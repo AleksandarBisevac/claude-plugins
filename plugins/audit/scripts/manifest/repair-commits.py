@@ -158,8 +158,8 @@ def apply_repair(mpath, manifest, ans):
     """Clear under the lock, revalidate before saving, journal each cleared row."""
     project = project_of(mpath)
     lost = [(r["phaseId"], r["taskId"], r["commit"]) for r in ans["lost"]]
-    # F188. THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE
-    # WERE WRONG. It was named `handle` and tested with `isinstance(..., dict)`,
+    # THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE USED
+    # TO BE WRONG. It was named `handle` and tested with `isinstance(..., dict)`,
     # which is never true of an int - so the release never ran and every write left
     # the index lock on disk, and the code was never read, so a refused acquire
     # fell into the write below and changed the manifest with no lock held. The
@@ -209,7 +209,7 @@ def apply_repair(mpath, manifest, ans):
     # SUCCEEDED must not be reported as failed because the note about it could
     # not be written - but the failure is said, not swallowed.
     #
-    # `append_from_cli` (F287): this is a script the operator runs from Bash, and
+    # `append_from_cli`: this is a script the operator runs from Bash, and
     # an append no writer claims is what `guard-bash-writes` reports as a shell
     # write into the append-only trail on the next Bash command.
     rel = os.path.relpath(mpath, project).replace(os.sep, "/")

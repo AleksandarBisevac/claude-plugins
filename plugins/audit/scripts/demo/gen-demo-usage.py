@@ -24,7 +24,7 @@ WHAT `DEFAULT_MODEL` COSTS, AND WHY IT IS PINNED FROM THE OTHER SIDE.
 `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)` cannot fail, so a phase that declares no
 tier does not produce an error - it produces a row attributed to sonnet. That is
 how 148 of the 40x5 demo's 482 rows came to print `claude-sonnet-5` as though the
-manifest had chosen it (F34). The fallback is still right for an ad-hoc row, which
+manifest had chosen it. The fallback is still right for an ad-hoc row, which
 genuinely has no manifest tier to read; what it must never do is stand in for a
 declaration the manifest should have made, and the case that catches that compares
 each orchestrator row against its own phase's declared tier rather than looking for

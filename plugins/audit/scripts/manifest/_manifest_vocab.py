@@ -230,7 +230,7 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               "notes", "baseCommit", "workspaceRoot",
               "signOffChecklist", "autoMode", "modelPolicy", "testPolicy",
               "reviewPolicy", "skillsPolicy", "statusLegend"}
-# F187. WHO WRITES EACH meta.ado KEY -- a human, or a command. `KNOWN_ADO` says a
+# WHO WRITES EACH meta.ado KEY -- a human, or a command. `KNOWN_ADO` says a
 # key is legal and says nothing about how it gets there, and that silence is the
 # gap: a precondition a gate refuses on, with no way to satisfy it but hand-editing
 # the manifest, is a gate people switch off. Splitting the set is what makes
@@ -497,7 +497,7 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #      PYTHONPATH=$S/config python3 -m timeit -s 'import _help' '_help.manifest_fields()'
 #      PYTHONPATH=$S/manifest python3 -X importtime -c 'import _manifest_vocab'
 #
-#    THE FIGURES ARE NOT WRITTEN DOWN, AND THAT IS THE REPAIR (F60). They were, with
+#    THE FIGURES ARE NOT WRITTEN DOWN, AND THAT IS THE REPAIR. They were, with
 #    the schema's byte count beside them, and naming the tree is the only reason the
 #    rot was catchable at all — but a timing here moves with the SCHEMA and with the
 #    INTERPRETER independently, and re-running the first line above returned
@@ -743,7 +743,7 @@ def _check_ado(obj, where, findings):
                         % (where, type(ado).__name__))
         return
     # `isinstance(x, bool)` first, because `bool` subclasses `int` and `true`
-    # would otherwise be accepted as a work-item id (F15). `meta.version` already
+    # would otherwise be accepted as a work-item id. `meta.version` already
     # excluded it by name, so the tree disagreed with itself about one question.
     if "id" in ado and (isinstance(ado.get("id"), bool)
                         or not isinstance(ado.get("id"), int)):

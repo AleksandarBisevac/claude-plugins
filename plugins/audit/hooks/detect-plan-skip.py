@@ -36,7 +36,7 @@ UserPromptSubmit hook — plan-first opt-out logger + config-error surfacing.
    see that root, because the harness substitutes the variable into a command
    string rather than exporting it. A hook is the only thing that knows, so this
    one writes <stateDir>/running-plugin-<session_id>.json ({root, version}) on
-   every prompt for the doctor to read back (F228). A prompt is the coarsest
+   every prompt for the doctor to read back. A prompt is the coarsest
    event a session cannot avoid, which is why the stamp is here and not in a
    guard on the per-tool-call path.
 
@@ -70,7 +70,7 @@ _GC_PREFIXES = ("plan-gate-", "tdd-reminder-", "bash-writes-",
                 # which area tags this session has already been nudged about.
                 "owner-note-",
                 # This hook's own stamp of which plugin copy is executing the
-                # hooks (F228). It is rewritten on every prompt, so a slot that
+                # hooks. It is rewritten on every prompt, so a slot that
                 # ages past the line below belongs to a session that ended -
                 # exactly what the rest of this tuple means.
                 _config.RUNNING_STAMP_PREFIX)
@@ -117,7 +117,7 @@ def _arm_bypass(state_dir, logs_dir, session_id,
     message say the bypass expires unused after 30 minutes, because a fact that
     changes what the keyword means belongs where the keyword is used.
 
-    THE PROMPT'S WORDING NEVER REACHES A SURFACE ANYTHING PAINTS (F161). The
+    THE PROMPT'S WORDING NEVER REACHES A SURFACE ANYTHING PAINTS. The
     keyword is typed in the same sentence as whatever the person was actually
     doing, so a snippet of the prompt is a sentence a human wrote about their
     own work - and this function used to copy one into the gate events feed,
@@ -240,7 +240,7 @@ def main():
         # --- 0. opportunistic GC of stale session state -----------------------
         _gc_state(state_dir)
 
-        # --- 0b. which plugin copy is executing these hooks (F228) ------------
+        # --- 0b. which plugin copy is executing these hooks --------------------
         # `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that
         # began before an upgrade keeps running the copy it started with - and
         # `/audit:doctor`, a different process, has no way to see that root

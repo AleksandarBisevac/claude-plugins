@@ -88,7 +88,7 @@ PROBE_NOTICE = ("[audit] doctor: asking `az extension list` whether the "
 def announce_probe(stream=None):
     """Say that a third-party CLI is about to be waited on, and for how long.
 
-    WHY THIS EXISTS AT ALL (F158). The bound was already here and that is the
+    WHY THIS EXISTS AT ALL. The bound was already here and that is the
     important half - this diagnostic can never hang. What it could not do was
     SAY so: `/audit:doctor` is read-only and finishes in well under a second on
     everything else it checks, so an `az` that is slow to start turns the

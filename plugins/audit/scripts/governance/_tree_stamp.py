@@ -85,7 +85,7 @@ def porcelain(project):
     this module does not have, and reporting that as "nothing changed" would be
     the false clean sheet the whole file exists to prevent.
 
-    `-uall` IS THAT SAME REFUSAL, ONE CAUSE OVER (F224). Git collapses a WHOLLY
+    `-uall` IS THAT SAME REFUSAL, ONE CAUSE OVER. Git collapses a WHOLLY
     UNTRACKED directory to a single `?? dir/` entry, so without the flag a
     fix-in-place gate that CREATES a file inside one moves no line at all and the
     bracket answers `treeMutated == []` -- the value that means KNOWN CLEAN. That

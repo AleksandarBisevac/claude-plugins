@@ -140,7 +140,7 @@ def load_usage(manifest, manifest_path, project_dir=None):
         by_model = ul.aggregate(rows, "model")
         by_author = ul.aggregate(rows, "author")
 
-        # THE RATE BASIS, TRIMMED AT THE DOOR (F160). The plan schema asks only
+        # THE RATE BASIS, TRIMMED AT THE DOOR. The plan schema asks only
         # that `meta.usage.pricingAsOf` be non-empty, so a string of spaces
         # validates - and every renderer below tests it for truth, so `"  "`
         # reached the page and the terminal as "rates as of" followed by

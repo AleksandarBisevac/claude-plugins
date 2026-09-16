@@ -5,7 +5,7 @@ Where each audit item would hang on the board, and whether that place can be tru
 `_ado_parent` holds the rules; this is the door the orchestrator knocks on before
 it creates anything. A real command rather than a `python3 -c` one-liner for the
 reason `check-ado-item.py` gives and which is not style: a one-liner naming a
-source path is exactly the shape `guard-secrets-read` refuses (F20/F22), so the
+source path is exactly the shape `guard-secrets-read` refuses, so the
 check would be blocked on the machines that most need it.
 
   resolve-ado-parent.py <manifest> [--all | --phase P3 | --task P3.1] [--json]
@@ -18,7 +18,8 @@ command whose default answers about nothing is a command people forget to scope.
 prose was doing the job. `/audit:sync parents` asks the project for its backlog
 configuration and then had to BUILD `meta.ado.hierarchy` out of the answer, so
 the rule for placing the bug rung was written out in three documents - and the
-rule moved under them (F143/F157). The rank comes from `bugsBehavior`; the NAME
+rule moved under them while the documents stood still. The rank comes from
+`bugsBehavior`; the NAME
 comes from `meta.ado.types.bug`, which is why the manifest is still the first
 argument here. A document telling a reader to file that rank under `Bug` files
 it under a name no work item carries on a board that renamed the type, while
@@ -30,7 +31,7 @@ the one place the ladder is derived.
 IT WALKS BUGS TOO, and they are reported apart from the plan. `status` fetches a
 linked bug's `System.Parent` like any other item's and had nothing on the
 manifest side to compare it with, so a linked bug got no `parent?` verdict and
-nothing said why (F101). A bug's row is what the manifest RECORDS about where it
+nothing said why. A bug's row is what the manifest RECORDS about where it
 hangs - usually written by a pull, off the board - and never a plan for a write:
 a push creates no bug parent link, so the bug rows stay out of the plan block's
 counts and out of the hierarchy check, and one line names them instead. The
@@ -359,7 +360,7 @@ def main(argv):
     # BUGS ARE ASKED ABOUT HERE AND NOWHERE ELSE. `status` fetches a linked
     # bug's `System.Parent` exactly as it does a phase's, and until this list
     # was passed there was no manifest side to compare it with - so a linked bug
-    # got no `parent?` verdict at all and nothing said that was why (F101). The
+    # got no `parent?` verdict at all and nothing said that was why. The
     # list is passed even when it is empty, because `inventory` reads None as
     # "not asked" and this command always asks.
     inv = _parent.inventory(manifest.get("phases"), ado,

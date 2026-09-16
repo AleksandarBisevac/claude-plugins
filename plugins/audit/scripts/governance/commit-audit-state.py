@@ -115,7 +115,7 @@ E_OK, E_FAIL, E_USAGE = 0, 1, 2
 # reader who meets one of these in a log has to be able to tell, without opening
 # it, that it carries no implementation.
 #
-# F268: THE LITERAL IS THE SCOPE, NOT THE TYPE, and that is a reversal of the
+# THE LITERAL IS THE SCOPE, NOT THE TYPE, and that is a reversal of the
 # original spelling with its trigger named. `audit-state(P1):` put the literal in
 # the TYPE position, which made it an unknown conventional-commit type -- and a
 # repository with husky+commitlint rejects the commit AFTER this script has staged
@@ -128,9 +128,10 @@ COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-state"
 DEFAULT_SUBJECT = "the record of a run, without the work it ran on"
 
-# F305: THE SUBJECT OPENS WITH A FIXED LOWERCASE WORD, AND THE STANDARD IT MEETS
-# IS THE WHOLE OF commitlint's DEFAULT `subject-case` RULE. F268 above moved the
-# literal into the scope so the default `type-enum` would take the commit, and the
+# THE SUBJECT OPENS WITH A FIXED LOWERCASE WORD, AND THE STANDARD IT MEETS
+# IS THE WHOLE OF commitlint's DEFAULT `subject-case` RULE. The fix above moved
+# the literal into the scope so the default `type-enum` would take the commit,
+# and the
 # very next default rule refused it anyway: `subject-case` forbids a subject that
 # IS sentence-case, start-case, pascal-case or upper-case, and `P6 - the record of
 # a run` is sentence-case exactly -- commitlint asks whether
@@ -264,7 +265,8 @@ def commit_message(phase_id, subject, coauthor):
     subject line.
 
     `SUBJECT_LEAD` COMES FIRST AND NOTHING MAY BE PUT AHEAD OF IT - that position
-    is the whole of F305's repair, and the constant says why.
+    is the whole of the fixed-lowercase-subject repair above, and the constant
+    says why.
 
     AND THE SHAPE IS UNCONDITIONAL, deliberately NOT read from `meta.commit`. The
     manifest cannot answer the question: that block holds `{type, coauthor}` - a
@@ -276,7 +278,8 @@ def commit_message(phase_id, subject, coauthor):
     satisfies commitlint's defaults is a perfectly good subject where nothing
     enforces them, so the alternative is a second shape that runs only on the
     machines nobody tests on. Reading a field to decide whether to be correct is
-    also what F268 spent its reversal removing: the separating literal is fixed
+    also what the scope-not-type reversal above spent its removal on: the
+    separating literal is fixed
     precisely so a manifest cannot move this commit's spelling.
 
     THE CALLER'S HALF IS BOUNDED BY THE SAME RULE SET, through the bound its
@@ -321,7 +324,7 @@ def record_row(project, phase_id, sha, config=None):
     FAIL-SOFT, `_journal_io.append`'s own contract: a commit that HAPPENED must
     not be reported as not having happened because the trail could not be written.
 
-    `append_from_cli`, NOT `append` (F287): this command is run from Bash, so its
+    `append_from_cli`, NOT `append`: this command is run from Bash, so its
     append put the journal file into `git status` and `guard-bash-writes` had
     nothing claiming it -- the next shell command drew a notice about a row this
     plugin had just written, with `audit-journal.py verify` reporting the chain
@@ -349,7 +352,7 @@ NOTHING_UNCOMMITTED = ("nothing uncommitted: the phase's manifest file, the "
                        "was made, because an empty one records nothing and "
                        "buries the ones that do.")
 # THE CLAUSE IS `_scoped_commit.RIDES_ALONG` AND NOT A SECOND TYPING OF IT. This
-# refusal and the success-path notice that module prints (F286) are two runs'
+# refusal and the success-path notice that module prints are two runs'
 # answers to one fact - the row names the SHA, so it lands outside the commit -
 # and they are NOT the same claim: this one says why a dirty trail is not work to
 # do and would never terminate if it were, the other says a row has just been

@@ -96,7 +96,7 @@ UI_HTML = UI_HTML.replace("__LABELS__", json.dumps(_theme.LABELS, sort_keys=True
 # request-time placeholder would promise that it can.
 #
 # It is not the whole answer, and reading it as one is the fault the endpoint
-# beside it exists for (F100). The build INSTALLED on disk does move under a
+# beside it exists for. The build INSTALLED on disk does move under a
 # running server - an in-place upgrade replaces plugin.json - so "which build is
 # serving this page" and "is that still the build you have" are two questions and
 # only the first is baked here. The second is `GET /api/version`

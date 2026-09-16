@@ -197,7 +197,7 @@ def _now_iso():
 # holding the pen: another session has this manifest's lock and is alive, so this
 # write would land on top of theirs. Says the holder, what they are doing, the
 # basis for calling them alive, and the one command that resolves it.
-# What a SUBAGENT is told when it reaches for the plan itself (F262). Its own
+# What a SUBAGENT is told when it reaches for the plan itself. Its own
 # constant rather than a branch inside the refusal below, because this is a
 # different refusal: the file is not out of scope, it is out of AUTHORITY, and the
 # remedy is not a wider scope but a message to the orchestrator.
@@ -669,8 +669,8 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     Exempt from the PLAN gate is not the same as unconditionally writable.
     #     A manifest write is checked against the concurrency lock instead — see
     #     step 2a-ii.
-    # 2a-0. THE PLAN IS THE ORCHESTRATOR'S, AND THE EXEMPTION SAID OTHERWISE
-    #     (F262). `agents/audit-executor.md` puts the manifest with the
+    # 2a-0. THE PLAN IS THE ORCHESTRATOR'S, AND THE EXEMPTION SAID OTHERWISE.
+    #     `agents/audit-executor.md` puts the manifest with the
     #     orchestrator, and this gate exempted it from everybody — so a subagent
     #     refused a source file could, and did, widen its own scope instead:
     #     measured on a live run, four tasks out of five took that route because
@@ -958,7 +958,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
             % (rel, reason, manifest_rel),
         )
 
-    # The deny names its ACTUAL cause (F-F4): "a phase is in_progress" was
+    # The deny names its ACTUAL cause: "a phase is in_progress" was
     # printed even when the denial came from enforce:true in an empty repo —
     # a flatly false sentence, shipped because nothing pinned the text.
     knob = _config.plan_gate_knob(cfg)
@@ -986,7 +986,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     head = "Outside the running plan (%s): %s\n%s\n" % (reason, rel, cause)
     if note["stated"]:
         head += note["stated"] + "\n"
-    # THE REMEDY BRANCHES BY AUDIENCE, and it did not (F251, F262). The old text
+    # THE REMEDY BRANCHES BY AUDIENCE, and it did not. The old text
     # told every reader to "add a task covering this file to <manifest>" — but a
     # subagent may not edit the manifest (`agents/audit-executor.md` puts it with
     # the orchestrator) and has no channel to the human, so the one line addressed
@@ -1006,12 +1006,14 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
             "manifest belongs to the orchestrator, and widening a scope from "
             "inside a task is how a plan stops describing the work.\n"
             "Do this: STOP, and %s - either way you will not be re-spawned.\n"
-            # F284. THIS USED TO PROMISE THE WIDENING FLATLY, and at sign-off
+            # THIS USED TO PROMISE THE WIDENING FLATLY, and at sign-off
             # that promise was false. `_config.in_progress_task_map` reads only
             # `in_progress` tasks, and sign-off runs when every task is `done` -
             # so nothing is covered there, and no widening of a finished task
-            # changes that (F283's widening settles an index; it does not open an
-            # edit). A live run spent three fix-run subagents finding that out.
+            # changes that: `audit-task.py`'s `_locked_scope` lets a done task's
+            # `task.files` grow, but that only re-derives `fileIndex` -- it does
+            # not reopen the file for editing under this gate. A live run spent
+            # three fix-run subagents finding that out.
             # A refusal that names a remedy the reader cannot reach is worse than
             # one that names none: it sends them to spend the spawn twice.
 

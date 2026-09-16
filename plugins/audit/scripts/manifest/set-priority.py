@@ -195,7 +195,7 @@ def _journal_row(project, config, mpath, phase_id, was, now):
     contract: a write that HAPPENED must never be reported as failed because the
     record of it could not be.
 
-    `append_from_cli` for audit-task.py's reason too (F287): this is a script run
+    `append_from_cli` for audit-task.py's reason too: this is a script run
     from Bash, so no session slot and no panel slot can claim the journal file its
     append dirties, and `guard-bash-writes` reports an unclaimed one as a shell
     write into the append-only trail."""

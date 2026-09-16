@@ -427,7 +427,7 @@ def check_ado_meta(ado):
             f.append("meta.ado.stateMap: must be an object {task, bug, phase} "
                      "or null, got %s" % type(sm).__name__)
         else:
-            # F1 (live gate): phase work items have their OWN state vocabulary
+            # Phase work items have their OWN state vocabulary
             # in ADO (a Scrum PBI knows no "In Progress"), so the map carries a
             # third block, keyed by the same status names phases use.
             vocab = {"task": STATUS, "bug": BUG_STATUS, "phase": STATUS}

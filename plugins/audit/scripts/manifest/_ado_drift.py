@@ -260,7 +260,7 @@ def link_inventory(manifest):
 
     One walk shared by the door and by `/audit:doctor`'s `ado links` row, which
     used to do its own. `ado.id` must be an int and not a bool - `True` would
-    otherwise pass for a work-item id (the F15 shape, held by the validator).
+    otherwise pass for a work-item id, the same check the validator holds.
     """
     out = []
     for phase in ((manifest or {}).get("phases") or []):

@@ -6,7 +6,7 @@ The door `/audit:sync` knocks on to read the linked side of a board in one go.
 `check-ado-item.py` and `explain-ado-drift.py` are commands: the caller is
 orchestrator PROSE, which reaches Python only through Bash, and a `python3 -c`
 one-liner naming a source path is exactly the shape `guard-secrets-read` refuses
-(F20/F22) - so the thing would be off on the machines that most need it.
+- so the thing would be off on the machines that most need it.
 
 AND BECAUSE PROSE CANNOT BE TESTED, WHICH IS THE DEFECT THAT PRODUCED THIS FILE.
 `sync.md` step 3 said "batch-fetch the ADO side" and then named `az boards

@@ -35,7 +35,7 @@ written. `rest_payload_reason` says when a caller has the wrong one and
 `as_gradable_item` converts the other, so the answer to "can this be graded" is
 a function with cases rather than a paragraph a caller has to remember.
 
-AND ONE RULE IS SCOPED BY KIND, WHICH IS F120. `requireParent` reads the parent
+AND ONE RULE IS SCOPED BY KIND. `requireParent` reads the parent
 the connector RESOLVED for an item, and push resolves one for a phase (and, with
 `phaseWorkItems` off, a task) and for no third kind: a bug card is created with
 no parent link at all, which `_ado_parent.resolve(kind="bug")` already says from
@@ -248,7 +248,7 @@ def split_tags(raw):
 def _open_axis(allowed):
     """True when this prefix admits ANY value -- the `*` entry, one level down.
 
-    F186. A prefix's list is a CLOSED enum, and some axes are open by nature:
+    A prefix's list is a CLOSED enum, and some axes are open by nature:
     `release:2026-08`, `sprint:24`, `ticket:41207`. Closed, those cost a manifest
     edit per value, and until the edit lands the conformance gate exits 1 on work
     that is otherwise fine. A board with a monthly release axis was choosing
@@ -354,7 +354,7 @@ def rest_payload_reason(item):
     correct, long-existing item. A checker whose every message is precise, aimed
     at the wrong shape, is worse than one that says nothing.
 
-    THE TELL IS THE ABSENT `type`, NOT THE PRESENT DECORATION, AND THAT IS F106.
+    THE TELL IS THE ABSENT `type`, NOT THE PRESENT DECORATION.
     This guard used to require one of `_FETCHED_ONLY` to be present. That read
     as structural and was not: `_ado_fetch.as_items()` - this plugin's OWN batch
     producer, and what `/audit:sync status` feeds the gate - emits
@@ -412,7 +412,8 @@ def as_gradable_item(fetched):
     (ABSENT and never null when the board hangs it nowhere - `_ado_fetch` says
     so from a live read), and `fields` passes through untouched. A prose
     instruction naming three keys is a prose instruction nothing can check,
-    which is how F106 got onto a board in the first place.
+    which is how the shape confusion `rest_payload_reason` corrects got an item
+    onto a board wrongly graded in the first place.
 
     NOTHING IS INVENTED. A row whose `System.WorkItemType` is missing - a
     narrower SELECT, a hand-built row - comes back with no `type` at all, so
@@ -471,7 +472,8 @@ def _typeless_rule_reason(wit, conventions):
     `None` when the item names a type, or when the board scopes nothing by type
     and a typeless item can therefore be graded in full.
 
-    THE OTHER HALF OF F106, and the more dangerous one. `requiredFields` and
+    THE OTHER HALF OF THE SAME SHAPE CONFUSION, and the more dangerous one.
+    `requiredFields` and
     `descriptionMustContain` are both lookups on the work item type, so an item
     with no type sails past every entry in them and the answer comes back as
     "conforms". One payload produced a refusal on the only rule it could reach
@@ -526,7 +528,7 @@ def _a_type(wit):
 def parent_rule_exemption(item, conventions, unparented=None):
     """Why `requireParent` was not applied to this item. `None` when it was.
 
-    F120. The gate was type-agnostic and push is not: a payload with no parent
+    THE GATE WAS TYPE-AGNOSTIC AND PUSH IS NOT: a payload with no parent
     was a violation whatever kind of item it was, while push supplies a parent
     for a phase and a task and never for a bug. A board that legitimately set
     `requireParent` therefore could not have a bug pushed to it at all, and the
@@ -544,15 +546,17 @@ def parent_rule_exemption(item, conventions, unparented=None):
 
     A SENTENCE AND NOT A SILENT SKIP. A board that asks for a parent on every
     card is asking for something the connector cannot supply, and a rule that
-    quietly stopped applying would be exactly the silent pass the typeless half
-    of F106 was: the reader is entitled to know the rule narrowed and why. It is
+    quietly stopped applying would be exactly the silent pass
+    `_typeless_rule_reason` above exists to catch: the reader is entitled to know
+    the rule narrowed and why. It is
     NOT a violation, because refusing the create is the bug being fixed - so it
     travels beside the verdict rather than inside it, the same way
     `rest_payload_reason` does.
 
     `unparented` ABSENT MEANS THE CALLER DID NOT SAY, and nothing is exempt.
     That is deliberately the LOUD default: a caller which has not been taught
-    the question gets the pre-F120 refusal, which is wrong but visible, rather
+    the question gets the old type-agnostic refusal, which is wrong but visible,
+    rather
     than a pass nobody asked for. `_ado_parent.unparented_types(meta.ado)` is
     the answer, and `check-ado-item.py` is the caller that reads it.
     """

@@ -74,7 +74,7 @@ import _worktrees  # noqa: E402  (git's worktree list + the containment answer, 
 # exists for, and an ignore rule cannot reach a file that was committed before the
 # rule was written.
 #
-# TWO HOMES, DECIDED RATHER THAN OVERLOOKED (F148). The same basenames are spelled
+# TWO HOMES, DECIDED RATHER THAN OVERLOOKED. The same basenames are spelled
 # in `panel/panel-server.py` (`_PANEL_PRIVATE_FILES`), which is what writes their
 # ignore rules, and `dh19` in `tests/test__doctor_hygiene.py` compares the two SETS
 # rather than trusting either.
@@ -326,7 +326,8 @@ def check_worktrees(rep, git_root, manifest):
             unknown.append("%s (%s)" % (rec.get("path"), branch))
 
     # `some_of` and not `"; ".join(...)`: a count in front of a list that has been
-    # cut short is the F205 defect, and `truncated_evidence_violations()` fails it.
+    # cut short is a claim the reader cannot verify, and
+    # `truncated_evidence_violations()` fails it.
     # On a repository with a real backlog this line is otherwise hundreds of
     # characters wide and nobody reads the remedy at the end of it.
     if prunable:

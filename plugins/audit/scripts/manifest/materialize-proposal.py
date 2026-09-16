@@ -9,7 +9,7 @@ The command door onto the proposal lifecycle.
     materialize-proposal.py <manifest> drop <PROP-id> --reason <text> [--json]
     materialize-proposal.py <manifest> revive <PROP-id> [--json]
 
-`list` IS HERE FOR THE SAME REASON THE OTHERS ARE (F91). It was the one
+`list` IS HERE FOR THE SAME REASON THE OTHERS ARE. It was the one
 subcommand `commands/propose.md` both specified AND rendered - a table described
 in prose, printed from prose, checked by nothing - and what a user got was an
 accurate summary with no table in it. The rows come from `_proposals.list_view`,
@@ -106,7 +106,7 @@ LIST_COLUMNS = ("id", "status", "reserved phase (task count)", "name",
                 "openQuestions")
 
 
-# An ALIAS, not a copy (F93). The payload column - the phase this proposal
+# An ALIAS, not a copy. The payload column - the phase this proposal
 # reserves and how big it is - is `_proposals.reserved_cell`, because
 # `/audit:status`'s PROPOSALS block prints the same cell and the two spellings
 # had already stopped counting the same tasks. The name stays here because this

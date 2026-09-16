@@ -15,7 +15,7 @@ column.
 It is a command rather than a helper for the reason `check-ado-item.py` is one:
 the caller is orchestrator PROSE, which reaches Python only through Bash, and a
 `python3 -c` one-liner naming a source path is the shape `guard-secrets-read`
-refuses (F20/F22) - so the check would be off exactly where it matters.
+refuses - so the check would be off exactly where it matters.
 
 Usage:
   verify-invariants.py <manifest> <phaseId> [--project DIR] [--json]

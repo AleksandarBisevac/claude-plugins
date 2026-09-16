@@ -414,8 +414,8 @@ def do_sweep(git_root, manifest, verbs, apply_it=False, run=None):
                              obs["dirty"],
                              # `standing_in` answering None means "outside every
                              # worktree", which is a MEASUREMENT; passing it through
-                             # as None would now read as "never asked" and refuse
-                             # (F245), so it is named.
+                             # as None would now read as "never asked" and refuse,
+                             # so it is named.
                              cwd_tree=(_wt.standing_in(trees, os.getcwd())
                                        or _wt.CWD_OUTSIDE),
                              verbs=verbs, owned_by_path=obs["owned"],

@@ -232,7 +232,7 @@ def answer(skipped, committed=False, commit=None, staged=None, refused="",
 RIDES_ALONG = ("a journal row rides along with the next commit rather than "
                "earning one")
 
-# F286: SAID ON THE RUN THAT CREATES THE CONDITION, not on the next one. The row
+# SAID ON THE RUN THAT CREATES THE CONDITION, not on the next one. The row
 # lands after the commit, so a successful run leaves the trail uncommitted in a
 # tree it has just reported as committed - and an operator who has not read this
 # module meets the dirty file first and the explanation second, on a second run.

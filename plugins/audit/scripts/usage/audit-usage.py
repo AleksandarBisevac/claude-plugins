@@ -285,7 +285,7 @@ def apply_filters(rows, args, tags_by_phase=None):
 def rate_basis(usage):
     """`meta.usage.pricingAsOf` as a BASIS, or None when the manifest declares none.
 
-    THE TRIM IS THE POINT (F160). The plan schema asks only that this key be
+    THE TRIM IS THE POINT. The plan schema asks only that this key be
     non-empty, so a string of spaces validates - and both readers below test the
     value for truth, so `"  "` reached the terminal as `rates as of` followed by
     nothing and the `--json` payload as a basis a consumer would print the same

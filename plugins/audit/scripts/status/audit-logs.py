@@ -78,7 +78,7 @@ _NO_ECHO = ("Removed rows are counted by class and never echoed: the path in an\
             "would put it back.")
 
 # THE LIMIT OF WHAT A PRUNE CAN DECIDE, and it is printed rather than left for the
-# reader to discover (F154). Two writers were repaired in one release - a `file`
+# reader to discover. Two writers were repaired in one release - a `file`
 # that held a whole shell command, and a `reason` that held an absolute path - and
 # neither repair reaches a row already on disk. Nothing in a row records which
 # release wrote it, so `_gate_feed.classify` refuses to guess and keeps them; that

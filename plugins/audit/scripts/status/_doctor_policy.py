@@ -18,7 +18,7 @@ panel's rules view marks `dead` with, so the two surfaces cannot disagree about
 which rule is inert. Everything else it reaches - `_policy`, `_areas`,
 `usage_ledger` - is lower still.
 
-THE LAYER NUMBER IS DELIBERATELY NOT WRITTEN HERE (F230). This sentence used to
+THE LAYER NUMBER IS DELIBERATELY NOT WRITTEN HERE. This sentence used to
 carry one, and the sentence in `audit-doctor.py`'s own table carried the same one;
 both were left behind when `_panel_discovery` moved down and this module followed
 it, because nothing compares a docstring to `_deps.LAYERS`. A stale ARGUMENT is
@@ -364,7 +364,7 @@ def check_branch_naming(rep, project, manifest, git_root):
 def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
     """Do the skills this plan NAMES resolve on this machine — and on anybody else's?
 
-    F195. `meta.reviewSkill`, `meta.areas[*].skills` and `task.skills` name skills
+    `meta.reviewSkill`, `meta.areas[*].skills` and `task.skills` name skills
     by string and nothing verified any of them. Measured live: a manifest carried
     `meta.reviewSkill: "code-review-and-quality"` - a hand-placed SKILL.md in
     `~/.claude/skills/`, in no marketplace, so no command can install it. On the

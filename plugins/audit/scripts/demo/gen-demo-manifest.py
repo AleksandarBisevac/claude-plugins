@@ -173,9 +173,10 @@ def _tests_add(mode, rel):
     itself about what its own tests are for.
 
     THE `tdd` ENTRY LEADS WITH ITS PATH, and that ordering is load-bearing rather
-    than a house style: F294's union takes the path an entry NAMES so `commit_scope`
-    will allow the file the task is declared to create, and a `tdd` entry that names
-    none is a finding. The `regression` wording keeps the path mid-sentence on
+    than a house style: `tests_add_path` extracts the path an entry NAMES so
+    `commit_scope` will allow the file the task is declared to create, and a
+    `tdd` entry that names none is a finding. The `regression` wording keeps the
+    path mid-sentence on
     purpose - that mode promises no new file, so nothing derives a path from it.
     """
     if mode == "tdd":
@@ -254,7 +255,7 @@ def _task_gate(tstatus, files, roots):
     """The gate entries this task declares -- DERIVED from the files it touches.
 
     A TASK GATE IS NOT A SMALL PHASE GATE, and giving every task the phase's gate
-    is the fault this signature exists to remove (F304). The full suite on every
+    is the fault this signature exists to remove. The full suite on every
     task meant a plan running two phases at once asked for a whole worker fan-out
     per task; on a suite that boots a database per worker the machine runs out of
     cores and gates start going red for reasons no diff explains. Nothing guessed
@@ -611,7 +612,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         # nobody asked for on every shard at once.
         if pi == ungated:
             del phase["testGate"]
-        # F34: the tier this phase's ORCHESTRATOR runs at. It was absent, and
+        # THE TIER THIS PHASE'S ORCHESTRATOR RUNS AT. It was absent, and
         # `gen-demo-usage` maps an absent tier through
         # `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)` - which cannot fail, so all 148
         # orchestrator rows of the 40x5 demo (31% of 482) printed
@@ -716,7 +717,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             "createdISO": _iso(BASE),
             "developmentBranch": "main",
             "branchPrefix": "audit",
-            # Carried since F239: the panel has a card that renders this, and the
+            # Carried because the panel has a card that renders this, and the
             # demo is where that screenshot comes from. The template is the full
             # four-placeholder shape rather than the default, so the picture shows
             # a convention a reader can learn something from - and `initials` is
@@ -861,7 +862,7 @@ SCHEMA_EXEMPTIONS = {
         "hand-typed copy of the schema URL (there is no shared constant) or file "
         "I/O inside a generate() documented as pure; CI validates the generated "
         "manifest against the schema BY PATH instead.",
-    # `meta.branch` WAS EXEMPT HERE and is carried now (F239). Its row read "REVISIT
+    # `meta.branch` WAS EXEMPT HERE and is carried now. Its row read "REVISIT
     # when the panel grows a meta.branch card: the demo is where its screenshot
     # comes from" -- and the panel grew one, and nothing said so. The trigger had
     # been true for releases while the exemption sat unchanged, so every capture of
@@ -870,8 +871,8 @@ SCHEMA_EXEMPTIONS = {
     # THE GENERAL DEFECT IS NOT CLOSED BY CARRYING THE KEY. An exemption's REVISIT
     # condition is checked by nobody: the suite asserts every schema field is
     # carried or exempted, and never asks whether a row's own stated trigger has
-    # come true. That is F232 one register over, and it is recorded rather than
-    # papered over by this deletion.
+    # come true. That is the same shape this project has recorded under other
+    # names, and it is recorded here rather than papered over by this deletion.
     # `task.redFirst` AND ITS THREE FIELDS. The block records what happened to a
     # task's red-first proof - `proved`, `could-not-prove` with the refusal
     # verbatim, or `not-attempted`. No exemption here carries a REVISIT trigger,
@@ -1013,7 +1014,7 @@ SCHEMA_EXEMPTIONS = {
         "generator does not build. Coverage lives in tests/test__priority.py "
         "(the comparator) and tests/test_set_priority.py (the write). This row "
         "carried a REVISIT trigger naming the panel's phase row; the panel has "
-        "edited priority for some time and the trigger had fired unread (F239). "
+        "edited priority for some time and the trigger had fired unread. "
         "It is dropped rather than re-armed, because the reason above never "
         "depended on it: carrying a pin would reorder the ready list under "
         "committed screenshots whatever the panel renders.",
@@ -1026,7 +1027,7 @@ SCHEMA_EXEMPTIONS = {
         "tests/test__ado_parent.py (the resolution and the hierarchy tiers) "
         "and tests/test_resolve_ado_parent.py (the door). It carried a REVISIT "
         "trigger naming a connector card - the same one meta.branch carried, and "
-        "fired just as unread (F239). Dropped, and the reason stands without it: "
+        "fired just as unread. Dropped, and the reason stands without it: "
         "the fixture has no meta.ado, so an id here would name a work item in a "
         "project the demo does not have however much of a card the panel grows.",
     "task.adoParent":
@@ -1044,7 +1045,7 @@ SCHEMA_EXEMPTIONS = {
         "omits it is already demonstrating the common case. Coverage is "
         "tests/test__ado_tracked.py (the resolution and the inheritance) and "
         "tests/test_resolve_ado_tracked.py (the door). It shared phase.adoParent's "
-        "REVISIT trigger and was dropped with it (F239): no board, no distinction, "
+        "REVISIT trigger and was dropped with it: no board, no distinction, "
         "whatever the panel paints.",
     "adoParent.id":
         "a field of adoParent, which this fixture does not take. An id is the "
@@ -1124,8 +1125,9 @@ def _schema_path_as_panel_path(key):
 def revisit_trigger_drift(exemptions=None, panel_paths=None):
     """[(key, problem)] for an exemption whose REVISIT trigger has already fired.
 
-    F239, and the general defect that entry names rather than the one instance it
-    was found through. Every row here may carry a sentence beginning REVISIT, which
+    THE GENERAL DEFECT, addressed here rather than just the one instance it was
+    found through: an exemption's stated REVISIT condition can fire with nothing
+    reading it. Every row here may carry a sentence beginning REVISIT, which
     states the condition under which the exemption stops being right. **Nothing read
     those sentences.** `test_gen_demo_manifest` asserts each schema field is either
     carried or exempted, and never asks whether a row's own stated trigger has come
@@ -1637,7 +1639,7 @@ def _status_of(failed, ran_total, mutated):
     branches nothing enters. And the zero is read as a POSITIVE zero: `None` means
     this runner does not report a count and must not be mistaken for "nothing ran".
 
-    `mutated` IS THE REFUSED SET AND NOT MERELY THE CHANGED ONE (F280). The real
+    `mutated` IS THE REFUSED SET AND NOT MERELY THE CHANGED ONE. The real
     `run_status` reads `attributed_mutations`' owned half, because the foreign
     half is the one nothing can attribute; what makes the same list serve both
     here is `_run_plan`, which sets a mutating run's changed paths to the task's

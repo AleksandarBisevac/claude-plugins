@@ -140,13 +140,14 @@ _check_review = _phases._check_review
 _check_area_tag = _phases._check_area_tag
 _check_areas = _phases._check_areas
 _walk_phases = _phases._walk_phases
-# F294. `audit-task.py` reads this through `_rules` to decide which path a
+# `audit-task.py` reads this through `_rules` to decide which path a
 # `tests.add` entry puts into a task's `files`, and `_walk_phases` reads it to
 # require one of a `tdd` task that can still be committed against. It sits beside
 # that walk rather than here because those two are what a reader has to compare:
 # the first draft gave this file a rule and a THIRD pass over the tasks of its own,
-# re-expressing `mode == "tdd" and status not in TERMINAL` next to F254's copy of
-# the same filter -- and the two had already drifted on `expectRedFirst`.
+# re-expressing `mode == "tdd" and status not in TERMINAL` next to
+# `tests_add_graded`'s copy of the same filter -- and the two had already drifted
+# on `expectRedFirst`.
 tests_add_path = _phases.tests_add_path
 # The other half of the same rule: `tests_add_graded` is the filter the walk and
 # the one-shot migration must share, and `tests_add_repair` is what that migration
@@ -330,9 +331,10 @@ def validate(manifest):
     add(_check_meta(manifest))
     add(_check_branch(manifest))
     add(_check_areas(manifest))
-    # F294's rule about `tests.add` is NOT registered here, and its absence is the
-    # fact rather than an omission: it rides `_walk_phases` below, beside F254's
-    # rule about the same field. A line here would be a third pass over the tasks.
+    # `tests_add_path`'s rule about `tests.add` is NOT registered here, and its
+    # absence is the fact rather than an omission: it rides `_walk_phases` below,
+    # beside `tests_add_graded`'s rule about the same field. A line here would be
+    # a third pass over the tasks.
 
     phases = manifest.get("phases")
     if not isinstance(phases, list):

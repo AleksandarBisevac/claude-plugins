@@ -5,7 +5,7 @@ The gate `/audit:sync push` runs an item through before it creates it.
 `_ado_conventions` holds the rule; this is the door the orchestrator knocks on.
 It exists as a real command rather than a `python3 -c` one-liner for two
 reasons, and the second is not style: a one-liner that names a source path is
-exactly the shape `guard-secrets-read` refuses (F20/F22), so the check would be
+exactly the shape `guard-secrets-read` refuses, so the check would be
 blocked on the machines that most need it.
 
 WHY A GATE AND NOT AN ADVISORY. `SECURITY.md` splits these: advisory paths fail
@@ -36,7 +36,7 @@ Usage:
               "System.Tags": "type:refactor; supplier:databridge"},
    "parent": 103205}
 
-`--fetched` IS THE OTHER SHAPE, AND IT IS A DIFFERENT QUESTION (F106). It takes
+`--fetched` IS THE OTHER SHAPE, AND IT IS A DIFFERENT QUESTION. It takes
 the item list `fetch-ado-items.py --out` writes - rows of `{id, fields}`, with
 the work item type and the parent INSIDE `fields` - and asks whether the items
 already ON the board still conform. That payload used to be fed to `--item`,
@@ -53,7 +53,8 @@ grade a fiction. And it does not say "do NOT create this item" - nobody is
 creating these; a violation here is a report about a card that is already
 sitting on somebody's board.
 
-A `NOTE:` LINE IS NOT A REFUSAL, and F120 is why there is one. `requireParent`
+A `NOTE:` LINE IS NOT A REFUSAL, and the exemption below is why there is one.
+`requireParent`
 grades the parent the connector RESOLVED, and push resolves none for a bug -
 it creates that card with no parent link and names no third kind to hang - so
 the rule was refusing every bug create on any board that set it. It is scoped
@@ -138,14 +139,14 @@ def field_template_of(manifest):
 
 
 def unparented_of(manifest):
-    """The work item types push CREATES without a parent link (F120).
+    """The work item types push CREATES without a parent link.
 
     Handed to `_ado_conventions` rather than read there, because that module
     grades a `conventions` block and this command is the one holding the whole
     of `meta.ado`. A manifest with no connector block still gets the connector's
     default answer: `meta.ado` absent does not mean push would suddenly start
-    parenting bugs, and an empty tuple here would put the F120 refusal back for
-    exactly the manifests that configured nothing.
+    parenting bugs, and an empty tuple here would put the type-agnostic refusal
+    back for exactly the manifests that configured nothing.
 
     ASKED OF `_ado_parent` because that is where the bug type name is derived -
     it reads every other name in `meta.ado.types` too. It answered from
@@ -277,7 +278,8 @@ def grade_fetched(rows, conventions, unparented=None):
     A row this gate cannot read is a ROW, never a skip. Dropping it would leave a
     shorter table reading as a complete one - the same defect
     `_ado_fetch.missing_ids` exists to prevent one layer up - and counting it as
-    conforming would be the silent pass F106 is half made of.
+    conforming would be the same silent pass `_ado_conventions`'s shape checks
+    exist to catch.
 
     `exemption` rides along for the same reason it does on the create path: a
     rule that narrowed has to say it narrowed. It is NOT a violation and does
@@ -443,8 +445,8 @@ def run_item(manifest_path, manifest, path, as_json):
     # A LIST is the other flag's input, and it used to come back as
     # "DOES NOT CONFORM: 1 violation(s) - do NOT create this item" via
     # `conformance_violations`' "item must be an object" - a conformance verdict
-    # about a shape mistake, which is F106 in miniature. Exit 2 and say which
-    # flag wants it.
+    # about a shape mistake, the same class of confusion as `--fetched` above in
+    # miniature. Exit 2 and say which flag wants it.
     if not isinstance(item, dict):
         sys.stderr.write("ERROR: an --item payload is ONE create object; this is "
                          "%s. The item list `fetch-ado-items.py --out` writes "

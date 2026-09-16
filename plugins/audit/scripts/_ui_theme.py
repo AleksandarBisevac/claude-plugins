@@ -1109,8 +1109,8 @@ def cr_violations(assets):
     not "every asset is LF". A caller that built the list by filtering would have to
     say the set was empty itself.
 
-    WHO ASKS THIS, AND WHY THIS PARAGRAPH USED TO NAME CALLERS IT DID NOT HAVE
-    (F242). It read "both callers pass a fixed literal list"; measured, this
+    WHO ASKS THIS, AND WHY THIS PARAGRAPH USED TO NAME CALLERS IT DID NOT HAVE.
+    It read "both callers pass a fixed literal list"; measured, this
     function had no caller anywhere outside its own suite — the rule was stated,
     exercised over fixtures, and never applied to a shipped asset. `ua8b` asks it
     live over `UI_ASSETS` now, and `ua8c` asserts that set is not empty, which is

@@ -319,7 +319,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                  "transcripts: /audit:usage --backfill")
 
     # Initialised HERE rather than inside the `if deep:` block, and that placement
-    # IS the fix for F33: the all-clear at the bottom of this function reads every
+    # is the whole fix: the all-clear at the bottom of this function reads every
     # arm's result, and a name bound only inside the deep branch could not be read
     # there at all. So a --deep run printed "the task commit does not carry the
     # journal file" and "N done task(s) ... all carry chained records" side by side

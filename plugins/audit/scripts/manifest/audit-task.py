@@ -4208,7 +4208,7 @@ def cmd_add(args, out):
 
 
 # --- seed: the smallest honest plan, written where none exists yet -------------
-# P50.1. `/audit:init` is multi-agent and interviews a human before it writes
+# `/audit:init` is multi-agent and interviews a human before it writes
 # anything, which is the right shape for a real audit and the wrong one for a
 # repository that only wants the guards a manifest turns on. This verb is the
 # second, cheap door: no interview, no exploration, no invented findings -- one

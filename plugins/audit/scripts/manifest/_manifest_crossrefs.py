@@ -389,7 +389,7 @@ def _require_parent_warnings(ado, rows):
 def _bug_parent_warnings(ado, bugs):
     """`requireParent` against the ONE kind a push creates and never parents.
 
-    F120, and it is the half `_require_parent_warnings` structurally cannot
+    This is the half `_require_parent_warnings` structurally cannot
     answer. That function reads `_parent.inventory`'s rows, and the inventory is
     deliberately called WITHOUT bugs there - bug rows in front of the homeless
     count would report a warning about a link push was never going to create.
@@ -504,7 +504,7 @@ def _check_ado_parents(manifest, phases):
 # phase shard and `fileIndex` lives in the index, and `orchestrator.md` forbids a
 # task commit from staging the index — so a mid-phase commit CANNOT carry both
 # halves, and `_invariants.manifest_revalidated` has to tell this finding apart
-# from every other one (F250). Matching the sentence in two files by hand is how
+# from every other one. Matching the sentence in two files by hand is how
 # the two would drift; one of them owns the words.
 FILEINDEX_PAIRING = "missing from fileIndex"
 

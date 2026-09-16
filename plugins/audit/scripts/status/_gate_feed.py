@@ -221,7 +221,7 @@ def classify(project, lines, older_than_days=None, now=None):
     a path, which is the whole reason the repair had to be made at the writer; what
     clears the rows already on disk is the size self-trim, or `--older-than`.
 
-    NO CLASS FOR THOSE ROWS, AND THAT IS THE DECISION (F154). A class would have to
+    NO CLASS FOR THOSE ROWS, AND THAT IS THE DECISION. A class would have to
     guess which cell is a command, on a shape - a space, a leading word that looks
     like a program - and the guess is wrong in the direction that costs most: a
     tracked file whose repo-relative path contains a space reads as `program arg`,
@@ -229,7 +229,7 @@ def classify(project, lines, older_than_days=None, now=None):
     could not tell what went. `gf5` pins the opposite behaviour on purpose. What the
     product owes instead is to SAY SO, which is `oldestKeptDays` below plus the
     standing note `audit-logs.py` renders beside it: the same release also stopped
-    writing an absolute path into `reason` (F153), so the whole statement is "rows
+    writing an absolute path into `reason`, so the whole statement is "rows
     older than your upgrade may hold either, nothing in a row records which release
     wrote it, and `--older-than` is the lever" - with a real number for how far back
     this feed goes, so the lever can be aimed.
@@ -304,7 +304,7 @@ def prune(project, config=None, older_than_days=None, dry_run=False, now=None):
     never had anything to say here.
 
     `oldestKeptDays` is how far back the feed still reaches once this prune has
-    run, and it is here because of what a prune CANNOT decide (F154): a row
+    run, and it is here because of what a prune CANNOT decide: a row
     written by an older release can hold a whole shell command in `file` or an
     absolute path in `reason`, nothing in a row records which release wrote it,
     and `classify` refuses to guess. Age is the only lever that reaches them, so

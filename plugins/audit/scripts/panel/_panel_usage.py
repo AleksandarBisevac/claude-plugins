@@ -338,7 +338,8 @@ def usage_state(project):
     config = read_config(project)
     ucfg = cfg_mod.usage_cfg(config)
     ledger_dir = str(cfg_mod.ledger_dir(project, config))
-    # THE RATE BASIS, TRIMMED AT THE DOOR (F168), which is the surface F160
+    # THE RATE BASIS, TRIMMED AT THE DOOR - the one surface reaching
+    # `pricingAsOf` through `usage_cfg` that an earlier trim of the same key
     # missed. The `pricingAsOfDeclared` line below already DECIDES on the trimmed
     # value and this served the merged one AS TYPED, so the two disagreed about
     # one config value inside one dict literal: a padded date reached the tab as

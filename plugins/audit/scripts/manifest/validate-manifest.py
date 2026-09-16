@@ -80,7 +80,7 @@ def warning_tail(n_lines, n_items):
     reconcile. `collapse()` renders same-shape warnings as one line, so on a real
     plan the item count stopped being a count of anything on screen: a run that
     printed a pair of WARNING lines and closed with a total in the twenties read
-    as the rest having been swallowed, and both numbers were true (F115). The
+    as the rest having been swallowed, and both numbers were true. The
     house rule is that a claim carries the basis that makes it true, and the
     basis for the item count is the collapse - so when the collapse did something
     the line says so, naming both.

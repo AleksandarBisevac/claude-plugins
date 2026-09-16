@@ -179,7 +179,8 @@ def declaration_findings(item, where):
     real hole, found by asking the validator rather than by reading it:
     `adoParent = "not-an-object"` is REFUSED and named, `status = 17` is REFUSED
     and named, and `adoTracked = "yes"` was accepted in silence with exit 0. That
-    is F203 inverted - there the schema PERMITTED what the validator refused, here
+    is the same shape inverted - there the schema PERMITTED what the validator
+    refused, here
     the schema forbids (`"type": "boolean"`) what the validator waved through - and
     the two halves disagreeing about what a valid plan is has already shipped once.
 

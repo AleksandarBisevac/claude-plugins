@@ -313,7 +313,7 @@ def tasks_by_id(manifest):
 def resolve_phase_id(manifest, wanted):
     """`(phaseId, error)` — the phase `wanted` names, or a sentence naming the ids.
 
-    F257. There was no shared resolver, so every script answered `/audit:phase 2`
+    There was no shared resolver, so every script answered `/audit:phase 2`
     its own way and none of them mapped a bare integer to `P2`. A bare `<n>` is
     what an operator types when the plan is small and the ids are `P1`…`P9`, and
     the failure they got was whatever that script happened to print.

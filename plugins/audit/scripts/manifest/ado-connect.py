@@ -380,7 +380,7 @@ def report(manifest, facts, envelope, organization, project, now):
     # `fetchedAt` is what re-probing produces - so counting it would make the
     # "already right" figure permanently one short, and printing it inside a
     # plan that says "0 to set" would be a line contradicting the line above it.
-    # F184. TWO CLAIMS, AND EACH ONE CARRIES THE BASIS THAT MAKES IT TRUE. This
+    # TWO CLAIMS, AND EACH ONE CARRIES THE BASIS THAT MAKES IT TRUE. This
     # line said "replaces the last run's" unconditionally, so a FIRST connect
     # announced it was overwriting evidence that had never been recorded - and
     # that reading is what a confirm's decline option is composed from, which is

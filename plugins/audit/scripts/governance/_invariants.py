@@ -1007,7 +1007,7 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
             except Exception as exc:                       # defensive
                 findings = ["internal validator error: %s" % exc]
             for line in findings:
-                # F250. THE ONE FINDING A TASK COMMIT CANNOT AVOID. `task.files`
+                # THE ONE FINDING A TASK COMMIT CANNOT AVOID. `task.files`
                 # lives in the phase shard and `fileIndex` lives in the index, and
                 # step 4c forbids a task commit from staging the index - for a
                 # good reason, since two phases committing it in parallel conflict
@@ -1032,7 +1032,7 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    # ...AND THE DEFERRAL IS PAID HERE (F250). Exempting the pairing per commit
+    # ...AND THE DEFERRAL IS PAID HERE. Exempting the pairing per commit
     # without asking it of anything would be a hole, not a fix: the rule is not
     # "never true", it is "not true YET". The manifest as it stands now is the
     # state sign-off is about to preserve, so that is where it is asked - and a

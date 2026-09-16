@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Commit the manifest INDEX on its own, or say there is nothing to commit.
 
-WHY THIS EXISTS (F269). In the sharded layout the index holds `meta`,
+WHY THIS EXISTS. In the sharded layout the index holds `meta`,
 `fileIndex`, `bugs[]`, `deferred`, `proposals` and the phase stubs, and the
 shards hold the task bodies. Structural commands write the index: `/audit:task
 add --files ...` updates `fileIndex`, `/audit:phase add` appends a stub. But
@@ -126,7 +126,7 @@ E_OK, E_FAIL, E_USAGE = 0, 1, 2
 # reader who meets one of these in a log has to be able to tell, without opening
 # it, that it carries no implementation and no phase's own file.
 #
-# `chore` for `commit-audit-state.py`'s reason (F268): the type has to be one
+# `chore` for `commit-audit-state.py`'s reason: the type has to be one
 # commitlint's default enum accepts, or a repository with husky+commitlint
 # refuses the commit AFTER this script has staged the file, leaving the caller to
 # finish by hand. The phase id goes in the subject, where it is still greppable.
@@ -134,7 +134,7 @@ COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-index"
 DEFAULT_SUBJECT = "the shared index, carried alone so no phase's work rides with it"
 
-# `SUBJECT_LEAD` for `commit-audit-state.py`'s reason (F305), and this file carried
+# `SUBJECT_LEAD` for `commit-audit-state.py`'s reason, and this file carried
 # the identical defect: with the phase id first, the subject after the colon IS
 # sentence-case, which commitlint's default `subject-case` refuses along with
 # start-case, pascal-case and upper-case. Every one of those is computed by a
@@ -208,7 +208,8 @@ def commit_message(phase_id, subject, coauthor):
     subject line.
 
     `SUBJECT_LEAD` COMES FIRST AND NOTHING MAY BE PUT AHEAD OF IT - that position
-    is the whole of F305's repair, and the constant says why. The shape is
+    is the whole of `commit-audit-state.py`'s fixed-lowercase-subject repair, and
+    the constant says why. The shape is
     unconditional and is deliberately not read from `meta.commit`, for the reason
     `commit-audit-state.commit_message` states at length: that block holds a
     default type and a trailer and records nothing about which commitlint rules a
@@ -255,7 +256,7 @@ def record_row(project, phase_id, sha, index_abs, config=None):
     FAIL-SOFT, `_journal_io.append`'s own contract: a commit that HAPPENED must
     not be reported as not having happened because the trail could not be written.
 
-    `append_from_cli`, NOT `append` (F287): this command is run from Bash, and an
+    `append_from_cli`, NOT `append`: this command is run from Bash, and an
     append no writer claims is reported by `guard-bash-writes` as a shell write
     into the append-only trail on the next Bash command.
 

@@ -677,8 +677,8 @@ def _sweep_subject(project, action, step):
 def sweep_rows(project, plan):
     """The plan's steps as change rows, in the plan's own order.
 
-    ONE SHAPE, THREE CONSUMERS, and it used to be a list of pre-joined strings
-    (F248). `_fmt_change` calls `row.get("target")` on each, so every sweep that
+    ONE SHAPE, THREE CONSUMERS, and it used to be a list of pre-joined strings.
+    `_fmt_change` calls `row.get("target")` on each, so every sweep that
     actually removed something raised inside `_journal`'s blanket `except` and came
     back `journaled: false, journaledWhy: "failed"` — the code that means the journal
     REFUSED the row, so the panel told the operator the audit trail was broken on
@@ -768,7 +768,7 @@ def sweep_worktrees(project, body):
                                        terminal=_mio.TERMINAL)
     plan = _worktrees.sweep_plan(
         trees, wanted, parents, obs["contained"], obs["dirty"],
-        # WHERE THE SERVER IS STANDING, measured rather than skipped (F245). This
+        # WHERE THE SERVER IS STANDING, measured rather than skipped. This
         # was `None`, which the planner read as "nowhere" — so a panel started from
         # inside a phase worktree could remove the directory it was being served
         # from, silently, exit 0. `git_root` is the directory every git call here
@@ -930,7 +930,8 @@ def _redacted_feed_answer(project, result):
 
 # --- write locking ---------------------------------------------------------------
 # The panel wears a different identity in each of the three places that need one,
-# and F111 is what happens when one of them is reused for another:
+# and confusing which is meant for which is what breaks when one is reused for
+# another:
 #
 #   the LOCK      `_panel_session()` -- a pid, because liveness is the question;
 #   the JOURNAL   nothing. `_journal_io` falls through to its persisted
@@ -947,7 +948,7 @@ def _panel_session():
     A pid the OS can vouch for is what lets a crashed panel's lock be judged dead
     rather than waited out for an hour. That is the whole reason it is a pid.
 
-    IT MUST NOT NAME A COMMITTED FILE (F111). This value went to the journal as
+    IT MUST NOT NAME A COMMITTED FILE. This value went to the journal as
     `actor.sessionId` too, and `_journal_io.writer_id()` takes a session id as the
     writer id -- so the trail's own committed file became `<month>.panel-<pid>`,
     a shape this plugin's own PII gate refuses, in the one field with no repair
@@ -1385,7 +1386,7 @@ def _journal(project, config, action, target, rows):
 
 def _claim_panel_write(mod, project, config, written):
     """Leave the claim `guard-bash-writes` needs, so this append is not read as a
-    shell write into the audit trail (F104). Returns the slot, or None.
+    shell write into the audit trail. Returns the slot, or None.
 
     The panel server is a DETACHED process this plugin launched, so the guard's
     per-session sidecar can never name what it wrote: the operator's session did
@@ -1393,8 +1394,9 @@ def _claim_panel_write(mod, project, config, written):
     reads alongside the session's.
 
     THE PATH COMES FROM `append`, never from re-deriving a name here. Which file
-    the row landed in is `_journal_io`'s answer -- it changed once already (F111)
-    -- and a second guess at it would be a claim about a file that does not exist,
+    the row landed in is `_journal_io`'s answer -- it changed once already, for
+    the reason `_panel_session` explains -- and a second guess at it would be a
+    claim about a file that does not exist,
     which is silence dressed as evidence.
 
     Fail-soft like everything else on this path: a save that succeeded must not be
@@ -1901,7 +1903,7 @@ def apply_composition_patch(manifest, patch):
             err = _apply_ado_tracked(manifest, ph, pv[_ado_tracked.FIELD])
             if err:
                 return err
-        # F187. THE OTHER HALF OF `meta.areas`. The registry has had an editor
+        # THE OTHER HALF OF `meta.areas`. The registry has had an editor
         # since areas existed, and no phase could be put IN an area afterwards -
         # `audit-task add-phase --area` writes it at creation and nothing wrote it
         # again. A registry you can curate while nothing can be assigned to it is

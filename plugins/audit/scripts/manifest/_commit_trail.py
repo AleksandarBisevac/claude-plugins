@@ -241,7 +241,7 @@ def dangling(manifest, git_root):
       cannot answer. Not a clean trail; an unasked question, and a caller that
       folds it into "fine" reports a machine with no git as a healthy one.
 
-    **A SHALLOW CLONE TURNS EVERY ACCUSATION INTO AN UNASKED QUESTION** (F88).
+    **A SHALLOW CLONE TURNS EVERY ACCUSATION INTO AN UNASKED QUESTION**.
     `git clone --depth` and `actions/checkout`'s default cut the object store and
     the history at a graft boundary, so a `rev-parse` that fails there says the
     object is past the cut and not that it never existed — and a ref walk that

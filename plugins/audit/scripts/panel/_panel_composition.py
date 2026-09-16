@@ -922,8 +922,8 @@ def _composition_view(manifest, boundary=None):
                            # it currently does.
                            "adoParent": _ado_parent_of(ph),
                            "adoParentResolved": _resolved_parent(ph, ado),
-                           # THE THIRD HALF, and it is the one that was missing
-                           # (F101). Both values above are read out of the
+                           # THE THIRD HALF, and it is the one that was missing.
+                           # Both values above are read out of the
                            # manifest, so a row whose board was never asked and
                            # a row the board agrees with painted the same
                            # pixels - which is the shape this repo has recorded

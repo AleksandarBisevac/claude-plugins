@@ -597,7 +597,7 @@ def check_manifest(rep, project, cfg):
         # the proposals vocabulary is still tracked work and must be counted.
         #
         # THROUGH `_manifest_vocab.PROPOSAL_STATUS`, and the copy this replaces was
-        # not merely redundant -- it was AUTHORITATIVE (F142). This line decides
+        # not merely redundant -- it was AUTHORITATIVE. This line decides
         # what counts as out-of-vocabulary, so a word added to the real vocabulary
         # would have gone on being reported here as a legacy free-form entry, by
         # the one check whose job is to tell a user their manifest is healthy.
@@ -629,7 +629,7 @@ def _check_shards(rep, index_path, manifest, mio=None):
     with a second reading of the same fact - `audit-task`, `_proposals`,
     `repair-commits`, the panel and `_invariants` all ask the predicate. Two
     readings of one fact can disagree, and the disagreement had nowhere to
-    surface: the doctor would have reported a layout no writer was in (F13).
+    surface: the doctor would have reported a layout no writer was in.
 
     So the two are now separable, and the case where they disagree is named
     rather than absorbed - see the finding below. `mio` is passed in by

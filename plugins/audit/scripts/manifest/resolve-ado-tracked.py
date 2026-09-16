@@ -6,7 +6,7 @@ Which audit items belong on the shared board at all, and why each one does not.
 before it pushes anything, and the door `/audit:sync status` asks before it
 calls a phase `unlinked`. A real command rather than a `python3 -c` one-liner
 for `check-ado-item.py`'s reason, which is not style: a one-liner naming a
-source path is exactly the shape `guard-secrets-read` refuses (F20/F22), so the
+source path is exactly the shape `guard-secrets-read` refuses, so the
 check would be blocked on the machines that most need it.
 
   resolve-ado-tracked.py <manifest> [--all | --phase P3 | --task P3.1] [--json]

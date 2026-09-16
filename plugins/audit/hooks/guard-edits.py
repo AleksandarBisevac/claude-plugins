@@ -59,10 +59,11 @@ and it is deliberately not all five:
     `collect()` can name that text only because an edit tool's schema is fixed. An
     MCP payload has no such field, reading argument keys is the thing this plugin
     does not do, and grading every string instead would refuse an issue body or a
-    commit message that QUOTES the banned pattern — F116's defect, one tool over.
-    So an auth token logged by a source file written through an MCP server is not
-    caught here: stated, because a gap a reader can see is worth more than a rule
-    that fires on prose.
+    commit message that QUOTES the banned pattern rather than introduces it — the
+    same operation-vs-text mistake `guard-secrets-read._shell_text` corrects for a
+    read verb followed by a secret path. So an auth token logged by a source file
+    written through an MCP server is not caught here: stated, because a gap a
+    reader can see is worth more than a rule that fires on prose.
   - 6 (strict manifest state) is not reached either: it reads an old/new fragment
     pair off the edit tool's own schema, and an MCP payload carries no such pair.
     The write itself still reaches the journal, which is where that opt-in points

@@ -84,7 +84,7 @@ _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 # than a clear, so it is stored and never pruned. What a legal declaration is
 # comes from `_ado_parent.declaration_findings`, the function the manifest
 # validator asks - the panel cannot promise a parent the CLI would refuse.
-# F187: `area` joins under the SAME criterion, spelled above - it is composition
+# `area` joins under the SAME criterion, spelled above - it is composition
 # and not structural CRUD. It names no id, moves no dependency and creates
 # nothing; it is a tag the status rollup, the per-area totals and the doctor's
 # area check read, which is exactly the class `priority` is in. And legality comes
@@ -100,7 +100,7 @@ _META_FORM_KEYS = tuple(k for k in _META_KEYS if k not in _META_API_ONLY)
 # structural CRUD. It names no id, moves no dependency and creates nothing - it says
 # where one phase integrates, which `_branch.parent_branch` already resolves for
 # every other surface. It was reachable ONLY by hand-editing JSON, which is the same
-# gap F187 recorded for `meta.areas`: a lever every reader of a sign-off report
+# gap recorded above for `meta.areas`: a lever every reader of a sign-off report
 # depends on, and nothing to set it with.
 _PHASE_KEYS = ("reviewModel", "priority", "adoParent", "adoTracked", "area",
                "parentBranch")
@@ -406,7 +406,7 @@ COMPOSITION_HELP = {
     # writer would shred `Microsoft.VSTS.Common.Activity` into four levels.
     # `meta.ado` is still saved wholesale from a deep copy of the file, so a
     # template written by hand survives every save this card makes.
-    # F187. BOTH OF THESE WERE PRECONDITIONS WITH NO PATH. `requireParent` refuses
+    # BOTH OF THESE WERE PRECONDITIONS WITH NO PATH. `requireParent` refuses
     # every create that has nowhere to hang, and the manifest-wide answer to
     # "where" is `parentWorkItem` - so a board with the gate on and the fallback
     # unset was a refusal a reader could only clear by hand-editing the manifest.

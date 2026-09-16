@@ -10,7 +10,7 @@ so a panel reaching up to a command is an edge pointing the wrong way. Both door
 import this, downward.
 
 WHAT LIVES HERE. The refusals, the TWO id allocation rules over one taken set
-(F296: materialize takes the lowest free id because it is re-placing a payload
+(materialize takes the lowest free id because it is re-placing a payload
 whose id collided; `/audit:phase add` takes the highest plus one because a gap in
 a live plan is a phase that happened) plus `phase_id_doc_drift`, which grades
 `commands/phase.md`'s claim about them against the code rather than trusting the
@@ -21,7 +21,8 @@ READ side every surface renders. Orchestration is part of the rule: a caller tha
 or to refuse a write whose result would be invalid, is a second chance to get it
 wrong.
 
-THE READ SIDE IS PART OF THE RULE TOO, and it took F91 to notice. `list` was the
+THE READ SIDE IS PART OF THE RULE TOO, and only measuring against a live command
+surfaced it. `list` was the
 one verb no script produced: `commands/propose.md` specified a table and a model
 rendered it from that prose, so what a user got was whatever the model recalled -
 an accurate summary, and no table. Meanwhile the panel derived its own rows in
@@ -29,7 +30,8 @@ an accurate summary, and no table. Meanwhile the panel derived its own rows in
 `unresolved_refs` already answered. One derivation now, three renderings: cards in
 the panel, a table on the command line, and the PROPOSALS block `/audit:status`
 prints -- which was the third place the "reserved phase (N tasks)" cell was
-composed, and F93 is why `reserved_cell` lives here rather than in any of them.
+composed, and that duplication is why `reserved_cell` lives here rather than in
+any of them.
 
 WHAT DOES NOT. Argument parsing, printing, and asking a human anything. `plan_for`
 reports what a materialization would pull in and `run()` refuses while the answer
@@ -159,8 +161,9 @@ def next_phase_id(taken):
     """The lowest free `P<n>`, counting live AND parked ids.
 
     MATERIALIZE'S RULE, and it is not the rule an APPEND wants -- see
-    `next_appended_phase_id` below for the pair and F296 for what sharing one
-    cost. This verb RE-PLACES a payload whose id already collided with live
+    `next_appended_phase_id` below for the pair and what sharing one function
+    used to cost. This verb RE-PLACES a payload whose id already collided with
+    live
     work, so the gap it drops into was never anybody's id and filling it costs
     nothing.
     """
@@ -180,7 +183,8 @@ _PHASE_NUM = re.compile(r"\AP(\d+)\Z")
 def next_appended_phase_id(taken):
     """The id an APPEND takes: the highest `P<n>` in `taken`, plus one.
 
-    A DIFFERENT RULE OVER THE SAME TAKEN SET, which is the whole of F296.
+    A DIFFERENT RULE OVER THE SAME TAKEN SET, which is the whole reason this is
+    a separate function rather than a shared one.
     `next_phase_id` hands back the LOWEST free id; `/audit:phase add` mints an
     id into a plan whose gaps ARE its history, and re-minting one hands the
     caller a phase that collides with work already done under that number.
@@ -223,8 +227,9 @@ def next_appended_phase_id(taken):
 
 
 # --- the document's claim about the two rules above -------------------------------
-# F296 again, the half that rots. `commands/phase.md` told the reader `add-phase`
-# "continues the `P<n>` sequence", which is what the highest-plus-one rule does and
+# THE SAME TWO-RULE SPLIT, THE HALF THAT ROTS. `commands/phase.md` told the
+# reader `add-phase` "continues the `P<n>` sequence", which is what the
+# highest-plus-one rule does and
 # was NOT what the code did -- and correcting the sentence buys one green day,
 # because the next reader has no way to tell whether it still describes the
 # allocator. So the document carries a WORKED EXAMPLE instead of an adjective, and
@@ -401,7 +406,7 @@ HISTORY_STATUS = ("materialized", "dropped")
 def reserved_cell(row):
     """The phase a proposal reserves and how big it is, as ONE string.
 
-    THE CELL HAD THREE SPELLINGS (F93): `materialize-proposal`'s table composed
+    THE CELL HAD THREE SPELLINGS: `materialize-proposal`'s table composed
     it, `audit-status`'s PROPOSALS block composed it again, and the panel's
     Proposals tab composes it in JavaScript. Two of the three counted their own
     tasks, and they did not count the same ones -- the CLI table counts the task
@@ -452,7 +457,7 @@ def proposal_rows(manifest):
         out.append({
             "id": prop.get("id"),
             "name": prop.get("name"),
-            # THREE FIELDS, NOT ONE, AND THAT IS THE F93 DECISION. `status` is
+            # THREE FIELDS, NOT ONE - THAT IS THE DECISION HERE. `status` is
             # what a badge renders and normalises a MISSING one to `proposed`;
             # `statusRaw` is the value as written, None included; `statusKnown`
             # says whether that value is a word this plugin's vocabulary holds.
@@ -696,8 +701,8 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
                 "guess which you meant." % (pids[0], ", ".join(plan["pulledIn"]))]}
 
     project = os.path.dirname(os.path.abspath(mpath)) or "."
-    # F188. THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE
-    # WERE WRONG. It was named `handle` and tested with `isinstance(..., dict)`,
+    # THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE USED
+    # TO BE WRONG. It was named `handle` and tested with `isinstance(..., dict)`,
     # which is never true of an int - so the release never ran and every write left
     # the index lock on disk, and the code was never read, so a refused acquire
     # fell into the write below and changed the manifest with no lock held. The

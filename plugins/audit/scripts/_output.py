@@ -2064,8 +2064,8 @@ def _edge_sentences(text):
 def _historical_sentences(line, preceding, following):
     """The ordinals of `line`'s sentences that read as recollection, not a claim.
 
-    A SENTENCE, NEVER THE PHYSICAL LINE, and F76 is both directions of that
-    difference, met on one day. A past marker in the sentence BEFORE the number -
+    A SENTENCE, NEVER THE PHYSICAL LINE - both directions of that difference were
+    met on one day. A past marker in the sentence BEFORE the number -
     two clauses earlier on the same line, about something else entirely - was
     excusing a live count: the escape reading too widely. And a marker in the SAME
     sentence one line up was not reaching the number at all, because prose wraps:
@@ -2149,7 +2149,9 @@ def _cardinality_claim(tok, historical):
 
 
 def _persistence_claim(line, w):
-    """"`NAME` stayed at N" / "`NAME` is still N" - F43's shape, and F39's."""
+    """"`NAME` stayed at N" / "`NAME` is still N" - a count claimed to persist,
+    which goes stale the moment the named thing changes without the prose being
+    re-read."""
     if not _names_code(line):
         return None
     for i in range(len(w)):
@@ -2186,7 +2188,7 @@ def _completeness_claim(w):
     return None
 
 
-# --- a ratio quoted without its basis (F311) -----------------------------------
+# --- a ratio quoted without its basis -------------------------------------------
 # `N of M <noun>` is not a fourth question, it is the third answer to the one
 # already asked. A ratio READS as a quotation - it shows its own whole, so it looks
 # self-verifying - and the three spellings this repo keeps legal all read that way
@@ -2400,7 +2402,7 @@ def prose_scan_set(exts, repo_root=None):
             "problem": None}
 
 
-# Two terms, F69's shape, and adopted for F69's reason: an absolute floor answers
+# Two terms, one absolute and one derived: an absolute floor answers
 # "did this read return anything at all" and nothing more, so a set that had lost
 # most of the tree would still clear it. The derived term measures the SCANNED set
 # against the CANDIDATE set the same walk produced, which is the best available
@@ -2428,7 +2430,7 @@ def prose_claims_in(root, rels):
     ONE read loop for both halves of the scan. `_deps` keeps its own only for the
     caller that hands it absolute fixture paths; the tree is read here.
 
-    An unreadable file is NAMED, never skipped - F21's rule. A skip would return
+    An unreadable file is NAMED, never skipped. A skip would return
     the same empty list a clean file returns, and "nothing to report" would then
     mean either "clean" or "could not look".
     """
@@ -2491,9 +2493,9 @@ def prose_number_claims(repo_root=None):
         will read it for a family whose SHAPE supplies the bound instead, which
         today is the ratio and nothing else; switched on for the rest it
         reported over a hundred sites in this tree, essentially all honest;
-      * the bare `the N <noun>` with an ordinary noun, which is the shape F59's
-        own instance wore and F311's second half wore again -- "five claims
-        deep". This one is REFUSED rather than missing: the noun is unbounded,
+      * the bare `the N <noun>` with an ordinary noun, which is the shape two
+        earlier real instances wore, one of them "five claims deep". This one
+        is REFUSED rather than missing: the noun is unbounded,
         so reading it means reading every count in every sentence this tree
         writes. Measured before refusing, on the two nouns those instances used
         and on nothing wider: with the small words admitted it reported dozens

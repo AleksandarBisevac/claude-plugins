@@ -362,8 +362,8 @@ TERMINAL = _mio.TERMINAL
 # runner never started -- no interpreter, an unreadable command -- so there is no
 # verdict at all, which is emphatically not the same claim as a failing test.
 #
-#   * `gate-mutated` IS EXIT 0 TOO, AND IT IS THE SAME MISTAKE ONE STEP FURTHER ON
-#     (F280). Every command came back green and the gate rewrote files the work
+#   * `gate-mutated` IS EXIT 0 TOO, AND IT IS THE SAME MISTAKE ONE STEP FURTHER ON.
+#     Every command came back green and the gate rewrote files the work
 #     under test declares, so its exit code is a claim about bytes the gate itself
 #     produced -- `run-test-gate.render` has refused the commit step on exactly that
 #     for as long as the bracket has existed, and until the enum had a word for it
@@ -381,7 +381,8 @@ TERMINAL = _mio.TERMINAL
 # through as itself (`unrecognised` in the summary below, the raw word in the CLI's
 # `tests` column) and is judged by nothing.
 #
-# AND THE SET IS SPLIT IN TWO, WHICH IS F302 ONE LEVEL OUT. `failing-tests`
+# AND THE SET IS SPLIT IN TWO, THE SAME SPLIT `noVerdict` MAKES BELOW.
+# `failing-tests`
 # counted a run the OS killed as a FAILING TEST, because the runner recorded
 # `failed` for it and this set holds that word. The runner records
 # `could-not-run` now -- so the word on the record is right -- and the condition
@@ -693,7 +694,7 @@ def test_evidence_summary(manifest, boundary=None):
         "byStatus": _by_status_values([r["status"] for r in recorded]),
         "failing": [r for r in recorded
                     if r["status"] in NO_SIGN_OFF_EVIDENCE],
-        # F302. THE HALF OF `failing` THAT REACHED NO VERDICT AT ALL. It is a
+        # THE HALF OF `failing` THAT REACHED NO VERDICT AT ALL. It is a
         # SUBSET and not a fourth bucket: `failing` stays whole beside it for
         # `missingOnDone`'s reason - "which recorded run cannot sign work off"
         # is one question a surface may want on its own, and it should not have
@@ -1096,7 +1097,7 @@ def stranded_skills(summary):
 
 
 # --- a run that stopped mid-phase ------------------------------------------------
-# F301. `/audit:phase P5` means "execute every ready task in the phase, then run
+# `/audit:phase P5` means "execute every ready task in the phase, then run
 # sign-off". A phase planned as waves of parallel subagents committed wave one,
 # said which tasks wave two would be, and ENDED THE TURN. Nothing had blocked it:
 # the lock was held, the manifest was valid, every remaining task was ready with
@@ -1156,8 +1157,8 @@ def unfinished_runs(summary):
     `_locks.judge` resolves every uncertainty to LIVE, so `live: False` is not an
     absence of information - it is the positive finding that the holder was
     probed on this host and is gone. Excusing it would make this signal fall
-    silent exactly as the abandonment became certain: F301 was noticed a day
-    later, by which time the session that stopped mid-phase had long exited and
+    silent exactly as the abandonment became certain: the run abandoned mid-phase
+    above was noticed a day later, by which time the session had long exited and
     its lock was stale. A rule that graded only live locks would have had nothing
     to say about the very instance it was written for. What liveness changes is
     the sentence, not the verdict.

@@ -4,7 +4,7 @@ The door `/audit:sync` knocks on to find out who moved a linked work item last.
 
 `_ado_drift` holds the rule; this turns it into a command, for the same two reasons
 `check-ado-item.py` is a command: a `python3 -c` one-liner naming a source path is
-exactly the shape `guard-secrets-read` refuses (F20/F22), so the check would be off
+exactly the shape `guard-secrets-read` refuses, so the check would be off
 on the machines that most need it — and prose cannot be tested.
 
 WHY THIS IS NOT A GATE. `check-ado-item.py` exits 1 to mean "do not create this

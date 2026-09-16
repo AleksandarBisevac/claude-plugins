@@ -1274,7 +1274,7 @@ def _normalise(entry, project=None):
         "target": _normalised_target(entry.get("target"), project),
         "summary": _clip_summary(str(entry.get("summary") or "")),
     }
-    # F309: the OTHER name this session answers to, recorded ONLY when it is not
+    # THE OTHER NAME this session answers to, recorded ONLY when it is not
     # the one already above. A hook's payload `session_id` is what names the
     # file; `$CLAUDE_CODE_SESSION_ID` is what the session calls itself, and
     # without one row tying the two together no reader can group a session's
@@ -1349,7 +1349,7 @@ def append(project, entry, config=None):
     note: a write that succeeded must not be reported as failed because the
     record of it could not be written.
 
-    The path, not True (F-F3): the journal-writes hook records it in a
+    The path, not True: the journal-writes hook records it in a
     per-session sidecar so guard-bash-writes can tell the plugin's own append
     from a shell write into the journal. Every caller that boolean-tests the
     result is unchanged -- a non-empty path is truthy."""
@@ -1361,8 +1361,8 @@ def append(project, entry, config=None):
 
 
 def append_from_cli(project, entry, config=None):
-    """`append`, plus the claim a plugin script run from Bash owes the write
-    guard (F287). Same return contract as `append`: the path, or False.
+    """`append`, plus the claim a plugin script run from Bash owes
+    `guard-bash-writes`. Same return contract as `append`: the path, or False.
 
     WHAT NOT CLAIMING COSTS is a notice about the plugin's own write. An append
     puts a journal file into `git status`, and `guard-bash-writes` reports an
@@ -1412,7 +1412,7 @@ def append_from_cli(project, entry, config=None):
 #      holds both parents. The operation is auditable in the one place a rewrite
 #      of history would have to be audited anyway.
 #
-# WHAT MADE IT NECESSARY (F306). One writer on two branches is ordinary while a
+# WHAT MADE IT NECESSARY. One writer on two branches is ordinary while a
 # phase is paused, and the per-writer file split does not separate them: same
 # name, same month, a shared prefix and a different tail on each side. Nothing can
 # resolve that by editing, because each divergent row's hash covers a `prev` only
@@ -1771,8 +1771,8 @@ def _read_target(path):
     into `([], False)`, which is right for a reader sweeping a directory and
     wrong for the one place that is about to replace the file.
 
-    IT LIVES HERE RATHER THAN IN THE COMMAND BECAUSE OF WHERE IT IS CALLED FROM
-    (F340). This read is the one `write_merged` makes with the lock already
+    IT LIVES HERE RATHER THAN IN THE COMMAND BECAUSE OF WHERE IT IS CALLED FROM.
+    This read is the one `write_merged` makes with the lock already
     held; a copy of it in the command would be a read taken before the lock
     exists, which is the whole defect."""
     if not os.path.exists(path):
@@ -1795,13 +1795,14 @@ def write_merged(path, text, grade=None, dry_run=False):
     write just replaced -- a break that reads exactly like a deleted row, which
     is the false tamper verdict the lock exists to prevent.
 
-    THAT ARGUMENT ONLY EVER COVERED HALF OF WHAT THE LOCK IS FOR (F340). The
+    THAT ARGUMENT ONLY EVER COVERED HALF OF WHAT THE LOCK IS FOR. The
     other half is the row itself. The command used to read the target, grade the
     result against it and only then call this -- so the read happened before any
     lock existed, and a row appended between the grading and `os.replace` was
     graded by nobody and deleted, at exit 0, with `verify` reporting the
-    survivors chain cleanly. That is F328's signature moved from "the target was
-    never read" to "the target was read too early", and the repair is that the
+    survivors chain cleanly. That is the same signature as an earlier defect
+    here, moved from "the target was never read" to "the target was read too
+    early", and the repair is that the
     read, the grading and the replace are ONE hold: `grade(text, unreadable)`
     is called with what this function read under the lock and returns the
     reasons the write must not happen. WHAT those reasons are belongs to the
@@ -2132,7 +2133,7 @@ def rows_unaccounted(have_text, result_text):
 
     `unaccounted` IS ALL OF THEM, `(position, action)` in file order, because
     the count and the first one cannot be partitioned and the caller has to
-    partition them (F342). A row somebody typed into a conflicted file while
+    partition them. A row somebody typed into a conflicted file while
     resolving it and a `journal.merge` row a previous run of the merge verb left
     behind are both "in neither stage", and they are two different findings with
     two different repairs -- and which of them `row` happens to name depended on
@@ -2193,7 +2194,7 @@ def anchor_verdict(committed_text, working_text):
     "divergesAt", "extra"}. `row`/`action` name the first committed row that is
     gone or altered when `held` is false.
 
-    WHY THE OLD PROXY HAD TO GO (F306). "`git show HEAD:<file>` is a byte-prefix
+    WHY THE OLD PROXY HAD TO GO. "`git show HEAD:<file>` is a byte-prefix
     of the working copy" stood in for append-only across commits, and it is a
     good proxy for as long as appending is the only thing that ever happens to
     the file. A merge is the other thing: resolving a divergence re-links every
@@ -2460,7 +2461,7 @@ def verify(project, config=None):
     write), and a file whose LINKS were recomputed while every committed row's
     content survived, which is what resolving a divergence does.
 
-    THE GIT ANCHOR ASKS ABOUT ROWS AND NOT ABOUT BYTES since F306, and the two
+    THE GIT ANCHOR ASKS ABOUT ROWS AND NOT ABOUT BYTES, and the two
     differ for exactly one operation: a merge re-links every row after the
     divergence point, so the bytes change where nothing a row says changes.
     `anchor_verdict` carries the property that replaced the byte prefix, what it

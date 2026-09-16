@@ -273,7 +273,7 @@ def main(argv, out=print):
         out("[risk-confirmation] cannot read/parse %s: %s" % (mpath, exc))
         return E_USAGE
 
-    # Through the shared resolver (F257), so `2`, `p2` and `P2` name one phase here
+    # Through the shared resolver, so `2`, `p2` and `P2` name one phase here
     # and everywhere else rather than three answers per script.
     phase_id, perr = _mio.resolve_phase_id(manifest, args.phase)
     if phase_id is None:

@@ -3088,8 +3088,8 @@ SHARED_CONCERNS = (
      "(`test(s)`, `label(s)` and `dParse(s)` all match it), so it is not counted "
      "here; what stops it returning is that `plural` expresses what it never "
      "could - a clause whose VERB agrees too, which is why several of those "
-     "sites read '1 task(s) are blocked'. THIS IS THE ROW F130 WAS FILED "
-     "AGAINST: the needle was the offending line with its spaces removed, so a "
+     "sites read '1 task(s) are blocked'. THIS IS THE LINE THE OLD NEEDLE MISSED: "
+     "the needle was the offending line with its spaces removed, so a "
      "panel part spelling the same ternary with spaces was invisible to it, and "
      "an inverted `!== 1 ? 's' : ''` would have been too. The comparison, the "
      "spacing and the quote character are all free now; what stays fixed is the "
@@ -3509,10 +3509,11 @@ def ui_navigability_violations(ui_dir=None):
     rejected. Both are argued above `_UI_MARKER_RES`, and `u8` pins the resulting
     blindness so that closing it later is a deliberate act rather than a drift.
 
-    WHAT IS NOT A BLINDNESS ANY MORE, AND WHY IT WAS THE WORSE ONE (F44). This
+    WHAT IS NOT A BLINDNESS ANY MORE, AND WHY IT WAS THE WORSE ONE. This
     function used to swallow an asset it could not read and return an empty list
-    for a directory it could not list. Both are the quiet direction that F21
-    named: a file nothing could open came back as a file with nothing wrong, and
+    for a directory it could not list. Both are the quiet direction a check reads
+    as clean instead of unable to look: a file nothing could open came back as a
+    file with nothing wrong, and
     a missing `scripts/ui/` - the whole report and panel UI gone - printed
     exactly what a clean tree prints. The sibling .py rule already reported a
     file it could not tokenize, so the pair disagreed about the same question,
@@ -3588,7 +3589,7 @@ def tool_navigability_violations(tools_dir=None):
 # `POST /api/gate-events/prune` answered with a real verdict for a whole release
 # while a sweep of the assembled page for any control naming it found nothing, and
 # `commands/logs.md` said so out loud - "the card does not carry that button yet -
-# the endpoint ships ahead of it" (F110). Every half was tested: the route has
+# the endpoint ships ahead of it". Every half was tested: the route has
 # cases, the writer has cases, the page has hundreds of substring pins. What no
 # side could see is the JOIN, because the route table lives in Python and the
 # controls live in JavaScript, and nothing here read both.
@@ -3636,8 +3637,9 @@ PANEL_ROUTE_READERS = (
 )
 
 # WHERE A ROUTE IS REACHED BY NOTHING AT ALL, said here rather than left as a gap,
-# and each row is an open defect of F110's own class rather than a decision. The
-# table exists so the pair above stays honest: without it this lint would have to
+# and each row is an open defect of the same unreachable-route class rather than a
+# decision. The table exists so the pair above stays honest: without it this lint
+# would have to
 # ship red on the day it was written, and the repair for that is never to widen
 # what counts as a caller until the tree goes quiet. It can only shrink - a NEW
 # route with no control fails the build by name, which is the whole point.
@@ -3754,9 +3756,9 @@ def panel_route_violations(server_path=None, js_dir=None, readers=None,
                            unreached=None):
     """(route, problem) for every panel route no control on the page reaches.
 
-    The pair this checks is the one F110 slipped through: a route table in
-    Python and a set of controls in JavaScript, each half tested on its own and
-    neither compared with the other.
+    The pair this checks is the one that used to slip through with no lint on
+    it: a route table in Python and a set of controls in JavaScript, each half
+    tested on its own and neither compared with the other.
 
     Three shapes are reported, and the last two are the ones that keep this from
     quietly becoming a no-op:
@@ -3905,7 +3907,7 @@ def panel_route_violations(server_path=None, js_dir=None, readers=None,
 # anchor; and a call to a MERGED-BLOCK ACCESSOR, a helper named `<root>_cfg` for the
 # top-level block it hands back with defaults filled in.
 #
-# THAT LAST SHAPE WAS ADDED BY F168, AND THE FAULT IS THE ARGUMENT FOR IT. The
+# THAT LAST SHAPE WAS ADDED FOR EXACTLY THIS GAP, FOUND ONLY AFTER IT SHIPPED. The
 # panel's Usage payload reaches `usage.pricingAsOf` through `usage_cfg(config)`, so
 # no key on that line was an anchor, so the module was absent from the key's reader
 # list ENTIRELY - and the read it was absent for is the one that served the value as
@@ -4094,7 +4096,7 @@ def _resolve_config_path(node, env, roots):
     could not resolve a receiver for is itself an ANCHOR - a top-level property
     of one of the two schemas.
 
-    A MERGED-BLOCK ACCESSOR IS AN ANCHOR TOO (F168). A block that arrives through
+    A MERGED-BLOCK ACCESSOR IS AN ANCHOR TOO. A block that arrives through
     `usage_cfg(config)` leaves no key on the line, so every read off it used to
     resolve to nothing and the module holding those reads was missing from the
     key's reader list entirely - including the read that served `pricingAsOf` as
@@ -4407,7 +4409,7 @@ KNOWN_CONFIG_MIRRORS = (
      "disagree with. THE DAY A MODULE RESOLVES THE TEAM FOR USE it has to trim, "
      "and this row has to go rather than be widened to cover it."),
     # `usage.pricingAsOf` was the second row here and is GONE rather than kept as
-    # history (F160). Its recorded residual was real - the plan schema asks only
+    # history. Its recorded residual was real - the plan schema asks only
     # `minLength: 1`, so a whitespace-only value validated, reached three surfaces
     # as `rates as of` followed by nothing, and was called undeclared by the
     # fourth - and its own revisit trigger named the repair: trim the manifest key
@@ -5151,8 +5153,9 @@ def dict_key_violations(script_dir=None, hooks_dir=None):
 # and a figure in this comment would be a second copy of it with nothing comparing
 # the two. That is not hypothetical: the module docstring said this table "stayed
 # at 17" for as long as it held ONE, and this comment opened with "ONE entry" -
-# both true the day they were typed, and one of them a lie by the next commit
-# (F39, the same disease as F29). Print it rather than reading it:
+# both true the day they were typed, and one of them a lie by the next commit -
+# the same disease every present-tense count written into prose has. Print it
+# rather than reading it:
 #
 #   python3 -c "import sys; sys.path.insert(0, 'plugins/audit/scripts'); \
 # import _deps; print(len(_deps.KNOWN_LAYER_DEBT))"

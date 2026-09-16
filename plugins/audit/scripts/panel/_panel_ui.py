@@ -138,7 +138,7 @@ _JS_PARTS = (
     # view renderers boot routes.
     #
     # Those parentheses are typed on purpose, and this note is why. A comment
-    # here used to forbid them (F129): `tools/ui-tests/sandbox.mjs` read this
+    # here used to forbid them: `tools/ui-tests/sandbox.mjs` read this
     # list by matching the module's SOURCE with a non-greedy regex that ended at
     # the first closing bracket, so one written here truncated the list and every
     # browser suite loaded a page missing its tail -- which surfaced as a name

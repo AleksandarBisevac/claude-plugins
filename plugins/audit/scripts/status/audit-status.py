@@ -89,7 +89,7 @@ import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution 
 import _proposals  # noqa: E402  (the proposal READ side: one derivation of the rows
 #                                  and of the "reserved phase (N tasks)" cell that this
 #                                  block, the /audit:propose table and the panel's tab
-#                                  all print - F93)
+#                                  all print)
 import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, the gate)
 import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
 import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
@@ -508,7 +508,7 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
             and not isinstance(p.get("budgetUSD"), bool)
             and p.get("budgetUSD") > 0
             for p in dicts)
-        # Trimmed at the door (F160): the plan schema asks only that
+        # Trimmed at the door: the plan schema asks only that
         # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates
         # and `_usage_line` below printed "rates as of" followed by nothing - a
         # basis with no content, beside a cost figure the budget preflight acts
@@ -1221,7 +1221,7 @@ def _proposal_lines(manifest, summary, pt=None):
     of them on purpose; counting is this surface's job, judging is not.
 
     THE ROWS COME FROM `_proposals.proposal_rows` AND THE CLASSIFICATION FROM
-    THE RAW STATUS (F93). This block used to walk `proposals[]` itself and
+    THE RAW STATUS. This block used to walk `proposals[]` itself and
     compose the reserved cell itself, which made it the third spelling of a
     string two other surfaces already print. Routing it NAIVELY would have
     changed what it reports, and that is the thing the fault turned on:
@@ -1280,9 +1280,10 @@ def _resumable_lines(manifest, summary, pt=None):
 def _unfinished_lines(summary, pt=None):
     """UNFINISHED — a phase lock still held while the plan has work ready to run.
 
-    F301's other half. The condition makes the state gradeable; this is what
-    makes it VISIBLE, and visibility is what the fault was actually about — no
-    gate had failed, nothing had refused, and the run simply sat there until
+    THE OTHER HALF OF A RUN STOPPING MID-PHASE. The condition makes the state
+    gradeable; this is what makes it VISIBLE, and visibility is what the defect
+    was actually about — no gate had failed, nothing had refused, and the run
+    simply sat there until
     somebody asked a day later. The surface everyone checks first has to say so.
 
     NOTHING AT ALL WHEN NOBODY LOOKED. Every other caller of `render_status` —
@@ -1422,7 +1423,7 @@ CONDITION_HELP = {
     # The lead sentence stays short for `stranded-skills`' reason - ap9 asserts
     # the part before the first bracket survives on one line of `--help`.
     "unfinished-run": "a phase lock still held with tasks ready to run "
-                      "(a run that stopped mid-phase, which is what F301 was: "
+                      "(a run that stopped mid-phase: "
                       "a wave committed, the next wave was named, and the turn "
                       "ended. THREE STATES, and the third is the reason this is "
                       "worth having - a lock held with ready work left is an "
@@ -1693,9 +1694,9 @@ def main(argv):
             manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
     # THE ONE INJECTED BLOCK THE HUMAN RENDER ASKS FOR TOO, and that asymmetry is
-    # the point rather than an oversight. F301 was not a gate that passed
-    # wrongly - no gate had been asked anything. A run stopped between waves and
-    # the state sat on disk, knowable, until a human asked a day later, so the
+    # the point rather than an oversight. A run stopping mid-phase is not a gate
+    # that passed wrongly - no gate had been asked anything. A run stopped between
+    # waves and the state sat on disk, knowable, until a human asked a day later, so the
     # surface a human actually opens has to carry it. The three other injected
     # blocks are gate-only because each costs git calls per phase or a walk of
     # the repository; this one is a single `rev-parse` and a directory listing,

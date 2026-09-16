@@ -88,7 +88,7 @@ def stamp_time():
     Without this the report stamps wall-clock and is UNREPRODUCIBLE BY
     CONSTRUCTION, which is not a cosmetic problem: it is why nothing could ever
     compare a COMMITTED artifact against a fresh render. `examples/acme-store`
-    drifted for exactly that reason -- it kept the pre-F28 `aria-label`s, the
+    drifted for exactly that reason -- it kept stale `aria-label`s, the
     ones a speech user cannot reach, long after the source was fixed, and CI
     rendered its own copy to a temp directory and grepped that instead.
 
@@ -408,7 +408,7 @@ TEV_RUN_STATUSES = ("passed", "failed", "gate-mutated", "no-checks",
 TEV_LABELS = {
     "passed": "Passed",
     "failed": "Failed",
-    # F280. THE WORDS SAY WHAT HAPPENED AND NOT WHAT IT COST. A reader shown
+    # THE WORDS SAY WHAT HAPPENED AND NOT WHAT IT COST. A reader shown
     # `Failed` here would go looking for a red test and find none; a reader shown
     # `Passed` - which is what this surface said before the enum had the word -
     # would sign off a run whose exit code refused it. Spelled the same in the
@@ -466,7 +466,7 @@ TEV_FLAG_LABELS = {
 # about what it is rather than about how urgent it is: a run reached it, having
 # executed every command. Left where an unrecognised word goes - appended,
 # sorted, after `no-gate` - it read as the least urgent thing on the page, and it
-# is a verdict that refuses the commit step (F280).
+# is a verdict that refuses the commit step.
 #
 # THE NO-RUN TAIL READS AS A GRADIENT, and the two boundary states take their
 # places in it rather than being appended: the record itself is wrong
@@ -789,7 +789,7 @@ def _tev_gate_text(row):
     """Which declaration the run's `steps` came from, in words.
 
     EMPTY FOR A ROW THAT DOES NOT SAY, and then the cell is dropped rather than
-    filled from `scope` (F312). `scope` is the POINTER SUBJECT, so on a run that
+    filled from `scope`. `scope` is the POINTER SUBJECT, so on a run that
     fell back it reads `phase` beside a `taskId` and both opposite readings fit
     that shape - rendering it here as provenance is the exact mistake `gateSource`
     exists to stop, and a row recorded before the field existed has no answer.

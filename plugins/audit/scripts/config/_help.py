@@ -115,7 +115,7 @@ COMPOSITION_PATHS = {
     "branchInitials": "meta.branch.initials",
     "branchSlugMax": "meta.branch.slugMaxLength",
     # Where a phase lands, and what happens once it has. Same card, same form save,
-    # and the same F187 shape as the three ADO settings below: the merge TARGET was
+    # and the same shape as the three ADO settings below: the merge TARGET was
     # reachable only by hand-editing the manifest, and it is the key every reader of
     # a sign-off report depends on.
     "developmentBranch": "meta.developmentBranch",
@@ -136,7 +136,7 @@ COMPOSITION_PATHS = {
     # two share a cell and a reader who opened the parent's page would find
     # nothing there about a phase that is deliberately off the board.
     "phaseAdoTracked": "phases[].adoTracked",
-    # F187: three settings whose only path used to be a hand edit. The parent and
+    # Three settings whose only path used to be a hand edit. The parent and
     # the gate that needs it sit at the top of `meta.ado`; the tag vocabulary is
     # inside `conventions`, which is where the board's own rules live.
     "adoParentWorkItem": "meta.ado.parentWorkItem",
@@ -1249,7 +1249,7 @@ def schema_inline_drift(root=None):
 
 
 # --- a documented flag's VALUES, against the parser that takes them ---------------
-# F265, and it shipped inside the change that added the flag it caught:
+# THE DEFECT THIS CATCHES SHIPPED INSIDE THE VERY CHANGE THAT ADDED THE FLAG:
 # `commands/status.md` advertised `--view active|pending|archived|all` while the
 # parser took three, so a value copied straight out of the documentation exited 2.
 # Every gate was green and every one of them was honest — `_refs.command_flag_drift`
@@ -1309,7 +1309,8 @@ def choice_drift(cmd, advertised, accepted, unreadable):
 
     BOTH DIRECTIONS, and they are different defects. A value the doc advertises
     and the parser refuses is a promise the product breaks for anyone who copies
-    it — the shape F265 was. A value the parser takes and the doc omits is a
+    it — the shape the section comment above describes. A value the parser
+    takes and the doc omits is a
     capability nobody can find, which is the defect `command_flag_drift` already
     exists for, one level down from the flag to its values.
 

@@ -325,7 +325,7 @@ def read_lock(path):
 def held_by_us(info, session=None, pid=None):
     """`{"ours", "why"}` -- is this lock THIS session's own?
 
-    F260. `set-priority.py` refused with exit 3 and `pid 80470 is running on this
+    `set-priority.py` once refused with exit 3 and `pid 80470 is running on this
     host` — and that pid was the operator, who had taken the index lock by hand
     around several structural writes, which is the flow the lock exists for. The
     documented workaround was "hold no lock by hand", i.e. do not use the thing.
@@ -605,7 +605,7 @@ def _unattributed_claim(info, path):
 def held(code):
     """True when an `acquire` return value means the lock IS held.
 
-    F188. `acquire` returns an INT on every path - 0 held, `E_ERR` / `E_USAGE` /
+    `acquire` returns an INT on every path - 0 held, `E_ERR` / `E_USAGE` /
     `E_LIVE` / `E_STALE` otherwise - and two callers tested it with
     `isinstance(handle, dict)`, which is never true of an int. Both defects follow
     from that one misreading and the `try/finally` around it made the first look
@@ -651,8 +651,8 @@ def available(project):
 
     So the question is asked BEFORE acquiring, where it has an unambiguous answer,
     rather than inferred afterwards from a code that means two things. Found by the
-    browser gate: the F188 repair, correct for a contended lock, made every
-    proposal write in a non-git fixture refuse.
+    browser gate: `held()`'s int-vs-dict repair, correct for a contended lock,
+    made every proposal write in a non-git fixture refuse.
     """
     return bool(lock_dir(project))
 
@@ -665,7 +665,8 @@ def refusal(code, name):
     on two paths, an absolute project directory. Those lines are for a terminal
     the operator is already sitting at. A caller that hands them to a structured
     `findings` list publishes them: the panel paints proposal findings, so the
-    first draft of the F188 repair moved a hostname onto an HTTP response - the
+    first draft of `held()`'s int-vs-dict repair moved a hostname onto an HTTP
+    response - the
     same class of leak the machine-identity release existed to close.
 
     So the caller gets a sentence with no host and no path, and the detail stays

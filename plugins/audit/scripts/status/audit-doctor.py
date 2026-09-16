@@ -46,7 +46,7 @@ trail` block cut again at the three seams inside it:
   `_doctor_policy`       areas, the capability policy, the build runners, and
                          whether the plan's skills would survive a clone
 
-THIS TABLE USED TO CARRY A LAYER COLUMN AND IT WENT STALE (F230). `_panel_discovery`
+THIS TABLE USED TO CARRY A LAYER COLUMN AND IT WENT STALE. `_panel_discovery`
 moved down, `_doctor_policy` followed it, `_deps.py`'s own comment was rewritten to
 say so, and both this column and `_doctor_policy`'s docstring were left asserting the
 layer the module had left - because nothing compares either of them to the table. The
@@ -200,7 +200,8 @@ def diagnose(project, deep=False):
     check_areas(rep, project, cfg, manifest, manifest_rel)
     # ONE discovery scan for the two checks that need one. `check_policy`'s own
     # docstring sets that rule ("One discovery scan per run, batched across
-    # kinds"), and F195 added a second reader of the same inventory - so the scan
+    # kinds"), and `check_plan_skills` added a second reader of the same inventory
+    # - so the scan
     # is memoised here rather than each check calling it. Both take `_discover` as
     # a seam their selftests already use, so the sharing costs neither of them
     # their testability.
@@ -214,7 +215,7 @@ def diagnose(project, deep=False):
         return _scanned[key]
 
     check_policy(rep, project, cfg, cfg_mod, manifest, _discover=_scan_once)
-    # F195: the skills the plan NAMES, against what this machine can find. Beside
+    # THE SKILLS THE PLAN NAMES, against what this machine can find. Beside
     # `check_build_commands` on purpose - a runner that is not installed and a
     # reviewer that is not installed are the same claim, and they now read as a
     # pair instead of one warning and one silence.
@@ -227,7 +228,7 @@ def diagnose(project, deep=False):
     # whether anything has run here, and this says WHICH COPY ran it. Reading the
     # second without the first is how a guard several releases behind stayed
     # invisible while the command asked to name it answered about the
-    # installation (F228).
+    # installation.
     check_running_plugin(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
     check_journal(rep, project, cfg, cfg_mod, git_root)

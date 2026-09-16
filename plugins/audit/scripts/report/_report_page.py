@@ -439,12 +439,13 @@ def _nojs_block():
 def _parked_suffix(manifest, summary):
     """" · N parked proposal(s)" when the plan is empty and proposals exist.
 
-    F-P-32's other half, and it is deliberately NOT part of the Proposals section:
+    THE OTHER HALF OF THE PARKED-PROPOSAL COUNT, and it is deliberately NOT part
+    of the Proposals section:
     `--no-proposals` turns that section off, and a reader who asked for a report
     without proposals still must not be shown "0 phases" as if it were the whole
     truth. The count is stated where the other counts already are.
 
-    `_status_facts.is_parked_proposal`, not `== "proposed"` spelled here (F141).
+    `_status_facts.is_parked_proposal`, not `== "proposed"` spelled here.
     The word had already been decided twice in two places and reconciled twice, in
     two separate faults -- and this file was spelling it inline in two MORE, so the
     next change to the rule had two more places to miss. The predicate agrees with

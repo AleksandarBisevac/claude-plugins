@@ -762,8 +762,8 @@ def config_vocab_drift(plugin_root=None):
     already checked; "runs, therefore published" was not. `ui` spent its whole life
     read by `_ui_theme`, written by the panel, validated here, defaulted by the
     hooks - and absent from the schema, where `additionalProperties: true` meant no
-    surface ever said so (F79). The README table is the same rule one surface
-    further (F80): `priority.maxTier` had a panel control and no published row, so
+    surface ever said so. The README table is the same rule one surface
+    further: `priority.maxTier` had a panel control and no published row, so
     the only description of the lever was the row for the command that writes it.
 
     ROOT KEYS ONLY, which is the level at which three statements written for three

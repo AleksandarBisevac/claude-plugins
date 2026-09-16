@@ -191,7 +191,7 @@ _BASE_BACKLOGS = ("taskBacklog", "requirementBacklog")
 def _positive_id(value):
     """`value` as a work item id, or None. `bool` is refused before `int`,
     because `True` is an `int` in Python and `id: true` is a typo rather than
-    work item 1 - the same guard `_manifest_vocab._check_ado` learned at F15."""
+    work item 1 - the same guard `_manifest_vocab._check_ado` holds."""
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         return None
     return value
@@ -493,7 +493,7 @@ def levels_from_backlog_config(payload, ado=None):
     `asRequirements` and another at `asTasks`.
 
     THE PAYLOAD PLACES A BUG BY RANK AND NEVER NAMES ITS TYPE, WHICH IS WHY
-    `ado` IS HERE (F143). The rank has a source and the NAME had none, so the
+    `ado` IS HERE. The rank has a source and the NAME had none, so the
     name was a literal `"Bug"` - a shipped table of one row inside a function
     whose whole argument is that no table may ship. On a board that renamed the
     type, that rank was filed under a name no item carries: `inventory` stamps
@@ -664,7 +664,7 @@ def inventory(phases, ado=None, bugs=None):
     `bugs` IS OPTIONAL AND ITS DEFAULT IS NOT AN EMPTY LIST. `None` means the
     caller did not ask about bugs; `[]` means it asked and there are none. The
     two were one answer until a linked bug turned out to have no manifest-side
-    basis for a parent verdict at all (F101) — `status` fetches a bug's
+    basis for a parent verdict at all — `status` fetches a bug's
     `System.Parent` like any other item's and had nothing to compare it with,
     and "we did not ask about this kind of item" is not one of the sentences
     that feature can say. A default of `[]` would have made every caller look

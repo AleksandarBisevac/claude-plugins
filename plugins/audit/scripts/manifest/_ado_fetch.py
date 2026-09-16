@@ -350,7 +350,7 @@ def as_items(rows):
     copy would be a second answer - the same split `_ado_drift` already documents.
 
     THIS SHAPE IS NOT CONFORMANCE-GRADEABLE AND MUST NOT BE FED TO THE GATE AS
-    IT STANDS (F106). It carries no top-level `type` and no top-level `parent` -
+    IT STANDS. It carries no top-level `type` and no top-level `parent` -
     both live inside `fields` here - so `check-ado-item.py` refuses it, which is
     the correct answer and used to be a false "DOES NOT CONFORM" instead. The
     conversion is `_ado_conventions.as_gradable_item`, reached from this side by
