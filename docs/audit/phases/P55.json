@@ -176,7 +176,7 @@
     {
       "id": "P55.4",
       "title": "A hook paragraph is carried once per turn, not once per file",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: a batch of edits does not paste the same paragraph into the model's context once per file, and the invariant check stops on a breach the gate did not cover. Hook context is appended to every tool result, so twelve edits carry twelve copies of one paragraph - which is the same defect this release already repaired for the plan gate's own notice, reached through a different door: the repair there was per session, and a batch inside one turn is the case it does not cover. The second half is smaller and of a piece: the invariant check stops on a red gate but not on a breach the gate never asked about, so the louder failure hides the quieter one.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -207,14 +207,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T19:58:53Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -265,7 +265,7 @@
     {
       "id": "P55.6",
       "title": "Two lists that opt a new caller out by being forgotten",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: neither list of call sites is maintained by hand, and the derivation that replaces them carries a floor so an empty answer is a failure rather than a pass. A new caller of the lock's acquire path was invisible to the lint that grades those sites until somebody added it by hand, which is precisely the failure this project keeps recording one surface over: a row added later opts out by being forgotten. The third piece is the warning class the doctor cannot collapse, because its body quotes the offending text so every line differs after the locator - grouping on the rule rather than the body is the repair, and it needs a rule identifier at each emission site, which is the field that module was built without.",
       "files": [
         "plugins/audit/tests/test__output.py",
@@ -295,21 +295,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T19:58:53Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P55.7",
       "title": "The report's copy interaction is observed, or the gate says which it could not observe",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the interactive gate is green, and whichever of the two causes it was is stated. RELEASE BLOCKER: the gate is red on two clipboard interactions and red identically on the committed bytes, so it is not a recent change. The message is the finding rather than the failure - it says two assertion sites never RAN, so the report was graded on work that did not happen, which is the class this release repaired twice inside the suites, and the gate already refuses to call that a pass. Two questions come before any code, in this order: does the copy still work for a person, and does the automation hold the clipboard permission a headless context needs. A copy that works for a human and cannot be observed is a harness repair; a copy that has stopped working is a product defect and a much larger one. The gate cannot tell those apart today and saying which is part of the fix. What must not move is the refusal to grade a report on assertions that never ran: widening it to pass on an unreachable site turns the one instrument that can see this into one that cannot.",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -339,14 +339,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T19:58:54Z",
       "completedAt": null,
       "verifiedBy": []
     }
