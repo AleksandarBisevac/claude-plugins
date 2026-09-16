@@ -219,6 +219,55 @@
       "startedAt": "2026-09-16T19:26:23Z",
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P57.5",
+      "title": "The tracker connector is a module the core does not depend on",
+      "status": "pending",
+      "description": "DONE MEANS: nothing in the core depends on the tracker connector, a lint proves it, and a plan that declares a tracker while the connector cannot serve it is a finding rather than a silence. MEASURED FIRST, and it changed the shape: the connector's recurring cost is its command description in every session and nothing else - the command body loads only when invoked, and the scripts and tests never enter a context window at all. So splitting it into a second plugin buys almost nothing in tokens while costing a removed capability, a migration and a second install. The modular shape buys the same saving and breaks nothing: present on disk, inert in context until invoked, activated by configuration the plan already carries. What was always the real work is the seam, and that is what this task is. The failure to design against is the quiet one: a tracker that stops being updated while the board still looks maintained is worse than one that errors, so the doctor gains a third answer beside its existing not-configured and disabled ones. The packaging mechanism is deliberately not decided here - whether Claude Code offers an optional component within one plugin is being established separately, and the seam is what every answer needs.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/status/_doctor_ado.py",
+        "plugins/audit/commands/sync.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "COMPATIBILITY.md",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__doctor_ado.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: no module the core reaches imports a tracker module, and a core module that gains such an import is reported by name",
+          "plugins/audit/tests/test__doctor_ado.py: a plan declaring a tracker while the connector is unavailable is a finding naming what to do, told apart from a plan that declares none and from one that declares it and has it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-16T19:26:23Z"

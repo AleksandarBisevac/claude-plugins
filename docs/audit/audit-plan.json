@@ -646,7 +646,8 @@
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
-      "P57.3"
+      "P57.3",
+      "P57.5"
     ],
     "plugins/audit/commands/task.md": [
       "P1.7",
@@ -839,7 +840,8 @@
       "P51.8",
       "P54.4",
       "P54.5",
-      "P49.4"
+      "P49.4",
+      "P57.5"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -869,7 +871,8 @@
       "P53.4",
       "P47.3",
       "P55.6",
-      "P50.5"
+      "P50.5",
+      "P57.5"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1172,7 +1175,8 @@
       "P41.1",
       "P42.5",
       "P50.2",
-      "P50.6"
+      "P50.6",
+      "P57.5"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -1753,7 +1757,8 @@
       "P51.2",
       "P53.4",
       "P47.3",
-      "P50.5"
+      "P50.5",
+      "P57.5"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"
@@ -2075,6 +2080,12 @@
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3"
+    ],
+    "plugins/audit/scripts/status/_doctor_ado.py": [
+      "P57.5"
+    ],
+    "plugins/audit/tests/test__doctor_ado.py": [
+      "P57.5"
     ]
   },
   "bugs": [
