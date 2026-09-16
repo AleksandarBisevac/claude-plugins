@@ -29,7 +29,7 @@
     {
       "id": "P55.1",
       "title": "A release names the run, and a taker's identity is checked whole",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the release path checks the whole identity a claim records, not half of it. Ownership is compared on the session alone while the take records a process as well and the release is handed one it then ignores, so two measurements inside one session cannot be told apart: the loser's release succeeds and drops a lock out from under a run that still holds it. This is the same class the takeover repair closed from the other end, and it is the last door in that file where an identity is recorded and not read. The age rule stays, because it is the fallback when no identity was recorded at all.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -61,19 +61,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1922cc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_release_conflict compares session and process, each only where the claim recorded it and it resolves, and accepts the two candidate processes so the ordinary in-process take and release is unaffected.",
+        "descriptive": "A release is refused when the identity it carries disagrees with the one the claim recorded, on either field rather than on the session alone."
       },
       "startedAt": "2026-09-16T05:02:21Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T17:54:55Z",
+      "verifiedBy": [
+        "a6a",
+        "a6b",
+        "a6c",
+        "a6d",
+        "c9",
+        "c9c"
+      ]
     },
     {
       "id": "P55.2",
       "title": "A suite does not abort on a platform this project supports",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: no case in this suite can abort the body on a platform the project supports, and the smaller findings on the same surface are closed with it. One fixture makes the lock path a directory, which one platform reports as the name already existing and another as a permission refusal - only the first is caught, so on the second the escape takes that case and the ones after it out of the run. The class is the one this release already repaired elsewhere: a case that reports by raising takes its neighbours down and a harness reads one crash as a column of checks.",
       "files": [
         "plugins/audit/tests/test__locks.py",
@@ -104,19 +111,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1922cc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_link_into_place asks whether the name exists before attempting the raw create, so the two platform wordings collapse to one meaning; a case forces the other platform's wording directly rather than waiting to be run there.",
+        "descriptive": "A name a directory occupies is one fact on every platform, rather than whichever errno the local create call raises."
       },
       "startedAt": "2026-09-16T05:02:21Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T17:54:55Z",
+      "verifiedBy": [
+        "e7",
+        "e11",
+        "e12"
+      ]
     },
     {
       "id": "P55.3",
       "title": "Two documents agree about how many tiers the lock has",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: no document states a count of lock tiers that the library contradicts, and the statement is checked rather than remembered. The build guide says the command runs over two tiers while the command's own docstring says three, so two documents now contradict each other about a vocabulary the library declares in one place. The repair is not to correct the number: it is to read the vocabulary from where it is declared, the way the claim anchors already hold every other sentence in that family, so the next tier added cannot leave a document behind.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -149,14 +160,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1922cc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "a list anchor reads FIXED_NAMES and checks it against the orchestration document, through the mechanism that already holds the other lists in that family; both documents lost the count and gained the name they were missing.",
+        "descriptive": "Neither document states a count of lock tiers, and the sentence that names them is derived from the library's own list."
       },
       "startedAt": "2026-09-16T05:02:21Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T17:54:55Z",
+      "verifiedBy": [
+        "oa30",
+        "oa31",
+        "oa32"
+      ]
     },
     {
       "id": "P55.4",
