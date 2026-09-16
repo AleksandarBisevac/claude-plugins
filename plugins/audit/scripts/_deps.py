@@ -1421,6 +1421,70 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
     return violations
 
 
+# --- the tracker connector's own doors -------------------------------------------
+def _tracker_doors(script_dir=None):
+    """Basenames of the tracker connector's own entry points, DERIVED off the
+    tree rather than written down: a list of module names here would be the
+    same defect this project keeps recording, a row opting a new door out by
+    being forgotten.
+
+    An "entry point" in this tree is a HYPHENATED name - `import audit-status`
+    is not legal Python, so every one of them is reached by invocation, never
+    by a sibling's `import` or a `_loader` call (see the module docstring on
+    why that split matters). Every spelling of this feature - the schema key,
+    the manifest field, the command file - shares one substring, so a
+    hyphenated name carrying it (`ado-connect.py`, `fetch-ado-items.py`, ...)
+    is one of the connector's own doors, and nothing else in this tree is.
+
+    `_module_files` is the same recursive walk `layer_violations()` reads, so
+    a door moved into a new subdirectory is still found, and a rename is
+    picked up the next run rather than left for a reader to remember.
+
+    Carries its own floor: a tree shipping no such door returns an empty set,
+    and `tracker_dependency_violations()` reports nothing to fix rather than
+    guessing at why nothing matched.
+    """
+    modules, _collisions = _module_files(script_dir or _output.SCRIPTS_DIR)
+    return frozenset(name for name in modules if "-" in name and "ado" in name)
+
+
+def tracker_dependency_violations(script_dir=None):
+    """(importer, what) for every edge from OUTSIDE the tracker connector's own
+    doors (`_tracker_doors()`) into one of them.
+
+    THE SHARED FLOOR IS NOT A DOOR, AND THAT IS THE LINE THIS RULE DRAWS.
+    `meta.ado`'s declared shape already has one shared answer at the floor of
+    this graph - `_ado_parent`, `_ado_tracked`, `_manifest_ado` and their
+    neighbours - and core readers (the manifest validator, the panel, the
+    doctor) import THOSE on purpose: a plan may declare `meta.ado` or
+    `phases[].adoTracked` whether or not a connector can ever reach a board,
+    so asking what a KEY MEANS must not require asking whether a CONNECTOR
+    works. Putting that answer behind the connector's own doors would make
+    reading a declaration depend on the thing it declares - which is the
+    coupling this rule exists to refuse, not the one it would create by being
+    wider than it is. `/audit:sync`'s own commands are narrower than that
+    shared floor on purpose: nothing else runs them, because reading
+    `meta.ado` is not running `/audit:sync`.
+
+    Reads `import_graph()`, the same static-import-plus-`_loader`-call union
+    `layer_violations()` judges, so a `_loader.load_script("fetch-ado-items.py")`
+    from anywhere else is caught exactly as an `import` would be. An edge
+    FROM one door to another, or from a door down to the shared floor, is not
+    reported - the direction that matters is who reaches IN, not what the
+    connector reaches to do its own job.
+    """
+    doors = _tracker_doors(script_dir)
+    if not doors:
+        return []
+    edges, _broken = import_graph(script_dir)
+    return sorted((importer,
+                   "reaches %r, one of the tracker connector's own entry "
+                   "points (/audit:sync's door) - a door is invoked by the "
+                   "orchestrator, never imported by a sibling" % (imported,))
+                  for importer, imported in edges
+                  if imported in doors and importer not in doors)
+
+
 # --- one JSON encoding ----------------------------------------------------------
 # The writer, by every name it is reached through. `_manifest_io` defines
 # `atomic_write_json`; `_manifest_io`, `_panel_write` and `panel-server` each bind a

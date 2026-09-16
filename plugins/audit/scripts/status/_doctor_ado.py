@@ -125,7 +125,23 @@ def check_ado(rep, project, manifest):
     define them, and what the manifest's links actually prove. Offline on
     purpose - a doctor that phoned ADO would be a doctor that needs
     credentials. Real states live in ADO, so the state-map row is exactly
-    what it says: advisory."""
+    what it says: advisory.
+
+    THE ONE ROW ANSWERS THREE QUESTIONS, NOT TWO. A plan can declare no
+    tracker (nothing to diagnose), declare one it can reach, or declare one
+    it CANNOT reach - and the third is the failure worth designing against,
+    because it is the quiet one: a tracker that stops being updated while
+    the board still looks maintained reads as healthy for exactly as long as
+    nobody checks, where a connector that errors at least says so. The
+    third answer is a FINDING rather than a warning because it is
+    ESTABLISHED offline, with no live call: `meta.ado.organization` and
+    `meta.ado.project` are the address `/audit:sync` pushes and pulls
+    against, and their absence is a fact about the declaration itself, not a
+    guess about a machine this process cannot see. That is also why it is
+    narrower than it could be - a key that is PRESENT but malformed is
+    `check_ado_meta`'s finding already (da3's rule: two rows for one defect
+    is one status living in two places), so this asks only whether the key
+    was ever written at all."""
     meta = (manifest or {}).get("meta")
     ado = meta.get("ado") if isinstance(meta, dict) else None
     if ado is None:
@@ -139,12 +155,28 @@ def check_ado(rep, project, manifest):
     echo = enabled and ado.get("echo") is not False
     pbi = ado.get("phaseWorkItems") is not False
     sprint = ado.get("sprint") if isinstance(ado.get("sprint"), dict) else None
+    # What `/audit:sync` addresses a push or pull to. A key that is PRESENT
+    # but the wrong shape is `check_ado_meta`'s finding, not this one's - only
+    # an ABSENT key lands here, because "never written" is the one form of
+    # "cannot be served" this offline check can establish for itself.
+    unaddressed = [key for key in ("organization", "project") if key not in ado]
     if not enabled:
         rep.warn("ado",
                  "connector DISABLED (meta.ado.enabled: false) - push/pull "
                  "and the echo do nothing; links are kept and /audit:sync "
                  "status still reports them",
                  "re-enable in the panel's ADO card, or delete the key")
+    elif unaddressed:
+        rep.finding("ado",
+                    "connector DECLARED but cannot be SERVED - meta.ado.%s "
+                    "missing, so /audit:sync has no board to push to or pull "
+                    "from: a plan naming a tracker it cannot reach looks "
+                    "maintained right up until someone checks, which is "
+                    "worse than a connector that errors"
+                    % " and meta.ado.".join(unaddressed),
+                    "set meta.ado.%s in the panel's ADO card, or run "
+                    "/audit:sync connect"
+                    % " and meta.ado.".join(unaddressed))
     else:
         pbi_note = ""
         if pbi and not (ado.get("types") or {}).get("pbi"):

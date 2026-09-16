@@ -2197,6 +2197,83 @@ def _cases(check):
           not (set(M._all_names()) & set(os.path.basename(r)[:-3]
                                          for r, _p in _output.py_files(M._output.TESTS_DIR))))
 
+    # ---- the tracker connector: the core may not reach into its own doors ----
+    # `tk*`. Fixtures, because the real tree is (and must stay) clean, and a rule
+    # only ever seen returning [] is a rule that might be returning [] for the
+    # wrong reason.
+    real_doors = M._tracker_doors()
+    check("tk1 the real tree's derived doors are exactly `/audit:sync`'s own "
+          "entry points, and nothing that merely READS a declared meta.ado "
+          "(the manifest validator, the panel, the doctor) is one of them - "
+          "a derivation that swallowed those would flag core code that has "
+          "run clean for releases: %r" % (sorted(real_doors),),
+          real_doors == frozenset((
+              "ado-connect", "check-ado-item", "explain-ado-drift",
+              "fetch-ado-items", "read-ado-links", "resolve-ado-parent",
+              "resolve-ado-tracked")))
+    check("tk2 ...and the shared floor answers about a DECLARED meta.ado are "
+          "not doors - `_manifest_ado` (the validator's front door) and "
+          "`_doctor_ado` (the doctor's) stay reachable from core precisely "
+          "because reading a key must not require a working connector: %r"
+          % (sorted(real_doors),),
+          "_manifest_ado" not in real_doors and "_doctor_ado" not in real_doors
+          and "_ado_parent" not in real_doors and "_ado_tracked" not in real_doors)
+
+    tk_s = tempfile.mkdtemp(prefix="deps-tracker-s-")
+    try:
+        def _wtk(name, text):
+            with open(os.path.join(tk_s, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        # A door. Being hyphenated, it can never be the target of a static
+        # `import` (`import ado-connect` is not legal Python) - `_loader` is
+        # the only way anything reaches one, which is why every case below
+        # reaches it that way rather than testing an edge that cannot exist.
+        _wtk("ado-connect.py", "def probe():\n    return True\n")
+        # The shared floor underneath it - a stand-in for `_ado_parent` /
+        # `_manifest_ado`, imported by core on purpose.
+        _wtk("_shared_floor.py", "def answer(meta):\n    return meta\n")
+        _wtk("_manifest_like.py", "import _shared_floor\nx = 1\n")
+        # A core command reaching INTO the door.
+        _wtk("audit_status_like.py",
+             'import _loader\n\n\ndef f():\n'
+             '    return _loader.load_script("ado-connect.py")\n')
+        # A second door reaching the first - not the direction this rule
+        # judges, because nothing outside the connector is doing the reaching.
+        _wtk("check-ado-item.py",
+             'import _loader\n\n\ndef f():\n'
+             '    return _loader.load_script("ado-connect.py")\n')
+
+        tk = M.tracker_dependency_violations(tk_s)
+        named_tk = sorted(n for n, _w in tk)
+        check("tk3 a core command that RUNTIME-LOADS one of the connector's "
+              "own doors is reported by name - the shape most of this tree's "
+              "real edges take, and the one an import-only scan would miss "
+              "entirely: %r" % (tk,),
+              named_tk == ["audit_status_like"]
+              and "ado-connect" in tk[0][1])
+        check("tk4 a core module reading the SHARED FLOOR underneath the "
+              "connector is not reported - the property `tk2` pins for the "
+              "real tree, reproduced here so it cannot regress unnoticed: %r"
+              % (tk,), "_manifest_like" not in named_tk)
+        check("tk5 a SECOND door reaching the first is not reported - the "
+              "connector reaching its own door is not the edge this rule "
+              "refuses, only something outside it doing so: %r" % (tk,),
+              "check-ado-item" not in named_tk)
+        check("tk6 an absent tracker set derives no violations at all, which "
+              "is the floor the task itself asked for: a tree shipping no "
+              "door reports nothing to fix rather than guessing why",
+              M.tracker_dependency_violations(
+                  os.path.join(tk_s, "no-such-dir")) == [])
+    finally:
+        shutil.rmtree(tk_s, ignore_errors=True)
+
+    check("tk7 ...and the REAL tree carries none - this is the case that goes "
+          "red the day a core command reaches into `/audit:sync`'s own door "
+          "instead of the shared floor beneath it: %r"
+          % (M.tracker_dependency_violations(),),
+          M.tracker_dependency_violations() == [])
+
     # --- dpn: the prose docs accumulate one stale number per module -----------
     _dpn = M.doc_prose_numbers()
     check("dpn0 no prose doc writes a present-tense number - they carry a line "

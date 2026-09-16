@@ -247,7 +247,7 @@
             "object",
             "null"
           ],
-          "description": "Azure DevOps sync configuration for /audit:sync. null/absent => sync refuses with setup guidance. Never store credentials here — auth belongs to `az login` / AZURE_DEVOPS_EXT_PAT.",
+          "description": "Azure DevOps sync configuration for /audit:sync. null/absent => sync refuses with setup guidance. organization/project stay optional at this level (schema shape only) — an enabled connector missing either is still valid JSON, but /audit:doctor reports it as a finding rather than an ok row, because a plan declaring a tracker it cannot address looks maintained until someone actually pushes. Never store credentials here — auth belongs to `az login` / AZURE_DEVOPS_EXT_PAT.",
           "additionalProperties": true,
           "properties": {
             "organization": {

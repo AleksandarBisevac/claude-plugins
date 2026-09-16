@@ -364,6 +364,15 @@ TABLE = (
  ("tests_import_violations", S + "_fmt.py", "after", INSTALL,
   "\n\ndef _probe_tests():\n    import test__output\n    return test__output\n",
   DEP, "tb7"),
+ # A core module reaching into one of the tracker connector's own doors -
+ # exactly the edge the real tree carries none of, and the one `tk7` exists
+ # to catch. `_loader.load_script` rather than a static `import` because the
+ # door is hyphenated and cannot be spelled the other way - the same reason
+ # `tests_import_violations`' probe above is a loader call and not an import.
+ ("tracker_dependency_violations", S + "_fmt.py", "after", INSTALL,
+  "\n\ndef _probe_ado():\n    import _loader\n"
+  "    return _loader.load_script(\"fetch-ado-items.py\")\n",
+  DEP, "tk7"),
  # The one-encoding rule, crippled. It is the whole mechanism keeping a second
  # escaping from coming back into the manifest writers, and a version reporting
  # nothing reads exactly like a tree that decides the escaping in one place.
@@ -1196,6 +1205,13 @@ ALLOW = (
   "            for name in sorted(set(_imported_sibling_names(tree, test_names, None))):",
   "            for name in sorted(set(_py_literal_basenames(tree)) & test_names):",
   DEP, "tb4"),
+ # The direction check, narrowed to nothing. Drop "importer not in doors" and
+ # the connector reaching its OWN door - the shape `/audit:sync`'s commands
+ # are built from - reads as a violation, which is the known-good input `tk5`
+ # exists to keep clean.
+ ("tracker_dependency_violations", S + "_deps.py", "replace",
+  "                  if imported in doors and importer not in doors)",
+  "                  if imported in doors)", DEP, "tk5"),
  # The one-encoding rule, widened past the manifest writer to every `json.dump`
  # that carries an escaping. The journal's canonical row and the hook that appends
  # to it both spell one, because the string is a sha256 INPUT chaining one row to

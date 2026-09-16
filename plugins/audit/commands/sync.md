@@ -49,23 +49,34 @@ without one.
    ```
    (The v2 keys — `stateMap`, `sprint`, `pull`, `onComplete`, `comments`, `echo`,
    `phaseWorkItems`, `enabled` — are optional; the panel's ADO card edits them all.)
-3. **`meta.ado.enabled: false` disables writes**: `push` and `pull` STOP with
+3. **`meta.ado.organization` and `meta.ado.project` must BOTH be set once the
+   connector is enabled.** Both stay optional at the schema level — `connect` writes
+   them together, but nothing refuses a hand-edited block that skips them — so an
+   `enabled` connector missing either is a declaration with nowhere to push or pull:
+   `push`/`pull` STOP with `connector declared but not addressed — set
+   meta.ado.organization and meta.ado.project (or run /audit:sync connect)`; `status`
+   still runs and leads with the same note. This is the gap `/audit:doctor` reports as
+   a **finding**, not a warning: the other two silences this preflight names (no
+   `meta.ado` at all, step 2; `enabled: false`, step 4) are declared inactivity, while
+   this one says the connector is ON and has nowhere to go — the quiet failure a
+   maintained-looking board can hide.
+4. **`meta.ado.enabled: false` disables writes**: `push` and `pull` STOP with
    `connector disabled — re-enable in the panel's ADO card (or set meta.ado.enabled)`;
    `status` still runs (read-only is the drift lens you need to decide whether to
    re-enable) and leads with `connector DISABLED — N linked item(s) frozen, links kept`.
-4. **Transport**: if `mcp__azure-devops__wit_*` / `mcp__azure-devops__work` MCP tools
+5. **Transport**: if `mcp__azure-devops__wit_*` / `mcp__azure-devops__work` MCP tools
    are available in this session, you MAY use them (same field mapping below).
    Otherwise use the `az` CLI via Bash:
    `az devops configure --defaults organization=https://dev.azure.com/<org> project=<project>`
    then `az boards ...`. If `az` is missing or the `azure-devops` extension isn't installed,
    STOP with install guidance (`az extension add --name azure-devops`; auth via `az login`,
    or the `AZURE_DEVOPS_EXT_PAT` environment variable in CI).
-5. **Credentials are never yours to handle**: never write a PAT/token into the manifest,
+6. **Credentials are never yours to handle**: never write a PAT/token into the manifest,
    the config, or any file; never echo one (the secret guard blocks it anyway). Auth
    belongs to `az` / the MCP server.
-6. After EVERY manifest mutation: revalidate with
+7. After EVERY manifest mutation: revalidate with
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>`.
-7. `push`/`pull` write the manifest — hold the **concurrency lock** (see conventions →
+8. `push`/`pull` write the manifest — hold the **concurrency lock** (see conventions →
    Concurrency lock) around those writes; `status` is read-only and never locks.
 
 ## Every ADO call is bounded, and says so when the bound expires
@@ -781,8 +792,9 @@ no basis has to be trusted rather than checked.
 
 Read-only, no ADO writes, no manifest writes.
 1. Lead with the connector line: `enabled`/`echo`/`phaseWorkItems` state (and the
-   DISABLED banner from Preflight 3 when off), `sprint: <resolved path>` or
-   `sprint: unresolvable (team '<t>')` when resolution fails.
+   DISABLED banner from Preflight 4 when off, or the declared-but-not-addressed note
+   from Preflight 3 when `organization`/`project` is missing), `sprint: <resolved
+   path>` or `sprint: unresolvable (team '<t>')` when resolution fails.
 2. **The link inventory is a door, not a walk you write here.** Sorting the items
    into linked, unlinked and deliberately untracked means reading every phase, every
    task and every bug — which on the sharded layout is a walk over the ASSEMBLED

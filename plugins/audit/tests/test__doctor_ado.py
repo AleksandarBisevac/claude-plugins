@@ -174,6 +174,52 @@ def _cases(check):
           _levels(rep, "ado") == ["WARNING"]
           and "DISABLED" in _detail(rep, "ado"))
 
+    # --- the third answer: declared, enabled, and UNREACHABLE -------------
+    # `da32`-`da36`. Two ways the connector can fail, told apart because they
+    # fail apart: "not configured" (da1) and "disabled" (da7) are both
+    # DELIBERATE - a plan that never asked for a tracker, or one that turned
+    # it off. This third one is not deliberate in the same way: the key says
+    # "on" and nothing about it looks wrong until /audit:sync has nowhere to
+    # push.
+    rep = run(_manifest(ado={"enabled": True}))
+    check("da32 a connector DECLARED and ENABLED with no address at all is a "
+          "FINDING, not an ok row - a plan naming a tracker it cannot reach "
+          "looks maintained right up until someone checks, which is worse "
+          "than a connector that errors: %r" % (_detail(rep, "ado"),),
+          _levels(rep, "ado") == ["FINDING"]
+          and "cannot be SERVED" in _detail(rep, "ado")
+          and "meta.ado.organization and meta.ado.project" in
+          _detail(rep, "ado"))
+    check("da33 ...and the FIX names exactly what to set, so a reader is not "
+          "just told something is wrong: %r"
+          % (" ".join(r["fix"] or "" for r in rep.rows if r["check"] == "ado"),),
+          "meta.ado.organization and meta.ado.project" in
+          " ".join(r["fix"] or "" for r in rep.rows if r["check"] == "ado"))
+
+    rep = run(_manifest(ado={"enabled": True, "organization": "o"}))
+    check("da34 ...and ONE missing key is named ALONE, not both, so a reader "
+          "who has already set half the address is not sent back to redo "
+          "it: %r" % (_detail(rep, "ado"),),
+          _levels(rep, "ado") == ["FINDING"]
+          and "meta.ado.project missing" in _detail(rep, "ado")
+          and "organization missing" not in _detail(rep, "ado"))
+
+    rep = run(_manifest(ado={"enabled": False}))
+    check("da35 THE OTHER-DIRECTION CASE: a connector that is DISABLED and "
+          "also missing its address is still a WARNING, never a finding - "
+          "disabled already answers the question this one asks, and a "
+          "config nobody is using yet is not the quiet failure this rule "
+          "exists for: %r" % (_levels(rep, "ado"),),
+          _levels(rep, "ado") == ["WARNING"]
+          and "DISABLED" in _detail(rep, "ado"))
+
+    rep = run(_manifest(ado={"organization": "", "project": "p"}))
+    check("da36 a key that is PRESENT but blank is not reported here at all - "
+          "that shape defect is `check_ado_meta`'s finding (da3's rule "
+          "applied one field at a time), and this module asks only whether "
+          "the key was ever WRITTEN: %r" % (_levels(rep, "ado"),),
+          _levels(rep, "ado") == ["OK"])
+
     rep = run(_manifest(ado={"organization": "o", "project": "p",
                              "echo": False}))
     check("da8 `echo: false` is not a disabled connector - the row still reads "
