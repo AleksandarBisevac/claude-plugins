@@ -371,7 +371,7 @@
     {
       "id": "P55.8",
       "title": "Two lists that opt a new member out by being forgotten",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: neither hand-kept list of call sites in tests/test__output.py is maintained by hand, and the derivation that replaces each carries a floor so an empty answer is a failure rather than a pass. Two lists sit in that file: px2's _publishers, the modules that may not call os.path.relpath directly, and lk4's _lk_callers, the callers of the lock's acquire path. A new caller of acquire was invisible to lk4 until somebody added it by hand, which is precisely the failure this project keeps recording one surface over: a row added later opts out by being forgotten. Both lists are walked from the tree instead, each keeping the sentinel it already carries so a file that cannot be read stays a finding rather than an exception, and each with a floor that fails when the derivation returns nothing.",
       "files": [
         "plugins/audit/tests/test__output.py"
@@ -380,6 +380,58 @@
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test__output.py: the call sites each lint grades are derived from the tree with a floor, so a derivation that stops matching fails rather than reporting nothing to fix"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c6c70e9",
+      "outcome": {
+        "technical": "lk4's membership is a walk over M.py_files(M.SCRIPTS_DIR) keeping any file whose non-comment lines spell _locks.acquire(, with the unreadable-file sentinel generalised to any walked file and a floor asserted with >= rather than a tally. The walk found two callers the retired tuple never named.",
+        "descriptive": "The callers a case grades are found by reading the tree rather than by somebody remembering, and a walk that stops matching fails instead of reporting nothing to fix."
+      },
+      "startedAt": "2026-09-16T21:57:24Z",
+      "completedAt": "2026-09-16T21:57:36Z",
+      "verifiedBy": [
+        "lk4-evidence-io-first-site",
+        "lk4-audit-lock-passthrough",
+        "lk4-comment-is-not-a-call",
+        "lk4-floor-catches-a-collapsed-walk"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c6c70e9",
+        "at": "2026-09-16T21:57:36Z"
+      }
+    },
+    {
+      "id": "P55.9",
+      "title": "A case that says it pins the window plants its decoy where the window cannot reach",
+      "status": "pending",
+      "description": "DONE MEANS: widening _areas._CLAIM_WINDOW past the section reddens a case. It does not today - the constant was raised past any document in the tree and the whole sweep stayed green, so the one site that reads it is defended by nothing. oa12 carries a comment asserting the window is load-bearing and that oa12 is what says so, and that comment is the reason nobody looked: it plants its decoy BEFORE the anchor's bullet, while the slice runs forward from the anchor, so no forward widening can ever reach it. What oa12 pins is the slice's left endpoint, which the slice does for free. Add a second laundered document with the decoy planted after the anchor and outside the shipped window, a finding at the shipped value and a non-finding only once the window is widened past it. oa12 stays as it is - a decoy behind the anchor is worth a case, it just is not this one - and the comment above it stops claiming what the new case is the one to claim.",
+      "files": [
+        "plugins/audit/tests/test__areas.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__areas.py: a claim satisfied only by a neighbour's value BEYOND the context window is a finding, so widening the window reddens the case"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -411,19 +463,18 @@
       "verifiedBy": []
     },
     {
-      "id": "P55.9",
-      "title": "A case that says it pins the window plants its decoy where the window cannot reach",
+      "id": "P55.10",
+      "title": "A persisted path goes through the one helper, and the table that says so names it",
       "status": "pending",
-      "description": "DONE MEANS: widening _areas._CLAIM_WINDOW past the section reddens a case. It does not today - the constant was raised past any document in the tree and the whole sweep stayed green, so the one site that reads it is defended by nothing. oa12 carries a comment asserting the window is load-bearing and that oa12 is what says so, and that comment is the reason nobody looked: it plants its decoy BEFORE the anchor's bullet, while the slice runs forward from the anchor, so no forward widening can ever reach it. What oa12 pins is the slice's left endpoint, which the slice does for free. Add a second laundered document with the decoy planted after the anchor and outside the shipped window, a finding at the shipped value and a non-finding only once the window is widened past it. oa12 stays as it is - a decoy behind the anchor is worth a case, it just is not this one - and the comment above it stops claiming what the new case is the one to claim.",
+      "description": "DONE MEANS: scripts/manifest/repair-commits.py builds the relative path it persists through _output.posix_rel rather than by hand, and px2's publisher table names the file. The value it writes today is right, because the hand-rolled spelling happens to be what the helper does - so nothing is broken and nothing will be until the next copy leaves the separator replacement off, which is the defect the helper was written after. The table that would have caught it does not name this file. THE TABLE STAYS HAND-KEPT ON THE RECORD: whether a value is published is a judgement about what happens to it downstream, not a fact the tree states, and one file in this tree holds both a containment check that must NOT go through the helper and a published path that must, so a file-level derivation would be unsound in both directions.",
       "files": [
-        "plugins/audit/tests/test__areas.py"
+        "plugins/audit/scripts/manifest/repair-commits.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test__areas.py: a claim satisfied only by a neighbour's value BEYOND the context window is a finding, so widening the window reddens the case"
-        ],
-        "expectRedFirst": true,
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
         "gate": [
           "selftests",
           "validate",

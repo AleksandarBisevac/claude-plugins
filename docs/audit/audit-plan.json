@@ -1734,7 +1734,8 @@
       "P53.3",
       "P55.6",
       "P50.5",
-      "P55.8"
+      "P55.8",
+      "P55.10"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -1749,7 +1750,8 @@
       "P57.3"
     ],
     "plugins/audit/scripts/manifest/repair-commits.py": [
-      "P31.6"
+      "P31.6",
+      "P55.10"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
