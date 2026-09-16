@@ -1254,7 +1254,8 @@
       "P42.6",
       "P46.5",
       "P53.3",
-      "P50.5"
+      "P50.5",
+      "P55.11"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
