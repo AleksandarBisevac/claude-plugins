@@ -186,6 +186,39 @@ def _cases(check):
               and M.regression_task([{"taskId": "P1.3",
                                       "testsMode": "gate-only"}]) is None)
 
+        # (k) a BATCH: many distinct source files, one session, no gap between
+        # them - the shape a wide edit actually produces. throttleMinutes is
+        # set to 0 so the timing throttle (which a project may turn down on
+        # purpose, for tighter nudging) cannot be read as the reason nothing
+        # repeats; what has to stop the paragraph from repeating is `fullShown`,
+        # never the gap between warnings.
+        cfg_k = dict(cfg)
+        cfg_k["tddReminder"] = dict(_config.DEFAULTS["tddReminder"],
+                                    throttleMinutes=0)
+        sess_k = "tdd-session-k"
+        v_k1, m_k1 = _nudge("src/batch/one.ts", sess_k, use_cfg=cfg_k)
+        check("k1 the first file of a batch gets the full paragraph",
+              v_k1 == "warn" and "write or update a test first" in m_k1,
+              repr((v_k1, m_k1)))
+        v_k2, m_k2 = _nudge("src/batch/two.ts", sess_k, use_cfg=cfg_k)
+        check("k2 a second, DIFFERENT file in the same batch still warns - "
+              "the fix is not a silence - but does not carry the paragraph "
+              "again, which is the whole point: a batch this size must not "
+              "paste it once per file",
+              v_k2 == "warn" and "src/batch/two.ts" in m_k2
+              and "write or update a test first" not in m_k2
+              and m_k2.startswith("[tdd-reminder]"), repr((v_k2, m_k2)))
+        v_k3, m_k3 = _nudge("src/batch/three.ts", sess_k, use_cfg=cfg_k)
+        check("k3 a third file, same batch: still short, still named, still "
+              "warn - the paragraph rode once and every file after it is a "
+              "pointer, however many files follow",
+              v_k3 == "warn" and "src/batch/three.ts" in m_k3
+              and "write or update a test first" not in m_k3, repr((v_k3, m_k3)))
+        v_k4, m_k4 = _nudge("src/batch/one.ts", sess_k, use_cfg=cfg_k)
+        check("k4 a file already warned stays silent inside the same batch - "
+              "the per-file throttle case (b) pins is untouched by this",
+              v_k4 == "silent", repr((v_k4, m_k4)))
+
         # (e) disabled -> silent
         cfg_off = dict(cfg)
         cfg_off["tddReminder"] = dict(_config.DEFAULTS["tddReminder"], enabled=False)

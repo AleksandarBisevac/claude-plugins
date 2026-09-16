@@ -61,7 +61,7 @@
         "technical": "Boundary validator + 2 regression tests.",
         "descriptive": "Malformed checkouts are turned away early."
       },
-      "commit": null,
+      "commit": "c89ff0a1416dd4e14f96cb3fb9f503901b63234f",
       "attempts": 1,
       "maxAttempts": 3,
       "startedAt": "2026-06-22T09:30:00Z",

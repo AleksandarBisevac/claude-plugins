@@ -1048,7 +1048,13 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    it is said before the first command instead of after a whole suite has been paid for. Nothing
    the gate does can change that answer; every other way the coverage question ends needs the
    run's own output and is still reported at the end.
-3. **`invariantsChecked`** — run, from the project directory and **before** step 5c, because
+3. **`invariantsChecked`** — run this **even when step 2 came back red**, and even though signing
+   off will not follow. A red test gate is the loud failure and it is where a human's attention
+   goes; it says nothing about whether this same run also pushed, force-updated or staged files
+   `commit-scope` would refuse, and a governance breach sitting beside a failing suite is not
+   excused by the suite failing. Skipping this step because step 2 already gave you something to
+   report is how the quieter breach goes unlooked-at behind the louder one.
+   Run it, from the project directory and **before** step 5c, because
    `close-phase.py` deletes the branch by default and that takes with it the reflog this reads.
    The ordering is not advice: it is why this step is numbered ahead of the landing step rather
    than beside it:

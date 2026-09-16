@@ -55,7 +55,9 @@ Decision order (see `decide`):
   mechanism: the hook watches its own Edit stream to learn that tests exist);
   exempt / non-source / covered-by-task / test-already-touched / throttled →
   SILENT; otherwise → WARN (once per file, throttled per session), worded in the
-  covering task's test mode.
+  covering task's test mode on the FIRST warn of the session and as a short
+  pointer back to it on every warn after - a batch touching many distinct files
+  must not paste the whole paragraph once per file.
 
 AN MCP SERVER'S WRITE TOOL IS DELIBERATELY NOT ON THIS MATCHER. The mechanism
 above is "the hook watches its own Edit stream", and both halves of that stream
@@ -68,7 +70,8 @@ refuses nothing and never has — so the incomplete signal is worth less here th
 the false silence would cost.
 
 State: <stateDir>/tdd-reminder-<session_id>.json
-  {"testTouched": bool, "testFiles": [rel...], "warned": {rel: epoch}, "lastWarnAt": epoch}
+  {"testTouched": bool, "testFiles": [rel...], "warned": {rel: epoch},
+   "lastWarnAt": epoch, "fullShown": bool}
 
 Contract: ALWAYS exits 0. Any unexpected input / exception also exits 0 —
 a reminder must never break legitimate work.
@@ -107,6 +110,19 @@ REGRESSION_TEMPLATE = (
     "-> tddReminder."
 )
 
+# Every warn after the first ONE THIS SESSION uses this instead of a template
+# above. A batch that touches many distinct source files in close succession
+# fires this hook once per file, and `throttleMinutes` only governs how SOON a
+# new file may warn at all - a project that lowers it for tighter nudging must
+# not get the whole paragraph back on every file of a wide edit, which is the
+# same paragraph landing in the model's context once per file rather than once.
+# The tag stays first so a transcript filter on `[tdd-reminder]` still finds it.
+POINTER_TEMPLATE = (
+    "[tdd-reminder] %s was modified with no test file touched yet - see this "
+    "session's first tdd-reminder note above for the full explanation and how "
+    "to turn it off."
+)
+
 
 # --- state ----------------------------------------------------------------------
 def _state_file(state_dir, session_id):
@@ -121,7 +137,8 @@ def _load_state(state_dir, session_id):
             return data
     except Exception:
         pass
-    return {"testTouched": False, "testFiles": [], "warned": {}, "lastWarnAt": 0}
+    return {"testTouched": False, "testFiles": [], "warned": {}, "lastWarnAt": 0,
+            "fullShown": False}
 
 
 def _save_state(state_dir, session_id, state):
@@ -262,11 +279,22 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     if throttle_s and (ts - float(state.get("lastWarnAt") or 0)) < throttle_s:
         return ("silent", "inside throttle window")
 
-    # 7. Warn.
+    # 7. Warn. The full paragraph rides ONCE per session, on whichever file
+    #    triggers it first; every later file in the same session - however many,
+    #    however soon after - gets the short pointer instead. `fullShown` is
+    #    orthogonal to the throttle above: the throttle decides whether a NEW
+    #    file may warn at all, this decides how much text that warn costs, and a
+    #    project that lowers the throttle for tighter nudging must not get the
+    #    whole paragraph back on every file of a wide edit.
     state.setdefault("warned", {})[rel] = ts
     state["lastWarnAt"] = ts
+    if state.get("fullShown"):
+        text = POINTER_TEMPLATE % rel
+    else:
+        state["fullShown"] = True
+        text = _warn_text(rel, covering)
     _save_state(sd, session_id, state)
-    return ("warn", _warn_text(rel, covering))
+    return ("warn", text)
 
 
 def main():

@@ -333,6 +333,18 @@ def _cases(check):
           "manifest validity" in html_out and "--fail-on" in html_out)
     check("verdict: the ready task is promoted into the hero and is copyable",
           'class="vd-run"' in html_out and "btn-copy" in html_out)
+    # copy: `.btn-copy` is shared by the run command above and the commit sha
+    # cell rendered elsewhere in the page, and only the run command's payload
+    # carried the class the fallback searched for. A selector scoped to one
+    # caller's class name is a fallback that silently does nothing for every
+    # other caller - the button stays on "Copy" with nothing selected and
+    # nothing said, which is exactly the failure the surrounding comment in
+    # the source warns against.
+    check("copy: the clipboard fallback selects ANY sibling payload beside the "
+          "button, not one class name - so a second caller with a different "
+          "payload wrapper still gets a working fallback",
+          "btn.parentNode.querySelector('code')" in M._SCRIPT
+          and "btn.parentNode.querySelector('.vd-run')" not in M._SCRIPT)
 
     # --- app shell -------------------------------------------------------------
     check("shell: navigation at the side, document actions on top",

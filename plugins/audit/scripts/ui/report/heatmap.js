@@ -269,13 +269,21 @@
   // --- run commands and the Markdown twin ------------------------------------
 
   /**
-   * Select the run command beside a copy button so the reader can copy it with
+   * Select the payload beside a copy button so the reader can copy it with
    * their own key.
+   *
+   * Reads ANY sibling `<code>`, not one carrying a particular class: `.btn-copy`
+   * is shared by more than one caller (the ready-task run command, the commit
+   * sha cell), and each renders its payload as a bare `<code>` beside the
+   * button. Narrowing the selector to one caller's class name silently
+   * disabled this fallback for every other caller — the button stayed on
+   * "Copy" with nothing selected and nothing said, which is exactly the
+   * silent failure the surrounding comment warns against.
    * @param {HTMLButtonElement} btn The copy button.
    * @returns {void}
    */
   function selectRun(btn) {
-    const code = btn.parentNode.querySelector('.vd-run');
+    const code = btn.parentNode.querySelector('code');
     if (!code) return;
     const r = document.createRange();
     r.selectNodeContents(code);
