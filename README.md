@@ -9,6 +9,21 @@ A [Claude Code](https://code.claude.com) plugin marketplace with one theme:
 secret guards. The guards are deterministic hooks; the pipeline they govern is an
 orchestrator prompt — [which is which, row by row](#what-is-enforced-and-what-is-followed).
 
+A coding agent already reads your code, drafts a plan and edits files across a
+session — this is what a plan file and a hook add on top of that:
+
+- **A plan a tool refuses to let you leave.** Once a phase is running, an edit
+  outside its tasks is denied before the write lands, not merely flagged after.
+- **An evidence record that survives the session.** Every gate run is written to
+  a ledger committed beside the plan, so "the tests passed" outlives the chat
+  that made the claim.
+- **A guard that fires on an operation, not a spelling.** A secret-file read or a
+  write no task covers is caught by what the tool call does, never by matching a
+  string inside it.
+
+It governs **one repository at a time, deliberately** —
+[COMPATIBILITY.md](COMPATIBILITY.md) names what that boundary leaves out.
+
 ### ▶ The gate, refusing
 
 The plan gate denying an edit no task covers, while a phase is running. Every line is

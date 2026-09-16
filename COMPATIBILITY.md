@@ -302,7 +302,12 @@ depending on an implementation:
   warns from 2.3.0 and refuses at 3.0.0,
 - `plugins/audit/reference/orchestrator.md` and the prose the model reads,
 - every path under `plugins/audit/scripts/` — the plugin's own modules move, and
-  `CHANGELOG.md` is where a move is recorded.
+  `CHANGELOG.md` is where a move is recorded,
+- **coordinating more than one repository.** A manifest governs the repository
+  that carries it. There is no cross-repo view, no shared lock and no combined
+  report across two projects, and none of that is planned — pointing a second
+  project's config at the same plugin gets a second, independent set of guards,
+  never a shared one.
 
 If you need one of these to be stable, say so in an issue; the answer is a promise
 added here, not an assumption held quietly.

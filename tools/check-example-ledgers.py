@@ -66,6 +66,28 @@ CLONE first and refuses when the answer is that it cannot look. `_commit_trail`
 owns both questions, so the doctor, the repair verb and this gate cannot reach
 three different answers.
 
+A THIRD SUBJECT WAS ADDED WHEN A SECOND WORKED EXAMPLE JOINED THE FIRST: does a
+committed phase's or task's gate entry name something the manifest itself says
+how to run. A worked example in a different ecosystem is exactly where this
+rots quietest -- a reader translating a gate entry into their own runner's
+vocabulary has no way to tell a real `meta.buildCommands` key from a plausible
+one somebody typo'd, and this repository has no runner for the ecosystem the
+example targets to catch it by executing anything. So the check reads the
+manifest ASSEMBLED (`_manifest_io.load_manifest`, which resolves a sharded
+index's shards the way every other reader here does) and asks only the one
+question a manifest can answer about itself: is the entry a declared key.
+
+SCOPED TO `examples/`, and that boundary is itself a finding this rule
+produced: run once over every manifest this repository tracks, it also
+convicted the plan this repository dogfoods on itself of gate entries
+`meta.buildCommands` does not carry. That plan is a real defect and not this
+tool's to repair -- it is also the wrong SUBJECT: this repository's own plan
+names gates from the fixed, standing suite `CLAUDE.md`'s Tests section lists
+once and shares across every phase, where a worked EXAMPLE's gate is the
+one-off, per-project commands `meta.buildCommands` exists for. Judging both
+vocabularies by one rule is grading two different contracts as though they
+were the same, so this half of the tool reads `examples/` alone.
+
 EXIT 0 only when a real set was compared. Nothing found, or a question that could
 not be asked, exits non-zero and says which -- a run that compared no ledgers is
 the exact shape of a green run that checked nothing.
@@ -85,6 +107,11 @@ import _output  # noqa: E402  (the anchor: install_path, safe_stdio)
 _output.install_path()
 
 import _commit_trail  # noqa: E402  (is this clone able to answer, and does it have the object?)
+import _manifest_io as _mio  # noqa: E402  (load_manifest: the one assembler that
+#                                            resolves an index's shards, so a gate
+#                                            entry can be checked against
+#                                            meta.buildCommands wherever the entry
+#                                            actually lives on disk)
 
 SCHEMA_REL = "plugins/audit/schema/audit-plan.schema.json"
 # Where the published vocabulary lives. Spelled as a PATH rather than searched for,
@@ -327,6 +354,68 @@ def commit_findings(rel, doc, git_root):
     return out
 
 
+# --- a gate entry has to resolve to something this tree can run --------------
+def _gate_holders(assembled):
+    """(label, entries) for every phase's `testGate` and every task's
+    `tests.gate` in one FULLY ASSEMBLED manifest.
+
+    ASSEMBLED, not read off one file the way `_holders()` reads `testEvidence`.
+    A gate entry can only be judged against `meta.buildCommands`, which lives
+    on the INDEX, and a sharded layout's index carries only phase STUBS
+    (`{id, title, shard}`, no `testGate`, no `tasks`) -- the real entries live
+    in the shard files beside it. `_manifest_io.load_manifest()` is what
+    already resolves that pointer, for every other reader in this plugin, so
+    this walks its return rather than re-deriving the join.
+    """
+    out = []
+    for phase in (assembled.get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        gate = phase.get("testGate")
+        if isinstance(gate, list):
+            out.append(("phase %s testGate" % (phase.get("id"),), gate))
+        for task in (phase.get("tasks") or []):
+            if not isinstance(task, dict):
+                continue
+            tests = task.get("tests")
+            tgate = tests.get("gate") if isinstance(tests, dict) else None
+            if isinstance(tgate, list):
+                out.append(("task %s tests.gate" % (task.get("id"),), tgate))
+    return out
+
+
+def gate_findings(rel, assembled):
+    """[(rel, label, why), ...] -- a gate entry naming a command nothing in
+    this manifest says how to run.
+
+    ONE FORM IS CHECKED, DELIBERATELY: a `testGate`/`tests.gate` entry that is
+    a KEY into `meta.buildCommands`. Every entry in every phase and task this
+    repository ships is already one. The OTHER forms `audit-task.py`'s own
+    `_task_gate` can derive for a live plan -- a path-scoped literal, a
+    project/package selector, a source-to-test substitution -- are exactly
+    the forms that function refuses to verify by pattern-matching a string
+    rather than by asking a registered boundary ("never against a directory
+    name that merely looks like one"), so a committed example is held to the
+    one form this check can actually confirm rather than to a guess about the
+    others: widening this to accept any string that merely LOOKS like a
+    runnable command is the over-fire this rule exists to refuse.
+    """
+    meta = assembled.get("meta") if isinstance(assembled, dict) else None
+    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
+    known = build if isinstance(build, dict) else {}
+    out = []
+    for label, entries in _gate_holders(assembled):
+        for entry in entries:
+            if not isinstance(entry, str) or not entry.strip():
+                continue
+            if entry not in known:
+                out.append((rel, label, (
+                    "names %r, which is not a key in meta.buildCommands - "
+                    "nothing in the manifest itself says what that command "
+                    "is or how to run it" % (entry,))))
+    return out
+
+
 def pointer_reach(doc, by_run):
     """(pointers, resolved) -- how many cached pointers exist, and how many
     name a run some committed ledger actually holds.
@@ -451,9 +540,62 @@ def findings(repo=None):
             "same answer as a tree with nothing wrong in it"
             % (pointers, checked_manifests))
 
+    # THE GATE HALF, ASSEMBLED RATHER THAN READ RAW, AND SCOPED TO WORKED
+    # EXAMPLES ONLY. It walks only the INDEX rels of `manifests` (a shard
+    # carries no `meta.buildCommands` to check an entry against), and asks
+    # `_manifest_io` to resolve each one's shards the same way every other
+    # reader in this plugin does - re-deriving that join here would be a
+    # second answer to "where do this index's phases actually live".
+    #
+    # `examples/` ONLY, and that boundary is a finding this rule produced
+    # against ITSELF: driven once over every manifest this repository tracks,
+    # it convicted this plugin's OWN dogfood plan of gate entries `meta.
+    # buildCommands` does not carry - `sweep` among them, a name that stopped
+    # being a key when the row beside it was renamed `selftests` and was
+    # never updated at every call site. That is a real, separate finding and
+    # not this task's to fix inline (CONTRIBUTING.md's own rule: a bug found
+    # along the way goes into the plan, not into an unrelated change) - but it
+    # is also the wrong SUBJECT for this check. This repository's own plan
+    # names gates from the fixed, standing suite `CLAUDE.md`'s Tests section
+    # lists (`selftests`, `lint`, `report`, ...), a vocabulary that exists
+    # once and is shared across every phase; a worked EXAMPLE's `testGate` is
+    # the thing `meta.buildCommands` was built for - a project's own, one-off
+    # commands, declared beside the plan that uses them. Judging both
+    # vocabularies by the same rule is validating two different contracts as
+    # if they were one, and the dogfood plan is not this task's example.
+    gate_manifests = 0
+    gate_entries = 0
+    for rel in manifests:
+        if not rel.endswith("-plan.json") or not rel.startswith("examples/"):
+            continue
+        path = os.path.join(root, rel.replace("/", os.sep))
+        try:
+            assembled = _mio.load_manifest(path)
+        except Exception as exc:
+            out.append((rel, 0, "could not be assembled, so its gate entries "
+                                "were not checked against meta.buildCommands: "
+                                "%s" % (exc,)))
+            continue
+        if not isinstance(assembled, dict):
+            continue
+        gate_manifests += 1
+        for _label, entries in _gate_holders(assembled):
+            gate_entries += sum(1 for e in entries
+                                if isinstance(e, str) and e.strip())
+        for rel_, label, why in gate_findings(rel, assembled):
+            out.append((rel_, label, why))
+
+    if gate_manifests and not gate_entries:
+        return [], {}, (
+            "%d index manifest(s) were assembled and not one gate entry was "
+            "found in any of them, so the gate-entry half of this run "
+            "compared nothing - which is not the same answer as a tree whose "
+            "gate entries all resolve" % (gate_manifests,))
+
     counts = {"ledgers": len(ledgers), "rows": seen_rows,
               "manifests": checked_manifests, "vocabulary": len(known),
-              "pointers": pointers, "resolved": resolved, "commits": commits}
+              "pointers": pointers, "resolved": resolved, "commits": commits,
+              "gateManifests": gate_manifests, "gateEntries": gate_entries}
     return out, counts, None
 
 
@@ -461,11 +603,13 @@ def ok_line(counts):
     """The clean verdict, carrying what it looked at rather than just 'OK'."""
     return ("OK: %d row(s) across %d committed ledger(s) record a verdict the "
             "schema publishes, none contradicts its own observations, %d of "
-            "%d cached pointer(s) across %d manifest(s) resolved and agree, and "
-            "%d commit reference(s) all resolve in this checkout "
-            "(vocabulary: %d word(s))"
+            "%d cached pointer(s) across %d manifest(s) resolved and agree, "
+            "%d commit reference(s) all resolve in this checkout, and "
+            "%d gate entry/entries across %d assembled manifest(s) all name a "
+            "meta.buildCommands key (vocabulary: %d word(s))"
             % (counts["rows"], counts["ledgers"], counts["resolved"],
                counts["pointers"], counts["manifests"], counts["commits"],
+               counts["gateEntries"], counts["gateManifests"],
                counts["vocabulary"]))
 
 
@@ -682,6 +826,74 @@ def _cases(check):
           "which is what makes a run where no runId resolves distinguishable from "
           "one where every cache agreed: %r vs %r" % (_all_hit, _none_hit),
           _all_hit == (2, 2) and _none_hit == (2, 0))
+
+    # el18. A gate entry that IS a declared key: no finding.
+    _gate_doc = {
+        "meta": {"buildCommands": {"gotest": "go test ./..."}},
+        "phases": [{"id": "P5", "testGate": ["gotest"], "tasks": [
+            {"id": "P5.1", "tests": {"gate": ["gotest"]}}]}]}
+    check("el18 a testGate/tests.gate entry that IS a key in meta.buildCommands "
+          "is not a finding: %r" % (gate_findings("x/audit-plan.json", _gate_doc),),
+          gate_findings("x/audit-plan.json", _gate_doc) == [])
+
+    # el19. ...and one that is NOT a declared key is, naming the entry and the
+    # holder rather than only the file.
+    _bad_gate_doc = {
+        "meta": {"buildCommands": {"gotest": "go test ./..."}},
+        "phases": [{"id": "P5", "testGate": ["golnt"], "tasks": []}]}
+    _gf = gate_findings("x/audit-plan.json", _bad_gate_doc)
+    check("el19 a gate entry naming no declared key is a finding that names "
+          "BOTH the entry and which holder carries it, so a typo'd key is not "
+          "a silent pass: %r" % (_gf,),
+          len(_gf) == 1 and "golnt" in _gf[0][2] and _gf[0][1] == "phase P5 testGate")
+
+    # el20. OVER-FIRE CASE, and the reason the rule checks only ONE form. A
+    # package/project selector (`go test ./<pkg>/...`) or any other literal
+    # this repository's own `_task_gate` can derive is NOT a declared key
+    # either, and widening this check to also accept "looks like a runnable
+    # command" would have to guess at exactly the shape it cannot verify -
+    # so a manifest carrying one is judged the SAME way a typo would be,
+    # which is the honest answer and not a narrowing that quietly lets a
+    # wrong key through.
+    _literal_doc = {
+        "meta": {"buildCommands": {}},
+        "phases": [{"id": "P5", "testGate": [], "tasks": [
+            {"id": "P5.1", "tests": {"gate": ["go test ./workers/..."]}}]}]}
+    _lf = gate_findings("x/audit-plan.json", _literal_doc)
+    check("el20 OVER-FIRE CASE: a literal command this repository's own gate "
+          "derivation would consider legitimate is judged the same way an "
+          "undeclared key is - this check verifies ONE form and refuses to "
+          "guess at the others rather than silently trusting a string that "
+          "merely looks runnable: %r" % (_lf,),
+          len(_lf) == 1 and "go test" in _lf[0][2])
+
+    # el21. `_gate_holders` walks BOTH the phase level and every task, and an
+    # entry that is not a string (or is blank) is skipped rather than judged -
+    # that is a different rule's business (the schema's own type check).
+    _multi = {"meta": {"buildCommands": {"a": "x", "b": "y"}},
+              "phases": [{"id": "P1", "testGate": ["a", ""], "tasks": [
+                  {"id": "P1.1", "tests": {"gate": ["a", "b"]}},
+                  {"id": "P1.2", "tests": {"gate": None}},
+                  {"id": "P1.3"}]}]}
+    _holders = _gate_holders(_multi)
+    check("el21 every phase's testGate and every task's tests.gate is walked, "
+          "a task with no tests object or a non-list gate contributes "
+          "nothing, and a blank/non-string entry is skipped rather than "
+          "judged: %r" % (_holders,),
+          [label for label, _e in _holders]
+          == ["phase P1 testGate", "task P1.1 tests.gate"]
+          and gate_findings("x/audit-plan.json", _multi) == [])
+
+    # el22. THE LIVE CLAIM's other half: the real example's gate entries were
+    # actually compared, not vacuously - a run over a manifest with no gate at
+    # all would return the same empty findings list.
+    check("el22 ...and over the real tree, more than one index manifest was "
+          "assembled and more than one gate entry was actually checked - "
+          "a count, because a count of findings alone cannot tell 'nothing "
+          "disagreed' from 'nothing was compared': %r"
+          % ({k: _counts.get(k) for k in ("gateManifests", "gateEntries")},),
+          _counts.get("gateManifests", 0) >= 1
+          and _counts.get("gateEntries", 0) >= 10)
 
 
 def _selftest():

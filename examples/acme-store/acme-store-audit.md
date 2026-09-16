@@ -1,10 +1,10 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-09-15 19:36 UTC
+repo: acme-store · generated 2026-09-16 00:39 UTC
 
-> Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.
+> Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved. Phase 5 (sync worker resilience) is queued behind the storefront work, in a different part of the stack — a background Go service rather than the storefront's TypeScript — and its gate is a runner named for what it is: go test rather than npm test.
 
-**Overall:** 6/13 tasks done · 2/6 phases signed off · 3 open bug(s) · 2 ready now
+**Overall:** 6/14 tasks done · 2/7 phases signed off · 3 open bug(s) · 3 ready now
 
 ## P0 — Framework upgrade (done, 2/2)
 _The storefront runs on the supported framework line, so the security fixes the audit depends on are actually available._
@@ -55,6 +55,13 @@ _The invariants Phase 1 and Phase 2 established are written down where the next 
 |---|---|---|---|---|---|---|---|---|
 | P4.1 | Write down the auth and checkout invariants | pending | haiku | low | — | — | no-gate | — |
 
+## P5 — Sync worker resilience (pending, 0/1)
+_A failed inventory sync retries with capped exponential backoff instead of hammering the supplier feed immediately and forever._
+
+| id | title | status | model | risk | commit | done | tests | ADO |
+|---|---|---|---|---|---|---|---|---|
+| P5.1 | Cap the retry backoff | pending | sonnet | med | — | — | no-evidence | — |
+
 ## Bugs
 
 | id | title | status | severity | task | fixedIn |
@@ -67,12 +74,12 @@ _The invariants Phase 1 and Phase 2 established are written down where the next 
 
 ## Ready now
 
-P2.4, P4.1
+P2.4, P4.1, P5.1
 
 
 ## Usage
 
-**Total:** 90.1M tokens · ~$102.45 equiv · 1,304 msgs · 5 session(s) · cache hit 93% · rates as of 2026-08-06
+**Total:** 90.3M tokens · ~$102.60 equiv · 1,282 msgs · 5 session(s) · cache hit 93% · rates as of 2026-08-06
 
 ### By phase
 
@@ -82,24 +89,24 @@ P2.4, P4.1
 | P1 | 31.6M | $29.13 | 266 |
 | BF1 | 15.5M | $20.18 | 127 |
 | P2 | 6.4M | $27.40 | 343 |
-| Uncategorized | 3.8M | $5.94 | 216 |
+| Uncategorized | 4.0M | $6.09 | 194 |
 
 ### By model
 
 | model | tokens | cost | msgs |
 |---|---:|---:|---:|
-| claude-sonnet-5 | 54.8M | $53.24 | 694 |
-| claude-opus-5 | 25.8M | $43.96 | 376 |
-| claude-haiku-4-5 | 8.8M | $2.48 | 198 |
-| claude-fable-5 | 610.5K | $2.77 | 36 |
+| claude-sonnet-5 | 54.9M | $53.18 | 694 |
+| claude-opus-5 | 25.8M | $43.96 | 374 |
+| claude-haiku-4-5 | 8.9M | $2.47 | 182 |
+| claude-fable-5 | 765.3K | $2.99 | 32 |
 
 ### By author
 
 | author | tokens | cost | msgs |
 |---|---:|---:|---:|
-| sara@acme.example | 31.3M | $32.29 | 416 |
-| milos@acme.example | 30.7M | $37.40 | 379 |
-| alex@acme.example | 28.0M | $32.76 | 509 |
+| sara@acme.example | 31.2M | $32.20 | 414 |
+| milos@acme.example | 30.9M | $37.63 | 368 |
+| alex@acme.example | 28.2M | $32.77 | 500 |
 
 ### Month by month
 
@@ -107,8 +114,8 @@ Plan columns count the whole project by event month (task completedAt, bug repor
 
 | month | tokens | cost | msgs | tasks done | bugs | fixed | merged |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 2026-05 | 33.2M | $20.35 | 388 | 2 | 0 | 0 | 1 |
-| 2026-06 | 36.8M | $44.61 | 613 | 3 | 3 | 0 | 1 |
+| 2026-05 | 33.1M | $20.26 | 374 | 2 | 0 | 0 | 1 |
+| 2026-06 | 37.1M | $44.84 | 605 | 3 | 3 | 0 | 1 |
 | 2026-07 | 20.0M | $37.49 | 303 | 1 | 2 | 1 | 0 |
 
 ### Economics
@@ -117,7 +124,7 @@ Plan columns count the whole project by event month (task completedAt, bug repor
 - **Lowest cache phase:** P2 at 62%.
 - **Attribution:** 96% of spend attributed (87% to a specific task).
 - **Cost per completed task:** $11.41 across 6 task(s).
-- **Projection:** remaining 7 task(s) at the p25-p75 rate = $66.23 to $110.21.
+- **Projection:** remaining 8 task(s) at the p25-p75 rate = $75.69 to $125.95.
 - **Retried tasks:** $5.36 across 1 task(s) (5% of spend). Not the same as wasted spend — the ledger buckets by hour, not by attempt.
 - **Blocked tasks:** $5.36 across 1 task(s) — spend with no outcome.
 

@@ -1,0 +1,59 @@
+{
+  "id": "P5",
+  "title": "Sync worker resilience",
+  "area": "worker",
+  "status": "pending",
+  "model": "sonnet",
+  "blockedBy": [],
+  "desiredOutcome": "A failed inventory sync retries with capped exponential backoff instead of hammering the supplier feed immediately and forever.",
+  "testGate": [
+    "workertest"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P5.1",
+      "title": "Cap the retry backoff",
+      "status": "pending",
+      "model": "sonnet",
+      "skills": [],
+      "blockedBy": [],
+      "dependsOn": [],
+      "files": [
+        "workers/datasync/retry.go"
+      ],
+      "docs": [],
+      "description": "The sync worker retries a failed push to the supplier feed immediately and without limit. Add exponential backoff with a capped attempt count.",
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "workers/datasync/retry_test.go: retries a failed sync with exponential backoff and stops after the attempt cap"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "workertest"
+        ]
+      },
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "commit": null,
+      "attempts": 0,
+      "maxAttempts": 3,
+      "startedAt": null,
+      "completedAt": null,
+      "risk": "med",
+      "verifiedBy": []
+    }
+  ]
+}

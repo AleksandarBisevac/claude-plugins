@@ -15,6 +15,16 @@ project-specific is supplied by a small per-repo config file.
 > [COMPATIBILITY.md](../../COMPATIBILITY.md) is what an upgrade promises about the
 > files you own.
 
+What a coding agent cannot already do, in one sentence each: hold a plan open that
+a tool refuses to let you step outside of; keep an evidence record that survives
+the chat that made it; and fire a guard on what a tool call *does* rather than on
+how the command was spelled. Every one of those needs the manifest below, which is
+why the parts that need one are exactly what a guards-only package would have
+shipped without.
+
+It governs **one repository per manifest, deliberately** —
+[COMPATIBILITY.md](../../COMPATIBILITY.md) names what that leaves out.
+
 ## TL;DR
 
 ```
@@ -439,7 +449,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 
 | Command | Arguments | What it does |
 |---|---|---|
-| `/audit:init` | `[scope/goals — you'll be interviewed for the rest]` | Multi-agent codebase audit that **generates** the manifest: interviews you for scope/dimensions/size, fans out parallel read-only explorers, synthesizes findings, then **presents the proposed phases for approval before writing** — approve to materialize, park everything as proposals, or choose per phase. The entry point every other command consumes. |
+| `/audit:init` | `[scope/goals — you'll be interviewed for the rest]` | Multi-agent codebase audit that **generates** the manifest: interviews you for scope/dimensions/size, fans out parallel read-only explorers, synthesizes findings, then **presents the proposed phases for approval before writing** — approve to materialize, park everything as proposals, or choose per phase. The entry point every other command consumes. Offers a cheaper first step before any of that spends a token: `scripts/manifest/audit-task.py seed` writes the smallest manifest that validates — one phase, one task, a gate the caller names with `--gate` or an honestly empty one, never a guessed one — where nothing exists yet, and refuses rather than overwriting where something already does. It turns the plan gate from **observing** (no manifest to check against) to **advisory** in the one call, with no interview and no invented findings; the phases below are for when there is real work to describe. |
 | `/audit:propose` | `list \| materialize <PROP-id>\|--all \| drop <PROP-id>` | Parked-phase lifecycle: `list` what `/audit:init` parked, `materialize` a proposal into a live phase (lossless — the full phase travels in the proposal's payload), `drop` one with a recorded reason. |
 | `/audit:status` | `[--gate] [--fail-on <c1,c2,...>] [--phase <id>] [--view active\|archived\|all] [--json] [--section <key>] [--color auto\|always\|never]` | Read-only rollup — phases, tasks, bugs, and the ready-now list, with per-phase progress and resumable-phase flags. **The table lists the work in hand by default**: `in_progress`, `blocked` and `pending` phases are shown and the finished ones fold into one line saying how many phases and task rows it left out and how to see them (`--view all` is the whole plan, byte for byte as before). A plan whose phases are all finished opens on everything instead, since an empty table answers nothing — the same three views and the same default the HTML report's toggle and the panel's Overview select already use. It matters because the render is printed verbatim, so its length is paid on every call and an archive only grows. **`--phase <id>` and `--view <segment>` scope the human render only** — the totals above the table stay whole-plan, and neither `--gate` nor `--json` is scoped by either, so `--phase P3 --gate` still gates on the whole manifest and `--view active --gate` still trips on a task in a finished phase; `--phase` wins when both are given. **`--section <key>`** (with `--json`) prints one top-level key of that same payload instead of all of it — a projection, never a reshape, so the bare `--json` output is untouched and no key stops being emitted; the orchestrator's budget check reads `--json --section usage` rather than carrying the whole rollup to reach one array. A key the payload does not have is a usage error naming the ones it has, because `null` cannot tell "metering is off" apart from "nothing was recorded". No locks, no mutations. |
 | `/audit:next` | `[--dry-run]` | Execute the next ready task (by phase order, then task id), then report what's ready next. `--dry-run` previews the choice without mutating. |
@@ -674,7 +684,11 @@ curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v2
 > The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
 > real lint/test/typecheck commands. Inside a Claude Code session the installed plugin's
 > files are also reachable at `${CLAUDE_PLUGIN_ROOT}` (that's how the commands invoke the
-> validator); `claude plugin list` shows what's installed.
+> validator); `claude plugin list` shows what's installed. Not a Node project? The
+> [worked example](../../examples/) carries a second phase in a different ecosystem
+> (`workertest: "go test ./..."` beside the storefront's `test: "npm test"`) so the shape
+> of a `meta.buildCommands` entry and a `tests.gate` reference is not tied to npm's
+> spelling of either.
 
 Run it:
 

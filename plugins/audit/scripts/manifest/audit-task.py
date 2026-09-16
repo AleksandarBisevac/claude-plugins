@@ -40,6 +40,9 @@ Usage:
                 [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT|-]
                 [--rename TITLE|-]
                 [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
+  audit-task.py seed ["<phase title>"] [manifest]
+                [--gate CMD ... | --gate-clear]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -77,6 +80,16 @@ Usage:
   here whose flag is REQUIRED for the record rather than for the field:
   `--commit` is the SHA the work landed in, without which the close is the
   state `/audit:doctor` already reports (`done`, no commit).
+  `seed` is the one verb here that WRITES WHERE NOTHING WAS: every other verb
+  refuses when the manifest is missing, and this one refuses the opposite way,
+  when one is already there -- pointing the caller at `add`/`add-phase` or
+  /audit:init instead of overwriting it. What it writes is deliberately the
+  smallest thing that validates: one phase, one task, and a `testGate` derived
+  from `meta.buildCommands` the same way `add-phase` derives one -- which is
+  empty, honestly, because nothing here guesses a test or lint command from a
+  tree it has never run. `--gate`/`--gate-clear` still work, for a caller who
+  already knows the real command and would rather not run `/audit:task
+  retarget` a second time.
 
 Exit codes:
   0  written, manifest valid
@@ -189,6 +202,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -3270,31 +3284,46 @@ def _locked_phase_add(args, project, config, mpath, title, out):
 
 
 # --- the doors ------------------------------------------------------------------
-def _under_lock(args, project, out, body):
+def _under_lock(args, project, out, body, must_exist=True):
     """Config, manifest path, the index lock, `body`, release.
 
-    ONE copy for three verbs. The lock comes BEFORE the read: ids are allocated
+    ONE copy for every verb. The lock comes BEFORE the read: ids are allocated
     under it, so the read-modify-write is serialized (manifest-conventions ->
     ID allocation). What each verb checks before this point differs and stays in
     its own door; what happens after it does not differ at all, and three copies
     of that would be three answers to "where is the manifest".
 
     IT IS ALSO WHERE EVERY VERB SAYS WHICH TREE IT IS WRITING, for that same
-    reason and one more: the seven doors reach this function and nothing else
+    reason and one more: every door reaches this function and nothing else
     they all reach comes after the project is known, so a verb cannot be added
     that quietly skips the line. It is emitted BEFORE the manifest check, so a
     refusal a reader is about to argue with already names the root it was
     arguing about. Under `--json` it is not printed at all -- the payload must
-    stay one parseable object -- and travels as `projectBasis` instead."""
+    stay one parseable object -- and travels as `projectBasis` instead.
+
+    `must_exist` IS THE ONE THING `seed` NEEDS THE OTHER WAY ROUND. Every other
+    verb reads or mutates a plan that must already be there; `seed` writes the
+    first one, so ITS refusal fires on the opposite condition -- a manifest
+    already at the path is the state it declines to overwrite. One door with a
+    flag is what keeps the lock, the config read and the release in one place
+    for both directions rather than `seed` growing a near-duplicate of this
+    function for the one line that differs.
+    """
     args.project_basis = _panel_write.standing_elsewhere(resolve_basis(args))
     if args.project_basis["note"] and not args.as_json:
         out(args.project_basis["note"])
     config = _panel_write.read_config(project)
     mpath = (os.path.abspath(args.manifest) if args.manifest
              else _panel_write._manifest_path(project, config))
-    if not os.path.isfile(mpath):
+    exists = os.path.isfile(mpath)
+    if must_exist and not exists:
         out("[audit-task] manifest not found: %s -- run /audit:init first"
             % mpath)
+        return E_USAGE
+    if not must_exist and exists:
+        out("[audit-task] a manifest already exists at %s -- seed only writes "
+            "the very first one. Use add/add-phase to extend it, or "
+            "/audit:init for a full audit." % mpath)
         return E_USAGE
     lock = _acquire_lock(project, config, mpath, args.takeover, out)
     if isinstance(lock, int):
@@ -4170,6 +4199,221 @@ def cmd_add(args, out):
                            args, project, config, mpath, title, out))
 
 
+# --- seed: the smallest honest plan, written where none exists yet -------------
+# P50.1. `/audit:init` is multi-agent and interviews a human before it writes
+# anything, which is the right shape for a real audit and the wrong one for a
+# repository that only wants the guards a manifest turns on. This verb is the
+# second, cheap door: no interview, no exploration, no invented findings -- one
+# phase, one task, a gate that is either the caller's own `--gate` or honestly
+# empty. A plan that LOOKS complete and describes work nobody agreed to is worse
+# than three lines, because the first thing it teaches a reader is that the
+# manifest is decoration.
+DEFAULT_SEED_PHASE_TITLE = "Bootstrap"
+DEFAULT_SEED_TASK_TITLE = "Point this plan at real work"
+DEFAULT_SEED_OUTCOME = ("A valid plan exists, and the guards that need one are "
+                        "live; nothing in it was invented.")
+DEFAULT_SEED_DESCRIPTION = (
+    "No test, lint or build command could be honestly detected here, so "
+    "meta.buildCommands stays empty rather than guessed. Set it once you know "
+    "what this repository actually runs -- by hand, or from /audit:panel -- "
+    "then use /audit:task add for the first real task. This one exists only "
+    "to make the plan true instead of empty.")
+
+
+def _git_remote_name(project):
+    """The repo name off `git remote get-url origin`, or None.
+
+    Best-effort and silent on failure by design: a project with no remote, or
+    no git at all, still gets a plan. `meta.repo` is descriptive text nothing
+    validates against, so a wrong guess here costs nothing a human cannot fix
+    by hand later -- which is not true of a guessed gate command, and is why
+    only THIS field is guessed at all.
+    """
+    try:
+        raw = subprocess.check_output(
+            ["git", "-C", project, "remote", "get-url", "origin"],
+            stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    url = raw.decode("utf-8", "replace").strip()
+    name = url.rsplit("/", 1)[-1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name or None
+
+
+def _seed_meta(project):
+    """The smallest honest `meta` for a plan nobody has written yet.
+
+    NOTHING HERE IS DETECTED. `/audit:init`'s recon reads a tree's
+    package.json/Makefile/pyproject.toml and drafts `meta.buildCommands` from
+    what LOOKS runnable -- a judgement call this file leaves to the human
+    being interviewed, because a wrong guess here is a gate that refuses a
+    phase for a command that was never real. So a seeded plan's
+    `buildCommands` is empty rather than guessed, and `_phase_gate` says so
+    in the sentence it returns rather than in a comment nobody reads at
+    run time.
+    """
+    repo = _git_remote_name(project) or os.path.basename(
+        os.path.abspath(project).rstrip(os.sep)) or "repo"
+    return {
+        "version": _mio.LAYOUT_VERSION["single-file"],
+        "repo": repo,
+        "developmentBranch": "main",
+        "branchPrefix": "audit",
+        "gitRoot": ".",
+        "buildCommands": {},
+        "createdISO": _utc_now(),
+    }
+
+
+def _seed_phase(pid, title, gate):
+    """The new phase's dict, template fields only (conventions -> New phase
+    template).
+
+    NOT `_build_phase`. That function reads `args.description`, `.outcome`,
+    `.blocked_by`, `.area` and `.review_skill` off the caller's namespace, none
+    of which `seed` exposes as a flag -- there is nothing yet to describe,
+    block on or tag. Calling it anyway would put every one of those reads in
+    `seed`'s own derived flag set the way the suite's `vf6` computes it, which
+    would make a verb that accepts none of those flags LOOK like it reads all
+    of them. The one piece of real judgement -- deriving an honest gate -- is
+    still shared, through `_phase_gate`; this is the fixed shape the
+    conventions document, applied to fixed values.
+    """
+    return {
+        "id": pid,
+        "title": title,
+        "status": "pending",
+        "description": "",
+        "desiredOutcome": DEFAULT_SEED_OUTCOME,
+        "testGate": gate,
+        "blockedBy": [],
+        "baseRef": None,
+        "branch": None,
+        "mergedAt": None,
+        "review": {"tool": None, "model": "sonnet", "status": "pending",
+                   "findings": []},
+        "summary": None,
+        "tasks": [],
+    }
+
+
+def _seed_task(task_id, title, gate, gate_basis):
+    """The new task's dict, template fields only (conventions -> New task
+    template). See `_seed_phase` for why this does not call `_build_task`."""
+    return {
+        "id": task_id,
+        "title": title,
+        "status": "pending",
+        "description": DEFAULT_SEED_DESCRIPTION,
+        "files": [],
+        "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                  "gate": gate, "gateBasis": gate_basis},
+        "model": _model_floor("low"),
+        "skills": [],
+        "risk": "low",
+        "blockedBy": [],
+        "dependsOn": [],
+        "attempts": 0,
+        "maxAttempts": 3,
+        "commit": None,
+        "outcome": {"technical": None, "descriptive": None},
+        "startedAt": None,
+        "completedAt": None,
+        "verifiedBy": [],
+    }
+
+
+def _locked_seed(args, project, config, mpath, out):
+    """Write the smallest valid, honest manifest to a path nothing occupies
+    yet: one phase, one task, and a gate the caller declared with `--gate` or
+    an honestly empty one -- never a guessed one. Written straight to disk
+    (there is no earlier version to read, allocate against or roll back to),
+    then re-read and validated exactly like every other write in this file; a
+    manifest this would leave invalid is REMOVED rather than kept, because
+    keeping an invalid file nobody asked for is worse than writing nothing."""
+    contradiction = _gate_contradiction(args)
+    if contradiction:
+        out(contradiction)
+        return E_USAGE
+    meta = _seed_meta(project)
+    assembled = {"meta": meta, "phases": [], "fileIndex": {}, "bugs": []}
+    gate, gate_basis = _phase_gate(args, assembled)
+    pid = "P1"
+    phase_title = (args.title or "").strip() or DEFAULT_SEED_PHASE_TITLE
+    phase = _seed_phase(pid, phase_title, gate)
+    assembled["phases"].append(phase)
+
+    task_id = pid + ".1"
+    task_gate, _task_gate_sentence, task_gate_word = _task_gate(
+        args, phase, assembled, [], [])
+    task = _seed_task(task_id, DEFAULT_SEED_TASK_TITLE, task_gate,
+                      task_gate_word)
+    phase["tasks"].append(task)
+
+    try:
+        written = _mio.save_single_file(mpath, assembled)
+    except Exception as exc:
+        out("[audit-task] write failed: %s" % exc)
+        return E_INVALID
+
+    vm = _panel_write._cores()[0]
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s"
+                              % exc], []
+    if findings:
+        try:
+            os.remove(mpath)
+        except OSError:
+            pass
+        out("[audit-task] REFUSED: the smallest plan this would write is "
+            "not valid, so nothing was kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jres = _journal_row(project, config, mpath, "plan.seed",
+                        "seeded the smallest honest plan: %s (%s)"
+                        % (pid, task_id),
+                        {"phaseId": pid, "taskId": task_id})
+    if args.as_json:
+        result = {"ok": True, "phaseId": pid, "taskId": task_id,
+                  "phase": phase, "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
+                  "testGateBasis": gate_basis, "taskGateBasis": task_gate_word}
+        result.update(jres)
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] seeded the smallest honest plan at %s" % mpath)
+    out("  phase %s: %s" % (pid, phase_title))
+    out("  task %s: %s" % (task_id, DEFAULT_SEED_TASK_TITLE))
+    out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the plan.seed row")
+    out("  written: %s" % ", ".join(written))
+    out("  next: /audit:status, then set meta.buildCommands once you know "
+        "what this repository runs, or /audit:task add the first real work")
+    return 0
+
+
+def cmd_seed(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_seed(
+                           args, project, config, mpath, out),
+                       must_exist=False)
+
+
 # --- which verb reads which flag (F295) ------------------------------------------
 # ONE PARSER SERVES EVERY VERB, so argparse accepts every flag on every one of them
 # and each verb's writer reads only the subset it knows. Driven across the whole
@@ -4236,6 +4480,10 @@ VERB_FLAGS = {
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "area", "outcome", "description",
                  "rename"),
+    # `seed` writes where nothing exists yet, so it has no target to describe,
+    # tag or rename -- only the one pair every gate-bearing verb offers, for a
+    # caller who already knows the real command.
+    "seed": ("gate", "gate_clear"),
 }
 
 
@@ -4254,7 +4502,7 @@ def build_parser():
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
-                            "retarget", "start", "done"])
+                            "retarget", "start", "done", "seed"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -4485,7 +4733,7 @@ def main(argv, out=print):
     doors = {"add": cmd_add, "add-phase": cmd_phase_add,
              "cancel": cmd_cancel, "scope": cmd_scope,
              "retarget": cmd_retarget, "start": cmd_start,
-             "done": cmd_done}
+             "done": cmd_done, "seed": cmd_seed}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

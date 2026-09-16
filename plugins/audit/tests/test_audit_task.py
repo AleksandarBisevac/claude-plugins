@@ -61,7 +61,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
 # reads),
 # pd (P43.2, the `done` verb: the close, and the SHA that makes it a record),
-# tw (P46.2: the tree the caller stands in against the tree the verb writes).
+# tw (P46.2: the tree the caller stands in against the tree the verb writes),
+# sd (seed: the smallest honest plan, written where none was).
 def _cases(check):
     import contextlib
     import io
@@ -128,6 +129,19 @@ def _cases(check):
                            stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
         return proj, mpath
+
+    def mk_empty(name):
+        """`(proj, mpath)` for a project `seed` can write INTO -- `mk()` minus
+        the manifest write. Every other verb in this file needs one already
+        there; `seed` is the one verb that refuses when it finds one, so its
+        own second-direction case needs a project none of `mk()`'s callers
+        would otherwise leave behind."""
+        proj = os.path.join(tmp, name)
+        os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        return proj, os.path.join(proj, "docs", "audit", "audit-plan.json")
 
     def task_in(mpath, tid):
         try:
@@ -3491,7 +3505,13 @@ def _cases(check):
                    # ...and `done` on the running task the fixture carries, with
                    # the one flag it requires: a base call that could not close
                    # anything would refuse every row for its own reason.
-                   "done": ["done", "P2.9", "--commit", _VF_SHA]}
+                   "done": ["done", "P2.9", "--commit", _VF_SHA],
+                   # `seed` refuses whenever a manifest is already there, which
+                   # `vf_proj` is -- but that refusal is `cmd_seed`'s own, and it
+                   # fires AFTER the misplaced-flag check this grid drives, so
+                   # running it against the shared fixture still proves the
+                   # thing vf3 asks about (a title placeholder is all it needs).
+                   "seed": ["seed", "T"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -3516,6 +3536,13 @@ def _cases(check):
         # SECOND-DIRECTION CASES. A refusal that fires on a flag the verb DOES
         # read is a refusal somebody routes around inside a day, and the
         # universal flags are the ones every verb has to keep taking.
+        #
+        # `seed` needs its OWN project for this half, and not `vf_proj`: every
+        # other verb's row below relies on a manifest already being there, and
+        # `seed` refuses for exactly that reason. Its actual work -- writing
+        # where nothing exists yet -- can only be shown on a project none of
+        # the other rows has touched.
+        _vf_seed_proj, _vf_seed_mp = mk_empty("vf-seed")
         _vf_ok = {}
         for _vfargv, _vfwhat in (
                 (["add", "Files ok", "--phase", "P2", "--files", "src/a.ts"],
@@ -3541,6 +3568,11 @@ def _cases(check):
                 (["cancel", "P3", "--reason", "dropped", "--json"],
                  "cancel/--json")):
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
+        # `seed` alone, against its own empty project rather than `vf_proj`
+        # every row above shares -- see `_vf_seed_proj`'s comment.
+        _vf_ok["seed/--gate"] = run(
+            ["seed", "Bootstrap ok", "--gate", "true",
+             "--project-dir", _vf_seed_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -4978,6 +5010,22 @@ def _cases(check):
                           name + "-branch", tree])
             return proj, mp, tree
 
+        def mk_pair_empty(name):
+            """`mk_pair()` minus the manifest -- a git repo with a first
+            commit and a linked worktree, but nothing at manifestPath yet.
+            `seed`'s own row in the tw-group needs this: every other verb's
+            row relies on a manifest already being at the project, and `seed`
+            refuses for exactly that reason."""
+            proj, mp = mk_empty(name)
+            subprocess.run(["git", "init", "-q", proj], check=True,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _git_q(proj, ["add", "-A"])
+            _git_q(proj, ["commit", "-qm", "fixture"])
+            tree = os.path.join(tmp, name + "-wt")
+            _git_q(proj, ["worktree", "add", "-q", "-b",
+                          name + "-branch", tree])
+            return proj, mp, tree
+
         # The clauses, read off the table rather than retyped here: a case that
         # spelled the sentence a second time would go green on a note that had
         # stopped matching the rule the resolver follows, which is the whole
@@ -5039,6 +5087,11 @@ def _cases(check):
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL)
         _tw_sha = _tw_head.stdout.decode("utf-8", "replace").strip()
+        # `seed` gets its OWN pair: every row below relies on a manifest
+        # already being at `tw_all`, and `seed` refuses for exactly that
+        # reason -- its row has to stand in a tree that diverges from a
+        # PROJECT that is still empty.
+        tw_seed_proj, _tw_seed_mp, tw_seed_tree = mk_pair_empty("tw-seed")
         _tw_argv = (
             ("add", ["add", "Fresh", "--phase", "P2"]),
             ("add-phase", ["add-phase", "Later", "--outcome", "it ships"]),
@@ -5047,16 +5100,19 @@ def _cases(check):
             ("done", ["done", "P2.3", "--commit", _tw_sha]),
             ("retarget", ["retarget", "P3", "--outcome", "changed its mind"]),
             ("cancel", ["cancel", "P3", "--reason", "dropped"]),
+            ("seed", ["seed", "Fresh plan"]),
         )
+        _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj)}
         _tw_silent = []
         for _label, _argv in _tw_argv:
+            _tw_tree, _tw_proj = _tw_pairs.get(_label, (tw_all_tree, tw_all))
             try:
-                _pin(tw_all_tree, tw_all)
+                _pin(_tw_tree, _tw_proj)
                 _codev, _txtv = run(_argv)
             finally:
                 _unpin()
             if _codev != 0 or "standing in" not in _txtv \
-                    or os.path.realpath(tw_all_tree) not in _txtv:
+                    or os.path.realpath(_tw_tree) not in _txtv:
                 _tw_silent.append((_label, _codev, _txtv[:140]))
         check("tw5 every manifest-writing verb says which tree it wrote, and "
               "the verbs are the PARSER's list rather than one typed here: %r"
@@ -5147,6 +5203,64 @@ def _cases(check):
               and all(r["why"] == _tw_why[r["basis"]] for r in _tw_rows)
               and sorted(r["basis"] for r in _tw_rows)
               == sorted(k for k, _w in _panel_write.PROJECT_BASES))
+
+        # ---- (sd) seed: the smallest honest plan, written where none was ----
+        sd_proj, sd_mp = mk_empty("sd-fresh")
+        code, txt = run(["seed", "--project-dir", sd_proj])
+        sd_written = _mio.load_manifest(sd_mp) if os.path.isfile(sd_mp) else None
+        check("sd1 seed writes a manifest that validates, where none existed "
+              "a moment before: %r" % (code,),
+              code == 0 and sd_written is not None
+              and _rules.validate(sd_written)[0] == [])
+        check("sd2 OVER-FIRE CASE: the plan carries exactly ONE phase and that "
+              "phase exactly ONE task -- a generator that invented a second "
+              "phase or a second task nobody asked for would still validate, "
+              "so only a COUNT and not a validity check can catch it: %r"
+              % ([len(sd_written.get("phases") or []) if sd_written else None,
+                  len(sd_written["phases"][0].get("tasks") or [])
+                  if sd_written else None],),
+              sd_written is not None
+              and len(sd_written.get("phases") or []) == 1
+              and len(sd_written["phases"][0].get("tasks") or []) == 1)
+        check("sd3 ...and nothing in it was guessed: the phase's testGate and "
+              "the one task's tests.gate are both empty, with a basis word a "
+              "reader (and the validator) can act on rather than a "
+              "plausible-looking command nobody ran: %r"
+              % (sd_written["phases"][0]["tasks"][0]["tests"]["gateBasis"],),
+              sd_written["phases"][0]["testGate"] == []
+              and sd_written["phases"][0]["tasks"][0]["tests"]["gate"] == []
+              and sd_written["phases"][0]["tasks"][0]["tests"]["gateBasis"]
+              in _vocab.GATE_BASIS)
+        import _config as _sd_config
+        sd_state = _sd_config.manifest_state(sd_proj,
+                                             "docs/audit/audit-plan.json")
+        sd_mode = _sd_config.plan_gate_mode(dict(_sd_config.DEFAULTS),
+                                           sd_state)
+        check("sd4 the plan gate is INERT (observe) with no manifest at all "
+              "and LIVE (warn -- advisory, nothing running yet) the moment "
+              "this writes one: %r" % (sd_mode,), sd_mode == "warn")
+        sd2_proj, sd2_mp = mk("sd-exists", base_manifest())
+        _sd2_before = open(sd2_mp, "rb").read()
+        code2, _txt2 = run(["seed", "--project-dir", sd2_proj])
+        check("sd5 SECOND-DIRECTION CASE: seed REFUSES rather than overwriting "
+              "a manifest that is already there, and writes not one byte -- "
+              "the one door here that checks the OPPOSITE of every other "
+              "verb's precondition: %r" % (code2,),
+              code2 == 2 and open(sd2_mp, "rb").read() == _sd2_before)
+        sd3_proj, sd3_mp = mk_empty("sd-gate")
+        code3, _txt3 = run(["seed", "Named", "--gate", "pytest -q",
+                            "--project-dir", sd3_proj])
+        sd3_written = _mio.load_manifest(sd3_mp)
+        check("sd6 --gate reaches BOTH the phase's testGate and the one "
+              "task's tests.gate in a single call -- what add-phase followed "
+              "by add would need two calls to do -- and a title override "
+              "lands on the phase rather than the default: %r"
+              % (sd3_written["phases"][0]["title"],),
+              code3 == 0
+              and sd3_written["phases"][0]["title"] == "Named"
+              and sd3_written["phases"][0]["testGate"] == ["pytest -q"]
+              and sd3_written["phases"][0]["tasks"][0]["tests"]["gate"]
+              == ["pytest -q"])
 
         # ---- (u) usage -------------------------------------------------------
         with open(os.devnull, "w") as _null, \

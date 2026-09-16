@@ -17,6 +17,19 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve
 
 ## 1. Preflight
 
+**If NO file exists at `manifestPath` yet**, offer the cheap door before the interview
+below spends anything (AskUserQuestion):
+- **Full audit** (default) — continue below: an interview, a multi-agent read of the
+  codebase, and a synthesized set of phases to approve before anything is written.
+- **Just the smallest plan** — run
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" seed [manifestPath]`
+  and stop. It writes one phase and one task, with a gate that is either an honestly
+  empty one or whatever `--gate "<command>"` names — never a guessed one — and turns
+  the plan gate from observing (nothing to check against) to advisory in the one
+  call. The phases the interview below produces are for when there is real work to
+  describe; a plan that looks complete and describes work nobody agreed to teaches
+  its reader that the manifest is decoration.
+
 If a file already exists at `manifestPath`, first print any parked proposals it
 carries (`proposals[]` entries with `status: "proposed"`):
 `N parked proposal(s) — /audit:propose materialize <id>|--all` — the user may be

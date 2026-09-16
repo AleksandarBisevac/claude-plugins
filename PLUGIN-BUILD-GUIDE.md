@@ -3468,6 +3468,21 @@ turns the title into the branch's slug, and the readers of that name part compan
 `resolve-branch.py` composes from the title, so a renamed phase in flight has two names and no
 reader agreeing on which.
 
+**`seed ["<phase title>"] [manifest]` writes where nothing exists yet** — the one door here that
+refuses the OPPOSITE precondition every other verb checks: it declines when a manifest is
+already at the path, rather than when one is missing. It writes the smallest manifest that
+validates (one phase, one task, template fields exactly once) with no interview and no
+exploration, through `_under_lock`'s shared lock/config/release, now parameterized by
+`must_exist` so this one call can ask the opposite question the other six do without a second
+copy of the door. The gate is `--gate`/`--gate-clear` or an honestly empty `meta.buildCommands`
+— never guessed, because nothing in this tree can mechanically tell a real lint command from a
+plausible one. `VERB_FLAGS["seed"]` is `("gate", "gate_clear")` alone: it calls `_phase_gate`/
+`_task_gate` directly (which read only those two flags) rather than `_build_phase`/`_build_task`
+(which read `description`/`outcome`/`area`/`risk`/... off the caller's namespace), because those
+reads are attributed to a verb through its call graph regardless of what variable a caller
+passes at the site — sharing them would have made `seed` appear, to the suite's own AST-derived
+`vf6`, to accept every flag `add`/`add-phase` do.
+
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model

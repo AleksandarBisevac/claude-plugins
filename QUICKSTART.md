@@ -72,6 +72,12 @@ proposals rather than lost.
 This is the step that spends real tokens. It is also the step that makes the plan
 gate start enforcing, because from here on there is a plan to be outside of.
 
+Nothing to audit yet, or just want the guards live before you decide what goes in
+the plan? `/audit:init` offers a cheaper first step: the smallest manifest that
+validates — one phase, one task, an honestly empty gate or the one you name — in
+one call, no interview. Come back and run the full audit above whenever there is
+real work to describe.
+
 ```
 /audit:status
 ```

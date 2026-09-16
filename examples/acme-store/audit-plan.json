@@ -19,7 +19,8 @@
       "lint": "npm run lint",
       "test": "npm test",
       "typecheck": "npm run typecheck",
-      "precommit": "pre-commit run --all-files"
+      "precommit": "pre-commit run --all-files",
+      "workertest": "go test ./..."
     },
     "ado": {
       "organization": "acme",
@@ -32,7 +33,7 @@
       }
     },
     "reportBasename": "acme-store-audit",
-    "reportSummary": "Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved.",
+    "reportSummary": "Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved. Phase 5 (sync worker resilience) is queued behind the storefront work, in a different part of the stack — a background Go service rather than the storefront's TypeScript — and its gate is a runner named for what it is: go test rather than npm test.",
     "usage": {
       "ledgerDir": ".claude/usage",
       "showCost": true,
@@ -52,6 +53,9 @@
       },
       "checkout": {
         "description": "The cart-to-order path: payload validation and cart mutation schemas."
+      },
+      "worker": {
+        "description": "The background Go service that syncs inventory with the supplier feed."
       }
     }
   },
@@ -85,6 +89,11 @@
       "id": "P4",
       "title": "Documentation",
       "shard": "phases/P4.json"
+    },
+    {
+      "id": "P5",
+      "title": "Sync worker resilience",
+      "shard": "phases/P5.json"
     }
   ],
   "fileIndex": {
@@ -130,6 +139,9 @@
     ],
     "docs/architecture/invariants.md": [
       "P4.1"
+    ],
+    "workers/datasync/retry.go": [
+      "P5.1"
     ]
   },
   "bugs": [
