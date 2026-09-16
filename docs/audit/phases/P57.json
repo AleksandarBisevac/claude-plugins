@@ -29,7 +29,7 @@
     {
       "id": "P57.1",
       "title": "A command reads only the instruction it executes",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: a command loads the sections it runs and no others, and nothing was copied to make that true. The orchestration reference is read whole by every execution command, and the two longest sections - executing a task and signing off a phase - are most of it, while four commands execute neither. The cut must COPY NOTHING: two copies of a procedure is one copy and one lie, which this repository has paid for more than once. The claim anchors and the drift lints are the precondition being spent here, so they are re-pointed rather than dropped, and a section that moved without its anchor following fails by name. What stays in the core is what every command needs: the vocabulary, the refusal table, and the judgement no mechanism can check.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -70,19 +70,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d2f97c7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Execute the task and Phase sign-off were cut out of reference/orchestrator.md into reference/execute-task.md and reference/phase-signoff.md, and every pointer that named a step inside them was repointed; _refs.py gained a check that reads fenced blocks under reference/ and refuses one naming a command carrying disable-model-invocation.",
+        "descriptive": "A command reads the procedure it runs instead of both, and an instruction the pipeline cannot follow is refused where it is written."
       },
       "startedAt": "2026-09-16T19:26:23Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T21:30:11Z",
+      "verifiedBy": [
+        "command-reach-red",
+        "command-reach-necessity"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d2f97c7",
+        "at": "2026-09-16T21:30:11Z"
+      }
     },
     {
       "id": "P57.2",
       "title": "A projection that exists is the one the caller asks for",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the two callers that read the discovery payload ask for the projection instead of the whole thing. The projection already exists and the orchestrator's own budget read uses it for exactly this reason; the two document call sites do not, and print several times as much. This is a flag at two call sites against a mechanism already built and already cased. What must not move: a caller asking for a section that does not exist is refused by name, never quietly handed the whole payload, because a silent fallback turns a saving into a surprise.",
       "files": [
         "plugins/audit/commands/init.md",
@@ -115,19 +123,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d2f97c7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-status.py --section projects one key of the same assembled payload under --json; an unknown section writes the sections the payload has to stderr and exits 2, and --section without --json is a usage error.",
+        "descriptive": "A caller can ask the status payload for the part it needs, and a part that is not there is named rather than answered with null."
       },
       "startedAt": "2026-09-16T19:26:23Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T21:30:11Z",
+      "verifiedBy": [
+        "discovery-projection-red",
+        "sc3-necessity"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d2f97c7",
+        "at": "2026-09-16T21:30:11Z"
+      }
     },
     {
       "id": "P57.3",
       "title": "A description is carried by the sessions that might call it",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: a command a model will never invoke stops occupying every session's startup context, and a lint holds the line between the two kinds. Eight commands are human-typed - a legacy spelling, a layout change, a log read, a worktree, the panel, a proposal, a bug, a tracker sync - and each carries its description into every session where the plugin is enabled, including sessions that never open a plan. What makes this safe rather than clever is the lint: the sign-off procedure invokes commands BY NAME, so a command the pipeline calls must stay reachable, and the check reads the documents that do the calling rather than a list somebody maintains.",
       "files": [
         "plugins/audit/commands/sync.md",
@@ -166,19 +182,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d2f97c7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The two commands no automated run should reach for carry disable-model-invocation in their frontmatter, which keeps their description out of session context while leaving them typeable.",
+        "descriptive": "A description is carried by the sessions that might call the command, and not by the ones that will not."
       },
       "startedAt": "2026-09-16T19:26:23Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T21:30:11Z",
+      "verifiedBy": [
+        "command-reach-red"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d2f97c7",
+        "at": "2026-09-16T21:30:11Z"
+      }
     },
     {
       "id": "P57.4",
       "title": "The short render is what the pipeline echoes, and the full one is what you type for",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the orchestration steps that echo a whole-plan render echo a short one, and what an operator sees when they type the command themselves does not change. OPERATOR'S DECISION, taken deliberately: the researcher recommended making the short form the default and said plainly they would not ship it without asking, because it trades the operator's default visibility for tokens. The operator chose to keep the full view when they type the command and to use the short one only where the pipeline echoes it. So the saving is taken where nobody was reading the output anyway, and none is taken from the person who asked to see it. The short form ends by naming the command for the full view, because the reason the verbatim instruction exists at all is a run that ended with the answer collapsed behind a tool call and the model believing it had replied.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -211,14 +234,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d2f97c7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "--short selects a condensed render - the overall line, the ready block with the command to type, and a closing pointer at the full view - while the bare invocation keeps the full render and --json ignores the flag entirely.",
+        "descriptive": "The short render is what an automated run echoes; a person who types the command still gets the whole view."
       },
       "startedAt": "2026-09-16T19:26:23Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T21:30:11Z",
+      "verifiedBy": [
+        "short-render-red",
+        "short-render-necessity"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d2f97c7",
+        "at": "2026-09-16T21:30:11Z"
+      }
     },
     {
       "id": "P57.5",
