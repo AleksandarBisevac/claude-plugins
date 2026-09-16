@@ -815,6 +815,19 @@ LIST_ANCHORS = (
      r'def _locked_scope\((?:(?!\n\S).)*?node\.get\("status"\)\s*(?:==|in)\s*'
      r'\(?((?:"[^"]+"(?:\s*,\s*)?)+)\)?\s*:\s*out\("\[audit-task\] ',
      "and a `done` task will take a widening"),
+    # The build guide and this section once named a different count of fixed
+    # lock names than `audit-lock.py`'s own docstring, because neither prose
+    # copy read the tuple that actually decides the vocabulary. Deriving it
+    # here is the repair: a name added to or dropped from `FIXED_NAMES` moves
+    # this row rather than leaving a document to restate a number by hand.
+    # `phase-<phaseId>` is not a member of the tuple - it is the separate
+    # pattern `valid_name` accepts alongside it - so it is folded into the
+    # marker instead of asked to derive.
+    ("lock-fixed-names", "Concurrency lock",
+     os.path.join("scripts", "governance", "_locks.py"),
+     r"FIXED_NAMES\s*=\s*\(([^)]*)\)",
+     "`phase-<phaseId>` also works — **take the narrowest one that covers "
+     "your writes:**"),
 )
 
 # section -> why nothing anchors it. Checked in BOTH directions by `claim_drift`:

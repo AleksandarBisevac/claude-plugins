@@ -219,10 +219,16 @@ def _cases(check):
                   json.loads(txt)["locks"][0]["name"] == "phase-P1")
             check("c8c and carries the basis", json.loads(txt)["locks"][0]["basis"])
 
-            code, _ = run(["release", "phase-P1", "--session", "sess-B"], tmp)
+            # THE SAME `--pid` THE TAKEOVER RECORDED. Release now reads the pid
+            # half of the claim as well as the session half, so the identity
+            # that gives this lock back has to be the one that took it over --
+            # `other` is what c6 wrote, not a fresh value invented here.
+            code, _ = run(["release", "phase-P1", "--session", "sess-B",
+                          "--pid", other], tmp)
             check("c9 the owner releases", code == 0)
             check("c9b lock is gone", not os.path.exists(p1))
-            code, txt = run(["release", "phase-P1", "--session", "sess-B"], tmp)
+            code, txt = run(["release", "phase-P1", "--session", "sess-B",
+                             "--pid", other], tmp)
             check("c9c releasing twice is not an error", code == 0)
 
             code, txt = run(["acquire", "phase-../escape", "--session", "s"], tmp)

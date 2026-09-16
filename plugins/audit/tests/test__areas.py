@@ -575,6 +575,38 @@ def _cases(check):
           any(c == "audit-state-statuses" and "no such member" in p
               for c, p in M.claim_drift(text=_invented)),
           repr(M.claim_drift(text=_invented)))
+    # --- the fixed lock names, read from the tuple that owns them --------------
+    # `## Concurrency lock` once said "the two tiers" while `_locks.FIXED_NAMES`
+    # had grown a member the sentence never learned, and the build guide copied
+    # the same stale count. The repair reads the tuple instead of writing a
+    # corrected number, so a name added to or dropped from it moves this row
+    # rather than leaving a second document to catch by hand.
+    check("oa30 the fixed lock names are DERIVED from `_locks.FIXED_NAMES`, not "
+          "restated: every member the tuple holds is named by the section, and "
+          "every name the section calls fixed is a member of the tuple",
+          not [p for c, p in M.claim_drift() if c == "lock-fixed-names"],
+          repr([p for c, p in M.claim_drift() if c == "lock-fixed-names"]))
+    _dropped_usage = body.replace("`index` and `usage` are the fixed\nnames;",
+                                  "`index` is the fixed\nname;")
+    check("oa31 ...and a name the tuple holds that the section stops naming is "
+          "a finding - the direction this very section rotted in once, before "
+          "this row existed to catch it",
+          _dropped_usage != body
+          and any(c == "lock-fixed-names" and "does not name it" in p
+                  for c, p in M.claim_drift(text=_dropped_usage)),
+          repr([p for c, p in M.claim_drift(text=_dropped_usage)
+                if c == "lock-fixed-names"]))
+    _invented_lock = body.replace(
+        "`index` and `usage` are the fixed\nnames;",
+        "`index`, `usage` and `worktree` are the fixed\nnames;")
+    check("oa32 ...and a name the section adds that the tuple does not hold is "
+          "a finding too - a lock nothing in the library issues, printed as "
+          "though `valid_name` would accept it",
+          _invented_lock != body
+          and any(c == "lock-fixed-names" and "no such member" in p
+                  for c, p in M.claim_drift(text=_invented_lock)),
+          repr([p for c, p in M.claim_drift(text=_invented_lock)
+                if c == "lock-fixed-names"]))
     # --- the clause a five-claim section was not holding ------------------------
     # `## Phase sign-off` told the reader `/audit:task scope` refuses a `done`
     # task, and a prior fix had already reversed that: driven on one fixture with

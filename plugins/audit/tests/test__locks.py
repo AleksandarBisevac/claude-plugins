@@ -218,6 +218,79 @@ def _cases(check):
               "lock directory filling up with them is the bug: %r"
               % (sorted(n for n in os.listdir(tmp) if n.startswith(".claim-")),),
               [n for n in os.listdir(tmp) if n.startswith(".claim-")] == [])
+
+        # --- a name occupied by a DIRECTORY, not a file -----------------------
+        # A real race lands a file at the name `link()` was refused for, which
+        # is what `e6`/`e7` already drive. This drives the OTHER occupant a
+        # race can leave: a directory. `link()` reports a file occupying the
+        # name as `FileExistsError` on every platform this ships on; a
+        # DIRECTORY occupying it reaches a permission refusal on at least one
+        # of them instead - the identical fact, worded two ways. THIS CASE IS
+        # WRAPPED IN `_harness.attempt` FOR THE REASON IT EXISTS: a fixture
+        # that only recognises one of those two wordings is exactly what lets
+        # the other one escape uncaught, taking every case after it out of
+        # the run on the platform that spells it differently.
+        def _dir_appears(src, dst):
+            os.makedirs(dst)
+            return os.link(src, dst)
+
+        dirclash = os.path.join(tmp, "dirclash.lock")
+        _ok, res4 = _harness.attempt(M._claim, dirclash, {"sessionId": "s-4"},
+                                     link=_dir_appears)
+        check("e11 a name that becomes a DIRECTORY mid-claim reads `exists`, "
+              "whichever errno this platform spells that with - the two "
+              "wordings collapse to one meaning before `_claim` returns "
+              "rather than being left for a caller that only recognises "
+              "one of them: %r" % ((_ok, res4),),
+              _ok is True
+              and res4 == {"taken": False, "exists": True, "error": None},
+              repr((_ok, res4)))
+
+        # THE OTHER WORDING, DRIVEN DIRECTLY rather than trusted to this host's
+        # own platform: `e11` proves the outcome on whichever errno THIS
+        # machine's `link()` happens to give for a directory, and on a POSIX
+        # host the fallback's OWN `os.open()` reaches the identical EEXIST for
+        # the same reason - so nothing here would go red if the check this
+        # case is about were deleted outright. `os.open` is replaced for the
+        # duration of this one call so that CAN be told apart: if the
+        # existence check runs first, as it must, the replacement beneath it
+        # is never reached at all.
+        def _dir_appears_as_permission_refusal(src, dst):
+            os.makedirs(dst)
+            raise PermissionError("simulating the wording the other platform "
+                                  "gives for the identical fact")
+
+        permclash = os.path.join(tmp, "permclash.lock")
+        _real_open = os.open
+
+        def _open_must_not_be_reached(path_arg, *a, **k):
+            # NOT a blanket replacement: `_claim` reaches this same function
+            # through `tempfile.mkstemp` for its OWN sibling temp file first,
+            # and that call has nothing to do with what this case is proving.
+            # Only the fallback's create, of the name this case clashed with,
+            # is the one that must never run.
+            if path_arg == permclash:
+                raise AssertionError("the fallback's own create ran, so the "
+                                     "existence check this case is about "
+                                     "did not")
+            return _real_open(path_arg, *a, **k)
+
+        os.open = _open_must_not_be_reached
+        try:
+            _ok2, res5 = _harness.attempt(
+                M._claim, permclash, {"sessionId": "s-5"},
+                link=_dir_appears_as_permission_refusal)
+        finally:
+            os.open = _real_open
+        check("e12 ...and a permission refusal over a name a DIRECTORY "
+              "occupies reads the SAME `exists`, not the `error` a permission "
+              "refusal over an unrelated problem correctly stays (`e7` is "
+              "that allow case, over a name nothing occupies yet) - proved "
+              "by never reaching the fallback's own create at all: %r"
+              % ((_ok2, res5),),
+              _ok2 is True
+              and res5 == {"taken": False, "exists": True, "error": None},
+              repr((_ok2, res5)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -271,6 +344,41 @@ def _cases(check):
             check("a6 releasing what is not held is 0, not an error: a cleanup "
                   "path must be idempotent or every failure becomes two",
                   code == 0 and any("not held" in x for x in lines), lines)
+            # --- release reads the WHOLE identity a claim recorded ------------
+            # `a2`/`a3` proved a DIFFERENT session is refused; this proves the
+            # narrower case the session check alone could not see - a SECOND
+            # process of the SAME session, which is what two parallel takers
+            # look like from here. `os.getppid()` is the taker's pid and
+            # `os.getpid()` is a live pid that is not it, mirroring `a2`'s own
+            # convention in the other direction.
+            usage_lock = os.path.join(M.lock_dir(proj), "usage.lock")
+            lines = []
+            code = M.acquire(proj, "usage", note="two takers, one session",
+                             session="s-SAME", pid=os.getppid(),
+                             out=lines.append)
+            check("a6a acquire records the taker's OWN pid, not just its "
+                  "session",
+                  code == 0 and M.read_lock(usage_lock).get("pid")
+                  == os.getppid())
+            lines = []
+            code = M.release(proj, "usage", session="s-SAME", pid=os.getpid(),
+                             out=lines.append)
+            check("a6b THE ALLOW CASE'S MIRROR: a second process of the SAME "
+                  "session is refused - session alone used to be enough, and "
+                  "this release would have dropped the first taker's lock "
+                  "out from under a run that still holds it",
+                  code == M.E_LIVE and any("NOT yours" in x for x in lines),
+                  lines)
+            check("a6c ...and the claim is still there, which is the property "
+                  "that must never move",
+                  os.path.exists(usage_lock))
+            lines = []
+            code = M.release(proj, "usage", session="s-SAME",
+                             pid=os.getppid(), out=lines.append)
+            check("a6d ...while the SAME taker - matching session AND pid - "
+                  "releases it cleanly",
+                  code == 0 and not os.path.exists(usage_lock))
+
             lines = []
             code = M.acquire(proj, "../escape", out=lines.append)
             check("a7 a bad name is refused before anything is created",

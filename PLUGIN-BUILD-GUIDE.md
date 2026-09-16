@@ -2706,8 +2706,9 @@ index lock by building an argv and calling `main()` through `_panel_write._lockm
 `_deps` attributed the edge to the panel. It is an ordinary import now.
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
-The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the two tiers the
-orchestrator uses (`index`, `phase-<id>`), turning the library's answers into exit codes —
+The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
+`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` — turning the
+library's answers into exit codes —
 a live holder is **waited out** for a bounded window and then refused (exit 3); one that is
 not alive can be seized with `--takeover` (exit 4), because the old "older than 60 minutes =
 crashed" rule was wrong in both directions. `--wait` overrides the window, and zero is the

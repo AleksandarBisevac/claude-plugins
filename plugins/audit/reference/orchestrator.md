@@ -252,11 +252,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" acquire <name> 
         --project <gitRoot> --note "<verb> <scope>"
 ```
 
-`<name>` is one of the **two tiers — take the narrowest lock that covers your writes:**
+Every lock this script can take has one of these names. `index` and `usage` are the fixed
+names; `phase-<phaseId>` also works — **take the narrowest one that covers your writes:**
 
 - **`index`** — held **briefly** for STRUCTURAL writes and id allocation: `init`, `task`, `bug`,
   `sync`, allocating a new phase/task/bug id, and the phase **status-mirror** write in the index.
   Acquire → edit the index → release, within that step.
+- **`usage`** — held while the usage ledger's monthly files are rewritten by the backfill; the
+  orchestrator's own verbs never take it.
 - **`phase-<phaseId>`** — held for the DURATION of a phase run by `next`/`run`/`phase`/`review`/
   `resume` on that phase. Two DIFFERENT phases take two different locks → they run in **parallel**
   (separate worktrees), each writing only its own shard. A run that must also allocate an id or

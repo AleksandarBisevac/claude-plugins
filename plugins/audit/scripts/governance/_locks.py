@@ -427,6 +427,16 @@ def _link_into_place(tmp, path, link, info):
     exclusivity test, so the caller's contention path runs exactly as it did
     when the create was the test.
 
+    THE NAME BEING TAKEN IS A FACT ABOUT THE FILESYSTEM, NOT ABOUT AN
+    EXCEPTION'S TYPE. `link()` reports a name already occupied as
+    `FileExistsError` when the occupant is an ordinary file; a name occupied
+    by a DIRECTORY reaches a permission refusal on at least one platform this
+    project ships on instead -- the identical fact, worded two ways by two
+    platforms. Asking the filesystem directly, once, is the check that reads
+    the same on both: it is what makes the fallback below reachable only for
+    an occupant NEITHER wording can be blamed on, rather than raising a
+    platform-specific exception the caller has to have anticipated by name.
+
     The fallback exists because hard links are not universal, and a filesystem
     without them would otherwise leave a project with no lock rather than a
     weaker one. It reopens the window between the create and the write; what
@@ -437,6 +447,8 @@ def _link_into_place(tmp, path, link, info):
     except FileExistsError:
         raise
     except OSError:
+        if os.path.exists(path):
+            raise FileExistsError("already exists: %s" % (path,))
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(info, fh)
@@ -834,6 +846,48 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
     return 0
 
 
+def _release_conflict(held, session, pid):
+    """`{"mismatch", "who"}` -- does the WHOLE identity a claim recorded rule
+    this caller out from releasing it?
+
+    A take records a session id AND a pid; comparing the session alone left
+    the pid recorded and never read, so two processes sharing one session --
+    each a real taker with its own pid -- could not be told apart, and the
+    second one's release succeeded against a claim the first still holds.
+    Both fields are compared now, and a mismatch on EITHER is enough to
+    refuse: an unrecorded field proves nothing, the same rule the age
+    fallback already applies when no identity was written at all, so only a
+    field that IS recorded on the claim and DOES differ counts.
+
+    THE CANDIDATE SET HAS TWO MEMBERS, NOT ONE, and that is what keeps an
+    ordinary same-process round trip from refusing itself. A caller that took
+    the lock and means to give it back before it returns recorded
+    `os.getpid()` at acquire time (`_holder_pid`'s reason); a caller that took
+    it through a command that then exited recorded `$CLAUDE_PID` instead.
+    Release cannot know which shape produced the claim it is reading, so both
+    of this call's own spellings are offered and either is accepted -- which
+    is what stops the ordinary in-process pattern (acquire, then release,
+    with no pid ever handed to either call) from reading `$CLAUDE_PID` as a
+    stranger's pid and refusing a caller its own claim.
+    """
+    if not isinstance(held, dict) or not held:
+        return {"mismatch": False, "who": "someone else"}
+    sid, ident = _identity(session, pid)
+    owner = held.get("sessionId")
+    session_mismatch = bool(owner) and bool(sid) and str(owner) != str(sid)
+    candidates = set(str(c) for c in (os.getpid(), ident) if c is not None)
+    holder_pid = held.get("pid")
+    pid_mismatch = (holder_pid is not None
+                    and str(holder_pid) not in candidates)
+    if session_mismatch:
+        who = owner
+    elif pid_mismatch:
+        who = "pid %s" % (holder_pid,)
+    else:
+        who = owner or holder_pid or held.get("hostname") or "someone else"
+    return {"mismatch": session_mismatch or pid_mismatch, "who": who}
+
+
 def release(project, name, session=None, pid=None, force=False, out=print):
     ld = lock_dir(project)
     if not ld:
@@ -847,14 +901,15 @@ def release(project, name, session=None, pid=None, force=False, out=print):
         out("[audit-lock] %s was not held -- nothing to release" % name)
         return 0
     held = read_lock(path)
-    sid, _pid = _identity(session, pid)
-    owner = held.get("sessionId")
+    conflict = _release_conflict(held, session, pid)
     # Releasing a lock that is no longer yours is how a session that was taken
     # over finds out -- today it deletes the winner's lock and neither ever knows.
-    if owner and sid and owner != sid and not force:
-        out("[audit-lock] %s is NOT yours to release -- held by %s" % (name, owner))
+    if conflict["mismatch"] and not force:
+        out("[audit-lock] %s is NOT yours to release -- held by %s"
+            % (name, conflict["who"]))
         out("             You were taken over. Anything you wrote since may have")
         out("             raced that session. Re-read the shard before trusting it.")
+        sid, _pid = _identity(session, pid)
         if held.get("takenOverFrom", {}).get("sessionId") == sid:
             out("             (this lock records taking over from you)")
         return E_LIVE
