@@ -319,7 +319,7 @@
     {
       "id": "P55",
       "title": "The last small ones the register still holds",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P55.json"
     }
   ],

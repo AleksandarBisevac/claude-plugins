@@ -1,7 +1,7 @@
 {
   "id": "P55",
   "title": "The last small ones the register still holds",
-  "status": "pending",
+  "status": "in_progress",
   "description": "What the register still holds after the release phases: an ownership check that discards half the identity it was given, a document pair that contradicts each other about how many tiers a lock has, a fixture that aborts a suite on a platform this project supports, a hook paragraph repeated once per tool result in a batch, a derivation that is silently inert under a symlinked path, and two hand-maintained lists that opt a new caller out by being forgotten. None is user-visible today and every one of them is a check or a sentence somebody will trust the next time they need it.",
   "desiredOutcome": "Every open entry in the register that is not an explicit out-of-scope decision is either closed by code or restated as a decision with its own trigger.",
   "testGate": [
@@ -29,7 +29,7 @@
     {
       "id": "P55.1",
       "title": "A release names the run, and a taker's identity is checked whole",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the release path checks the whole identity a claim records, not half of it. Ownership is compared on the session alone while the take records a process as well and the release is handed one it then ignores, so two measurements inside one session cannot be told apart: the loser's release succeeds and drops a lock out from under a run that still holds it. This is the same class the takeover repair closed from the other end, and it is the last door in that file where an identity is recorded and not read. The age rule stays, because it is the fallback when no identity was recorded at all.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -59,21 +59,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T05:02:21Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P55.2",
       "title": "A suite does not abort on a platform this project supports",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: no case in this suite can abort the body on a platform the project supports, and the smaller findings on the same surface are closed with it. One fixture makes the lock path a directory, which one platform reports as the name already existing and another as a permission refusal - only the first is caught, so on the second the escape takes that case and the ones after it out of the run. The class is the one this release already repaired elsewhere: a case that reports by raising takes its neighbours down and a harness reads one crash as a column of checks.",
       "files": [
         "plugins/audit/tests/test__locks.py",
@@ -102,21 +102,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T05:02:21Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P55.3",
       "title": "Two documents agree about how many tiers the lock has",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: no document states a count of lock tiers that the library contradicts, and the statement is checked rather than remembered. The build guide says the command runs over two tiers while the command's own docstring says three, so two documents now contradict each other about a vocabulary the library declares in one place. The repair is not to correct the number: it is to read the vocabulary from where it is declared, the way the claim anchors already hold every other sentence in that family, so the next tier added cannot leave a document behind.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -147,14 +147,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T05:02:21Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -335,5 +335,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-16T05:02:21Z"
 }
