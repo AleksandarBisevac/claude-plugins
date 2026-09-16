@@ -158,7 +158,7 @@
     {
       "id": "P50.4",
       "title": "The orchestrator reference loses every rule a script now enforces",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the document an orchestrator reads at the start of every run no longer restates a rule that a verb or a hook now refuses, and what remains is the part no mechanism can check. The document is the largest instruction in the product and almost none of it is checkable, which is why its claims were anchored first - that anchoring is the precondition this task spends. Several of its longest passages describe hand edits that verbs have since replaced, and a document that prescribes a hand edit the tool refuses teaches a reader to distrust the tool. The reduction is not a summarisation pass: each paragraph removed names the script that now enforces it, and the anchor is what proves the script still does. What stays is the judgement - which work to take next, when to stop, what to tell a human - and it is the part the document was always for.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -189,14 +189,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b69cb2f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "steps two and four-b of the orchestration reference now invoke the start and done verbs instead of prescribing hand edits, one of which the closing verb refuses outright; _areas claim coverage and drift are unchanged before and after.",
+        "descriptive": "The procedure calls the verbs that exist to be the edits it used to prescribe, and the anchor coverage proves nothing anchored was removed."
       },
       "startedAt": "2026-09-15T23:01:17Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T01:12:08Z",
+      "verifiedBy": [
+        "oa1",
+        "oa21",
+        "oa22"
+      ]
     },
     {
       "id": "P50.5",
@@ -247,7 +251,7 @@
     {
       "id": "P50.6",
       "title": "A plan written under 2.x opens under 3.0 with no manual step",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: a plan written against the previous major opens under this one, validates, renders and runs, without its owner editing a file. The compatibility document is a contract rather than a description: a version the plugin accepted keeps being accepted and a config key it read keeps being read, so this release's new refusals are the thing that has to be paid for. The one already named is the test entry that carries prose where a path belongs, which becomes a finding in this release and would strand every plan generated before it. The migration is a verb the owner runs, it says what it changed and what it could not, and anything it cannot carry forward is refused by name - a migration that silently drops a field it does not understand is how a plan loses the record of work somebody did. This is the highest-risk task in the release because it is the one that touches a file the plugin does not own.",
       "files": [
         "plugins/audit/scripts/manifest/migrate-manifest.py",
@@ -280,14 +284,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b69cb2f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "no second migration was written: the existing repair for the one refusal this release introduces was found and driven live, rewriting the derivable entry and refusing the ambiguous one by name.",
+        "descriptive": "A plan written against the previous major opens, validates, renders and runs with no manual step, driven on a single-file and a sharded fixture."
       },
       "startedAt": "2026-09-15T23:01:17Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T01:12:08Z",
+      "verifiedBy": [
+        "driven on two fixtures: report",
+        "apply",
+        "validate",
+        "render and status",
+        "plus the refused case"
+      ]
     }
   ],
   "startedAt": "2026-09-15T23:01:16Z"
