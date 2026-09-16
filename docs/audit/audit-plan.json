@@ -1732,7 +1732,8 @@
       "P43.4",
       "P53.3",
       "P55.6",
-      "P50.5"
+      "P50.5",
+      "P55.8"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",

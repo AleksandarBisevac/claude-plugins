@@ -176,7 +176,7 @@
     {
       "id": "P55.4",
       "title": "A hook paragraph is carried once per turn, not once per file",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: a batch of edits does not paste the same paragraph into the model's context once per file, and the invariant check stops on a breach the gate did not cover. Hook context is appended to every tool result, so twelve edits carry twelve copies of one paragraph - which is the same defect this release already repaired for the plan gate's own notice, reached through a different door: the repair there was per session, and a batch inside one turn is the case it does not cover. The second half is smaller and of a piece: the invariant check stops on a red gate but not on a breach the gate never asked about, so the louder failure hides the quieter one.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -209,14 +209,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "27f84d1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The TDD reminder keeps session state for whether the full template has already ridden; the first file in a session gets it, every later one gets a pointer, and the verdict stays warn in both cases.",
+        "descriptive": "A batch of edits carries the advisory's full text once instead of once per file, without silencing it."
       },
       "startedAt": "2026-09-16T19:58:53Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T21:18:24Z",
+      "verifiedBy": [
+        "p554-red",
+        "p554-red2",
+        "p554-red3"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "27f84d1",
+        "at": "2026-09-16T21:18:24Z"
+      }
     },
     {
       "id": "P55.5",
@@ -265,7 +274,7 @@
     {
       "id": "P55.6",
       "title": "Two lists that opt a new caller out by being forgotten",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "DONE MEANS: neither list of call sites is maintained by hand, and the derivation that replaces them carries a floor so an empty answer is a failure rather than a pass. A new caller of the lock's acquire path was invisible to the lint that grades those sites until somebody added it by hand, which is precisely the failure this project keeps recording one surface over: a row added later opts out by being forgotten. The third piece is the warning class the doctor cannot collapse, because its body quotes the offending text so every line differs after the locator - grouping on the rule rather than the body is the repair, and it needs a rule identifier at each emission site, which is the field that module was built without.",
       "files": [
         "plugins/audit/tests/test__output.py",
@@ -300,16 +309,16 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Split after its first attempt, because the task carried two pieces with different answers and one record cannot say both. The derivation of the two hand-kept lists is real and continues as P55.8. The third piece - grouping the doctor's quoting warning class on a rule id rather than on the body - re-opens a decision that _warning_groups.py records with its reasoning and test__warning_groups.py pins, no revisit trigger has fired, and its cost is a new field at every emission site across the manifest, panel, status and deps surfaces to merge lines that differ in the one part the reader has to read. Declined on the record rather than carried as open work."
       },
       "startedAt": "2026-09-16T19:58:53Z",
-      "completedAt": null,
+      "completedAt": "2026-09-16T21:19:40Z",
       "verifiedBy": []
     },
     {
       "id": "P55.7",
       "title": "The report's copy interaction is observed, or the gate says which it could not observe",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the interactive gate is green, and whichever of the two causes it was is stated. RELEASE BLOCKER: the gate is red on two clipboard interactions and red identically on the committed bytes, so it is not a recent change. The message is the finding rather than the failure - it says two assertion sites never RAN, so the report was graded on work that did not happen, which is the class this release repaired twice inside the suites, and the gate already refuses to call that a pass. Two questions come before any code, in this order: does the copy still work for a person, and does the automation hold the clipboard permission a headless context needs. A copy that works for a human and cannot be observed is a harness repair; a copy that has stopped working is a product defect and a much larger one. The gate cannot tell those apart today and saying which is part of the fix. What must not move is the refusal to grade a report on assertions that never ran: widening it to pass on an unreachable site turns the one instrument that can see this into one that cannot.",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -341,12 +350,63 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "27f84d1",
+      "outcome": {
+        "technical": "selectRun's clipboard fallback selected its payload by a class belonging to the other caller of the shared helper, so the sha button's fallback matched nothing; it now selects the sibling payload by shape. The worked example gained a task carrying a commit that resolves, so the two assertion sites the gate reported as never reached now run.",
+        "descriptive": "The copy button's fallback reaches the value it was asked to copy, and the report gate grades work that actually ran."
+      },
+      "startedAt": "2026-09-16T19:58:54Z",
+      "completedAt": "2026-09-16T21:18:18Z",
+      "verifiedBy": [
+        "p557-red",
+        "p557-necessity",
+        "interactive"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "27f84d1",
+        "at": "2026-09-16T21:18:18Z"
+      }
+    },
+    {
+      "id": "P55.8",
+      "title": "Two lists that opt a new member out by being forgotten",
+      "status": "pending",
+      "description": "DONE MEANS: neither hand-kept list of call sites in tests/test__output.py is maintained by hand, and the derivation that replaces each carries a floor so an empty answer is a failure rather than a pass. Two lists sit in that file: px2's _publishers, the modules that may not call os.path.relpath directly, and lk4's _lk_callers, the callers of the lock's acquire path. A new caller of acquire was invisible to lk4 until somebody added it by hand, which is precisely the failure this project keeps recording one surface over: a row added later opts out by being forgotten. Both lists are walked from the tree instead, each keeping the sentinel it already carries so a file that cannot be read stays a finding rather than an exception, and each with a floor that fails when the derivation returns nothing.",
+      "files": [
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: the call sites each lint grades are derived from the tree with a floor, so a derivation that stops matching fails rather than reporting nothing to fix"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-16T19:58:54Z",
+      "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
     }
