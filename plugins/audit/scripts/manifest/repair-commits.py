@@ -212,7 +212,7 @@ def apply_repair(mpath, manifest, ans):
     # `append_from_cli`: this is a script the operator runs from Bash, and
     # an append no writer claims is what `guard-bash-writes` reports as a shell
     # write into the append-only trail on the next Bash command.
-    rel = os.path.relpath(mpath, project).replace(os.sep, "/")
+    rel = _output.posix_rel(mpath, project)
     ok = bool(_journal_io.append_from_cli(project, {
         "action": "trail.repair",
         # Persisted row: "/" separators regardless of platform, like every other

@@ -305,6 +305,70 @@ def substr(text):
     return ("substr", text)
 
 
+# MOVED UP FROM BESIDE `mutation()`, which is its other caller: `_nav_min_target`
+# below needs it while TABLE is still being built, and a name used before its own
+# definition is a `NameError` rather than a subtle bug - so it has to sit here,
+# ahead of the table, and not merely ahead of `mutation()`.
+def _first_line(text, pattern):
+    """The one line matching `pattern`, or None. Unique or it is not an anchor."""
+    hits = [ln for ln in text.splitlines() if re.search(pattern, ln)]
+    if not hits:
+        return None
+    for line in hits:
+        if text.count(line + "\n") == 1:
+            return line
+    return None
+
+
+def _nav_min_target(script_dir=None, hooks_dir=None, repo=None):
+    """The repo-relative path of a file `navigability_violations` applies to,
+    that carries EXACTLY the minimum non-selftest section markers the rule
+    allows (2), where the FIRST `# -{2,}` line - the one a DROP mutation
+    removes - is one of those two: dropping it must actually take the file
+    below the floor, or the mutation proves nothing.
+
+    DERIVED, not written down, because a name written into the table cannot
+    see either way this row has already gone quiet: a refactor once took the
+    named file below the LENGTH floor, and separately, a file can drift PAST
+    the MARKER floor instead - `drop` removes one line, so a file holding
+    three or more still has enough left after the drop, and the gate reports
+    STAYED GREEN while the lint itself is fine. A walk run at the moment the
+    mutation is needed sees whichever of the two has drifted; a name typed
+    here can only ever describe the tree as it was the day it was chosen.
+
+    Refuses LOUDLY when the tree holds no such file, rather than falling back
+    to a name that once qualified: a target this walk cannot find is the row
+    itself having nothing to mutate, and reporting a colour over that silence
+    is exactly the failure this row exists to catch.
+    """
+    repo = repo or REPO
+    for _rel, _kind, path in _deps._real_source_files(script_dir, hooks_dir):
+        try:
+            text = io.open(path, encoding="utf-8").read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if len(text.splitlines()) < _deps._NAV_MIN_LINES:
+            continue
+        names = _deps._section_header_names(text)
+        if names is None or len([n for n in names if n != "selftest"]) != 2:
+            continue
+        line = _first_line(text, r"^# -{2,}")
+        if line is None:
+            continue
+        after = _deps._section_header_names(text.replace(line + "\n", "", 1))
+        after_headers = len([n for n in after if n != "selftest"]) \
+            if after is not None else 0
+        if after_headers >= 2:
+            continue  # the marker the drop removes is not one of the two counted
+        return _output.posix_rel(path, repo)
+    raise RuntimeError(
+        "prove-gates.py: no file under scripts/ or hooks/ is >= %d lines while "
+        "carrying EXACTLY the minimum 2 non-selftest section markers - the "
+        "navigability_violations row ('n1') has no file left to drop a marker "
+        "from, and reporting a colour over that silence would be the STAYED "
+        "GREEN this row exists to catch" % (_deps._NAV_MIN_LINES,))
+
+
 # --- the RED table: break the guarded thing, the guard must fire ---------------
 # (lint, file, kind, anchor, payload, suite, the case that must go red)#
 # kinds: "after" appends payload after anchor; "replace" swaps anchor for payload;
@@ -388,19 +452,25 @@ TABLE = (
   "def register_citation_violations(repo_root=None):",
   "def register_citation_violations(repo_root=None):\n    return []",
   DEP, "rc15"),
- # TWO CONSTRAINTS, and this row lost the first one silently. The target must be
- # a file the rule APPLIES to (400+ lines) AND one carrying EXACTLY the two
- # markers it needs, because `drop` removes ONE line: a file with fourteen
- # markers still has thirteen afterwards and never violates.
+ # TWO CONSTRAINTS, and this row has now lost each of them once. The target must
+ # be a file the rule APPLIES to (>= `_deps._NAV_MIN_LINES`) AND one carrying
+ # EXACTLY the minimum non-selftest markers the rule allows (2), because `drop`
+ # removes ONE line: a file with more than the minimum still has enough left
+ # afterwards and never violates.
  #
- # It named `panel/_panel_composition.py` until a refactor moved `_proposals_view`
- # out of it. At 344 lines the rule had nothing to say there any more, so the
- # mutation proved nothing and this gate reported STAYED GREEN while the lint
- # itself was fine - one change making an unrelated gate stop asserting, with no
- # test going red anywhere. A row naming a file NEAR the threshold is a row with
- # an expiry date, which is why the replacement is 253 lines clear of it rather
- # than the two closer candidates.
- ("navigability_violations", "plugins/audit/hooks/require-plan.py", "drop",
+ # A name typed into this table can only ever describe the tree as it was the
+ # day it was chosen, which is why it has drifted in BOTH directions with no
+ # test going red either time: first by falling below the LENGTH floor when a
+ # refactor moved code out of the named file, and later - the constraint the
+ # fix for THAT said nothing about - by growing PAST the MARKER floor while
+ # comfortably clear of the length one. Both failures print the same colour,
+ # STAYED GREEN, with the lint itself unbothered either time.
+ #
+ # `_nav_min_target()` is the repair: asked, not told, which file currently
+ # sits at exactly the floor this mutation needs - so a future drift in EITHER
+ # constraint moves what it returns instead of silencing what it proves - and
+ # it refuses loudly rather than answer with a name that no longer qualifies.
+ ("navigability_violations", _nav_min_target(), "drop",
   r"^# -{2,}", None, DEP, "n1"),
  ("ui_navigability_violations", "plugins/audit/scripts/ui/panel/composition.js",
   "drop", r"^ {0,2}//\s+-{2,}", None, DEP, "u1"),
@@ -754,17 +824,23 @@ TABLE = (
  ("config_read_violations", S + "_deps.py", "replace",
   "    block = _block_accessor(node, roots)",
   "    block = None", DEP, "ck18"),
- # THE DEFECT ITSELF, PUT BACK. `_evidence_io.row_for` read
- # `result.get("countsBasis")` while nothing wrote that key, so every recorded
- # evidence row carried `None` in the one field built to explain a count with
- # three answers. The mutation is that state exactly - the producer stops
- # writing the key and the reader is left asking for it - and it is the tree
- # that is broken here rather than the guard, which is what makes this the RED
- # direction. `dk2b` is the live claim over the real tree; the fixture pair in
- # `dk3` proves the same rule where a reader can see both halves at once.
+ # THE READER, NOT THE PRODUCER. This row used to delete the producer's own
+ # `"countsBasis"` key, which reads like the historical defect it was named
+ # after - `_evidence_io.row_for` once read `result.get("countsBasis")` while
+ # nothing wrote it - but that read is off a PARAMETER the scan cannot resolve
+ # to a producer at all, so removing the write never became a `dict_key_violations`
+ # finding here: only `dk1`, the floor case that names this exact producer and
+ # key to prove the scan even reached it, reddened - crediting a case the sweep
+ # never observed, before the rule under test had anything to report.
+ #
+ # THIS READ IS RESOLVED, where that one is not: `pointer` is a local assigned
+ # straight from `_ev.write_pointer(...)`, so the scan traces it to that
+ # producer's own key set. Asking it for a key nothing writes is the shape only
+ # the rule under test, through `dk2b`, catches; no producer's key set moves, so
+ # the floor case stays exactly where it was.
  ("dict_key_violations", S + "governance/run-test-gate.py", "replace",
-  '"ranTotal": ran_total, "countsBasis": counts_basis(steps, shared),',
-  '"ranTotal": ran_total,', DEP, "dk2b"),
+  'pointer.get("releaseRefused")', 'pointer.get("releaseRefusedXYZ")',
+  DEP, "dk2b"),
 
  # --- The meta-gate, whose silence takes four documents down with it ----------
  # THE MUTATED FILE IS A DOCUMENT, because a document is what this rule watches.
@@ -1807,17 +1883,6 @@ _MIN_ALLOW_REASON = 80    # a reason short enough to be a label is not a reason
 
 
 # --- deriving the mutation ----------------------------------------------------
-def _first_line(text, pattern):
-    """The one line matching `pattern`, or None. Unique or it is not an anchor."""
-    hits = [ln for ln in text.splitlines() if re.search(pattern, ln)]
-    if not hits:
-        return None
-    for line in hits:
-        if text.count(line + "\n") == 1:
-            return line
-    return None
-
-
 def mutation(row, repo=None):
     """(old, new) for one row, read off the tree, or (None, reason).
 

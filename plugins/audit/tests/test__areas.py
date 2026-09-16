@@ -472,8 +472,8 @@ def _cases(check):
           any(c == "lock-exit-live" and "does not state" in p
               for c, p in renum), repr(renum))
     # THE FLOOR UNDER EVERY MUTATION CASE ABOVE AND BELOW: the fixture door is
-    # the same door. oa3, oa4, oa6, oa7 and oa12 all hand the document in as
-    # `text`, and if that parameter took a different path through the function
+    # the same door. oa3, oa4, oa6, oa7, oa12 and oa33 all hand the document in
+    # as `text`, and if that parameter took a different path through the function
     # than the file does, every one of them would be testing something the live
     # claim never runs. Handing in the real bytes must produce the real verdict.
     # (The over-fire direction - a row that reports regardless of what it read -
@@ -925,27 +925,53 @@ def _cases(check):
           repr((M._capture_source(r'X\s*=\s*"([^"]+)"'),
                 M._capture_source(r"(?:not a capture)"),
                 M._capture_source(r"A(B(C))"))))
-    # THE CONTEXT WINDOW IS LOAD-BEARING and this is the case that says so.
-    # `## Preflight` states two defaults in the same shape - `(default main)` for
-    # the development branch and `(default audit)` for the branch prefix - so a
-    # row searching the WHOLE section could be satisfied by the neighbour's
-    # value. Here the prefix's own default is wrong and the right string is
-    # planted elsewhere in the same section: a laundered claim must still be a
-    # finding.
+    # THE SLICE STARTS AT THE ANCHOR, and this is the case that says so - NOT
+    # that its width is bounded, which is a separate claim and oa33 below is
+    # the one that makes it. `## Preflight` states two defaults in the same
+    # shape - `(default main)` for the development branch, `(default audit)`
+    # for the branch prefix - and `meta.developmentBranch`'s own bullet comes
+    # FIRST in the section, before `meta.branchPrefix`'s. Planting the decoy
+    # there puts it BEHIND the anchor this row searches from, so a forward
+    # slice can never reach it at any width: what this proves is that the
+    # slice begins where the context match is found, not that it stops
+    # somewhere short of the section's end.
     laundered = body.replace(
         "prefix for per-phase branches (default `audit`)",
         "prefix for per-phase branches (default `qa`)").replace(
         "- `meta.developmentBranch` —",
         "- Somewhere else entirely, mentioning (default `audit`) in passing.\n"
         "- `meta.developmentBranch` —")
-    check("oa12 a claim satisfied by a NEIGHBOUR's value in the same section is "
-          "still a finding - two defaults written in one shape is exactly why "
-          "the row carries a context substring and a window rather than "
-          "searching the section",
+    check("oa12 a decoy planted BEHIND the anchor is unreachable regardless of "
+          "width - the slice runs FORWARD from `meta.branchPrefix`, so a value "
+          "written in the earlier, neighbouring bullet can never satisfy this "
+          "row's claim",
           "(default `qa`)" in laundered
           and any(c == "branch-prefix-default" and "does not state" in p
                   for c, p in M.claim_drift(text=laundered)),
           repr(M.claim_drift(text=laundered)))
+    # THE WIDTH ITSELF, which oa12 does not pin. Here the decoy sits AFTER
+    # `meta.branchPrefix` instead of before it - deep enough into the same
+    # section that the shipped `_CLAIM_WINDOW` cannot reach it - and the real
+    # value beside the anchor is corrupted exactly as in oa12. At the shipped
+    # width this is a finding for the same surface reason oa12 is: nothing
+    # readable from the anchor states the claim. The two cases only tell apart
+    # a decoy's PLACEMENT, and that is the point - widen `_CLAIM_WINDOW` far
+    # enough to reach this decoy and THIS is the case that goes red, because
+    # the decoy would then read as the answer where oa12's never could.
+    far_decoy = body.replace(
+        "prefix for per-phase branches (default `audit`).",
+        "prefix for per-phase branches (default `qa`).").replace(
+        "to the PROJECT dir, like `task.files`. Registering a tag gives",
+        "to the PROJECT dir, like `task.files`. Somewhere else entirely, "
+        "mentioning (default `audit`) in passing. Registering a tag gives")
+    check("oa33 a decoy planted AFTER the anchor but past the shipped width is "
+          "still a finding at that width - _CLAIM_WINDOW bounds how far "
+          "forward the slice reads, not merely where it starts",
+          far_decoy != body
+          and any(c == "branch-prefix-default" and "does not state" in p
+                  for c, p in M.claim_drift(text=far_decoy)),
+          repr([p for c, p in M.claim_drift(text=far_decoy)
+                if c == "branch-prefix-default"]))
 
 
 def _selftest():

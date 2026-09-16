@@ -2253,6 +2253,19 @@ def _cases(check):
     # else, because each had retyped `os.path.relpath` as the value it expected
     # back - a reader holding the spelling the writer had just stopped using. A
     # rule that binds only the producing side is half a rule.
+    #
+    # THIS TABLE STAYS HAND-KEPT, ON THE RECORD, rather than derived from a walk
+    # for `os.path.relpath(`: whether a value is PUBLISHED is a judgement about
+    # what happens to it downstream, not a fact the tree states. One file here,
+    # `migrate-json-encoding.py`, calls `os.path.relpath` twice and the two calls
+    # answer differently - a shard path is checked for climbing out of its
+    # manifest by splitting the RAW, platform-separated result on `os.sep`, which
+    # a forced "/" would break on Windows by leaving nothing for that split to
+    # find; the same file's `_report` path is handed to `--json` and goes through
+    # `_output.posix_rel`, exactly as this table requires. A derivation keyed on
+    # the call alone would have to call both rows the same thing, which is
+    # unsound in both directions - so a file earns a row here by what it does
+    # with the value, and that is read by a person, not a walk.
     _publishers = (
         "../scripts/_output.py",
         "../scripts/_refs.py",
@@ -2260,6 +2273,7 @@ def _cases(check):
         "../scripts/_ui_theme.py",
         "../scripts/manifest/audit-task.py",
         "../scripts/manifest/set-priority.py",
+        "../scripts/manifest/repair-commits.py",
         "../scripts/panel/_panel_write.py",
         "../scripts/panel/_panel_state.py",
         "../scripts/panel/_panel_composition.py",
