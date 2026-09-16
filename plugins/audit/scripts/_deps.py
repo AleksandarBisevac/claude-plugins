@@ -2343,6 +2343,232 @@ def doc_prose_numbers(doc_paths=None):
     return out
 
 
+# --- register citations: a comment must speak for itself, not for a private ---
+# --- record -----------------------------------------------------------------
+# The house rule already existed with nothing measuring it: a comment states the
+# constraint of the block it sits on, not the id of the private note that first
+# raised it. A fault or phase citation reads as though it carries the reason, but
+# the register that would make it checkable lives outside this repo, so the
+# reader is handed a pointer with nothing on the other end.
+#
+# TWO SHAPES, NOT ONE, because the two registers are spelled differently.
+#
+#   fault    `F` + digits, anywhere in a comment, a docstring or a document -
+#            there is no legitimate in-tree use of that shape, so any instance
+#            is a finding.
+#   phase    `P` + digits (+ `.` + digits), but ONLY where it opens a comment or
+#            a docstring paragraph and is immediately followed by a full stop -
+#            the "P42. EXPLANATION" shape this tree's own retrospectives use.
+#            A bare `P<n>` is NOT flagged, and neither is one inside a
+#            parenthetical mid-sentence: it is this plugin's OWN vocabulary for
+#            a manifest phase id, `P1`-`P3` overwhelmingly so, and a scan that
+#            could not tell "phase P1 of a user's plan" from "phase P42 of this
+#            repo's own backlog" would be routed around inside a day. That gap
+#            is real and is left to the author, the same way
+#            `_output.prose_number_claims()` leaves its own widenings unenforced.
+_FAULT_TOKEN_RE = re.compile(r"\bF\d{1,4}\b")
+_PHASE_OPEN_RE = re.compile(r"^P\d+(\.\d+)?\.\s")
+
+# The one in-repo, openable collision with the fault shape: `reference/
+# tracker-sync.md` names its own live-network probes "live-gate F<n>", which
+# resolves to a check IN THIS DOCUMENT, not to the external register. A
+# citation naming its own paragraph is not the defect this scan exists for.
+_LIVE_GATE_MARKER = "live-gate"
+
+
+def _fault_hits(text):
+    """[(offset, token)] -- every fault-shaped token in `text`, `live-gate` names
+    excluded."""
+    out = []
+    for m in _FAULT_TOKEN_RE.finditer(text):
+        before = text[:m.start()].rstrip().lower()
+        if before.endswith(_LIVE_GATE_MARKER):
+            continue
+        out.append((m.start(), m.group(0)))
+    return out
+
+
+def _phase_paragraph_hit(line):
+    """The phase token opening `line`'s paragraph, or None.
+
+    Read stripped of a leading `#` and its own indentation, because the shape
+    is the same whether it opens a `#` comment or a line inside a docstring --
+    and a line that opens neither carries no paragraph for a token to open.
+    """
+    stripped = line.lstrip()
+    if stripped.startswith("#"):
+        stripped = stripped[1:].lstrip()
+    m = _PHASE_OPEN_RE.match(stripped)
+    return m.group(0).split(".", 1)[0] if m else None
+
+
+def _py_comment_citations(text):
+    """[(lineno, token)] -- a register citation inside a `#` comment.
+
+    None if `text` will not tokenize -- the caller's cue to report the file
+    rather than read it as clean, `_section_header_names`'s reasoning above.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return None
+    out = []
+    for tok in tokens:
+        if tok.type != tokenize.COMMENT:
+            continue
+        for _off, token in _fault_hits(tok.string):
+            out.append((tok.start[0], token))
+        phase = _phase_paragraph_hit(tok.string)
+        if phase is not None:
+            out.append((tok.start[0], phase))
+    return out
+
+
+def _py_docstring_citations(text):
+    """[(lineno, token)] -- a register citation inside a module/class/function
+    docstring. None if `text` will not parse."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    out = []
+    nodes = [tree] + [n for n in ast.walk(tree)
+                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                        ast.ClassDef))]
+    for node in nodes:
+        doc = ast.get_docstring(node, clean=False)
+        if not doc:
+            continue
+        body = getattr(node, "body", None) or []
+        lineno = body[0].lineno if body else getattr(node, "lineno", 0)
+        for _off, token in _fault_hits(doc):
+            out.append((lineno, token))
+        for docline in doc.split("\n"):
+            phase = _phase_paragraph_hit(docline)
+            if phase is not None:
+                out.append((lineno, phase))
+    return out
+
+
+def _call_string_literal(node):
+    """(text, lineno) for a `check()` argument that IS a message string, else
+    None.
+
+    Two spellings, because this tree writes both: a plain literal, and the
+    `"label text %r" % (...)` shape `%`-formatting a `repr()` onto the end.
+    The SECOND is read off the left operand only -- the formatted values are
+    data the case captured, never a citation this scan is written to hold, and
+    reading them as prose would be the same over-reach `_prose_number_claim`
+    is written to refuse for a number.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value, node.lineno
+    if (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod)
+            and isinstance(node.left, ast.Constant)
+            and isinstance(node.left.value, str)):
+        return node.left.value, node.left.lineno
+    return None
+
+
+def _check_label_citations(text):
+    """[(lineno, token)] -- a register citation inside a `check(...)` call's
+    message, with ONE EXCEPTION: a token that IS the call's own leading label is
+    not a citation, it is the identifier `tools/prove-gates.py` attributes a
+    mutation by (`_harness.case_id()` reads the same leading token). Only that
+    position is exempt -- a citation appearing anywhere else in the same
+    message is still one. None if `text` will not parse.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    out = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "check" and node.args):
+            continue
+        literal = _call_string_literal(node.args[0])
+        if literal is None:
+            continue
+        label, lineno = literal
+        for off, token in _fault_hits(label):
+            if off == 0:
+                continue          # the case's own leading label - the exception
+            out.append((lineno, token))
+    return out
+
+
+def register_citation_violations(repo_root=None):
+    """[(rel, lineno, token)] -- a comment, docstring or document citing a
+    fault/phase id from the private register instead of stating its own
+    constraint.
+
+    THE FILE SET IS `_output.PROSE_SCAN_EXEMPT`'S, reused rather than
+    duplicated: `CHANGELOG.md` is released history there for the same reason a
+    citation naming what a past release fixed is a historical record and not a
+    dangling pointer, and the two test-fixture rows exist so a suite whose job
+    is proving this scanner fires does not have to dodge its own scan --
+    `doc_prose_numbers()` already reuses the same table for the same reason one
+    document-scan over.
+
+    `.py` FILES ARE READ THREE WAYS, because the register's vocabulary reaches
+    this tree through three different constructs: a `#` comment
+    (`_py_comment_citations`), a docstring (`_py_docstring_citations`), and a
+    `check()` call's own message, which is this tree's test suite's equivalent
+    of a docstring and carries the one written exception
+    (`_check_label_citations`). `.md` FILES are read whole, the same as
+    `doc_prose_numbers()` reads them: a document is prose from end to end, so
+    there is no comment/docstring distinction to make.
+
+    A file that will not tokenize or will not parse is NAMED, never skipped --
+    the same rule `prose_claims_in()` and `doc_prose_numbers()` already hold:
+    a scan that answers "nothing to report" for a file it could not read
+    reads exactly like a scan that read a clean one.
+    """
+    root = repo_root if repo_root is not None else _output.REPO_ROOT
+    out = []
+    py_scan = _output.prose_scan_set((".py",), root)
+    if py_scan["problem"] is not None:
+        return [(".gitignore", 0, py_scan["problem"])]
+    for rel in py_scan["paths"]:
+        path = os.path.join(root, rel.replace("/", os.sep))
+        try:
+            with io.open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((rel, 0, "<unreadable: %s>" % exc))
+            continue
+        comments = _py_comment_citations(text)
+        if comments is None:
+            out.append((rel, 0, "will not tokenize"))
+        else:
+            out.extend((rel, ln, tok) for ln, tok in comments)
+        docstrings = _py_docstring_citations(text)
+        if docstrings is None:
+            out.append((rel, 0, "will not parse"))
+        else:
+            out.extend((rel, ln, tok) for ln, tok in docstrings)
+        labels = _check_label_citations(text)
+        if labels is not None:
+            out.extend((rel, ln, tok) for ln, tok in labels)
+    md_scan = _output.prose_scan_set((".md",), root)
+    if md_scan["problem"] is not None:
+        out.append((".gitignore", 0, md_scan["problem"]))
+    else:
+        for rel in md_scan["paths"]:
+            path = os.path.join(root, rel.replace("/", os.sep))
+            try:
+                with io.open(path, "r", encoding="utf-8") as fh:
+                    text = fh.read()
+            except (OSError, UnicodeDecodeError) as exc:
+                out.append((rel, 0, "<unreadable: %s>" % exc))
+                continue
+            for lineno, line in enumerate(text.split("\n"), 1):
+                for _off, tok in _fault_hits(line):
+                    out.append((rel, lineno, tok))
+    return out
+
+
 def _guide_file_blocks(section2):
     """{heading line: block text} for every `### ` block of the guide's
     file-by-file section. `{}` when there is no such section."""

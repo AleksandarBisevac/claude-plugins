@@ -170,7 +170,7 @@ never hardcode branch names, package ids, skills, or build tools here:
 - If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command **you type
   yourself**. You do not need to for `run-test-gate.py`: it applies the preamble to every gate
   command it resolves, because it spawns its own shell and a preamble exported into a different one
-  reaches nothing. That was F253 — two gate rows recorded exit 127, a `PATH` problem, as evidence,
+  reaches nothing. Two gate rows once recorded exit 127, a `PATH` problem, as evidence,
   and a committed ledger carries a false failure for as long as it exists.
 - Every manifest write goes through `Edit` and must keep the JSON valid — after each mutation run
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` and fix any findings
@@ -348,9 +348,16 @@ report, because `git switch -c` is about to fail anyway.
       `sessionId` is **`$CLAUDE_CODE_SESSION_ID`** — say which one, because a session has more than
       one name and the hooks see a different id in their payload. `meter-usage` accepts either, so
       spend still lands on the claimed phase; write this one so the record is consistent.
-2. Set `task.status = "in_progress"`, `task.startedAt = <ISO now>`, `task.attempts += 1` (Edit the phase's manifest file — the shard when sharded).
-   If `task.attempts > (task.maxAttempts or 3)`, do NOT spawn — set `status = "blocked"` and surface to the human.
-   A task entering `blocked` gets the **ADO echo** (section below).
+2. **Promote the task — through the script, not by hand:**
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start <taskId>
+   ```
+   It sets `task.status = "in_progress"`, stamps `startedAt`, and does `task.attempts += 1` — in
+   the phase's manifest file (the shard when sharded), under the lock, revalidated and journaled.
+   **If the increment would take `attempts` past `maxAttempts` (default 3), it REFUSES rather than
+   spawn** — that transition still owes an ADO echo and a human, neither of which the verb can
+   supply — so on that refusal do NOT spawn: set `task.status = "blocked"` yourself and surface it
+   to the human. A task entering `blocked` gets the **ADO echo** (section below).
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
    `subagent_type: "audit:audit-executor"`, `model = task.model`, and **`description` starting with
    the task id** (e.g. `"P3.2 shard writer"`). The id prefix is what makes token metering exact:
@@ -488,7 +495,7 @@ report, because `git switch -c` is about to fail anyway.
      Nothing compares the two for you: the return is prose and no script reads it, so a
      comparison you did not make reads afterwards exactly like one that agreed.
 
-     **And the RECORD says which, not just the terminal (F312).** The row carries `gateSource`,
+     **And the RECORD says which, not just the terminal.** The row carries `gateSource`,
      `task` or `phase`, beside the `steps` that ran. Read that and never `scope`: `scope` is the
      pointer subject — it is what decides whether the plan's `testEvidence` block lands on the
      task or on the phase — so on a fallback run it reads `phase` beside a `taskId`, and a
@@ -496,7 +503,7 @@ report, because `git switch -c` is about to fail anyway.
      recorded before the field existed carries no `gateSource` at all, and that means *unknown*
      rather than either answer.
 
-     **Every entry of a gate runs, in the order it is declared (F313).** There is no short
+     **Every entry of a gate runs, in the order it is declared.** There is no short
      circuit: an entry that exits non-zero does not stop the ones after it, so `steps` is both
      what ran and the whole declared list — which is what lets `failed` be read against it and
      `ranTotal` be a total rather than a floor. Two consequences for how you compose a gate.
@@ -666,8 +673,13 @@ report, because `git switch -c` is about to fail anyway.
         as obeying the ask is. And there is no pre-given answer without a trail: with
         `journal.enabled` false, or an append that does not land, the command exits 1 saying the
         confirmation was NOT recorded — go back to asking per task.
-     b. Set `task.status = "done"`, `task.completedAt = <ISO now>`, fill `task.outcome` and `task.verifiedBy`.
-        (The **orchestrator**, not the subagent, writes `outcome`.)
+     b. **Nothing to `Edit` at this letter — the close is one script call, made at the end of (c).**
+        `task.status = "done"`, `completedAt`, `outcome` and `verifiedBy` are not written here by
+        hand: writing them ahead of the commit is the sequence this letter used to prescribe, and
+        it is exactly the hand edit `/audit:task done` (below, in (c)) exists to replace. Doing it
+        here does not merely duplicate that later write — a task already `"done"` is terminal, so
+        the call in (c) would refuse to close it again, over a task the gates just passed. (The
+        **orchestrator**, not the subagent, supplies `outcome`.)
      c. **Commit the task's work — through the script, not by hand:**
         ```
         python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" \
@@ -866,7 +878,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `ready now -- /audit:run <id>`. Run that, and the fix executor edits inside an open task.
    **`/audit:task scope` is not that route**, and it is where the old wording sent
    people. It no longer refuses a finished
-   task. F283 narrowed that refusal to `cancelled` alone,
+   task — that refusal narrowed to `cancelled` alone,
    and a `done` task will take a widening — one that settles the `fileIndex` and deliberately
    records no new work: the task's `outcome` still describes the run that happened, so the finding
    would get no commit, no gate run and no evidence row of its own — and the task stays `done`,
@@ -909,7 +921,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    up. Everything it writes happens after the verdict is complete, so the recording can never
    appear in the tree comparison it is being judged by.
 
-   **It brackets the gate, and that is why it is a script (F193).** A gate is a MEASUREMENT.
+   **It brackets the gate, and that is why it is a script.** A gate is a MEASUREMENT.
    Exit 1 is not one answer, and the output says which: a command failed, the gate
    **changed the working tree**, **nothing actually ran**, a step **reached no verdict** (it
    never started, the OS ended it, or it was stopped at its bound), or a **stop signal** cut the
@@ -922,7 +934,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    task's own markdown files it then SKIPPED every hook on a Python-only config and the task
    went to `done` on a gate that verified nothing.
 
-   **`NO OVERLAP WITH THIS WORK` is a REPORT, not a refusal (F204).** The third way a gate
+   **`NO OVERLAP WITH THIS WORK` is a REPORT, not a refusal.** The third way a gate
    says nothing, after doing too much and doing nothing: it ran, it passed, and none of the
    paths it printed is a file the phase's tasks declare. Measured live — a UI suite, two files,
    nine tests, all green, against a diff that was a one-value edit to a JSON manifest. The
@@ -932,7 +944,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    refuses manufactures false refusals. Where the runner prints no paths the line says the
    question is not knowable from its output, which is not the same answer and is never spelled
    like it. `--task <taskId>` narrows the question to one task. The line NAMES a bounded sample
-   of the paths the runner actually printed (F270), which is what tells "these are my suites and
+   of the paths the runner actually printed, which is what tells "these are my suites and
    none of them touched my files" apart from "these are `node_modules` stack frames and a config
    file" — two counts could not, and the line was reported firing on every gate run of one
    session because of it.
@@ -943,7 +955,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    spelling of the check (`--check` not `--write`, `ruff check` not `ruff --fix`) or
    `/audit:phase retarget <phaseId> --gate <read-only entry>`.
 
-   **`TREE CHANGED OUTSIDE THIS WORK` is a REPORT and moves the exit code not at all (F273).**
+   **`TREE CHANGED OUTSIDE THIS WORK` is a REPORT and moves the exit code not at all.**
    Paths moved in the window that the work under test does not declare. `git status --porcelain`
    describes the WHOLE repository, so a task you are running in parallel — this file tells you to
    do that whenever `files` are disjoint — puts its executor's writes inside every sibling's
@@ -953,7 +965,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
 
    **What makes not-refusing affordable is step 4c's pathspec, and the two are one decision.**
    Before it, a gate that rewrote files outside its subject reached the commit through a bare
-   `git commit` — that is F193, where a documentation task came within one command of carrying
+   `git commit` — a documentation task once came within one command of carrying
    +33/-62 of backend reformatting. Committing with an explicit pathspec means those paths cannot
    ride in whoever wrote them, so the remaining exposure is that they sit in the working tree
    unnoticed, and a line that names them is the answer to that. **Weaken either half and the other
@@ -961,7 +973,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    drop the pathspec and a foreign rewrite is back in somebody's commit with only a printed line
    between it and the reader.
 
-   **`GATE COULD NOT RUN` is not the task's failure (F276).** A step reached no verdict — a
+   **`GATE COULD NOT RUN` is not the task's failure.** A step reached no verdict — a
    missing command, a runner that died before its first test, a port it could not bind in a
    sandbox, or **the OS ending the runner** (an out-of-memory reaper, a crash inside it, a cgroup
    limit, another measurement on the host starving it of CPU). The first three exit non-zero having

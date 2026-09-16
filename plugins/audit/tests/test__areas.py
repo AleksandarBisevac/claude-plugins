@@ -528,18 +528,18 @@ def _cases(check):
         moved = M.claim_drift(text=body)
         check("oa11 a row whose CODE no longer carries the fact it is anchored "
               "to is a FINDING, not a pass. Without this the way to silence any "
-              "row is to delete the constant it reads, which is the direction "
-              "F271 and F276 already rotted in",
+              "row is to delete the constant it reads, which is a direction "
+              "this document has already rotted in",
               any(c == "gone-fact" and "no longer carries the fact" in p
                   for c, p in moved), repr(moved))
     finally:
         M.CLAIM_ANCHORS = _saved
-    # --- F282, second pass: the two things a review found this block claiming --
+    # --- second pass: the two things a review found this block claiming --------
     # 1. A LIST CLAIM. `## Keeping a failed run's record` names the evidence
     #    statuses a run can strand, and that list went stale inside the very
     #    change that added these anchors: the section was anchored, but only by a
-    #    row reading a check NAME, so `claim_drift` was blind to the list. F282's
-    #    own class in F282's own commit.
+    #    row reading a check NAME, so `claim_drift` was blind to the list -
+    #    the same class of gap, in the very commit meant to close it.
     check("oa13 the evidence vocabulary is DERIVED from the enum that owns it, "
           "not restated: every member of `_status_facts.NO_SIGN_OFF_EVIDENCE` is "
           "named by the section, and every word the section names is a member",
@@ -570,21 +570,22 @@ def _cases(check):
                              "evidence can sit")
     check("oa15 ...and a word the section names that the enum does NOT have is "
           "also a finding. This is the half that stops a status being written "
-          "into the prose before the code produces it, which is what F271 and "
-          "F276 already were",
+          "into the prose before the code produces it, which this document has "
+          "already been caught doing",
           any(c == "audit-state-statuses" and "no such member" in p
               for c, p in M.claim_drift(text=_invented)),
           repr(M.claim_drift(text=_invented)))
-    # --- F303: the clause a five-claim section was not holding -----------------
+    # --- the clause a five-claim section was not holding ------------------------
     # `## Phase sign-off` told the reader `/audit:task scope` refuses a `done`
-    # task, and F283 had already reversed that: driven on one fixture with only
-    # the status changed, the released v2.2.0 exits 2 and this tree exits 0 having
-    # widened `files`. The ADVICE survived - a finding in an undeclared file still
-    # wants a new task, because the widening settles the index and records no new
-    # work - so a reader checks the reasoning, finds it sound, and never re-checks
-    # the clause under it. The section was already anchored several claims deep
-    # and not one of them read that sentence, which is what a per-SECTION coverage
-    # figure actually buys; `_areas.py --coverage` prints the per-claim answer.
+    # task, and a prior fix had already reversed that: driven on one fixture with
+    # only the status changed, the released v2.2.0 exits 2 and this tree exits 0
+    # having widened `files`. The ADVICE survived - a finding in an undeclared
+    # file still wants a new task, because the widening settles the index and
+    # records no new work - so a reader checks the reasoning, finds it sound, and
+    # never re-checks the clause under it. The section was already anchored
+    # several claims deep and not one of them read that sentence, which is what a
+    # per-SECTION coverage figure actually buys; `_areas.py --coverage` prints the
+    # per-claim answer.
     check("oa20 the statuses `scope` REFUSES are read out of the verb, not "
           "restated beside it: `## Phase sign-off` names every status the guard "
           "in `_locked_scope` turns away, and every status it names is one",
@@ -592,16 +593,16 @@ def _cases(check):
                if c == "scope-refusal-statuses"],
           repr([p for c, p in M.claim_drift()
                 if c == "scope-refusal-statuses"]))
-    # F303 ITSELF, in the direction the document rotted: it named a status the
-    # verb does not refuse. One word swapped inside the anchored sentence, which
-    # is the smallest edit that reproduces the fault.
-    _refused_wrong = body.replace("refusal to `cancelled` alone,",
-                                  "refusal to `done` alone,")
+    # THIS DOCUMENT ITSELF ROTTED THIS WAY ONCE: it named a status the verb does
+    # not refuse. One word swapped inside the anchored sentence, which is the
+    # smallest edit that reproduces the fault.
+    _refused_wrong = body.replace("that refusal narrowed to `cancelled` alone,",
+                                  "that refusal narrowed to `done` alone,")
     check("oa21 ...and naming a status the verb does NOT refuse is a finding in "
           "both halves at once - the word the code has no member for, and the "
-          "member the section stopped naming. This is F303 exactly: the clause "
-          "read `done` for a release and a half while the code refused only "
-          "`cancelled`",
+          "member the section stopped naming. This is exactly the shape a "
+          "released version once shipped: the clause read `done` while the code "
+          "refused only `cancelled`",
           _refused_wrong != body
           and any(c == "scope-refusal-statuses" and "no such member" in p
                   for c, p in M.claim_drift(text=_refused_wrong))
@@ -615,14 +616,14 @@ def _cases(check):
     # about a member - a reworded mechanism is a mechanism somebody has to
     # re-check.
     _pre_f303 = body.replace(
-        "It no longer refuses a finished\n   task. F283 narrowed that refusal to "
+        "It no longer refuses a finished\n   task — that refusal narrowed to "
         "`cancelled` alone,\n   and a `done` task will take a widening",
         "It refuses a `done` task on purpose, and every task is `done` by the "
         "time you are reading this step")
-    check("oa22 ...and reverting the clause to the sentence F283 had already "
-          "falsified is a finding too, because it takes the anchored mechanism "
-          "with it: the list can no longer be located, which is the repair "
-          "rather than a member to add",
+    check("oa22 ...and reverting the clause to a sentence a prior fix had "
+          "already falsified is a finding too, because it takes the anchored "
+          "mechanism with it: the list can no longer be located, which is the "
+          "repair rather than a member to add",
           _pre_f303 != body
           and any(c == "scope-refusal-statuses" and "cannot be located" in p
                   for c, p in M.claim_drift(text=_pre_f303)),

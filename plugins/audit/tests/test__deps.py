@@ -2362,6 +2362,122 @@ def _cases(check):
     finally:
         shutil.rmtree(_dpn_tmp, ignore_errors=True)
 
+    # --- rc: a comment or docstring must state its own constraint, not a private --
+    # --- register's id -------------------------------------------------------------
+    # register_citation_violations() reads a `#` comment, a docstring and a
+    # `check()` message for a fault token anywhere, and a phase token only where
+    # it opens a paragraph. The helpers are asserted directly first, on plain
+    # text, because a comparison built through the full derived file-walk could
+    # not tell "the shape was not recognised" from "the fixture never reached
+    # the walk".
+    check("rc0 a fault token is found wherever it sits in a comment - two on "
+          "one line, since a scan that stopped after the first would call a "
+          "line with two citations clean after removing one",
+          M._fault_hits("# F1 broke this, and F2000 is the same bug elsewhere")
+          == [(2, "F1"), (21, "F2000")])
+    check("rc1 ...and a token past the table's own digit width is NOT a fault "
+          "id - the shape is bounded, not merely 'F followed by digits'",
+          M._fault_hits("# F12345 is five digits wide") == [])
+    check("rc2 the ONE in-repo collision is excluded: `tracker-sync.md` names "
+          "its own live probes 'live-gate F<n>', which resolves inside that "
+          "same document and is not the private register",
+          M._fault_hits("see tracker-sync.md -> live-gate F5, which is fast")
+          == [])
+    check("rc3 ...and that exclusion is NARROW - the same digits cited without "
+          "the two-word marker in front are still a finding, so a citation "
+          "cannot dodge this by dropping the phrase mid-sentence",
+          M._fault_hits("gate F5 alone, no 'live-' in front") == [(5, "F5")])
+    check("rc4 a phase token is found ONLY where it opens a paragraph, "
+          "immediately followed by a full stop - the 'P42. EXPLANATION' shape "
+          "this tree's own retrospectives use",
+          M._phase_paragraph_hit("P42. AN EXECUTOR FIXED A SECURITY DEFECT") == "P42"
+          and M._phase_paragraph_hit("# P46.5. THE TOTAL IS THE SIZE") == "P46")
+    check("rc5 NEGATIVE CONTROL: this plugin's OWN phase-id vocabulary - a bare "
+          "`P1`/`P2`/`P3`, or one named mid-sentence with no full stop after it "
+          "- is not a paragraph-opening citation and is left alone, which is "
+          "the gap the module docstring states rather than hides",
+          M._phase_paragraph_hit("phase P1 and P2 both hold priority 3") is None
+          and M._phase_paragraph_hit("--phase P1 exits 0") is None
+          and M._phase_paragraph_hit("(P46.5)") is None)
+    check("rc6 a comment carries a fault token through `_py_comment_citations`, "
+          "by LINE - the token this tokenizer sees is the comment's, never a "
+          "string literal beside it on the same physical line",
+          M._py_comment_citations('x = 1  # F281 explains this default\n'
+                                  'y = "F281 as data, not a comment"\n')
+          == [(1, "F281")])
+    check("rc7 a file that will not tokenize is None, not an empty list - the "
+          "caller's cue to NAME it rather than read silence as clean",
+          M._py_comment_citations("def broken(:\n    pass\n") is None)
+    check("rc8 a docstring carries a fault token, at the docstring's own first "
+          "line, whether the citing module, class or function docstring",
+          M._py_docstring_citations(
+              'def f():\n    """F282 measured the gap this returns."""\n'
+              '    return 1\n')
+          == [(2, "F282")])
+    check("rc9 a docstring paragraph opening a phase citation is found too, on "
+          "an indented line inside a multi-line docstring",
+          M._py_docstring_citations(
+              'def f():\n    """Why this exists.\n\n'
+              '    P42. AN EXECUTOR FIXED A DEFECT AND COULD NOT PROVE IT.\n'
+              '    """\n    return 1\n')
+          == [(2, "P42")])
+    check("rc10 unparseable source is None for the docstring reader too",
+          M._py_docstring_citations("def broken(:\n    pass\n") is None)
+    # THE ONE WRITTEN EXCEPTION, both directions. A case's own leading label may
+    # be fault-shaped - `_harness.case_id()` is the same leading token
+    # `tools/prove-gates.py` attributes a mutation by - but a citation ANYWHERE
+    # else in the same message is still one.
+    check("rc11 a check() label that IS a fault-shaped token is exempt - the "
+          "case's own identifier, not a citation of the entry behind it",
+          M._check_label_citations(
+              'def _cases(check):\n'
+              '    check("F281 the exempt label case", True)\n')
+          == [])
+    check("rc12 ...and the SAME token cited later in the SAME message is not "
+          "exempt - only the leading position is the label",
+          M._check_label_citations(
+              'def _cases(check):\n'
+              '    check("pr5 this cites F281 mid message", True)\n')
+          == [(2, "F281")])
+    check("rc13 the `%`-formatted shape is read off its LEFT operand only - the "
+          "format arguments are data the case captured, not prose this scan "
+          "reads, so a variable NAMED like a fault id is not a false citation",
+          M._check_label_citations(
+              'def _cases(check):\n'
+              '    F281 = 1\n'
+              '    check("pr6 formatted label %r" % (F281,), True)\n')
+          == [])
+    check("rc14 ...and a citation written INTO the formatted literal itself is "
+          "still read, because only the ARGUMENTS are exempt, not the message",
+          M._check_label_citations(
+              'def _cases(check):\n'
+              '    check("pr7 this cites F281 and formats %r" % (1,), True)\n')
+          == [(2, "F281")])
+    # END TO END, on a real derived tree - a `.gitignore` so `prose_scan_set`
+    # answers rather than reporting the walk itself broken, one `.py` and one
+    # `.md` file each carrying one citation of each kind.
+    _rc_tmp = tempfile.mkdtemp(prefix="audit-deps-rc-")
+    try:
+        with open(os.path.join(_rc_tmp, ".gitignore"), "w", encoding="utf-8") as fh:
+            fh.write("__pycache__/\n")
+        with open(os.path.join(_rc_tmp, "mod.py"), "w", encoding="utf-8") as fh:
+            fh.write('"""Module doc.\n\nF11 is why this file reads one line at a '
+                      'time.\n"""\n\n\ndef _cases(check):\n'
+                      '    check("c1 an ordinary label, no citation", True)\n'
+                      '    check("c2 this one cites F12 mid message", True)\n')
+        with open(os.path.join(_rc_tmp, "GUIDE.md"), "w", encoding="utf-8") as fh:
+            fh.write("A decision made because of F13 stays true today.\n")
+        _rc_hits = M.register_citation_violations(_rc_tmp)
+        check("rc15 END TO END: the derived walk finds all three - the module "
+              "docstring, the mid-message citation and the document, none of "
+              "them the exempt label - and finds NOTHING ELSE, so the ordinary "
+              "label and the c1 case do not appear: %r" % (_rc_hits,),
+              sorted(_rc_hits) == sorted([
+                  ("mod.py", 1, "F11"), ("mod.py", 9, "F12"),
+                  ("GUIDE.md", 1, "F13")]))
+    finally:
+        shutil.rmtree(_rc_tmp, ignore_errors=True)
+
 
     # --- the ONE recorded layer debt, and whether its REASON still holds ----------
     # KNOWN_LAYER_DEBT carries a written justification, and a written justification

@@ -370,6 +370,14 @@ TABLE = (
   "def json_encoding_violations(script_dir=None, hooks_dir=None):",
   "def json_encoding_violations(script_dir=None, hooks_dir=None):\n    return []",
   DEP, "je2"),
+ # The whole mechanism, crippled the same way. A comment or a document citing
+ # the private register is a claim nobody can check on the far side of it, and
+ # a version reporting nothing reads exactly like a tree with no citations left
+ # to find.
+ ("register_citation_violations", S + "_deps.py", "replace",
+  "def register_citation_violations(repo_root=None):",
+  "def register_citation_violations(repo_root=None):\n    return []",
+  DEP, "rc15"),
  # TWO CONSTRAINTS, and this row lost the first one silently. The target must be
  # a file the rule APPLIES to (400+ lines) AND one carrying EXACTLY the two
  # markers it needs, because `drop` removes ONE line: a file with fourteen
@@ -1181,6 +1189,13 @@ ALLOW = (
   "                if _called_name(node) not in JSON_WRITER_NAMES "
   "+ _JSON_DUMP_NAMES:",
   DEP, "je5"),
+ # `reference/tracker-sync.md` names its own live-network probes "live-gate
+ # F<n>", which resolves inside that same document and is not the private
+ # register - drop the narrowing and the lint convicts the document for
+ # naming its own evidence.
+ ("register_citation_violations", S + "_deps.py", "replace",
+  "        if before.endswith(_LIVE_GATE_MARKER):\n            continue",
+  "        if False:\n            continue", DEP, "rc2"),
  # A byte-for-byte comparison that stops honouring the fence's trailing newline
  # reports drift on a guide that is exactly right, which is the direction a
  # regenerate-and-commit instruction cannot fix.
