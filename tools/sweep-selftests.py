@@ -6,6 +6,7 @@ sweeps that used to exist.
     tools/sweep-selftests.py                     # the sweep, all cores but two
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
     tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass
+    tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
     tools/sweep-selftests.py --selftest          # this file's own cases
 
 WHY THIS EXISTS. The sweep was written twice - once in `tools/verify.sh` and once
@@ -572,14 +573,38 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
     return sorted(rows, key=lambda r: r["path"])
 
 
+def _render_tail(rows, bad, skipped, total_cases, out):
+    """Every failure IN FULL, the fail list, then the one-line summary.
+
+    Shared by `render` and `render_quiet`: both grade the same rows, and this
+    is the tail either form reads off them once the inventory line above it -
+    loud or none - has been decided. That order is not cosmetic: `verify.sh`
+    shows `tail -12` of a failed step, so the last lines have to be the ones
+    that say what broke. Full output goes above the summary because a step
+    that hides its output in exactly the case you need it is worse than one
+    that prints everything - CI's old comment says so, and this keeps that
+    promise.
+    """
+    for row in bad:
+        out.write("\n--- %s: %s ---\n" % (row["path"], row["why"]))
+        out.write(row.get("output") or "(no output)")
+        if not (row.get("output") or "").endswith("\n"):
+            out.write("\n")
+    out.write("\n")
+    if bad:
+        for row in bad:
+            out.write("FAIL  %s: %s\n" % (row["path"], row["why"]))
+    out.write("%d/%d files ok, %d migrated to tests/, %d cases\n"
+              % (len(rows) - len(bad), len(rows), len(skipped), total_cases))
+    return 1 if bad else 0
+
+
 def render(rows, jobs, encoding=None, stream=None):
     """Print the table, then every failure IN FULL, then the summary. Returns exit.
 
-    That order is not cosmetic: `verify.sh` shows `tail -12` of a failed step, so
-    the last lines have to be the ones that say what broke. Full output goes above
-    the summary because a step that hides its output in exactly the case you need it
-    is worse than one that prints everything - CI's old comment says so, and this
-    keeps that promise.
+    THE LOUD FORM, UNCHANGED: one line per file whatever it did, because a
+    human bisecting a red run wants the inventory of every file the sweep
+    touched and not only the ones that failed.
     """
     out = stream if stream is not None else sys.stdout
     bad = [r for r in rows if not r["ok"]]
@@ -595,18 +620,29 @@ def render(rows, jobs, encoding=None, stream=None):
             out.write("  ok      %-58s %d cases\n" % (row["path"], row["cases"]))
         else:
             out.write("  FAILED  %-58s %s\n" % (row["path"], row["why"]))
-    for row in bad:
-        out.write("\n--- %s: %s ---\n" % (row["path"], row["why"]))
-        out.write(row.get("output") or "(no output)")
-        if not (row.get("output") or "").endswith("\n"):
-            out.write("\n")
-    out.write("\n")
-    if bad:
-        for row in bad:
-            out.write("FAIL  %s: %s\n" % (row["path"], row["why"]))
-    out.write("%d/%d files ok, %d migrated to tests/, %d cases\n"
-              % (len(rows) - len(bad), len(rows), len(skipped), total_cases))
-    return 1 if bad else 0
+    return _render_tail(rows, bad, skipped, total_cases, out)
+
+
+def render_quiet(rows, jobs, encoding=None, stream=None):
+    """Print every failure, the totals, and nothing per passing file.
+
+    Measured across this release's agent transcripts, shell output is the
+    largest single source of material entering an agent's context, larger
+    than every file read put together - and the loud form's one line per
+    file, printed whether or not it has anything to say, is most of it. This
+    is a second spelling of the same run and not a second run: `render` and
+    this both grade the identical rows `sweep()` returned, so nothing here
+    can change which files failed - only the inventory line above the tail
+    either form shares through `_render_tail`.
+    """
+    out = stream if stream is not None else sys.stdout
+    bad = [r for r in rows if not r["ok"]]
+    total_cases = sum(r["cases"] for r in rows)
+    skipped = [r for r in rows if r["skipped"]]
+
+    label = "encoding pass (%s)" % (encoding,) if encoding else "sweep"
+    out.write("%s: %d files, %d workers\n" % (label, len(rows), jobs))
+    return _render_tail(rows, bad, skipped, total_cases, out)
 
 
 # --- entry point --------------------------------------------------------------
@@ -627,6 +663,11 @@ def main(argv):
     encoding = _flag_value(argv, "--encoding", None)
     timeout = int(_flag_value(argv, "--timeout", DEFAULT_TIMEOUT))
     jobs = int(_flag_value(argv, "--jobs", default_jobs()))
+    # THE INVENTORY, MADE OPTIONAL. One line per file whether or not it has
+    # anything to say is most of what this run puts into an agent's context;
+    # `--quiet` keeps the failures and the totals and drops the rest. A human
+    # bisecting a red run still has the loud form, unchanged, as the default.
+    quiet = "--quiet" in argv
 
     paths = sweep_files()
     covered = covered_paths()
@@ -641,7 +682,7 @@ def main(argv):
                          "`_output.py --covered` and find out why.\n")
         return 2
     rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout)
-    return render(rows, jobs, encoding=encoding)
+    return (render_quiet if quiet else render)(rows, jobs, encoding=encoding)
 
 
 # --- selftest -----------------------------------------------------------------
@@ -765,6 +806,43 @@ def _cases(check):
     check("r2 a migrated file is reported as SKIPPED with its reason rather "
           "than as a silent zero, which is the row CI printed by hand",
           "cases live in tests/" in buf.getvalue())
+
+    # -- render_quiet prints failures and totals, never a passing file --------
+    _rows_mix = [grade(live, 0, "1/1 cases passed\n", covered),
+                 grade("plugins/audit/scripts/_deps.py", 1, "boom\n", covered)]
+    buf_rq = io.StringIO()
+    code_rq = render_quiet(_rows_mix, 4, stream=buf_rq)
+    text_rq = buf_rq.getvalue()
+    check("rq0 THE QUIET FORM matches the LOUD FORM (r0) on the VERDICT - the "
+          "same exit code, the failing file's own header, its output IN "
+          "FULL, and the final counts - because a quiet run is a second "
+          "spelling of the same run and not a second run: %r" % (text_rq,),
+          code_rq == 1 and "FAIL" in text_rq and "boom" in text_rq
+          and text_rq.rstrip().endswith("%d cases" % 1))
+    check("rq1 ...and drops the PASSING file's own inventory line, which is "
+          "the whole of what this form is for: %r" % (text_rq,),
+          live not in text_rq)
+
+    buf_rq_green = io.StringIO()
+    render_quiet([grade(live, 0, "5/5 cases passed\n", covered)], 4,
+                 stream=buf_rq_green)
+    check("rq2 a wholly green quiet render names no file at all - not even the "
+          "one that passed - and still prints the count, so a caller reading "
+          "only this output can still tell 'nothing failed' from 'nothing "
+          "ran': %r" % (buf_rq_green.getvalue(),),
+          live not in buf_rq_green.getvalue()
+          and "FAIL" not in buf_rq_green.getvalue()
+          and ("%d cases" % 5) in buf_rq_green.getvalue())
+
+    buf_rq_skip = io.StringIO()
+    render_quiet([grade(migrated, 0, "moved\n", covered)], 4,
+                 stream=buf_rq_skip)
+    check("rq3 OVER-FIRE GUARD: a SKIPPED file is not a failure either, so the "
+          "quiet form drops its row too rather than keeping every non-red row "
+          "by some looser rule than 'ok' - and it still must not hide a red "
+          "row, which rq0 already covers: %r" % (buf_rq_skip.getvalue(),),
+          "cases live in tests/" not in buf_rq_skip.getvalue()
+          and migrated not in buf_rq_skip.getvalue())
 
     # -- the scratch-directory rule, without a subprocess ----------------------
     g = grade(live, 0, "ALL PASS: 9/9 cases passed\n", covered,

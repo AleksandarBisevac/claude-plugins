@@ -1162,6 +1162,55 @@ def _cases(check):
           and res_dup["status"] == "passed"
           and res_dup["steps"][1]["measured"] == M.MEASURED_CHECKS)
 
+    # --- render_quiet prints failures and totals, never a plain pass -------
+    _res_mixed_render = {
+        "steps": [
+            {"name": "ok-step", "exit": 0, "ran": 5, "durationMs": 120},
+            {"name": "bad-step", "exit": 1, "ran": 5, "durationMs": 80,
+             "failing": ["FAIL: something broke"], "failingBasis": "b"}],
+        "failed": ["bad-step"], "treeMutated": [], "treeBasis": "b",
+        "ranTotal": 10, "sharedCounts": [], "overlap": None,
+        "coverageBasis": ""}
+    _loud_lines, _quiet_lines = [], []
+    _loud_code = M.render(_res_mixed_render, out=_loud_lines.append)
+    _quiet_code = M.render_quiet(_res_mixed_render, out=_quiet_lines.append)
+    _loud_text, _quiet_text = "\n".join(_loud_lines), "\n".join(_quiet_lines)
+    check("rq1 THE LOUD FORM prints a line for a step that simply passed, "
+          "unchanged: %r" % (_loud_text,),
+          "ok-step" in _loud_text and "exit 0" in _loud_text)
+    check("rq2 THE QUIET FORM drops that line - a plain pass has nothing left "
+          "to say once the totals below already say the run came back clean: "
+          "%r" % (_quiet_text,),
+          "ok-step" not in _quiet_text)
+    check("rq3 ...and keeps the FAILING step's line and its failing detail IN "
+          "FULL, exactly as the loud form does - the shape this task is about "
+          "is one line per PASSING file, never a failure: %r" % (_quiet_text,),
+          "bad-step" in _quiet_text and "FAIL: something broke" in _quiet_text
+          and "bad-step" in _loud_text
+          and "FAIL: something broke" in _loud_text)
+    check("rq4 THE VERDICT ITSELF DOES NOT MOVE: both forms return the same "
+          "exit code and print the identical GATE RED banner - a quiet run is "
+          "a second spelling of one run and not a second run: %r"
+          % ((_loud_code, _quiet_code),),
+          _loud_code == _quiet_code
+          and "GATE RED: bad-step" in _loud_text
+          and "GATE RED: bad-step" in _quiet_text)
+
+    _res_retried = {
+        "steps": [{"name": "flaky", "exit": 0, "ran": 4, "durationMs": 50,
+                   "retryBasis": "retried after SIGTERM once"}],
+        "failed": [], "treeMutated": [], "treeBasis": "b", "ranTotal": 4,
+        "sharedCounts": [], "overlap": None, "coverageBasis": ""}
+    _rq_lines = []
+    M.render_quiet(_res_retried, out=_rq_lines.append)
+    check("rq5 OVER-FIRE GUARD: a step that passed on a RETRY is not a plain "
+          "pass, so the quiet form must not drop its own inventory line (the "
+          "one carrying ITS exit, ran count and duration, distinct from the "
+          "retry banner every form prints) - a quiet form that widened this "
+          "far would be hiding a finding rather than an inventory: %r"
+          % (_rq_lines,),
+          any("flaky" in ln and "exit" in ln for ln in _rq_lines))
+
     # --- did the step measure anything, said as a word --------------------
     # THE READING, RECORDED WHERE IT WAS TAKEN. Reported from the field: three
     # rows brought as "false reds", two of them withdrawn on the raw evidence
@@ -4083,7 +4132,7 @@ def _reuse_cases(check):
           % (other_scope["key"] != plain_key["key"],),
           other_scope["key"] != plain_key["key"])
 
-    excluded = _ev_io.recorded_paths(root, mp)
+    excluded, _no_drops = _ev_io.recorded_paths(root, mp)
     check("ru5 the paths this recorder writes are DERIVED and include the "
           "SHARD, which is the one the assembled manifest cannot name: assembly "
           "replaces every `shard` stub with the phase it points at, so a reader "
@@ -4093,6 +4142,111 @@ def _reuse_cases(check):
           and "docs/audit/journal" in excluded
           and "docs/audit/audit-plan.json" in excluded
           and "docs/audit/phases/P1.json" in excluded)
+
+    # --- the exclusion, and the identity built on it, must not depend on
+    # whether a project's path is spelled through a symlink -----------------
+    # A repo is routinely reached through one - /tmp -> /private/tmp on macOS,
+    # and every checkout somebody symlinked into place - and `recorded_paths`
+    # used to compare a write it built by joining onto `project` against
+    # `project` itself with neither side resolved: fine while both spellings
+    # agreed, and silently wrong the moment they did not, because a relative
+    # path computed from two different spellings of one directory climbs back
+    # OUT of it. Guarded the way `test__config.py`'s r7/r8 already are: a
+    # platform that will not make a symlink here skips rather than fails.
+    _sym_link = root + "-link"
+    try:
+        os.symlink(root, _sym_link)
+        _symlinked = True
+    except (OSError, NotImplementedError, AttributeError):
+        _symlinked = False
+    if not _symlinked:
+        print("SKIP ru5a-ru5c (this platform will not create a symlink here)")
+    else:
+        _link_mp = os.path.join(_sym_link, "docs", "audit", "audit-plan.json")
+        _ex_a, _drop_a = _ev_io.recorded_paths(_sym_link, mp)
+        _ex_b, _drop_b = _ev_io.recorded_paths(root, _link_mp)
+        check("ru5a THE FAULT, FIXED: the project spelled through a symlink "
+              "with the manifest spelled plainly, or the other way round, "
+              "excludes exactly what ru5 excluded reaching both plainly, with "
+              "nothing reported dropped. Before the fix the manifest fell out "
+              "of the exclusion on both sides: %r"
+              % ((_ex_a, _ex_b, _drop_a, _drop_b),),
+              _ex_a == excluded and _ex_b == excluded
+              and _drop_a == [] and _drop_b == [])
+
+        _id_link_project = M.reuse_identity(_sym_link, mp, declared,
+                                            [("ok", "true")], ["src/a.py"])
+        _id_link_manifest = M.reuse_identity(root, _link_mp, declared,
+                                             [("ok", "true")], ["src/a.py"])
+        check("ru5b ...and the IDENTITY built on that exclusion agrees "
+              "whichever side of the pair is spelled through the link, which "
+              "is the property a caller actually reads rather than the "
+              "exclusion list alone: %r"
+              % ((plain_key["key"], _id_link_project["key"],
+                  _id_link_manifest["key"]),),
+              plain_key["key"] is not None
+              and plain_key["key"] == _id_link_project["key"]
+              and plain_key["key"] == _id_link_manifest["key"])
+
+        # OVER-FIRE GUARD: resolving both sides must not make two genuinely
+        # different repositories - each reached only through its OWN symlink -
+        # read as one tree. What must not move (the brief's own words) is that
+        # a reused verdict is still refused for a tree that genuinely differs.
+        _other_root = _harness.fixture_root("run-test-gate-reuse-other-")
+        subprocess.run(["git", "init", "-q", _other_root], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.makedirs(os.path.join(_other_root, "src"))
+        with open(os.path.join(_other_root, "src", "a.py"), "w") as fh:
+            fh.write("declared = 999\n")
+        for arg in (["add", "--", "src"],
+                    ["-c", "user.email=fixture@example.com",
+                     "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                     "commit", "-qm", "fixture"]):
+            subprocess.run(["git", "-C", _other_root] + arg, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _other_link = _other_root + "-link"
+        os.symlink(_other_root, _other_link)
+        _other_mp = os.path.join(_other_link, "audit-plan.json")
+        _id_other = M.reuse_identity(_other_link, _other_mp, declared,
+                                     [("ok", "true")], ["src/a.py"])
+        check("ru5c OVER-FIRE GUARD: resolving both sides of the comparison "
+              "must not widen what counts as the same tree - a genuinely "
+              "DIFFERENT repository, reached only through its own symlink, "
+              "still measures a different identity from the fixture's: %r"
+              % ((plain_key["key"], _id_other["key"]),),
+              _id_other["key"] is not None
+              and _id_other["key"] != plain_key["key"])
+
+        # THE SYMLINKS ARE SIBLINGS OF THEIR TARGETS, not children of them, so
+        # `_harness.fixture_root`'s own atexit cleanup - registered on `root`
+        # and `_other_root` - never reaches them. Removed explicitly, or the
+        # sweep's own isolation check (this suite's cwd is a watched
+        # directory) names them as debris this suite left behind.
+        os.unlink(_other_link)
+        os.unlink(_sym_link)
+
+    # --- a write genuinely outside the project (not a symlink of the same
+    # file) is REPORTED, not silently dropped from the exclusion -----------
+    _outside_mp = os.path.join(os.path.dirname(root), "elsewhere-plan.json")
+    _ex_outside, _dropped_outside = _ev_io.recorded_paths(root, _outside_mp)
+    check("ru5d a manifest path that is genuinely outside the project still "
+          "cannot be excluded, and the miss is NAMED rather than left for a "
+          "shrunk count in a basis line to imply: %r" % (_dropped_outside,),
+          "docs/audit/audit-plan.json" not in _ex_outside
+          and len(_dropped_outside) == 1
+          and _dropped_outside[0][0] == os.path.abspath(_outside_mp))
+
+    _sibling_root = _harness.fixture_root("run-test-gate-sibling-")
+    subprocess.run(["git", "init", "-q", _sibling_root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _sibling_lines = []
+    M.main([mp, "P1", "--project-dir", _sibling_root], out=_sibling_lines.append)
+    _sibling_text = "\n".join(_sibling_lines)
+    check("ru5e ...and `main` PRINTS that sentence rather than letting the "
+          "identity's basis count shrink where nobody is watching: %r"
+          % (_sibling_text[:200],),
+          "is a path this plugin writes" in _sibling_text
+          and "stays inside the content identity" in _sibling_text)
 
     # --- through `main`, which is where the wiring lives --------------------
     code_one, text_one = _run()

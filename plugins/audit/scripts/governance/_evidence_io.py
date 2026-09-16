@@ -136,7 +136,8 @@ def in_evidence(project, path, config=None):
 
 
 def recorded_paths(project, manifest_path, config=None):
-    """Every path THIS recorder writes, as project-relative prefixes, sorted.
+    """`(rels, dropped)` -- every path THIS recorder writes, as project-relative
+    prefixes, sorted, and any write this function could not turn into one.
 
     WHO NEEDS IT. A caller asking "is this tree the one that was measured?" has to
     leave the recorder's own output out of the answer, or the first recorded run
@@ -160,9 +161,29 @@ def recorded_paths(project, manifest_path, config=None):
     gate DOES - the entries and the declared files - are things the caller reads
     directly and can put in its own key.
 
-    A PATH OUTSIDE `project` IS DROPPED rather than returned relative, and the
-    drop is safe in the one direction that matters: it leaves MORE of the tree
-    inside the identity, and git never names such a path anyway.
+    BOTH SIDES ARE RESOLVED BEFORE THEY ARE COMPARED, and that is not cosmetic.
+    `project` reaches this function however ITS caller spelled it, and a write
+    built by joining a relative suffix onto it inherits that same spelling - so
+    comparing the two lexically is safe only while neither has passed through a
+    symlink. Wherever one has - and a plain child process's own working directory
+    already comes back resolved on some platforms, which is what makes the system
+    temp directory exactly such a path there - the two spellings of the identical
+    file stop sharing a prefix, `os.path.relpath` answers with a string climbing
+    back OUT of `project`, and a write this recorder makes reads as outside it:
+    MORE of the tree, not less, ends up inside the content identity the caller is
+    narrowing, and the one file that changes on every recorded run is exactly the
+    one this function exists to leave out. Resolving both sides removes the
+    spelling from the question and leaves only whether the write is really under
+    the project.
+
+    A PATH THAT IS STILL OUTSIDE `project` ONCE RESOLVED IS REPORTED, NOT
+    SILENTLY DROPPED, in the second return value, as `(path, why)`. That is a
+    different claim from the one the old comment made here: leaving an outside
+    path out of `rels` is still safe in the direction that matters, because it
+    leaves MORE of the tree inside the identity rather than inventing a match -
+    but a narrowing the caller asked for that quietly did not apply is a thing to
+    say, not a thing to absorb, or the only trace of it is a changed count in a
+    basis line nobody was watching.
     """
     config = _journal_io.load_config(project) if config is None else config
     writes = [evidence_dir(project, config), _journal_io.journal_dir(project, config)]
@@ -181,16 +202,25 @@ def recorded_paths(project, manifest_path, config=None):
             shard = stub.get("shard") if isinstance(stub, dict) else None
             if isinstance(shard, str) and shard.strip():
                 writes.append(os.path.normpath(os.path.join(base, shard.strip())))
-    rels = []
+    root = os.path.realpath(project)
+    rels, dropped = [], []
     for path in writes:
         try:
-            rel = os.path.relpath(path, project).replace(os.sep, "/")
-        except Exception:
+            rel = os.path.relpath(os.path.realpath(path), root).replace(os.sep, "/")
+        except Exception as exc:
+            dropped.append((path, "could not be compared against the resolved "
+                                  "project root: %s" % (exc,)))
             continue
-        if rel == ".." or rel.startswith("../") or rel == ".":
+        if rel == ".":
+            dropped.append((path, "resolves to the project root itself, so "
+                                  "excluding it would exclude everything"))
+            continue
+        if rel == ".." or rel.startswith("../"):
+            dropped.append((path, "resolves outside the project even once "
+                                  "symlinks are followed on both sides"))
             continue
         rels.append(rel)
-    return sorted(set(rels))
+    return sorted(set(rels)), dropped
 
 
 # --- what a row may carry -----------------------------------------------------

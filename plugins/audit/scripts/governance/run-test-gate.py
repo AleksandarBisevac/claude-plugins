@@ -1932,8 +1932,8 @@ def grades_left_out(gate, excluded):
 
 
 def reuse_identity(project, manifest_path, manifest, commands, owns):
-    """`{key, basis, limit, grading}` - what this run would have to match to be a
-    repeat, and the entries that stop it being one.
+    """`{key, basis, limit, grading, unexcluded}` - what this run would have to
+    match to be a repeat, and the entries that stop it being one.
 
     `key` is None when the tree's content could not be established; the basis
     then says why, and a None never matches a None - `reusable_run` refuses an
@@ -1943,8 +1943,14 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     The key is still computed and still recorded in that case, because the row
     has to carry what this run was taken on whether or not a repeat was allowed -
     a run that recorded no identity leaves the next one nothing to match.
+
+    `unexcluded` is `recorded_paths`' own report of a write it could not turn
+    into a project-relative exclusion. It travels on the identity for the same
+    reason `grading` does: the caller printing this dict is the one place an
+    operator meets the run, and a narrowing that silently failed to apply is not
+    this function's to swallow.
     """
-    excluded = _ev.recorded_paths(project, manifest_path)
+    excluded, unexcluded = _ev.recorded_paths(project, manifest_path)
     content, cbasis = _tree_stamp.content_digest(project, excluded=excluded)
     build = ((manifest.get("meta") or {}).get("buildCommands") or {})
     if not isinstance(build, dict):
@@ -1955,13 +1961,14 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     grading = grades_left_out(gate, excluded)
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
-                "grading": grading}
+                "grading": grading, "unexcluded": unexcluded}
     return {"key": _tree_stamp.identity_of([content, gate, scope]),
             "basis": "%s; over that, the %d gate command(s) this manifest "
                      "declares and the %d file(s) the work under test declares"
                      % (cbasis, len(gate), len(scope)),
             "limit": REUSE_LIMIT,
-            "grading": grading}
+            "grading": grading,
+            "unexcluded": unexcluded}
 
 
 def reused_result(identity, row, elapsed_ms):
@@ -2540,9 +2547,30 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
             "failed": failed}
 
 
-def render(res, out=print):
-    """Print the answer and return the exit code it earns."""
+def _quiet_step(step):
+    """True when a step's own line would say nothing past "it passed".
+
+    Exit 0, no no-verdict outcome, no failing detail and no retry: that is
+    the whole of what a plain-pass line carries, and the totals `render`
+    already prints once for the whole run say the same thing. A step missing
+    any one of those stays on the quiet form's output, because each is a fact
+    a plain pass does not have.
+    """
+    return (step["exit"] == 0 and not step.get("outcome")
+            and step.get("failing") is None and not step.get("retryBasis"))
+
+
+def _render_steps(res, out, quiet):
+    """The per-step lines, shared by `render` and `render_quiet`.
+
+    `quiet` drops the line for a step `_quiet_step` calls a plain pass; every
+    other step prints exactly as the loud form always has, because a step
+    carrying a failure, a no-verdict outcome or a retry is not the inventory
+    line either form is for.
+    """
     for step in res["steps"]:
+        if quiet and _quiet_step(step):
+            continue
         ran = step["ran"]
         # WHAT THE STEP COST, ON THE STEP'S OWN LINE AND NOT AS A TOTAL (P46.5).
         # `durationMs` has been recorded per step and for the run since this
@@ -2570,6 +2598,14 @@ def render(res, out=print):
             for line in step["failing"]:
                 out("      %s" % (line,))
             out("      basis: %s" % (step["failingBasis"],))
+
+
+def _render_verdict(res, out):
+    """Everything past the per-step lines: shared by `render` and
+    `render_quiet` so the verdict itself can never be one form's alone. A
+    quiet run is a second spelling of one run and not a second run - only the
+    step inventory above this differs between the two.
+    """
     # THE PARTS, PRINTED WHERE THE TOTAL IS READ (P46.5). Above the verdict
     # banners and below the steps, because this is a statement about the steps
     # and `reference/orchestrator.md` keys its arms on the banner literals - a
@@ -2816,6 +2852,33 @@ def render(res, out=print):
                "" if res["ranTotal"] is None
                else ", %d check(s) ran" % res["ranTotal"]))
     return code
+
+
+def render(res, out=print):
+    """Print the answer and return the exit code it earns.
+
+    THE LOUD FORM, UNCHANGED: every step gets its own line whatever it did,
+    because a human bisecting a red run wants the inventory of what ran and
+    not only what failed.
+    """
+    _render_steps(res, out, quiet=False)
+    return _render_verdict(res, out)
+
+
+def render_quiet(res, out=print):
+    """`render`'s verdict, with a plain-passing step's own line left out.
+
+    Measured across this release's agent transcripts, shell output is the
+    largest single source of material entering an agent's context, and a
+    line per step that only ever says "it passed" is exactly that cost paid
+    again on every gate run - the same shape `sweep-selftests.py --quiet`
+    already fixed on the file side. `_quiet_step` is the one predicate that
+    decides what "plain passing" means, and everything past the step
+    inventory - `_render_verdict` - runs identically to the loud form: this
+    changes what prints above the verdict and never the verdict itself.
+    """
+    _render_steps(res, out, quiet=True)
+    return _render_verdict(res, out)
 
 
 # --- stopping this process ----------------------------------------------------
@@ -3072,6 +3135,14 @@ def main(argv, out=print):
     # nothing else - no gate, no subprocess - so it is safe to hand a human who
     # has just been told their pointer did not land.
     p.add_argument("--reconcile", dest="reconcile", action="store_true")
+    # THE INVENTORY, MADE OPTIONAL. `render`'s per-step line for a step that
+    # simply passed says nothing the verdict below does not already say once
+    # for the whole run - an agent calling this gate over and over pays for
+    # that line every time. `--json` already carries the full row for a
+    # machine reader, so this is for the caller reading text who does not
+    # want the inventory either; a human bisecting a red run still gets it,
+    # because nothing here changes what `render` alone does.
+    p.add_argument("--quiet", dest="quiet", action="store_true")
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
@@ -3134,6 +3205,17 @@ def main(argv, out=print):
     # nothing to match, which turns one operator's override into everybody's.
     started = time.monotonic()
     identity = reuse_identity(project, args.manifest, manifest, commands, owns)
+    if identity.get("unexcluded"):
+        # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
+        # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
+        # the tree's content identity and could not, for one of these; the
+        # identity below still includes the path as source, so it will keep
+        # changing on every recorded run and no repeat will ever fire for it.
+        for path, why in identity["unexcluded"]:
+            out("[run-test-gate] %s is a path this plugin writes, but it %s - "
+                "so it stays inside the content identity rather than being "
+                "left out of it, and a run that changes it can never be "
+                "matched by a later one." % (path, why))
     prior = None
     if identity.get("grading"):
         # THE ONE SUBJECT THIS IDENTITY CANNOT SPEAK FOR. Driven before this
@@ -3228,7 +3310,7 @@ def main(argv, out=print):
     # observations it never made.
     if res.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
         return render_reuse(res, out=out)
-    return render(res, out=out)
+    return (render_quiet if args.quiet else render)(res, out=out)
 
 
 if __name__ == "__main__":
