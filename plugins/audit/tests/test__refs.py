@@ -2523,7 +2523,9 @@ def _cases(check):
           and '"redFirst"' in _rf_brief
           and "|".join(M.RED_FIRST_WORDS) in _rf_brief)
 
-    _rf_orch = _product_doc("reference/orchestrator.md")
+    # `## Execute the task` moved into `reference/execute-task.md`, split off so a
+    # command that never runs a task does not have to read it - this arm lives there.
+    _rf_orch = _product_doc("reference/execute-task.md")
     check("rf5 ...and the orchestrator has an ARM for it rather than only the word. "
           "It records and carries on - no block, no retry - and it says out loud "
           "that nothing grades what it recorded, which is the half a rule addressed "
@@ -2596,7 +2598,7 @@ def _cases(check):
           "grew a field nobody else heard of: %r" % (_rs["keys"],),
           bool(_rs["keys"])
           and all(('"%s"' % (k,)) in _rs_brief for k in _rs["keys"]))
-    _rs_orch = _product_doc("reference/orchestrator.md")
+    _rs_orch = _product_doc("reference/execute-task.md")
     check("rs3 the reference names what enforces the shape IN THE RULE'S OWN "
           "SENTENCE, says in the same breath that the return itself is prose and "
           "unparsed, sends the fallback path to PASTE the brief instead of "
@@ -2622,7 +2624,7 @@ def _cases(check):
               and len(_d["missing"]) == 1
               and _d["missing"][0].startswith(M.RETURN_SHAPE_READER
                                               + " <unreadable:"))
-        _write(_tmp_rs, _FX_REFERENCE + "orchestrator.md",
+        _write(_tmp_rs, _FX_REFERENCE + "execute-task.md",
                "The subagent returns `gates` and `outcome`.\n")
         _d = M.return_shape_drift(_tmp_rs)
         check("rs5 THE DENY CASE: a field the brief declares and the reference "
@@ -2630,7 +2632,7 @@ def _cases(check):
               "the names changed: %r" % (_d["missing"],),
               _d["missing"] == ["testsAdded: %s never asks for it"
                                 % (M.RETURN_SHAPE_READER,)])
-        _write(_tmp_rs, _FX_REFERENCE + "orchestrator.md",
+        _write(_tmp_rs, _FX_REFERENCE + "execute-task.md",
                "It returns `gates`, `outcome` and `testsAdded`, and the halves of\n"
                "`outcome` are named by the object that holds them.\n")
         _d = M.return_shape_drift(_tmp_rs)
@@ -3133,6 +3135,11 @@ def _cases(check):
     _EXE = _product_doc("agents/audit-executor.md")
     _EXP = _product_doc("agents/audit-explorer.md")
     _ORC = _product_doc("reference/orchestrator.md")
+    # `## Execute the task` and `## Phase sign-off` moved into their own files,
+    # split off so a command that never runs a task or never signs a phase off
+    # does not have to read the section it will not use.
+    _EXECDOC = _product_doc("reference/execute-task.md")
+    _PSODOC = _product_doc("reference/phase-signoff.md")
     _iq_asked = _question_lines(_REV, "description", "outcome")
     check("iq1 the reviewer's brief ASKS the intent question - one question naming "
           "both halves, what was asked (the task's description) and what was "
@@ -3183,8 +3190,8 @@ def _cases(check):
     check("iq6b ...and the brief SAYS that, where the reviewer reads it - a key "
           "order nobody explains is a key order the next author collapses",
           "`intent` is not a finding" in _squash(_REV))
-    _iq_exec = _md_section(_ORC, "## Execute the task")
-    _iq_signoff = _md_section(_ORC, "## Phase sign-off")
+    _iq_exec = _md_section(_EXECDOC, "## Execute the task")
+    _iq_signoff = _md_section(_PSODOC, "## Phase sign-off")
     _iq_passed = dict((tok, tok in _iq_exec)
                       for tok in ('"audit:audit-reviewer"', "`mode: task`",
                                   "`task.description`", "`outcome`",
@@ -3339,9 +3346,9 @@ def _cases(check):
           "with the sentence in the brief, which is the point - the claim is "
           "wrong the moment the routing changes - which is why the brief names "
           "THIS case in the sentence that makes the claim, where its reader is: %r"
-          % (("preExisting" in _ORC, "phase.review.findings" in _ORC,
+          % (("preExisting" in _EXECDOC, "phase.review.findings" in _EXECDOC,
               "`ih9`" in _REV),),
-          "preExisting" not in _ORC and "phase.review.findings" in _ORC
+          "preExisting" not in _EXECDOC and "phase.review.findings" in _EXECDOC
           and "`ih9`" in _REV)
     check("ih10 ...over a section that actually resolved: `_md_section` returns "
           "empty for a heading that moved, and every `in` above would then be "
@@ -3366,7 +3373,7 @@ def _cases(check):
     _SO_TOKENS = ("fix task", "invalidate", "gate")
     _SO_UNENFORCED = "Nothing measures whether you held the order"
     _SO_QUIET = ("commands/review.md", "commands/run.md", "agents/audit-executor.md")
-    _so_signoff = _md_section(_ORC, "## Phase sign-off")
+    _so_signoff = _md_section(_PSODOC, "## Phase sign-off")
     _so_phase = _product_doc("commands/phase.md")
     _so_ref = _reason_blocks(_so_signoff, *_SO_TOKENS)
     check("so1 the sign-off section gives the REASON beside the order, in one block: "
@@ -3435,27 +3442,38 @@ def _cases(check):
           % (_fr_live,),
           _fr_live["missing"] == [] and _fr_live["checked"] == 2)
 
-    _fr_routes = M.route_lines(_product_doc("reference/orchestrator.md"))
-    _fr_quoted = _product_doc("reference/orchestrator.md").lower().count(
-        M.SIGNOFF_ROUTE_CONDITION)
+    # `## Phase sign-off` moved into its own file, split off so a command that
+    # never reaches sign-off does not have to read it - the route lives there now,
+    # stated once rather than twice in one document the way it was before the
+    # split (its other mention is a forward pointer inside `## Execute the task`,
+    # in a different file, naming neither `/audit:task add` nor `/audit:run`).
+    _fr_pso = _product_doc("reference/phase-signoff.md")
+    _fr_routes = M.route_lines(_fr_pso)
+    _fr_quoted = _fr_pso.lower().count(M.SIGNOFF_ROUTE_CONDITION)
     check("fr5 THE ALLOW CASE, on the real document: the qualifier the route "
           "lost is still QUOTED in the section underneath, by the paragraph "
           "recording what reading it that way cost. So a version of this check "
           "that read the section instead of the route line would convict the "
-          "repair - which is why it reads the line. Both halves counted, because "
-          "a document that had simply deleted the history would pass a "
-          "line-only assertion and prove nothing about the widening. And EVERY "
-          "route line is read, not the first - the document states the route "
-          "twice and a first-only check would let the second grow the condition "
-          "back unseen: %r / %r" % (_fr_quoted, _fr_routes),
-          _fr_quoted > 0 and len(_fr_routes) > 1
+          "repair - which is why it reads the line: %r / %r"
+          % (_fr_quoted, _fr_routes),
+          _fr_quoted > 0 and len(_fr_routes) >= 1
           and not any(M.SIGNOFF_ROUTE_CONDITION in ln.lower()
                       for ln in _fr_routes)
           and _fr_live["missing"] == [])
+    # EVERY route line is read, not only the first - proved on a fixture now that
+    # the live document states the route once per file rather than twice in one:
+    # a first-only reader would let a SECOND line grow the condition back unseen.
+    _fr_two_lines = ("intro\n\nA finding gets a NEW TASK, plainly.\n"
+                     "more prose\n\nA finding in a file no task declares gets a "
+                     "NEW TASK, conditioned.\n")
+    check("fr5b route_lines reads every matching line rather than the first - a "
+          "document with the mark twice must come back with two: %r"
+          % (M.route_lines(_fr_two_lines),),
+          len(M.route_lines(_fr_two_lines)) == 2)
 
-    def _fr_tree(orch, review):
+    def _fr_tree(signoff, review):
         root = tempfile.mkdtemp()
-        for rel, body in (("reference/orchestrator.md", orch),
+        for rel, body in (("reference/phase-signoff.md", signoff),
                           ("commands/review.md", review)):
             full = os.path.join(root, M.PLUGIN_REL.replace("/", os.sep),
                                 rel.replace("/", os.sep))
@@ -3482,7 +3500,7 @@ def _cases(check):
         check("fr2 a route line that has grown a condition is reported, and the "
               "condition is QUOTED in the line so the reader can find it: %r"
               % (_fr_r,),
-              [d for d, _w in _fr_r["missing"]] == ["reference/orchestrator.md"]
+              [d for d, _w in _fr_r["missing"]] == ["reference/phase-signoff.md"]
               and "under a condition" in _fr_r["missing"][0][1])
 
         _fr_s = _fr_tree(_fr_ok, _fr_silent)
@@ -3521,17 +3539,21 @@ def _cases(check):
         for _d in _fr_dirs:
             shutil.rmtree(_d, ignore_errors=True)
 
-    # --- executor.runsGate: two documents, one vocabulary (P42.5, `gp*`) ---------
+    # --- executor.runsGate: two documents, one vocabulary (`gp*`) ---------------
     # The agent brief and the orchestrator reference each got their own paragraph
     # about this key rather than a shared one, which is exactly the shape that let
     # `exemptGlobs` and `tddReminder.testGlobs` disagree about what a test file
     # is before. Read fresh off hooks/_config.py's own tuple rather than typed out
     # a third time - a word added there is what should move this case, not a copy
     # of the words drifting on its own schedule.
+    #
+    # `## Execute the task` — where the executor spawn resolves this key — moved
+    # into `reference/execute-task.md`, split off so a command that never runs a
+    # task does not have to read it; that is the reference side these cases read.
     _gp_hooks = _loader.load_hooks_config(modname="audit__refs_gate_policy_cfg")
     _gp_words = tuple(_gp_hooks.RUNS_GATE_MODES)
     _gp_exec = _product_doc("agents/audit-executor.md")
-    _gp_orch = _product_doc("reference/orchestrator.md")
+    _gp_orch = _product_doc("reference/execute-task.md")
     check("gp1 hooks/_config.py still carries the three-word vocabulary this "
           "case reads - a word added or renamed there is what should move this "
           "check, not a hand-kept copy of it: %r" % (_gp_words,),
@@ -3542,7 +3564,7 @@ def _cases(check):
     _gp_missing = dict(
         (rel, [w for w in _gp_words if ("`" + w + "`") not in text])
         for rel, text in (("agents/audit-executor.md", _gp_exec),
-                          ("reference/orchestrator.md", _gp_orch)))
+                          ("reference/execute-task.md", _gp_orch)))
     check("gp3 every word of the vocabulary is named, backticked, in BOTH "
           "documents - a word dropped from either one is a reading a subagent "
           "or the orchestrator can no longer recognise: %r" % (_gp_missing,),
@@ -3551,6 +3573,105 @@ def _cases(check):
           "missing file cannot pass this by returning empty text for both "
           "sides: %r" % ((len(_gp_exec), len(_gp_orch)),),
           min(len(_gp_exec), len(_gp_orch)) > 400)
+
+
+    # --- a hidden command must stay unreachable only where nothing calls it -----
+    # `disable-model-invocation: true` keeps a command's description out of every
+    # session's start-up context and refuses the model's own invocation of it;
+    # the pipeline's OWN fix loop invokes `/audit:task` and `/audit:run` by name,
+    # so hiding either would refuse a step the pipeline actually takes.
+    check("cr1 on the real tree, nothing hidden is also called - the live "
+          "invariant this check exists to hold: %r" % (M.command_reach_violations(),),
+          M.command_reach_violations() == [])
+    _cr_hidden = M.hidden_commands()
+    _cr_unflagged = [name for name in _cr_hidden
+                     if _frontmatter(_product_doc("commands/%s.md" % name),
+                                     "disable-model-invocation") != "true"]
+    check("cr2 every command this reads as hidden really carries the frontmatter "
+          "line, read off the file rather than assumed - none unflagged: %r"
+          % (_cr_unflagged,),
+          bool(_cr_hidden) and _cr_unflagged == [])
+    check("cr3 the two commands the sign-off fix loop names by name are never "
+          "among the hidden ones - hiding either would refuse the pipeline's "
+          "own step: %r" % (sorted(_cr_hidden),),
+          "task" not in _cr_hidden and "run" not in _cr_hidden)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, _FX_REFERENCE + "orch.md",
+               "core rules\n\n```\n/audit:hidden-one do-the-thing\n```\n")
+        _write(tmp, _FX_COMMANDS + "hidden-one.md",
+               "---\ndescription: 'x'\ndisable-model-invocation: true\n---\n\nbody\n")
+        violations = M.command_reach_violations(tmp)
+        check("cr4 RED: a hidden command spelled inside a fenced block under "
+              "reference/ is reported, naming the calling document",
+              violations == [("hidden-one", M.PLUGIN_REL + "/reference/orch.md")],
+              repr(violations))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, _FX_REFERENCE + "orch.md",
+               "see /audit:hidden-two for details - not a fence, just a mention\n")
+        _write(tmp, _FX_COMMANDS + "hidden-two.md",
+               "---\ndescription: 'x'\ndisable-model-invocation: true\n---\n\nbody\n")
+        check("cr5 a bare prose mention (no fence) is not a call - the fence is "
+              "what separates 'about this' from 'run this', so this stays clean",
+              M.command_reach_violations(tmp) == [],
+              repr(M.command_reach_violations(tmp)))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, _FX_REFERENCE + "orch.md",
+               "```\n/audit:visible-one go\n```\n")
+        _write(tmp, _FX_COMMANDS + "visible-one.md",
+               "---\ndescription: 'x'\n---\n\nbody\n")
+        check("cr6 a command called by name but NOT hidden is not a violation - "
+              "this check is about the pair, never about one half alone",
+              M.command_reach_violations(tmp) == [],
+              repr(M.command_reach_violations(tmp)))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, _FX_REFERENCE + "orch.md", "```\n/audit:two-callers x\n```\n")
+        _write(tmp, _FX_COMMANDS + "other.md",
+               "```\n/audit:two-callers y\n```\n")
+        called = M.called_by_name(tmp)
+        check("cr7 one command called from two documents names BOTH, not only "
+              "the first found - repairing one call site and missing the other "
+              "would still leave the pipeline refused on the second path: %r"
+              % (called.get("two-callers"),),
+              sorted(called.get("two-callers") or []) ==
+              sorted([M.PLUGIN_REL + "/reference/orch.md",
+                      M.PLUGIN_REL + "/commands/other.md"]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- a discovery caller asks for the projection, not the whole payload ------
+    check("dp1 THE LIVE CLAIM: both documents that enrich the payload with "
+          "--discovery also project it down to that one block with --section "
+          "discovery, so neither hands the whole rollup to a step that reads "
+          "one key of it: %r" % (M.discovery_projection_drift(),),
+          M.discovery_projection_drift() == [])
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, _FX_COMMANDS + "init.md",
+               "run `audit-status.py <tmpfile> --json --discovery`, then read it\n")
+        _write(tmp, _FX_COMMANDS + "task.md",
+               "run `audit-status.py <manifestPath> --json --discovery "
+               "--section discovery`\n")
+        _dp = M.discovery_projection_drift(tmp)
+        check("dp2 RED: a --discovery call with no --section discovery within "
+              "reach is reported by document and line: %r" % (_dp,),
+              _dp == [("commands/init.md", 1)])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _selftest():

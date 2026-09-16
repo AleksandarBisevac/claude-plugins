@@ -6,8 +6,11 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 # /audit:phase — add a phase, run it, order it, or close it
 
-Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first.
+Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md`,
+`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md`,
+`${CLAUDE_PLUGIN_ROOT}/reference/execute-task.md` and
+`${CLAUDE_PLUGIN_ROOT}/reference/phase-signoff.md` first — a phase run does both: it executes
+every ready task and, once all of them are `done`, signs the phase off.
 
 ## 0. Which verb — read off `$ARGUMENTS`, before the manifest is
 
@@ -90,12 +93,16 @@ re-run the run command without the flag and treat that as the same thing.
 
 Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go:
 
-0. **Print the scoped entry view first, verbatim — in your own reply, inside a fenced block.** A
+0. **Print the entry view first, verbatim — in your own reply, inside a fenced block.** A
    tool result is collapsed behind the tool call, so running it is not showing it:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --phase <phaseId>` —
-   the phase's tasks, their statuses, what each is waiting on, and the whole-plan totals.
-   Deterministic, so it costs nothing to lay out. The per-task **Progress output** lines below
-   are yours to emit as the work happens; only this entry view is pre-rendered.
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --short` — the
+   overall line, the usage line, the ready list (each entry with the command that runs it), the
+   open-bug count, and a closing line naming the command that shows the full table. Deterministic,
+   so it costs nothing to lay out, and this run is about to work through this phase's tasks one by
+   one anyway, so the full per-phase table it would otherwise pay for here is not what a reader
+   needs from THIS line — `/audit:status --phase <phaseId>` still renders it whole. The per-task
+   **Progress output** lines below are yours to emit as the work happens; only this entry view is
+   pre-rendered.
 1. If the phase is `done` → refuse; point to `/audit:review <phaseId>` to re-run sign-off.
 2. Execute every **ready** task in the phase in parallel where safe (disjoint `files` and satisfied
    `dependsOn`), sequentially otherwise. (**Execute the task** performs phase entry — branch,

@@ -1,5 +1,6 @@
 ---
 description: 'Audit pipeline: choose how the manifest is stored — `sharded` (an index plus one file per phase: fewer tokens per phase run, parallel-safe across worktrees) or `single-file` (one file, one diff, no index). A layout CHOICE, not a version upgrade: both shapes are current, neither goes out of date, and this command moves in either direction under one lock, one backup and a re-validate-or-restore.'
+disable-model-invocation: true
 argument-hint: '<sharded|single-file> [--dry-run] [--renumber] [--force]'
 allowed-tools: Read, Bash, AskUserQuestion
 ---

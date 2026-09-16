@@ -1,5 +1,6 @@
 ---
 description: 'Audit pipeline: prune the local feeds this plugin writes under logsDir — today the plan-gate events feed rendered by the panel Plan gate card. Removes rows that no longer belong (paths outside this repository, lines that are not JSON, optionally rows past an age you name), prints what went and what stayed, and never touches anything outside logsDir. This one WRITES: the verb is mandatory and --dry-run is the read-only half.'
+disable-model-invocation: true
 argument-hint: 'prune [--older-than DAYS] [--dry-run] [--json]'
 allowed-tools: Bash
 ---

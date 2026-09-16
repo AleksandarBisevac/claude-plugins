@@ -80,7 +80,9 @@ claude-plugins/                           # this repo (personal, public)
         journal-writes.py                 # PostToolUse: records manifest/config writes in the audit trail
         meter-usage.py                    # Stop/SubagentStop/SessionEnd: tails the transcript into the usage ledger
       reference/
-        orchestrator.md                   # shared execution logic (preflight, lock, Execute-the-task, sign-off)
+        orchestrator.md                   # shared execution logic (preflight, lock, branch-per-phase, resume)
+        execute-task.md                   # Execute the task - split out so a command that never runs one skips it
+        phase-signoff.md                  # Phase sign-off - split out so a command that never reaches it skips it
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
         tracker-sync.md                   # tracker-sync contract (tracker-neutral half + the ADO binding)
       schema/
@@ -418,18 +420,24 @@ each action is its own thin command file — `status.md`, `next.md`, `run.md`, `
 `/audit:phase <id>`, `/audit:review <id>`, `/audit:resume`, `/audit:report`. (This replaces the
 old single `audit.md`, whose only invocation would have been the awkward `/audit:audit`.) Each verb
 file is a few lines: frontmatter with QUOTED values (an unquoted description containing `: ` silently
-drops ALL frontmatter), plus "read `orchestrator.md` + `manifest-conventions.md`, run this slice."
-`orchestrator.md` holds: config resolution (incl. `meta.gitRoot`), preflight (config/manifest/
-git-root/submodule/lock), guardrails, readiness rule, concurrency lock, branch-per-phase,
-Execute-the-task (executor agent + TDD/regression/gate-only + infra-vs-test failure split +
-per-task commit via `git -C <gitRoot>`), Phase sign-off (reviewer agent, test gate, runtime boot,
-ff/`--no-ff` merge), resume, reporting. **De-coupling:** everything reads `meta.developmentBranch` /
-`branchPrefix` / `gitRoot` / `reviewSkill` (null → skip) / `areas` (the monorepo registry a phase's
-`area` tag names; resolution `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`,
-stated identically in `orchestrator.md`, `manifest-conventions.md` and `review.md`) /
-`runtimeBoot` (null → skip) /
-`nodePreamble` / `commit` / `buildCommands` — no hardcoded branch, package id, skill, or build tool.
-Read-only verbs (`status`, `report`) skip the mutating preflight and never lock.
+drops ALL frontmatter), plus "read `orchestrator.md` + `manifest-conventions.md`, run this slice" —
+and, for the four verbs that actually run a task or reach sign-off, the further file that section
+now lives in. `orchestrator.md` holds only what every verb needs: config resolution (incl.
+`meta.gitRoot`), preflight (config/manifest/git-root/submodule/lock), guardrails, readiness rule,
+concurrency lock, branch-per-phase, keeping a failed run's record, the ADO echo, resume, progress
+output, dry-run/preview, reporting. **`## Execute the task` and `## Phase sign-off` are split into
+their own files** — `reference/execute-task.md` and `reference/phase-signoff.md` — so a command
+that never runs a task or never signs a phase off does not pay to read the section it will not
+use: `next`, `phase` and `run` read the first; `phase` and `review` read the second; `status`,
+`report`, `resume`, `worktree` and `layout` read neither. The claim-anchor mechanism in
+`scripts/manifest/_areas.py` (`SECTION_DOC`) follows the same section into whichever file now
+holds it, so a section that moved without its anchor following still fails by name. **De-coupling:**
+everything reads `meta.developmentBranch` / `branchPrefix` / `gitRoot` / `reviewSkill` (null → skip)
+/ `areas` (the monorepo registry a phase's `area` tag names; resolution `phase.reviewSkill ??
+meta.areas[tag].reviewSkill ?? meta.reviewSkill`, stated identically in `orchestrator.md`,
+`manifest-conventions.md` and `review.md`) / `runtimeBoot` (null → skip) / `nodePreamble` /
+`commit` / `buildCommands` — no hardcoded branch, package id, skill, or build tool. Read-only verbs
+(`status`, `report`) skip the mutating preflight and never lock.
 
 ### `plugins/audit/commands/init.md`, `task.md`, `bug.md`
 The creation-side commands (invoked namespaced: `/audit:init`, `/audit:task`, `/audit:bug` —

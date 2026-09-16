@@ -113,9 +113,10 @@ the executor named, and it tells absent from present, never able-to-fail from no
 is the reason — the change is being credited with a gate this test sits in, so a test in
 that gate that cannot fail is what the change is standing on, and `preExisting` is read by
 nothing. Its `resolution` is a task that proves the test can fail, never a fix applied
-here, because making a test red is an edit. `reference/orchestrator.md` records `findings`
-in `phase.review.findings` and turns one in a file no task declares into a NEW TASK at
-sign-off: that is what reads this. **Nothing enforces the routing** — no hook reads a
+here, because making a test red is an edit. `reference/execute-task.md` records `findings`
+in `phase.review.findings`, and `reference/phase-signoff.md` turns one in a file no task
+declares into a NEW TASK at sign-off: that is what reads this. **Nothing enforces the
+routing** — no hook reads a
 subagent's return — so the run's own recorded outcome is the verdict either way.
 
 Report the answer itself as `intent.inheritedTests` — `none-found`, `flagged` or
@@ -158,7 +159,7 @@ a broken one leaves behind is a gate run the orchestrator's record does not acco
   dead/leftover debug code.
 - Charge findings to the DIFF, not the codebase: pre-existing problems outside the
   changed lines go into `preExisting`, not `findings`. **Nothing reads `preExisting`**:
-  no hook reads a subagent's return at all, and `reference/orchestrator.md` — the one
+  no hook reads a subagent's return at all, and `reference/execute-task.md` — the one
   actor that does — names the key in no step of the run, so it is an observation for
   whoever reads the transcript and never a queue. A class that must be ACTED on does not
   belong in it; the inherited-test rule above routes to `findings` for that reason, and

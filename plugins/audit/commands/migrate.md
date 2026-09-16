@@ -1,5 +1,6 @@
 ---
 description: 'Audit pipeline: LEGACY SPELLING of /audit:layout sharded — it still works and does exactly that. Kept so existing transcripts, runbooks and older docs resolve; new work should say /audit:layout <sharded|single-file>, which also goes back the other way.'
+disable-model-invocation: true
 argument-hint: '[--dry-run] [--renumber] [--force]'
 allowed-tools: Read, Bash, AskUserQuestion
 ---

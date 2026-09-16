@@ -1,5 +1,6 @@
 ---
 description: 'Audit pipeline: the worktrees this plan owns — list them with their merge state, add one for a phase so it can run in a parallel session, remove one, or sweep the ones whose work has already landed. The sweep is read-only until you name a verb; a worktree is only ever reaped when its branch is contained in its parent AND its tree is clean.'
+disable-model-invocation: true
 argument-hint: '<list|add|remove|sweep> [phaseId] [--path DIR] [--force] [--apply] [--remove-worktrees] [--delete-branches] [--prune] [--json]'
 allowed-tools: Read, Bash
 ---

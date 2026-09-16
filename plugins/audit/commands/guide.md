@@ -1,5 +1,6 @@
 ---
 description: 'Ask the plugin about itself — what a config key does, how the plan gate grades, what the journal can prove — answered from its own docs with a citation for every claim, by the read-only guide agent.'
+disable-model-invocation: true
 argument-hint: '<question about the audit plugin>'
 allowed-tools: Agent
 ---

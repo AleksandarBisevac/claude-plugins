@@ -191,10 +191,11 @@ If something matched, ask (AskUserQuestion, multi-select, all detected areas pre
   filesystem for skills yourself — use the same ONE mechanical source step 6.1 uses: no manifest
   exists yet at this step, so write a stub to a temp file (`mktemp`; content
   `{"meta": {"version": 2}, "phases": []}`), run
-  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <tmpfile> --json --discovery`, delete
-  the temp file, and offer names from `discovery.skills` only — never invented ones. A
-  `discovery.error` key means the scan failed and the list is empty (fail-open): say so and skip
-  skill offers rather than guessing.
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <tmpfile> --json --discovery
+  --section discovery` — the projection, not the whole rollup, since this step needs nothing
+  else in it — delete the temp file, and offer names from the printed `skills` only — never
+  invented ones. A top-level `error` key means the scan failed and the list is empty
+  (fail-open): say so and skip skill offers rather than guessing.
 
 Derive each `tag` from the package/module name, lowercased, non-alphanumerics collapsed to `-`
 (`@acme/mobile-app` → `mobile-app`). Roots are **project-dir-relative**, like `task.files`.
@@ -444,13 +445,15 @@ Write the assembled candidate manifest (step 5.4) to a TEMP file (`mktemp` — n
 `manifestPath`; the gate below still decides what lands on disk), run
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <tmpfile> --json --discovery
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <tmpfile> --json --discovery \
+    --section discovery
 ```
 
-and delete the temp file. The payload's `discovery` block is the inventory:
+and delete the temp file. `--section` projects the one block this step needs instead of the
+whole rollup, so the printed object IS the inventory directly:
 `{"skills": [{"name", "description", "source"}, …], "agents": […]}` — every skill
 and agent this project can actually see (project `.claude/`, user `~/.claude/`,
-installed plugins). A `discovery.error` key means the scan failed and the lists are
+installed plugins). A top-level `error` key means the scan failed and the lists are
 empty (fail-open, not wrong): say so and skip inventory suggestions rather than
 guessing. Suggest from that output:
 
@@ -461,7 +464,7 @@ guessing. Suggest from that output:
   rollup and advisory `owner`, not the roots), those are the baseline: they load
   first for every task in the area anyway, so do not repeat them on the task —
   suggest only ADDITIONS.
-- **Inventory match** — suggest a `discovery.skills` name when its `name` or
+- **Inventory match** — suggest a `skills` entry's name when its `name` or
   `description` matches the task's `files` (language, framework, path under an area
   root) or its subject (a security finding → a security-review skill). Offer names
   the payload carries and NOTHING else — never invent one.

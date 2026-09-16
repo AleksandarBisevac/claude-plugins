@@ -6,8 +6,11 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 # /audit:next — execute the next ready task
 
-Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first.
+Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md`,
+`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` and
+`${CLAUDE_PLUGIN_ROOT}/reference/execute-task.md` first — this command runs a task, so it
+needs the section that does; it never signs a phase off, so it does not read
+`reference/phase-signoff.md`.
 
 **If `$ARGUMENTS` contains `--dry-run`:** follow the orchestrator's **Dry-run / preview** section —
 show the next ready task and what would run, and STOP without mutating.

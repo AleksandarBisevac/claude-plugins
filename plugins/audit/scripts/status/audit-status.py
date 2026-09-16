@@ -9,7 +9,7 @@ any Claude session involved.
 Usage:
   audit-status.py --help
   audit-status.py <manifest> [--json [--discovery]] [--gate] [--phase <id>]
-                             [--color auto|always|never]
+                             [--short] [--color auto|always|never]
                              [--fail-on <c1,c2,...>]
   audit-status.py --selftest
 
@@ -21,6 +21,10 @@ Modes: a bare invocation renders a human report; --json is for machines.
             prose. Without the flag the --json payload is byte-identical to the
             pre-flag output (pinned by selftest dv1).
   --phase   scope the human render to one phase (totals stay whole-plan)
+  --short   the condensed human render (overall line, usage line, READY NOW, a
+            pointer to the full view) instead of the full one; ignored with
+            --json or --gate. Not a new default - the bare invocation above is
+            unchanged whether or not this flag exists (selftest sh0).
   --gate    evaluate fail conditions; exit 1 when any trips (prints a summary)
 
 The `--fail-on` conditions are NOT listed a second time here, and they are not
@@ -674,6 +678,43 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     return "\n".join(lines)
 
 
+# The line the short render ends on, so a reader knows where the rest of the
+# plan lives without re-deriving the command from memory.
+SHORT_FULL_VIEW_POINTER = "/audit:status"
+
+
+def render_short(manifest, summary, width=18, pt=None):
+    """The condensed render an automated run echoes mid-flight: the overall
+    line, the usage line, the READY NOW block (with the command to type), and
+    a closing line naming the command for the full view.
+
+    NOT THE DEFAULT, and never substituted for it: `render_status` is what a
+    typed `/audit:status` renders, unchanged — `sh0` pins its bytes against
+    this function's mere existence, because a short form that quietly became
+    the default the day it was added is the one correction the operator
+    explicitly refused. This is what `reference/orchestrator.md`'s Progress
+    output section echoes BETWEEN waves instead, where nobody is reading for
+    the phase table or the per-task waiting-on column, so the table's cost is
+    one nobody there was paying attention to anyway.
+
+    It ends by naming the full-view command rather than trailing off, because
+    that is the actual reason this document instructs printing a verbatim
+    entry view at all: a run has finished with an answer sitting behind a
+    tool call, unread, while the model believed it had already replied. This
+    closing line is cheap insurance against the same thing happening to the
+    condensed form.
+    """
+    pt = pt or _cli_fmt.PLAIN
+    lines = [_overall_line(summary, width)]
+    usage = summary.get("usage")
+    if usage:
+        lines.append("  " + _usage_line(summary, usage))
+    lines += _ready_lines(manifest, summary, pt=pt)
+    lines.append("")
+    lines.append("  Full view: %s" % SHORT_FULL_VIEW_POINTER)
+    return "\n".join(lines)
+
+
 def _tasks_bar(done, total, cancelled, width):
     """The done/total progress bar for a task tally whose TOTAL already
     excludes cancelled work.
@@ -693,6 +734,29 @@ def _tasks_bar(done, total, cancelled, width):
     return _fmt.fmt_bar(done, total, width)
 
 
+def _overall_line(summary, width=18):
+    """`<bar>  N/M tasks done... - N/M phases signed off - N open bug(s) - N ready now`.
+
+    Split out of `_header_lines` so `render_short` below can carry exactly this
+    one line, with no title, no notices and no budget block beside it. The full
+    render calls this in the same place it always built the line in place, so
+    `render_status`'s own bytes do not move — `sh0` pins that they do not.
+    """
+    t_total = summary["tasks"]["total"]
+    t_done = summary["tasks"]["byStatus"].get("done", 0)
+    ph_done = sum(1 for p in summary["phases"] if p.get("status") == "done")
+    bugs = summary["bugs"]
+    # `t_total` already excludes cancelled work (`_status_facts.rollup`) — see
+    # `_header_lines`'s own note on the same fraction, which this is split from.
+    t_cancelled = summary["tasks"]["byStatus"].get("cancelled", 0)
+    return ("  %s  %d/%d tasks done%s - %d/%d phases signed off - "
+           "%d open bug(s) - %d ready now"
+           % (_tasks_bar(t_done, t_total, t_cancelled, width), t_done, t_total,
+              (" (%d cancelled)" % t_cancelled) if t_cancelled else "",
+              ph_done, len(summary["phases"]), bugs["open"],
+              len(summary["ready"])))
+
+
 def _header_lines(manifest, summary, width=18, pt=None):
     """Who this plan is, the whole-plan bar, and every notice that qualifies it.
 
@@ -707,22 +771,7 @@ def _header_lines(manifest, summary, width=18, pt=None):
                     % (meta.get("title") or "audit", meta.get("repo") or "-"),
                     "header"), ""]
 
-    t_total = summary["tasks"]["total"]
-    t_done = summary["tasks"]["byStatus"].get("done", 0)
-    ph_done = sum(1 for p in summary["phases"] if p.get("status") == "done")
-    bugs = summary["bugs"]
-    # `t_total` already excludes cancelled work (`_status_facts.rollup`) — a
-    # reader resolves this fraction before reaching the parenthetical after
-    # it, and a denominator that still counted dropped work as outstanding
-    # put settled work where open work goes. Read the count for the
-    # parenthetical off `byStatus`, which is where the plan-wide figure lives.
-    t_cancelled = summary["tasks"]["byStatus"].get("cancelled", 0)
-    out.append("  %s  %d/%d tasks done%s - %d/%d phases signed off - "
-               "%d open bug(s) - %d ready now"
-               % (_tasks_bar(t_done, t_total, t_cancelled, width), t_done, t_total,
-                  (" (%d cancelled)" % t_cancelled) if t_cancelled else "",
-                  ph_done, len(summary["phases"]), bugs["open"],
-                  len(summary["ready"])))
+    out.append(_overall_line(summary, width))
     if not summary["valid"]:
         out.append(pt.paint(
             "  INVALID MANIFEST: %d validator finding(s) - fix before "
@@ -1493,6 +1542,16 @@ def build_parser():
     p.add_argument("--color", choices=list(_cli_fmt.MODES), default="auto",
                    help="ANSI color for the human render (auto colors only a TTY "
                         "and respects NO_COLOR; --json never colors)")
+    # --short: with no --json and no --gate only, the condensed human render
+    # (render_short) instead of the full one. NOT a new default — omitting the
+    # flag renders exactly as before, which `sh0` pins byte for byte. Built for
+    # the orchestration reference's own mid-run echo, where the phase table and
+    # the per-task waiting-on column are not what a reader between waves needs;
+    # a typed `/audit:status` never passes this itself.
+    p.add_argument("--short", action="store_true",
+                   help="print the condensed render (overall line, usage line, "
+                        "READY NOW, a pointer to the full view) instead of the "
+                        "full one; ignored with --json or --gate")
     # --submodules <.gitmodules path> [--git-root <prefix>]: preflight guard,
     # exits 1 when a task file lives inside a submodule. Standalone mode.
     p.add_argument("--submodules", default=None, metavar="GITMODULES",
@@ -1516,6 +1575,7 @@ def main(argv):
         return exc.code if isinstance(exc.code, int) else 2
     want_json = args.as_json
     want_gate = args.gate
+    want_short = args.short
     want_discovery = args.discovery
     want_section = args.section
     if want_discovery and not want_json:
@@ -1685,22 +1745,30 @@ def main(argv):
                                  % (only_phase, manifest_path, ", ".join(
                                      str(k) for k in known)))
                 return 2
-        # THE DEFAULT PICK, and it is copied rather than invented: the identical
-        # expression decides `_report_page`'s starting view and `overview.js`'s.
-        # Open on what is still to do, unless there is none of it left - a
-        # finished plan greeting its reader with an empty table would be the
-        # fold's own failure wearing a flag. It lives HERE and not in the
-        # renderer because which view a reader opens on is a policy of the
-        # command, and every other caller of `render_status` must keep rendering
-        # every phase.
-        view = args.view
-        if view is None:
-            segs_present = set(_vocab.segment_of(p.get("status"))
-                               for p in summary["phases"])
-            view = ("active" if (segs_present & set(("active", "pending")))
-                    else "all")
-        print(render_status(manifest, summary, only_phase=only_phase, pt=pt,
-                            view=view))
+        if want_short:
+            # A SEPARATE BRANCH, not a parameter threaded into `render_status`.
+            # The default path below is untouched by this flag's existence -
+            # `sh0` pins its output byte for byte - and `only_phase`/`view` are
+            # a full-render policy that the condensed form has no table to
+            # apply either to.
+            print(render_short(manifest, summary, pt=pt))
+        else:
+            # THE DEFAULT PICK, and it is copied rather than invented: the
+            # identical expression decides `_report_page`'s starting view and
+            # `overview.js`'s. Open on what is still to do, unless there is
+            # none of it left - a finished plan greeting its reader with an
+            # empty table would be the fold's own failure wearing a flag. It
+            # lives HERE and not in the renderer because which view a reader
+            # opens on is a policy of the command, and every other caller of
+            # `render_status` must keep rendering every phase.
+            view = args.view
+            if view is None:
+                segs_present = set(_vocab.segment_of(p.get("status"))
+                                   for p in summary["phases"])
+                view = ("active" if (segs_present & set(("active", "pending")))
+                        else "all")
+            print(render_status(manifest, summary, only_phase=only_phase, pt=pt,
+                                view=view))
 
     if want_gate:
         # WHERE THE VERDICT GOES. The machine-readable verdict is already whole in

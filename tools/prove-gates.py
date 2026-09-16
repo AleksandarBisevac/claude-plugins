@@ -547,13 +547,26 @@ TABLE = (
  # AS a field. The backticks are the whole rule rather than a typographic taste -
  # `gates` in a sentence is a report about a run, in backticks it is a key a prompt
  # can ask a subagent for - so taking them off is taking the ask away.
- ("return_shape_drift", "plugins/audit/reference/orchestrator.md", "replace",
+ ("return_shape_drift", "plugins/audit/reference/execute-task.md", "replace",
   "`gates` per gate", "gates per gate", REF, "rs1"),
  # ...and the DECLARATION going missing, which neither row above reaches: with no
  # trigger there is no block, and a check that read a clean sheet out of that would
  # be grading a reference which asks for nothing as one that asks for everything.
  ("return_shape_drift", "plugins/audit/agents/audit-executor.md", "replace",
   "Report back a structured outcome:", "Report back what happened:", REF, "rs2"),
+ # A hidden command spelled inside a fenced block under `reference/` - the shape
+ # the sign-off fix loop already uses for `/audit:task`/`/audit:run` - is a command
+ # the pipeline would be refused invoking the day it takes that step. `## Reporting`
+ # is the anchor because it is the last section and the plainest insertion point.
+ ("command_reach_violations", "plugins/audit/reference/orchestrator.md", "replace",
+  "## Reporting",
+  "## Reporting\n\n```\n/audit:guide what just happened\n```", REF, "cr1"),
+ # A discovery caller drops the projection and goes back to handing a step
+ # that reads ONE key the whole rollup, which is the saving `--section`
+ # exists to take.
+ ("discovery_projection_drift", "plugins/audit/commands/task.md", "replace",
+  "         --discovery --section discovery",
+  "         --discovery", REF, "dp1"),
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
   (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, "p1"),
@@ -1616,6 +1629,22 @@ ALLOW = (
  # noise, which is the same argument `rf7` makes for its trigger.
  ("return_shape_drift", S + "_refs.py", "replace",
   "            if (depth == 1\n", "            if (True\n", REF, "rs6"),
+ # The fence narrowed to nothing: ANY backtick span now counts as "the pipeline
+ # runs this", not only a triple-backtick block. `layout`, `migrate`, `sync` and
+ # `worktree` are each named in single backticks in ordinary prose across
+ # `reference/`, so the live tree convicts every one of them the moment the fence
+ # stops meaning "run this" - the over-fire this narrowing exists to prevent.
+ ("command_reach_violations", S + "_refs.py", "replace",
+  '_CMD_FENCE_RE = re.compile(r"```[a-zA-Z]*\\n(.*?)```", re.S)',
+  '_CMD_FENCE_RE = re.compile(r"`+[a-zA-Z]*\\n?(.*?)`+", re.S)',
+  REF, "cr1"),
+ # The window narrowed past what the real call sites need: each writes
+ # `--discovery` and `--section discovery` across a line break, and a window
+ # too small to reach past it convicts every one of them on a tree nobody
+ # touched - the over-fire this width exists to prevent.
+ ("discovery_projection_drift", S + "_refs.py", "replace",
+  "_DISCOVERY_WINDOW = 60", "_DISCOVERY_WINDOW = 5",
+  REF, "dp1"),
  # The needle widened from a BOLDED prohibition to any sentence carrying the word.
  # `orchestrator.md` says "never goes out of date" about a manifest and "never
  # recompute it" about a budget - prose about a thing, not a rule about an action -

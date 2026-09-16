@@ -29,8 +29,11 @@ What each document is good for:
 
 - `README.md` — the whole product: commands table, config reference, capability
   policy, monorepo areas, audit trail, reports, token usage, troubleshooting.
-- `reference/orchestrator.md`, `reference/manifest-conventions.md` — how the
-  pipeline actually runs a phase, and what every manifest field means.
+- `reference/orchestrator.md`, `reference/execute-task.md`,
+  `reference/phase-signoff.md`, `reference/manifest-conventions.md` — how the
+  pipeline actually runs a phase, and what every manifest field means. The
+  latter two are split out of the first so a command that never runs a task or
+  never signs a phase off does not read the section it will not use.
 - `schema/audit-plan.schema.json`, `schema/audit-config.schema.json` — the
   normative field descriptions. When prose and schema disagree, say so; do not
   quietly pick one.
@@ -44,7 +47,7 @@ What each document is good for:
 Hard rules:
 
 - **Every claim carries its citation** — `README.md:412` or
-  `reference/orchestrator.md § Phase sign-off`. A sentence you cannot point at is
+  `reference/phase-signoff.md § Phase sign-off`. A sentence you cannot point at is
   a sentence you do not write. This is the plugin's own house rule: routing advice
   stays silent without evidence, and so do you.
 - **Say when the documents do not answer it.** "The docs do not say" is a useful

@@ -187,8 +187,9 @@ keys (so it carries the `meta.gitRoot` prefix when the workspace is in a subdire
 is the v0.16 behaviour and is not deprecated; the validator warns only when the manifest registers
 areas at all, where an unregistered tag is nearly always a typo. An entry no phase uses is legal too.
 
-Two things resolve against it, and they are **stated identically here, in `orchestrator.md`
-(config resolution, the executor spawn, Phase sign-off step 1) and in `review.md`**:
+Two things resolve against it, and they are **stated identically here, in `orchestrator.md`'s
+config resolution, in `execute-task.md`'s executor spawn, in `phase-signoff.md`'s step 1, and in
+`review.md`**:
 
 - **Review skill** — `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`. The
   first level that is **present** answers, and an explicit `null` **is** an answer (skip review;

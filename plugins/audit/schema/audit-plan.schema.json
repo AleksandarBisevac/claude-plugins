@@ -140,7 +140,7 @@
         "merge": {
           "type": "object",
           "additionalProperties": true,
-          "description": "What phase sign-off does once every task is done. Absent, or any key absent, reads as ON — that is the behaviour reference/orchestrator.md already describes, so turning a switch off is the deliberate act. Read by _branch.merge_policy, which reports each value WITH the key that decided it. Lives here beside developmentBranch (the merge target) and branch (the name) rather than in .claude/audit.config.json, so branch decisions have one home.",
+          "description": "What phase sign-off does once every task is done. Absent, or any key absent, reads as ON — that is the behaviour reference/phase-signoff.md already describes, so turning a switch off is the deliberate act. Read by _branch.merge_policy, which reports each value WITH the key that decided it. Lives here beside developmentBranch (the merge target) and branch (the name) rather than in .claude/audit.config.json, so branch decisions have one home.",
           "properties": {
             "auto": {
               "type": "boolean",

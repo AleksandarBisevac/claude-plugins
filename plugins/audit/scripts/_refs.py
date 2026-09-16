@@ -894,7 +894,10 @@ def verbatim_rule_drift(repo_root=None):
 # documents that describe sign-off have to name both steps. A condition is what the
 # reader routes around; a route missing its second step is a reader who creates the
 # task and never starts it, which fails in exactly the same place.
-SIGNOFF_ROUTE_DOCS = ("reference/orchestrator.md", "commands/review.md")
+# `## Phase sign-off` moved out of `reference/orchestrator.md` into its own file, split
+# off so a command that never reaches sign-off does not have to read it - this route
+# lives wherever that section now does, which is `reference/phase-signoff.md`.
+SIGNOFF_ROUTE_DOCS = ("reference/phase-signoff.md", "commands/review.md")
 SIGNOFF_ROUTE_MARK = "gets a NEW TASK"
 # The qualifier that was there, lower-cased for the comparison. It is a SUBSTRING of
 # the route line and nothing else: the paragraph below the route quotes it while
@@ -1102,11 +1105,13 @@ def red_first_drift(repo_root=None):
 # the pair of documents that describe it, and this is that check.
 #
 # THE DEFECT IT WAS WRITTEN FOR. `agents/audit-executor.md` declares the shape.
-# `reference/orchestrator.md` tells an orchestrator what to ask for, and carries a
-# FALLBACK path -- the agent type is unavailable, so the rules get restated inline
-# -- which named no `testsAdded` at all. That is the field `task.verifiedBy` is
-# filled from, so on that path the test names an executor reported were asked for
-# by nobody and recorded nowhere, and no gate could say so.
+# `reference/execute-task.md` (the `## Execute the task` section, split out of
+# `orchestrator.md` so a command that never runs a task does not read it) tells an
+# orchestrator what to ask for, and carries a FALLBACK path -- the agent type is
+# unavailable, so the rules get restated inline -- which named no `testsAdded` at
+# all. That is the field `task.verifiedBy` is filled from, so on that path the
+# test names an executor reported were asked for by nobody and recorded nowhere,
+# and no gate could say so.
 #
 # WHY NOT THE OTHER TWO ROUTES, because both were available and neither reaches it.
 # A manifest vocabulary entry grades a value once it has been WRITTEN INTO the plan,
@@ -1120,7 +1125,7 @@ def red_first_drift(repo_root=None):
 # with the answer, or that an executor ever filled the field in. A document naming
 # every key in one dead sentence passes.
 RETURN_SHAPE_BRIEF = "agents/audit-executor.md"
-RETURN_SHAPE_READER = "reference/orchestrator.md"
+RETURN_SHAPE_READER = "reference/execute-task.md"
 
 # The sentence the declared block follows. The brief keeps the shape in one place
 # and this reads it from there; a copy of the keys here would be the second
@@ -1284,6 +1289,185 @@ def command_flag_drift(repo_root=None):
             if flag not in row_flags:
                 missing.append((cmd, flag))
     return {"missing": missing, "checked": checked}
+
+
+# --- a hidden command must stay unreachable only where nothing calls it --------
+# WHAT THE FLAG BUYS AND WHAT IT COSTS. `disable-model-invocation: true` on a
+# command's frontmatter keeps its description out of every session's start-up
+# context and refuses the MODEL's own invocation of it; a human can still type
+# it. That is a real saving for a command nobody but a human ever reaches for -
+# but the same refusal falls on the model's own reach, so hiding a command the
+# pipeline invokes BY NAME - not a document merely naming it, an instruction
+# telling THIS session to run it - would refuse the pipeline's own step the day
+# it takes that path. `reference/orchestrator.md`'s Phase sign-off and
+# `commands/review.md` both do exactly this for the fix loop they open: invoke
+# `/audit:task add`, then `/audit:run`, rather than reimplementing either
+# command's own dialogue inline.
+#
+# A FENCED CODE BLOCK IS THE LINE, drawn where the documents already draw it.
+# Every plain mention of a command name elsewhere in this tree sits in prose or
+# a single backtick - "point to /audit:init", "/audit:doctor is what says which
+# direction it broke in" - and neither is an instruction to run anything now.
+# The two places that actually tell a session to invoke another command put
+# that invocation inside a fenced block, which is the shape this tree already
+# uses for "type this". So a command counts as CALLED when its `/audit:<name>`
+# spelling appears inside a fenced block somewhere under `reference/` or
+# `commands/` - the plugin's own operational surface - and not when it appears
+# in the repository's outer documentation, which shows a command as a worked
+# example for a reader rather than as a step this session takes.
+_CALLING_SUBDIRS = ("reference", "commands")
+# Named apart from the sweep-verification fence pattern further down this file: that one
+# is deliberately narrowed to bash/sh/shell/console tags, while this one has to see every
+# fence regardless of its language tag or the absence of one. Two module-level names for
+# one pattern would let either definition silently replace the other at import time, so
+# each fence rule keeps a name no other one in this file uses.
+_CMD_FENCE_RE = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.S)
+_CMD_INVOKE_RE = re.compile(r"/audit:([a-z][a-z-]*)")
+_HIDE_FLAG_RE = re.compile(r"^disable-model-invocation:\s*true\s*$", re.MULTILINE)
+
+
+def called_by_name(repo_root=None):
+    """{command: [rel, ...]} - every `/audit:<command>` spelled inside a FENCED
+    CODE BLOCK somewhere under `plugins/audit/reference/` or
+    `plugins/audit/commands/`, each entry naming every calling document rather
+    than only the first.
+
+    WHAT THIS CANNOT SEE, stated rather than implied. `commands/worktree.md`
+    fences `cd <path> && claude` above `/audit:phase <phaseId>` as the exact
+    line to paste into a NEW terminal, which this counts as a call the same way
+    it counts the sign-off fix loop - the fence does not say which session runs
+    it. That over-approximates toward the safe side only: it can mark a
+    command reachable that a person alone was ever going to type, never the
+    other way around, so `command_reach_violations` below never refuses a
+    hiding this function failed to notice was needed.
+    """
+    root = repo_root or REPO_ROOT
+    out = {}
+    for sub in _CALLING_SUBDIRS:
+        d = os.path.join(root, PLUGIN_REL.replace("/", os.sep), sub)
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for name in names:
+            if not name.endswith(".md"):
+                continue
+            rel = "%s/%s/%s" % (PLUGIN_REL, sub, name)
+            try:
+                with open(os.path.join(d, name), "r",
+                          encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            for block in _CMD_FENCE_RE.findall(text):
+                for match in _CMD_INVOKE_RE.finditer(block):
+                    bucket = out.setdefault(match.group(1), [])
+                    if rel not in bucket:
+                        bucket.append(rel)
+    return out
+
+
+def hidden_commands(repo_root=None):
+    """{command: rel} for every `plugins/audit/commands/*.md` carrying
+    `disable-model-invocation: true` in its frontmatter.
+
+    Read PER FILE rather than derived from a maintained list, which is the
+    whole point of doing this at all: a command opts in by carrying the line
+    itself, and nothing elsewhere has to be told that it did.
+    """
+    root = repo_root or REPO_ROOT
+    cdir = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "commands")
+    out = {}
+    try:
+        names = sorted(os.listdir(cdir))
+    except OSError:
+        return out
+    for name in names:
+        if not name.endswith(".md"):
+            continue
+        try:
+            with open(os.path.join(cdir, name), "r",
+                      encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        parts = text.split("---", 2)
+        frontmatter = parts[1] if len(parts) > 2 else ""
+        if _HIDE_FLAG_RE.search(frontmatter):
+            out[name[:-3]] = "%s/commands/%s" % (PLUGIN_REL, name)
+    return out
+
+
+def command_reach_violations(repo_root=None):
+    """[(command, doc)] - every command HIDDEN from the model (`hidden_commands`)
+    that the pipeline still invokes by name (`called_by_name`) somewhere under
+    `reference/` or `commands/`.
+
+    ONE ROW PER CALLING DOCUMENT, not one per command: a command hidden AND
+    called from two places names both, because repairing one call site and
+    missing the other still leaves the pipeline refused the day it takes the
+    second path.
+    """
+    root = repo_root or REPO_ROOT
+    hidden = hidden_commands(root)
+    called = called_by_name(root)
+    out = []
+    for name in sorted(hidden):
+        for doc in called.get(name, ()):
+            out.append((name, doc))
+    return out
+
+
+# --- a discovery caller asks for the projection, not the whole payload ---------
+# `audit-status.py --json --discovery` enriches the payload with a `discovery`
+# block; `--section discovery` then projects that one key out instead of paying
+# for the rest of the rollup. Two command documents ask for the enrichment and
+# used to hand the whole payload to the model to pick one key back out of by
+# hand - the saving `--section` exists for and the orchestrator's own budget
+# read already takes. A caller that drops `--section discovery` while keeping
+# `--discovery` is the regression this catches: the enrichment still runs, and
+# the saving quietly stops being taken.
+_DISCOVERY_CALLERS = ("commands/init.md", "commands/task.md")
+_DISCOVERY_FLAG = "--discovery"
+_DISCOVERY_SECTION = "--section discovery"
+# The window of TEXT (not one line - the flag and the projection are written on
+# adjacent lines, joined by a backtick continuation or a shell `\`) after
+# `--discovery` that `--section discovery` may sit in, never separated by
+# unrelated prose.
+_DISCOVERY_WINDOW = 60
+
+
+def discovery_projection_drift(repo_root=None):
+    """[(doc, lineno)] - every `--discovery` invocation in a caller document with
+    no `--section discovery` within reach of it.
+
+    WHAT THIS CANNOT SEE: a caller that never mentions `--discovery` at all owes
+    nothing here, which is correct - a document not asking for the enrichment has
+    no projection to take. Restricted to `_DISCOVERY_CALLERS` rather than every
+    command, because `--discovery` appearing elsewhere (a status render, a
+    cross-reference) is not this invariant's business.
+    """
+    root = repo_root or REPO_ROOT
+    out = []
+    for rel in _DISCOVERY_CALLERS:
+        path = os.path.join(root, PLUGIN_REL.replace("/", os.sep),
+                            *rel.split("/"))
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError as exc:
+            out.append(("%s <unreadable: %s>" % (rel, exc), 0))
+            continue
+        pos = 0
+        while True:
+            at = text.find(_DISCOVERY_FLAG, pos)
+            if at < 0:
+                break
+            window = text[at:at + _DISCOVERY_WINDOW]
+            if _DISCOVERY_SECTION not in window:
+                out.append((rel, text.count("\n", 0, at) + 1))
+            pos = at + len(_DISCOVERY_FLAG)
+    return out
 
 
 # --- what the published handbook claims about the product ---------------------

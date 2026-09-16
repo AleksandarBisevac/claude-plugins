@@ -2580,7 +2580,7 @@ def _cases(check):
         # tied either of them to the document that PRESCRIBES this recovery --
         # so the `in_progress` arm was repaired without being named, and a gate
         # tightened back would meet no case that reads the flow it breaks.
-        # `reference/orchestrator.md` writes the state in its Execute step
+        # `reference/execute-task.md` writes the state in its Execute step
         # (`task.status = "in_progress"` and `task.attempts += 1`, in one step,
         # BEFORE the executor is spawned) and then names the remedy for the
         # moment the plan gate refuses a file that task genuinely needs: widen
@@ -2588,7 +2588,9 @@ def _cases(check):
         # on, rather than spawning a fresh one. Released 2.2.0 wrote that state
         # and refused that remedy, so the route the document sells as the cheap
         # one was the route an operator could not take -- reported from a live
-        # phase run.
+        # phase run. `## Execute the task` moved out of `reference/orchestrator.md`
+        # into its own file, split off so a command that never runs a task does
+        # not have to read it.
         #
         # READ OUT OF THE DOCUMENT, st5's rule: a reworded prescription, or a
         # state whose write moves, has to come past this case instead of
@@ -2596,7 +2598,7 @@ def _cases(check):
         # cannot open the document it is comparing must fail rather than assert
         # on an empty string.
         with open(os.path.join(_output.PLUGIN_ROOT, "reference",
-                               "orchestrator.md"), "r",
+                               "execute-task.md"), "r",
                   encoding="utf-8") as _fh:
             _orc_src = _fh.read()
         _orc_starts = ('task.status = "in_progress"' in _orc_src
@@ -2627,7 +2629,7 @@ def _cases(check):
                          "--project-dir", wdd_proj])
         _wddt = task_in(wdd_mp, "P2.3") or {}
         _wddi = (_mio.load_manifest(wdd_mp).get("fileIndex") or {})
-        check("wd12 THE DOCUMENTED RECOVERY, DRIVEN: `orchestrator.md` sets "
+        check("wd12 THE DOCUMENTED RECOVERY, DRIVEN: `execute-task.md` sets "
               "`in_progress` and increments `attempts` before it spawns, and "
               "prescribes a widening through this verb plus a message to the "
               "RUNNING executor for the moment the plan gate refuses a file the "
@@ -4669,11 +4671,14 @@ def _cases(check):
               and "\"answer\":\"matches\"" in _ic_field[0]["to"])
 
         # THE ORCHESTRATION DOCUMENT ITSELF NAMES THE FLAG, so the wiring above
-        # is not a capability nothing tells an operator to use.
+        # is not a capability nothing tells an operator to use. `## Execute the
+        # task` - where the per-task reviewer spawn and its close live - moved
+        # into `reference/execute-task.md`, split off so a command that never
+        # runs a task does not have to read it.
         with open(os.path.join(_output.PLUGIN_ROOT, "reference",
-                               "orchestrator.md"), "r", encoding="utf-8") as _ic_fh:
+                               "execute-task.md"), "r", encoding="utf-8") as _ic_fh:
             _ic_orch = _ic_fh.read()
-        check("ic6 `reference/orchestrator.md` tells the orchestrator to carry "
+        check("ic6 `reference/execute-task.md` tells the orchestrator to carry "
               "the reviewer's answer into the SAME close that already carries "
               "`--commit`, for every one of the three words - not only the two "
               "that already had somewhere to go",

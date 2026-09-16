@@ -609,6 +609,33 @@ def rule_drift(plugin_root=None):
 #     python3 plugins/audit/scripts/manifest/_areas.py --coverage
 _ORCHESTRATOR = os.path.join("reference", "orchestrator.md")
 
+# `## Execute the task` and `## Phase sign-off` moved OUT of `_ORCHESTRATOR` into their
+# own files, split off so a command that never runs a task or never signs a phase off
+# does not have to read the section it will not use. The move is what `SECTION_DOC`
+# below is for: every row's section prefix still names the `##` heading, but the
+# heading no longer lives in one fixed file, so each row is checked against the file
+# `SECTION_DOC` names for its prefix — `_ORCHESTRATOR` when the prefix names none.
+_EXECUTE_TASK = os.path.join("reference", "execute-task.md")
+_PHASE_SIGNOFF = os.path.join("reference", "phase-signoff.md")
+
+# section prefix -> the file its `##` heading now lives in. Consulted by
+# `_doc_for_prefix`, which is the ONLY function on either side of this move that reads
+# it — everything downstream asks that function rather than repeating the map.
+SECTION_DOC = {
+    "Execute the task": _EXECUTE_TASK,
+    "Phase sign-off": _PHASE_SIGNOFF,
+}
+
+
+def _doc_for_prefix(prefix):
+    """The file a `##` section prefix's claims are checked against.
+
+    `SECTION_DOC.get(prefix, _ORCHESTRATOR)` inlined as its own function rather than
+    repeated at every call site — a row moved into `SECTION_DOC` without every reader
+    of the map being updated is exactly the drift a shared function exists to close."""
+    return SECTION_DOC.get(prefix, _ORCHESTRATOR)
+
+
 # How far after a row's `context` substring the claim may sit. A window rather
 # than the whole section because `(default main)` and `(default audit)` are the
 # same shape twice in one section, and a whole-section search would let either
@@ -725,9 +752,9 @@ CLAIM_ANCHORS = (
     # PRESENCE: an argparse flag is spelled once at its definition and there is no
     # neighbouring value to capture positionally. A renamed flag is caught; there
     # is nothing else here for a value to be.
-    ("status-phase-flag", "Progress output", "presence",
+    ("status-short-flag", "Progress output", "presence",
      os.path.join("scripts", "status", "audit-status.py"),
-     r'"(--phase)"', "", 'audit-status.py" <manifestPath> [%s <id>]'),
+     r'"(--short)"', "", 'audit-status.py" <manifestPath> --short'),
     # POSITIONAL: the argv pair the code actually runs, so changing the git
     # subcommand it asks moves the value.
     ("dry-run-ancestry", "Dry-run / preview", "value",
@@ -974,7 +1001,27 @@ def _strength_mismatches():
     return out
 
 
-def _list_anchor_drift(root, sections):
+def _doc_sections_cached(root, doc, text, cache):
+    """(sections, error) for `doc`, read once per call to `claim_drift` and shared
+    by every row that anchors there.
+
+    `text` substitutes for `_ORCHESTRATOR`'s content alone — the one document
+    every existing fixture mutates this way — and every other document is
+    always read off `root`, so a case exercising `_ORCHESTRATOR` through `text`
+    still checks `_EXECUTE_TASK` and `_PHASE_SIGNOFF` against the real files.
+    """
+    if doc in cache:
+        return cache[doc]
+    if doc == _ORCHESTRATOR and text is not None:
+        result = (doc_sections(text), None)
+    else:
+        src, err = _read(os.path.join(root, doc))
+        result = (None, err) if err is not None else (doc_sections(src), None)
+    cache[doc] = result
+    return result
+
+
+def _list_anchor_drift(root, text, cache):
     """[(claim, problem)] for every vocabulary the document and the code disagree on.
 
     The section's list is read from the RAW markdown, not the plained text, so
@@ -985,10 +1032,15 @@ def _list_anchor_drift(root, sections):
     """
     out = []
     for claim, prefix, rel, pattern, marker in LIST_ANCHORS:
+        doc = _doc_for_prefix(prefix)
+        sections, err = _doc_sections_cached(root, doc, text, cache)
+        if err is not None:
+            out.append((claim, "%s unreadable: %s" % (doc, err)))
+            continue
         found = _section_named(sections, prefix)
         if found is None:
             out.append((claim, "no single '## %s...' section in %s"
-                        % (prefix, _ORCHESTRATOR)))
+                        % (prefix, doc)))
             continue
         src, err = _read(os.path.join(root, rel))
         if err is not None:
@@ -1034,23 +1086,23 @@ def claim_drift(plugin_root=None, text=None):
     the section does not state what the code says; and the coverage declaration
     has drifted from what the rows actually cover.
 
-    `text` substitutes for the DOCUMENT only; the code side is always read off
-    `plugin_root`. That split is what lets the cases mutate the document on a
-    fixture while still comparing against the real modules - a fixture tree
-    holding both sides would report every row as "the code moved", which is a
-    different finding and would make the document cases pass for the wrong
-    reason.
+    `text` substitutes for `_ORCHESTRATOR`'s content only; every other document a
+    row may anchor at (`_EXECUTE_TASK`, `_PHASE_SIGNOFF`) is always read off
+    `plugin_root`, through `_doc_sections_cached`. That split is what lets a case
+    mutate `_ORCHESTRATOR` on a fixture while still comparing the other two
+    documents against the real modules - a fixture tree holding every side would
+    report every row as "the code moved", which is a different finding and would
+    make the document cases pass for the wrong reason. The CODE side (`rel`,
+    `pattern`) is always read off `plugin_root` regardless of which document
+    states the claim.
     """
     root = plugin_root or _output.PLUGIN_ROOT
     out = []
-    if text is not None:
-        doc, err = text, None
-    else:
-        doc, err = _read(os.path.join(root, _ORCHESTRATOR))
-    if err is not None:
-        return [(_ORCHESTRATOR, "unreadable: %s" % err)]
-    sections = doc_sections(doc)
-    if not sections:
+    cache = {}
+    orch_sections, orch_err = _doc_sections_cached(root, _ORCHESTRATOR, text, cache)
+    if orch_err is not None:
+        return [(_ORCHESTRATOR, "unreadable: %s" % orch_err)]
+    if not orch_sections:
         # An empty section list would make every row below report "section
         # missing" for one reason, which reads as many findings about the
         # document rather than one about this scan.
@@ -1061,11 +1113,16 @@ def claim_drift(plugin_root=None, text=None):
     out.extend(_strength_mismatches())
     for row in CLAIM_ANCHORS:
         claim, prefix, _strength, rel, pattern, context, needle = row
+        doc = _doc_for_prefix(prefix)
+        sections, doc_err = _doc_sections_cached(root, doc, text, cache)
+        if doc_err is not None:
+            out.append((claim, "%s unreadable: %s" % (doc, doc_err)))
+            continue
         found = _section_named(sections, prefix)
         if found is None:
             out.append((claim, "no single '## %s...' section in %s - the claim "
                                "this row anchors has nowhere to live"
-                        % (prefix, _ORCHESTRATOR)))
+                        % (prefix, doc)))
             continue
         # `stated`, not `text`: `text` is this function's own parameter, and
         # rebinding it here left the parameter unreachable by name after the
@@ -1098,26 +1155,43 @@ def claim_drift(plugin_root=None, text=None):
             out.append((claim, "'## %s' does not state %r%s" %
                         (found[0], want,
                          "" if not rel else " (%s says so)" % rel)))
-    out.extend(_list_anchor_drift(root, sections))
-    coverage = anchor_coverage(root, sections)
-    for name in coverage["undeclared"]:
-        out.append((name, "a '## ' section with no anchor and no row in "
-                          "UNANCHORED_SECTIONS - decide which it is; a section "
-                          "in neither set is the silent mass F282 measured"))
-    for name in coverage["stale_declarations"]:
-        out.append((name, "declared unanchored, but it is either anchored now or "
-                          "no longer a section - delete the declaration rather "
-                          "than leaving a reason nobody can check"))
+    out.extend(_list_anchor_drift(root, text, cache))
+    for doc in ANCHOR_DOCS:
+        sections, doc_err = _doc_sections_cached(root, doc, text, cache)
+        if doc_err is not None:
+            continue  # already reported above, by the row(s) anchored there
+        coverage = anchor_coverage(root, sections=sections, doc=doc)
+        for name in coverage["undeclared"]:
+            out.append((name, "a '## ' section with no anchor and no row in "
+                              "UNANCHORED_SECTIONS - decide which it is; a "
+                              "section in neither set is the silent mass this "
+                              "whole mechanism exists to catch"))
+        for name in coverage["stale_declarations"]:
+            out.append((name, "declared unanchored, but it is either anchored "
+                              "now or no longer a section - delete the "
+                              "declaration rather than leaving a reason nobody "
+                              "can check"))
     return out
 
 
-def anchor_coverage(plugin_root=None, sections=None, text=None):
-    """Which `##` sections of the orchestrator carry an anchor, and which do not.
+# Every document a `##` heading in `CLAIM_ANCHORS`/`LIST_ANCHORS` can name, in the
+# order `render_coverage` prints them. Derived from `SECTION_DOC`'s VALUES would
+# miss `_ORCHESTRATOR` itself (nothing maps TO it, every unlisted prefix defaults
+# to it) - so this is the one place the three are named as a set instead.
+ANCHOR_DOCS = (_ORCHESTRATOR, _EXECUTE_TASK, _PHASE_SIGNOFF)
+
+
+def anchor_coverage(plugin_root=None, sections=None, text=None, doc=None):
+    """Which `##` sections of ONE document (`doc`, default `_ORCHESTRATOR`) carry
+    an anchor, and which do not.
 
     Derived rather than written down, because a coverage figure in prose is the
     defect this repository has recorded most often. `undeclared` and
     `stale_declarations` are what make `UNANCHORED_SECTIONS` a checked claim in
-    both directions instead of a list that only grows.
+    both directions instead of a list that only grows - checked only against
+    `_ORCHESTRATOR`, because every entry `UNANCHORED_SECTIONS` declares today
+    names one of ITS sections; a document with no entry of its own simply has
+    nothing to declare stale yet.
 
     BOTH TABLES, and reading only `CLAIM_ANCHORS` was a real gap rather than an
     omission with no consequence: `audit-state-statuses` held a whole vocabulary
@@ -1127,17 +1201,28 @@ def anchor_coverage(plugin_root=None, sections=None, text=None):
     reported by `claim_drift` as being in neither set, which is a finding against
     a section that is anchored. The two tables differ in what a row derives, not
     in whether a row is an anchor.
+
+    `sections`, when given, is trusted AS the parsed sections for `doc` and
+    neither `text` nor a file read happens - `claim_drift` uses this to share one
+    read across every row and this function's own per-document coverage pass.
+    `text` substitutes for `_ORCHESTRATOR`'s content and is honoured only when
+    `doc` is `_ORCHESTRATOR` (its default), for the same reason `claim_drift`
+    limits it that way.
     """
     root = plugin_root or _output.PLUGIN_ROOT
-    if sections is None and text is not None:
-        sections = doc_sections(text)
+    doc = doc or _ORCHESTRATOR
     if sections is None:
-        doc, err = _read(os.path.join(root, _ORCHESTRATOR))
-        sections = [] if err is not None else doc_sections(doc)
+        if doc == _ORCHESTRATOR and text is not None:
+            sections = doc_sections(text)
+        else:
+            src, err = _read(os.path.join(root, doc))
+            sections = [] if err is not None else doc_sections(src)
     names = [name for name, _body in sections]
     anchored, claims = [], {}
     for row in CLAIM_ANCHORS + LIST_ANCHORS:
         claim, prefix = row[0], row[1]
+        if _doc_for_prefix(prefix) != doc:
+            continue
         for name in names:
             if name.startswith(prefix):
                 if name not in anchored:
@@ -1145,31 +1230,36 @@ def anchor_coverage(plugin_root=None, sections=None, text=None):
                 claims.setdefault(name, []).append(claim)
     unanchored = [name for name in names if name not in anchored]
     return {
+        "doc": doc,
         "sections": names,
         "anchored": anchored,
         "unanchored": unanchored,
         "claims": claims,
         "undeclared": [n for n in unanchored if n not in UNANCHORED_SECTIONS],
-        "stale_declarations": sorted(n for n in UNANCHORED_SECTIONS
-                                     if n not in unanchored),
+        "stale_declarations": (sorted(n for n in UNANCHORED_SECTIONS
+                                     if n not in unanchored)
+                               if doc == _ORCHESTRATOR else []),
     }
 
 
 def render_coverage(plugin_root=None):
-    """The coverage table as lines, for `--coverage` and for a report to paste."""
-    cov = anchor_coverage(plugin_root)
-    lines = ["orchestrator.md sections and the claims anchored in each:"]
-    for name in cov["sections"]:
-        claims = cov["claims"].get(name) or []
-        if claims:
-            lines.append("  [anchored] %s: %s" % (name, ", ".join(claims)))
-        elif name in UNANCHORED_SECTIONS:
-            lines.append("  [declared unanchored] %s" % name)
-        else:
-            lines.append("  [UNDECLARED, no anchor] %s" % name)
-    lines.append("anchored %d of %d section(s); %d declared unanchored"
-                 % (len(cov["anchored"]), len(cov["sections"]),
-                    len(cov["unanchored"])))
+    """The coverage table as lines, ONE PER DOCUMENT `CLAIM_ANCHORS`/`LIST_ANCHORS`
+    can name a section in, for `--coverage` and for a report to paste."""
+    lines = []
+    for doc in ANCHOR_DOCS:
+        cov = anchor_coverage(plugin_root, doc=doc)
+        lines.append("%s sections and the claims anchored in each:" % doc)
+        for name in cov["sections"]:
+            claims = cov["claims"].get(name) or []
+            if claims:
+                lines.append("  [anchored] %s: %s" % (name, ", ".join(claims)))
+            elif name in UNANCHORED_SECTIONS:
+                lines.append("  [declared unanchored] %s" % name)
+            else:
+                lines.append("  [UNDECLARED, no anchor] %s" % name)
+        lines.append("  anchored %d of %d section(s); %d declared unanchored"
+                     % (len(cov["anchored"]), len(cov["sections"]),
+                        len(cov["unanchored"])))
     return lines
 
 

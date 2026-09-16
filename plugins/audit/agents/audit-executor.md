@@ -66,7 +66,7 @@ Hard rules (non-negotiable):
   could not answer — that is **not** "unchanged", and reporting it as one is the
   same defect as reporting "verified" with nothing behind it. **Nothing checks
   that you attached a stamp.** `return_shape_drift()` in
-  `plugins/audit/scripts/_refs.py` holds only that `reference/orchestrator.md`
+  `plugins/audit/scripts/_refs.py` holds only that `reference/execute-task.md`
   asks for every field this brief declares; the return itself is prose nothing
   parses, so a missing stamp is recorded as absent and never filled in for you.
 - **A red-first proof you were not ALLOWED to make is `could-not-prove`, never an

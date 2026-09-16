@@ -618,6 +618,40 @@ def _cases(check):
     # several claims deep and not one of them read that sentence, which is what a
     # per-SECTION coverage figure actually buys; `_areas.py --coverage` prints the
     # per-claim answer.
+    #
+    # THE SECTION NOW LIVES IN `reference/phase-signoff.md`, not in `orchestrator.md`
+    # — split into its own file so a command that never signs a phase off does not
+    # read it — so `body` — orchestrator's own text — no longer carries it and
+    # cases below build a SCRATCH plugin root instead: the real `orchestrator.md`
+    # (so `claim_drift`'s own-sections bailout never fires), a `phase-signoff.md` of
+    # the case's choosing, and the real `audit-task.py` unless a case mutates it.
+    def _pso_scratch(pso_text, verb_src=None):
+        root = tempfile.mkdtemp(prefix="areas-phase-signoff-")
+        orch_dir = os.path.join(root, os.path.dirname(M._ORCHESTRATOR))
+        os.makedirs(orch_dir)
+        with open(os.path.join(_harness.SCRIPTS_DIR, os.pardir, M._ORCHESTRATOR),
+                  "r", encoding="utf-8") as fh:
+            orch_real = fh.read()
+        with open(os.path.join(root, M._ORCHESTRATOR), "w",
+                  encoding="utf-8") as fh:
+            fh.write(orch_real)
+        with open(os.path.join(root, M._PHASE_SIGNOFF), "w",
+                  encoding="utf-8") as fh:
+            fh.write(pso_text)
+        if verb_src is None:
+            with open(os.path.join(_harness.SCRIPTS_DIR, "manifest",
+                                   "audit-task.py"), "r", encoding="utf-8") as fh:
+                verb_src = fh.read()
+        verb_rel = os.path.join("scripts", "manifest", "audit-task.py")
+        os.makedirs(os.path.join(root, os.path.dirname(verb_rel)))
+        with open(os.path.join(root, verb_rel), "w", encoding="utf-8") as fh:
+            fh.write(verb_src)
+        return root
+
+    with open(os.path.join(_harness.SCRIPTS_DIR, os.pardir, M._PHASE_SIGNOFF),
+              "r", encoding="utf-8") as fh:
+        pso_body = fh.read()
+
     check("oa20 the statuses `scope` REFUSES are read out of the verb, not "
           "restated beside it: `## Phase sign-off` names every status the guard "
           "in `_locked_scope` turns away, and every status it names is one",
@@ -628,39 +662,48 @@ def _cases(check):
     # THIS DOCUMENT ITSELF ROTTED THIS WAY ONCE: it named a status the verb does
     # not refuse. One word swapped inside the anchored sentence, which is the
     # smallest edit that reproduces the fault.
-    _refused_wrong = body.replace("that refusal narrowed to `cancelled` alone,",
-                                  "that refusal narrowed to `done` alone,")
-    check("oa21 ...and naming a status the verb does NOT refuse is a finding in "
-          "both halves at once - the word the code has no member for, and the "
-          "member the section stopped naming. This is exactly the shape a "
-          "released version once shipped: the clause read `done` while the code "
-          "refused only `cancelled`",
-          _refused_wrong != body
-          and any(c == "scope-refusal-statuses" and "no such member" in p
-                  for c, p in M.claim_drift(text=_refused_wrong))
-          and any(c == "scope-refusal-statuses" and "does not name it" in p
-                  for c, p in M.claim_drift(text=_refused_wrong)),
-          repr([p for c, p in M.claim_drift(text=_refused_wrong)
-                if c == "scope-refusal-statuses"]))
+    _refused_wrong = pso_body.replace(
+        "that refusal narrowed to `cancelled` alone,",
+        "that refusal narrowed to `done` alone,")
+    _scratch21 = _pso_scratch(_refused_wrong)
+    try:
+        _drift21 = M.claim_drift(plugin_root=_scratch21)
+        check("oa21 ...and naming a status the verb does NOT refuse is a finding in "
+              "both halves at once - the word the code has no member for, and the "
+              "member the section stopped naming. This is exactly the shape a "
+              "released version once shipped: the clause read `done` while the code "
+              "refused only `cancelled`",
+              _refused_wrong != pso_body
+              and any(c == "scope-refusal-statuses" and "no such member" in p
+                      for c, p in _drift21)
+              and any(c == "scope-refusal-statuses" and "does not name it" in p
+                      for c, p in _drift21),
+              repr([p for c, p in _drift21 if c == "scope-refusal-statuses"]))
+    finally:
+        shutil.rmtree(_scratch21, ignore_errors=True)
     # ...and the WHOLE clause put back the way it read before this fix, which is
     # the mutation a reverting edit would actually make. It takes the marker with
     # it, so the finding is about the list no longer being locatable rather than
     # about a member - a reworded mechanism is a mechanism somebody has to
     # re-check.
-    _pre_f303 = body.replace(
+    _pre_f303 = pso_body.replace(
         "It no longer refuses a finished\n   task — that refusal narrowed to "
         "`cancelled` alone,\n   and a `done` task will take a widening",
         "It refuses a `done` task on purpose, and every task is `done` by the "
         "time you are reading this step")
-    check("oa22 ...and reverting the clause to a sentence a prior fix had "
-          "already falsified is a finding too, because it takes the anchored "
-          "mechanism with it: the list can no longer be located, which is the "
-          "repair rather than a member to add",
-          _pre_f303 != body
-          and any(c == "scope-refusal-statuses" and "cannot be located" in p
-                  for c, p in M.claim_drift(text=_pre_f303)),
-          repr([p for c, p in M.claim_drift(text=_pre_f303)
-                if c == "scope-refusal-statuses"]))
+    _scratch22 = _pso_scratch(_pre_f303)
+    try:
+        _drift22 = M.claim_drift(plugin_root=_scratch22)
+        check("oa22 ...and reverting the clause to a sentence a prior fix had "
+              "already falsified is a finding too, because it takes the anchored "
+              "mechanism with it: the list can no longer be located, which is the "
+              "repair rather than a member to add",
+              _pre_f303 != pso_body
+              and any(c == "scope-refusal-statuses" and "cannot be located" in p
+                      for c, p in _drift22),
+              repr([p for c, p in _drift22 if c == "scope-refusal-statuses"]))
+    finally:
+        shutil.rmtree(_scratch22, ignore_errors=True)
     # THE OTHER DIRECTION, AND THE ONE A DOCUMENT CASE CANNOT REACH: the VERB
     # changes under a correct document. The row is repointed at a guard in the
     # same file that really does refuse two statuses - `cancel`'s - so the
@@ -668,6 +711,7 @@ def _cases(check):
     # Widening `scope`'s refusal back over `done` is what this simulates, and it
     # must be reported as the member the section never learned.
     _saved_lists = M.LIST_ANCHORS
+    _scratch23 = _pso_scratch(pso_body)
     try:
         M.LIST_ANCHORS = tuple(
             row if row[0] != "scope-refusal-statuses"
@@ -676,7 +720,7 @@ def _cases(check):
                   r'\s*# Terminal is terminal',
                   row[4])
             for row in _saved_lists)
-        _widened = M.claim_drift(text=body)
+        _widened = M.claim_drift(plugin_root=_scratch23)
         check("oa23 ...and a VERB that starts refusing a status the document "
               "does not name is a finding under a document nobody touched. "
               "Without this half the anchor only ever watches the prose, which "
@@ -687,6 +731,7 @@ def _cases(check):
                     if c == "scope-refusal-statuses"]))
     finally:
         M.LIST_ANCHORS = _saved_lists
+        shutil.rmtree(_scratch23, ignore_errors=True)
     # --- F334: the window this row searches, and what bounds it ---------------
     # THE PATTERN USED TO BE UNBOUNDED - `.*?` under `re.S` - and the shape it
     # anchors on is not unique to the verb it names: a status test beside an
@@ -703,19 +748,14 @@ def _cases(check):
     # smallest edit that takes the shape out of the function and leaves
     # everything below it standing. A hand-written verb here would be a fixture
     # that agrees with whichever pattern wrote it.
-    _verb_rel = os.path.join("scripts", "manifest", "audit-task.py")
     with open(os.path.join(_harness.SCRIPTS_DIR, "manifest", "audit-task.py"),
               "r", encoding="utf-8") as fh:
         _verb_src = fh.read()
     _guard_test = '    if node.get("status") == "cancelled":\n'
     _blinded = _verb_src.replace(_guard_test, "    if False:\n")
-    _scratch = tempfile.mkdtemp(prefix="areas-code-side-")
+    _scratch = _pso_scratch(pso_body, verb_src=_blinded)
     try:
-        os.makedirs(os.path.join(_scratch, os.path.dirname(_verb_rel)))
-        with open(os.path.join(_scratch, _verb_rel), "w",
-                  encoding="utf-8") as fh:
-            fh.write(_blinded)
-        _gone = [p for c, p in M.claim_drift(plugin_root=_scratch, text=body)
+        _gone = [p for c, p in M.claim_drift(plugin_root=_scratch)
                  if c == "scope-refusal-statuses"]
         check("oa26 a DELETED guard is reported as a deleted guard: with the "
               "status test gone from `_locked_scope`, the row says the file no "
@@ -807,17 +847,21 @@ def _cases(check):
           not [p for c, p in M.claim_drift() if "EMPTY vocabulary" in p],
           repr([r for r in M.claim_drift() if "EMPTY vocabulary" in r[1]]))
     # --- coverage is derived from EVERY anchor table, not just the first -------
+    # `## Phase sign-off` lives in `_PHASE_SIGNOFF` now, so its coverage is asked
+    # of THAT document; `## Keeping a failed run's record` stayed in the
+    # orchestrator and is asked with the default `doc`.
     _claims = M.anchor_coverage()["claims"]
-    _sign_off = [n for n in _claims if n.startswith("Phase sign-off")]
+    _pso_claims = M.anchor_coverage(doc=M._PHASE_SIGNOFF)["claims"]
+    _sign_off = [n for n in _pso_claims if n.startswith("Phase sign-off")]
     _failed_run = [n for n in _claims if n.startswith("Keeping a failed run")]
     check("oa24 the coverage table counts a LIST row as the anchor it is: both "
           "vocabularies show up under the section that carries them. Reading "
           "only `CLAIM_ANCHORS` showed `## Keeping a failed run's record` with "
           "one claim while it carried two",
           len(_sign_off) == 1 and len(_failed_run) == 1
-          and "scope-refusal-statuses" in _claims[_sign_off[0]]
+          and "scope-refusal-statuses" in _pso_claims[_sign_off[0]]
           and "audit-state-statuses" in _claims[_failed_run[0]],
-          repr(_claims))
+          repr((_pso_claims, _claims)))
     _saved_lists, _saved_claims = M.LIST_ANCHORS, M.CLAIM_ANCHORS
     try:
         M.LIST_ANCHORS = (("frob-vocab", "Frobnication",

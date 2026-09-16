@@ -1,5 +1,6 @@
 ---
 description: 'Audit pipeline: open / stop / check a local control-panel UI to visually manage .claude/audit.config.json and the manifest''s composition levers (reviewSkill, per-task skills/models, buildCommands) — with live validation and discovery of the skills & agents available in this repo + globally. Ephemeral, on-demand; a per-project pidfile keeps it discoverable and stoppable.'
+disable-model-invocation: true
 argument-hint: '[stop|status] [--port <n>]'
 allowed-tools: Read, Bash
 ---

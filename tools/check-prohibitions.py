@@ -67,8 +67,25 @@ _output.install_path()
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
-DOC = os.path.join(REPO, "plugins", "audit", "reference", "orchestrator.md")
+# `## Execute the task` and `## Phase sign-off` moved out of `orchestrator.md`
+# into their own files, split off so a command that never runs a task or never
+# signs a phase off does not have to read the section it will not use - and a
+# prohibition may be stated in any of the three. `DOCS` names all of them; the
+# census below reads their text joined, so a rule moving between the three
+# never changes what this scan sees.
+DOCS = (
+    os.path.join(REPO, "plugins", "audit", "reference", "orchestrator.md"),
+    os.path.join(REPO, "plugins", "audit", "reference", "execute-task.md"),
+    os.path.join(REPO, "plugins", "audit", "reference", "phase-signoff.md"),
+)
 HOOKS = os.path.join(REPO, "plugins", "audit", "hooks")
+
+
+def _live_body():
+    """The three orchestration documents' text, joined. An unreadable one RAISES
+    rather than being skipped - a scan that quietly read fewer files would report
+    a clean census over the one thing it could no longer see."""
+    return "\n".join(io.open(d, encoding="utf-8").read() for d in DOCS)
 
 # --- what the document states -------------------------------------------------
 # A prohibition is a bolded NEVER naming a command. The narrowing is deliberate:
@@ -190,7 +207,7 @@ _REASON_MIN = 80
 
 def prohibitions(text=None):
     """Every bolded NEVER in the document, as (sentence, [commands it names])."""
-    body = text if text is not None else io.open(DOC, encoding="utf-8").read()
+    body = text if text is not None else _live_body()
     out = []
     for m in _BOLD_NEVER.finditer(body):
         sentence = " ".join(m.group(0).split())
@@ -339,7 +356,7 @@ def refuses(hook, command):
 def prohibition_drift(text=None):
     """[(subject, problem)] - every prohibition nothing accounts for, both ways."""
     out = []
-    body = text if text is not None else io.open(DOC, encoding="utf-8").read()
+    body = text if text is not None else _live_body()
     known = dict(ENFORCED)
     seen = set()
     for sentence, cmds in prohibitions(body):

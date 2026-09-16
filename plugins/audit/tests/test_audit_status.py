@@ -2387,6 +2387,82 @@ def _cases(_record):
         _sh_uf.rmtree(_uf_root, ignore_errors=True)
 
 
+    # --- render_short: the condensed form the pipeline echoes, never the default
+    # The full render is what a typed /audit:status still gets - the operator
+    # decided against making the short form the default, and sh0 pins the bare
+    # invocation's bytes against that ever quietly changing.
+    import contextlib as _ctx_sh
+    import io as _io_sh
+
+    def _sh_cli(argv):
+        _o, _e = _io_sh.StringIO(), _io_sh.StringIO()
+        with _ctx_sh.redirect_stdout(_o), _ctx_sh.redirect_stderr(_e):
+            _c = M.main(argv)
+        return _c, _o.getvalue(), _e.getvalue()
+
+    _sh_fx = _fixture()
+    _sh_sum = summarize(_sh_fx)
+    fd, _sh_path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(_sh_fx, fh)
+    try:
+        # THE VIEW default is the CLI's own policy (`main`, not `render_status`),
+        # so it is reproduced here rather than assumed - a fixture with a done
+        # phase folds it under the "active" default, and comparing against
+        # `render_status(fx, sum)` with no `view=` (which means EVERY phase, by
+        # that function's own contract) would compare two different questions.
+        _sh_full_direct = M.render_status(_sh_fx, _sh_sum, view="active")
+        _sh_c0, _sh_o0, _sh_e0 = _sh_cli([_sh_path])
+        check("sh0 RED-FIRST GUARD: the bare invocation's render is exactly "
+              "render_status's output for the same view, with no trace of the "
+              "short form's own closing line - the case that must go red the "
+              "day --short is made the default without being asked for",
+              _sh_c0 == 0 and _sh_o0 == _sh_full_direct + "\n"
+              and "Full view:" not in _sh_o0
+              and "waiting on" in _sh_o0,
+              repr(_sh_o0[:260]))
+
+        _sh_short = M.render_short(_sh_fx, _sh_sum)
+        check("sh1 the short render carries the overall line, the READY NOW "
+              "block with the command to type, and ends by naming the full "
+              "view - and never the per-phase table (no phase title in it)",
+              _sh_short.startswith("  ") and "tasks done" in _sh_short
+              and "READY NOW" in _sh_short and "run: /audit:run P2.1" in _sh_short
+              and _sh_short.rstrip().endswith("Full view: /audit:status")
+              and "Done phase" not in _sh_short and "Next phase" not in _sh_short,
+              repr(_sh_short))
+
+        _sh_c1, _sh_o1, _sh_e1 = _sh_cli([_sh_path, "--short"])
+        check("sh2 CLI: --short selects the condensed render, byte for byte "
+              "the same text render_short produced directly",
+              _sh_c1 == 0 and _sh_o1 == _sh_short + "\n", repr(_sh_o1[:200]))
+
+        # Compared against the SAME CLI invocation without the flag, not a
+        # hand-rebuilt payload - `rollup` folds in a time-sensitive evidence
+        # boundary that a direct call cannot reproduce without the CLI's own
+        # wiring, and that mismatch is a different question than this one.
+        _sh_c2a, _sh_o2a, _sh_e2a = _sh_cli([_sh_path, "--json"])
+        _sh_c2b, _sh_o2b, _sh_e2b = _sh_cli([_sh_path, "--json", "--short"])
+        check("sh3 --short is IGNORED under --json - the machine payload is "
+              "unaffected by a flag that only names a human render",
+              _sh_c2a == 0 and _sh_c2b == 0 and _sh_o2a == _sh_o2b
+              and _sh_e2a == _sh_e2b,
+              repr(_sh_o2b[:120]))
+
+        _u_sh = {"totals": {"tokens": 4200, "costUSD": 1.5}, "showCost": True,
+                 "byPhase": {}}
+        _sh_sum_u = summarize(_sh_fx)
+        _sh_sum_u["usage"] = _u_sh
+        _sh_short_u = M.render_short(_sh_fx, _sh_sum_u)
+        check("sh4 a usage-carrying summary adds the usage line to the short "
+              "render too - the render an automated run echoes should not "
+              "read as free when the full one says what it cost",
+              "usage:" in _sh_short_u and "tok" in _sh_short_u,
+              repr(_sh_short_u))
+    finally:
+        os.unlink(_sh_path)
+
+
 def _selftest():
     return _harness.run(_cases)
 

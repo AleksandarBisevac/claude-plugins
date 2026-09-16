@@ -127,11 +127,13 @@ per add is the class of error the script exists to delete.
    - **Skills** — do not scan the filesystem for skills yourself; there is ONE
      mechanical source. Run (Bash):
      ```bash
-     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --json --discovery
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --json \
+         --discovery --section discovery
      ```
-     The payload's `discovery` block lists every skill this project can actually
-     see (`{"skills": [{"name", "description", "source"}, …]}` — project
-     `.claude/`, user `~/.claude/`, installed plugins). A `discovery.error` key
+     `--section` projects the one block this step needs, so the printed object lists
+     every skill this project can actually see directly
+     (`{"skills": [{"name", "description", "source"}, …]}` — project
+     `.claude/`, user `~/.claude/`, installed plugins). A top-level `error` key
      means the scan failed and the lists are empty (fail-open, not wrong): say
      so and offer only the area defaults below. Then ask "which skills should
      the executor load for this task?" (AskUserQuestion), offering:
@@ -140,9 +142,9 @@ per add is the class of error the script exists to delete.
        `root` prefixes) — mark them as the default (they load first for every
        task in the area anyway; naming them on the task is a no-op kept for
        readability);
-     - **discovery names as options** — `discovery.skills` entries whose
+     - **discovery names as options** — `skills` entries whose
        names/descriptions match the task's files and subject — offer names the
-       payload carries and nothing else, never invented ones;
+       printed object carries and nothing else, never invented ones;
      - **"null — none applies"** — the explicit opt-out, written as JSON `null`:
        it STOPS the area fallback so nothing loads. Distinct from leaving skills
        unconsidered (`[]`, the default), where the area default stays in force.
@@ -280,7 +282,7 @@ spawns, and the hand edit this file forbids everywhere else.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start P3.2 [--json]
 ```
 
-What it writes — exactly the fields `reference/orchestrator.md` → *Execute the task*,
+What it writes — exactly the fields `reference/execute-task.md` → *Execute the task*,
 step 2 prescribes as an orchestrator `Edit`, and nothing besides:
 
 - `status: "in_progress"`, `startedAt` stamped at the moment of the call, and
@@ -329,7 +331,7 @@ note is the whole of it.
 ## Subcommand: `done <taskId> --commit <sha>`
 
 Close a task that **landed**. This is `start`'s twin at the other end of the lifecycle,
-and it exists because there was no verb for the close: `reference/orchestrator.md` →
+and it exists because there was no verb for the close: `reference/execute-task.md` →
 *Execute the task*, step 4 prescribed two hand `Edit`s — 4b's status and completion
 stamp, 4c's SHA — and a hand edit writes wherever the hand goes. Measured in this
 repository: one run wrote a task's completion into the phase **shard** and the manifest
@@ -555,7 +557,7 @@ into a pass — while shrinking it can turn a commit that was clean when it was 
 breach, retroactively, on work nobody can go back and redo. The plan gate reads the same
 list forward, so a widening only ever *allows* an edit it was refusing.
 
-**And that is the case the verb exists for.** `reference/orchestrator.md` prescribes
+**And that is the case the verb exists for.** `reference/execute-task.md` prescribes
 `/audit:task scope` for the moment the plan gate refuses a file a running task genuinely
 needs — a task which is, by then, `in_progress` with an attempt on it. Measured live: hit
 three times in one phase while the guard excluded exactly that state, and the only escape

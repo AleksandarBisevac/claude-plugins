@@ -7,8 +7,11 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 # /audit:run — execute one task
 
 `$ARGUMENTS` = the task id to run (plus optional `--dry-run`). Read
-`${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first.
+`${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md`,
+`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` and
+`${CLAUDE_PLUGIN_ROOT}/reference/execute-task.md` first — this command runs a task, so it
+needs the section that does; it never signs a phase off, so it does not read
+`reference/phase-signoff.md`.
 
 **If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section — preview
 whether the task is ready + what would run, and STOP without mutating.
