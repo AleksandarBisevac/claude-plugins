@@ -75,7 +75,7 @@
     {
       "id": "P56.2",
       "title": "The gate summary and the sweep print the verdict, not the inventory",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the commands an agent runs most often print what changed the verdict rather than an inventory of what did not. Measured across this release's agent transcripts, shell output is the largest single source of material entering an agent's context - larger than every file read put together - and the sweep's own per-file lines are most of it: one line per file, hundreds of them, on every run, of which only the failures carry information. The loud form stays exactly as it is, because a human bisecting wants the inventory; the quiet form is what a brief tells an agent to use.",
       "files": [
         "tools/sweep-selftests.py",
@@ -107,14 +107,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "60d3ab6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "the per-row loop and the tail were split so both forms share one tail; a step is droppable only when it exited clean, recorded no outcome, named no failing case and was not retried.",
+        "descriptive": "The sweep and the gate runner have a quiet form that prints every failure and the totals and nothing per passing row, with the loud form unchanged."
       },
       "startedAt": "2026-09-16T17:58:07Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T19:29:19Z",
+      "verifiedBy": [
+        "rq0",
+        "rq1",
+        "rq2",
+        "rq3",
+        "rq4",
+        "rq5"
+      ]
     },
     {
       "id": "P56.3",
@@ -210,7 +217,7 @@
     {
       "id": "P56.5",
       "title": "The reuse identity works where a path passes through a link",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: the saving that is already built actually fires for the projects that would benefit from it. The set of paths the recorder writes is computed by comparing a resolved path against an unresolved one, so wherever any component of a project's path is a symbolic link the manifest falls out of the exclusion, is read into the content identity, changes on every recorded run, and the reuse never matches - leaving nothing but a count in a basis line to tell the two behaviours apart. This is the largest already-built saving in the product and on a large share of real machines it does nothing. It fails safe here by luck rather than design: more of the tree stays inside the identity, so the answer is measure again. Duplicate of an entry already recorded against the same surface, kept here because this is the phase that owns whether the saving is real.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -242,14 +249,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "60d3ab6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "recorded_paths resolves both sides of the comparison and returns the dropped writes beside the excluded ones; the gate's identity carries them and main prints them.",
+        "descriptive": "The reuse identity excludes the recorder's own writes whichever spelling of the project path reaches it, and a write genuinely outside the project is reported rather than absorbed."
       },
       "startedAt": "2026-09-16T17:58:08Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T19:29:19Z",
+      "verifiedBy": [
+        "ru5",
+        "ru5a",
+        "ru5b",
+        "ru5c",
+        "ru5d",
+        "ru5e"
+      ]
     },
     {
       "id": "P56.6",
