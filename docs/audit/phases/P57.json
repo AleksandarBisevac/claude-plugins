@@ -1,7 +1,7 @@
 {
   "id": "P57",
   "title": "The instructions cost what they are worth",
-  "status": "pending",
+  "status": "in_progress",
   "description": "The token audit's finding, in one sentence: the expensive surfaces of this plugin are its instructions rather than its code. The Python runs locally and costs the user nothing, and the two largest artifacts never enter a context window; what costs tokens is prose the model is told to read and prose it is told to re-type. This phase takes the three cheapest of those: the orchestration reference read whole by commands that execute none of it, a discovery payload printed unprojected beside a projection nothing calls, and command descriptions carried by every session including the ones that never open a plan.",
   "desiredOutcome": "A command loads only the instruction it executes, a projection is used where one exists, and no description sits in a session that will never call it.",
   "testGate": [
@@ -29,7 +29,7 @@
     {
       "id": "P57.1",
       "title": "A command reads only the instruction it executes",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: a command loads the sections it runs and no others, and nothing was copied to make that true. The orchestration reference is read whole by every execution command, and the two longest sections - executing a task and signing off a phase - are most of it, while four commands execute neither. The cut must COPY NOTHING: two copies of a procedure is one copy and one lie, which this repository has paid for more than once. The claim anchors and the drift lints are the precondition being spent here, so they are re-pointed rather than dropped, and a section that moved without its anchor following fails by name. What stays in the core is what every command needs: the vocabulary, the refusal table, and the judgement no mechanism can check.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -68,21 +68,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T19:26:23Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P57.2",
       "title": "A projection that exists is the one the caller asks for",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the two callers that read the discovery payload ask for the projection instead of the whole thing. The projection already exists and the orchestrator's own budget read uses it for exactly this reason; the two document call sites do not, and print several times as much. This is a flag at two call sites against a mechanism already built and already cased. What must not move: a caller asking for a section that does not exist is refused by name, never quietly handed the whole payload, because a silent fallback turns a saving into a surprise.",
       "files": [
         "plugins/audit/commands/init.md",
@@ -113,21 +113,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T19:26:23Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P57.3",
       "title": "A description is carried by the sessions that might call it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: a command a model will never invoke stops occupying every session's startup context, and a lint holds the line between the two kinds. Eight commands are human-typed - a legacy spelling, a layout change, a log read, a worktree, the panel, a proposal, a bug, a tracker sync - and each carries its description into every session where the plugin is enabled, including sessions that never open a plan. What makes this safe rather than clever is the lint: the sign-off procedure invokes commands BY NAME, so a command the pipeline calls must stay reachable, and the check reads the documents that do the calling rather than a list somebody maintains.",
       "files": [
         "plugins/audit/commands/sync.md",
@@ -164,21 +164,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T19:26:23Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P57.4",
       "title": "The short render is what the pipeline echoes, and the full one is what you type for",
-      "status": "pending",
+      "status": "in_progress",
       "description": "DONE MEANS: the orchestration steps that echo a whole-plan render echo a short one, and what an operator sees when they type the command themselves does not change. OPERATOR'S DECISION, taken deliberately: the researcher recommended making the short form the default and said plainly they would not ship it without asking, because it trades the operator's default visibility for tokens. The operator chose to keep the full view when they type the command and to use the short one only where the pipeline echoes it. So the saving is taken where nobody was reading the output anyway, and none is taken from the person who asked to see it. The short form ends by naming the command for the full view, because the reason the verbatim instruction exists at all is a run that ended with the answer collapsed behind a tool call and the model believing it had replied.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -209,16 +209,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-16T19:26:23Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-16T19:26:23Z"
 }
