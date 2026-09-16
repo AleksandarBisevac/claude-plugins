@@ -1,0 +1,300 @@
+{
+  "id": "P56",
+  "title": "The plugin costs the user less than wild use, and can prove it",
+  "status": "pending",
+  "description": "Measured on this release's own session: cost is the sum of context size per turn, not the sum of work done. An agent living past three hours pays nearly three times per turn what a short one pays, because every later turn carries everything earlier and the cache is rewritten as it lapses; the spawn itself is cheap, a small fraction of the total. So the lever is short agents reading narrowly, which is exactly what a plan buys over one long-lived agent that accumulates the whole repository. The mechanisms that serve this mostly landed already - a gate that reuses a recorded verdict, a task gate narrowed to its own paths, an executor that no longer duplicates the recorded run, a question answered without reading the plan - and nothing measures whether they pay off. This phase makes the saving real where it is inert, cheap where it is loud, and provable where it is currently a claim.",
+  "desiredOutcome": "A run through the plan costs measurably less than the same work done ad hoc, and the plugin reports the comparison rather than claiming it.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P56.1",
+      "title": "The surface reports what a run cost and how much of it was context",
+      "status": "pending",
+      "description": "DONE MEANS: the cost surface distinguishes the tokens a run read for the first time from the ones it re-read, and reports the highest context each run reached. Today every figure is one total, which cannot tell an operator whether a task was expensive because it did a lot or because it lived a long time - and those have opposite repairs. Measured here, an agent past three hours paid nearly three times per turn what a short one paid, all of it in material that had already been read once. Without this split the claim that a plan costs less than ad hoc work has no basis, which is the rule this project applies to every other claim it makes. A transcript too thin to support the split says so rather than reporting a zero.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: a task's cost separates what was newly read from what was re-read, carries the highest context the run reached, and a transcript too thin to support either says so rather than reporting a zero"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P56.2",
+      "title": "The gate summary and the sweep print the verdict, not the inventory",
+      "status": "pending",
+      "description": "DONE MEANS: the commands an agent runs most often print what changed the verdict rather than an inventory of what did not. Measured across this release's agent transcripts, shell output is the largest single source of material entering an agent's context - larger than every file read put together - and the sweep's own per-file lines are most of it: one line per file, hundreds of them, on every run, of which only the failures carry information. The loud form stays exactly as it is, because a human bisecting wants the inventory; the quiet form is what a brief tells an agent to use.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tools/verify.sh"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: the quiet form prints every failure and the totals and nothing per passing file, and the loud form is unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P56.3",
+      "title": "A brief carries the task's files, and an agent that explores says why",
+      "status": "pending",
+      "description": "DONE MEANS: an executor is handed the paths its task declares and the one question it would otherwise grep for, so exploring the tree is a deliberate step it justifies rather than the default first move. The plan already records which files a task touches and which task last declared each of them, and the lookup that answers the second landed this release - what is missing is that the spawn carries either. An agent that greps a repository pays for the repository, and that cost is the difference between planned and ad hoc work rather than a detail of it.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: the brief material a task's declared files produce is derivable from the plan in one call, including who last declared each of them"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P56.4",
+      "title": "One task per agent, and a context that has grown hands back",
+      "status": "pending",
+      "description": "DONE MEANS: the procedure spawns one task per agent and says what an agent does when its context outgrows the work left in it. Measured on this release, an agent living past three hours paid nearly three times per turn, because every later turn carries everything earlier and the cache is rewritten as it lapses - so a long agent is expensive in a way that has nothing to do with the difficulty of its task. The plan's task is the natural boundary and the orchestration document already prefers continuing an agent to re-spawning one, which is right for skills and context and wrong past a point nothing names. The bound is a configured number rather than a rule of thumb, because the right value differs per project, and an agent that reaches it hands back what it has with a summary the next one starts from rather than stopping mid-task.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__config.py: the context bound resolves to its documented default when unset and refuses a value outside its vocabulary, and the orchestration document states the same bound it reads"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P56.5",
+      "title": "The reuse identity works where a path passes through a link",
+      "status": "pending",
+      "description": "DONE MEANS: the saving that is already built actually fires for the projects that would benefit from it. The set of paths the recorder writes is computed by comparing a resolved path against an unresolved one, so wherever any component of a project's path is a symbolic link the manifest falls out of the exclusion, is read into the content identity, changes on every recorded run, and the reuse never matches - leaving nothing but a count in a basis line to tell the two behaviours apart. This is the largest already-built saving in the product and on a large share of real machines it does nothing. It fails safe here by luck rather than design: more of the tree stays inside the identity, so the answer is measure again. Duplicate of an entry already recorded against the same surface, kept here because this is the phase that owns whether the saving is real.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a project reached through a symbolic link excludes the same paths as one reached directly, and a narrowing the caller asked for that did not apply is reported rather than skipped"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P56.6",
+      "title": "The plan's own cost is compared against the same work done ad hoc",
+      "status": "pending",
+      "description": "DONE MEANS: the product can answer whether working through the plan costs less than working without it, from this project's own recorded runs, and refuses to answer where the history cannot support it. This is the claim the whole design rests on and nothing in the product measures it - which is the shape this repository refuses everywhere else: a claim carries the basis that makes it true, and when the basis is missing the missing basis is the thing to say. The comparison must name what it compared, because the honest version is narrow: a task run under a narrowed gate against the same task run under the phase's, a re-run avoided against one taken, an agent's spend against the spread of its siblings. A single ratio with no named subjects would be the most quotable number in the product and the least checkable, which is worse than none.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__usage_economics.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_economics.py: a comparison names what it compared and over which runs, and a history too short to support one says the question could not be answered rather than reporting a ratio"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

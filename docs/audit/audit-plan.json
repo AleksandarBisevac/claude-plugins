@@ -321,6 +321,12 @@
       "title": "The last small ones the register still holds",
       "status": "in_progress",
       "shard": "phases/P55.json"
+    },
+    {
+      "id": "P56",
+      "title": "The plugin costs the user less than wild use, and can prove it",
+      "status": "pending",
+      "shard": "phases/P56.json"
     }
   ],
   "fileIndex": {
@@ -510,7 +516,8 @@
       "P50.3",
       "P53.4",
       "P53.5",
-      "P54.7"
+      "P54.7",
+      "P56.6"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -521,7 +528,9 @@
       "P42.4",
       "P43.4",
       "P47.1",
-      "P50.5"
+      "P50.5",
+      "P56.3",
+      "P56.4"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -652,7 +661,8 @@
       "P42.5",
       "P44.1",
       "P47.1",
-      "P55.4"
+      "P55.4",
+      "P56.4"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -712,7 +722,8 @@
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
-      "P47.6"
+      "P47.6",
+      "P56.1"
     ],
     "plugins/audit/hooks/py-launch.sh": [
       "P1.2",
@@ -789,7 +800,9 @@
       "P52.5",
       "P54.6",
       "P54.7",
-      "P49.4"
+      "P49.4",
+      "P56.3",
+      "P56.4"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -966,7 +979,8 @@
       "P10.3",
       "P10.6",
       "P14.2",
-      "P53.7"
+      "P53.7",
+      "P56.6"
     ],
     "plugins/audit/scripts/demo/gen-demo-manifest.py": [
       "P10.3",
@@ -1034,7 +1048,8 @@
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
-      "P47.6"
+      "P47.6",
+      "P56.1"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -1258,7 +1273,8 @@
     ],
     "tools/verify.sh": [
       "P19.2",
-      "P32.10"
+      "P32.10",
+      "P56.2"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -1341,7 +1357,8 @@
       "P46.4",
       "P46.5",
       "P52.4",
-      "P54.7"
+      "P54.7",
+      "P56.2"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1651,7 +1668,8 @@
       "P51.4",
       "P52.4",
       "P54.6",
-      "P55.5"
+      "P55.5",
+      "P56.5"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1727,7 +1745,8 @@
       "P41.4",
       "P40.3",
       "P54.6",
-      "P55.5"
+      "P55.5",
+      "P56.5"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -1858,12 +1877,14 @@
       "P43.1"
     ],
     "tools/sweep-selftests.py": [
-      "P37.2"
+      "P37.2",
+      "P56.2"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
       "P42.5",
-      "P47.1"
+      "P47.1",
+      "P56.4"
     ],
     "examples/acme-store/evidence/2026-07.e7c1a94b2f08d635.jsonl": [
       "P41.1"
@@ -1875,7 +1896,8 @@
       "P41.5",
       "P41.7",
       "P42.5",
-      "P47.1"
+      "P47.1",
+      "P56.4"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6"
@@ -1901,7 +1923,8 @@
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
       "P46.3",
-      "P55.5"
+      "P55.5",
+      "P56.5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4"
@@ -1924,7 +1947,8 @@
       "P47.1"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
-      "P47.6"
+      "P47.6",
+      "P56.1"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -1935,13 +1959,17 @@
       "P49.1"
     ],
     "plugins/audit/scripts/usage/_usage_economics.py": [
-      "P49.2"
+      "P49.2",
+      "P56.1",
+      "P56.6"
     ],
     "plugins/audit/scripts/panel/_panel_usage.py": [
-      "P49.2"
+      "P49.2",
+      "P56.1"
     ],
     "plugins/audit/tests/test__usage_economics.py": [
-      "P49.2"
+      "P49.2",
+      "P56.6"
     ],
     "plugins/audit/scripts/panel/_panel_runstate.py": [
       "P49.3"
@@ -2001,6 +2029,12 @@
     ],
     "plugins/audit/scripts/ui/report": [
       "P55.7"
+    ],
+    "plugins/audit/scripts/status/audit-lookup.py": [
+      "P56.3"
+    ],
+    "plugins/audit/tests/test_audit_lookup.py": [
+      "P56.3"
     ]
   },
   "bugs": [
