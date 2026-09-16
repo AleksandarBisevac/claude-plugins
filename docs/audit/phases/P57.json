@@ -254,7 +254,7 @@
     {
       "id": "P57.5",
       "title": "The tracker connector is a module the core does not depend on",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: nothing in the core depends on the tracker connector, a lint proves it, and a plan that declares a tracker while the connector cannot serve it is a finding rather than a silence. MEASURED FIRST, and it changed the shape: the connector's recurring cost is its command description in every session and nothing else - the command body loads only when invoked, and the scripts and tests never enter a context window at all. Splitting it into a second plugin therefore buys almost nothing in tokens while costing a removed capability and a migration. The modular shape buys the same saving and breaks nothing: present on disk, inert in context until invoked, activated by configuration the plan already carries. ESTABLISHED FROM THE DOCUMENTATION, so the design rests on what the platform states rather than on assumption: a plugin is enabled as a whole and there is no documented per-component switch, so modular here means the plugin making its own parts inert; the flag that removes a command's description from every session is documented and is the whole of the recurring saving; hooks are always registered and the documented way to make one conditional is to exit fast, which the guards already do; and a plugin may declare dependencies, so if this is ever split the install stays one command - which de-risks the decision rather than reversing it. The failure to design against is the quiet one: a tracker that stops being updated while the board still looks maintained is worse than one that errors, so the doctor gains a third answer beside its existing not-configured and disabled ones. One thing stays UNVERIFIED and is not built on: whether declaring a tool from an absent server costs anything at all. This plugin ships no server of its own and exactly one command names such a tool, so the exposure is one line in one file - it is worth driving before anyone leans on it.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -289,16 +289,30 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7c99433",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_deps gained _tracker_doors() deriving the connector entry points from the tree by the hyphenated-entry-point convention, and tracker_dependency_violations() flagging any edge from outside that set into it through the import graph, so a script loaded by name counts as an import; _doctor_ado gained a third answer for a plan that enables the connector while naming neither organization nor project, graded a finding because it is establishable with no live call.",
+        "descriptive": "The connector is a module the core does not depend on, proved by a lint rather than intended, and a plan naming a board it cannot reach is told so instead of looking maintained."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-16T22:34:11Z",
+      "completedAt": "2026-09-16T22:34:11Z",
+      "verifiedBy": [
+        "tk-hyphen-filter",
+        "tk-floor-overfire",
+        "tk-direction-catches-door-to-door",
+        "tk-direction-not-needed-for-shared-floor",
+        "da-absence-only-catches-blank",
+        "da-absence-only-not-needed-when-fully-absent",
+        "da-branch-priority",
+        "da-branch-priority-not-needed-when-enabled"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7c99433",
+        "at": "2026-09-16T22:34:11Z"
+      }
     }
   ],
   "startedAt": "2026-09-16T19:26:23Z"
