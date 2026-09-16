@@ -315,6 +315,12 @@
       "title": "The guards' last read shapes, and the work the plan has no place for",
       "shard": "phases/P54.json",
       "status": "in_progress"
+    },
+    {
+      "id": "P55",
+      "title": "The last small ones the register still holds",
+      "status": "pending",
+      "shard": "phases/P55.json"
     }
   ],
   "fileIndex": {
@@ -394,7 +400,8 @@
       "P42.6",
       "P43.4",
       "P44.1",
-      "P53.4"
+      "P53.4",
+      "P55.3"
     ],
     "README.md": [
       "P2.3",
@@ -643,7 +650,8 @@
       "P41.7",
       "P42.5",
       "P44.1",
-      "P47.1"
+      "P47.1",
+      "P55.4"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -731,7 +739,8 @@
       "P44.2",
       "P54.2",
       "P54.5",
-      "P53.8"
+      "P53.8",
+      "P55.4"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -803,7 +812,8 @@
       "P15.4",
       "P32.9",
       "P34.5",
-      "P36.10"
+      "P36.10",
+      "P55.3"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -824,7 +834,8 @@
       "P50.5",
       "P51.2",
       "P53.4",
-      "P47.3"
+      "P47.3",
+      "P55.6"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1297,7 +1308,8 @@
       "P20.6",
       "P32.9",
       "P34.5",
-      "P36.10"
+      "P36.10",
+      "P55.3"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -1360,7 +1372,8 @@
       "P42.4",
       "P44.2",
       "P54.5",
-      "P53.8"
+      "P53.8",
+      "P55.4"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
@@ -1471,7 +1484,9 @@
       "P52.2",
       "P52.3",
       "P52.4",
-      "P52.5"
+      "P52.5",
+      "P55.1",
+      "P55.2"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -1480,7 +1495,9 @@
       "P52.2",
       "P52.3",
       "P52.4",
-      "P52.5"
+      "P52.5",
+      "P55.1",
+      "P55.2"
     ],
     "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
       "P22.11"
@@ -1631,7 +1648,8 @@
       "P51.2",
       "P51.4",
       "P52.4",
-      "P54.6"
+      "P54.6",
+      "P55.5"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1659,7 +1677,8 @@
       "P42.6",
       "P43.4",
       "P50.5",
-      "P53.3"
+      "P53.3",
+      "P55.6"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -1704,7 +1723,8 @@
       "P41.1",
       "P41.4",
       "P40.3",
-      "P54.6"
+      "P54.6",
+      "P55.5"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -1787,11 +1807,13 @@
       "P52.1",
       "P52.2",
       "P52.3",
-      "P52.5"
+      "P52.5",
+      "P55.3"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
-      "P52.1"
+      "P52.1",
+      "P55.1"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -1875,7 +1897,8 @@
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
-      "P46.3"
+      "P46.3",
+      "P55.5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4"
@@ -1937,7 +1960,8 @@
       "P51.4"
     ],
     "plugins/audit/scripts/manifest/_warning_groups.py": [
-      "P51.5"
+      "P51.5",
+      "P55.6"
     ],
     "plugins/audit/tests/test__warning_groups.py": [
       "P51.5"
@@ -1965,6 +1989,9 @@
     ],
     "docs/screenshots": [
       "P53.9"
+    ],
+    "plugins/audit/scripts/governance/verify-invariants.py": [
+      "P55.4"
     ]
   },
   "bugs": [

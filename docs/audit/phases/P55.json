@@ -1,0 +1,295 @@
+{
+  "id": "P55",
+  "title": "The last small ones the register still holds",
+  "status": "pending",
+  "description": "What the register still holds after the release phases: an ownership check that discards half the identity it was given, a document pair that contradicts each other about how many tiers a lock has, a fixture that aborts a suite on a platform this project supports, a hook paragraph repeated once per tool result in a batch, a derivation that is silently inert under a symlinked path, and two hand-maintained lists that opt a new caller out by being forgotten. None is user-visible today and every one of them is a check or a sentence somebody will trust the next time they need it.",
+  "desiredOutcome": "Every open entry in the register that is not an explicit out-of-scope decision is either closed by code or restated as a decision with its own trigger.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P55.1",
+      "title": "A release names the run, and a taker's identity is checked whole",
+      "status": "pending",
+      "description": "DONE MEANS: the release path checks the whole identity a claim records, not half of it. Ownership is compared on the session alone while the take records a process as well and the release is handed one it then ignores, so two measurements inside one session cannot be told apart: the loser's release succeeds and drops a lock out from under a run that still holds it. This is the same class the takeover repair closed from the other end, and it is the last door in that file where an identity is recorded and not read. The age rule stays, because it is the fallback when no identity was recorded at all.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test_audit_lock.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: a release from a different process of the same session is refused, and a release from the process that took it is allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.2",
+      "title": "A suite does not abort on a platform this project supports",
+      "status": "pending",
+      "description": "DONE MEANS: no case in this suite can abort the body on a platform the project supports, and the smaller findings on the same surface are closed with it. One fixture makes the lock path a directory, which one platform reports as the name already existing and another as a permission refusal - only the first is caught, so on the second the escape takes that case and the ones after it out of the run. The class is the one this release already repaired elsewhere: a case that reports by raising takes its neighbours down and a harness reads one crash as a column of checks.",
+      "files": [
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/scripts/governance/_locks.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__locks.py: a lock path that cannot be created for a reason this platform words differently is still one answer, and the cases after it still run"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.3",
+      "title": "Two documents agree about how many tiers the lock has",
+      "status": "pending",
+      "description": "DONE MEANS: no document states a count of lock tiers that the library contradicts, and the statement is checked rather than remembered. The build guide says the command runs over two tiers while the command's own docstring says three, so two documents now contradict each other about a vocabulary the library declares in one place. The repair is not to correct the number: it is to read the vocabulary from where it is declared, the way the claim anchors already hold every other sentence in that family, so the next tier added cannot leave a document behind.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/tests/test__areas.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__areas.py: the tier vocabulary a document states is the one the library declares, read from both sides"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.4",
+      "title": "A hook paragraph is carried once per turn, not once per file",
+      "status": "pending",
+      "description": "DONE MEANS: a batch of edits does not paste the same paragraph into the model's context once per file, and the invariant check stops on a breach the gate did not cover. Hook context is appended to every tool result, so twelve edits carry twelve copies of one paragraph - which is the same defect this release already repaired for the plan gate's own notice, reached through a different door: the repair there was per session, and a batch inside one turn is the case it does not cover. The second half is smaller and of a piece: the invariant check stops on a red gate but not on a breach the gate never asked about, so the louder failure hides the quieter one.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: a batch of edits in one turn carries the advisory paragraph once and a count, and a new turn carries it again"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.5",
+      "title": "The reuse identity resolves both sides of its own comparison",
+      "status": "pending",
+      "description": "DONE MEANS: the set of paths the recorder writes is computed the same way whichever spelling of the project path the caller used, and a narrowing that did not apply is said rather than silently skipped. The comparison resolves one side and not the other, so on a machine where any component of the project path is a symbolic link the manifest falls out of the exclusion, is read into the content identity, changes on every recorded run, and the whole reuse feature is inert - with nothing but a count in a basis line to tell the two behaviours apart. It fails safe here by luck rather than by design: more of the tree stays inside the identity, so the answer is measure again. The comparison is still wrong, and the next reader to rely on it may not be so lucky.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a project whose path reaches the same tree through a symbolic link excludes the same paths as one that does not, and the basis says when an exclusion the caller asked for was dropped"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.6",
+      "title": "Two lists that opt a new caller out by being forgotten",
+      "status": "pending",
+      "description": "DONE MEANS: neither list of call sites is maintained by hand, and the derivation that replaces them carries a floor so an empty answer is a failure rather than a pass. A new caller of the lock's acquire path was invisible to the lint that grades those sites until somebody added it by hand, which is precisely the failure this project keeps recording one surface over: a row added later opts out by being forgotten. The third piece is the warning class the doctor cannot collapse, because its body quotes the offending text so every line differs after the locator - grouping on the rule rather than the body is the repair, and it needs a rule identifier at each emission site, which is the field that module was built without.",
+      "files": [
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/manifest/_warning_groups.py",
+        "plugins/audit/scripts/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: the call sites a lint grades are derived from the tree with a floor, so a pattern that stops matching fails rather than reporting nothing to fix"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
