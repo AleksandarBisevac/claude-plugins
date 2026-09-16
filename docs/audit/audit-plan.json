@@ -872,7 +872,8 @@
       "P47.3",
       "P55.6",
       "P50.5",
-      "P57.5"
+      "P57.5",
+      "P50.7"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1763,7 +1764,8 @@
       "P53.4",
       "P47.3",
       "P50.5",
-      "P57.5"
+      "P57.5",
+      "P50.7"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"
