@@ -75,7 +75,7 @@ UNKNOWN = "unknown"
 
 # The answer a caller gives `cleanup_plan` when it HAS asked where it is standing and
 # the answer is "outside every worktree". It exists because absence used to mean that
-# (F245): `cwd_tree=None` skipped the check, so a caller that never asked and a caller
+# `cwd_tree=None` skipped the check, so a caller that never asked and a caller
 # that asked and got "nowhere" were one value -- and the panel passed the first one
 # literally while the CLI passed the second. `owned` and `settled` already refuse on
 # an absent answer; this is the third precondition joining them.
@@ -137,7 +137,7 @@ def read_provenance(tree_path, run=None, expect_branch=None):
     the report can say "could not tell" rather than "somebody else's", which are
     different things to a reader deciding what to do next.
 
-    `expect_branch` IS WHAT MAKES THE ANSWER ABOUT THIS WORKTREE (F246). The marker
+    `expect_branch` IS WHAT MAKES THE ANSWER ABOUT THIS WORKTREE. The marker
     records the phase and the branch it was written for, and only `createdBy` used to
     be read -- so the join from worktree to phase was made purely from whatever branch
     git reports NOW. An operator who runs `git switch` inside a phase worktree to look
@@ -198,7 +198,7 @@ def phase_settled(phase, terminal):
         return {"settled": False,
                 "why": "phase %s is %r, not 'done' - sign-off has not passed"
                        % (phase.get("id"), status)}
-    # AN ENTRY THIS CANNOT READ IS A REFUSAL, NOT A FINISHED TASK (F247). The
+    # AN ENTRY THIS CANNOT READ IS A REFUSAL, NOT A FINISHED TASK. The
     # `isinstance` test used to sit inside the comprehension, where it dropped the
     # item from the OPEN list -- so `"tasks": ["P2.1", "P2.2"]`, or a `tasks` object
     # rather than an array, produced `settled: True` with a `why` that stated "every
@@ -448,7 +448,7 @@ def within_tree(root, path, resolve=None):
     against a backslash-spelled cwd and answers False - so on Windows the "do not
     delete the directory you are standing in" guard would go quietly back to never
     firing,
-    which is the whole of F245 returning on one platform. Caught by windows-latest
+    which is the same defect returning on one platform. Caught by windows-latest
     on the 2.1.1 candidate, which is the second time that leg has found a real
     defect a green macOS run had.
     """
@@ -470,7 +470,7 @@ def standing_in(trees, cwd, resolve=None):
     a `git status` never mentioned go with it. Nothing in git asks the question, so
     this is the only place it can be asked.
 
-    INSIDE, NOT AT (F245). This was realpath EQUALITY, which answered a different
+    INSIDE, NOT AT. This was realpath EQUALITY, which answered a different
     question than its own docstring asked: from `<worktree>/src` it returned None and
     the guard never fired, so one `cd` into a subdirectory turned the refusal into
     the deletion. Reproduced on a real repository -- clean per `status --porcelain`,
@@ -634,7 +634,7 @@ def dirtiness(tree_path, run=None):
 
     `-uall` and not the default: a directory of untracked files collapses to one
     line without it, so the count under-reports exactly where the operator needs the
-    names. That is the same correction F224 already made elsewhere in this tree.
+    names. That is the same correction already made elsewhere in this tree.
     """
     fn = _runner(run)
     code, out, err = fn(tree_path, ["status", "--porcelain", "-uall"])
@@ -846,7 +846,7 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
     them git does not make at all.
 
     `tree` IS THE RECORD THAT WAS MEASURED, and passing it is how a caller keeps this
-    plan about the same directory its answers were about (F244). `git worktree add
+    plan about the same directory its answers were about. `git worktree add
     --force <path> <branch>` legally puts two records on one branch; `sweep_plan`
     measures provenance and dirtiness per RECORD, and re-resolving here by branch took
     the FIRST holder instead -- so a plan could keep `/a` as "somebody else's" and
@@ -913,7 +913,7 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                 "switch the main worktree to another branch if you want this one "
                 "reaped"))
         elif cwd_tree is None:
-            # FAIL CLOSED, like `owned` and `settled` one gate up (F245). This used
+            # FAIL CLOSED, like `owned` and `settled` one gate up. This used
             # to skip on None, so "the caller never asked where it is standing" and
             # "the caller asked and is outside every worktree" were the same value -
             # and the panel passed the first one literally, which made the panel
@@ -1005,7 +1005,7 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                 "%r used by worktree at %r`" % (branch, _rest[0].get("path"))))
         else:
             # NOT `git branch -d` WHEN WE CAN DO BETTER, and this is measured rather
-            # than preferred (F249). After a `no-checkout` merge the parent is by
+            # than preferred. After a `no-checkout` merge the parent is by
             # construction checked out nowhere, so HEAD is not the parent - and
             # `branch -d` grades from HEAD. Driven on a real repository: a branch
             # proven contained in `develop` by `merge-base --is-ancestor` is refused
@@ -1067,12 +1067,12 @@ def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
         branch = rec.get("branch")
         parent = (parent_of or {}).get(branch) or ""
         # Where the branch points RIGHT NOW, so the deletion can be guarded on it
-        # rather than re-asked of git's HEAD-graded `branch -d` (F249).
+        # rather than re-asked of git's HEAD-graded `branch -d`.
         shas[branch] = ref_exists(git_root, branch, run=run).get("sha") or ""
         contained[branch] = merged_into(git_root, branch, parent,
                                         run=run)["answer"]
         dirty[rec.get("path")] = dirtiness(rec.get("path"), run=run)
-        # The branch is what binds the marker to the work now in the tree (F246).
+        # The branch is what binds the marker to the work now in the tree.
         # This is the observation the sweep's permission gate reads, so it asks the
         # narrow question; the report in `_panel_composition` asks the wide one.
         prov = read_provenance(rec.get("path"), run=run, expect_branch=branch)
@@ -1132,7 +1132,7 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
             cwd_tree=cwd_tree,
             want_worktree="removeWorktrees" in verbs,
             want_branch="deleteBranches" in verbs,
-            # THE RECORD, not the branch (F244). `owned` and `dirt` above were both
+            # THE RECORD, not the branch. `owned` and `dirt` above were both
             # read at `rec`'s path; handing the branch over instead let the plan act
             # on a different record carrying the same branch, judged by this one's
             # answers.

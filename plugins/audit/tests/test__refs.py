@@ -155,10 +155,10 @@ def _sweep_doc(rel, command, prose=""):
 # --- the floor `tb2` reads ----------------------------------------------------
 # `tb1` answers "did any reference go stale", and that answer is worth nothing from a
 # walk nobody watched: a walk that reached one file names no stale reference either.
-# So `tb2` carries a floor - and the floor is what F72 was about. It was two ABSOLUTE
+# So `tb2` carries a floor. The original floor was two ABSOLUTE
 # terms, and on the day it was written both sat far below what the run printed beside
-# them, so the walk could have shed almost the whole tree and still cleared them. Same
-# defect as F69's `p1`, one file over.
+# them, so the walk could have shed almost the whole tree and still cleared them. The
+# same defect `p1`'s floor had, one file over.
 #
 # TWO TERMS EACH NOW. The absolute ones are unchanged - they answer "did this walk
 # return anything at all", and nothing about them was wrong. The derived ones measure
@@ -654,7 +654,7 @@ def _cases(check):
     tb = M.tool_basename_drift()
     # The detail prints only on FAILURE, which is the one moment an author needs it:
     # meeting this rule with a fixture used to end in a guess, and it was guessed
-    # twice (F68).
+    # twice.
     check("tb1 no `.py` basename written anywhere in tools/ names a file that is gone: "
           "%r" % (tb["unknown"],), tb["unknown"] == [],
           "if a name above is a FIXTURE rather than a reference, it is spelled around "
@@ -673,7 +673,7 @@ def _cases(check):
           tb["checked"] >= _tb_cfloor and tb["files"] >= _tb_ffloor,
           repr((tb["checked"], _tb_cfloor, tb["files"], _tb_ffloor, _tb_size)))
 
-    # THE FIXTURE SIZE IS THE OLD FLOOR'S BLIND SPOT (F72), which is the only reason
+    # THE FIXTURE SIZE IS THE OLD FLOOR'S BLIND SPOT, which is the only reason
     # this case is worth anything: a walk down to a handful of files CLEARS two
     # absolute terms of this size, and both versions of the floor score this fixture
     # while disagreeing about it.
@@ -787,7 +787,7 @@ def _cases(check):
 
     tmp = tempfile.mkdtemp()
     try:
-        # THE DOCUMENTED CONVENTION, AS A CASE (F68). The docstring tells an author
+        # THE DOCUMENTED CONVENTION, AS A CASE. The docstring tells an author
         # holding a fixture nothing creates to spell it around instead of adding a
         # table row, and names the shapes: no extension, the JavaScript module
         # extension, or a literal assembled from pieces. That is advice about THIS
@@ -1070,7 +1070,7 @@ def _cases(check):
         # at the substring `scripts/*.py` would fail the first half of this fixture, and
         # would fail the real guide - which is what c6's placeholders show it
         # legitimately writes twice. A version aimed at the whole FILE would fail the
-        # second half, which is F21's shape exactly: a document warning against the
+        # second half exactly this way: a document warning against the
         # retired sweep, reported as carrying it.
         _write(tmp, _yml, _sweep_doc(
             _yml, M.SWEEP_RUNNER,
@@ -1294,7 +1294,7 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
     # --- the published handbook, and what it claims about the product ---------------
-    # F216. The one published page with no generator behind it and, until this, no
+    # The one published page with no generator behind it and, until this, no
     # reader in front of it. Every fixture below is a MIRROR tree - its own commands,
     # its own scripts, its own schemas - because the rule compares the page with the
     # product beside it, and a fixture page judged against the LIVE product would go
@@ -1397,7 +1397,7 @@ def _cases(check):
               "by name: %r" % (_hb["findings"],),
               [(k, s) for k, s, _p in _hb["findings"]] == [("flag", _hb_dead)])
 
-        # F243. THE CASE THIS LINT MISSED FOR A WHOLE RELEASE. `_plugin_options`
+        # THE CASE THIS LINT MISSED FOR A WHOLE RELEASE. `_plugin_options`
         # was a text scan, so removing a flag properly - parser, tests, and a
         # comment at each site saying what went and why - left the spelling in
         # those comments and the option read as still carried. That is how
@@ -1875,7 +1875,7 @@ def _cases(check):
           repr([r for r in _fdocs
                 if r == "CHANGELOG.md" or r.startswith("docs/design/")]))
 
-    # --- F12: the version a committed artifact stamps -------------------------
+    # --- the version a committed artifact stamps -------------------------
     # The defect: the scale demo under `docs/` is published and linked from the
     # README, and it served a stamp several releases behind the plugin while every
     # check over it stayed green - they asserted CONTENT (no invalid-manifest
@@ -1947,7 +1947,7 @@ def _cases(check):
               len(_d) == 1 and _d[0][0] == _av_page and _d[0][1] > 0
               and _stale in _d[0][2] and _pv in _d[0][2])
 
-        # The shape F12 actually took: plugin.json moves first.
+        # The shape this actually takes in a release: plugin.json moves first.
         _next = "99.0.0"
         _write(tmp, _av_page, _av_html % _pv)
         _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _next}) + "\n")
@@ -2061,8 +2061,9 @@ def _cases(check):
 
     # --- screenshot_capture_drift: the same question, asked of a PICTURE -------
     # The claim cannot be read back out of the pixels - `capture-screenshots.mjs`
-    # refuses to compare them, and F18 records why - so it is recorded beside them
-    # and this is what compares it.
+    # refuses to compare them at all, because font rasterisation differs between
+    # hosts and no environment variable pins it - so the basis is recorded beside
+    # them instead and this is what compares it.
     _sc = M.screenshot_capture_drift()
     check("sc1 every committed screenshot records the build plugin.json names - the "
           "live claim, and the one that goes red the day a bump is not followed by "
@@ -2214,7 +2215,7 @@ def _cases(check):
               len(_sc_nover) == 1 and _sc_nover[0][0] == M._PLUGIN_JSON_REL
               and "no readable version" in _sc_nover[0][2])
 
-        # --- sc11-sc19 (F85): the picture against the UI it is a picture OF ----
+        # --- sc11-sc19: the picture against the UI it is a picture OF ----
         # The version answers "captured at this release". It cannot answer "still
         # shows this UI", and it did not: commits landed under `scripts/ui/` after
         # the last re-capture and this rule stayed green over stale pixels. Every
@@ -2235,8 +2236,8 @@ def _cases(check):
         _sc_pan = M.screenshot_capture_drift(tmp)
         _write(tmp, _sc_panel_src, "const el = 1;\n")
         check("sc11 a changed PANEL source reddens the panel picture and NOT the "
-              "report one, naming the surface and both digests - this is F85's own "
-              "shape, and the version still agrees throughout: %r" % (_sc_pan,),
+              "report one, naming the surface and both digests - the version still "
+              "agrees throughout, so only the UI-source digest catches this: %r" % (_sc_pan,),
               len(_sc_pan) == 1 and _sc_pan[0][0] == _sc_a
               and "panel sources" in _sc_pan[0][2]
               and "nobody re-shot" in _sc_pan[0][2]
@@ -2344,12 +2345,12 @@ def _cases(check):
           % ((_sc_leg_names, sorted(_output.UI_SURFACES)),),
           _sc_leg_names == sorted(_output.UI_SURFACES))
 
-    # --- F36: a command's flags vs the README row that catalogues them ---------
+    # --- a command's flags vs the README row that catalogues them ---------
     # The defect this exists for was live when it was written: /audit:status had
     # grown --gate and --fail-on while its README row said "-", and /audit:doctor
     # had grown --deep while its row still said [--json]. A capability nobody can
     # find is the thing this repo keeps meeting.
-    # --- F191: the operator's own words, and the doc that has to say so -------
+    # --- the operator's own words, and the doc that has to say so -------
     # The journal is tamper-evident and works on whatever sentence it is given, so
     # a paraphrased reason makes the chain guarantee something its subject never
     # wrote. Measured live: "Tracked in ADO only, not executed here" was recorded
@@ -2360,7 +2361,7 @@ def _cases(check):
     # The RULE lives once, in `reference/manifest-conventions.md`; the command docs
     # carry a pointer. This asserts both halves, because a pointer at a heading
     # nobody kept is a pointer at nothing and every doc would still pass.
-    # --- (rt) F290: printing it is not delivering it --------------------------
+    # --- (rt) printing it is not delivering it --------------------------
     # `status.md` said "Print its stdout verbatim", and a live run read that as
     # discharged - the Bash tool had run and its stdout WAS printed, to the tool
     # result, so the reply said "the report above" and the operator saw nothing.
@@ -2809,14 +2810,14 @@ def _cases(check):
           "instead of teaching the old one",
           _PRD.count("`/audit:phase priority <phaseId> <tier\\|--clear>`") > 0)
 
-    # --- F198: the hint is the only view a caller gets of the interface --------
+    # --- the hint is the only view a caller gets of the interface --------
     # Measured live: an operator holding a whole task specification - files, gate,
     # risk, tests-mode, description - asked whether to paste it as the command,
     # because the hint advertised `--phase` and nothing else while the script took
     # eleven write flags for `add`. Five tasks were about to be created through
     # rounds of `AskUserQuestion` each, and every question that did not need
     # asking is another chance to PARAPHRASE a value the caller had already
-    # decided, which is the defect F191 fixed for `--reason`.
+    # decided - the same paraphrase risk fixed above for `--reason`.
     #
     # DERIVED FROM THE SCRIPT'S OWN USAGE BLOCK, never a list kept here - `pv5`'s
     # rule, applied per verb. The flags common to EVERY verb are the global ones
@@ -2856,10 +2857,10 @@ def _cases(check):
     _tk_flags = dict((a.split()[0], set(re.findall(r"--[a-z][a-z-]*", a)))
                      for a in _tk_alts if a.split())
 
-    # F207. THE HINTS OF BOTH DOCS, because the verb where this class recurred a
+    # THE HINTS OF BOTH DOCS, because the verb where this class recurred a
     # third time lives in the other one. `_tk_flags` is `commands/task.md`'s, and
     # `pf1` skipped any verb absent from it -- so `add-phase` was outside the check
-    # that exists BECAUSE of `scope` (F196) and `add` (F201). Measured: a row added
+    # that exists BECAUSE of `scope` and `add`. Measured: a row added
     # to `_AT_WRITERS` for it stayed green with the flag's read DELETED, which is a
     # check asserting nothing.
     #
@@ -2881,11 +2882,11 @@ def _cases(check):
           % (_tk_verbs,),
           _tk_verbs != []
           and all(re.match(r"^[a-z]+$", v) for v in _tk_verbs))
-    # F210. BOTH COMMAND DOCS, because reading one of them was the defect twice.
+    # BOTH COMMAND DOCS, because reading one of them was the defect twice.
     # `tk2` compared `commands/task.md` against the usage block and nothing
     # compared `commands/phase.md`, so that hint advertised three flags for `add`
-    # against a usage block naming eight - F198's defect surviving in the
-    # document F198 did not touch. `phase.md` spells the verb `add` while the
+    # against a usage block naming eight - the same class of drift surviving in
+    # the document the earlier fix did not touch. `phase.md` spells the verb `add` while the
     # script spells it `add-phase`, so the two are MAPPED, in the same one place
     # `pf1` maps them.
     _tk_all = dict(_tk_flags)
@@ -2949,13 +2950,13 @@ def _cases(check):
           "ask only for what's missing" in _tk_add
           and "the dialogue is the fallback" in _TK.lower())
 
-    # --- F196 / F201: a flag ADVERTISED for a verb the verb never reads --------
+    # --- a flag ADVERTISED for a verb the verb never reads --------
     # `tk4` above proves every advertised flag is one argparse defines, and that is
     # not the same question. Every flag on this parser is GLOBAL, so argparse
     # accepts `add --gate-clear` and `scope --gate-clear` alike whether or not the
     # verb's own writer looks at it - which is how the same defect shipped twice:
-    # `scope --gate-clear` exited 0 and left the gate where it was (F196), and
-    # `add --gate-clear` reported success and wrote the phase's testGate (F201).
+    # `scope --gate-clear` exited 0 and left the gate where it was, and
+    # `add --gate-clear` reported success and wrote the phase's testGate.
     # Both were found by RUNNING the command, and nothing in the tree could see
     # them. A whole-file search for `args.gate_clear` would not have: the string was
     # in the file, in the other verb.
@@ -3012,8 +3013,8 @@ def _cases(check):
     # entirely - and the cases in `test_audit_task.py` are what cover the other.
     check("pf1 every flag the hint advertises FOR A VERB is one that verb's own "
           "writer reads - the parser is global, so argparse accepts a flag the "
-          "verb ignores and reports success without it, which is F196 and F201 "
-          "twice over and is invisible to a whole-file search for the dest: "
+          "verb ignores and reports success without it, a defect that has shipped "
+          "twice this way and is invisible to a whole-file search for the dest: "
           "unread %r" % (_pf_unread,),
           _pf_unread == [])
     # THE VACUITY GUARD, and it is the half that matters: an empty flag set, a
@@ -3033,7 +3034,7 @@ def _cases(check):
             _pf_same = _fh.read()
     except (OSError, UnicodeDecodeError, AttributeError, TypeError):
         _pf_same = ""
-    # --- F294: the plugin's own prescribed `tests.add` entries -------------------
+    # --- the plugin's own prescribed `tests.add` entries -------------------
     # THE RULE REACHED THIS PLUGIN'S OWN WORKFLOW AND THE CORPUS COULD NOT SEE IT.
     # `_manifest_phases` warns when a live `tdd` task's `tests.add` entry names no
     # file, and it was measured against the manifests this repository SHIPS - where

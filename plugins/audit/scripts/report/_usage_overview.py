@@ -399,7 +399,7 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
         # The bar is a share the eye reads against its neighbours; the hover adds
         # the exact count and the share of the whole, which the bar cannot show
         # because it is scaled to the largest row, not to the total.
-        # tabindex="0" is F17: the name is clipped to 49-78% at 1153px and the
+        # tabindex="0" makes the row focusable: the name is clipped to 49-78% at 1153px and the
         # whole of it lives in `title`, which a browser shows on hover and never
         # on focus. Without a tab stop there is no keyboard path to it at all.
         # It costs one stop per row (11 on the shipped report) and that is the

@@ -100,7 +100,7 @@ def _names_used(path):
 
     PROSE IS EXCLUDED ON PURPOSE and that is the whole reason this reads the AST:
     a docstring saying a file leaves a claim is not a file leaving one, and every
-    writer touched by F287 explains itself in prose. `getattr` is in because
+    writer this rule is about explains itself in prose. `getattr` is in because
     `_panel_write` reaches its recorder through one - an older journal module has
     no `record_plugin_write`, and that miss is the fail-soft branch."""
     with open(path, "r", encoding="utf-8") as fh:
@@ -124,7 +124,7 @@ def _unclaimed_journal_writers(owner):
     subtract, as `path:line`. Also returns every site it derived, so an empty
     finding list cannot be read as "all clear" by a walk that found nothing.
 
-    THE RULE (F287): a journal append puts its file into `git status`, and
+    THE RULE: a journal append puts its file into `git status`, and
     `guard-bash-writes` reports a journal file no writer claimed as a shell write
     into the append-only trail. So a site is settled when it goes through
     `append_from_cli`, or when the file files the claim by hand - which
@@ -213,7 +213,7 @@ def _cases(check):
     def with_env(value, fn):
         """Run `fn()` with `$CLAUDE_CODE_SESSION_ID` pinned, then put it back.
 
-        EVERY CASE THAT WRITES A ROW DEPENDS ON THIS VARIABLE SINCE F309, and
+        EVERY CASE THAT WRITES A ROW DEPENDS ON THIS VARIABLE, and
         the suite runs both where it is set (inside a Claude Code session) and
         where it is not (CI). A case reading whatever the machine happened to
         export would assert a different shape on each, which is exactly the
@@ -653,12 +653,12 @@ def _cases(check):
                                               M.WRITER_TOKEN_FILE)))
 
         # --- pw: the claim that keeps the plugin's own append off the shell ----
-        # F-F3 for the journal-writes hook, F104 for the panel. Both leave the
-        # same shape of claim in `stateDir` and guard-bash-writes subtracts it
-        # before it reads the journal class; the fault F104 records is what the
-        # MISSING claim looks like from the operator's chair - a warning about a
-        # write into the audit trail, a chain that verifies clean, and no way to
-        # tell the two apart without checking by hand.
+        # The journal-writes hook and the panel each file that claim in
+        # `stateDir`, and guard-bash-writes subtracts it before it reads the
+        # journal class; a MISSING claim looks like this from the operator's
+        # chair - a warning about a write into the audit trail, a chain that
+        # verifies clean, and no way to tell the two apart without checking by
+        # hand.
         _pwp = os.path.join(tmp, "claim")
         os.makedirs(_pwp)
         _pwcfg = {"journal": {"dir": "j"}}
@@ -675,7 +675,8 @@ def _cases(check):
         # still carries its own copy of this derivation (a hook may not import
         # `scripts/`, though it already loads THIS module to append at all), and a
         # sidecar written where the guard does not look is indistinguishable from
-        # a plugin that appended nothing - F-F3 reopened in the quiet direction.
+        # a plugin that appended nothing - the same missing-claim gap reopened in
+        # the quiet direction.
         _jw = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
                            modname="journal_writes_for_pw", cache=False)
         _hookslot = _jw._sidecar_path(_pwp, {}, {"session_id": "panel"})
@@ -726,7 +727,7 @@ def _cases(check):
               M.record_plugin_write(_pwp, _pwcfg, "panel", False) is None
               and M.record_plugin_write(_pwp, _pwcfg, "panel", "") is None)
 
-        # F287: THE KEY A CLI FILES UNDER AND THE KEY THE HOOK READS ARE TWO
+        # THE KEY A CLI FILES UNDER AND THE KEY THE HOOK READS ARE TWO
         # LITERALS IN TWO FILES that may not share an import - `guard-bash-writes`
         # is a hook and the layer rule forbids it reaching into `scripts/` - so the
         # mirror is pinned the way `PLUGIN_SIDECAR` already is. DRIVEN, not
@@ -759,8 +760,8 @@ def _cases(check):
               and _cliheld.get(M.PLUGIN_WRITE_KEY)
               == [_output.posix_rel(_clipath, _cliproj)])
 
-        # THE RULE, NOT THE INSTANCE. F287 was reported against one command and was
-        # true of every script that appends: only the journal-writes hook and the
+        # THE RULE, NOT THE INSTANCE. The gap was reported against one command and
+        # was true of every script that appends: only the journal-writes hook and the
         # panel had ever filed a claim, so each of the others made the next Bash
         # command draw a notice about a write this plugin had just made. A case
         # pinning that one command would have left the class open and the next
@@ -836,7 +837,7 @@ def _cases(check):
               repr(sorted((_oread[0].get("details") or {}))))
 
         # THE OLD FILE NAMES KEEP VERIFYING, and that is a constraint rather than
-        # a nicety (F111). The panel used to hand its lock identity to the journal
+        # a nicety. The panel used to hand its lock identity to the journal
         # as a session id, so its committed file was named `<month>.panel-<pid>`;
         # `genesis_prev()` seeds the chain from exactly those bytes, so a project
         # that already holds one cannot have it renamed or rewritten without
@@ -1067,7 +1068,7 @@ def _cases(check):
           repr(M.normalise_details({"phaseId": "P2", "cancelledId": "P2",
                                     "cascaded": ["P2.1"], "nonsense": 1})))
 
-    # --- `attempt` joined the allow-list (F271) -------------------------------
+    # --- `attempt` joined the allow-list ---------------------------------------
     # `/audit:task scope` now accepts a WIDENING of `files` on a task that is
     # already running, and without the attempt on the row a trail cannot tell a
     # scope written BEFORE the work from one that grew DURING it - every reader
@@ -1701,8 +1702,9 @@ def _cases(check):
             # --- the three refusals, each on its own fixture ------------------
             # An abandoned first attempt at the tie fixture stood here: two
             # locals and a whole `merge_rows` whose result nothing read, which
-            # is a case that looks like coverage and is none. `ruff`'s F841
-            # cannot see it either, because the underscore prefix every local in
+            # is a case that looks like coverage and is none. `ruff`'s own
+            # unused-local rule cannot see it either, because the underscore
+            # prefix every local in
             # this suite wears matches its dummy-variable pattern. The tie
             # fixture that works is the one below, built one row DEEPER.
             _same_ts = os.path.join(mtmp, "same-ts")
@@ -1884,7 +1886,7 @@ def _cases(check):
             # `isfile` as well as the outcome, because proving the mv cases red
             # means mutating `write_merged` into one that RETURNS without
             # writing - and an unguarded `open` here would then raise, take
-            # every case after it out of the run and name none of them (F330).
+            # every case after it out of the run and name none of them.
             # The assertion below still fails when nothing was written.
             _wrote = None
             if _after[0] is True and os.path.isfile(_dest):
@@ -1895,7 +1897,7 @@ def _cases(check):
                   "away by a lock nobody holds: %r" % (_after,),
                   _after[0] is True and _wrote == "{}")
 
-            # --- mv: the grade and the replace are ONE lock hold (F340) -------
+            # --- mv: the grade and the replace are ONE lock hold ---------------
             # The command used to read the target, grade the result against it
             # and only then call this - so the read happened before any lock
             # existed and a row appended in between was graded by nobody and
@@ -1915,7 +1917,7 @@ def _cases(check):
                 """`obj[key]`, or None when `obj` cannot be asked.
 
                 A CASE THAT RAISES TAKES EVERY CASE AFTER IT OUT OF THE RUN AND
-                NAMES NONE (F330), and proving the mv cases red means changing
+                NAMES NONE, and proving the mv cases red means changing
                 what `write_merged` RETURNS - the bare path it used to, or a
                 dict missing the key - so an unguarded index is precisely the
                 shape that would go down instead of going red."""
@@ -1942,9 +1944,10 @@ def _cases(check):
                 _mvafter = fh.read()
             check("mv1 the grader runs with the lock ALREADY HELD, so no append "
                   "can land between the bytes it graded and the bytes "
-                  "`os.replace` overwrites -- which is the whole of F340, and "
-                  "the lock file's existence is the only evidence of it that "
-                  "cannot itself race: %r" % (_lockstate["held"],),
+                  "`os.replace` overwrites -- which is the whole point of "
+                  "holding the lock across both, and the lock file's existence "
+                  "is the only evidence of it that cannot itself race: %r"
+                  % (_lockstate["held"],),
                   _lockstate["held"] is True)
             check("mv2 ...and it is handed what the file held AT THAT MOMENT, "
                   "read inside the same hold rather than by the caller before "
@@ -2089,8 +2092,9 @@ def _cases(check):
                   and _respelt != _committed, repr(_av7))
 
             # --- ru: presence WITHOUT order, for the conflicted-file path -----
-            # `rows_unaccounted` is the from_index half of F328. Its whole
-            # reason to exist apart from `anchor_verdict` is that it must NOT
+            # `rows_unaccounted` is the from_index half of the same repair that
+            # added `anchor_verdict`. Its whole reason to exist apart from
+            # `anchor_verdict` is that it must NOT
             # ask about order: the text it grades is a conflicted working copy,
             # two index stages with markers between them, an order no chain
             # ever had. So the pair below is the specification - reordering is
@@ -2122,7 +2126,7 @@ def _cases(check):
                   "count-do-not-find rule that applies to `mu3`, because here "
                   "the duplication is what resolving a conflict produces",
                   _ru3["missing"] == 0, repr(_ru3))
-            # ALL OF THEM, NOT THE FIRST OF THEM (F342). `row`/`action` name
+            # ALL OF THEM, NOT THE FIRST OF THEM. `row`/`action` name
             # whichever unaccounted row sits earliest in the file, and the
             # caller has to tell a row somebody TYPED while resolving from a
             # `journal.merge` row a previous run of the verb left - two
@@ -2134,7 +2138,7 @@ def _cases(check):
             # `.get` with a list default, for the same reason every read in the
             # mu group is guarded: proving this red means DELETING the key, and
             # an unguarded index would take every case after it down while
-            # naming none of them (F330).
+            # naming none of them.
             _ru4gone = _ru4.get("unaccounted")
             _ru4gone = _ru4gone if isinstance(_ru4gone, list) else []
             check("ru4 every unaccounted row comes back, in file order, with "
@@ -2297,8 +2301,8 @@ def _cases(check):
                 {"action": "manifest.edit", "target": "",
                  "actor": dict(_sa_actor)}))
             check("sa1 a row records the OTHER id its session answers to, which "
-                  "is what makes a file named for the payload id resolvable "
-                  "(F309): %r" % (sorted(_sa1["actor"]),),
+                  "is what makes a file named for the payload id resolvable: "
+                  "%r" % (sorted(_sa1["actor"]),),
                   _sa1["actor"].get("envSessionId") == "env-id-bbbb"
                   and _sa1["actor"].get("sessionId") == "payload-id-aaaa")
             check("sa2 SECOND DIRECTION for r10: with the environment naming a "

@@ -19,7 +19,7 @@ Appends one row to the tamper-evident journal for every write to the MANIFEST
 Nothing else is recorded: the journal is the audit trail of the plan and the
 rules, not a log of the repository.
 
-WHICH TOOL WROTE IT IS NO LONGER THE QUESTION (F194). The derived rows below used
+WHICH TOOL WROTE IT IS NO LONGER THE QUESTION. The derived rows below used
 to exist only for a write that arrived through an edit tool, because `classify()`
 reads `file_path` and a Bash payload has none. A session that wrote the manifest
 through `python3 -c` -- a harness mode that prefers Bash, a script, a different
@@ -69,7 +69,7 @@ them would be a second writer, and two writers means duplicate rows. Tokens are
 deliberately NOT in these rows: metering lands on Stop/SessionEnd, so any number
 written here would be wrong; the cross-anchor is the ledger, joined by taskId.
 
-THE REFRESH IS WHAT MAKES THE POST PASS TOOL-AGNOSTIC (F194). The Post pass used
+THE REFRESH IS WHAT MAKES THE POST PASS TOOL-AGNOSTIC. The Post pass used
 to CONSUME the slot -- load and delete -- which made the pre-image a one-shot for
 the Pre pass that wrote it. A Pre pass only runs for an edit tool, so the next
 write of the session had a baseline only if it too arrived through one. Refreshed
@@ -152,7 +152,7 @@ TASK_FIELDS = ("status", "startedAt", "completedAt", "commit", "attempts",
                "outcome", "verifiedBy", "model", "skills")
 PHASE_FIELDS = ("status", "mergedAt", "branch")
 
-# What a row says when the write is known and the pre-image is not (F194). The gap
+# What a row says when the write is known and the pre-image is not. The gap
 # used to be silence: a generic "<tool> wrote <path>" row, indistinguishable from a
 # write where nothing this hook tracks had moved. A reader, `verify` and `doctor`
 # can all act on a stated gap; none of them can act on silence. It rides in
@@ -295,8 +295,9 @@ def _snapshot(path):
     """(digest, text) of a file: the digest at ANY size, the text only under the
     cap. (None, None) when the bytes cannot be read at all.
 
-    THE DIGEST IS THE DETECTION AND THE TEXT IS THE DIFF, and F194 is why those are
-    two answers now instead of one. The old reader took neither past the cap, so a
+    THE DIGEST IS THE DETECTION AND THE TEXT IS THE DIFF, and that split is why
+    those are two answers now instead of one. The old reader took neither past
+    the cap, so a
     large manifest was not merely undiffable -- a write to it could not even be
     NOTICED, because noticing is a digest comparison. Both come out of ONE read, so
     the digest can never describe bytes the text did not."""
@@ -320,7 +321,7 @@ def _write_slot(root, cfg, data, rel):
     """Snapshot `rel` into its (session, target) slot, overwriting whatever was
     there. Returns the slot path, or None when it could not be written.
 
-    THE ONE WRITER, and both passes go through it (F194). Pre seeds the slot before
+    THE ONE WRITER, and both passes go through it. Pre seeds the slot before
     an edit-tool write; Post refreshes it after reading, so the baseline is the
     target as of the last row in the journal rather than as of the last EDIT. Never
     raises: a slot that cannot be written costs a generic summary next time, never
@@ -342,8 +343,8 @@ def pre_cache(data, *, cfg=None, root=None):
     """The PreToolUse pass: remember the target as it stands, so the Post pass
     can diff. Returns the slot path when one was written, else None.
 
-    Never raises, never blocks, never speaks. IT STAYS, and F194 is where that was
-    decided rather than assumed: the slot is keyed per (session, target), so with
+    Never raises, never blocks, never speaks. IT STAYS, and that was decided
+    rather than assumed: the slot is keyed per (session, target), so with
     no Pre pass the FIRST write of every session would have no baseline and would
     lose its derived rows -- a regression wearing the shape of a simplification."""
     try:
@@ -378,7 +379,7 @@ def _swept_tool(tool):
 
 
 def _pre_seed_sweep(root, cfg, data):
-    """Seed a baseline for the swept paths, for the sweep lane's FIRST call (F261).
+    """Seed a baseline for the swept paths, for the sweep lane's FIRST call.
 
     THE EDIT LANE'S OWN REASONING, one lane over. `pre_cache`'s docstring already
     says why the Pre pass stays: with no baseline the FIRST write of every session
@@ -414,7 +415,7 @@ def _read_preimage(root, cfg, data, rel):
     """Load the slot for `rel` WITHOUT deleting it. None on any miss -- a miss is a
     fallback, never an error.
 
-    It used to delete (F194), which made the pre-image a one-shot belonging to the
+    It used to delete, which made the pre-image a one-shot belonging to the
     Pre pass that wrote it. A Pre pass runs only for an edit tool, so the session's
     next write had a baseline only if it too arrived through one. `_write_slot` is
     the one writer now, and the Post pass calls it on the way past."""
@@ -668,7 +669,7 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
     THE FLAG IS STILL READ BEFORE ANYTHING ELSE IN HERE, and the reason it used to
     give is no longer the reason. It said that resolving the repo root and loading
     the config on every Bash call would charge every command in the session for a
-    rare event -- true then, and F194 spent exactly that: `swept_entries` resolves
+    rare event -- true then, and that fix spent exactly that: `swept_entries` resolves
     both before this function is reached, because deciding whether the manifest
     moved needs the config that says where the manifest IS. What survives is the
     narrower guarantee: a sandboxed call still builds no row and reads no command
@@ -716,7 +717,7 @@ def _manifest_rows(entry, rel, old_obj, new_obj):
 
     A missing document on EITHER side is the stated gap, not a quiet generic row:
     the write is known to have happened and the field-level answer is not
-    available, which is the F194 shape whatever produced it."""
+    available, which is the same stated-gap shape whatever produced it."""
     row = dict(entry)
     if old_obj is None or new_obj is None:
         row["summary"] = "%s (%s)" % (row["summary"], DERIVATION_MISSED)
@@ -777,7 +778,6 @@ def _swept_targets(root, cfg):
 def swept_entries(data, *, cfg=None, root=None):
     """The PostToolUse pass for a sweep-lane call -- Bash or an MCP tool: the
     unsandboxed row, plus whatever the paths this hook records did while it ran.
-    F194.
 
     THE QUESTION IS ASKED OF THE FILE, NOT OF THE PAYLOAD. `classify()` reads
     `file_path` and returns None for anything that is not an edit tool, which was
@@ -878,7 +878,7 @@ def post_entries(data, *, cfg=None, root=None):
             return []
         pre = _read_preimage(root, cfg, data, rel)
         old_obj = _parse_preimage(pre)
-        # REFRESHED, NOT CONSUMED (F194), and here rather than after the row is
+        # REFRESHED, NOT CONSUMED, and here rather than after the row is
         # built so that every path out of this function leaves the same baseline
         # behind. The slot now holds the target as of the last write this hook
         # SAW, which is what lets the next write be diffed whatever makes it. The
@@ -903,7 +903,7 @@ def post_entries(data, *, cfg=None, root=None):
         return []
 
 
-# --- the F-F3 sidecar -----------------------------------------------------------
+# --- the plugin-write sidecar ----------------------------------------------------
 def _sidecar_path(root, cfg, data):
     """<stateDir>/bash-writes-plugin-<sid>.json -- where this session's plugin-made
     journal writes are named. The `bash-writes-` prefix is already in
@@ -920,7 +920,7 @@ def record_plugin_write(root, cfg, data, written_path):
     """Note a journal file THIS hook just appended to -- {"pluginWrote": [rel]}.
 
     The append above put that file into `git status`, and guard-bash-writes'
-    next Bash pass used to blame the shell command for it (F-F3). That guard
+    next Bash pass used to blame the shell command for it. That guard
     reads this sidecar and skips exactly the rels named here.
 
     ONE writer, this hook, on purpose: hooks registered on the SAME event run

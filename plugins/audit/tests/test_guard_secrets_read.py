@@ -122,7 +122,7 @@ def _cases(check):
     _expect("b10 python selftest of a hook allowed", "allow",
           bash("python3 hooks/require-plan.py --selftest"))
 
-    # F263. Rule #1's arm used to grep the WHOLE body for a secret-filename token,
+    # Rule #1's arm used to grep the WHOLE body for a secret-filename token,
     # so writing a sentence that names one was refused as reading one. Reported
     # from a live run and reproduced twice inside a single command here: the
     # refusal said "Reading a secret file" about prose that read nothing. F-P-7
@@ -156,8 +156,8 @@ def _cases(check):
           "creating one", "allow",
           bash("python3 -c \"open('build/.env','w').write('K=1')\""))
 
-    # THE HALF F263 LEFT. Its first arm was narrowed to the paths a read call
-    # NAMES; its second still grepped the WHOLE body for shell-read text, so a
+    # THE HALF LEFT AFTER THAT FIX. Its first arm was narrowed to the paths a
+    # read call NAMES; its second still grepped the WHOLE body for shell-read text, so a
     # body carrying that text as DATA - a list of fixtures, a table of examples,
     # a test case about this very guard - was refused as reading a secret.
     #
@@ -499,7 +499,7 @@ def _cases(check):
           use_cfg=cfg_pin_deny)
     _expect("s18 secret reads are NOT graded - .env is refused at the ask tier "
           "too", "block", read(".env"), use_cfg=cfg_ask)
-    # (s20+) what the shell refusal SAYS, by actual cause (F-F4) - the mirror
+    # (s20+) what the shell refusal SAYS, by actual cause - the mirror
     # of require-plan's h group: this file used to claim "A phase is
     # in_progress" whether or not one was, on the same evidence tiers.
     def sdeny(use_cfg, cmd="sed -i 's/a/b/' src/blamed.ts"):
@@ -766,7 +766,7 @@ def _cases(check):
           bash('echo x >/tmp/o; '
                'python3 -c "open(\'src/foo/gen3.ts\',\'w\').write(\'x\')"'))
 
-    # (s26a+) F209: THE SEPARATOR A MULTI-LINE BLOCK IS ACTUALLY WRITTEN WITH.
+    # (s26a+) THE SEPARATOR A MULTI-LINE BLOCK IS ACTUALLY WRITTEN WITH.
     # `_clauses` split on `;`, `|` and `&` and not on a newline, so every
     # multi-line Bash block was judged as ONE clause -- the eval marker taken
     # from one line, the write target from another, and the two paired without
@@ -804,9 +804,9 @@ def _cases(check):
     # case named a cause it never touched. A splitter is a pure function over
     # text, so it is asserted as one; routing the claim through six other rules
     # is exactly what let it go unchecked.
-    check("s26g a NEWLINE outside quotes separates clauses - the whole of F209, "
-          "asserted where it lives rather than through a verdict six rules can "
-          "also produce",
+    check("s26g a NEWLINE outside quotes separates clauses - the whole of the "
+          "newline-clause defect, asserted where it lives rather than through "
+          "a verdict six rules can also produce",
           M._clauses("echo a" + chr(10) + "echo b") == ["echo a", "echo b"],
           repr(M._clauses("echo a" + chr(10) + "echo b")))
     _s26_cont = "python3 -c " + chr(92) + chr(10) + "  'x'"
@@ -914,7 +914,7 @@ def _cases(check):
           "actually used", "block",
           bash('python3 - <<\'PY\'\nimport io\np=\'src/app.ts\'\n'
                's=io.open(p).read()\nio.open(p,\'w\').write(s)\nPY'))
-    # F256. Grading a heredoc as an inline eval is deliberate (F31: same
+    # Grading a heredoc as an inline eval is deliberate (same
     # capability), so the classification is right and the MESSAGE was wrong - it
     # named `python -c` for a command the operator never typed. Reported from a
     # live run, and hit three times in one session here. A guard people believe
@@ -961,7 +961,7 @@ def _cases(check):
               and M._resolve_write_expr("p", {}) is None
           ) else "block", bash("true"))
 
-    # (s57+) F103: ONE OPERATION, TWO SPELLINGS, OPPOSITE VERDICTS. Reported from a
+    # (s57+) ONE OPERATION, TWO SPELLINGS, OPPOSITE VERDICTS. Reported from a
     # live session where a python heredoc writing under the session scratchpad was
     # refused as an inline-eval source write, while an equivalent heredoc earlier in
     # the SAME session was allowed. Measured against this classifier before anything
@@ -986,7 +986,7 @@ def _cases(check):
     _join = ("python3 - <<'PY'\nimport os, json\nbase = '%s'\n"
              "open(os.path.join(base, 'probe.json'), 'w').write(json.dumps({}))\nPY"
              % _scratch)
-    check("s57 F103: the `+` and `os.path.join` spellings of one scratchpad write "
+    check("s57 the `+` and `os.path.join` spellings of one scratchpad write "
           "get ONE verdict, and it is allow - asserted as the pair, because the "
           "defect was a disagreement and a case reading either spelling alone "
           "cannot see one",
@@ -1036,7 +1036,7 @@ def _cases(check):
           M._eval_write_targets(_s61) == [],
           repr(M._eval_write_targets(_s61)))
 
-    # (s62+) F103, the same root said twice: the arm reported a target it had not
+    # (s62+) The same root said twice: the arm reported a target it had not
     # read from a path argument. `(?:fs\.)?` was optional around a bare
     # `write`/`append`, and nothing in any of these languages puts a path first in a
     # call spelled that way - Python's `f.write(data)` and Node's `fs.write(fd, buf)`
@@ -1062,7 +1062,7 @@ def _cases(check):
     _expect("s65 ...and so does fs.appendFile, where the infix is absent", "block",
             bash('node -e "fs.appendFile(\'src/gen.ts\', x)"'))
 
-    # (s66+) F116, the same root reported a third way and from the cleanest angle
+    # (s66+) The same root reported a third way and from the cleanest angle
     # yet: a heredoc that CREATED a markdown file was refused as "reading a secret
     # file via shell". The OPERATION was a write, the target was `.md`, and the
     # only secret-ish content was an example command inside an English sentence
@@ -1071,8 +1071,9 @@ def _cases(check):
     # about, arrived at by the only move that reads as available.
     #
     # MEASURED BEFORE CHANGING ANYTHING, and the answer was not a pattern being
-    # too broad. F31 already separated a heredoc body that nothing executes from
-    # the command, and it spent that separation on Rule #2's two arms and on the
+    # too broad. A prior fix already separated a heredoc body that nothing
+    # executes from the command, and it spent that separation on Rule #2's two
+    # arms and on the
     # inline-eval arms. The shell-read arm, the echo arm, the sandbox arm and the
     # shell-write arm went on reading the RAW command, so one body was data for
     # one branch and a command for the next one down. Two further findings came
@@ -1132,7 +1133,7 @@ def _cases(check):
             "allow",
             bash("git commit -F - <<'MSG'\ndocs: say why `cat %s` is not a debug "
                  "step\nMSG" % _key))
-    # s75/s76 are F116's pair for the sandbox arm; they sit with the other
+    # s75/s76 are the sandbox arm's matching pair; they sit with the other
     # unsandboxed cases further down, where the payload builder for them exists.
     # THE FIXTURE WAS WRONG BEFORE IT WAS RIGHT, and the mutation is what said so.
     # The prose first read ``build > src/app.ts`.`` - a trailing backtick and full
@@ -1150,12 +1151,12 @@ def _cases(check):
             "passes on a broken half", "block",
             bash("build > src/app.ts"), use_cfg=cfg_enforced)
 
-    # (s35+) F20/F22. The original symptom - a read-only one-liner refused as a
+    # (s35+) The original symptom - a read-only one-liner refused as a
     # write - is gone with F-P-7 above. Measuring the same function again found
     # it wrong in BOTH directions instead, which is the shape a heuristic decays
     # into when only one side is ever tested.
     #
-    # Direction one, the FALSE POSITIVE, and it is the F20 class exactly: a
+    # Direction one, the FALSE POSITIVE: a
     # scratch file under a temp root is not source, and blocking it teaches the
     # reader to route around the guard - which is also where the guard is blind.
     _expect("s35 an eval that writes a SCRATCH file under /tmp is not a source "
@@ -1168,7 +1169,7 @@ def _cases(check):
           "allow",
           bash('node -e "require(\'fs\').writeFileSync(\'/var/folders/d1/pw/T/o.json\', x)"'))
     # Direction two, the FALSE NEGATIVES. Each is a real source write the pattern
-    # could not see, and F20's fix shape named three of them. `Path(...)
+    # could not see, and this fix shape named three of them. `Path(...)
     # .write_text` is the one that matters most: the path is the RECEIVER rather
     # than an argument, so a pattern that only looks inside the call's
     # parentheses cannot reach it however many call names it lists.
@@ -1217,7 +1218,7 @@ def _cases(check):
           bash('python3 -c "s=open(\'/tmp/in.json\').read(); '
                'open(\'src/out.ts\',\'w\').write(s)"'))
 
-    # (s44+) F31, found while committing the fix above: the guard refused its
+    # (s44+) Found while committing the fix above: the guard refused its
     # own commit, because the message DESCRIBED the write forms it had just
     # learned and the guard scans the whole command text, heredoc body included.
     # Probing that turned up the mirror defect, and the two share one root -- the

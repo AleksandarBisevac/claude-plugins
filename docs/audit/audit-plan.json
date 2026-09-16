@@ -537,8 +537,8 @@
       "P44.3",
       "P43.4",
       "P47.4",
-      "P50.5",
-      "P49.4"
+      "P49.4",
+      "P50.5"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -832,11 +832,11 @@
       "P36.15",
       "P42.6",
       "P43.4",
-      "P50.5",
       "P51.2",
       "P53.4",
       "P47.3",
-      "P55.6"
+      "P55.6",
+      "P50.5"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -867,9 +867,9 @@
       "P15.4",
       "P35.1",
       "P36.15",
-      "P50.5",
       "P51.2",
-      "P53.3"
+      "P53.3",
+      "P50.5"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2"
@@ -1210,8 +1210,8 @@
       "P42.3",
       "P42.6",
       "P46.5",
-      "P50.5",
-      "P53.3"
+      "P53.3",
+      "P50.5"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -1426,7 +1426,8 @@
       "P54.4",
       "P54.5",
       "P54.6",
-      "P49.4"
+      "P49.4",
+      "P50.5"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1677,9 +1678,9 @@
       "P36.15",
       "P42.6",
       "P43.4",
-      "P50.5",
       "P53.3",
-      "P55.6"
+      "P55.6",
+      "P50.5"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -1701,7 +1702,8 @@
       "P36.15",
       "P51.2",
       "P53.4",
-      "P47.3"
+      "P47.3",
+      "P50.5"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"

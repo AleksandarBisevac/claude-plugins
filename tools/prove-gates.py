@@ -23,7 +23,7 @@ carries, or by `substr("some words from the label")` for the many suites whose l
 are sentences. `redfirst.sh` does the mutating, because a second implementation of
 mutate-run-restore is a second place for a mutation to be stranded.
 
-AND `ALLOW` IS THE SAME MACHINERY POINTED THE OTHER WAY (F55). Proving a check goes
+AND `ALLOW` IS THE SAME MACHINERY POINTED THE OTHER WAY. Proving a check goes
 red is one half of its specification; the half nothing here asserted is that it says
 NOTHING about legitimate input, which is the failure this repo ships most often - a
 guard that refuses a write for what the prose inside it quoted, and then gets routed
@@ -75,7 +75,7 @@ REF = "plugins/audit/tests/test__refs.py"
 CFG = "plugins/audit/tests/test__config_rules.py"
 ADP = "plugins/audit/tests/test__ado_parent.py"
 ADC = "plugins/audit/tests/test__ado_conventions.py"
-# The suites the F231 remainder answers to. Every one of these lints was outside the
+# The suites the derived remainder answers to. Every one of these lints was outside the
 # hand-written source list, so none of them had a row until the list became a walk.
 HLP = "plugins/audit/tests/test__help.py"
 MVO = "plugins/audit/tests/test__manifest_vocab.py"
@@ -96,7 +96,7 @@ INSTALL = "\n_output.install_path()\n"
 # lint added later is missing from the table LOUDLY - see `coverage()`.
 #
 # `affected_dispatch` IS IN THE SECOND GROUP, AND THAT IS A DECISION RATHER THAN A
-# CONVENTION SOMEBODY SKIPPED (F229). Its name says nothing about reporting, and the
+# CONVENTION SOMEBODY SKIPPED. Its name says nothing about reporting, and the
 # arm that reads what a function DOES cannot see it either: it takes no required
 # argument, but its corpus is a SUBPROCESS and a file - it runs `tools/affected.py`
 # and reads the prefixes `tools/verify.sh` will dispatch - rather than one of the
@@ -145,14 +145,14 @@ _GATE_MODULES = ("_output.py", "_deps.py", "_refs.py",
 # and `stale_rows()` would have reported the live row as dead. One derivation,
 # reaching every file that holds a lint, is what makes both directions honest.
 #
-# `tools/_suite.py` is here for `unsafe_removal_violations()` (F155), which refuses a
+# `tools/_suite.py` is here for `unsafe_removal_violations()`, which refuses a
 # tool that builds a git repository with objects in it and then removes the tree with
 # a call that cannot unlink a read-only file. It joins this tuple in the same commit
 # as its rows, which is the only way anything may join it: a coverage rule that
 # arrives already failing gets an exemption written for it on day one, and that is
 # how an exemption table stops meaning anything.
 #
-# ITS NEIGHBOUR IN THAT FILE WAS THE HOLE (F166). `hand_rolled_runners()` keeps every
+# ITS NEIGHBOUR IN THAT FILE WAS THE HOLE. `hand_rolled_runners()` keeps every
 # tool's selftest on the shared harness, and it had a row in neither table and no
 # recorded reason for having none - because its NAME ends in no shape above and it is
 # not in the list below, so nothing here could see it and `coverage()` could never
@@ -163,15 +163,15 @@ _GATE_MODULES = ("_output.py", "_deps.py", "_refs.py",
 # found a second: `_output.redundant_constants()`, load-bearing since the day it was
 # written, asserted over the real tree by its own suite, and proven by nothing.
 #
-# F229: THE META-GATE, AND WHAT IT FELL THROUGH IS NEITHER A NAME NOR A SIGNATURE.
+# THE META-GATE, AND WHAT IT FELL THROUGH IS NEITHER A NAME NOR A SIGNATURE.
 # `gate-parity.py` is what keeps four hand-maintained descriptions of the gate set
 # honest with each other, and nothing proved any of its checks. It was NOT missed
-# the way F166's lint was missed: `isolation_drift` ends in a shape above and
-# `scratch_isolation` walks the tree through `_output.py_files()`, so both arms
-# would have derived them the moment anything opened the file. Nothing opened it -
+# the way `hand_rolled_runners()` was missed above: `isolation_drift` ends in a shape
+# above and `scratch_isolation` walks the tree through `_output.py_files()`, so both
+# arms would have derived them the moment anything opened the file. Nothing opened it -
 # every arm reads functions out of `_gate_sources()`, which is this tuple and
 # `_GATE_MODULES`, both written by hand. The file-level enumeration is the hole,
-# and it SUBSUMES the function-level one F166 closed: a file nobody lists is
+# and it SUBSUMES the function-level hole `_TREE_WALKS` closed: a file nobody lists is
 # invisible to every arm at once, the arm added to close the last hole included.
 #
 # THIS ROW REGISTERS THE INSTANCE AND DOES NOT CLOSE THAT HOLE, said here rather
@@ -215,7 +215,7 @@ _TREE_WALKS = ("py_files", "lint_py_files", "kept_files")
 # THE FILES AN `ALLOW` ROW MAY MUTATE: every file that HOLDS a guard, repo-relative.
 # `_GATE_MODULES` under `scripts/`, plus the guards that do not live in the plugin at
 # all - `sweep-selftests.py`'s `scratch_debris()`, which refuses a suite that changed
-# the directory it was run from (F119), and `_suite.py`'s removal rule. Each has the
+# the directory it was run from, and `_suite.py`'s removal rule. Each has the
 # same two halves as any lint above and earns rows in both tables for the same reason.
 #
 # NAMED, NOT WIDENED TO A DIRECTORY. `a3`'s property is that an ALLOW row mutates the
@@ -226,11 +226,12 @@ _TREE_WALKS = ("py_files", "lint_py_files", "kept_files")
 # `GUARD_FILES` USED TO BE A LITERAL HERE and is derived now, by `guard_files()`.
 # It is bound BELOW `NOT_A_GATE`, because deriving it needs that table to know which
 # tree-walking helpers are not verdicts - a hand-written copy beside a hand-written
-# source list is two lists that can disagree, and F231 is what that cost.
+# source list is two lists that can disagree, which is the failure mode a single
+# derivation exists to close off.
 
 # (lint, file, kind, anchor, payload, suite, expected case label)#
 # `count` is a number OR the word for it: the second row of each pair exists to
-# prove the numeral table still reads the word spelling (F59), and one builder
+# prove the numeral table still reads the word spelling, and one builder
 # serving both is what stops the two payloads drifting into different sentences.
 def _claim_payload(count):
     """A probe function whose docstring makes a cardinality claim."""
@@ -283,7 +284,7 @@ def _truncated_payload(sliced):
 #
 # Reading the first token was the only way in, so no row could point into any of
 # those suites and the coarse whole-suite verdict was all they could ever get -
-# which is the weaker claim this table exists to avoid (F74).
+# which is the weaker claim this table exists to avoid.
 #
 # The suites are NOT migrated to leading ids. Their labels are readable sentences,
 # which is the right thing for whoever reads the failure; what was missing is
@@ -295,8 +296,8 @@ def substr(text):
     id with its siblings - `substr("sc9 the panel")` reaches one of four `sc9`
     cases that `AMBIGUOUS LABEL` is otherwise right to refuse.
 
-    IT MUST STILL BE UNIQUE, and that is not a weakening of F63's rule but the
-    same rule read one level up: the whole `RED, WRONG CASE` guarantee rests on
+    IT MUST STILL BE UNIQUE, and that is not a weakening of the leading-id rule but
+    the same rule read one level up: the whole `RED, WRONG CASE` guarantee rests on
     the row naming exactly one case, so a selector matching two is refused
     exactly as a duplicated id is. A substring is enough to be unique and short
     enough to stay readable in the table.
@@ -310,7 +311,7 @@ def substr(text):
 # "drop" removes the first line matching the anchor regex; "suffix" appends payload
 # to it; "sub" applies payload as a (pattern, replacement) pair to it.
 #
-# `replace` IS THE KIND THAT SPANS LINES, and writing that down is F149's answer.
+# `replace` IS THE KIND THAT SPANS LINES, which is worth stating outright:
 # `drop`, `suffix` and `sub` all reach their target through `_first_line()`, so one
 # line is all they can ever touch; `replace` is a whole-TEXT count and swap, here
 # and again in `redfirst.sh`, so its anchor may be a block and a row may therefore
@@ -331,7 +332,7 @@ TABLE = (
  ("path_preamble_violations", S + "_fmt.py", "replace",
   "_anchor_dir = os.path.dirname(os.path.abspath(__file__))",
   "_anchor_dir = os.path.dirname(os.path.abspath(__file__))  # probe", OUT, "pp1"),
- # F94: THE SAME LINT, MUTATED IN THE HALF THE ROW ABOVE CANNOT REACH. That one
+ # THE SAME LINT, MUTATED IN THE HALF THE ROW ABOVE CANNOT REACH. That one
  # breaks the block so the WHOLE-TEXT count falls to zero; this one leaves the block
  # intact and repeats one of its lines, which is the shape the doubled bootstraps
  # under `panel/` arrived in - a second `install_path()` that a count of the whole
@@ -349,7 +350,7 @@ TABLE = (
   '\n_PROBE = "1/1 cases passed"\n', OUT, "sc10"),
  ("prose_number_claims", S + "_fmt.py", "after", INSTALL,
   _claim_payload(12), OUT, "pn0"),
- # F59: the SAME lint, mutated in the word spelling. The digit row above cannot
+ # The SAME lint, mutated in the word spelling. The digit row above cannot
  # notice a numeral table that has stopped reading words - which is the state this
  # repo shipped in until a count spelled out sat unnoticed in a comment block every
  # gate reads. Two rows for one lint, the way the house-style lint carries two.
@@ -383,8 +384,8 @@ TABLE = (
  # markers it needs, because `drop` removes ONE line: a file with fourteen
  # markers still has thirteen afterwards and never violates.
  #
- # It named `panel/_panel_composition.py` until F91 moved `_proposals_view` out
- # of it. At 344 lines the rule had nothing to say there any more, so the
+ # It named `panel/_panel_composition.py` until a refactor moved `_proposals_view`
+ # out of it. At 344 lines the rule had nothing to say there any more, so the
  # mutation proved nothing and this gate reported STAYED GREEN while the lint
  # itself was fine - one change making an unrelated gate stop asserting, with no
  # test going red anywhere. A row naming a file NEAR the threshold is a row with
@@ -403,7 +404,7 @@ TABLE = (
  ("shared_concern_violations", "plugins/audit/scripts/ui/panel/composition.js",
   "suffix", r"^ {0,2}//\s+-{2,}",
   "\nconst probeStore=localStorage.getItem('probe');", DEP, "sc1"),
- # F110: the pairing nothing checked. A route table in Python and a set of
+ # The pairing nothing checked. A route table in Python and a set of
  # controls in JavaScript, each half tested on its own, and `POST
  # /api/gate-events/prune` shipping for a release with no control naming it. The
  # mutation adds a route to the real dispatcher, which is the shape the defect
@@ -412,12 +413,12 @@ TABLE = (
   "                self._json(200, discover(project)); return\n",
   '            if path == "/api/probe-uncalled":\n'
   "                self._json(200, {}); return\n", DEP, "pr1"),
- # F205: a count printed over evidence that was cut. TWO ROWS FOR ONE LINT, the
+ # A count printed over evidence that was cut. TWO ROWS FOR ONE LINT, the
  # way the house-style and prose-number pairs are two, and for the same reason -
  # the second spelling is one an arm of the rule could silently stop reading. The
  # first plants the slice on the collection itself; the second wraps it, which is
- # how three of F205's own siblings were written and is the arm that reads the
- # names a sliced EXPRESSION mentions rather than only the whole of it.
+ # how three of this lint's own sibling rows were written and is the arm that reads
+ # the names a sliced EXPRESSION mentions rather than only the whole of it.
  ("truncated_evidence_violations", S + "_fmt.py", "after", INSTALL,
   _truncated_payload("items[:3]"), OUT, "te11"),
  ("truncated_evidence_violations", S + "_fmt.py", "after", INSTALL,
@@ -429,7 +430,7 @@ TABLE = (
  ("map_drift", S + "_deps.py", "replace", '    ("_output",),\n',
   '    ("_output", "_probe_layer_name"),\n', DEP, "r3"),
  ("hooks_rule_drift", "PLUGIN-BUILD-GUIDE.md", "replace", None, None, DEP, "g0"),
- # F230 restored where it actually shipped: the docstring line that opened on a
+ # Restored where it actually shipped: the docstring line that opened on a
  # layer the table had already moved this module off. The mutation is the real
  # sentence rather than an invented one, because what made the defect survive was
  # that it read as a perfectly ordinary claim.
@@ -475,18 +476,18 @@ TABLE = (
  # BOTH ROWS BELOW USED TO NAME NO CASE, and the coarse verdict was the only
  # thing available to them - not because their suite could not be named, but
  # because nobody had looked. The names here were read off a live run of each
- # row (F74): `cf1` is the only case the flag mutation reddens, and the URL
+ # row: `cf1` is the only case the flag mutation reddens, and the URL
  # mutation reddens the version-pin family, of which `p1` is one.
  ("command_flag_drift", "plugins/audit/commands/status.md", "suffix",
   r"^argument-hint:", " [--probe-flag]", REF, "cf1"),
- # F290. A command doc that says to print its output and not WHERE. The mutation
+ # A command doc that says to print its output and not WHERE. The mutation
  # is the sentence as it stood before this entry: "print it verbatim" with no
  # target, which a live run read as discharged by the Bash tool having run - so
  # the operator got a collapsed tool result and the model believed it answered.
  ("render_target_drift", "plugins/audit/commands/status.md", "replace",
   "**Print it in your own reply, inside a fenced block.**",
   "**Print it promptly and completely.**", REF, "rt1"),
- # F282. A prohibition the document states and nothing accounts for. The mutation
+ # A prohibition the document states and nothing accounts for. The mutation
  # is the shape the rule exists for: somebody writes a new **NEVER** and no hook
  # is asked whether anything stops it. `orchestrator.md` is the subject because it
  # is the document that governs every run and, measured, the one nothing checks.
@@ -494,7 +495,7 @@ TABLE = (
   "## Reporting",
   "## Reporting\n\n**NEVER `git cherry-pick` onto a phase branch.**",
   "tools/check-prohibitions.py", "pr0"),
- # F319. The launcher's `ask` fail mode is what tells an operator the guards are
+ # The launcher's `ask` fail mode is what tells an operator the guards are
  # NOT running when no interpreter can be found, so a deciding guard registered
  # `open` is the one failure a blocking guard may not have: silent absence. The
  # mutation is the shape the rule exists for - somebody edits the wiring and the
@@ -503,7 +504,7 @@ TABLE = (
  ("fail_mode_drift", "plugins/audit/hooks/hooks.json", "replace",
   "guard-secrets-read.py ask", "guard-secrets-read.py open",
   "tools/check-prohibitions.py", "pr6c"),
- # F191. The pointer that says a human's own words go in unchanged. Removed from
+ # The pointer that says a human's own words go in unchanged. Removed from
  # ONE doc, because that is the shape the fault had: three commands said nothing
  # and the fourth's silence was the one that got a paraphrase into the chain.
  ("verbatim_rule_drift", "plugins/audit/commands/task.md", "replace",
@@ -522,7 +523,7 @@ TABLE = (
   "def signoff_fix_route_drift(repo_root=None):\n"
   "    return {\"missing\": [], \"checked\": 2}",
   REF, "fr2"),
- # P42. The word for a red-first proof that could not be MADE, removed from the
+ # The word for a red-first proof that could not be MADE, removed from the
  # document the CHECK reached rather than the one a person remembered: `bug.md`
  # orders a red-first repro test and owes the word for exactly that reason. The
  # mutation is the state every document was in before this entry - the proof is
@@ -536,7 +537,7 @@ TABLE = (
  # has nowhere to put what the documents just promised.
  ("red_first_drift", "plugins/audit/schema/audit-plan.schema.json", "replace",
   '            "could-not-prove",\n', "", REF, "rf2"),
- # P42. THE BRIEF GROWS A FIELD AND THE REFERENCE DOES NOT FOLLOW; renaming a key
+ # THE BRIEF GROWS A FIELD AND THE REFERENCE DOES NOT FOLLOW; renaming a key
  # is that event with a shorter diff. `testsAdded` is what fills `task.verifiedBy`,
  # so this is the shipped defect with the name changed - the field was declared,
  # the fallback path restated every rule beside it, and nobody asked for this one.
@@ -564,7 +565,7 @@ TABLE = (
  ("artifact_version_drift", "docs/demo-large.html", "sub",
   r">audit [0-9]+\.[0-9]+\.[0-9]+</span>",
   (r">audit [0-9]+\.[0-9]+\.[0-9]+</span>", ">audit 0.0.1</span>"), REF, "av1"),
- # F216. THE PUBLISHED PAGE NOTHING READ. `docs/handbook.html` is hand-written, has
+ # THE PUBLISHED PAGE NOTHING READ. `docs/handbook.html` is hand-written, has
  # no generator to be compared against and is served beside the live demo, so it could
  # assert something the code had stopped doing and stay green for ever - and it had.
  # The PAGE is mutated rather than a source file, for the reason the row above mutates
@@ -580,8 +581,8 @@ TABLE = (
   (r"/audit:doctor", "/audit:doktor"), REF, "hb1"),
 
  # TWO ROWS FOR THE SCREENSHOT RULE, because it now answers two questions through
- # two code paths and only one of them was ever proved. This one is the SOURCE side
- # (F85): a picture whose UI has moved under it, which no version stamp can see. A
+ # two code paths and only one of them was ever proved. This one is the SOURCE
+ # side: a picture whose UI has moved under it, which no version stamp can see. A
  # `ui/` COMMENT is appended rather than a rule changed, because the mutation only
  # has to move bytes - a behavioural edit would redden the report's own pins too and
  # make the verdict about the wrong thing. The marker line is unique in its file,
@@ -616,7 +617,7 @@ TABLE = (
  # to produce. Nothing upstream of the module can break it: the standard is a
  # config block and the item is a dict the connector builds.
  # The anchor is the FIRST line of a two-line condition, not the whole condition:
- # F120 scoped this rule by kind, so the branch grew a second clause. A row that
+ # The rule is scoped by kind, so the branch grew a second clause. A row that
  # pinned the old one-line spelling went to "anchor occurs 0 time(s)" the moment
  # that landed - which is the coverage rule doing its job, and the reason the
  # payload opens the parenthesis it no longer closes on this line.
@@ -636,12 +637,12 @@ TABLE = (
  # The config vocabulary. Three rows for the tree-bound half, because it has three
  # failure modes and only the first announces itself. `ui` was read by `_ui_theme`,
  # written by the panel, validated and defaulted - and unpublished in the schema for
- # its whole life, because `additionalProperties: true` accepts anything (F79). So
+ # its whole life, because `additionalProperties: true` accepts anything. So
  # the row that would have caught that goes first: rename the schema property and a
  # key the plugin reads stops being published.
  ("config_vocab_drift", "plugins/audit/schema/audit-config.schema.json", "replace",
   '    "ui": {\n', '    "uiRenamed": {\n', CFG, "cv1"),
- # The same rule one surface further (F80): a lever with a panel control and no
+ # The same rule one surface further: a lever with a panel control and no
  # published row. A RENAME rather than a deletion - deleting the row would also cut
  # the table's contiguous run and take every key below it down at once, which proves
  # the wrong thing.
@@ -659,7 +660,7 @@ TABLE = (
  # rule and the fixture case goes red where the three above cannot.
  ("root_vocab_drift", S + "config/_config_rules.py", "replace",
   "set(known) - published - set(exempt)", "set()", CFG, "cv4"),
- # F119, AND THE ONLY ROW HERE THAT BREAKS A TEST RATHER THAN A SCRIPT, because a
+ # THE ONLY ROW HERE THAT BREAKS A TEST RATHER THAN A SCRIPT, because a
  # test IS what this guard watches: the thing `scratch_debris()` guards is a suite
  # leaving its fixture behind in the directory it was run from. The payload is the
  # defect verbatim - a `mkdtemp` with no cleanup, inside a suite that otherwise
@@ -672,7 +673,7 @@ TABLE = (
   '    import tempfile as _leak\n    _leak.mkdtemp(prefix="probe-leak-")\n',
   "tools/sweep-selftests.py", "x4"),
 
- # --- F139: one fact with two homes, and the rule that compares them ----------
+ # --- One fact with two homes, and the rule that compares them ----------------
  # THE MUTATED FILE IS THE HOME, not the guard: `_harness.remove_tree()` is where
  # the read-only-object fact lives, and the sweep runner keeps a copy because a
  # runner may not import a file it is one of the runners OF. The thing this rule
@@ -683,7 +684,7 @@ TABLE = (
   "                os.chmod(os.path.join(base, name), 0o700)",
   "                os.chmod(os.path.join(base, name), 0o755)",
   "tools/sweep-selftests.py", "rm1"),
- # --- F155: the callers, and the rule that stops the next one -----------------
+ # --- The callers, and the rule that stops the next one -----------------------
  # THE MUTATED FILE IS A CALLER, not the guard: the drift row above watches the two
  # copies of the helper agreeing, and this one watches a tool actually USING it. The
  # payload is the defect verbatim - the ordinary removal with `ignore_errors=True`,
@@ -708,7 +709,7 @@ TABLE = (
  ("config_read_violations", S + "_deps.py", "replace",
   "            normalisers = normalisers | _name_normalisers(scope, local)",
   "            normalisers = normalisers", DEP, "ck3"),
- # --- F166: the two lints the name-shaped derivation could not see ------------
+ # --- The two lints the name-shaped derivation could not see ------------------
  # THE MUTATED FILE IS A TOOL, not the guard: what `hand_rolled_runners()` watches
  # is a tool running its own suite instead of handing its cases to the shared
  # runner, and the payload is that defect at its smallest - a `_selftest` whose
@@ -726,7 +727,7 @@ TABLE = (
  # THE MERGED-BLOCK ACCESSOR. A config block that arrives through a `<root>_cfg`
  # call puts no key on the line, so without this branch every read taken off it
  # resolves to nothing and the module holding them is absent from the key's reader
- # list entirely - which is how F168 served a padded date past a rule added the
+ # list entirely - which is how a padded date slipped past a rule added the
  # same round to catch one key read two ways. `ck18` is that pair as a fixture.
  ("config_read_violations", S + "_deps.py", "replace",
   "    block = _block_accessor(node, roots)",
@@ -743,7 +744,7 @@ TABLE = (
   '"ranTotal": ran_total, "countsBasis": counts_basis(steps, shared),',
   '"ranTotal": ran_total,', DEP, "dk2b"),
 
- # --- F229: the meta-gate, whose silence takes four documents down with it ----
+ # --- The meta-gate, whose silence takes four documents down with it ----------
  # THE MUTATED FILE IS A DOCUMENT, because a document is what this rule watches.
  # `sweep-selftests.py` points a family of environment variables per child away
  # from the machine, and the documents describing that isolation are compared with
@@ -765,7 +766,7 @@ TABLE = (
  # real runner against every side.
  ("sweep_roots_drift", "CLAUDE.md", "sub", r"tools/ AND \.claude/hooks/",
   (r"tools/ AND \.claude/hooks/", "tools/"), "tools/gate-parity.py", "sr0"),
- # F232 VERBATIM, and the mutation is the row that actually shipped.
+ # THE SHIPPED DEFECT, VERBATIM, and the mutation is the row that actually shipped.
  # `render-report.py` is excused locally on a reason that NAMES the local gate
  # making the equivalent claim; strike that name out and the reason excuses
  # nothing - which is exactly the state `gen-demo-usage.py` sat in behind "same
@@ -805,7 +806,7 @@ TABLE = (
  ("affected_dispatch", "tools/verify.sh", "sub", r"^    grep -v -e ",
   (r" -e '\^claude '", ""), "tools/gate-parity.py", "ad0"),
 
- # --- F319: the fail-mode table, against the wiring that decides it -----------
+ # --- The fail-mode table, against the wiring that decides it -----------------
  # THE MUTATED FILE IS THE DOCUMENT, because a document is what this rule watches.
  # SECURITY.md tells a reader which hooks PROMPT when no interpreter can be found
  # and which pass in silence, and what actually decides that is the second argument
@@ -825,7 +826,7 @@ TABLE = (
  ("failmode_table_drift", "SECURITY.md", "drop", r"^\| `remind-tdd` \|",
   None, "tools/gate-parity.py", "fm0"),
 
- # --- F231: the remainder the hand-written source list was hiding --------------
+ # --- The remainder the hand-written source list was hiding --------------------
  # Fifteen lints arrived the moment `_gate_sources()` became a walk. Every row
  # below is the debt that list was deferring, and each is written the way the rows
  # above are: break the thing the rule guards, and name the case that must notice.
@@ -883,7 +884,7 @@ TABLE = (
  ("inline_drift", S + "config/_help.py", "replace",
   "def inline_drift(levels, found, anchors):",
   "def inline_drift(levels, found, anchors):\n    return []", MVO, "mv31"),
- # F265, and the mutation IS the defect that shipped: a command doc advertising a
+ # The mutation IS the defect that shipped: a command doc advertising a
  # value its parser refuses. `/audit:status --view pending` was documented and
  # exited 2 through a green gate set, because nothing asked a parser what a flag's
  # values were. `ch7` is the live case over the real command surface.
@@ -950,20 +951,20 @@ TABLE = (
   "def budget_violations(hooks_dir=None, python=None):",
   "def budget_violations(hooks_dir=None, python=None):\n    return []",
   BEN, "h6"),
- # F291. The explorer's return contract is written twice - the agent's own doc and
+ # The explorer's return contract is written twice - the agent's own doc and
  # `commands/init.md`'s fallback restatement - and nothing read either copy. A field
  # added to ONE of them is the whole fault, so that is the mutation: the agent-side
  # copy gains a field the command-side copy has never heard of.
  ("explorer_contract_drift", "plugins/audit/agents/audit-explorer.md", "after",
   '"suggestedTests": ["...", ...], ', '"confidence": "0-1", ', DEP, "ec1"),
- # F292, THREE WAYS, because the lint has three ways to stop being true. First the
- # document: the paragraph reverts to its pre-F268 wording, which is the historical
- # bug and encodes no checkable claim at all.
+ # THREE WAYS, because the lint has three ways to stop being true. First the
+ # document: the paragraph reverts to its earlier, already-shipped wording, which
+ # is the historical bug and encodes no checkable claim at all.
  ("commit_spelling_drift", "PLUGIN-BUILD-GUIDE.md", "replace",
   "**Never an empty commit**, and a fixed literal in the **scope** position. Nothing staged means no\n"
   "commit and a line saying so \u2014 a stream of empty commits is how a record stops being read. The\n"
   "commit itself reads `chore(audit-state):` \u2014 `chore` because commitlint's default type-enum has to\n"
-  "accept it or a repository with husky rejects the commit *after* the file is staged (F268), and\n"
+  "accept it or a repository with husky rejects the commit *after* the file is staged, and\n"
   "`audit-state` sits in the scope because a task commit's scope is its phase id while its type comes\n"
   "from `meta.commit.type`, which a manifest may set to anything. `git log --grep audit-state`\n"
   "therefore separates the two commit classes for ever.",
@@ -984,7 +985,7 @@ TABLE = (
   "        found = _commit_constants_in(tree)",
   '\n        if name == "commit-manifest-index.py":\n            found = {}',
   DEP, "cs1b"),
- # F296. The document side, and the mutation is a SWAP rather than a deletion: the
+ # The document side, and the mutation is a SWAP rather than a deletion: the
  # worked example in `commands/phase.md` names the id an append takes and the id the
  # gap makes look free, so exchanging the two leaves a well-formed paragraph that is
  # simply wrong - which is the shape a reader cannot spot and the lint must.
@@ -992,7 +993,7 @@ TABLE = (
   "id is `P4`, and never the `P2` the gap makes look free",
   "id is `P2`, and never the `P4` the gap makes look free",
   PRP, "ap5"),
- # F282. `orchestrator.md` governed every run with ONE anchored sentence, and each
+ # `orchestrator.md` governed every run with ONE anchored sentence, and each
  # of its fourteen sections was deleted in turn without a single gate noticing. So
  # both sides get a row, because a claim rots in both directions: the DOCUMENT half
  # renames a section heading, which is how a rule silently stops being stated.
@@ -1000,7 +1001,7 @@ TABLE = (
   "## Concurrency lock", "## Concurrency luck", ARE, "oa1"),
  # ...and the CODE half moves a literal the document quotes. This is the direction
  # a string-presence check cannot see at all, and it is the one that actually
- # happened three times this week (F271, F276, F269).
+ # happened three times this week.
  ("claim_drift", S + "governance/_locks.py", "replace",
   "E_LIVE, E_STALE, E_USAGE, E_ERR = 3, 4, 2, 1",
   "E_LIVE, E_STALE, E_USAGE, E_ERR = 7, 4, 2, 1", ARE, "oa4"),
@@ -1015,7 +1016,7 @@ TABLE = (
  ("claim_drift", S + "manifest/_areas.py", "replace",
   "        for name in sorted(members - stated):",
   "        for name in sorted(set()):", ARE, "oa14"),
- # F334. The list anchor's window, and the mutation is the spelling it SHIPPED
+ # The list anchor's window, and the mutation is the spelling it SHIPPED
  # with: `.*?` under `re.S` runs past the function body, so deleting the guard
  # the row is anchored to made the pattern latch onto a repeat of the same code
  # shape hundreds of lines further down and report a status the verb no longer
@@ -1036,12 +1037,12 @@ TABLE = (
 
 
 # --- the other half of the specification: the guard that stays QUIET ----------
-# EVERY ROW ABOVE PROVES A CHECK GOES RED, AND NONE PROVED ONE STAYS QUIET (F55).
+# EVERY ROW ABOVE PROVES A CHECK GOES RED, AND NONE PROVED ONE STAYS QUIET.
 # A guard has two halves: it fires on the thing it exists for, and it says nothing
 # about legitimate input. Only the first was ever proven here, and the second is
 # this repo's repeatedly-shipped failure mode - a guard refused a heredoc that
-# CREATED a markdown file because the prose inside it quoted a path to a key file
-# (F116). The operation was a write, the target was a document, and the only
+# CREATED a markdown file because the prose inside it quoted a path to a key file.
+# The operation was a write, the target was a document, and the only
 # secret-ish thing on the line was a sentence. Nobody had a case for that.
 #
 # THE MECHANISM IS THE ONE ABOVE, POINTED THE OTHER WAY. A row still mutates one
@@ -1054,8 +1055,9 @@ TABLE = (
 #
 # So the mutation is chosen to be a NARROWING REMOVED rather than damage: the
 # exempted file that stops being exempt, the prose scope that widens to the whole
-# document, the comment stripper that stops stripping. Those are the shapes F116
-# arrived in, and each one has a legitimate input the suite already names.
+# document, the comment stripper that stops stripping. Those are the shapes this
+# failure mode arrived in, and each one has a legitimate input the suite already
+# names.
 #
 # A FEW ROWS NAME THE SAME CASE AS THEIR RED TWIN, and that is deliberate rather
 # than lazy: a suite's live-tree assertion is the only allow corpus some of these
@@ -1068,15 +1070,16 @@ ALLOW = (
  ("path_preamble_violations", S + "_output.py", "replace",
   "        found = src.count(PATH_PREAMBLE)",
   "        found = src.count(PATH_PREAMBLE) + 1", OUT, "pp10"),
- # F94's NARROWING, REMOVED. The repeat check compares whole LINES of the preamble
- # and skips the blank ones. Stop skipping them and a blank line becomes a preamble
- # line, so every file holding one more than once - which is every file - reads as a
- # partial repeat. `pp10` is the ordinary compliant fixture, and it is what stops
- # the F94 repair over-firing on the whole tree it was added to clean.
+ # THE SAME LINT'S NARROWING, REMOVED. The repeat check compares whole LINES of
+ # the preamble and skips the blank ones. Stop skipping them and a blank line
+ # becomes a preamble line, so every file holding one more than once - which is
+ # every file - reads as a partial repeat. `pp10` is the ordinary compliant
+ # fixture, and it is what stops the repair over-firing on the whole tree it was
+ # added to clean.
  ("path_preamble_violations", S + "_output.py", "replace",
   "    wanted = set(line for line in PATH_PREAMBLE.splitlines() if line.strip())",
   "    wanted = set(PATH_PREAMBLE.splitlines())", OUT, "pp10"),
- # --- F149: the narrowing that lives in two statements ------------------------
+ # --- The narrowing that lives in two statements ------------------------------
  # THE THIRD NARROWING IN THAT REPAIR, and the one no single-line row can reach.
  # The repeat check is whole-line equality twice over: once where a source line is
  # matched against the block, and once in the key the seen-set remembers. Widen
@@ -1104,10 +1107,11 @@ ALLOW = (
   "            repeats.append(number)\n"
   "        else:\n"
   "            seen.add(hit[0])\n", OUT, "pp13"),
- # THE PUREST F116 SHAPE IN THE TREE. The rule bans `__file__`, and the pinned
- # preamble is the one legitimate occurrence of it - which is why the preamble is
- # cut out before the scan. Stop cutting it and every compliant file reads as a
- # violation, quoting the very bytes the house rule tells people to paste.
+ # THE PUREST INSTANCE OF THAT NARROWING SHAPE IN THE TREE. The rule bans
+ # `__file__`, and the pinned preamble is the one legitimate occurrence of it -
+ # which is why the preamble is cut out before the scan. Stop cutting it and
+ # every compliant file reads as a violation, quoting the very bytes the house
+ # rule tells people to paste.
  ("depth_sensitive_paths", S + "_output.py", "replace",
   "            tree = ast.parse(src.replace(PATH_PREAMBLE, blanked), filename=rel)",
   "            tree = ast.parse(src, filename=rel)", OUT, "ds5"),
@@ -1137,8 +1141,8 @@ ALLOW = (
  # given day is the second hatch, and this is the row that fails if it closes.
  ("prose_number_claims", S + "_output.py", "replace",
   "        if _looks_historical(scope):", "        if False:", OUT, "pn4"),
- # F205'S TWO NARROWINGS, EACH REMOVED. Both are the F116 shape - a guard that
- # convicts the very thing the house rule tells people to write - and both have
+ # THIS LINT'S TWO NARROWINGS, EACH REMOVED. Both are the same shape - a guard
+ # that convicts the very thing the house rule tells people to write - and both have
  # legitimate input in the real tree, which is what makes the rows mean something.
  #
  # The remainder clause first: `len(X) - n` in the same sentence IS the repair, so
@@ -1148,7 +1152,7 @@ ALLOW = (
  ("truncated_evidence_violations", S + "_output.py", "replace",
   "                    if key in sliced and key not in stated:",
   "                    if key in sliced:", OUT, "te8"),
- # ...and the same-collection clause, which is F149's shape: the narrowing lives
+ # ...and the same-collection clause, which is the same shape: the narrowing lives
  # in TWO statements, because the line that REPORTS is keyed by the same property
  # the line above it tests. Widening only the test leaves `sliced[key]` looking up
  # a key it just stopped requiring, so the function RAISES and the suite dies
@@ -1241,9 +1245,10 @@ ALLOW = (
  ("tool_navigability_violations", S + "_deps.py", "replace",
   "        want = max(2, -(-len(lines) // _NAV_MIN_LINES))",
   "        want = max(2, -(-len(lines) // _NAV_MIN_LINES)) + 1", DEP, "tn4"),
- # F116 ITSELF, in the one lint here that already meets it: a needle appearing
- # only in a COMMENT is a mention, not a copy. Stop stripping comments and the
- # scout convicts a file for explaining the convention it follows.
+ # THE COMMENT-VS-CODE DISTINCTION ITSELF, in the one lint here that already
+ # meets it: a needle appearing only in a COMMENT is a mention, not a copy. Stop
+ # stripping comments and the scout convicts a file for explaining the
+ # convention it follows.
  #
  # `sc7` AND NOT `sc11`, measured rather than assumed: `sc11` calls `_code_only`
  # directly, so it judges the stripper and stays green while the LINT is the thing
@@ -1259,7 +1264,7 @@ ALLOW = (
  ("panel_route_violations", S + "_deps.py", "replace",
   '_PANEL_BROWSER_ROUTES = frozenset(("/", "/favicon.ico"))',
   "_PANEL_BROWSER_ROUTES = frozenset()", DEP, "pr4"),
- # F216. The narrowing that makes the handbook rule readable at all: a CSS custom
+ # The narrowing that makes the handbook rule readable at all: a CSS custom
  # property is spelled exactly like a command-line option, so a reader that took the
  # whole file would report this page's own design tokens as options the plugin does
  # not accept. Stop dropping the opaque elements and the rule convicts the page for
@@ -1385,7 +1390,7 @@ ALLOW = (
   "        elif bare_allowed and tag not in bare_allowed:",
   "        elif tag not in (bare_allowed or []):",
   ADC, substr("no contradiction warning for free-form vocabulary")),
- # THE PUREST F116 SHAPE THIS GUARD HAS: the checker plants a file in the scratch
+ # THE PUREST SHAPE THIS GUARD HAS: the checker plants a file in the scratch
  # directory so it can tell a DELETION apart from a clean run, and that file is the
  # one thing in there it must not report. Stop excluding it and every suite in the
  # tree - all of them clean - is convicted of having dirtied its directory by the
@@ -1402,8 +1407,8 @@ ALLOW = (
   "    strays = [name for name in left if name != sentinel]",
   "    strays = list(left)",
   "tools/sweep-selftests.py", substr("touches nothing")),
- # --- F139: the quiet half of the copy-comparison -----------------------------
- # THE NARROWING IS THE DOCSTRING, and it is the F116 shape again. The two copies
+ # --- The quiet half of the copy-comparison -----------------------------------
+ # THE NARROWING IS THE DOCSTRING, and it is the same shape again. The two copies
  # of `remove_tree` are REQUIRED to describe themselves differently - one carries
  # the measurement that chose the fallback order, the other carries the pointer
  # and the reason a copy exists at all - so the comparison drops the docstring and
@@ -1413,7 +1418,7 @@ ALLOW = (
  ("removal_helper_drift", "tools/sweep-selftests.py", "replace",
   "            body = body[1:]", "            body = list(body)",
   "tools/sweep-selftests.py", "rm2"),
- # --- F155: the half that decides who the rule is ALLOWED to leave alone ------
+ # --- The half that decides who the rule is ALLOWED to leave alone ------------
  # THE NARROWING IS THE OBJECT VERB, and it is the difference between a rule and a
  # demand. A bare repository initialisation writes no object, so there is nothing
  # read-only under it and the ordinary removal is correct; one staged file is enough
@@ -1426,7 +1431,7 @@ ALLOW = (
  ("unsafe_removal_violations", "tools/_suite.py", "replace",
   "    if not any(marker in words for marker in OBJECT_MARKERS):",
   "    if False:", "tools/_suite.py", "s14"),
- # --- F166: the quiet half for the two lints nothing used to derive -----------
+ # --- The quiet half for the two lints nothing used to derive -----------------
  # THE NARROWING IS THE IMPORT LINE. A tool's `_selftest` is two statements, and
  # only one of them is the delegation; the other is what makes the runner
  # reachable. Stop admitting it and every tool in the tree is convicted of running
@@ -1460,7 +1465,7 @@ ALLOW = (
  # goes on passing.
  ("dict_key_violations", S + "_deps.py", "replace",
   "                if key in carried:", "                if False:", DEP, "dk4"),
- # --- F229: the quiet half for the meta-gate ----------------------------------
+ # --- The quiet half for the meta-gate ------------------------------------------
  # THE NARROWING IS "NAMING A MEMBER NAMES THE FAMILY", and the rule argues it out
  # loud: the runner pins every spelling a lookup reads, and a document that listed
  # all of them would BE the module. Ask for every member instead and the rule
@@ -1499,7 +1504,7 @@ ALLOW = (
  ("exemption_audit_drift", "tools/gate-parity.py", "replace",
   "_REASON_MIN = 30", "_REASON_MIN = 0",
   "tools/gate-parity.py", "ea1"),
- # THE PUREST F116 SHAPE THIS GUARD HAS. The rule bans naming a temp root, and the
+ # THE PUREST SHAPE THIS GUARD HAS. The rule bans naming a temp root, and the
  # one line allowed to name it is the line that DERIVES a unique directory under
  # it - which is the repair every other line is told to route through. Stop
  # excusing it and the rule reports its own remedy, in both scripts that use it:
@@ -1522,7 +1527,7 @@ ALLOW = (
   '        if not line.startswith("  ") or line.startswith("  ("):',
   "tools/gate-parity.py", "ad4"),
 
- # --- F319: the two shapes a careless reader of that table loses in silence ----
+ # --- The two shapes a careless reader of that table loses in silence ----------
  # THE PARENTHETICAL STRIPPER THAT STOPS STRIPPING. One script appears in the table
  # twice because its events fail differently, and the second row is disambiguated by
  # a parenthetical name - so the hook is read with the parenthesis dropped. Stop
@@ -1550,7 +1555,7 @@ ALLOW = (
   '                                   cells[columns["event"]]))[:1]',
   "tools/gate-parity.py", "fm3"),
 
- # --- F231: the same fifteen, weakened until they over-fire --------------------
+ # --- The same set of lints, weakened until they over-fire ---------------------
  # Every row here widens a rule until it convicts something correct, and names the
  # case that must go red for it. Most of them name their RED twin, for the reason
  # this table's own header gives: a suite's live-tree assertion is the only allow
@@ -1593,7 +1598,7 @@ ALLOW = (
   'RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md", "next.md",',
   'RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md",',
   REF, "rt2"),
- # P42. The trigger dropped, which turns "a document that NAMES a red-first proof"
+ # The trigger dropped, which turns "a document that NAMES a red-first proof"
  # into "every document in three directories" - the explorer brief, the reviewer
  # brief and every command doc convicted for a rule they have no part in. That is
  # how a check like this gets routed around inside a day, and it is the direction
@@ -1603,7 +1608,7 @@ ALLOW = (
  ("red_first_drift", S + "_refs.py", "replace",
   "            if RED_FIRST_TRIGGER not in text:",
   '            if "" not in text:', REF, "rf7"),
- # P42. The TOP-LEVEL restriction dropped, so every nested key of the declared
+ # The TOP-LEVEL restriction dropped, so every nested key of the declared
  # shape is demanded as a standalone backticked word of its own: a reference that
  # writes `outcome` = `{ technical, descriptive }` is convicted for naming both
  # halves in one breath, which is honest prose and the ordinary way to write it.
@@ -1620,7 +1625,7 @@ ALLOW = (
   r'_BOLD_NEVER = re.compile(r"\*\*[^*]*\bNEVER\b[^*]*\*\*")',
   r'_BOLD_NEVER = re.compile(r"[^.\n]*\bnever\b[^.\n]*", re.I)',
   "tools/check-prohibitions.py", "pr0"),
- # F319. Drop the half that asks whether the hook DECIDES and the rule becomes
+ # Drop the half that asks whether the hook DECIDES and the rule becomes
  # "every registration must be `ask`", which convicts `journal-writes.py` for
  # being wired the only way it correctly can be. That is the over-fire this
  # guard would be switched off for, and the reason the pairing is checked in two
@@ -1638,8 +1643,9 @@ ALLOW = (
   r'([a-z][a-z0-9-]*(?:\|[a-z][a-z0-9-]*)+)")',
   r'([<a-z][a-z0-9-.,>]*(?:\|[a-z][a-z0-9-]*)*)")', HLP, "ch7"),
  # The refusing half, dropped. Report only the values the parser has that the doc
- # lacks and the direction F265 actually shipped in - a doc promising a value the
- # parser rejects - stops being reported at all, while the walk still looks busy.
+ # lacks and the direction the shipped defect actually took - a doc promising a
+ # value the parser rejects - stops being reported at all, while the walk still
+ # looks busy.
  ("choice_drift", S + "config/_help.py", "replace",
   "            if value not in got:",
   "            if False:", HLP, "ch2"),
@@ -1698,7 +1704,7 @@ ALLOW = (
   "def schema_inline_drift(root=None):",
   "def schema_inline_drift(root=None):\n    return [('ghost', 'probe')]",
   MVO, "mv29"),
- # F291's over-fire. The field/value split is structural: the value half of a
+ # This lint's over-fire. The field/value split is structural: the value half of a
  # `key: value` pair is consumed first so a value that happens to be
  # identifier-shaped cannot be read as a field name. Reverse the regex to
  # key-colon only and every bare identifier in either block becomes a field, so
@@ -1706,14 +1712,14 @@ ALLOW = (
  ("explorer_contract_drift", S + "_deps.py", "replace",
   '    r\':\\s*"[A-Za-z_][A-Za-z0-9_]*"|"([A-Za-z_][A-Za-z0-9_]*)"\')',
   '    r\'"([A-Za-z_][A-Za-z0-9_]*)"\\s*:\')', DEP, "ec1"),
- # F292's over-fire, and it is the reason the subsection bound reads the heading
+ # This lint's over-fire, and it is the reason the subsection bound reads the heading
  # LEVEL rather than a literal `## `. Bound it on `## ` and one script's
  # subsection swallows the next sibling script's paragraph, so every writer is
  # convicted of claiming its neighbour's commit spelling.
  ("commit_spelling_drift", S + "_deps.py", "replace",
   '    pattern = re.compile(r"\\n#{1,%d} " % (level,))',
   '    pattern = re.compile(r"\\n## ")', DEP, "cs1"),
- # F296's over-fire, and it is why the check compares the WHOLE allocated id. The
+ # This lint's over-fire, and it is why the check compares the WHOLE allocated id. The
  # example is worth having only because the two allocators answer it differently;
  # compare just the `P` prefix and every correct example reads as one the two rules
  # cannot be told apart on, so a right document is convicted of vacuity.
@@ -1721,7 +1727,7 @@ ALLOW = (
   "    if real_next == real_other:",
   "    if real_next[:1] == real_other[:1]:",
   PRP, "ap5"),
- # F282's over-fire, and it is the difference from `rule_drift`, which a DUPLICATE
+ # This lint's over-fire, and it is the difference from `rule_drift`, which a DUPLICATE
  # sentence let survive every section deletion. Anchors are section-SCOPED: drop the
  # scoping and every anchor matches text anywhere in the document, so a neighbour's
  # sentence launders a section that no longer states its own rule.
@@ -1883,8 +1889,9 @@ _GATE_ROOTS = ("plugins/audit/scripts", "plugins/audit/hooks", "tools")
 def _gate_sources(script_dir=None, repo=None):
     """[(path, tree)] for every file that could hold a guard — DERIVED, not listed.
 
-    F231, and it is the hole that subsumed the one F166 closed. Both derivation arms
-    below used to iterate a HAND-WRITTEN tuple of paths, so neither of them was the
+    THE FILE-LEVEL HOLE, and it subsumes the earlier function-level one. Both
+    derivation arms below used to iterate a HAND-WRITTEN tuple of paths, so
+    neither of them was the
     first filter: **being listed was.** A file nobody listed was invisible to every
     arm at once, including the arm added to reach lints whose names say nothing —
     and `coverage()` cannot report a lint it never derives, so the table went on
@@ -1897,8 +1904,7 @@ def _gate_sources(script_dir=None, repo=None):
     derived `bench-hooks.render_violations`, which is a FORMATTER whose name ended in
     a reporting shape (renamed `render_budget_findings` — the name arm refuses by
     construction to excuse what it reaches, and the repair was the name), and it
-    surfaced `_ui_theme.cr_violations`, a rule with no caller outside its own suite
-    (F242).
+    surfaced `_ui_theme.cr_violations`, a rule with no caller outside its own suite.
 
     AND ONE NARROWING WAS TRIED AND MEASURED WRONG, recorded so it is not tried
     again: refusing functions that take a required argument looks right — those are
@@ -1977,8 +1983,8 @@ def gate_names(script_dir=None, repo=None):
     a guard living outside the plugin was invisible to the rule that asks whether
     it is proven AND to the rule that asks whether its row still means anything.
 
-    AND TWO ARMS, because a name is a convention and a convention is what F166 fell
-    through. A lint whose name ends in none of the shapes and sits in no list was
+    AND TWO ARMS, because a name is a convention and a convention is something a
+    lint can fall straight through. A lint whose name ends in none of the shapes and sits in no list was
     invisible to BOTH coverage rules at once - which is the same silence one level
     up: `coverage()` cannot report a lint it never derives, so the table went on
     looking complete. `walks_the_tree()` reaches those by what they DO, and
@@ -2135,7 +2141,7 @@ def case_labels(text, only_failing=False):
 def case_hits(text, target):
     """How many of a suite's cases the row's selector names.
 
-    THE OTHER END OF F63. Every verdict below keys on the selector, so the whole
+    THE OTHER END OF THE SAME GAP. Every verdict below keys on the selector, so the whole
     `RED, WRONG CASE` guarantee rests on it naming exactly one case, and until
     this counted them nothing here could tell the difference between the case
     going red and its NAMESAKE going red. `pn10` named two cases in
@@ -2246,7 +2252,7 @@ def prove(row, repo=None):
         except OSError:
             gate = ""
     finally:
-        # F165, AND THE ANSWER HERE IS THE PLAIN CALL - recorded rather than left
+        # THE ANSWER HERE IS THE PLAIN CALL - recorded rather than left
         # for the next reader to work out again, and recorded on what was MEASURED
         # rather than on where this code can run.
         #
@@ -2423,7 +2429,7 @@ def _cases(check):
           % (unanchored,),
           unanchored == [])
 
-    # F149: THE BLOCK ANCHOR, PINNED WHERE IT IS USED. A narrowing that lives in
+    # THE BLOCK ANCHOR, PINNED WHERE IT IS USED. A narrowing that lives in
     # two statements cannot be reached one line at a time, and the answer chosen
     # was a row rather than a column recording that somebody had proven it by
     # hand. Both halves are asserted, because either alone is empty: that at least
@@ -2480,12 +2486,12 @@ def _cases(check):
                "SELFTEST FAILED: 2/3 cases passed\n")
     check("c7 a row's selector is COUNTED in the suite's report, not merely "
           "found in it - two cases wearing one name make every verdict "
-          "below meaningless for that row. F63; `_harness.run()` enforces "
+          "below meaningless for that row; `_harness.run()` enforces "
           "the other half, for every suite",
           (case_hits(_report, "pn10"), case_hits(_report, "pn11"),
            case_hits(_report, "pn12")) == (2, 1, 0))
 
-    # -- naming a case that has no leading id (F74) ----------------------------
+    # -- naming a case that has no leading id ----------------------------------
     # THE FIXTURE IS A REAL SUITE'S OUTPUT, trimmed. `test__panel_viewer.py`
     # opens every label with one group tag, so the tag names every case in it and
     # the words after it are the only thing that tells them apart - which is
@@ -2497,7 +2503,7 @@ def _cases(check):
                   "SELFTEST FAILED: 1/2 cases passed\n")
     check("c8 an id selector reads the LEADING token and nothing else, so a "
           "suite whose labels open with a word or a group tag cannot be named "
-          "by one - which is F74 stated as a measurement rather than as a "
+          "by one - stated as a measurement rather than as a "
           "complaint",
           case_hits(_sentences, "resolves") == 0
           and case_hits(_sentences, "viewer:") == 2)
@@ -2568,7 +2574,7 @@ def _cases(check):
           "exits 0, so that notice means something when it appears",
           "NO SUCH LINT" not in _buf.getvalue())
 
-    # --- F166: the arm that does not read a name ------------------------------
+    # --- the arm that does not read a name ------------------------------------
     # A lint with a row in neither table and no recorded reason for having neither,
     # because its NAME matched no shape and it was in no list - so `coverage()`
     # could not report it absent and the table went on looking complete. The repair
@@ -2576,7 +2582,7 @@ def _cases(check):
     _ng_live = gate_names()
     check("ng0 THE LIVE CLAIM: the derivation reaches a lint whose name says "
           "nothing about what it is, and every row that excuses one says why. "
-          "`hand_rolled_runners` is the name F166 was about, and a version that "
+          "`hand_rolled_runners` is the name this arm exists for, and a version that "
           "lost this arm would drop it silently - `coverage()` cannot report a "
           "lint it never derives: %r" % (not_a_gate_problems(),),
           "hand_rolled_runners" in _ng_live
@@ -2665,14 +2671,14 @@ def _cases(check):
           gate_log_path("/probe/a") != gate_log_path("/probe/b")
           and os.path.basename(gate_log_path("/probe/a")) == LOG_BASENAME)
 
-    # F165: `prove()` removes its scratch with the plain call, and the reason
+    # `prove()` removes its scratch with the plain call, and the reason
     # recorded beside it is a MEASURED one - every suite a row names removes its own
     # fixtures, so no repository and nothing read-only is left under there - rather
     # than the tempting one about which platform the shell can run on, which was
     # false in both halves. What keeps that record honest is that the rule which
     # WOULD convict a careless removal already reaches this file, and that is
     # asserted here instead of left as prose nobody re-checks.
-    from _suite import unsafe_removal_violations   # the tools/ removal rule (F155)
+    from _suite import unsafe_removal_violations   # the tools/ removal rule
     _rf_self = os.path.basename(__file__)
     _rf_walked = [rel for rel, _p in _output.py_files(os.path.join(REPO, "tools"))]
     _rf_findings = [rel for rel, _p in unsafe_removal_violations()]
@@ -2683,7 +2689,7 @@ def _cases(check):
           % (_rf_self in _rf_walked, _rf_findings),
           _rf_self in _rf_walked and _rf_self not in _rf_findings)
 
-    # -- the ALLOW half, checked the same way and for the same reason (F55) -----
+    # -- the ALLOW half, checked the same way and for the same reason -----------
     _a_unanchored = []
     _a_static = []
     for row in ALLOW:

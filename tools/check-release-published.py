@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The newest published tag must have a GitHub Release, and Latest must name it.
 
-WHY THIS EXISTS (F222). The Releases page had drifted until it presented an old
+WHY THIS EXISTS. The Releases page had drifted until it presented an old
 version as Latest while the README told readers to `curl` from a much newer tag.
 Nothing was wrong with the tags: every release this project has cut carries an
 annotated `v<version>` tag, pushed, never moved. What was missing was the OTHER

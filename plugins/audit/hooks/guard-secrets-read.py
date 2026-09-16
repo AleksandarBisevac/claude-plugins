@@ -95,15 +95,15 @@ anthropics/claude-code#29709); the complete control would be a PostToolUse
 diff/worktree check (out of scope, documented in SECURITY.md).
 
 `heredocs into interpreters` used to be listed on that undecidable line and is
-not any more (F31). `python3 - <<PY` is the same capability as `python3 -c`
+not any more. `python3 - <<PY` is the same capability as `python3 -c`
 spelled differently, and it walked through because the pattern knew the spelling
 rather than the capability. A heredoc body is graded when — and only when — it
 feeds something that runs it; a body fed to anything else is DATA and leaves the
 scanned text, which is what stopped this guard refusing a commit whose message
 merely described a write.
 
-F116 IS THAT SENTENCE HAVING BEEN TRUE OF TWO BRANCHES AND WRITTEN AS IF IT WERE
-TRUE OF ALL OF THEM. The separation was spent on Rule #2's dump verb and on the
+THAT SENTENCE HELD TRUE OF TWO BRANCHES ONLY, BUT WAS WRITTEN AS IF IT HELD FOR
+ALL OF THEM. The separation was spent on Rule #2's dump verb and on the
 inline-eval arms; the shell-read arm, the echo arm, the sandbox arm and the
 shell-write arm went on reading the raw command, so one heredoc body was data for
 one branch and a command for the next. Creating a markdown file whose prose quoted
@@ -254,11 +254,11 @@ _INLINE_EVAL = re.compile(
 )
 SECRET_TOKEN_RE = re.compile(_SECRET_TOKEN, re.IGNORECASE)
 
-# How the interpreter got its program, in the words the operator used (F256). Both
-# shapes are the same CAPABILITY and are graded identically — that is F31 and it
-# stays — but a refusal that names the spelling nobody typed reads as a guard
-# firing at random, and a guard people believe fires at random is one they route
-# around. The distinction costs one word and buys the reader their own command.
+# How the interpreter got its program, in the words the operator used. Both
+# shapes are the same CAPABILITY and are graded identically, but a refusal
+# that names the spelling nobody typed reads as a guard firing at random, and
+# a guard people believe fires at random is one they route around. The
+# distinction costs one word and buys the reader their own command.
 _EVAL_SHAPE = {
     "-c": "an inline-eval one-liner (python -c / node -e / ruby/perl -e …)",
     "heredoc": ("a heredoc fed to an interpreter's stdin (python3 - <<EOF …), "
@@ -297,7 +297,7 @@ _EVAL_SHAPE = {
 #   * the RECEIVER form. `Path('x.py').write_text(...)` names its target BEFORE the
 #     call, so a pattern that only looks inside the parentheses cannot reach it
 #     however many call names it is given -- which is why adding names had not found
-#     it. F20 listed `Path.write_*` in its fix shape.
+#     it. `Path.write_*` is matched as that receiver rather than as a call name.
 #   * two-argument forms where the SECOND path is the one written. An atomic rename
 #     and a copy are edits with different spelling.
 #
@@ -308,7 +308,7 @@ _EVAL_SHAPE = {
 # reader from assuming coverage the expression can not give.
 _WRITE_CALL_EXPR = re.compile(
     r"(?:open\s*\(\s*([^,)]+?)\s*,\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
-    # F103. `(?:fs\.)?` USED TO BE OPTIONAL AROUND A BARE `write`/`append`, and
+    # `(?:fs\.)?` USED TO BE OPTIONAL AROUND A BARE `write`/`append`, and
     # nothing in any of these languages puts a path first in a call spelled that
     # way: Python's `f.write(data)` and Node's `fs.write(fd, buf)` both take the
     # PAYLOAD (or a descriptor) there, and Ruby's path-first `File.write` has its
@@ -443,7 +443,7 @@ def _resolve_write_expr(expr, bindings):
     the same side of the line `_clauses` and `split_heredocs` are on: unreadable
     input is never quietly graded as clean by INVENTING a target for it.
 
-    F103 IS THAT PARAGRAPH BEING FALSE. The body used to ask `_STRING_LITERAL`
+    THAT PARAGRAPH USED TO BE FALSE. The body used to ask `_STRING_LITERAL`
     for every literal ANYWHERE in the expression and join whatever came back, so
     a MIXED expression lost its unreadable half silently instead of returning
     None: `open(base + '/probe.json', 'w')` resolved to `/probe.json` - a
@@ -518,7 +518,7 @@ def _eval_write_targets(clause):
             out.append(target)
     return out
 # Every shape that READS a path in an interpreter body, with the path in the
-# argument position (F263). The mirror of `_WRITE_CALL_EXPR`, and it exists for the
+# argument position. The mirror of `_WRITE_CALL_EXPR`, and it exists for the
 # reason F-P-7 gives about that one: a token that merely SHARES a clause with a read
 # shape is not a read. Write modes are excluded here on purpose — `open(p, 'w')` is
 # the write arm's business, and grading it as a read would refuse creating a file
@@ -556,7 +556,7 @@ def _eval_read_targets(clause):
 
 
 # The calls that hand text to a shell. Arm 2 below grades THEIR arguments and no
-# other text in the body, which is the whole of F267: `BASH_FILE_READ` over a whole
+# other text in the body: `BASH_FILE_READ` over a whole
 # interpreter body cannot tell `subprocess.run(["cat", ".env"])` from a list of
 # example commands that runs nothing, and this repository's own test fixtures are
 # the second kind.
@@ -634,7 +634,7 @@ def _eval_reads_a_secret(clause, extras):
 
     -> the basis, in the words the refusal quotes, or None
 
-    F263, and it is a narrowing of Rule #1, so what it keeps is stated first.
+    This is a narrowing of Rule #1, so what it keeps is stated first.
     THREE WAYS TO BE A READ, and only prose falls outside all three:
 
       1. a read call NAMES the path — the definite case, resolved through one hop
@@ -643,7 +643,7 @@ def _eval_reads_a_secret(clause, extras):
          ".env"])` is a read no Python-shaped pattern would see, and
          `BASH_FILE_READ` is the same matcher the shell lane already trusts for
          that sentence. It is applied to the ARGUMENTS of such a call and to no
-         other text in the body (F267): grepping the whole body cannot tell that
+         other text in the body: grepping the whole body cannot tell that
          call from a list of example commands, and this repository's own fixtures
          for this guard are the second kind. Both users who met it — a live
          project and this repository — routed around it by writing the script to a
@@ -977,7 +977,7 @@ def _mcp_secret_target(ti, extras):
 
 
 # THE RULE ITSELF NOW LIVES IN `_config.split_heredocs`, and this file reads it
-# from there. F31 and F116 were found here, but `guard-history-rewrite` needs the
+# from there. The classification began here, but `guard-history-rewrite` needs the
 # same three-way grading before it can tell a command from a file it is writing,
 # and a hook may not import another hook. `_config` is the one module both
 # already load, so the classification has one home and the reasoning behind each
@@ -989,7 +989,7 @@ def _shell_text(cmd):
     """Only the text a SHELL parses: the command, plus heredoc bodies fed to a shell.
 
     For the rules written in shell GRAMMAR -- a read verb followed by a secret
-    path. F116: those rules used to read the raw command, so the body of
+    path. Those rules used to read the raw command, so the body of
     `cat > notes.md <<EOF` was graded as if a shell were running it, and creating
     a markdown file whose prose quoted an example command naming a key file was
     refused as "reading a secret file via shell". The operation was a write; the
@@ -1006,14 +1006,14 @@ def _shell_text(cmd):
 
 
 def _runnable_text(cmd):
-    """The command with only the spans nothing executes removed (F116).
+    """The command with only the spans nothing executes removed.
 
     Everything a machine will run in SOME language: the text, shell bodies and
     interpreter bodies. For the rules that are about a capability rather than
     about shell grammar -- echoing a token variable, reaching the environment
     layer, writing a file -- where the interpreter body is still evidence and
-    dropping it would open a hole. Only the data body leaves, which is exactly
-    F31's rule spent on the branches that never got it.
+    dropping it would open a hole. Only the data body leaves, which is the same
+    heredoc rule spent on the branches that never got it.
 
     A name in this file for `_config.runnable_text`: the view is wanted by the
     history guard too, so the join lives beside the split that feeds it.
@@ -1070,7 +1070,7 @@ def _executed_text(cmd):
     and that is why this is a fix rather than a hole.
 
     Heredocs come from `_config.split_heredocs`, which already draws this line and
-    draws it correctly (F31): a body fed to an interpreter is CODE and comes back, so
+    draws it correctly: a body fed to an interpreter is CODE and comes back, so
     `python3 - <<PY` is still judged as `python3 -c` is, and only a body fed to
     something like `git commit -F -` or `cat` leaves. Nothing about that grading
     changes here; this only spends it on one more branch.
@@ -1089,8 +1089,8 @@ def _executed_text(cmd):
 def _clauses(cmd):
     """Split a shell command into clauses on `;`, `|`, `&`, NEWLINE, outside quotes.
 
-    F209 added the newline, which is the separator a multi-line Bash block is
-    actually written with -- and its absence was this function's own documented
+    The newline was added as a separator, matching how a multi-line Bash block is
+    actually written -- and its absence was this function's own documented
     defect surviving in the one spelling nobody had tried. Measured: the two
     lines below deny together and neither denies alone, while the same two joined
     with `;` are allowed. The evidence was being taken from two different
@@ -1225,7 +1225,7 @@ def _ungoverned_write_target(targets, root, cfg):
         `../../../private/tmp/probe.py`, matched no exempt glob, was covered by
         no in_progress task, and was denied — a refusal nobody could act on,
         which is the route-around class. It is also what retired the eval arm's
-        own `/tmp` / `/private/tmp` / `/var/folders` literals (F20): the
+        own `/tmp` / `/private/tmp` / `/var/folders` literals: the
         question those spelled was never "is this a temp directory" but "is
         this my repository", and only one of the two can be answered correctly
         on a machine whose repo lives under a temp root.
@@ -1285,7 +1285,7 @@ def _eval_write_hit(graded, root, cfg):
     different grammar: `_eval_write_targets` resolves what a write CALL names,
     `_ungoverned_write_target` decides whether the plan gate has anything to say
     about it. Per clause rather than over one flattened target list, because the
-    refusal has to name the spelling the operator actually typed (F256) and only
+    refusal has to name the spelling the operator actually typed and only
     the clause knows whether it arrived as `-c` or as a heredoc body.
 
     The unestablished destinations accumulate across ALL clauses rather than
@@ -1339,13 +1339,13 @@ def _plan_gate_write_verdict(root, cfg, hit, surface):
     and the tier is `_config.plan_gate_mode` — require-plan's own resolver —
     for all three. `surface` names the spelling in the operator's words, because
     a refusal that describes a command nobody typed reads as a guard firing at
-    random (F256)."""
+    random."""
     manifest_rel = (cfg.get("manifestPath")
                     or _config.DEFAULTS["manifestPath"])
     state = _config.manifest_state(root, manifest_rel)
     mode = _config.plan_gate_mode(cfg, state)
     if mode == "deny":
-        # The refusal names its ACTUAL cause (F-F4), mirroring require-plan word
+        # The refusal names its ACTUAL cause, mirroring require-plan word
         # for word: "a phase is in_progress" was printed here even when the
         # denial came from enforce:true in an empty repo.
         knob = _config.plan_gate_knob(cfg)
@@ -1506,7 +1506,7 @@ def _append_verdict_event(root, cfg, data, verdict, msg):
     `reason` this row carries. An empty cell claims nothing; the old cell
     claimed the whole command line was a file in the repository.
 
-    AND THE SAME ROW, ONE CELL OVER, HAD THE OPPOSITE TREATMENT (F153). The Read
+    AND THE SAME ROW, ONE CELL OVER, HAD THE OPPOSITE TREATMENT. The Read
     and Grep branches interpolate the payload's path or glob into their message,
     whose first line IS this `reason`, and no reader redacts that cell — so a
     denial over a dotenv file under a home directory published the absolute path
@@ -1611,14 +1611,15 @@ def _decide_core(data, root, cfg):
 
     if tool == "Bash":
         cmd = str(ti.get("command", ""))
-        # F116. EVERY BRANCH BELOW READS A VIEW OF THE COMMAND, NEVER THE RAW TEXT,
+        # EVERY BRANCH BELOW READS A VIEW OF THE COMMAND, NEVER THE RAW TEXT,
         # and which view is the rule's own claim about what counts as evidence.
         # `_runnable_text` drops what nothing executes; `_shell_text` also drops a
         # body written in another language, because a shell READ VERB inside a
-        # Python string is a word. F31 drew this line and spent it on two branches;
-        # a heredoc creating a markdown file was still refused as a secret read by
-        # the branches that never got it, and the fix that reads as available there
-        # is to reword the prose until the guard stops objecting.
+        # Python string is a word. That line was drawn and, for a while, spent on
+        # only two branches; a heredoc creating a markdown file was still refused
+        # as a secret read by the branches that never got it, and the fix that
+        # reads as available there is to reword the prose until the guard stops
+        # objecting.
         runnable = _runnable_text(cmd)
         shell_text = _shell_text(cmd)
         # FIRST, because it is the only branch that knows the OS layer is off, and
@@ -1671,7 +1672,7 @@ def _decide_core(data, root, cfg):
             return ("block",
                     "Echoing a token/secret variable is blocked (Rule #2). "
                     "Print only a prefix (first 6 chars) + length if you must debug.")
-        # F116: SHELL text, because this rule is shell grammar - a read VERB with a
+        # SHELL text, because this rule is shell grammar - a read VERB with a
         # secret path after it. A body in another language reaches the inline-eval
         # arms below, where the token alone is enough, so nothing stops being
         # refused; what stops is `cat > notes.md <<EOF` being read as if the prose
@@ -1701,11 +1702,11 @@ def _decide_core(data, root, cfg):
         # command, a redirect in clause one plus an eval in clause two used to
         # combine into a deny neither clause earns. A single-clause command is
         # judged exactly as before (see _clauses).
-        # F31: a heredoc body is graded when, and only when, it feeds an
+        # A heredoc body is graded when, and only when, it feeds an
         # interpreter. Data bodies leave the text entirely (prose that documents
         # a write is not a write); code bodies come back as clauses of their own,
         # so `python3 - <<PY` is judged exactly as `python3 -c` is.
-        # F116 sorted those bodies by LANGUAGE for the branches above; here both
+        # Those bodies were sorted by LANGUAGE for the branches above; here both
         # kinds are code and both are graded, which is what they already were.
         _text, _code_bodies, _shell_bodies = _config.split_heredocs(cmd)
         # (clause, is it already known to be code). A heredoc body carries no
@@ -1713,8 +1714,8 @@ def _decide_core(data, root, cfg):
         # spelling -- so it arrives pre-judged rather than re-matched.
         graded = [(cl, bool(_INLINE_EVAL.search(cl)), "-c") for cl in
                   _clauses(_text)]
-        # ...and the heredoc bodies, carrying HOW they arrived (F256). Grading
-        # `python3 - <<PY` as an inline eval is deliberate and stays (F31: it is
+        # ...and the heredoc bodies, carrying HOW they arrived. Grading
+        # `python3 - <<PY` as an inline eval is deliberate and stays (it is
         # the same capability as `python3 -c`), but the refusal used to name only
         # the `-c` spelling - so an operator who typed a heredoc was told about a
         # command nobody had written, which is how a correct guard earns a
@@ -1774,7 +1775,7 @@ def _decide_core(data, root, cfg):
             refusal = _manifest_write_verdict(data, root, cfg, mhit)
             if refusal is not None:
                 return refusal
-        # F116: over what runs, not over the raw text - a `>` inside prose being
+        # Over what runs, not over the raw text - a `>` inside prose being
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.
         shell_write = _source_write_hit(runnable, root, cfg)

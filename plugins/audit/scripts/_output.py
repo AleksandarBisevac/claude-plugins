@@ -143,8 +143,8 @@ def safe_stdio():
 
 
 # --- naming a bounded set without hiding the rest -------------------------------
-# ONE renderer for every "N things: a, b, c" line this plugin prints, and F205 is
-# why it is one. `_doctor_completions` told a live client repo that four tasks were
+# ONE renderer for every "N things: a, b, c" line this plugin prints. `_doctor_completions`
+# once told a live client repo that four tasks were
 # marked done with no completion record and then named three of them. The COUNT was
 # right - it always was, which is why nothing caught it - and the EVIDENCE was the
 # truncated half, so the fourth name did not exist as far as that line was
@@ -169,7 +169,7 @@ def some_of(items, budget=None, sep=", ", render=None):
     Never silently short. The tail says how many were left out whenever anything
     was, so a count printed in front of this list and the list itself cannot
     disagree about how much of the set the reader is looking at — which is the
-    only thing F205's reader needed and could not get.
+    only thing a reader needed and could not get.
 
     `render` is how one item becomes text: `repr` for the sites that used to hand
     a bounded list straight to `%r`, `str` otherwise.
@@ -403,11 +403,11 @@ def kept_files(root, patterns, exts, drop=None):
 
 # --- which files a surface's pictures are OF ------------------------------------
 # ONE walk for the question "does this committed screenshot still show the current
-# UI", which is NOT the question the version stamp beside it answers. F85: commits
+# UI", which is NOT the question the version stamp beside it answers. Commits
 # landed under `scripts/ui/` after the last re-capture and the recorded version was
 # still current, so `_refs.screenshot_capture_drift()` was green over stale pixels.
 #
-# Pixels cannot close that. F18 settled that a PNG is comparable only on the host
+# Pixels cannot close that. A PNG is comparable only on the host
 # that wrote it - font rasterisation has no environment variable - and
 # `tools/capture-screenshots.mjs` declines three repairs by name in its own header.
 # The SOURCES can: they are committed bytes, so a digest over them is
@@ -417,7 +417,7 @@ def kept_files(root, patterns, exts, drop=None):
 # IT LIVES HERE, AT THE ANCHOR, for the same reason the kept-files walk above does:
 # two readers at two layers. `_refs` at layer 1 holds the rule, and the capture asks
 # for the same answer over a pipe. A copy in either would be the second
-# implementation of "which files" that F85's round exists to remove.
+# implementation of "which files" that this shared walk exists to remove.
 #
 # DERIVED, NEVER DECLARED. Membership comes off a part's own name, so a directory
 # added under `ui/` is covered the day it lands - and a name that answers nobody is
@@ -1246,7 +1246,7 @@ def redundant_constants(dirs=None):
 
 
 # --- a count whose own evidence was truncated ----------------------------------
-# F205's shape, and the reason it needed a lint of its own rather than an extension
+# This shape needed a lint of its own rather than an extension
 # of either prose scan. Those two read a number that nothing prints; here the number
 # IS printed, from a live source, and it is the EVIDENCE BESIDE IT that was cut. The
 # claim stayed true the whole time, which is exactly why no existing check could see
@@ -1280,8 +1280,8 @@ def _prefix_slice_keys(expr):
 
     Keyed by every name the SLICED EXPRESSION mentions and not only by the whole
     of it, because `sorted(bad)[:3]` is still a bounded slice of `bad` — one of
-    the spellings F205's siblings were written in, and the one a key built from
-    the outermost expression alone walks straight past.
+    the spellings this lint's sibling sites were written in, and the one a key
+    built from the outermost expression alone walks straight past.
 
     The upper bound may be any expression, not just a literal. A cap held in a
     variable is the same cap, and the site that first proved that is the one
@@ -1608,13 +1608,13 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
 #                51 sites when adopted, 9 already wrong.
 #   persistence  "`NAME` stayed at N", "`NAME` is still N" - a claim that a
 #                number HAS NOT CHANGED as of writing. 2 sites, BOTH wrong
-#                (`KNOWN_LAYER_DEBT` written as 17 twice against a real 1: F43,
-#                which is F39 one document over).
+#                (`KNOWN_LAYER_DEBT` written as 17 twice against a real 1,
+#                once in each of two separate documents).
 #   completeness "all N of them", "all N ... have/are" - a claim that a
 #                collection's whole is N. 2 sites beyond the first shape, BOTH
 #                wrong (48 against a real 83).
 #   ratio        "N of M <noun>" - the tally a command prints, quoted with no
-#                command beside it (F311). Adopted after reading every hit the
+#                command beside it. Adopted after reading every hit the
 #                unbounded reading produced over this whole tree: the one real
 #                claim it left was `.claude/skills/writing-css/SKILL.md`'s
 #                declaration count, and every other hit was a rendered tally or
@@ -1697,7 +1697,7 @@ def _numeral_span(w, i, small=False):
 
     `small` admits a BARE `_NUMERAL_TAILS` word - `five` standing on its own
     rather than as the tail of `twenty-five`. It is the same table read one way
-    further, which is F311's half of F59's rule: a shape added later must read
+    further, and it is what keeps the rule that a shape added later must read
     both spellings THROUGH HERE and must not grow a numeral reader of its own.
 
     IT IS OFF BY DEFAULT, AND THE DEFAULT IS THE MEASUREMENT. Switched on for
@@ -1722,7 +1722,7 @@ def _numeral_span(w, i, small=False):
 # Token sequences that assert a number has not changed AS OF WRITING. The past
 # tense of `stayed`/`remained` is not what makes them history: "it stayed at N"
 # with no anchor to a past moment means "and it is N now", which is why
-# `_deps.py`'s own F39 note classifies exactly that spelling as the defect.
+# `_deps.py`'s own persistence note classifies exactly that spelling as the defect.
 # `was still N` and `stood at N` are deliberately absent - those ARE anchored to
 # a past moment, and `pn4` pins them as writable.
 #
@@ -2007,8 +2007,8 @@ def _names_code(line):
 # not a claim about now and must stay writable. The sentence and not the line -
 # `_historical_sentences()` below carries the two directions the line got wrong.
 #
-# `measured`, `saw` and `did` were added by F311, and adding them is F76's defect
-# met one word at a time rather than a loosening. The ratio family below reads the
+# `measured`, `saw` and `did` were added later, closing a gap in past-tense
+# coverage one word at a time rather than as a wholesale loosening. The ratio family below reads the
 # spelling a measurement is USUALLY written in, so every sentence it reached that
 # was already legal was legal under CONTRIBUTING's third shape - "put it in the
 # past" - and this table could not read the past tense the tree actually writes

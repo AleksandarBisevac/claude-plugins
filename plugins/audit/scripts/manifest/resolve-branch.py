@@ -84,7 +84,7 @@ def git_user_name(git_root):
 
 
 def find_phase(manifest, phase_id):
-    """The phase `phase_id` names, through the shared resolver (F257).
+    """The phase `phase_id` names, through the shared resolver.
 
     `2`, `p2` and `P2` are one phase here because they are one phase everywhere -
     the fault this replaces was that each script answered the question its own way

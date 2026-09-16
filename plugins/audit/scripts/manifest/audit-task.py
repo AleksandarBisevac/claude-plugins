@@ -54,24 +54,24 @@ Usage:
   force). A skill literally named "null" cannot be spelled from this flag;
   no such skill exists. --tests-add and --gate repeat (one value each).
   A --tests-add value reaches `files` through the PATH it names, written as
-  "<path>: <what it asserts>" (F294); the field is free prose, so an entry
+  "<path>: <what it asserts>"; the field is free prose, so an entry
   naming no file adds nothing and the report says which entries those were
   rather than guessing a filename out of a sentence.
-  --risk, --blocked-by and --depends-on reach `scope` as well as `add`
-  (F199): the same three fields `_build_task` sets at creation, correctable
+  --risk, --blocked-by and --depends-on reach `scope` as well as `add`: the
+  same three fields `_build_task` sets at creation, correctable
   afterwards while the task has not started -- once it has, only `--files`
-  and `--tests-add` are still on offer and only as a WIDENING (F271, and
-  `_locked_scope` states why append-only is the exact operation that leaves
+  and `--tests-add` are still on offer and only as a WIDENING (`_locked_scope`
+  states why append-only is the exact operation that leaves
   a past judgement standing). They need no
   `--clear` twin -- `--blocked-by ""` empties the field, because a comma
   list of IDS has no value that reads as content the way `--gate ""` reads
   as an empty COMMAND, and `retarget --area ""` already draws that line.
-  `--description -` reads the brief off STDIN instead of off argv (F285),
+  `--description -` reads the brief off STDIN instead of off argv,
   which is where a brief goes that must reach the manifest with its
   backticks intact; a heredoc with a QUOTED word is the shell-proof form.
   A description consisting of the single character `-` cannot be spelled
   from this flag, and is not a description. Every flag in PROSE_FLAGS takes
-  that `-` and is checked the same way (F293) -- `PROSE_FLAGS` is the list,
+  that `-` and is checked the same way -- `PROSE_FLAGS` is the list,
   and it is a tuple rather than a sentence here so a flag added to it cannot
   be added to a prose enumeration nobody updates. STDIN IS ONE STREAM, so at
   most one flag per call may claim it and a call where two do is refused
@@ -99,8 +99,8 @@ Exit codes:
   2  usage: unknown/ambiguous/done/reserved phase, missing manifest, bad args,
      a `--description` off argv that a shell has already eaten part of, or a
      flag passed to a verb that does not READ it -- one parser serves every
-     verb, so argparse accepts every flag on each of them and half of those used
-     to write nothing and report success (F295). The refusal names the verb
+     verb, so argparse accepts every flag on each of them and a flag a verb
+     does not read would otherwise write nothing and report success. The refusal names the verb
      that does read it; `VERB_FLAGS` is the table and the suite derives the
      same answer off this file's call graph.
   3  the index lock is held by a LIVE run (audit-lock's standard message)
@@ -137,7 +137,7 @@ Design decisions, each mirroring a precedent rather than inventing one:
     materialize (materialization is a move; hand-minting into a reserved id
     would make it a collision).
 
-  * PHASE (F58). `add-phase` is the verb `/audit:phase add` calls, and it
+  * PHASE. `add-phase` is the verb `/audit:phase add` calls, and it
     exists because nothing else in the tree appends to `phases[]` except the
     ADO pull: `/audit:init` synthesizes a whole plan, `/audit:propose
     materialize` MOVES a parked payload, and `add` places a task inside a phase
@@ -148,7 +148,7 @@ Design decisions, each mirroring a precedent rather than inventing one:
     sequence through `_proposals.next_appended_phase_id` -- the highest `P<n>`
     plus one -- over the same live-AND-parked taken set
     `/audit:propose materialize` allocates against, sharing the set and not the
-    rule (F296, and `_allocate_phase_id` says what sharing both cost);
+    rule (`_allocate_phase_id` says what cost sharing only the set carried);
     `--outcome` is required for `--reason`'s reason (a phase whose
     success cannot be stated in a line is a phase sign-off cannot address); and
     the sharded case writes the shard the phase does not have yet plus the
@@ -163,7 +163,7 @@ Design decisions, each mirroring a precedent rather than inventing one:
     byte-for-byte and exit 1 -- this script refuses to leave an invalid
     manifest behind.
 
-  * BRIEF (F285, widened to its class by F293). A flag carrying a human's own
+  * BRIEF. A flag carrying a human's own
     words reaches this script through a shell, which eats a backtick span before
     argparse sees it -- silently, and usually taking the clause the author
     backticked BECAUSE it mattered. So each such flag also takes `-`, reading the
@@ -247,7 +247,7 @@ import _proposals             # noqa: E402  (the TAKEN SET `/audit:propose mater
 #                                            allocates against - live AND parked ids - plus
 #                                            the two rules over it. A second taken set here
 #                                            would be a second answer about which ids are
-#                                            taken; the rules differ on purpose, F296)
+#                                            taken; the rules differ on purpose)
 import _status_facts          # noqa: E402  (unmet_refs: the ONE answer to "what is this
 #                                            waiting on". A downward edge, L7 -> L2, with
 #                                            precedent at audit-status.py, _invariants.py
@@ -385,8 +385,8 @@ def _union_paths(declared, extra):
     `sorted(set(...))` would produce the same scope and a different document on
     every edit, which is a diff nobody can review.
 
-    `extra` IS ALREADY PATHS, and that is F294's division of labour: this joins
-    two lists of paths and `_tests_add_paths` below is the only thing that
+    `extra` IS ALREADY PATHS: this joins two lists of paths, and
+    `_tests_add_paths` below is the only thing that
     decides what a `tests.add` entry names. A union that also parsed would be
     the place a sentence got in.
     """
@@ -403,8 +403,8 @@ def _tests_add_paths(entries):
     """`(paths, unnamed)` -- the file each `tests.add` entry names, and every
     entry that names none.
 
-    F294. F258 unioned `tests.add` into `files` on the rule that "a tdd task
-    creates the file it names in `tests.add` by definition", and copied the WHOLE
+    `tests.add` used to be unioned into `files` on the rule that "a tdd task
+    creates the file it names in `tests.add` by definition", copying the WHOLE
     STRING to do it. The premise is false of the field: the schema documents
     `tests.add` as "Assertions/tests to author" -- free prose -- so the scope
     filled up with assertions and `fileIndex` grew keys no path can ever match.
@@ -446,7 +446,8 @@ def _unnamed_add_note(unnamed):
     ONE SENTENCE, THREE WRITE SITES. `add` and the two `scope` branches all union
     `tests.add` into `files`, so all three owe the same account of what the union
     could NOT do -- and three spellings of it is how one of them ends up silent,
-    which is the state F294 found all three in.
+    which is the state all three call sites were found in before this single
+    function existed to write the line once.
     """
     if not unnamed:
         return None
@@ -473,8 +474,8 @@ def _parse_skills(val):
     return _split_csv(val)
 
 
-# --- the brief, and the shell that may already have eaten part of it (F285) ----
-# A description is the operator's OWN WORDS (F191), and by the time argparse sees
+# --- the brief, and the shell that may already have eaten part of it ----------
+# A description is the operator's OWN WORDS, and by the time argparse sees
 # one it has already been through a shell. Inside double quotes a backtick span is
 # COMMAND SUBSTITUTION: the shell RUNS what sits between the backticks and puts its
 # output there instead, which for a sentence of prose is nothing at all. Measured
@@ -545,9 +546,9 @@ def shell_eaten_gap(text):
     return None
 
 
-# EVERY FLAG WHOSE VALUE IS THE OPERATOR'S OWN PROSE (F293). F285 fixed
-# `--description` and left the class, which is what this table is. `--reason` is the
-# sharpest of the rest: F191 made it a VERBATIM field precisely so nobody would
+# EVERY FLAG WHOSE VALUE IS THE OPERATOR'S OWN PROSE. The stdin-and-gap check above
+# started with `--description` alone and widened to cover the whole class, which is what this table is. `--reason` is the
+# sharpest of the rest: it is a VERBATIM field precisely so nobody would
 # paraphrase it, so a clause a shell deleted out of one is silent BY DESIGN -- it
 # reaches `outcome.descriptive` or a phase `summary`, and a `task.cancel` row in the
 # hash-chained journal then attests it. `--outcome` is a phase's `desiredOutcome`,
@@ -577,7 +578,7 @@ def shell_eaten_gap(text):
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
                "technical")
 
-# ...AND THE TITLE, WHICH IS NOT A FLAG AT ALL. The first draft of F293 closed the
+# ...AND THE TITLE, WHICH IS NOT A FLAG AT ALL. The check above closed the
 # class for flags and left this, which put the guard on the CORRECTION path and not
 # on the path where a title first reaches the manifest: `retarget --rename "$T"`
 # refused a run of spaces while `add-phase "$T"` and `add "$T"` wrote the same
@@ -590,9 +591,9 @@ PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
 # which is not a thing. So the door and the check follow the verb, exactly as
 # `VERB_FLAGS` does one question over.
 #
-# IT NEEDS ITS OWN LABEL. `option_dests()` leaves positionals out on purpose (an
-# F295 reason: there is no way to pass a positional to the wrong verb, so there is
-# nothing to refuse), so a message about this one cannot name a `--flag` that does
+# IT NEEDS ITS OWN LABEL. `option_dests()` leaves positionals out on purpose --
+# there is no way to pass a positional to the wrong verb, so there is
+# nothing to refuse -- so a message about this one cannot name a `--flag` that does
 # not exist -- `--title` in particular is REFUSED by argparse, and `rn4` pins that.
 PROSE_POSITIONAL = {"add": "title", "add-phase": "title"}
 _POSITIONAL_LABEL = {"title": "the <title> argument"}
@@ -617,13 +618,13 @@ def read_brief(value, flag, stream=None):
 
     ONLY THE TRAILING NEWLINES ARE DROPPED, and only those. A heredoc always ends
     in one and nobody means it as part of the brief; a trailing SPACE, by contrast,
-    is a character the operator typed, and F191 says the operator's words go into
+    is a character the operator typed, and the operator's words go into
     the manifest unchanged. That restraint is also what makes this route a real
     escape from the check above -- text that comes in this way comes in verbatim,
     so an operator whose brief genuinely holds one of the shapes has somewhere to
     put it.
 
-    `flag` RIDES EVERY MESSAGE (F293). One route now serves every flag in
+    `flag` RIDES EVERY MESSAGE. One route now serves every flag in
     `PROSE_FLAGS`, and a refusal naming `--description` to somebody who typed
     `--reason` is a refusal that sends them looking at the wrong argument.
     """
@@ -737,8 +738,8 @@ def resolve_briefs(args, out, stream=None):
 
     ONE PLACE, AND BEFORE THE LOCK. Every flag in `PROSE_FLAGS` is written
     straight into the manifest by the verb that reads it, so a check living
-    inside any one verb is a check the others do not have -- which is F285's
-    reason, applied to the class rather than to one flag. Before the lock
+    inside any one verb is a check the others do not have -- so this validates
+    the whole class in one place rather than once per flag. Before the lock
     because a call refused here must not cost a lock, a journal row or a
     rollback.
 
@@ -782,7 +783,7 @@ def resolve_briefs(args, out, stream=None):
         if not gap:
             continue
         if from_stdin:
-            # COLLECTED, NOT PRINTED, and F293 shipped the printing version:
+            # COLLECTED, NOT PRINTED -- an earlier version printed here directly:
             # this runs BEFORE dispatch and wrote three human lines to the same
             # stream the verb then writes its JSON to, so `--json` came back as
             # prose followed by an object and `json.load` raised on line 1. Every
@@ -825,7 +826,7 @@ def _gate_contradiction(args):
     answers to one question, and guessing which the caller meant is how a task
     ends up gated on a command nobody asked for. `scope` and `retarget` each
     carried their own copy of the sentence; `add` needed a third when it learned
-    to read the flag (F201), and three copies of a refusal is how one of them
+    to read the flag, and three copies of a refusal is how one of them
     eventually stops matching the other two.
 
     Every caller asks it in the SAME POSITION -- under the lock, after the target
@@ -910,7 +911,7 @@ def _readiness_lines(waiting, tid):
     return ["  ready now -- /audit:run %s" % tid]
 
 
-# --- widening a scope that has already governed something (F271) ---------------
+# --- widening a scope that has already governed something ----------------------
 # `scope` used to refuse every task that was not pending-and-never-attempted, and
 # `reference/orchestrator.md` prescribes `/audit:task scope` for the one case that
 # description excludes: the plan gate refuses a file a RUNNING task needs, the
@@ -976,10 +977,11 @@ def _started(task):
     TWO SIGNALS, EITHER ONE ENOUGH, and they are genuinely independent rather
     than one fact spelled twice. The orchestrator sets `in_progress` and
     increments `attempts` in the same step, but a task that ran, failed and was
-    put back to `pending` carries the count with no status left to show for it
-    (F190's case), and a task moved to `blocked` before its first spawn carries
+    put back to `pending` carries the count with no status left to show for it,
+    and a task moved to `blocked` before its first spawn carries
     the status with no count. Reading only the status is how the guard here was
-    written the first time, and F190 is the entry that added the other half.
+    written the first time, missing the count-only case; it now reads both
+    signals to catch it.
     """
     if not isinstance(task, dict):
         return False
@@ -1063,11 +1065,12 @@ def _rescope_refusal(tid, task, blockers):
     tail is shared because what is still on offer and what was asked for are one
     fact each, and neither depends on which head printed.
 
-    THE `attempts` SENTENCE IS KEPT VERBATIM (F190's wording). It is what
-    `commands/task.md` quotes, and it is still true of every change this arm
+    THE `attempts` SENTENCE IS KEPT VERBATIM, because `commands/task.md`
+    quotes it, and it is still true of every change this arm
     refuses -- the outcome describes work judged under the current scope, and
-    these changes would make that record describe something else. What F271
-    changed is the LAST sentence: cancel-and-re-add is no longer the only way
+    these changes would make that record describe something else. The LAST
+    sentence changed once widening became possible: cancel-and-re-add is no
+    longer the only way
     out, so a refusal that still said it was would send an operator to the
     expensive route for a change the verb now takes.
 
@@ -1081,7 +1084,7 @@ def _rescope_refusal(tid, task, blockers):
     attempt = _mio.recorded_attempt(task)
     status = (task or {}).get("status")
     if status == "done":
-        # F283's THIRD HEAD. A done task is not running and may have no attempt
+        # A THIRD HEAD FOR THE SETTLED CASE. A done task is not running and may have no attempt
         # recorded, so both heads below say something false about it - one would
         # claim a gate is matching edits nobody is making, the other needs a
         # number this task may not carry. What is true of it is the grading: its
@@ -1375,7 +1378,7 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
         new_stub, body = _new_stub_and_body(body, _shard_rel_dir(raw_index))
         stub = new_stub
         index_dirty = True
-    # F288. THE STUB IS A COPY, AND A COPY NOTHING REFRESHES GOES STALE. Until
+    # THE STUB IS A COPY, AND A COPY NOTHING REFRESHES GOES STALE. Until
     # `retarget --rename` existed no verb could change a mirrored key after the
     # split, so nothing here ever had to look. Measured on a sharded fixture the
     # moment one could: the shard carried the new title while the index went on
@@ -1453,7 +1456,7 @@ def _journal_row(project, config, mpath, action, summary, details):
     be seen from the row that was written; both are the reason the builder is
     shared rather than the shape being restated a third time for `add-phase`.
 
-    THE APPEND IS `append_from_cli` (F287). `/audit:task` is run from Bash, and
+    THE APPEND IS `append_from_cli`. `/audit:task` is run from Bash, and
     the journal file its append dirties was reported by `guard-bash-writes` as a
     shell write into the append-only trail on the next Bash command -- there was
     no claim on it, because the only writers that filed one were the hook (under
@@ -1529,7 +1532,7 @@ def _journal_scope(project, config, mpath, task_id, phase_id, changes, task):
     the allow-list would drop in silence. `_journal_phase_add`'s note says what
     that costs: a field written, dropped, and believed.
 
-    `attempt` IS A NEW KEY ON THAT ALLOW-LIST (F271), and it passes the three
+    `attempt` IS A NEW KEY ON THAT ALLOW-LIST, and it passes the three
     tests the list states beside itself. It names a FIELD OF THE PLAN --
     `task.attempts` is a manifest key, not something the plugin observed about
     the machine; it is bounded like every other value; and it exposes nothing
@@ -1624,7 +1627,7 @@ def _waiting_on(assembled, node):
     """What `node` is still waiting on -- `_status_facts.unmet_refs`' answer for
     its id, looked up rather than recomputed.
 
-    F275. THIS WAS A THIRD COPY OF THE READINESS RULE, AND IT WAS THE ONE THAT
+    THIS WAS A THIRD COPY OF THE READINESS RULE, AND IT WAS THE ONE THAT
     HAD GONE WRONG. It read `blockedBy + dependsOn` off the TASK and stopped
     there, while `reference/orchestrator.md`'s rule has FOUR terms and the fourth
     is the owning PHASE's `blockedBy` -- which no task dict carries and which
@@ -1657,7 +1660,7 @@ def _gate_entry_paths(entry):
 
     THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
     token instead of the leading one. `_rules.tests_add_path` is the ONE answer
-    to "does this string name a file" (F294), and a gate entry is the other
+    to "does this string name a file", and a gate entry is the other
     place a path has to be recognized inside free text -- a second spelling of
     the filename bound would be two opinions about the same token, and the one
     that drifted would either miss a suite or read `--selectProjects` as a path.
@@ -1786,10 +1789,12 @@ def _task_gate(args, phase, assembled, add_paths, files):
     if args.gate:
         return list(args.gate), "from --gate", "declared"
     if args.gate_clear:
-        # F201. The flag is defined globally, so argparse ACCEPTED it here and
+        # THIS USED TO BE ACCEPTED AND IGNORED. The flag is defined globally, so
+        # argparse ACCEPTED it here and
         # nothing read it: `add --gate-clear` reported success and wrote the
-        # phase's `testGate` anyway. A flag accepted and ignored is the defect
-        # F196 was one verb over -- the operator is told the call succeeded and
+        # phase's `testGate` anyway. A flag accepted and ignored is a defect this
+        # repo has already hit on other verbs for other flags of the same shape --
+        # the operator is told the call succeeded and
         # the value they asked for is not there. The empty gate is a designed
         # state (`_phase_gate`, and `scope --gate-clear` for a task that already
         # exists); creation is where a gate is derived at all, so it is the one
@@ -1854,14 +1859,14 @@ def _build_task(task_id, title, args, phase, assembled):
         "status": "pending",
         "description": args.description or "",
         # `tests.add` IS PART OF `files`, and keeping them apart cost a real run 13
-        # hand-fixes (F258). A task that names a file in `tests.add` creates it, so a
+        # hand-fixes. A task that names a file in `tests.add` creates it, so a
         # scope that excludes it trips commit-scope on the task's own commit — and the
         # operator who reported it put it plainly: there is no case where the
         # divergence is wanted. Unioned rather than replaced, and the declared order
         # is kept, so a reader still sees what the author typed first.
         #
-        # THE PATH THE ENTRY NAMES, NEVER THE ENTRY (F294). F258's rule said "the file
-        # it names in `tests.add` BY DEFINITION", and the field is free prose, so what
+        # THE PATH THE ENTRY NAMES, NEVER THE ENTRY. An earlier version of this union
+        # said "the file it names in `tests.add` BY DEFINITION", and the field is free prose, so what
         # the union copied was usually a sentence: `files` filled with assertions and
         # the permission this union exists to grant was never granted. An entry that
         # names nothing contributes nothing and is reported instead.
@@ -1935,7 +1940,7 @@ def _locked_add(args, project, config, mpath, title, out):
         return phase
     phase_id = phase.get("id")
 
-    # F201: `add` reads `--gate-clear` now, so it owes the same refusal the other
+    # `add` reads `--gate-clear` now, so it owes the same refusal the other
     # two verbs give -- asked HERE, in their position: after the target is
     # resolved and before the first mutation.
     contradiction = _gate_contradiction(args)
@@ -2009,7 +2014,7 @@ def _locked_add(args, project, config, mpath, title, out):
                   # with `--verbose`, and this reader cannot.
                   "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "filesNotOnDisk": missing,
-                  # F294, as data: WHICH `tests.add` entries the `files` union
+                  # THE SAME ACCOUNT AS DATA: WHICH `tests.add` entries the `files` union
                   # could not carry. A machine surface that reported only the
                   # resulting `files` would show a scope with nothing wrong
                   # with it and no way to tell that a case file is outside it.
@@ -2037,7 +2042,7 @@ def _locked_add(args, project, config, mpath, title, out):
         % (", ".join(task["tests"]["gate"]) if task["tests"]["gate"]
            else "none", gate_basis))
     if task["tests"]["mode"] == "tdd" and not task["tests"]["add"]:
-        # F254, said HERE as well as by the validator, and the reason is when. A
+        # SAID HERE AS WELL AS BY THE VALIDATOR, and the reason is when. A
         # live run created two tdd tasks with no case named, and the operator only
         # noticed later — by which point the plan was written and the work was
         # being handed to an executor told to prove a red first with nothing to
@@ -2597,7 +2602,7 @@ def _locked_start(args, project, config, mpath, tid, out):
 
 
 # --- done: the close the record is made of ---------------------------------------
-# P43.2. `start` gave the promotion a verb and the close still had none, so
+# `start` gave the promotion a verb and the close still had none, so
 # `reference/orchestrator.md`'s step 4 stayed two hand Edits: 4b's status and
 # completion stamp, 4c's SHA. Measured here: one run wrote a task's completion into
 # the phase shard AND the manifest index, a later `git reset --hard` reverted the
@@ -3029,7 +3034,7 @@ def _locked_done(args, project, config, mpath, tid, out):
 
 
 # --- add-phase: one more phase in a plan that already exists ---------------------
-# F58. Everything that WROTE a phase before this verb wrote a whole plan or moved
+# Everything that WROTE a phase before this verb wrote a whole plan or moved
 # one that had already been written somewhere else, so "I have a live plan and a
 # new body of work" was the one shape with no command behind it -- and it is the
 # shape every plan reaches once its first round is finished.
@@ -3039,14 +3044,15 @@ def _allocate_phase_id(assembled):
     """The highest `P<n>` in use plus one, over live ids AND every parked
     reservation.
 
-    ONE TAKEN SET, TWO RULES, and F58's comment above was right about the first
+    ONE TAKEN SET, TWO RULES, and the comment above was right about the first
     half and wrong about the second. `live_ids | parked_ids` is the SAME pair
     `/audit:propose materialize` allocates against, because a second expression
     of "which phase ids are taken" would eventually hand this verb an id
     materialization had already promised to a payload. But the RULE over that
     set is `next_appended_phase_id` and not materialize's
     `next_phase_id`: filling a gap is harmless when re-placing a payload whose
-    id collided, and F296 is what it cost here. Measured on a copy of this
+    id collided, and reusing that same rule here is what produced the wrong ids
+    below. Measured on a copy of this
     repository's own plan, consecutive calls to this verb returned `P0`, then
     `P30`, then `P32` -- and `P30` at that moment named four live branches and
     two merges into `main`, which `meta.branch` would have derived again from
@@ -3104,8 +3110,8 @@ def _phase_gate(args, assembled):
     EMPTY gate is the answer that needs one: a phase nothing can prove done is
     a phase sign-off signs on review alone, and the reader has to be told which
     of the two reasons produced it."""
-    # F207. `--gate-clear` reaches the EMPTY gate here too, and this was the third
-    # verb of the same shape after F196 (`scope`) and F201 (`add`): the flag is
+    # `--gate-clear` reaches the EMPTY gate here too, and this was the third
+    # verb of the same shape after `scope` and `add`: the flag is
     # defined on the global parser, so argparse accepted it and this resolver
     # never looked -- the new phase inherited `meta.buildCommands` while the caller
     # was told the call succeeded. Measured: `--gate-clear` alone wrote `["lint"]`.
@@ -3114,10 +3120,10 @@ def _phase_gate(args, assembled):
     # is what makes it a different answer from the two empty cases below: those say
     # nothing here CAN prove the phase done, this says the caller decided nothing
     # should.
-    # F207. `--gate-clear` was advertised on this verb, accepted by the shared
+    # `--gate-clear` was advertised on this verb, accepted by the shared
     # parser and then never read here, so it silently left the gate at its
-    # default -- the third verb of that exact shape after `scope` (F196) and
-    # `add` (F201). Spelled `args.gate_clear` rather than `getattr(args, ...)`:
+    # default -- the third verb of that exact shape after `scope` and
+    # `add`. Spelled `args.gate_clear` rather than `getattr(args, ...)`:
     # the flag is `store_true` on the shared parser, so the attribute always
     # exists and the defensive form only hides a real `AttributeError` if the
     # parser ever stops declaring it.
@@ -3198,7 +3204,7 @@ def _locked_phase_add(args, project, config, mpath, title, out):
             out("FINDING: " + line)
         return E_INVALID
 
-    # F207, and the reason this arrived only now: while `--gate-clear` was inert
+    # The reason this arrived only now: while `--gate-clear` was inert
     # here, refusing the pair would have reported a conflict between a flag that
     # works and a flag that does nothing -- theatre. The clear is live above, so
     # the pair is a real contradiction and gets the same sentence, in the same
@@ -3365,7 +3371,7 @@ def cmd_phase_add(args, out):
 def _locked_scope(args, project, config, mpath, tid, out):
     """Give an unscoped task its `files` (and optionally its tests), under lock.
 
-    F189. `pull sprint` imports tasks with `files: []` and a description telling
+    `pull sprint` imports tasks with `files: []` and a description telling
     the reader to "scope files/tests before running" -- and no verb could. `add`
     creates, `cancel` closes, `move` relocates, `priority` ranks a phase; none of
     them edits a task, and the panel's composition card reaches `skills` and
@@ -3378,7 +3384,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     phase ran with its central guard inert -- not failing, because it had nothing
     to match. Measured live before this existed.
 
-    SETTLED WORK ONLY IS REFUSED OUTRIGHT (F271). A `done` or `cancelled` task
+    SETTLED WORK ONLY IS REFUSED OUTRIGHT. A `done` or `cancelled` task
     has a scope its commit was graded against and its sign-off accepted, and
     nothing this verb could write to it would describe the run that happened.
     Everything short of that -- `pending`, `in_progress`, `blocked`, with or
@@ -3388,7 +3394,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     other field may move at all.
 
     THE OLD RULE WAS NOT WRONG, IT WAS TOO WIDE, and its own reason is what
-    narrows it. F190 refused a started task because an `outcome` describes work
+    narrows it. It refused a started task because an `outcome` describes work
     judged under the OLD scope, so rescoping would make that record describe
     something else. A widening cannot: `_invariants.commit_scope` grades a
     recorded commit against the task's CURRENT `files`, so growing that list can
@@ -3417,7 +3423,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     each time was hand-editing the shard and the index under the lock, which is
     the operation this verb exists to replace.
 
-    THE EMPTY GATE NEEDS ITS OWN FLAG HERE TOO (F196), for a reason that is NOT
+    THE EMPTY GATE NEEDS ITS OWN FLAG HERE TOO, for a reason that is NOT
     `retarget`'s. That verb appends to `testGate`, so the append itself left the
     empty gate unspellable; this one REPLACES `tests.gate` outright. The gap is
     in the values: no `--gate` VALUE says "none" - `--gate ""` writes a gate
@@ -3428,7 +3434,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     the state the phase had just reached were a rescope mid-run or the hand edit
     `commands/task.md` forbids.
 
-    RISK, BLOCKEDBY AND DEPENDSON REACH IT TOO (F199), and they were the three
+    RISK, BLOCKEDBY AND DEPENDSON REACH IT TOO, and they were the three
     fields of the new-task template that NOTHING could correct: `add` sets them,
     the panel's composition card reaches `model` and `skills` instead, and this
     verb reached the other five. Measured live: a task filed
@@ -3476,7 +3482,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out("[audit-task] scope takes a TASK id; %r is %s"
             % (tid, "not in this manifest" if kind is None else "a " + kind))
         return E_USAGE
-    # F283. `cancelled` IS SETTLED; `done` IS NOT, AND THE DIFFERENCE WAS
+    # `cancelled` IS SETTLED; `done` IS NOT, AND THE DIFFERENCE WAS
     # MEASURED RATHER THAN REASONED. This refusal used to cover `_mio.TERMINAL`
     # whole, which made the plugin contradict itself out loud: at sign-off
     # `_invariants.manifest_revalidated` prints, as its own repair,
@@ -3507,7 +3513,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
             "settle and no run for a wider list to describe. Add the work as a "
             "new task." % (tid,))
         return E_USAGE
-    # F190. STATUS IS NOT THE WHOLE TEST, and it is not the whole test in the
+    # STATUS IS NOT THE WHOLE TEST, and it is not the whole test in the
     # other direction either: a task that ran, failed and was put back to
     # `pending` still carries `attempts` and an `outcome` describing work judged
     # under its OLD scope, while an `in_progress` task with no attempt recorded
@@ -3531,7 +3537,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # `is None` for the two ID-LIST flags and not truthiness, because an EMPTY
     # value of either is an instruction rather than an absence: `--depends-on ""`
     # is how the field is emptied, which is `retarget --area ""`'s spelling and
-    # the reason F199 needed no `--depends-on-clear` twin.
+    # the reason this flag needed no `--depends-on-clear` twin.
     if not files and args.tests_mode is None and not args.tests_add \
             and not args.gate and not args.gate_clear and not args.description \
             and args.risk is None and args.blocked_by is None \
@@ -3543,7 +3549,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         return E_USAGE
 
     was_files = list(node.get("files") or [])
-    # F197. READ BEFORE ANY WRITE, and that ordering IS the repair rather than a
+    # READ BEFORE ANY WRITE, and that ordering IS the repair rather than a
     # tidier spelling: the `tests.add` and `tests.gate` branches below write the
     # field first and append the journal row second, so reading it inside the
     # branch would read back the value just written and record `from == to`. Both
@@ -3554,7 +3560,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     prior_tests = prior_tests if isinstance(prior_tests, dict) else {}
     was_gate = list(prior_tests.get("gate") or [])
     was_add = list(prior_tests.get("add") or [])
-    # F294, computed here rather than in each branch below because BOTH of them
+    # Computed here rather than in each branch below because BOTH of them
     # union `tests.add` into `files` and the note they owe is one note.
     #
     # OVER THE ENTRIES THIS CALL ACTUALLY CONSULTS, which is not the same as "the
@@ -3577,8 +3583,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
     unnamed_add = _tests_add_paths(consulted)[1]
     changes = []
     if files:
-        # `files` ⊇ the paths `tests.add` NAMES is an invariant, not a courtesy at
-        # creation (F258, narrowed by F294). `--files` REPLACES the list, so without
+        # `files` ⊇ the paths `tests.add` NAMES is an invariant, not a courtesy,
+        # at creation too. `--files` REPLACES the list, so without
         # this a later re-scope silently released the very case file the task is
         # still declared to create, and the next commit tripped commit-scope for a
         # scope the operator had just fixed. The task's CURRENT `add` is used,
@@ -3586,7 +3592,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
         # there -- and only the PATH each entry names is carried, since the field is
         # free prose and copying a sentence in grants no permission at all.
         files = _union_paths(files, _tests_add_paths(was_add)[0])
-        # F202. F197's class one field over, and not named by that entry: the row
+        # THE SAME READ-BEFORE-WRITE CLASS ONE FIELD OVER, and not named by that
+        # entry: the row
         # went in under a bare `if files:`, so re-scoping to the list the task
         # already held printed and journaled `files: [...] -> [...]`. The chain
         # verifies and the row attests a change that never happened, which is what
@@ -3596,7 +3603,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "files",
                             "from": was_files, "to": files})
         node["files"] = files
-    # F208. THE `tests` OBJECT IS MATERIALIZED ONLY IF SOMETHING WRITES INTO IT.
+    # THE `tests` OBJECT IS MATERIALIZED ONLY IF SOMETHING WRITES INTO IT.
     # It used to be created unconditionally, so `scope --files` alone left
     # `tests: {}` behind -- and an ABSENT `tests` is legal while one present
     # without a `mode` is not (`_manifest_phases.py`). The rollback held, so no
@@ -3638,12 +3645,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "tests.add",
                             "from": was_add, "to": now_add})
         tests["add"] = now_add
-        # ...and into `files` here too (F258), for `_build_task`'s reason: a case
+        # ...and into `files` here too, for `_build_task`'s reason: a case
         # whose PATH `tests.add` names is a file this task creates, and a scope that
         # omits it fails the task's own commit. `scope` is the verb an operator
         # reaches for when reality differed from the plan, so it is the LAST place
         # that should hand back a scope it knows to be short -- which is exactly
-        # what F294 made it do, since a sentence unioned in is not the path
+        # what unioning the whole entry, rather than just its path, used to do,
+        # since a sentence unioned in is not the path
         # `commit_scope` will be looking for.
         was_files = list(node.get("files") or [])
         now_files = _union_paths(was_files, _tests_add_paths(now_add)[0])
@@ -3709,7 +3717,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out("[audit-task] %s already reads that way -- nothing written" % (tid,))
         return 0
 
-    # F271's guard, and it is placed HERE for two reasons that both come from
+    # THE WIDENING GUARD, and it is placed HERE for two reasons that both come from
     # what it grades. It asks about the CHANGE and not about the flags, so it
     # needs `changes` -- which is also what makes `--risk med` on a task already
     # at `med` a no-op above rather than a refusal, since a field that does not
@@ -3748,7 +3756,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         if tid not in entry:
             entry.append(tid)
 
-    # F197's adjacent half. The report line below used to print unconditionally,
+    # THE READ-BEFORE-WRITE FIX'S ADJACENT HALF. The report line below used to print unconditionally,
     # including when `--files` was absent and the re-derivation was a no-op over
     # an unchanged list - read live it said work had been dropped when none had.
     # These two ARE the derivation's outcome: `fidx` gains a row for every path
@@ -3782,7 +3790,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         return E_INVALID
 
     jres = _journal_scope(project, config, mpath, tid, phase_id, changes, node)
-    # F199's payoff, and the reason it is computed unconditionally: the live case
+    # THE PAYOFF FOR COMPUTING READINESS HERE, and the reason it is computed unconditionally: the live case
     # was a task parked behind a `dependsOn` id, rescoped precisely so it could
     # run. "Can it run now" is the question that call was asking.
     waiting = _waiting_on(assembled, node)
@@ -3805,7 +3813,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
                   "widened": widened,
                   "gateChanged": gate_changed,
                   "attempt": _mio.recorded_attempt(node),
-                  # F294's basis, on this surface too: `changes` shows the
+                  # THE SAME BASIS, on this surface too: `changes` shows the
                   # `files` list that resulted, and nothing in it says a case
                   # file the task declares is outside it.
                   "testsAddNamingNoFile": list(unnamed_add),
@@ -3820,7 +3828,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
     if widened:
-        # THE BASIS FOR AN ACCEPTANCE THAT USED TO BE A REFUSAL (F271). A reader
+        # THE BASIS FOR AN ACCEPTANCE THAT USED TO BE A REFUSAL. A reader
         # of this transcript has to be able to tell a scope written BEFORE the
         # work from one written DURING it, because the two say different things
         # about every record already carrying this task's id -- and the report
@@ -3918,7 +3926,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
 def _locked_retarget(args, project, config, mpath, pid, out):
     """Correct a phase's gate, area, outcome or description, under lock.
 
-    F190, and it is the half `scope` does not reach. `pull sprint` and `init`
+    THIS VERB EXISTS FOR THE HALF `scope` DOES NOT REACH. `pull sprint` and `init`
     synthesize a phase and choose its `testGate`; from that moment the choice is
     unreachable, and one wrong choice is enough to make the phase unable to pass
     its own sign-off. Measured live: an imported phase got `testGate: ["lint"]`,
@@ -3966,7 +3974,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             "attested" % (pid, node.get("status")))
         return E_USAGE
 
-    # F288. A TITLE IS NOT A LABEL HERE, and that is why the rename has a guard
+    # A TITLE IS NOT A LABEL HERE, and that is why the rename has a guard
     # rather than being a free field. `_branch.slugify`'s own docstring is
     # "phase.title -> the `{slug}` segment", composed into
     # "<prefix>/{phase}-{slug}" - so before a phase enters, its title decides
@@ -4414,13 +4422,14 @@ def cmd_seed(args, out):
                        must_exist=False)
 
 
-# --- which verb reads which flag (F295) ------------------------------------------
+# --- which verb reads which flag -------------------------------------------------
 # ONE PARSER SERVES EVERY VERB, so argparse accepts every flag on every one of them
 # and each verb's writer reads only the subset it knows. Driven across the whole
 # grid, half the (verb, flag) pairs were accepted, wrote nothing and reported
 # success with exit 0: `scope --outcome`, `retarget --files`, `add --id`,
-# `add-phase --risk`, `add-phase --files` among them. That is the same defect F196,
-# F201 and F207 each fixed for ONE flag on ONE verb -- and `--rename` was born
+# `add-phase --risk`, `add-phase --files` among them. That is the same defect
+# fixed before, each time for ONE flag on ONE verb -- and `--rename`
+# was born
 # ignored by four verbs, which is what makes it a class: a new flag inherits it by
 # existing.
 #
@@ -4466,7 +4475,7 @@ VERB_FLAGS = {
     # EMPTY ON PURPOSE, and it is a row rather than an omission: `start` takes
     # an id and writes the three fields `reference/orchestrator.md` prescribes,
     # so every flag on this parser except the universal ones belongs to some
-    # other verb and passing one here is the F295 usage error. A verb ABSENT
+    # other verb and passing one here is a usage error. A verb ABSENT
     # from this table would instead be refused every flag including the
     # universal ones, and `vf6` grades the row against the real dispatch either
     # way.
@@ -4518,7 +4527,7 @@ def build_parser():
     p.add_argument("--blocked-by", dest="blocked_by", default=None)
     p.add_argument("--depends-on", dest="depends_on", default=None)
     p.add_argument("--description", default="")
-    # F288. `retarget --rename "<new title>"`. Not `--title`: this verb's
+    # `retarget --rename "<new title>"`. Not `--title`: this verb's
     # POSITIONAL slot is called `title` and carries the phase id, so the flag
     # would shadow it. A phase title is not decoration - `_branch.slugify` turns
     # it into the branch's `{slug}` - which is why it is corrected through a verb
@@ -4667,9 +4676,8 @@ def misplaced_flag_refusal(verb, supplied, flags=None):
     for its own broken state is how a table stops meaning anything.
 
     NAMED AS WHAT IT IS. This paragraph and the message below both used to cite
-    a `verb_flag_drift()` that was never written, which is F298's exact class:
-    a comment naming a function, read as a promise that something checks this,
-    with nothing behind it.
+    a `verb_flag_drift()` that was never written -- a comment naming a function,
+    read as a promise that something checks this, with nothing behind it.
     """
     flags = flags if flags is not None else option_dests()
     known = set(VERB_FLAGS.get(verb) or ()) | set(UNIVERSAL_FLAGS)
@@ -4701,7 +4709,7 @@ def main(argv, out=print):
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
-    # F295, and it comes FIRST because it is the cheapest true thing that can be
+    # This check comes FIRST because it is the cheapest true thing that can be
     # said about this call: a flag the verb does not read is a usage error whatever
     # its value, and asking about the VALUE of a flag nothing will read would be
     # grading input that has no reader.
@@ -4718,8 +4726,8 @@ def main(argv, out=print):
     if misplaced:
         out(misplaced)
         return E_USAGE
-    # F285 widened to its class by F293: every flag carrying the operator's own
-    # prose, for the verbs that read it. It used to run for every verb on the
+    # THE PROSE-GAP CHECK, WIDENED TO ITS WHOLE CLASS: every flag carrying the
+    # operator's own prose, for the verbs that read it. It used to run for every verb on the
     # argument that a caller passing `--description` to `cancel` should not be told
     # a different story about the same flag by a different verb -- and the story
     # they are told now is the true one, from the check above, which is that the

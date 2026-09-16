@@ -176,8 +176,8 @@ def _cases(check):
     def plant_plan(project_dir):
         """A manifest that exists with nothing running — the middle rung.
 
-        F52 graded the plan-coverage class on `plan_gate_mode`, so a fixture with
-        no manifest is now on the observe rung and reports nothing. The (f) and
+        The plan-coverage class is graded on `plan_gate_mode`, so a fixture with
+        no manifest is on the observe rung and reports nothing. The (f) and
         (h) fixtures below are about REAL git integration and nested-gitRoot path
         handling, and neither can be proven by a silence that the grading would
         produce whatever git did. They opt in, so their subject is still theirs.
@@ -203,7 +203,7 @@ def _cases(check):
 
     # (a) a bash-only new source file → warn once, then stays silent
     #
-    # The plan is planted first because F52 graded the plan-coverage class: with
+    # The plan is planted first because the plan-coverage class is graded: with
     # no manifest this fixture is on the observe rung and every case here would
     # pass through silence, testing nothing. The (gr) group owns that rung.
     plant_plan(tmp)
@@ -371,7 +371,7 @@ def _cases(check):
           "silent", payload("Bash", sid="bw-j5"),
           dirty=["docs/audit/journal-notes/why.md"])
 
-    # (k) F-F3: the plugin's OWN journal append lands in git status too, and it
+    # (k) The plugin's OWN journal append lands in git status too, and it
     # used to be blamed on the next shell command -- journal-writes appends a
     # row at PostToolUse, the journal file goes dirty, and the next Bash pass
     # reported "That shell command wrote into the append-only audit journal"
@@ -440,7 +440,7 @@ def _cases(check):
     finally:
         os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
 
-    # (pw) F104: THE PANEL IS THE PLUGIN'S OTHER JOURNAL WRITER, and the guard
+    # (pw) THE PANEL IS THE PLUGIN'S OTHER JOURNAL WRITER, and the guard
     # could not name it. The panel server is a detached process this plugin
     # launched and invites every user to run; it appends rows of its own, and the
     # per-session sidecar the (k) group covers can never name them, because the
@@ -509,7 +509,7 @@ def _cases(check):
           "replacing the other would satisfy pw1 and pw2 and lose the case the "
           "(k) group is about", _pw_both, _pw_detail)
 
-    # (cw) F287: THE PLUGIN'S OWN CLI SCRIPTS ARE THE WRITER THIS GUARD WENT ON
+    # (cw) THE PLUGIN'S OWN CLI SCRIPTS ARE THE WRITER THIS GUARD WENT ON
     # FLAGGING. Reported from a live project: `commit-audit-state.py` ran, the
     # journal file it appended to went dirty, and the NEXT Bash command drew "that
     # shell command wrote into the append-only audit journal ... an edit tool would
@@ -557,10 +557,11 @@ def _cases(check):
                                 cfg=cwcfg, state_dir=cwsd, dirty=[_cwother])
         _cw_other = _cwv2 == "warn" and "append-only audit journal" in _cwd2
         # EVERY SLOT, not one instead of another: a reader that swapped the panel's
-        # key for the CLI's would satisfy cw1 and cw2 and silently drop F104, and
-        # one that swapped the session's would drop F-F3. Each claim is left by the
-        # REAL function that files it for that writer, on a path of its own, so the
-        # three cannot collapse into one row's file.
+        # key for the CLI's would satisfy cw1 and cw2 and silently drop the panel's
+        # own claim, and one that swapped the session's key would drop the session
+        # hook's sidecar claim. Each claim is left by the REAL function that files
+        # it for that writer, on a path of its own, so the three cannot collapse
+        # into one row's file.
         _jw3 = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
                             modname="journal_writes_for_cw", cache=False)
         _cwsess = str(cwproj / "docs" / "audit" / "journal" / "2026-08.sess.jsonl")
@@ -706,7 +707,7 @@ def _cases(check):
         verdict, detail = M.decide(data, cfg=cfg_nested, state_dir=sd)
         # project-relative path is gitRoot-prefixed: sub/src/shellmade.ts
         ok = verdict == "warn" and "sub/src/shellmade.ts" in detail
-        # F84 asks git which tree a command ran in, from the command's own cwd,
+        # This asks git which tree a command ran in, from the command's own cwd,
         # and `gitRoot` is what that REFINES rather than replaces. h1 covers the
         # cwd git cannot answer for at all (the project dir is not a repo, so the
         # declaration stands); this covers the cwd it CAN answer for - a
@@ -734,7 +735,7 @@ def _cases(check):
           "watched tree, so the monorepo write is still reported - gitRoot is "
           "refined by git's answer, never replaced by it", ok_h2, _detail_h)
 
-    # (wt) F84: WHICH TREE DID THE COMMAND RUN IN. `_config.repo_root` answers
+    # (wt) WHICH TREE DID THE COMMAND RUN IN. `_config.repo_root` answers
     # where the CONFIG lives, and CLAUDE_PROJECT_DIR wins there on purpose - a
     # worktree should not need its own copy of the project's config. It stays
     # pinned to the primary checkout while an agent works inside a git worktree,
@@ -848,7 +849,7 @@ def _cases(check):
         _wt("bw-wt4", wta)
         _v4, _d4 = _wt("bw-wt4", wtsep)
         _wt_sep = _v4 == "warn" and "separate git repository" in _d4
-        # F212. THE PAYLOAD'S cwd IS THE SESSION'S DIRECTORY, NOT THE SHELL'S.
+        # THE PAYLOAD'S cwd IS THE SESSION'S DIRECTORY, NOT THE SHELL'S.
         # `command_tree` reads it and short-circuits on an equal path without
         # asking git at all, so a command that walks into another tree INSIDE ONE
         # CALL - `cd <worktree> && <writer>` - is placed in the watched tree and
@@ -944,7 +945,7 @@ def _cases(check):
     check("wt6 an unrelated checkout is called a separate repository, not a "
           "worktree - the branch `--git-common-dir` decides",
           _wt_sep, _detail_wt)
-    check("wt7 F212: a command that WALKS into another tree inside one call is "
+    check("wt7 a command that WALKS into another tree inside one call is "
           "not blamed for the watched tree's dirt either - the payload's cwd is "
           "the session's directory, not the shell's, so the `cd` is the evidence",
           _cd_out, _detail_wt)
@@ -1215,7 +1216,7 @@ def _cases(check):
     # THE WITHDRAWAL THAT OUTRANKS IT. A command that moved the shell somewhere
     # this guard cannot place has no established location, so a destination
     # resolved against the session's directory means nothing - the claim stays
-    # off, which is the property F212 bought.
+    # off, which is the property this withdrawal buys.
     s = "bw-named3"
     seed(s)
     _v_m, _d_m = M.decide(payload("Bash", sid=s,
@@ -1573,7 +1574,7 @@ def _cases(check):
     s = "bw-os2b"
     seed(s, state_dir=osd)
     _same = _other("sess-tied", tool_edited=["src/tied.ts"])
-    # TIED TO THIS WRITER'S OWN LAST LOOK, not to the file's mtime (F230). Those
+    # TIED TO THIS WRITER'S OWN LAST LOOK, not to the file's mtime. Those
     # were the same value while the window came from the shared file; they are not
     # any more, and that difference IS the fix — the file's mtime moves when any
     # agent of this session passes, and the boundary must not. The property the
@@ -1595,9 +1596,10 @@ def _cases(check):
           and "CANNOT say the command wrote them" not in _d2b,
           repr((_v2b, _d2b)))
 
-    # --- F230: a PEER AGENT's pass must not move a PEER SESSION's window --------
-    # The residue F227's fix could not reach. Every agent of one session rewrites
-    # the one state file, so while `since` came from that file's mtime, one agent
+    # --- A PEER AGENT's pass must not move a PEER SESSION's window --------------
+    # The residue giving every writer its own position could not reach. Every
+    # agent of one session rewrites the one state file, so while `since` came
+    # from that file's mtime, one agent
     # passing moved the boundary for all of them: a sibling session that had
     # plainly acted inside the window fell outside it, its claim was dropped, and
     # the path was reported instead. The cost was noise rather than a false
@@ -1627,7 +1629,7 @@ def _cases(check):
 
     _f230_solo = _peer_window(False)
     _f230_peer = _peer_window(True)
-    check("os2c F230: a peer SESSION's claim is honoured whether or not a peer "
+    check("os2c a peer SESSION's claim is honoured whether or not a peer "
           "AGENT of my session passed in between. The two runs differ by one "
           "call, and under the shared-mtime window the second one reported the "
           "path instead - the boundary had moved because somebody else looked",
@@ -1682,19 +1684,21 @@ def _cases(check):
         os.environ["CLAUDE_PROJECT_DIR"] = prev_env
 
     # (sr) WHICH ROOT THE STATE DIRECTORY IS RESOLVED FROM, which is the coupling
-    # F84 sits on. `stateDir` is the CONFIG question: `_config.state_dir` is
-    # `root / cfg["stateDir"]`, the value comes out of the project's config file,
-    # and the plugin tells consumers to gitignore it at the project root. Two
+    # the git-tree question above sits on. `stateDir` is the CONFIG question:
+    # `_config.state_dir` is `root / cfg["stateDir"]`, the value comes out of
+    # the project's config file, and the plugin tells consumers to gitignore it
+    # at the project root. Two
     # features depend on every session in that directory resolving the SAME root:
     #
     #   * `_other_sessions` (the (os) group, 9b45c54) subtracts a peer's claim
     #     from THIS tree's dirt. Narrow the directory per tree and a same-checkout
     #     peer becomes invisible, so a write another session made comes back as
     #     this command's - and every worktree case still passes.
-    #   * the F-F3 sidecar (the (k) group) has ONE writer, `journal-writes`, which
-    #     resolves the directory the same way. Move one and not the other and the
-    #     guard reads an empty sidecar, which is indistinguishable from "the plugin
-    #     appended nothing" - F-F3 reopened in the quiet direction.
+    #   * the session hook's sidecar (the (k) group) has ONE writer,
+    #     `journal-writes`, which resolves the directory the same way. Move one
+    #     and not the other and the guard reads an empty sidecar, which is
+    #     indistinguishable from "the plugin appended nothing" - the same
+    #     failure reopened in the quiet direction.
     #
     # NOTHING HERE INJECTS `state_dir`. Every other group in this file passes it,
     # so the resolution itself has never been under test; and in a fixture whose
@@ -1746,9 +1750,10 @@ def _cases(check):
                                                  encoding="utf-8")
         _v2, _d2 = _sr("sr-b")
         _sr_plain = _v2 == "warn" and "sub/src/nobody.ts" in _d2
-        # F-F3's one directory, driven through the REAL writer the way (k) does -
-        # `_jw` is the module loaded there - and then read with the guard's OWN
-        # reader out of the directory the guard actually wrote its state into.
+        # That same coupling's one directory, driven through the REAL writer the
+        # way (k) does - `_jw` is the module loaded there - and then read with
+        # the guard's OWN reader out of the directory the guard actually wrote
+        # its state into.
         # Asserted as a non-empty set naming the appended row, because "the
         # plugin's write was not blamed" is vacuously true of an empty sidecar.
         _srsid = "sr-ff3"
@@ -1778,7 +1783,7 @@ def _cases(check):
     check("sr2 ...while a path no peer claims is still reported from that same "
           "directory - the second-direction case for sr1",
           _sr_plain, _detail_sr)
-    check("sr3 the guard's own state file and journal-writes' F-F3 sidecar land "
+    check("sr3 the guard's own state file and journal-writes' sidecar land "
           "in ONE directory, and the guard's reader finds a NON-EMPTY set there "
           "naming the row the plugin appended", _sr_one_dir, _detail_sr)
 
@@ -1833,7 +1838,7 @@ def _cases(check):
                                     "provably read-only" if _want else "watched"),
               M._command_is_read_only(_cmd) == _want)
 
-    # (rwq) F51/F56: the predicate decided on RAW TEXT, so a shell metacharacter
+    # (rwq) the predicate decided on RAW TEXT, so a shell metacharacter
     # sitting inside a quoted SEARCH PATTERN was read as shell syntax. Grepping
     # for `>` or `&&` or `${` is not a redirect, a background job or an expansion,
     # and this is a repo whose most ordinary command greps its own source.
@@ -1872,7 +1877,7 @@ def _cases(check):
             # Putting `xargs` on the allowlist to fix the read side opened three
             # writes on the other: its command was never judged. Recursion, the
             # way `-exec` is judged — and these cases are the only reason the
-            # regression was seen at all, which is F55 in one group.
+            # regression was seen at all.
             ("xargsrm", 'find . -name "*.tmp" | xargs rm', False),
             ("xargsrmf", 'find . | xargs -n1 rm -f', False),
             ("xargsmv", 'ls | xargs -I{} mv {} /tmp', False),
@@ -1881,7 +1886,7 @@ def _cases(check):
                                "provably read-only" if _want else "watched"),
               M._command_is_read_only(_cmd) == _want)
 
-    # (gr) F52: the plan-coverage class is GRADED, like the plan gate beside it.
+    # (gr) the plan-coverage class is GRADED, like the plan gate beside it.
     #
     # `require-plan.py` resolves evidence into a tier through
     # `_config.plan_gate_mode` so that installing the plugin does not start acting
@@ -1889,7 +1894,8 @@ def _cases(check):
     # never called it. It asked `in_progress_files`, which returns an empty set
     # both for "no manifest" and for "a manifest with nothing running", so a repo
     # with no plan read as a repo where nothing is covered and every shell write
-    # in it was reported. With F51 live that meant a stranger's first `grep`.
+    # in it was reported. With the raw-text read-only bug above also live, that
+    # meant a stranger's first `grep`.
     _gr = tmp / "noplan"
     (_gr / "src").mkdir(parents=True, exist_ok=True)
 
@@ -2019,7 +2025,7 @@ def _cases(check):
     # instead of this one: run that after touching the imports at the top of
     # guard-bash-writes.py.
 
-    # --- the slot's SHAPE is public, because something outside reads it (F228) --
+    # --- the slot's SHAPE is public, because something outside reads it -------
     # `/audit:doctor` dates the plugin copy that wrote a slot here by which of
     # these keys it carries - the evidence a stale cached copy was actually
     # identified by, mechanised. That only works while `default_state()` really is

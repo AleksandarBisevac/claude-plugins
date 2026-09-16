@@ -39,7 +39,7 @@ anchor covers instead of it, and what a row written before the chain existed is
 graded as, are all at the section marked `the chain, and what each layer covers`
 -- read it before trusting any of the three for something it does not do.
 
-EVERY ANCHOR ROW HERE GOES THROUGH `_journal_io.append_from_cli` (F287), not
+EVERY ANCHOR ROW HERE GOES THROUGH `_journal_io.append_from_cli`, not
 `append`. `run-test-gate.py` is the only caller of the functions here that write
 one, and it is a script the operator runs from Bash: nothing else can claim the
 journal file the append dirties -- the journal-writes hook files its claim under a
@@ -499,7 +499,7 @@ def row_for(project, result, scope, ids, identity, published=None):
     # told from one a build does not produce.
     #
     # SO `gate-mutated` NEEDED NO FOURTH FIELD, and that is a finding rather than
-    # an omission (F280). The word says the gate rewrote files the work under test
+    # an omission. The word says the gate rewrote files the work under test
     # declares; `treeMutated` already holds every path that moved and `treeBasis`
     # already ends with either "N of M changed path(s) are declared by the work
     # under test" or the sentence saying no ownership could be sorted, which are
@@ -522,7 +522,7 @@ def row_for(project, result, scope, ids, identity, published=None):
     # when there is something to write, like the key above it.
     if result.get("attributionBasis") is not None:
         row["attributionBasis"] = str(result["attributionBasis"])
-    # WHERE THE `steps` LIST CAME FROM (F312). `steps` names the entries that
+    # WHERE THE `steps` LIST CAME FROM. `steps` names the entries that
     # executed and carries no declaration beside them, and the manifest that
     # declared them is not on the row -- so two rows with different `steps` differ
     # either because the tasks differ or because one was measured by its own

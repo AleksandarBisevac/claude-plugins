@@ -17,8 +17,8 @@ It reads two ways, and the first one decides almost every call:
     forbidden command spelled inside a QUOTED ARGUMENT - a commit message, an
     `echo` into a notes file - is absent as an operation and is allowed. Writing
     about the rules is a daily operation in this repository and a guard that
-    fires on it is the same defect as one that fires on a read (F283, which
-    REVERSED the known cost recorded before it);
+    fires on it is the same defect as one that fires on a read - this REVERSED
+    the known cost recorded before it;
   * a command `shlex` cannot parse falls back to the raw-text patterns, which
     over-fire on quoted text and are the conservative answer where nothing can
     be parsed at all.
@@ -31,8 +31,8 @@ a force-push literal as a test payload - was refused with the force-push reason,
 having requested no push and named no remote. The author's way past it was to
 write the file with another tool, which is the routed-around outcome that makes
 a guard worthless. The previous paragraph here called that a measured cost and
-said nothing could tell the two apart; `guard-secrets-read` could, and had since
-F31. So the question is asked once, in `_config.split_heredocs`: a body fed to an
+said nothing could tell the two apart; `guard-secrets-read` could, and had for a
+while. So the question is asked once, in `_config.split_heredocs`: a body fed to an
 interpreter or a shell (`python3 - <<PY`, `bash -s <<EOF`, `cat <<EOF | bash`) is
 text a machine RUNS and every rule below still reads it, and a body on its way
 into a file is data and is gone before the first token is read.
@@ -71,7 +71,7 @@ an optimisation. It is the reason the guard is allowed to exist.
 TWO ARMS, TWO ACTIVATION CONDITIONS, and they are not interchangeable. The
 history arm asks whether a COMMIT the manifest records would stop being
 reachable, so a manifest with no recorded SHAs has nothing to orphan and every
-command passes. The **stash** arm (F281, see its own block below) asks nothing
+command passes. The **stash** arm (see its own block below) asks nothing
 about commits: `git stash` removes work that was never committed, so it is
 refused as soon as an audit plan exists on disk. Reading the second arm as the
 first is how it would end up silent on a plan whose first task is still mid-edit.
@@ -100,7 +100,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402  (hooks resolve scripts/ by basename through here)
 
 # --- reading the command as an OPERATION --------------------------------------
-# F283. THE COMMAND IS TOKENIZED AND THE VERB IS READ FROM AN ADJACENT TOKEN.
+# THE COMMAND IS TOKENIZED AND THE VERB IS READ FROM AN ADJACENT TOKEN.
 # Everything below this block is the FALLBACK for a command that will not parse;
 # this is the path that decides almost every call, and it exists because the
 # text-matching version refused people for WRITING ABOUT THE RULES.
@@ -210,7 +210,7 @@ def shell_words(command):
     separate answer rather than an empty list because "no words" and "could not
     be read" lead to opposite verdicts, and the second one must never be quiet.
 
-    F284. THE LEXER IS BUILT BY HAND BECAUSE `shlex.split` DROPS NEWLINES.
+    THE LEXER IS BUILT BY HAND BECAUSE `shlex.split` DROPS NEWLINES.
     A newline is whitespace to it, so it never reaches a token, `_SEP_SPLIT`'s
     `\\n` was inert in both directions, and the FIRST verb's argument loop
     swallowed every command after it - `git_invocations` returned one pair for a
@@ -246,7 +246,7 @@ def shell_words(command):
 def program_name(word):
     """A command word's program name: basename, no `.exe`, folded to lower case.
 
-    F284: comparing the whole word missed `/usr/bin/git push --force`, which the
+    Comparing the whole word missed `/usr/bin/git push --force`, which the
     raw-text version caught because `\\bgit\\b` matches after a `/`. Windows
     spellings fold in here too - CI runs these suites on it, and `git.exe` is the
     same program.
@@ -258,7 +258,7 @@ def program_name(word):
 def _is_shell_command_flag(word):
     """A shell's command flag: `-c`, and every CLUSTER it really appears in.
 
-    F284: this read `word.endswith("c")`, which accepts `-lc` and `-ic` and
+    This read `word.endswith("c")`, which accepts `-lc` and `-ic` and
     misses `-cx`, `-cv` and `-ce`. A cluster is a SET of short options, so the
     question is whether `c` is in it and not where it sits.
     """
@@ -269,7 +269,7 @@ def _is_shell_command_flag(word):
 def _has_option(args, name):
     """Is this long option present, in either spelling git accepts?
 
-    F284: `"--force-with-lease" in args` is exact-token equality, and the
+    `"--force-with-lease" in args` is exact-token equality, and the
     ORDINARY spelling passes a ref - `--force-with-lease=origin/main`. Every
     `=`-taking option goes through here for that reason. It also keeps the two
     force spellings apart: `--force-with-lease` is not `--force` and does not
@@ -353,7 +353,7 @@ def git_invocations(command, depth=0):
                     break
                 scan += 1
         elif depth < _MAX_NEST and program in EVAL_WRAPPERS:
-            # F284. `eval "git push --force"` saw NO git: `eval` was in no
+            # `eval "git push --force"` saw NO git: `eval` was in no
             # wrapper table, its argument stayed one token, and the fallback is
             # only reached when the line will not parse - which this one does.
             # It takes the command as its next word rather than behind a flag.
@@ -386,7 +386,7 @@ def git_invocations(command, depth=0):
 
 
 # --- the text fallback --------------------------------------------------------
-# F278. THE VERB HAS TO BE IN SUBCOMMAND POSITION, not merely somewhere in the
+# THE VERB HAS TO BE IN SUBCOMMAND POSITION, not merely somewhere in the
 # line. These patterns used to read `\bgit\b[^|;&]*\bVERB\b`, which lets any text
 # at all sit between the two — so a COMMIT MESSAGE naming one of these operations
 # was graded as performing it. Measured, all four refused:
@@ -397,8 +397,9 @@ def git_invocations(command, depth=0):
 #     git log --grep "rebase"                       <- a READ
 #
 # The last one is the tell: nothing about `git log` can rewrite anything. This is
-# `guard-secrets-read`'s F267 in a second hook — a guard grading TEXT rather than
-# the operation — and it has the same consequence, which is why it is fixed the
+# `guard-secrets-read` had the same defect in a second hook — a guard grading TEXT
+# rather than the operation — and it has the same consequence, which is why it is
+# fixed the
 # same way rather than exempted. It refused this repository's own commit
 # documenting the rule, and then refused the probe written to measure it, which is
 # a guard teaching the person it protects to work around it.
@@ -406,7 +407,7 @@ def git_invocations(command, depth=0):
 # `git`, then GLOBAL OPTIONS ONLY, then the verb. `-C <path>` and `-c <k=v>` take a
 # value and are spelled out so the value cannot be mistaken for the verb.
 #
-# F281 CONSIDERED NARROWING THE LONG-OPTION ARM TO GIT'S ACTUAL GLOBAL SET and
+# THIS CONSIDERED NARROWING THE LONG-OPTION ARM TO GIT'S ACTUAL GLOBAL SET and
 # measured no reason to. The worry was that a generic `--[a-z][a-z-]*` admits a
 # POST-verb option whose separate value would then land in verb position, making
 # `git log --grep stash` read as the operation. It cannot: the option group has to
@@ -503,7 +504,7 @@ def amend_requested(command):
                and not help_requested(args)
                for verb, args in invocations)
 
-# --- the stash arm (F281) -----------------------------------------------------
+# --- the stash arm -------------------------------------------------------------
 # `git stash` is the OTHER half of this hook and it asks a different question, so
 # the two must not be read as one rule. Everything above asks "would a COMMIT the
 # manifest records stop being reachable" — a question about published history, and
@@ -560,7 +561,7 @@ def stash_operations(command):
         if verb != "stash":
             continue
         if help_requested(args):
-            # F284. `git stash --help` and `-h` printed a manual page and were
+            # `git stash --help` and `-h` printed a manual page and were
             # REFUSED, because a leading flag fell through the skip below to the
             # bare form. `moving_stash` states the argument against that: a guard
             # that fires on a read is a guard people route around, and then the

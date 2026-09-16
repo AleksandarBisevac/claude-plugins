@@ -166,7 +166,7 @@ def remove_tree(path):
 def fixture_root(prefix):
     """A temp directory for a suite's fixture, removed before the process exits.
 
-    WHY THIS EXISTS (F119). A set of suites allocated their top-level fixture with
+    WHY THIS EXISTS. A set of suites allocated their top-level fixture with
     a bare `tempfile.mkdtemp()` and never removed it - the NESTED fixtures each had
     a `finally`, the one holding the git repositories had none. Nobody noticed
     because `mkdtemp` answers to `TMPDIR`, and on a developer's machine that is the
@@ -316,14 +316,14 @@ def _module_body_offset(text):
     """Where the CODE starts, for text that is a Python module with a docstring.
 
     A marker quoted in a module's own docstring is prose ABOUT the code, so a
-    slice that starts there is a check about the wrong region - F21 was that
+    slice that starts there is a check about the wrong region - this was found
     twice in one day. Both firings were loud, and the polarity that is not
     happened to be absent rather than impossible: with the two markers named
     either side of the flag in one plausible sentence, the `--name-only`
     security case in `test__panel_viewer.py` passes on the docstring's prose
     while guarding nothing - measured by injecting such a sentence into that
     module's docstring and taking the slice, not argued from the shape.
-    Rewording the docstring - the repair that closed F21 - leaves that one edit
+    Rewording the docstring - the repair that closed the gap - leaves that one edit
     away, for every marker in every suite. Starting below the docstring does
     not.
 
@@ -380,7 +380,7 @@ def between(text, start, end):
 
     THE SLICE STARTS BELOW A MODULE DOCSTRING, which is where every marker this
     is ever pointed at lives. `_module_body_offset` carries the reason and the
-    measurement; F21 is the entry.
+    measurement behind this.
     """
     offset = _module_body_offset(text)
     body = text[offset:]
@@ -438,8 +438,8 @@ def case_id(label):
 
     NOT A FORMATTING DETAIL. `tools/prove-gates.py` credits a mutation to the
     case that went red by taking exactly this token off a `FAIL <label>` line -
-    it is the key the whole proof harness attributes by. F63 is what happens
-    when two cases claim one key: the "RED, WRONG CASE" verdict that stops an
+    it is the key the whole proof harness attributes by. Two cases claiming one
+    key defeats that: the "RED, WRONG CASE" verdict that stops an
     unrelated breakage being called a proof is defeated for that key, silently,
     and a rule proven through the other case reads as proven.
     """
@@ -481,7 +481,7 @@ def label_faults(labels, sites):
                 ("DUPLICATE CASE ID `%s` - claimed by %d separate check() call "
                  "sites, at lines %s. prove-gates.py credits a mutation to the "
                  "case whose id went red, so an id naming two cases defeats that "
-                 "verdict silently (F63)"
+                 "verdict silently"
                  % (cid, len(lines), ", ".join(str(n) for n in lines)),
                  False, ""))
     seen = {}
@@ -764,7 +764,7 @@ def _cases(check):
           "the tally line is not a case",
           _labels(text) == ["one", "two (why)"])
 
-    # -- two cases wearing one name (F63) --------------------------------------
+    # -- two cases wearing one name --------------------------------------------
     # THE TWO CALLS BELOW MUST SIT ON DIFFERENT LINES. Written as a one-line
     # lambda they would share one call site, the rule would correctly stay
     # silent, and the case would pass against a `run()` that never learned any
@@ -776,7 +776,7 @@ def _cases(check):
 
     out_dup, code_dup = _capture(run, _claims_one_id_twice)
     check("u1 an id claimed from two check() call sites is reported by NAME, "
-          "with the count and both line numbers. F63: prove-gates.py credits a "
+          "with the count and both line numbers. prove-gates.py credits a "
           "mutation to the case whose id went red, so an ambiguous id defeats "
           "its 'RED, WRONG CASE' verdict silently",
           "FAIL DUPLICATE CASE ID `dup7`" in out_dup
@@ -787,7 +787,7 @@ def _cases(check):
           code_dup == 1
           and "SELFTEST FAILED: 2/3 cases passed" in out_dup, out_dup)
     # u3 AND u4 LOOK VACUOUS AND ARE THE SECOND-DIRECTION CASES. Both pass on
-    # the pre-F63 code by construction, and they are the only ones here that
+    # the pre-fix code by construction, and they are the only ones here that
     # fail if the rule starts firing where it should not: u3 if it fires
     # unconditionally, u4 if it counts OCCURRENCES instead of call sites.
     check("u3 a suite whose ids are all distinct is told nothing at all",
@@ -828,7 +828,7 @@ def _cases(check):
     # reason now. It arrived for a different one: the prose scanner used to split
     # an identifier on the underscore, so a numeric index in front of `case_id(`
     # read as a cardinality claim, and naming the local was the rewording. The
-    # scanner keeps an identifier whole since F77, so the workaround is no longer
+    # scanner keeps an identifier whole now, so the workaround is no longer
     # load-bearing - kept because computing one id twice in one assertion is
     # worse, not because anything forces it.
     _pn10b_id = case_id("pn10b the BARE count")
@@ -879,7 +879,7 @@ def _cases(check):
           between("END aaa START middle END zzz", "START", "END") == " middle ")
 
     # -- between(): a marker in the module docstring is prose, not code --------
-    # F21's remainder. Each fixture below is chosen so the pre-fix and post-fix
+    # The rest of that same fix's cases. Each fixture below is chosen so the pre-fix and post-fix
     # implementations DISAGREE - a fixture both versions answer the same way
     # would leave these green against a `between()` that never learned this.
     _prose = ('"""`def target` runs with PAYLOAD before `def stop` ranks it.\n'
@@ -893,7 +893,7 @@ def _cases(check):
     # would otherwise escape and stop the suite AT this line, so the cases below
     # would not run and a red-first proof would learn nothing about them.
     _p_ok, _p_sl = attempt(between, _prose, "def target", "def stop")
-    check("s6 the QUIET polarity of F21: with both markers named either side of "
+    check("s6 the QUIET polarity: with both markers named either side of "
           "a payload in the docstring, the pre-fix slice was that sentence and "
           "the payload was IN it, so the case passed guarding nothing. The slice "
           "is now the code, and the payload is absent from it",
@@ -904,7 +904,7 @@ def _cases(check):
                  'def real():\n'
                  '    return 1\n')
     _d_ok, _d_msg = attempt(between, _only_doc, "def gone", "def alsogone")
-    check("s7 ...and F21's LOUD polarity now says which of the two diagnoses it "
+    check("s7 ...and the LOUD polarity now says which of the two diagnoses it "
           "is: a marker that exists only in the docstring raises, and the "
           "message names the docstring rather than only the marker",
           _d_ok is False and "module docstring" in _d_msg, _d_msg)
@@ -949,7 +949,7 @@ def _cases(check):
           "on the windows runner by looking for something no encoder can emit",
           _row.count(_win_p) == 0 and in_json(_win_p) != _win_p)
 
-    # --- fixture_root, driven through a real interpreter exit (F119) ----------
+    # --- fixture_root, driven through a real interpreter exit ------------------
     # THE CLAIM IS ABOUT WHAT SURVIVES THE PROCESS, so it cannot be asserted from
     # inside this one: nothing registered with `atexit` has run yet, and reading
     # the registry back would assert that a callback was recorded rather than that

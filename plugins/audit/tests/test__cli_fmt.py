@@ -10,7 +10,7 @@ was the `M.` prefix.
 M IS THE MODULE UNDER TEST, in this file and in every other one. A moved selftest
 references its module's names bare (`enabled(...)`, `CODES[r]`), and those names have to
 be re-attached to something. `globals().update(vars(mod))` would re-attach them
-invisibly and hand ruff's F821 a body of names it cannot see declared; an explicit
+invisibly and hand ruff's undefined-name check a body of names it cannot see declared; an explicit
 `from _cli_fmt import (enabled, painter, CODES, RESET, strip, PLAIN, MODES)` would work
 HERE and nowhere else, because the other two pilots are a hyphenated entry point and a
 hook - neither is spellable in an `import` statement, and both must come through

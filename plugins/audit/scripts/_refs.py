@@ -589,7 +589,7 @@ def tool_basename_drift(repo_root=None):
     rather than derived.
 
     AND IF YOU MET THIS RULE WITH A FIXTURE, THE TABLE IS PROBABLY NOT WHERE THE
-    NAME GOES (F68). That exception is for a name that has to exist ON DISK carrying
+    NAME GOES. That exception is for a name that has to exist ON DISK carrying
     the Python extension, because the scanner under test opens nothing else. A name a
     case only TALKS ABOUT is spelled around instead, and the tree already holds a
     spelling for each reason there is to want one:
@@ -732,7 +732,7 @@ _CMD_ROW = re.compile(r"^\|\s*`/audit:([a-z-]+)`\s*\|((?:\\\||[^|])*)\|",
 _FLAG = re.compile(r"--[a-z][a-z0-9-]*")
 
 
-# F191. THE FLAGS THAT CARRY A HUMAN'S OWN WORDS into the manifest and the
+# THE FLAGS THAT CARRY A HUMAN'S OWN WORDS into the manifest and the
 # hash-chained journal. A command doc that asks for one of these and does not say
 # the text goes through UNCHANGED is a doc that lets a paraphrase be recorded --
 # and the journal then proves the integrity of a sentence its subject never wrote.
@@ -775,7 +775,7 @@ VERBATIM_RULE_DOC = "reference/manifest-conventions.md"
 VERBATIM_RULE_HEADING = "## The operator's words go in unchanged"
 
 
-# F290. A COMMAND THAT ASKS FOR ITS OUTPUT PRINTED HAS TO SAY WHERE.
+# A COMMAND THAT ASKS FOR ITS OUTPUT PRINTED HAS TO SAY WHERE.
 #
 # `commands/status.md` said "Print its stdout verbatim", and a live run read that
 # as discharged: the Bash tool had run, its stdout WAS printed - to the tool
@@ -964,7 +964,7 @@ def signoff_fix_route_drift(repo_root=None):
 
 
 # --- the third word, for a proof that could not be made -------------------------
-# P42. AN EXECUTOR FIXED A SECURITY DEFECT, WROTE THE ASSERTION FOR IT, AND COULD
+# AN EXECUTOR FIXED A SECURITY DEFECT, WROTE THE ASSERTION FOR IT, AND COULD
 # NOT WATCH IT FAIL. Watching it fail meant undoing the fix for as long as one run
 # takes - ordinary mutation testing - and the HOST's permission classifier refused
 # that edit as a security-test removal. What came back was "treat that as an
@@ -1095,7 +1095,7 @@ def red_first_drift(repo_root=None):
 
 
 # --- the shape the executor hands back, and who has to keep asking for it -------
-# P42. THE RETURN IS PROSE AN AGENT WRITES. Nothing parses it, nothing rejects it,
+# THE RETURN IS PROSE AN AGENT WRITES. Nothing parses it, nothing rejects it,
 # and the orchestrator -- the one actor that could quietly fill a gap in -- is also
 # its only reader. So the return itself cannot be validated at the boundary, and
 # saying that plainly is the point rather than an apology: what CAN be checked is
@@ -1244,7 +1244,7 @@ def command_flag_drift(repo_root=None):
     column legitimately carries prose (`[scope/goals - you'll be interviewed]`)
     and escaped pipes that no frontmatter string would.
 
-    Why it exists (F36, and it was already true when written): `/audit:status`
+    Why it exists (and it was already true when written): `/audit:status`
     grew `--gate` and `--fail-on` and its README row said `-`; `/audit:doctor`
     grew `--deep` and its row still said `[--json]`. A capability nobody can find
     is the defect this repo keeps meeting, and a second copy of a list with
@@ -1310,7 +1310,8 @@ def command_flag_drift(repo_root=None):
 # THE REGION IT READS IS THE TEXT A READER READS. Markup is stripped, and the
 # stylesheet and the inline diagrams are dropped before that: a CSS custom property is
 # spelled exactly like a command-line option, and a rule that read the `<style>` block
-# would report this page's own design tokens as options the plugin does not accept. That is the F116 trap in its usual clothing, and the repair is the
+# would report this page's own design tokens as options the plugin does not
+# accept. That is the same trap in its usual clothing, and the repair is the
 # narrowing rather than a looser needle - a pattern widened until the tokens passed
 # would stop catching an option that was really removed.
 HANDBOOK_REL = "docs/handbook.html"
@@ -1414,8 +1415,8 @@ def _accepted_flags(source):
     """Every `--flag` this source CARRIES AS A VALUE: its string literals, minus
     the prose ones.
 
-    THE LINE IS CODE VERSUS PROSE, and it is drawn where the AST already draws it
-    (F243). A comment is not in the tree at all, and a docstring is the one string
+    THE LINE IS CODE VERSUS PROSE, and it is drawn where the AST already draws it.
+    A comment is not in the tree at all, and a docstring is the one string
     constant that is prose by construction — so excluding those two is exactly the
     narrowing that was needed, and nothing more. `--include-strangers` was removed
     properly, leaving four comments and one docstring naming it; a text scan read
@@ -1471,7 +1472,7 @@ def _accepted_flags(source):
 def _plugin_options(root):
     """(every option spelling the plugin's own source carries, problem).
 
-    AN OPTION IS CARRIED WHEN SOMETHING ACCEPTS IT (F243). This was a TEXT SCAN,
+    AN OPTION IS CARRIED WHEN SOMETHING ACCEPTS IT. This was a TEXT SCAN,
     and its own docstring called that "the safe direction" on the grounds that
     removing an option takes the declaration, the parser and the command doc with
     it. This repository is the counter-example: a removal here is expected to leave
@@ -2402,7 +2403,7 @@ def _ui_source_findings(rel, entry, digests):
 
     A MISSING DIGEST IS A FINDING, NOT SILENCE. Absence is not agreement: an entry
     with no digest makes the same claim every picture makes and nothing can settle
-    it, which is the state F85 found. The consequence is deliberate - this rule is
+    it, which is exactly the gap this rule exists to close. The consequence is deliberate - this rule is
     red until a capture has written one, and a re-capture is the repair rather than
     a default filled in here.
 
@@ -2439,7 +2440,7 @@ def screenshot_capture_drift(repo_root=None):
     claim about which build it shows - and reading that claim back means reading text
     out of an image. `tools/capture-screenshots.mjs` refuses to compare these pixels
     at all, for reasons its own header sets out at length: font rasterisation differs
-    between hosts and no environment variable pins it. F18 settled that, and three
+    between hosts and no environment variable pins it. That was settled once, and three
     repairs that would fake a wider claim are declined there by name.
 
     So the basis is recorded beside the pictures instead, by the run that took them,
@@ -2448,7 +2449,7 @@ def screenshot_capture_drift(repo_root=None):
     sidecar writes down is what was already checked.
 
     TWO QUESTIONS, NOT ONE, AND THE SECOND ARRIVED LATER. "Was this captured at
-    this release" is what the version answers, and F85 is the proof that it is not
+    this release" is what the version answers, but that is not
     the whole question: commits landed under `scripts/ui/` after the last
     re-capture, the recorded version was still current, and this rule was green
     over pictures of a panel that had since moved. "Does this picture still show

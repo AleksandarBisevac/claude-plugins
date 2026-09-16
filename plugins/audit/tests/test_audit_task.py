@@ -47,16 +47,15 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # resolution), i (reserved/parked ids), t (template fields), s (skills
 # three-state), x (fileIndex), r (validator rollback), k (lock), y (layout:
 # sharded/single), j (--json + journal row), h (A4 heal at this write site),
-# n (named-manifest project resolution), c (cancel), p (add-phase: the F58
-# verb, both layouts), w (the _waiting_on index), u (usage errors), sc (scope,
-# the F189 verb), rt (retarget, the F190 verb), gc (F196: the empty gate a task
-# could not reach), jf (F197: the prior state the trail attests), ag (F201: the
-# empty gate at CREATION), fn (F202: the files row for a change that did not
-# happen), sf (F199: the three task fields `scope` did not reach), sn (F208: the
-# task with no `tests` object), qg (F207: add-phase's empty gate), wd (F271: the
-# widening `scope` refused on the very task it exists for), pb (F275: the owning
-# phase's blockedBy, the readiness term this file's own copy never carried),
-# eb (F285: the brief a shell had already eaten, and the stdin route out),
+# n (named-manifest project resolution), c (cancel), p (add-phase, both
+# layouts), w (the _waiting_on index), u (usage errors), sc (scope), rt
+# (retarget), gc (the empty gate a task could not reach), jf (the prior state
+# the trail attests), ag (the empty gate at CREATION), fn (the files row for a
+# change that did not happen), sf (the three task fields `scope` did not
+# reach), sn (the task with no `tests` object), qg (add-phase's empty gate),
+# wd (the widening `scope` refused on the very task it exists for), pb (the
+# owning phase's blockedBy, the readiness term this file's own copy never
+# carried), eb (the brief a shell had already eaten, and the stdin route out),
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
 # reads),
@@ -256,8 +255,8 @@ def _cases(check):
         code, _txt = run(["add", "Risky", "--phase", "P2",
                           "--project-dir", proj,
                           "--risk", "high", "--tests-mode", "tdd",
-                          # The DOCUMENTED shape, `<path>: <what it asserts>`
-                          # (F294). It used to be a bare sentence here, and the
+                          # The DOCUMENTED shape, `<path>: <what it asserts>`.
+                          # It used to be a bare sentence here, and the
                           # suite agreed with the writer that a sentence is a
                           # path -- both were the same assumption, which is what
                           # a fixture written by the author of the parser costs.
@@ -274,7 +273,7 @@ def _cases(check):
               and (t.get("tests") or {}).get("expectRedFirst") is True
               and (t.get("tests") or {}).get("add")
               == ["tests/repro.test.ts: it must fail first"])
-        # F258. The case named in `tests.add` is a file this task CREATES, so a
+        # The case named in `tests.add` is a file this task CREATES, so a
         # scope that excludes it fails the task's own commit through commit-scope.
         # One operator hand-fixed 13 tasks over exactly this, and reported that
         # there is no case where the divergence is wanted.
@@ -295,7 +294,7 @@ def _cases(check):
               "tests.add is empty" not in _txt, repr(_txt[-160:]))
         check("t6b ...and the PATH the entry names is in `files`, unioned rather "
               "than left for the operator to type twice - the path and not the "
-              "sentence around it, which is F294: %r" % (t.get("files"),),
+              "sentence around it: %r" % (t.get("files"),),
               "tests/repro.test.ts" in (t.get("files") or [])
               and not any(" " in f for f in (t.get("files") or [])))
         # The ordering rule asked of the helper that owns it, rather than by
@@ -316,9 +315,9 @@ def _cases(check):
               == ["src/a.ts", "src/b.ts"],
               repr(M._union_paths(["src/a.ts"], ["", "   ", None, "src/b.ts"])))
 
-        # ---- (tp) F294: the files union takes the PATH, or nothing -----------
+        # ---- (tp) the files union takes the PATH, or nothing ------------------
         # THE FIXTURES ARE THIS REPOSITORY'S OWN `tests.add` STRINGS, both
-        # shapes, because the premise F258 wrote down ("a tdd task creates the
+        # shapes, because the premise wrote down ("a tdd task creates the
         # file it names in `tests.add` BY DEFINITION") is true of the tasks that
         # name one and false of the FIELD, which the schema documents as
         # "Assertions/tests to author". Every regression task in this plan
@@ -427,9 +426,10 @@ def _cases(check):
               "entry: %r" % (_tp_written.get("files"),),
               _tp_written.get("files") == []
               and "name no file" in _tp_tdd)
-        # `scope` is the OTHER two write sites, and F294 was in all three. The
-        # verb an operator reaches for when reality differed from the plan is
-        # the last place that should hand back a scope it knows to be short.
+        # `scope` is the OTHER two write sites, and the same file-union defect
+        # reached all three. The verb an operator reaches for when reality
+        # differed from the plan is the last place that should hand back a
+        # scope it knows to be short.
         #
         # `regression` AGAIN, and for `tp1`'s reason one step on: a PENDING tdd
         # task carrying this entry is a manifest the validator refuses, so
@@ -1085,7 +1085,7 @@ def _cases(check):
               and det_cw.get("phaseId") == "P2")
 
         # ---- (p) add-phase: one more phase in a plan that already exists ------
-        # F58. Nothing appended to `phases[]` except the ADO pull: init writes a
+        # Nothing appended to `phases[]` except the ADO pull: init writes a
         # whole plan, materialize MOVES one that was already written, and `add`
         # needs the phase to be there. Every case below is about the half a hand
         # edit forgets.
@@ -1141,7 +1141,7 @@ def _cases(check):
         check("p3 ...and it is APPENDED - the written order is the plan's order",
               [ph.get("id") for ph in _mio.load_manifest(mpp)["phases"]]
               == ["P0", "P1", "P3"])
-        # F296, END TO END, and the fixture above cannot reach it: `P0`, `P1`
+        # Tested END TO END, and the fixture above cannot reach it: `P0`, `P1`
         # live and `P2` parked is a plan with NO GAP, so the lowest-free rule
         # and the highest-plus-one rule both answer `P3` there and every case
         # from p1 down passes under either. This fixture has the gap the live
@@ -1163,7 +1163,7 @@ def _cases(check):
                          "--outcome", "the next body of work is tracked"])
         _gap_ids = [ph.get("id")
                     for ph in _mio.load_manifest(mpgap)["phases"]]
-        check("p3b F296: the id is the HIGHEST plus one, so a gap in the plan "
+        check("p3b the id is the HIGHEST plus one, so a gap in the plan "
               "is never re-minted - `P2` here is a phase that HAPPENED and "
               "`meta.branch` derives the branch name from the id, so handing "
               "it back names branches and merges that already exist. Measured "
@@ -1416,10 +1416,10 @@ def _cases(check):
         # These are the cases that go red if the two are ever folded into one.
         #
         # THEY PASS A NODE THAT IS IN THE MANIFEST, found by id, because that is
-        # what the three call sites pass and what F275 turned the lookup into. A
-        # synthetic dict handed in from outside answers about no task at all -
-        # and it was exactly that shape, a task dict with no phase attached to
-        # it, which hid the fourth readiness term here for as long as it did.
+        # what the three call sites pass now, in place of a synthetic dict
+        # handed in from outside that answers about no task at all - and it
+        # was exactly that shape, a task dict with no phase attached to it,
+        # which hid the fourth readiness term here for as long as it did.
         _wm = {"phases": [
             {"id": "P0", "title": "groundwork", "status": "done"},
             {"id": "P1", "title": "next", "status": "in_progress", "tasks": [
@@ -1487,7 +1487,7 @@ def _cases(check):
         check("w6 ...and _waiting_on returns only strings, so whatever joins "
               "them cannot die on the row: %r" % (_wbad,),
               isinstance(_wbad, list) and all(isinstance(x, str) for x in _wbad))
-        # w7-w8: F275, the fourth term of the readiness rule. `reference/
+        # w7-w8: the fourth term of the readiness rule. `reference/
         # orchestrator.md` lists four and this function carried two, so a task
         # whose PHASE was parked read as ready - and `/audit:status`, reading
         # `_status_facts`, said the opposite about the same manifest. The suffix
@@ -1513,7 +1513,7 @@ def _cases(check):
               "merely appended: %r" % (M._waiting_on(_wp2, wnode(_wp2, "P1.1")),),
               M._waiting_on(_wp2, wnode(_wp2, "P1.1")) == [])
 
-        # ---- (sc) F189: `scope`, the verb the importer's own instruction needed
+        # ---- (sc) `scope`, the verb the importer's own instruction needed
         # `pull sprint` writes `files: []` and tells the reader to scope before
         # running. Nothing could: `add` creates, `cancel` closes, `move`
         # relocates, and the panel reaches `skills`/`model` but not `files`. The
@@ -1555,13 +1555,13 @@ def _cases(check):
               and _idx2.get("src/a.ts") == ["P2.1"])
         code, txt = run(["scope", "P2.1", "--files", "src/b.ts",
                          "--project-dir", sc_proj])
-        # F271 NARROWED THIS REFUSAL, F283 SPLIT WHAT WAS LEFT, and neither
+        # This refusal has been narrowed once and split once since, and neither
         # removed it. The call above REPLACES `src/a.ts` with `src/b.ts`, so it
         # is a NARROWING - and a narrowing is refused on a done task for the one
         # reason that is true of a done task: its commit was graded against the
         # list it holds, so dropping an entry moves a judgement already made.
-        # (What F283 opened is the other shape, a WIDENING, which settles the
-        # index rather than re-judging anything - the st group holds it.)
+        # (The other shape, a WIDENING, settles the index rather than
+        # re-judging anything - the st group holds it.)
         check("sc4 a NARROWING on a task whose commit was already graded is "
               "refused, and the refusal names the grading rather than the "
               "status alone - `done` is not `running` and must not borrow the "
@@ -1590,15 +1590,15 @@ def _cases(check):
               "which is the assertion rather than the exit code",
               code == 2 and _sc_after == _sc_before)
 
-        # ---- (sn) F208: the verb was unusable on the task it exists for ------
+        # ---- (sn) the verb was unusable on the task it exists for ------------
         # `tests` used to be materialized unconditionally, so `scope --files`
         # alone left `tests: {}` behind - and an ABSENT `tests` is legal while
         # one present without a `mode` is not (`_manifest_phases.py`). The
         # rollback held, so nothing was ever corrupted; the verb simply could
-        # not run. Measured live on the F189 case itself: an imported task whose
-        # description says "scope files/tests before running" has no `tests`
-        # key, and the refusal read `tests.mode None not in [...]`, which
-        # describes the manifest for a defect in the writer.
+        # not run. Measured live on the scope-import case above: an imported
+        # task whose description says "scope files/tests before running" has
+        # no `tests` key, and the refusal read `tests.mode None not in [...]`,
+        # which describes the manifest for a defect in the writer.
         sn_proj, sn_mp = mk("p-scope-notests", base_manifest())
         os.makedirs(os.path.join(sn_proj, "src"), exist_ok=True)
         with open(os.path.join(sn_proj, "src", "b.ts"), "w") as _fh:
@@ -1647,7 +1647,7 @@ def _cases(check):
               and (task_in(sn_mp, "P2.3").get("tests") or {}).get("gate")
               == ["true"])
 
-        # ---- (rt) F190: a plan can be CORRECTED, not only created ------------
+        # ---- (rt) a plan can be CORRECTED, not only created ------------------
         # `init` and `pull sprint` synthesize a phase and choose its `testGate`;
         # until `retarget` that choice was unreachable, and one wrong choice made
         # the phase unable to pass its own sign-off. `--gate` APPENDS, so the
@@ -1690,7 +1690,7 @@ def _cases(check):
               "null - the conventions default it to absent, and a null would "
               "make an untagged phase claim to have considered the question",
               code == 0 and "area" not in _rtp)
-        # ---- (rn) F288: a phase can be renamed, and a rename is not a label ---
+        # ---- (rn) a phase can be renamed, and a rename is not a label --------
         # Reported from a live run: a phase whose scope widened kept a title
         # describing half of it, and nothing could change it - `phase.title` is
         # written at creation and never again, the panel does not touch it, and
@@ -1778,7 +1778,7 @@ def _cases(check):
               code == 0 and _rns_written
               and not [p for p in _rns_written if p.endswith("audit-plan.json")])
         # DRIVEN, not introspected, and it stays driven now that there IS a
-        # `build_parser()` to ask (F295 extracted it, the same shape P26.1
+        # `build_parser()` to ask (built for this file, the same shape P26.1
         # extracted for `audit-doctor.py`). The parser is what would answer
         # "is `--title` declared"; only a run answers "and what happens when
         # somebody passes it", which is argparse refusing an unknown option on
@@ -1810,10 +1810,10 @@ def _cases(check):
         check("rt8 a call that changes nothing is refused rather than taking the "
               "index lock for it: %r" % (txt[:70],),
               code == 2 and "retarget needs one of" in txt)
-        # F190's OTHER half of the pending rule: an attempted task keeps an
+        # THE OTHER half of the pending rule: an attempted task keeps an
         # outcome describing work judged under the scope it had.
         #
-        # THE CALL CHANGED WITH F271 AND THE CLAIM DID NOT. This used to pass
+        # THE CALL CHANGED AND THE CLAIM DID NOT. This used to pass
         # `--files src/a.ts` at a task holding none, which is a WIDENING and is
         # now accepted (the wd group drives that). `--description` is the field
         # the entry's own reason is sharpest about: the outcome answers the
@@ -1833,7 +1833,7 @@ def _cases(check):
               and (task_in(at_mp, "P2.3") or {}).get("description")
               != "a different job")
 
-        # ---- (gc) F196: the empty gate a task could not reach ----------------
+        # ---- (gc) the empty gate a task could not reach -----------------------
         # `/audit:phase retarget` took `--gate-clear` in the release that gave
         # `scope` its `--gate`, and `scope` did not take the clear - so a phase
         # could say "nothing here can prove this" and a task could not. THE
@@ -1915,20 +1915,20 @@ def _cases(check):
               "flag rather than a value of the flag it clears: %r" % (gc_gate(),),
               code == 0 and gc_gate() == [""])
 
-        # ---- (jf) F197: what the trail says the prior state was --------------
+        # ---- (jf) what the trail says the prior state was ---------------------
         # `_locked_scope` builds the journal's `changes` list. Three fields read
         # the value they replace; `tests.add` and `tests.gate` wrote a literal
         # `None`. Measured live: a row said the gate went from nothing to a
         # command when it went from `["lint"]`. The chain verifies, the row is
         # genuine, and it is wrong about the prior state - so the surface built to
-        # answer "what was this gated on before, and who changed it" gave a false
-        # answer. Same class as F191 and F184: integrity guaranteed, content not
-        # true.
+        # answer "what was this gated on before, and who changed it" gave a
+        # false answer: the write is auditable end to end, but what it
+        # attests is not true.
         jfm = base_manifest()
-        # Both entries carry the documented `<path>: <what it asserts>` shape
-        # (F294): the union carries the PATH and not the sentence, so a fixture
-        # whose entries name no file would leave `files` unmoved and take the
-        # row this group is about out of the journal.
+        # Both entries carry the documented `<path>: <what it asserts>` shape -
+        # the union carries the PATH and not the sentence, so a fixture whose
+        # entries name no file would leave `files` unmoved and take the row
+        # this group is about out of the journal.
         jfm["phases"][1]["tasks"][1]["tests"] = {
             "mode": "gate-only", "expectRedFirst": False,
             "add": ["tests/import.test.ts: the case the import came with"],
@@ -1981,7 +1981,7 @@ def _cases(check):
         # only the unchanged ones.
         check("jf4 ...and every field the call moved IS in it, counted rather "
               "than found. `files` joins the pair because `tests.add` is unioned "
-              "into it (F258): a case the task creates is a file it owns, and a "
+              "into it: a case the task creates is a file it owns, and a "
               "scope that named one without the other was the shape that cost a "
               "real run 13 hand-fixes: %r" % (sorted(jf_from),),
               sorted(jf_from)
@@ -1992,13 +1992,13 @@ def _cases(check):
                 _fh.write("x\n")
         code, txt = run(["scope", "P2.3", "--files", "src/d.ts",
                          "--project-dir", jf_proj])
-        # F258, the invariant asserted on its own rather than as a side effect of
+        # The invariant asserted on its own rather than as a side effect of
         # jf4's row count: `files` must contain everything `tests.add` names, from
         # whichever writer touched the task last.
         _jf_node = [t for p in _mio.load_manifest(jf_mp).get("phases") or []
                     for t in (p.get("tasks") or []) if t.get("id") == "P2.3"]
-        # F294 narrowed the claim this makes: `files` carries the PATH each
-        # entry names, not the entry. Asked through the same parser the writer
+        # The claim here: `files` carries the PATH each entry names, not the
+        # entry. Asked through the same parser the writer
         # uses, because a second reading of "which path did that entry name"
         # here would be the second opinion the parse exists to prevent - and an
         # entry naming none contributes none, which is `tp1`.
@@ -2035,9 +2035,10 @@ def _cases(check):
               and "src/d.ts" not in _jf_idx
               and _jf_idx.get("src/e.ts") == ["P2.3"])
 
-        # ---- (ag) F201: the empty gate at CREATION ---------------------------
-        # F196's exact shape one verb over. `--gate-clear` is defined GLOBALLY on
-        # the parser, so argparse accepted `add --gate-clear`, `_build_task` never
+        # ---- (ag) the empty gate at CREATION ----------------------------------
+        # The same shape as the gc group's, one verb over. `--gate-clear` is
+        # defined GLOBALLY on the parser, so argparse accepted
+        # `add --gate-clear`, `_build_task` never
         # read it, and the new task inherited the phase's `testGate`. A flag
         # accepted and ignored tells the operator the call succeeded while the
         # value they asked for is not there - and creation is where the COPY of the
@@ -2144,14 +2145,15 @@ def _cases(check):
               code == 0 and ag_gate_note(ag_state_txt) != ""
               and ag_gate_note(ag_state_txt) == ag_gate_note(ag_moved_txt))
 
-        # ---- (fn) F202: a row for a change that did not happen ---------------
-        # F197's class one field over and not named by that entry: the `files` row
-        # went in under a bare `if files:`, so re-scoping to the list the task
-        # already held printed and journaled `files: [...] -> [...]`. Milder than
-        # F197 (the `from` is true, so nobody is misled about the prior state) and
-        # still a hash-chained row attesting a change that never occurred, which is
-        # exactly what a reader counting "who changed this task's scope, and when"
-        # counts. The three sibling fields already compared.
+        # ---- (fn) a row for a change that did not happen -----------------------
+        # The same class as the jf group's, one field over and not named by
+        # that entry: the `files` row went in under a bare `if files:`, so
+        # re-scoping to the list the task already held printed and journaled
+        # `files: [...] -> [...]`. Milder than that one (the `from` is true,
+        # so nobody is misled about the prior state) and still a
+        # hash-chained row attesting a change that never occurred, which is
+        # exactly what a reader counting "who changed this task's scope, and
+        # when" counts. The three sibling fields already compared.
         fnm = base_manifest()
         # A real `tests` block, because a `--files`-only scope over a task that has
         # none writes `tests: {}` and the validator refuses that - a different
@@ -2218,7 +2220,7 @@ def _cases(check):
               ((task_in(fn_mp, "P2.3") or {}).get("tests") or {}).get("mode")
               == "tdd")
 
-        # ---- (sf) F199: the three fields `scope` did not reach ---------------
+        # ---- (sf) the three fields `scope` did not reach -----------------------
         # `_build_task` initializes eleven fields. `scope` reached five, the panel's
         # composition card reaches `model` and `skills`, and `risk`, `blockedBy` and
         # `dependsOn` were reachable by NOTHING once set. Measured live: a task filed
@@ -2276,8 +2278,8 @@ def _cases(check):
         code, txt = run(["scope", "P2.3", "--risk", "med",
                          "--project-dir", sf_proj])
         check("sf5 re-passing the risk the task already holds writes nothing and "
-              "says so - F202's comparison at the new field, so the fix did not "
-              "arrive carrying the bug it was fixing: %r" % (txt[:70],),
+              "says so - the fn group's no-op comparison, extended to this field, "
+              "so the fix did not arrive carrying the bug it was fixing: %r" % (txt[:70],),
               code == 0 and "already reads that way" in txt)
         code, txt = run(["scope", "P2.3", "--depends-on", "",
                          "--project-dir", sf_proj])
@@ -2305,7 +2307,7 @@ def _cases(check):
         # body before the cases below it run.
         check("sf8 --depends-on replaces the list and the row carries the list it "
               "replaced, decoded rather than compared as text - the trail's `from` "
-              "is what F197 was about and a new field must not arrive with a "
+              "is what the jf group's fix was about and a new field must not arrive with a "
               "literal in it: %r" % (_sffrom,),
               code == 0 and jf_val(_sffrom.get("dependsOn")) == []
               and "waiting on: P2.2" in txt)
@@ -2357,13 +2359,14 @@ def _cases(check):
               _sfj.get("ready") is False and _sfj.get("waitingOn") == ["P2.2"]
               and [r["field"] for r in _sfj.get("changes") or []] == ["risk"])
         # THE GUARD IS PER-CHANGE NOW, AND THIS COMMENT USED TO SAY THE OPPOSITE.
-        # It read "THE PENDING GUARD IS THE WHOLE CALL, not a per-field rule",
-        # which F271 replaced: a started task will take a WIDENING of `files` or
-        # `tests.add`, because that is the one change `_invariants.commit_scope`
-        # cannot re-judge an already-recorded commit over. What is unchanged is
-        # this case's own claim - `risk` REPLACES a value the attempt ran under,
-        # so F190's reason still covers it exactly as it covers the other two
-        # fields F199 added, and the sentence the caller meets is still F190's.
+        # It read "THE PENDING GUARD IS THE WHOLE CALL, not a per-field rule" -
+        # now a started task takes a WIDENING of `files` or `tests.add`,
+        # because that is the one change `_invariants.commit_scope` cannot
+        # re-judge an already-recorded commit over. What is unchanged is
+        # this case's own claim - `risk` REPLACES a value the attempt ran
+        # under, so the same attempted-task rule still covers it exactly as
+        # it covers the other two fields this group added, and the sentence
+        # the caller meets is still the same one.
         sfa_proj, sfa_mp = mk("sf-attempted", sfm)
         _sfa = _mio.load_manifest(sfa_mp)
         _sfa["phases"][1]["tasks"][2]["attempts"] = 2
@@ -2397,7 +2400,7 @@ def _cases(check):
               and sf_handoff(sf_add_txt, "P2.4")
               == sf_handoff(sf_scope_txt, "P2.3"))
 
-        # ---- (wd) F271: `scope` refused the case it exists for ---------------
+        # ---- (wd) `scope` refused the case it exists for -----------------------
         # `reference/orchestrator.md` prescribes `/audit:task scope` for the
         # moment the plan gate refuses a file a RUNNING task genuinely needs -
         # and a task in that moment is `in_progress` with an attempt on it, the
@@ -2484,8 +2487,8 @@ def _cases(check):
                          "--project-dir", wd_proj])
         check("wd5 ...and a field with no safe direction is refused whichever way "
               "it moves, naming the field and the move rather than only the task: "
-              "`risk` REPLACES a value the attempt ran under, so F190's sentence "
-              "is still the one the caller meets: %r" % (txt[:240],),
+              "`risk` REPLACES a value the attempt ran under, so the same "
+              "attempted-task sentence is still the one the caller meets: %r" % (txt[:240],),
               code == 2 and "already been attempted (1)" in txt
               and '`risk` would move from "low" to "high"' in txt)
         code, txt = run(["scope", "P2.3", "--tests-add", "src/known.test.ts",
@@ -2493,7 +2496,7 @@ def _cases(check):
                          "--project-dir", wd_proj])
         _wdt = task_in(wd_mp, "P2.3") or {}
         check("wd6 `tests.add` widens on the same terms, and the case it names "
-              "lands in `files` with it (F258) - a task that CREATES a test file "
+              "lands in `files` with it - a task that CREATES a test file "
               "owns it, so a widening naming one without the other hands back a "
               "scope the task's own commit fails: %r"
               % ((code, (_wdt.get("tests") or {}).get("add")),),
@@ -2552,8 +2555,9 @@ def _cases(check):
         code, txt = run(["scope", "P2.3", "--files", "src/known.ts,src/more.ts",
                          "--project-dir", wdc_proj])
         check("wd10 a CANCELLED task is refused outright, widening and all - and "
-              "F283's split is exactly here: `done` takes a widening because "
-              "there is an index to settle, `cancelled` does not because nothing "
+              "the split between the two statuses is exactly here: `done` "
+              "takes a widening because there is an index to settle, "
+              "`cancelled` does not because nothing "
               "will ever be committed against it. A guard written around either "
               "word alone gets one of the two wrong: %r" % (txt[:140],),
               code == 2 and "is cancelled" in txt
@@ -2571,7 +2575,7 @@ def _cases(check):
               "it was before this entry: %r" % (txt[:160],),
               code == 0 and "WIDENED" not in txt and "append-only" not in txt)
 
-        # F300. THE DOCUMENT JOIN, and the half this group left open. F271
+        # THE DOCUMENT JOIN, and the half this group left open. The wd group
         # repaired the verb and the cases above pin the behaviour, but nothing
         # tied either of them to the document that PRESCRIBES this recovery --
         # so the `in_progress` arm was repaired without being named, and a gate
@@ -2602,9 +2606,9 @@ def _cases(check):
                        in _orc_src)
         wdd = base_manifest()
         # The state that Execute step leaves behind, and nothing more. `tests.add`
-        # is EMPTY on purpose: `--files` unions the task's own cases back in
-        # (F258), so a case file sitting there would re-add itself in the
-        # narrowing below and hide the drop that call exists to show.
+        # is EMPTY on purpose: `--files` unions the task's own cases back in,
+        # so a case file sitting there would re-add itself in the narrowing
+        # below and hide the drop that call exists to show.
         wdd["phases"][1]["tasks"][1].update({
             "status": "in_progress", "attempts": 1, "maxAttempts": 3,
             "description": "the executor is running", "risk": "low",
@@ -2646,7 +2650,7 @@ def _cases(check):
         check("wd13 SECOND-DIRECTION CASE, on the task the document just "
               "widened: a call that GAINS a path and LOSES one is still "
               "refused, names the path it would drop, and writes no byte. That "
-              "is the silent move F190 protects against -- an operator retyping "
+              "is the silent move this guard protects against -- an operator retyping "
               "the list from memory -- and it is the shape that separates a "
               "guard grading the DIRECTION of the change from one that merely "
               "notices something was added: %r" % (txt[:200],),
@@ -2655,13 +2659,13 @@ def _cases(check):
               and (task_in(wdd_mp, "P2.3") or {}).get("files")
               == ["src/documented.ts", "src/refused.ts"])
 
-        # ---- (st) F283: `done` settles the RECORD, not the INDEX -------------
+        # ---- (st) `done` settles the RECORD, not the INDEX ---------------------
         # The product prescribed a remedy and refused it in the same breath. At
         # sign-off `_invariants.manifest_revalidated` prints, as its own repair,
         # "run `/audit:task scope <id> --files ...` to re-derive the index" - and
         # sign-off runs only when every task is `done`, which this verb refused.
         # A live run spent 172,417 tokens on three fix-run subagents before that
-        # surfaced. F271 widened the STARTED rule five hours earlier and left the
+        # surfaced. The fix widened the STARTED rule five hours earlier and left the
         # SETTLED one, so `done` was exactly the half that bites where it hurts.
         #
         # What licenses opening it was checked in the code rather than argued:
@@ -2911,7 +2915,7 @@ def _cases(check):
               and "narrowed to a started task with no green run recorded"
               in _fg_doc)
 
-        # ---- (pb) F275: readiness ignored the owning phase's blockedBy -------
+        # ---- (pb) readiness ignored the owning phase's blockedBy ---------------
         # `reference/orchestrator.md`'s readiness rule has FOUR terms and the
         # fourth is the task's PHASE's `blockedBy`. `_waiting_on` carried two, so
         # `add` and `scope` printed a copyable `ready now -- /audit:run <id>` for
@@ -2975,12 +2979,13 @@ def _cases(check):
               "evaluated rather than merely appended: %r" % (txt[-90:],),
               code == 0 and "ready now -- /audit:run P3.1" in txt)
 
-        # ---- (qg) F207: add-phase reaches the EMPTY gate ---------------------
+        # ---- (qg) add-phase reaches the EMPTY gate -----------------------------
         # The THIRD verb of one shape. `--gate-clear` sits on the shared parser, so
         # argparse accepted it here while `_phase_gate` never looked - the new
         # phase inherited `meta.buildCommands` and the caller was told the call
-        # worked. `scope` was F196 and `add` was F201; the check that exists
-        # because of those two did not cover the verb where it happened again,
+        # worked. `scope` was the gc group's bug and `add` was the ag group's;
+        # the check that exists because of those two did not cover the verb
+        # where it happened again,
         # which is why `_AT_WRITERS` gained a row with the fix.
         qg_proj, qg_mp = mk("p-phasegate", base_manifest())
         code, txt = run(["add-phase", "Docs only", "--outcome", "shipped",
@@ -3018,7 +3023,7 @@ def _cases(check):
               and len(_mio.load_manifest(qg_mp)["phases"])
               == len(_qg_before["phases"]))
 
-        # ---- (eb) F285: the brief the shell had already eaten ----------------
+        # ---- (eb) the brief the shell had already eaten ------------------------
         # Reported from a live project. `--description "... `<the condition>`,
         # returning the response untouched otherwise."` -- the backticks are
         # COMMAND SUBSTITUTION inside double quotes, so the shell ran the
@@ -3167,10 +3172,10 @@ def _cases(check):
               and not M.shell_eaten_gap("a line\n   indented on")
               and not M.shell_eaten_gap("run git fetch . b:p here"))
 
-        # ---- (pf) F293: the CLASS `--description` was one member of -----------
-        # F285 fixed one flag. Two more carry the operator's own prose into the
-        # manifest AND into the hash-chained journal through the same shell:
-        # `--reason`, which F191 made a VERBATIM field precisely so nobody would
+        # ---- (pf) the CLASS `--description` was one member of -------------------
+        # The eb group fixed one flag. Two more carry the operator's own prose
+        # into the manifest AND into the hash-chained journal through the same
+        # shell: `--reason`, which is a VERBATIM field precisely so nobody would
         # paraphrase it - so a clause deleted out of one is silent by design -
         # and `--outcome`, which is the phase's `desiredOutcome` and the thing
         # sign-off has to address. `--rename` is here for the same reason one
@@ -3194,8 +3199,8 @@ def _cases(check):
         check("pf1 --reason and --outcome refuse a shell-eaten value, and so "
               "does --rename: the manifest is byte identical, which is the "
               "assertion, because the fault was that each of these was accepted "
-              "and written. `--reason` is the sharpest - F191 made it VERBATIM "
-              "so nobody would paraphrase it, so a hole in one is silent by "
+              "and written. `--reason` is the sharpest - it is a VERBATIM field "
+              "precisely so nobody would paraphrase it, so a hole in one is silent by "
               "design: %r"
               % (dict((k, v[0]) for k, v in _pf_refused.items()),),
               sorted(v[0] for v in _pf_refused.values()) == [2, 2, 2, 2]
@@ -3301,8 +3306,8 @@ def _cases(check):
               % (_pf_out[1][:120],),
               "note: the text on stdin" not in _pf_out[1]
               and "note: the text on stdin" not in _pf_stdin["reason"][1])
-        # F293's OWN REGRESSION, reported from a live run and the reason an
-        # advisory printed before dispatch is a defect rather than a style
+        # A REGRESSION IN THAT SAME FIX, reported from a live run and the
+        # reason an advisory printed before dispatch is a defect rather than a style
         # choice: this note went to `out` from `resolve_briefs`, which runs
         # BEFORE the verb, so `--json` came back as three human lines followed
         # by the object and `json.load` raised on line 1 column 2 - at exit 0,
@@ -3338,9 +3343,9 @@ def _cases(check):
               and "note: the text on stdin" in run_on_stdin(
                   ["add-phase", "Human note", "--outcome", "-",
                    "--project-dir", pf_proj], _EATEN + "\n")[1])
-        # F293 closed the class for FLAGS and left the TITLE, which put the
-        # guard on the CORRECTION path and not on the path where a title first
-        # reaches the manifest: `retarget --rename "$T"` refused a run of spaces
+        # The pf group closed the class for FLAGS and left the TITLE, which put
+        # the guard on the CORRECTION path and not on the path where a title
+        # first reaches the manifest: `retarget --rename "$T"` refused a run of spaces
         # while `add-phase "$T"` and `add "$T"` wrote the same string verbatim.
         # `_branch.slugify` derives the branch name from a phase title, which is
         # the argument for checking `--rename` read one door earlier.
@@ -3427,14 +3432,14 @@ def _cases(check):
                    for ph in _mio.load_manifest(pf_mp)["phases"]
                    if ph.get("id") == "P3"] == [["make check ; true"]])
 
-        # ---- (vf) F295: a flag a verb does not read is a usage error ----------
+        # ---- (vf) a flag a verb does not read is a usage error -----------------
         # ONE PARSER SERVES EVERY VERB. Driven across the grid before the fix,
         # half the (verb, flag) pairs were ACCEPTED, wrote nothing and reported
         # success with exit 0 - `scope --outcome`, `retarget --files`,
-        # `add --id`, `add-phase --risk`, `add-phase --files` among them. F196,
-        # F201 and F207 each fixed one cell of that grid; `--rename` was born
-        # ignored by four verbs, which is what makes it a class rather than
-        # three incidents.
+        # `add --id`, `add-phase --risk`, `add-phase --files` among them. The
+        # gc, ag and qg groups above each fixed one cell of that grid;
+        # `--rename` was born ignored by four verbs, which is what makes it a
+        # class rather than three incidents.
         import ast
         import re
         # ONE RUNNING TASK IN THE FIXTURE, because `done` is the only verb here
@@ -3590,9 +3595,10 @@ def _cases(check):
               "which is the half of a flag that is ignored MOST quietly: %r"
               % (_vf_empty,), _vf_empty == 2)
         # THE TABLE, GRADED AGAINST THE REAL DISPATCH. A hand-written table
-        # nothing compares to the code is the same defect one level up: F207's
-        # entry says a row added to `test__refs.py`'s writer table stayed green
-        # with the flag's read DELETED, which is a check asserting nothing.
+        # nothing compares to the code is the same defect one level up: the qg
+        # group's entry says a row added to `test__refs.py`'s writer table
+        # stayed green with the flag's read DELETED, which is a check
+        # asserting nothing.
         with open(os.path.join(_output.SCRIPTS_DIR, "manifest",
                                "audit-task.py"), "r", encoding="utf-8") as _fh:
             _vf_src = _fh.read()
@@ -3681,7 +3687,7 @@ def _cases(check):
               "derived by walking this file's own call graph from `main`'s "
               "`doors` map - equality and not a subset, because a table that "
               "over-claims refuses a working call and one that under-claims is "
-              "the F295 defect back: %r" % (_vf_off,), _vf_off == {})
+              "the very defect this group exists to catch, back: %r" % (_vf_off,), _vf_off == {})
         # THE VACUITY GUARD, and it is the half that matters: an empty door map,
         # a renamed function or an option list that failed to resolve all leave
         # vf6 green over nothing at all.
@@ -4408,8 +4414,8 @@ def _cases(check):
               and "start P2.3" in _pd_never[1]
               and M._started({"status": "pending", "attempts": 0}) is False)
         _pd_back = pd_fixture()
-        # F190's SHAPE: a task that ran, failed and was put back to `pending`
-        # carries the count with no status left to show for it.
+        # THE SAME SHAPE AS ABOVE: a task that ran, failed and was put back to
+        # `pending` carries the count with no status left to show for it.
         _pd_back["phases"][1]["tasks"][1]["attempts"] = 2
         projbk, mpbk = mk("dn-back-to-pending", _pd_back)
         _pd_ran = run(["done", "P2.3", "--project-dir", projbk,
@@ -4870,7 +4876,7 @@ def _cases(check):
         codetg, txttg = run(
             ["add", "Ungradeable", "--phase", "P1", "--project-dir", tg_proj,
              "--gate-clear"])
-        check("tg9 `--gate-clear` still reaches the EMPTY gate (F201) - the "
+        check("tg9 `--gate-clear` still reaches the EMPTY gate - the "
               "derivation runs after both flags, never instead of them: %r"
               % ((tg_gate("P1.7"), codetg),),
               codetg == 0 and tg_gate("P1.7") == []

@@ -176,12 +176,13 @@ REMEDY_COMMIT = ("commit the work first (stage the paths you mean, then "
 def parser():
     """The sibling's command parser, or None when it cannot be loaded.
 
-    IMPORTED, NOT COPIED. `git_invocations` is where F278, F283 and F284 were
-    each fixed - a verb read from an adjacent token so a commit MESSAGE naming a
-    command is not that command, a heredoc body graded by what consumes it,
-    newlines kept inside tokens, short-flag clusters, `sh -c` and `eval` parsed as
-    the commands they carry. A second copy of that surface here would be a second
-    set of those bugs. `guard-release.py` draws the same line in its own
+    IMPORTED, NOT COPIED. `git_invocations` is where each of these edge cases
+    was fixed in turn - a verb read from an adjacent token so a commit MESSAGE
+    naming a command is not that command, a heredoc body graded by what
+    consumes it, newlines kept inside tokens, short-flag clusters, `sh -c` and
+    `eval` parsed as the commands they carry. A second copy of that surface here
+    would be a second set of those bugs. `guard-release.py` draws the same line
+    in its own
     `_effective`: the plugin's hooks may not import `scripts/`, and this file is
     not a plugin hook - it is this repository's configuration, and this
     repository always has `plugins/audit/` sitting next to it.

@@ -150,7 +150,7 @@ ABSENT_BY_DESIGN = (
      "builds a throwaway demo tree in /tmp to smoke the pipeline end to end; the "
      "local set checks the COMMITTED artifacts instead"),
     # `gen-demo-usage.py` WAS EXEMPT HERE, on the reason "same throwaway demo tree",
-    # and that sentence described a different check (F232). Two of its three runs in
+    # and that sentence described a different check. Two of its three runs in
     # ci.yml do build a throwaway tree; the third regenerates the COMMITTED example
     # ledger and diffs it against what the repository ships. Nothing local asked, so
     # a phase added to the example desynchronised the two and the failure surfaced
@@ -1466,7 +1466,7 @@ def _ci_steps(text):
     """The workflow's steps as whole blocks of text, split on `- name:`.
 
     Whole blocks and not lines, because the question below is about what a STEP
-    does: F232's step invoked the exempted script on one line and compared a
+    does: a step once invoked the exempted script on one line and compared a
     committed file three lines later, and a line-at-a-time reader sees neither
     half as evidence about the other.
     """
@@ -1477,7 +1477,7 @@ def _ci_steps(text):
 def _committed_tokens(step, repo):
     """Paths in this step that the repository actually carries, globs expanded.
 
-    Globbed because a committed set is often named as one - F232's step iterated
+    Globbed because a committed set is often named as one - a step once iterated
     `examples/acme-store/.claude/usage/*.jsonl`, which no `os.path.exists` will
     ever answer True for.
     """
@@ -1498,7 +1498,7 @@ def _committed_tokens(step, repo):
 def exemption_reason_drift(repo=None, table=None):
     """[(gate, problem)] for a row whose REASON stopped being true of the other side.
 
-    THE HOLE F232 NAMED, and the shape it actually took. `compare()` verifies that
+    THE HOLE, AND THE SHAPE IT ACTUALLY TOOK. `compare()` verifies that
     an exempted gate is genuinely absent from the sides its row names, and that the
     row still corresponds to something real. It never asks whether the SENTENCE is
     true of what the other side does - so `gen-demo-usage.py` sat behind "same
@@ -1568,7 +1568,7 @@ def exemption_reason_drift(repo=None, table=None):
     return out
 
 
-# --- who audits an exemption's REASON (F232) ----------------------------------
+# --- who audits an exemption's REASON ------------------------------------------
 # `exemption_reason_drift` above answers that question for ONE table. This half
 # answers it for the tree: every exemption carrying a reason must name the
 # instrument that reads it, or say why it can have none.
@@ -1595,7 +1595,7 @@ _EXEMPTION_ROOTS = ("plugins/audit/scripts", "plugins/audit/hooks", "tools")
 #     step that diffs a committed file means, `revisit_trigger_drift` resolves "the
 #     panel grows a card" through `_help.COMPOSITION_PATHS`.
 #   `live`  — the SUBJECT is checked to still be there, so a row that excuses nothing
-#     is reported. Weaker, and it is the half both F232 instances ultimately needed:
+#     is reported. Weaker, and it is the half both earlier fixes ultimately needed:
 #     a row survives its subject long before its sentence stops being true.
 #
 # A table with neither is a finding, which is the whole point of deriving them.
@@ -1613,9 +1613,9 @@ AUDITED_EXEMPTIONS = {
     # excuses is still stated - so the table cannot go stale quietly, and a rule
     # that gains a hook has to leave it.
     "ADVISORY": ("reason", "prohibition_drift"),
-    # The sections of `orchestrator.md` that carry no anchor, each with why. F282
-    # measured the document at one anchored sentence in fourteen sections, so what
-    # this table has to stop is the honest subset quietly becoming the whole file
+    # The sections of `orchestrator.md` that carry no anchor, each with why. The
+    # document was once measured at one anchored sentence in fourteen sections, so
+    # what this table has to stop is the honest subset quietly becoming the whole file
     # again: a section that GAINS an anchor must leave here, and a reason a reader
     # cannot disagree with is not a reason.
     "UNANCHORED_SECTIONS": ("reason", "claim_drift"),
@@ -1715,8 +1715,8 @@ _REASON_MIN = 30
 def _module_sentences(tree):
     """`{name: text}` for every module-level `NAME = "a long enough sentence"`.
 
-    A REASON MAY BE SHARED, and until F282's guard rework nothing here could see
-    one that was. `guard-history-rewrite.py` names its refusal sentences once and
+    A REASON MAY BE SHARED, and until `guard-history-rewrite.py`'s rework nothing
+    here could see one that was. It names its refusal sentences once and
     reads each from TWO places - the regex fallback table and the tokenized arm -
     so duplicating the text would be the defect this repository names most often.
     The cost was silent: `_reason_table_names` matched only literal values, so the
@@ -1858,8 +1858,9 @@ def _instrument_missing(repo, who):
 def exemption_audit_drift(repo=None, audited=None, not_exemptions=None):
     """[(name, problem)] — a reason-carrying table nobody audits, or a dead row.
 
-    F232's general half. Two defects were recorded before this existed and both had
-    the same shape: a row whose SENTENCE had stopped being true while the row stayed
+    THE SAME PROBLEM, ASKED OF EVERY TABLE. Two defects were recorded before this
+    existed and both had the same shape: a row whose SENTENCE had stopped being true
+    while the row stayed
     green — `gen-demo-usage.py` behind "same throwaway demo tree" while CI diffed a
     committed ledger, and `meta.branch` behind "REVISIT when the panel grows a card"
     for releases after the panel grew one. Each was fixed with its own instrument.
@@ -2031,14 +2032,14 @@ def parity(repo=None):
     result = compare(read)
     result["counts"] = counts
     # ...and the question `compare()` cannot ask: is each row's REASON still true of
-    # what the other side does (F232). Reported as a stale exemption, because that
+    # what the other side does. Reported as a stale exemption, because that
     # is exactly what it is - a row that excuses nothing any more - and folding it
     # into `missing` would send the reader to add a gate rather than fix a sentence.
     result["stale_exemptions"] = sorted(
         list(result["stale_exemptions"])
         + [(gate, "ci.yml", why) for gate, why in exemption_reason_drift(repo)]
-        # ...and the same question asked of the TREE rather than of one table
-        # (F232's general half): every exemption carrying a reason must name the
+        # ...and the same question asked of the TREE rather than of one table:
+        # every exemption carrying a reason must name the
         # instrument that reads it. Reported here because it is the same kind of
         # answer - a row that has stopped meaning anything - and because this
         # command is already the one four sides are compared by, so the rule
@@ -2052,9 +2053,9 @@ def parity(repo=None):
 # --- was each side really READ? -----------------------------------------------
 # `compare()` answers "do the sides agree", and agreement is worth nothing from a
 # side nobody read: an empty set agrees with every other side and with every row in
-# the table. So the suite carries a floor, and the floor is what F69 was about - it
-# was one ABSOLUTE term, which catches a reader that returned nothing and cannot
-# catch a document that rotted while the others stood. It sat below the smallest
+# the table. So the suite carries a floor. It used to be one ABSOLUTE term, which
+# catches a reader that returned nothing and cannot catch a document that rotted
+# while the others stood. It sat below the smallest
 # side, so that side could have shed half its gates and still cleared it.
 #
 # TWO TERMS NOW. The absolute one is unchanged - it is the answer to "did this read
@@ -2179,7 +2180,7 @@ def _cases(check):
              underread_sides(real["counts"])),
           underread_sides(real["counts"]) == [])
 
-    # THE FIXTURE VALUE IS THE OLD FLOOR'S BLIND SPOT (F69), which is the only
+    # THE FIXTURE VALUE IS THE OLD FLOOR'S BLIND SPOT, which is the only
     # reason this case is worth anything: `p1` compared each count with a fixed
     # number that the rotted side below CLEARS. Both versions score this fixture,
     # and they disagree about it.
@@ -2499,7 +2500,7 @@ def _cases(check):
           and "why" in buf.getvalue())
 
     # --- the fourth side ------------------------------------------------------
-    # F61: CLAUDE.md's list said of itself that it was one of the sides being
+    # CLAUDE.md's list said of itself that it was one of the sides being
     # compared, and it was the one side nothing read. These drive `compare()` with
     # fixture sets, because what has to be shown is that a named side is really
     # compared - and four real files would put the readers under test instead.
@@ -2515,9 +2516,9 @@ def _cases(check):
     short["CLAUDE.md"] = set(["tools/alpha.mjs"])
     gap = compare(short, table=())
     check("x1 a gate the other sides name and CLAUDE.md does not is reported "
-          "against CLAUDE.md BY NAME, and nothing else is reported. The whole "
-          "of F61 is that this could not happen: the document telling readers "
-          "it was compared was not in SIDES: %r" % (gap["missing"],),
+          "against CLAUDE.md BY NAME, and nothing else is reported. This case "
+          "exists because the document telling readers it was compared was "
+          "not in SIDES: %r" % (gap["missing"],),
           [(g, s) for g, s, _n in gap["missing"]]
           == [("tools/beta.mjs", "CLAUDE.md")])
 
@@ -2602,7 +2603,7 @@ def _cases(check):
 
 
     # --- the sweep's isolation against every document that describes it -------
-    # F163: three documents describe what `sweep-selftests.py` points away from the
+    # Three documents describe what `sweep-selftests.py` points away from the
     # machine, the surface grew more than once, and each document was left behind by
     # a different amount because nothing compared any of them with the runner.
     _iso = isolation_drift()
@@ -2698,7 +2699,7 @@ def _cases(check):
            and _mini_extra["read"] != _mini_extra["labels"]
            and _mini_unplanted["planted"] != _mini_unplanted["read"]))
 
-    # --- F232: is each exemption's REASON still true of the other side? --------
+    # --- is each exemption's REASON still true of the other side? --------------
     _er_live = exemption_reason_drift()
     check("er1 THE LIVE CLAIM: every row in ABSENT_BY_DESIGN whose CI step "
           "compares a committed file names a local gate that makes the same "
@@ -2719,15 +2720,16 @@ def _cases(check):
          "same throwaway demo tree"),))
     check("er2 the COMPARISON is what makes a step evidence, not the committed "
           "path: an exempted script whose CI step merely READS one is clean even "
-          "with a reason that names nothing, while F232's own row - a step that "
-          "diffs the committed ledger - is reported. Both directions, because "
+          "with a reason that names nothing, while gen-demo-usage.py's own row "
+          "- a step that diffs the committed ledger - is reported. Both "
+          "directions, because "
           "either alone is a rule that fires on everything or on nothing: "
           "%r / %r" % (_er_readonly, [g for g, _w in _er_compared]),
           _er_readonly == []
           and [g for g, _w in _er_compared]
           == ["plugins/audit/scripts/demo/gen-demo-usage.py"])
 
-    # --- F232's GENERAL half: every exemption names who audits its reason ------
+    # --- THE GENERAL RULE: every exemption names who audits its reason ---------
     # Two defects were recorded before this existed and both had one shape - a row
     # whose sentence had stopped being true while the row stayed green. Each was
     # fixed with its own instrument; what was missing is the rule that every such
@@ -2887,7 +2889,7 @@ def _cases(check):
           and _sr_none["sides"] == 0)
 
     # --- SECURITY.md's fail modes against the wiring that decides them --------
-    # F319: the table says, per hook and per event, whether a missing interpreter
+    # The table says, per hook and per event, whether a missing interpreter
     # PROMPTS or passes in silence, and nothing in this tree compared it with the
     # second argument of each registration - the thing that actually decides. It
     # was accurate when this arrived, so these cases start no repair; what they

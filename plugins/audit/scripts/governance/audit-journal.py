@@ -23,7 +23,7 @@ own verdict and the exit code is non-zero when EITHER has findings; `cmd_verify`
 carries why that is one command rather than two. Every other subcommand on this
 page is the journal's alone.
 
-`merge` is the verb a journal conflict needs and did not have (F306). One writer
+`merge` is the verb a journal conflict needs and did not have. One writer
 on two branches is ordinary while a phase is paused, and the per-writer file
 split does not separate them -- so a landing phase produces one file with a
 shared prefix and two tails, which cannot be resolved by editing because each
@@ -32,7 +32,7 @@ resolution keeps one tail and loses the other in a second parent nobody reads
 again. It defaults to the two sides git already has (index stages 2 and 3 of
 `--file`), so during a conflict it needs nothing but the path.
 
-`sessions` answers the question a per-session file NAME cannot (F309): which
+`sessions` answers the question a per-session file NAME cannot: which
 session wrote which file. The name carries the id the writer supplied, and the
 hook that writes most rows is handed a different id from the one the session
 reads from Bash -- so the mapping goes in the rows and this prints it.
@@ -187,8 +187,8 @@ def cmd_append(args, out):
         out("[audit-journal] could not append: %s" % exc)
         return 1
     # THE CLAIM `append_from_cli` LEAVES, left by hand here because this command
-    # needs `row` for the line below and only the raising `_append` returns it
-    # (F287). Without it the append this command just made is reported by
+    # needs `row` for the line below and only the raising `_append` returns it.
+    # Without it the append this command just made is reported by
     # `guard-bash-writes` as a shell write into the append-only trail on the next
     # Bash command -- and this command is the one the guard's own notice names as
     # a legitimate writer, which made the notice contradict itself.
@@ -310,7 +310,7 @@ def _unreadable_refusal(base, unreadable):
 def _target_torn_faults(base, text):
     """Every reason the TARGET's own bytes cannot be graded at all, as refusals.
 
-    F341, AND IT IS THE DOOR THE F328 REPAIR LEFT OPEN. `_merge_input_faults`
+    AND IT IS THE DOOR `_target_loss`'S REFUSAL LEFT OPEN. `_merge_input_faults`
     refuses a torn or unparseable SIDE, and says why: those bytes are not a row,
     so a merge would drop them and say nothing. Nothing asked the same question
     of the file being OVERWRITTEN -- and it is the stronger case, because a side
@@ -362,7 +362,7 @@ def _target_torn_faults(base, text):
 def _prior_merge_faults(base, text, side_rows):
     """The refusal for a target that ALREADY holds a resolution, or none.
 
-    F342. Re-running `merge` on a file this verb has already resolved was
+    Re-running `merge` on a file this verb has already resolved was
     refused with the wrong cause and the wrong advice: the previous
     `journal.merge` row is in neither stage, so the presence check reported it
     exactly as it reports a row somebody typed while resolving -- "Append it
@@ -401,7 +401,7 @@ def _prior_merge_faults(base, text, side_rows):
 def _target_loss(base, verdict):
     """The reason the merge result would LOSE something the target holds.
 
-    F328, AND IT WAS A DATA LOSS THAT PRINTED SUCCESS. `--file` names the target
+    THIS WAS A DATA LOSS THAT PRINTED SUCCESS. `--file` names the target
     and seeds the chain from its basename; it was never READ INTO the merge. So a
     side that is a stale extract of this same file -- which is exactly what
     `--ours/--theirs` is for, a conflict resolved days ago -- produced a result
@@ -425,7 +425,7 @@ def _target_loss(base, verdict):
     worse surprise than the one it replaces.
 
     IT IS HANDED THE VERDICT RATHER THAN TAKING IT, because the read behind it
-    is `write_merged`'s, made with the lock held (F340). A copy of that read
+    is `write_merged`'s, made with the lock held. A copy of that read
     here would be the read taken too early, which is the defect."""
     return ("row %d (%s) of %s is not in the merge result with its content "
             "intact and in order, and the result is what would replace that "
@@ -444,8 +444,8 @@ def _target_loss(base, verdict):
 def _conflict_loss(base, text, merged, from_index):
     """The refusal for a CONFLICTED target the merge result would lose a row of.
 
-    The `from_index` half of F328, and it is a narrower question than
-    `_target_loss` asks. There the two sides are stages 2 and 3 of this very
+    The `from_index` half of the same data-loss question, and a narrower one
+    than `_target_loss` asks. There the two sides are stages 2 and 3 of this very
     file, so git built the working copy out of them and no row that came from a
     stage can be missing from their union. What CAN be missing is a row somebody
     typed into the conflicted file while resolving it: that row is in neither
@@ -458,7 +458,7 @@ def _conflict_loss(base, text, merged, from_index):
     one thing this path can get wrong, and says in its own docstring why
     presence is a set question here and a counting question one function up.
 
-    A ROW THIS VERB ITSELF LEFT IS NOT A ROW SOMEBODY TYPED (F342), which is
+    A ROW THIS VERB ITSELF LEFT IS NOT A ROW SOMEBODY TYPED, which is
     why the unaccounted rows are partitioned rather than counted. A previous
     resolution's `journal.merge` row is also in neither stage, and reporting it
     with the sentence above named the wrong cause and gave advice about a row
@@ -501,7 +501,7 @@ def _target_faults(base, text, unreadable, merged, side_rows, from_index):
     """Every reason replacing the target's CURRENT bytes with `merged` must not
     happen, as refusal text -- the whole grade, in one list.
 
-    CALLED FROM INSIDE THE LOCK `write_merged` HOLDS (F340), with the bytes that
+    CALLED FROM INSIDE THE LOCK `write_merged` HOLDS, with the bytes that
     function read there. Nothing below re-reads the file: a second read would be
     a second answer, and the one that mattered would be whichever ran first.
 
@@ -548,7 +548,7 @@ def _target_faults(base, text, unreadable, merged, side_rows, from_index):
 def _merge_json(res, dry_run, written, error):
     """The `--json` rendering of one merge, INCLUDING whether it wrote.
 
-    F331: `--json` used to return BEFORE `write_merged`, so it printed
+    `--json` used to return BEFORE `write_merged`, so it printed
     `"ok": true` with a full row list over a file it had not touched -- and
     `--json --dry-run` printed byte-identical output, which left a caller no way
     at all to tell a write from a preview.
@@ -573,7 +573,7 @@ def _merge_json(res, dry_run, written, error):
 
 def cmd_merge(args, out):
     """Resolve a divergence in one journal file by re-chaining the UNION of its
-    two sides (F306).
+    two sides.
 
     NOT BLOCKED BY `journal.enabled: false`, and that is deliberate: the switch
     governs whether new news is RECORDED, while this repairs a file that already
@@ -589,7 +589,7 @@ def cmd_merge(args, out):
     withholds the write, and the payload says which of the two happened
     (`_merge_json`). The result is graded against the file it would replace --
     `_target_faults`, handed to `write_merged` and run there, with the lock
-    held, on the bytes that same call read (F340).
+    held, on the bytes that same call read.
     """
     project = os.path.abspath(args.project)
     config = load_config(project)
@@ -606,7 +606,7 @@ def cmd_merge(args, out):
         out("[audit-journal] --file must name a .jsonl journal file (got %r)"
             % (name,))
         return 2
-    # F343: AND IT MUST BE A FILE IN THE TRAIL, which the suffix does not say.
+    # AND IT MUST BE A FILE IN THE TRAIL, which the suffix does not say.
     # `in_journal` was already here and was called by nobody, so `--file
     # <basename>` -- exactly what an operator copies out of git's conflict
     # message -- resolved against the project root, found nothing there, and
@@ -656,13 +656,13 @@ def cmd_merge(args, out):
                      actor={"author": args.author, "sessionId": args.session,
                             "via": MERGE_VIA},
                      torn=tuple(torn))
-    # THE RESULT IS GRADED AGAINST THE FILE IT WOULD REPLACE (F328), and the
+    # THE RESULT IS GRADED AGAINST THE FILE IT WOULD REPLACE, and the
     # verdict joins the OTHER refusals rather than getting a shape of its own:
     # same `REFUSED:` line, same closing sentence, same exit code, and the
     # `--json` caller below sees it too. `rows` is emptied with it, because
     # `merge_rows` promises a refusal never also hands back a half-built answer.
     #
-    # THE GRADING IS PASSED IN RATHER THAN RUN HERE, WHICH IS F340. It used to
+    # THE GRADING IS PASSED IN RATHER THAN RUN HERE. It used to
     # run at this point -- before `write_merged` was called, and therefore
     # before the lock that write takes existed -- so a row appended between the
     # grading and `os.replace` was graded by nobody and deleted, with this
@@ -694,7 +694,7 @@ def cmd_merge(args, out):
     # AND THE WRITE HAPPENS BEFORE ANYTHING IS RENDERED, so both renderings
     # report the same operation. It used to sit inside the human-readable tail,
     # which is how `--json` came to describe a write it had returned before
-    # making (F331).
+    # making.
     written, error = False, None
     if res["ok"]:
         merged = merge_text(res["rows"])
@@ -765,7 +765,7 @@ def cmd_merge(args, out):
 
 
 def cmd_sessions(args, out):
-    """Which session wrote which journal file (F309).
+    """Which session wrote which journal file.
 
     The file name carries the writer id the ROW supplied, truncated to fit a
     name, and for the hook that writes most rows that is not the id the session

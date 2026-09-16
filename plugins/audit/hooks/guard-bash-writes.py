@@ -47,14 +47,14 @@ Attribution is PER TREE, and the tree is git's own answer rather than an env var
 lives; it does not say which tree a command touched, and it stays pinned to the
 primary checkout while an agent works inside a worktree. So `git status` used to run
 in one tree while the command ran in another, and that tree's dirt was handed to this
-command (F84). `_config.command_tree` asks git from the working directory the
+command. `_config.command_tree` asks git from the working directory the
 payload names; a command from a tree this guard does not watch gets a notice naming
 both trees, once per tree, instead of an attribution. That directory is the
 SESSION's and not the shell's, so a command that only WALKS into another tree -
 `cd <worktree> && x`, which is how an agent reaches one, its shell starting back in
 the session's directory on every call - compares equal to the watched tree and slips
 past the notice. There the `cd` is the evidence: `directory_change_basis` withdraws
-the authorship claim and keeps the finding (F212).
+the authorship claim and keeps the finding.
 
 Attribution reads the OTHER sessions in this checkout before it blames this one.
 Parallel phases in one working tree are a feature of this product, so "new since
@@ -70,7 +70,7 @@ AND THE OTHER AGENTS OF THIS ONE, which that mechanism cannot see. A subagent's
 payload carries the SAME `session_id` as the main agent — probed, not assumed —
 so every agent of one session writes to ONE state file, `_other_sessions` skips
 it as `mine`, and a peer agent is neither claimed nor counted active there. The
-plain claim then went to whichever agent's command ran next (F227). What the
+plain claim then went to whichever agent's command ran next. What the
 payload DOES carry is `agent_id`, on a subagent's calls only, so the writers
 inside a session are stamped in the file they share (`agents`) and a peer that
 acted inside this writer's window withdraws the authorship claim the same way a
@@ -109,12 +109,12 @@ State: <stateDir>/bash-writes-<session_id>.json
 Read-only sidecars: <stateDir>/bash-writes-plugin-<key>.json {"pluginWrote": [rel]}
   — journal files the plugin ITSELF appended to. Those rels are skipped before
   the journal check, so the plugin's own append is never blamed on the next
-  shell command (F-F3). One slot per writer, each with a SINGLE writer, because
+  shell command. One slot per writer, each with a SINGLE writer, because
   hooks on one event run in parallel: `<sid>` is this session's, written by
   journal-writes.py; `panel` is the panel server's, written by `_panel_write`
-  (F104 — a detached process this plugin launched, whose appends the session's
+  (a detached process this plugin launched, whose appends the session's
   slot can never name because the session did not make them); and `cli` is the
-  plugin's own scripts, written by `_journal_io.append_from_cli` (F287 — a script
+  plugin's own scripts, written by `_journal_io.append_from_cli` (a script
   run from Bash is handed no session id, so the session's slot cannot name its
   appends either). A PEER SESSION'S slot is not read: see `_plugin_wrote`.
 
@@ -212,7 +212,7 @@ NAMED_TEMPLATE = (
 # the command that says whether the chain still holds.
 #
 # THE DISAMBIGUATION LIST NAMES THE CASE THAT ACTUALLY FIRED, which it did not
-# before (F287): a plugin script run from Bash. `append_from_cli` claims those
+# before: a plugin script run from Bash. `append_from_cli` claims those
 # writes now, so the ordinary run is silent -- but the claim is fail-soft and the
 # state directory it lands in is resolved from the script's `--project` while this
 # hook resolves its own from `CLAUDE_PROJECT_DIR`, so a reader can still meet this
@@ -269,7 +269,7 @@ UNPROVEN_TEMPLATE = (
 )
 
 # A command that ran in a WORKING TREE this guard is not watching, said once per
-# tree. F84: the guard watches ONE tree - `git status` runs in the configured
+# tree. The guard watches ONE tree - `git status` runs in the configured
 # gitRoot, and every path in the session's state file is a path in that tree - but
 # it was choosing that tree with `CLAUDE_PROJECT_DIR`, which answers where the
 # CONFIG lives and stays pinned to the primary checkout while an agent works inside
@@ -312,11 +312,11 @@ _READ_ONLY_CMDS = frozenset((
     "xxd", "od", "realpath", "readlink", "seq", "yes", "tee", "xargs",
     "cd", "pushd", "popd",
 ))
-# `xargs` was the absence that started F51. It runs another command, and the
-# segment split already puts that command in a segment of its own —
-# `find … | xargs wc -l` is `find …` and `xargs wc -l`, both judged. What made it
-# a writer was simply not being on this list, and `find | xargs wc -l` is the
-# measuring idiom this project's own documents reach for.
+# `xargs` runs another command, and the segment split already puts that command
+# in a segment of its own — `find … | xargs wc -l` is `find …` and `xargs wc -l`,
+# both judged. What made it a writer was simply not being on this list, and
+# `find | xargs wc -l` is the measuring idiom this project's own documents reach
+# for.
 # Sub-commands of `git` that write. `git` itself is on the list above because
 # `git status`/`log`/`diff` are the most common reads in any session.
 _GIT_WRITES = frozenset((
@@ -328,7 +328,7 @@ _GIT_WRITES = frozenset((
 # Flags that turn a reader into a writer, matched as WHOLE tokens. `sed` also
 # takes its backup suffix attached — `-i.bak`, `--in-place=.bak` — and an exact
 # membership test called those an ordinary argument, so a real in-place write
-# came back provably-read-only and the guard said nothing (F56). BSD `sed`
+# came back provably-read-only and the guard said nothing. BSD `sed`
 # refuses a bare `-i`, so the attached form is the only one that works on a Mac:
 # the spelling that went unseen is the spelling anyone here would type.
 # `_write_flag()` below is the membership test; this set is what it reads.
@@ -338,7 +338,7 @@ _WRITE_FLAGS = frozenset(("-i", "--in-place", "-delete"))
 _OP_TOKENS = frozenset((";", "|", "||", "&&", "&"))
 # Redirections. `>` and friends name a destination, so any surviving one puts the
 # command on the watched side — but only the ones the SHELL would treat as a
-# redirect. `grep -n "cost > 5"` names nothing (F51).
+# redirect. `grep -n "cost > 5"` names nothing.
 _REDIRECT_TOKENS = frozenset((">", ">>", "<", "<<", "<<<", ">&", "<&", ">|"))
 # Substitution and expansion, again as tokens: grepping FOR `$(`, `${` or a
 # backtick is not running a subshell.
@@ -370,8 +370,8 @@ _EXEC_FLAGS = frozenset(("-exec", "-execdir", "-ok", "-okdir"))
 _EXEC_END = frozenset((";", "+"))
 # The `cd` family again, asked a DIFFERENT question. They are on the allowlist
 # above because they cannot touch a file; here they matter because they move the
-# shell, and where the shell was is what decides which tree a write landed in
-# (F212). One name, two questions, and the answers point opposite ways: `cd` makes
+# shell, and where the shell was is what decides which tree a write landed in.
+# One name, two questions, and the answers point opposite ways: `cd` makes
 # a command safer to ignore and its LOCATION harder to establish.
 _DIR_CHANGE_CMDS = frozenset(("cd", "pushd", "popd"))
 # Marks that stop a `cd` argument being read as a literal directory, BORROWED
@@ -386,7 +386,7 @@ _UNRESOLVED_MARKS = _config.UNRESOLVED_MARKS
 def _tokenize(text):
     """Shell words and operators, or None when the text cannot be parsed.
 
-    THE WHOLE OF F51 IS THAT THIS DID NOT EXIST. Every decision below used to be
+    THIS FUNCTION IS THE FIX: every decision below used to be
     taken on the raw string: the hostile scan ran `">" in text`, and the segment
     split was `re.split(r"&&|\\|\\||[|;]|\\n", text)`. Neither knows what a quote
     is, so `grep -n "cost > 5"` was a redirect, `grep -n "a && b"` was two
@@ -454,8 +454,8 @@ def _write_flag(tok):
     """Does this token turn a reader into a writer?
 
     Whole-token membership plus the attached-value spellings of the in-place
-    family, which is F56: `-i.bak` and `--in-place=.bak` are the same capability
-    as `-i` wearing a suffix, and only the bare form was ever matched.
+    family: `-i.bak` and `--in-place=.bak` are the same capability
+    as `-i` wearing a suffix, and only the bare form was ever matched before this.
     """
     if tok in _WRITE_FLAGS:
         return True
@@ -558,10 +558,10 @@ def directory_change_basis(command, cwd, watching):
 
     -> a clause for UNPROVEN_TEMPLATE's second slot, or None
 
-    F212. `_config.command_tree` asks git which tree the command ran in, FROM THE
+    `_config.command_tree` asks git which tree the command ran in, FROM THE
     PAYLOAD'S cwd - and that field is the SESSION's directory, not the shell's. The
-    two agree for a session that sits in a worktree, which is the shape F84 was
-    reported and fixed for. They come apart for a session that only VISITS one:
+    two agree for a session that sits in a worktree the whole time.
+    They come apart for a session that only VISITS one:
     `cd <worktree> && <writer>` leaves the payload naming the tree the session
     started in, `command_tree` matches it against the watched tree, and the
     equal-path short circuit answers "watched" without asking git anything. The
@@ -576,8 +576,8 @@ def directory_change_basis(command, cwd, watching):
     design. It never says the command wrote somewhere; it says this guard cannot
     place the command, so the authorship half of the notice comes off while the
     finding stays. Reading a destination out of the command text to ACCUSE
-    somebody would be the raw-string inference F51 was about; reading it to stop
-    accusing costs nothing if it is wrong.
+    somebody would be the same raw-string guessing `_tokenize` exists to replace;
+    reading it to stop accusing costs nothing if it is wrong.
 
     So the claim survives only on positive evidence that the shell stayed put:
     every directory change in the command names a literal path that lands inside
@@ -716,11 +716,11 @@ def _command_is_read_only(command):
     when the command provably cannot write - an unrecognised command is still
     watched exactly as before.
 
-    F51 IS WHY THIS TOKENIZES FIRST. Every check used to read the raw string, so
-    a shell metacharacter inside a quoted SEARCH PATTERN was taken for shell
-    syntax and the most ordinary command in this repo - grepping its own source
-    for punctuation - was called a writer. `_tokenize` is the fix, and everything
-    after it asks its questions of tokens.
+    TOKENIZING FIRST IS WHAT MAKES THIS RELIABLE. Every check used to read the raw
+    string, so a shell metacharacter inside a quoted SEARCH PATTERN was taken for
+    shell syntax and the most ordinary command in this repo - grepping its own
+    source for punctuation - was called a writer. `_tokenize` is the fix, and
+    everything after it asks its questions of tokens.
     """
     toks = _tokenize((command or "").strip())
     if not toks:
@@ -733,7 +733,8 @@ def _tokens_are_read_only(toks):
 
     Separate from `_command_is_read_only` so `-exec` and `xargs` can recurse on
     the argv they already hold instead of joining it back into a string and
-    re-splitting it — a round trip that loses exactly the quoting F51 was about.
+    re-splitting it — a round trip that loses exactly the quoting `_tokenize`
+    exists to preserve.
     """
     toks = _drop_harmless_redirects(toks)
     for tok in toks:
@@ -774,7 +775,7 @@ def _tokens_are_read_only(toks):
 # --- state --------------------------------------------------------------------
 # PUBLIC because they are READ FROM OUTSIDE this file. `/audit:doctor` dates the
 # copy that wrote a state file here by which of `default_state()`'s keys the file
-# carries (F228) - the same evidence that identified a stale cached copy by hand,
+# carries - the same evidence that identified a stale cached copy by hand,
 # mechanised - and it tells a session slot from a plugin sidecar by these two
 # name templates. A hand-written list over there would be a second statement of
 # this file's shape, drifting the first time a key is added here.
@@ -813,7 +814,7 @@ def _load_state(state_dir, session_id):
                     # Absent in a slot an older copy wrote, and an empty map is
                     # the reading that says so: no writer has a look of its own
                     # yet, so each falls back to the session's mtime on its first
-                    # pass exactly as it always did (F230).
+                    # pass exactly as it always did.
                     "agentsAt": dict(data.get("agentsAt") or {})}
     except Exception:
         pass
@@ -845,7 +846,7 @@ def _sidecar_rels(state_dir, key):
 
 def _plugin_wrote(state_dir, session_id):
     """Journal files the PLUGIN ITSELF appended to, from every writer that can
-    leave a claim here (F-F3, F104).
+    leave a claim here.
 
     Written by journal-writes.py after each successful append, as
     `<stateDir>/bash-writes-plugin-<sid>.json` `{"pluginWrote": [rel, ...]}`.
@@ -860,13 +861,13 @@ def _plugin_wrote(state_dir, session_id):
     The panel server is a detached process this plugin launched, and it writes
     the journal too -- so its appends were reported as this session's shell
     writes, with a clean chain behind them and nothing but a manual check to say
-    so (F104). It cannot use the session's slot: the session did not write those
+    so. It cannot use the session's slot: the session did not write those
     rows. It gets a fixed key of its own, because a panel is one per project
     (`panel-server` refuses a second) and a per-process key would fragment the
     claim exactly as it fragmented the journal.
 
     THE PLUGIN'S CLI SCRIPTS ARE A WRITER OF THEIR OWN, and they were the one this
-    guard went on flagging (F287): `commit-audit-state.py` appends a row, the
+    guard went on flagging: `commit-audit-state.py` appends a row, the
     journal file goes dirty, and the next Bash command drew the notice about a
     write the plugin had just made -- with `audit-journal.py verify` reporting
     the chain clean behind it. A script run from Bash is handed no session id, so
@@ -917,7 +918,7 @@ def record_background_launch(state, tool_input, now):
     `tools/prove-gates.py` mutated this one in the background.
 
     ONLY A PROGRAM NAME IS KEPT, never the command text. `_journal_io` settled this
-    for the same channel one file over (CWE-532, F136/F153): a command line carries
+    for the same channel one file over (CWE-532): a command line carries
     paths, hostnames and occasionally a token, and this state file is not a place a
     redactor reaches. The first token answers the only question the verdict asks.
 
@@ -1008,7 +1009,7 @@ def writer_id(data):
     -> `_config.agent_of`: the payload's `agent_id`, sanitised, or `MAIN_WRITER`
        when there is none
 
-    THE SESSION IS NOT THE WRITER, which is the whole of F227. The state file is
+    THE SESSION IS NOT THE WRITER. The state file is
     named `bash-writes-<session_id>.json` and every agent of one session shares
     that id, so `_other_sessions` - which separates SESSIONS by their separate
     files - is blind to two agents of one by construction: a peer agent has no
@@ -1109,7 +1110,7 @@ def session_look_floor(state):
     BOUNDED, so a genuinely stale claim stays outside it.
 
     The rung it replaces is the shared file's mtime, and that is the whole point:
-    the mtime is moved by every agent's pass, which is F230.
+    the mtime is moved by every agent's pass.
     """
     stamps = [v for v in (state.get("agentsAt") or {}).values()
               if isinstance(v, (int, float)) and v > 0]
@@ -1119,8 +1120,8 @@ def session_look_floor(state):
 def record_agent_look(state, writer, stamp):
     """Stamp when THIS writer last looked at the tree. Returns the previous stamp.
 
-    F230, and it is the residue F227's fix could not reach. `record_agent_pass`
-    above gave every writer a POSITION of its own, which is what `peer_agent_basis`
+    THIS IS THE RESIDUE THAT GIVING EVERY WRITER A POSITION COULD NOT REACH.
+    `record_agent_pass` above gave every writer a POSITION of its own, which is what `peer_agent_basis`
     needs — an ordering question, answered exactly by one shared file. But
     `_other_sessions` asks a different question of a different population: did a
     SIBLING SESSION act inside my window, decided by comparing that session's file
@@ -1128,12 +1129,12 @@ def record_agent_look(state, writer, stamp):
     was still the SHARED state file's mtime — and every agent of this session
     rewrites that file, so one agent's pass moved the boundary for all of them.
 
-    Measured both ways when F230 was recorded: with no peer-agent pass in between, a
+    Measured both ways: with no peer-agent pass in between, a
     peer session's claim is honoured and the path stays silent; with one agent pass
     in between, the same claim falls outside the window and the path is reported.
-    The cost is noise rather than a false accusation — F227's withdrawal still comes
-    off — but it is noise that arrives by scheduling, which is the kind nobody can
-    reproduce.
+    The cost is noise rather than a false accusation — the per-writer authorship
+    withdrawal above still comes off — but it is noise that arrives by scheduling,
+    which is the kind nobody can reproduce.
 
     A SEPARATE MAP, NOT A SECOND FIELD IN `agents`. That map holds positions and, on
     a file an older build wrote, epochs — `_sequenced` exists entirely to renumber
@@ -1380,7 +1381,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     since_writer = record_agent_pass(state, writer)
     # ...and the same pass stamped for the one question a position cannot answer:
     # `_other_sessions` compares against sibling state files' MTIMES, so the stamp
-    # has to be comparable with those (F230).
+    # has to be comparable with those.
     #
     # THE STAMP IS THE FILE'S MTIME, NOT `_now()`, and the reason is measured
     # rather than aesthetic. The far end this is compared against is a SIBLING
@@ -1489,7 +1490,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         return ("silent", "read-only command: %d path(s) appeared but not from "
                           "this call" % (len(absorbed),))
 
-    # F84: THE TREE THE COMMAND RAN IN IS NOT THE TREE THIS GUARD WATCHES, so
+    # THE TREE THE COMMAND RAN IN IS NOT THE TREE THIS GUARD WATCHES, so
     # nothing seen here belongs to it. `_config.repo_root` answers where the config
     # lives and CLAUDE_PROJECT_DIR wins there on purpose - a worktree should not
     # need its own copy of the project's config - but it is the wrong answer to
@@ -1507,7 +1508,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     # sharing this stateDir resolves the same project directory. One path space
     # describing one tree is what lets `_other_sessions` subtract a peer's claim from
     # this tree's dirt at all (9b45c54), and it is why the sidecar `journal-writes`
-    # writes is found where this hook looks for it (F-F3). Measuring a second tree
+    # writes is found where this hook looks for it. Measuring a second tree
     # here would put two path spaces in one file and make a tree field mandatory on
     # records that have none - after which an old record is AMBIGUOUS rather than
     # wrong, which is worse. So the second tree is declined, not half-measured.
@@ -1526,7 +1527,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
                                                tree["watching"]))
 
     # The far end of the window everything below became dirty in, in THREE rungs,
-    # narrowest first and each one wider than the last (F230):
+    # narrowest first and each one wider than the last:
     #
     #   1. this writer's OWN previous look - exact, and the answer in the case that
     #      matters, an agent that has been here before;
@@ -1564,7 +1565,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     for rel in new:
         if rel in state["toolEdited"] or rel in state["warned"]:
             continue
-        # F-F3: the plugin's OWN journal appends (the journal-writes hook) put
+        # THE PLUGIN'S OWN JOURNAL APPENDS (the journal-writes hook) put
         # the journal file into git status too. Skip exactly the files the
         # sidecar names, BEFORE the in_journal check -- or the plugin's own row
         # would be reported as a shell write into the audit trail on the next
@@ -1595,7 +1596,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
             continue
         if not any(rel.lower().endswith(x) for x in exts):
             continue
-        # F52. THE PLAN-COVERAGE CLASS IS GRADED, and only this class: the journal
+        # THE PLAN-COVERAGE CLASS IS GRADED, and only this class: the journal
         # and lock classes above bind their claim to evidence of their own and mean
         # the same thing in a repo with no plan. This one does not. `in_progress_
         # files` returns an empty set both for "no manifest" and for "a manifest
@@ -1687,7 +1688,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         # THE PEER THE LINE ABOVE CANNOT SEE. `_other_sessions` separates sessions
         # by their separate files, and every agent of one session writes to this
         # one - so a peer AGENT is neither claimed nor counted active there, and
-        # the plain claim used to go to whichever agent's command ran next (F227).
+        # the plain claim used to go to whichever agent's command ran next.
         peer = peer_agent_basis(state, writer, since_writer)
         if peer:
             clauses.append(peer)

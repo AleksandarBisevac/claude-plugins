@@ -116,7 +116,7 @@ def transport_verdict(has_az, extensions, has_mcp):
         return {"transport": None, "stop": "az is on PATH but `az extension "
                 "list` did not answer, so whether the azure-devops extension "
                 "is installed is unknown - which is not the same as installed",
-                # F98 CARRIED THE EVIDENCE AND THIS SENTENCE HAD NOT NOTICED.
+                # THE EVIDENCE WAS ALREADY CARRIED AND THIS SENTENCE HAD NOT NOTICED.
                 # It used to send the operator off to run `az extension list`
                 # by hand and read its error - which was the only way to tell a
                 # missing tool from a sandbox refusal until the reading grew a

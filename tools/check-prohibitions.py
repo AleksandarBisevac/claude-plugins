@@ -21,7 +21,7 @@ force-push"**, and of that pair only force-push was refused by a hook. `git push
 and `git stash` were both ALLOWED by every guard in the plugin. The most
 emphatic rule in the file was half-enforced, and nothing could say so.
 
-`git stash` is enforced now (F281) - it is the one git verb that removes work
+`git stash` is enforced now - it is the one git verb that removes work
 without naming what it removed, and a compound command carrying one took a whole
 session's uncommitted edits out of an audit checkout. `git push` deliberately is
 not, and the ADVISORY row below is where that decision is recorded rather than
@@ -91,7 +91,7 @@ _COMMAND = re.compile(r"`([a-z][a-z0-9 _.-]{2,40})`")
 # stash row is justified by an incident that happened inside a COMPOUND command,
 # and it was probed with a single-line one - so a tokenizer that read only the
 # first command in a line would have passed this gate while the incident's own
-# shape went unenforced. That is not hypothetical: F284 was exactly that bug for
+# shape went unenforced. That is not hypothetical: exactly that bug shipped for
 # the newline spelling, and this probe would not have caught it.
 #
 # THE THIRD ELEMENT IS THE HALF THAT KEEPS THE DOCUMENT HONEST, and it is optional
@@ -117,7 +117,7 @@ ENFORCED = {
     # bolded prohibition.
     "filter-branch": ("guard-history-rewrite.py",
                       ("git filter-branch -f",), None),
-    # F281. `git stash` moved here from ADVISORY, and the pairing below is the
+    # `git stash` moved here from ADVISORY, and the pairing below is the
     # whole point of the move: the destructive verb is refused and the two READ
     # verbs are not. A hook refusing `git stash list` would be switched off, and
     # then the destructive half would be unguarded too - which is the argument
@@ -176,7 +176,7 @@ ADVISORY = {
 }
 
 # ADVISORY rule token -> a command that must stay ALLOWED, for the rows where one
-# exists. This half is F281's other direction: a row saying "nothing stops this"
+# exists. This half is the same rule's other direction: a row saying "nothing stops this"
 # is a claim about the HOOKS, and the flattering direction of this file's own
 # defect is a row still claiming a gap that has since been closed. A rule with no
 # entry here is unmeasurable rather than measured - `task.complete` is a rule about
@@ -263,7 +263,7 @@ def deciding_bash_hooks(hooks_json=None):
     make a read-only check mutate the repository it is checking.
 
     IT USED TO FILTER ON THE LAUNCHER'S FAIL MODE INSTEAD, saying that a hook
-    launched `open` *cannot* return a permission decision (F319). Driven through
+    launched `open` *cannot* return a permission decision. Driven through
     `py-launch.sh` with an interpreter present, that is false - `ask`, `open` and
     no argument at all each yield `deny` from `guard-secrets-read`, because the
     mode is read only when no interpreter exists. The set it selected was right
@@ -394,7 +394,7 @@ def prohibition_drift(text=None):
             out.append((token, "its advisory reason is %d characters; a reason "
                                "shorter than %d is a label"
                         % (len(reason), _REASON_MIN)))
-        # THE ADVISORY ROWS ARE DRIVEN TOO, and this half is F281's other
+        # THE ADVISORY ROWS ARE DRIVEN TOO, and this half is the same rule's other
         # direction. `git stash` sat here saying "MEASURED UNENFORCED" while it
         # was being enforced would have been the same defect as an ENFORCED row
         # naming a hook that stopped refusing - a table describing the system
@@ -453,8 +453,9 @@ def _fixture_wiring(hook, mode):
 
     A fixture and not a mutation of the tree: the real wiring agrees with the
     property, so both directions of `fail_mode_drift` need a wiring that does
-    not - and a suite that edited the repository to find out would be the
-    F281 shape. The caller unlinks it; nothing is left behind.
+    not - and a suite that edited the repository to find out would be exactly
+    the live-tree risk a fixture exists to avoid. The caller unlinks it; nothing
+    is left behind.
     """
     with io.open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8") as fh:
         wiring = json.load(fh)
@@ -507,15 +508,15 @@ def _cases(check):
           "than by going quiet",
           any("no prohibition in the document states this" in p
               for _s, p in prohibition_drift(fake)))
-    # F281. The stash half, pinned as a PAIR. Either line alone is a rule that is
+    # The stash half, pinned as a PAIR. Either line alone is a rule that is
     # useless (refuse nothing) or harmful (refuse the reads too, and get switched
     # off) - and the pair is what makes ENFORCED the honest table for it.
     verb = "git " + "stash"
     denied, _w = refuses("guard-history-rewrite.py", verb + " push --keep-index")
     read_l, _w = refuses("guard-history-rewrite.py", verb + " list")
     read_s, _w = refuses("guard-history-rewrite.py", verb + " show")
-    # ...and the NEWLINE spelling, which is the shape F284 allowed while the
-    # single-line probe passed. It is asked here as well as in ENFORCED because
+    # ...and the NEWLINE spelling, which is the shape that slipped through while
+    # the single-line probe passed. It is asked here as well as in ENFORCED because
     # a probe list is only as good as the spellings somebody thought of.
     compound, _w = refuses("guard-history-rewrite.py",
                            verb + " list\n" + verb + " drop")
@@ -540,7 +541,7 @@ def _cases(check):
           "audit trail it is checking" % (asked,),
           bool(asked) and "guard-history-rewrite.py" in asked
           and "journal-writes.py" not in asked)
-    # F319. The discriminator, asked directly. `journal-writes.py` is the one
+    # The discriminator, asked directly. `journal-writes.py` is the one
     # registered here that decides nothing, so it is the case that keeps pr6
     # from being a check about an empty distinction.
     check("pr6b the filter reads the hook's SOURCE for a permission decision "
@@ -577,7 +578,7 @@ def _cases(check):
         os.unlink(wired)
     # Both directions of the advisory probe, on a fixture: a row whose command a
     # hook DOES refuse is a finding, and the row that is genuinely unenforced is
-    # not. The first is the direction nothing asked before F281.
+    # not. The first is the direction nothing asked before this fix.
     saved = ADVISORY_PROBE.get("git push")
     try:
         ADVISORY_PROBE["git push"] = "git rebase -i main"

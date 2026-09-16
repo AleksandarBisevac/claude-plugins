@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cases for `governance/run-test-gate.py` (F193).
+"""Cases for `governance/run-test-gate.py`.
 
 WHAT THIS FILE IS ABOUT, in one line: a gate is a MEASUREMENT, and the two ways
 this one stopped being a measurement were both exit 0.
@@ -120,11 +120,11 @@ else:
 TREE_TIMEOUT = 5
 
 # --- what a runner leaves behind, per reporter --------------------------------
-# F323's fixtures, and they are TAKEN FROM THE REPORTERS rather than written to
-# suit the reader. The whole fault was a discriminator keyed on shapes this file
-# happens to recognise, so a fixture invented alongside the repair would encode
-# one assumption twice and go green against a reader that cannot fire in the
-# field. Every one below is what the named tool actually prints, trimmed; the
+# These fixtures are TAKEN FROM THE REPORTERS rather than written to suit the
+# reader. The discriminator below is keyed on shapes this file recognises, so a
+# fixture invented alongside it would encode the same assumption twice and go
+# green against a reader that cannot fire in the field. Every one below is what
+# the named tool actually prints, trimmed; the
 # tallies are all the SAME RUN - one pass and a hundred and thirty-nine failures
 # - because that failure count is the exit status the fault turns on.
 #
@@ -174,8 +174,8 @@ Starting audit...
 Audit done.
 Checkstyle ends with 139 errors.
 """
-# THREE TAP FIXTURES WHERE THERE WAS ONE, AND THE SPLIT IS THE POINT (F352).
-# The single fixture carried BOTH the opening plan line and the closing tallies,
+# THREE TAP FIXTURES WHERE THERE WAS ONE, AND THE SPLIT IS THE POINT.
+# A single fixture carried BOTH the opening plan line and the closing tallies,
 # so it matched whichever alternative was left and deleting either one kept
 # `sk5e` green - a case that could not see the difference between "the runner
 # closed" and "the runner started". A TAP plan is legal at either end of the
@@ -220,9 +220,9 @@ Test Run Failed.
 
 # ...and the one shape that is NOT a report: `pre-commit` mid-run, with a hook
 # already logged and the next one's line unfinished, which is what an
-# out-of-memory reaper leaves. F302 was reported against exactly this
-# configuration and the arm meant to catch it could not fire here, because
-# `ran_count` tallies LINES for `_STEP_WORDS` and so never answers None.
+# out-of-memory reaper leaves. The arm meant to catch this configuration
+# cannot fire here, because `ran_count` tallies LINES for `_STEP_WORDS` and so
+# never answers None.
 PRECOMMIT_KILLED = """\
 check yaml...............................................................Passed
 black...................................................................."""
@@ -230,9 +230,9 @@ black...................................................................."""
 # ...and the same wrapper with a hook that DOES publish a summary. `pre-commit`
 # runs other runners, so pytest's own closing line is an end-of-run report for
 # THAT HOOK and mid-flight for the step - `mypy` had not finished when the
-# reaper arrived. F352's second half: `summary_count` answers a number here, so
-# the summary arm of `reached_a_verdict` said the step had spoken for its exit
-# code and an OOM-killed composite was graded `failed`.
+# reaper arrived. Here `summary_count` answers a number, so the summary arm of
+# `reached_a_verdict` said the step had spoken for its exit code and an
+# OOM-killed composite was graded `failed`.
 PRECOMMIT_HOOK_SUMMARY = """\
 check yaml...............................................................Passed
 pytest...................................................................Failed
@@ -310,13 +310,13 @@ def _recorded_rows(directory):
 
 
 def _cases(check):
-    # `_harness.fixture_root`, NOT a bare mkdtemp with a trailing rmtree. It exists
-    # for F119 and it is the only spelling that survives windows: git writes its
-    # loose objects READ-ONLY, and on windows the read-only attribute is checked on
-    # the FILE, so `shutil.rmtree(..., ignore_errors=True)` leaves `.git/objects/**`
-    # behind and leaves it behind SILENTLY. This suite hand-rolled the pair and CI's
-    # windows leg caught it through the sweep's own isolation guard - the removal
-    # had simply never worked there.
+    # `_harness.fixture_root`, NOT a bare mkdtemp with a trailing rmtree. It is
+    # the only spelling that survives windows: git writes its loose objects
+    # READ-ONLY, and on windows the read-only attribute is checked on the FILE,
+    # so `shutil.rmtree(..., ignore_errors=True)` leaves `.git/objects/**`
+    # behind and leaves it behind SILENTLY. This suite once hand-rolled the pair
+    # and CI's windows leg caught it through the sweep's own isolation guard -
+    # the removal had simply never worked there.
     tmp = _harness.fixture_root("run-test-gate-selftest-")
     subprocess.run(["git", "init", "-q", tmp], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -347,7 +347,7 @@ def _cases(check):
           "it may be a literal shell command, and refusing it would make this "
           "script decide what a gate is allowed to be: %r" % (cmds3,),
           cmds3 == [("echo literal", "echo literal")])
-    # F253. `orchestrator.md` names `meta.nodePreamble` four times, including "it
+    # `orchestrator.md` names `meta.nodePreamble` repeatedly, including "it
     # must run task.tests.gate (running meta.nodePreamble first, un-piped, if set)"
     # — and the script had ZERO occurrences of it. On a real run that cost two gate
     # rows recording exit 127, a PATH problem, as EVIDENCE: the committed ledger
@@ -421,7 +421,7 @@ def _cases(check):
     # Leave the fixture as it was: the next case asserts on a clean tree.
     os.remove(os.path.join(tmp, "rewritten.py"))
 
-    # --- the bracket over a WHOLLY UNTRACKED directory (F224) --------------
+    # --- the bracket over a WHOLLY UNTRACKED directory ----------------------
     # A SEPARATE FIXTURE, and that is the point rather than tidiness. `tmp` above
     # holds nothing untracked, so every one of rg4-rg6 is green whether the
     # porcelain carries `-uall` or not -- which is how the flag came to be missing
@@ -502,7 +502,7 @@ def _cases(check):
           res["treeMutated"] == [] and res["failed"] == []
           and res["treeBasis"].startswith("git described"))
 
-    # --- F273: whose writes did the bracket catch? -------------------------
+    # --- whose writes did the bracket catch? --------------------------------
     # `_tree_stamp.porcelain` has no pathspec, so the bracket sees EVERY write in
     # its window and not only the gate's -- and `orchestrator.md` encourages
     # running tasks with disjoint `files` in parallel, which puts a sibling
@@ -643,7 +643,7 @@ def _cases(check):
         _gm_enum = ((((json.load(fh).get("$defs") or {}).get("testEvidence")
                       or {}).get("properties") or {})
                     .get("status") or {}).get("enum") or []
-    check("ow8 F280, THE FAULT: a gate that passed every command AND rewrote "
+    check("ow8 THE FAULT: a gate that passed every command AND rewrote "
           "the file it was grading records `gate-mutated` and NEVER `passed`. "
           "`run_status` took no tree argument and had no tree arm, so this "
           "exact run - the one ow2 shows refusing at the terminal - cached "
@@ -664,7 +664,7 @@ def _cases(check):
                          runner=_sibling_writes, owns=["src/mine.ts"])
     check("ow9 SECOND DIRECTION, and it is the one an always-firing repair "
           "fails: the SIBLING's write leaves the verdict `passed`. The foreign "
-          "half is the half nothing can attribute (F273) and refusing on it is "
+          "half is the half nothing can attribute, and refusing on it is "
           "what halted correct runs, so the word reads the same list `render` "
           "refuses on and not `treeMutated`: %r"
           % ((res_sib["status"], res_sib["treeMutatedForeign"]),),
@@ -716,8 +716,8 @@ def _cases(check):
           "WITH NO DEFAULT, so a "
           "caller that forgets it is a TypeError rather than a run silently "
           "spelled `passed`. That is not defensiveness: an argument nobody has "
-          "to pass is how F280 arrived, and this is the arm that stops it "
-          "coming back. %r" % (_why4,),
+          "to pass is how a mutated-tree run once got recorded `passed`, and "
+          "this is the arm that stops it coming back. %r" % (_why4,),
           _ok4 is False and _why4.startswith("TypeError:")
           # ...and the complete call still answers, so the case above is a
           # missing ARGUMENT and not a function that raises whatever it is given.
@@ -789,7 +789,7 @@ def _cases(check):
           M.render(res, out=lines.append) == M.E_OK
           and "not knowable from this runner" in "\n".join(lines))
 
-    # --- F276: the count vocabulary was one entry wide --------------------
+    # --- the count vocabulary was one entry wide ---------------------------
     # `_STEP_WORDS` held `pre-commit` and nothing else, so jest, vitest, mocha
     # and pytest all answered "not knowable" to "how many ran" -- which made the
     # `NO CHECK RAN` branch, and the whole "gates could NOT run" distinction
@@ -800,8 +800,8 @@ def _cases(check):
     check("ct1 jest is counted from its own summary, and from the words that "
           "mean a check EXECUTED rather than from `N total` -- jest's total "
           "includes SKIPPED tests, so reading it would bless the gate that "
-          "skipped everything, which is F193's second failure mode one runner "
-          "along: %r"
+          "skipped everything -- the same no-checks failure as pre-commit's, "
+          "one runner along: %r"
           % (M.summary_count("Tests:  1 failed, 2 skipped, 3 passed, 6 total\n"),),
           M.summary_count("Tests:  1 failed, 2 skipped, 3 passed, 6 total\n") == 4
           and M.summary_count("Tests:       0 total\n") == 0)
@@ -824,7 +824,8 @@ def _cases(check):
     check("ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule "
           "entirely -- and both of its zero shapes are POSITIVE zeros: `no "
           "tests ran` collected nothing, and `1 error` is a test that never "
-          "started, which is the exact reading F276 turns on: %r"
+          "started, which is the exact distinction that separates a positive "
+          "zero from `None`: %r"
           % ((M.summary_count("1 failed, 2 passed in 0.03s\n"),
               M.summary_count("==== no tests ran in 0.01s ====\n"),
               M.summary_count("==== 1 error in 0.01s ====\n")),),
@@ -860,7 +861,7 @@ def _cases(check):
                       "pytest................Passed\n"
                       "1 failed, 2 passed in 0.03s\n") == 1)
 
-    # --- F276: a gate that COULD NOT RUN is not a gate that FAILED --------
+    # --- a gate that COULD NOT RUN is not a gate that FAILED ----------------
     def _sandbox_died(_project, _command, _timeout=None):
         # The live shape: the port could not be bound, the suite died, and jest
         # still printed its summary -- reporting zero tests.
@@ -892,7 +893,7 @@ def _cases(check):
                           runner=_all_skipped)
     check("nr3 ...and the other direction: exit ZERO with zero checks is still "
           "`no-checks` and not infrastructure. A rule reading only the count "
-          "would swallow F193's skipped-everything gate into a word that names "
+          "would swallow a skipped-everything gate into a word that names "
           "a different repair: %r" % (res_skip["status"],),
           res_skip["status"] == "no-checks"
           and res_skip["steps"][0].get("outcome") is None)
@@ -930,7 +931,7 @@ def _cases(check):
           code == M.E_FAIL and "GATE TIMED OUT" in "\n".join(lines)
           and "GATE GREEN" not in "\n".join(lines))
 
-    # --- F276: the count ships with the basis that explains it ------------
+    # --- the count ships with the basis that explains it --------------------
     check("cb1 `countsBasis` is WRITTEN. `_evidence_io.row_for` has copied it "
           "into every row since the ledger existed and nothing ever set it, so "
           "each committed row carried null there and the panel printed a "
@@ -1749,7 +1750,7 @@ def _cases(check):
               "unaskable tree carries its own limit",
               "git could not describe the tree" in "\n".join(lines))
 
-    # --- F204: did the run touch anything the work declares? --------------
+    # --- did the run touch anything the work declares? ----------------------
     # The third way a gate says nothing, after doing too much and doing nothing.
     # Measured live: a UI vitest suite, two files, nine tests, all green, against
     # a diff that was a one-value edit to a JSON manifest. Exit 0, a real
@@ -1816,7 +1817,7 @@ def _cases(check):
           "not the same as a run that covered nothing: %r"
           % (res["coverageBasis"],),
           res["overlap"] is None and "declares no files" in res["coverageBasis"])
-    # F255. Two field reports disagreed about `NO OVERLAP` and both were right
+    # Two field reports disagreed about `NO OVERLAP` and both were right
     # about their own run: one saw it on 9 of 12 tasks because jest prints SUITE
     # paths while `task.files` lists the sources under them; the other called this
     # line the best thing in the plugin because eslint and tsc named real files and
@@ -1843,7 +1844,7 @@ def _cases(check):
           "they carry - a false overlap tells the reader their work was "
           "exercised when it was not, which is the comfort NO OVERLAP exists to "
           "refuse. THE MATCH IS ASSERTED SEPARATELY from the verdict, because "
-          "F307 turned this shape into NOT KNOWABLE: the suite really is about "
+          "this shape must read as NOT KNOWABLE: the suite really is about "
           "`lexer` and not about `parser`, so nothing matched - and a `None` "
           "here that came from a match quietly widening would look identical to "
           "one that came from the population test: %r / %r"
@@ -1853,11 +1854,11 @@ def _cases(check):
           and M.coverage(["src/lexer.ts"],
                          set(["tests/lexer.spec.ts"]))[0] == ["src/lexer.ts"])
 
-    # --- F307: an empty overlap is only evidence from comparable paths -------
+    # --- an empty overlap is only evidence from comparable paths -------------
     # `NO OVERLAP WITH THIS WORK` fired on roughly 20 of 30 runs in one jest
     # repository, INCLUDING runs whose coverage was obvious, because jest prints
     # the SUITE it ran while `task.files` lists the sources under it. The stem
-    # bridge F255 built is the only relation there is, so a suite named for a
+    # bridge above is the only relation there is, so a suite named for a
     # FEATURE rather than for a file leaves a real empty set over a real path
     # set - literally true, and useless. At two firings in three a reader learns
     # to skim the block a real finding appears in.
@@ -1882,8 +1883,9 @@ def _cases(check):
                                 "tools/ui-tests/report.test.js"]))
     _e_hit, _ = M.coverage(["src/mine.ts"], set(["src/a.ts", "src/b.ts"]))
     check("cv15 SECOND DIRECTION, AND IT IS TWO RUNS BECAUSE THE REPAIR HAS TWO "
-          "HALVES. F204's founding run - a vitest UI suite, two `.test.js` "
-          "files, nine tests green, against a one-value edit to a `.json` "
+          "HALVES. The run that motivated this feature - a vitest UI suite, "
+          "two `.test.js` files, nine tests green, against a one-value edit "
+          "to a `.json` "
           "manifest - printed nothing spelled like that manifest, so those "
           "suites demonstrably are not about it and NO OVERLAP is the finding. "
           "And eslint naming real `.ts` sources against a `.ts`-owning task it "
@@ -1965,7 +1967,7 @@ def _cases(check):
                      M.files_named("PASS /Users/someone/proj/src/a.ts\n"))[0]
           == ["src/a.ts"])
 
-    # --- F270: NO OVERLAP has to be diagnosable when it fires -------------
+    # --- NO OVERLAP has to be diagnosable when it fires ---------------------
     # Reported firing on every gate run of one session, including tasks whose own
     # suite went green -- and at that rate the line becomes noise people skip,
     # which is the opposite of what it is for. THE REPORTED MECHANISM WAS WRONG:
@@ -2367,7 +2369,7 @@ def _cases(check):
           res_127["status"] == "failed"
           and res_127["steps"][0].get("outcome") is None)
 
-    # --- F302: a signal-killed runner is not a failing test ----------------
+    # --- a signal-killed runner is not a failing test -----------------------
     # DRIVEN, and the two commands are the whole fault: `sh -c 'kill -9 $$'`
     # came back exit -9 and `sh -c 'exit 1'` came back exit 1, and the verdict
     # read them as ONE answer - GATE RED, recorded `failed`, a retry spent. The
@@ -2470,7 +2472,7 @@ def _cases(check):
           M.summary_count(MOCHA_MIN) == 140
           and M.ended_by_signal(139, MOCHA_MIN)[0] is None
           and M.ended_by_signal(139, "")[0] == "SIGSEGV")
-    # F323, AND THE FIXTURES ARE REAL REPORTER OUTPUT rather than a shape written
+    # THE FIXTURES BELOW ARE REAL REPORTER OUTPUT rather than a shape written
     # to match the reader: a hand-made fixture and the parser under it would
     # encode one assumption twice. These are what `mocha` emits under each
     # `--reporter`, trimmed.
@@ -2516,7 +2518,7 @@ def _cases(check):
         pc_lines = []
         pc_code = M.render(res_pc, out=pc_lines.append)
         pc_text = "\n".join(pc_lines)
-        check("sk5d ...AND F302's OWN CONFIGURATION, WHICH THE ARM COULD NEVER REACH. "
+        check("sk5d ...AND THE PRE-COMMIT CONFIGURATION THE ARM COULD NEVER REACH. "
               "`pre-commit` is the only entry in `_STEP_WORDS`, so `ran_count` tallies "
               "LINES for it and never answers None - an OOM-killed "
               "`pre-commit run --all-files` that had logged one hook came back "
@@ -2550,9 +2552,9 @@ def _cases(check):
           "summary any counting reader in that file knows. Their reports are "
           "recognised without teaching the counter to parse them, which is the "
           "whole point of asking the weaker question. THE TWO TAP SHAPES ARE "
-          "SEPARATE FIXTURES (F352): one carried the opening plan AND the "
-          "closing tallies, so it matched whichever alternative survived and "
-          "deleting either kept this green: %r" % (_machine,),
+          "SEPARATE FIXTURES: a single one carrying the opening plan AND the "
+          "closing tallies would match whichever alternative survived and "
+          "deleting either would keep this green: %r" % (_machine,),
           all(seen for _n, seen in _machine)
           # ...and none of them is COUNTED, which is what separates "the runner
           # finished" from "this reader has a number": a repair that widened
@@ -2568,7 +2570,7 @@ def _cases(check):
 
         res_tap = M.run_gate(tmp, [("tap", "npx tape test/*.js")],
                              runner=_tap_killed)
-        check("sk5f THE MARKER A RUNNER WRITES BEFORE ITS FIRST TEST (F352). A TAP "
+        check("sk5f THE MARKER A RUNNER WRITES BEFORE ITS FIRST TEST. A TAP "
               "plan is legal at either end of the stream and the CLASSIC form "
               "prints `1..N` first, so the row that read it anywhere was matching "
               "a marker emitted at the START of a run - which is the one thing the "
@@ -2605,7 +2607,7 @@ def _cases(check):
               "OTHER runners, so a pytest hook's closing line is that HOOK's "
               "end-of-run report and the step's mid-flight - `mypy` had not "
               "finished. `summary_count` reads it, so the arm answered True and an "
-              "OOM-killed composite was graded `failed`: F302's founding "
+              "OOM-killed composite was graded `failed`: the same OOM-killed "
               "configuration again, one arm along from the line tally sk5d "
               "covers. The count is still taken and is still not a verdict: "
               "count=%r ran=%r %r"
@@ -3226,7 +3228,7 @@ def _cases(check):
           "it must not move: %r %r" % (cmdsp, sourcep),
           sourcep == "phase" and cmdsp == [("lint", "ruff check .")])
 
-    # --- every declared entry runs, and in declaration order (F313) --------
+    # --- every declared entry runs, and in declaration order ---------------
     # THE MEASUREMENT CAME FIRST AND IS WHAT MADE THIS A PIN RATHER THAN A
     # CHANGE. Field data on a large phase: the suite dominated every recorded
     # gate, the typecheck entry was a small fraction of it, and the one genuine
@@ -3245,9 +3247,9 @@ def _cases(check):
     # first red and a one-step `failed` row can no longer be told from a
     # one-entry gate, while `ranTotal`, `countsBasis` and the coverage answer -
     # each summed or scraped over EVERY step - quietly begin describing a prefix.
-    # That is a record that can no longer be audited, which is the same defect
-    # F312 repairs one field over, and it would be paid on every red run to save
-    # time on the runs that are already going to be re-run.
+    # That is a record that can no longer be audited, the same defect already
+    # repaired one field over for `gateSource`, and it would be paid on every
+    # red run to save time on the runs that are already going to be re-run.
     #
     # AND THE TRAP, WHICH NO ORDERING MAY EVER BE READ AS PERMISSION TO SPRING. A
     # task gate of the cheap entry alone is not a narrowed suite; it is a
@@ -3284,7 +3286,7 @@ def _cases(check):
                                    ("suite", "expensive")], runner=_counting)
     check("eo1 a FAILING first entry does not stop the run: the runner is called "
           "for every declared entry, in declaration order. This is the answer the "
-          "F313 field report needed and nothing had established - the gate has no "
+          "field report needed and nothing had established - the gate has no "
           "short circuit to reorder, so a cheap entry placed first buys a reader "
           "the earlier line and buys the clock nothing: %r" % (seen,),
           seen == ["cheap", "middle", "expensive"])
@@ -3419,8 +3421,8 @@ def _cases(check):
                                                "gate": ["ok"]}}]}, fh)
     subprocess.run(["git", "init", "-q", recroot], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # AND THE FIXTURE IS COMMITTED, which is load-bearing here rather than tidy
-    # (F223). `git status --porcelain` collapses an UNTRACKED directory to one
+    # AND THE FIXTURE IS COMMITTED, which is load-bearing here rather than tidy.
+    # `git status --porcelain` collapses an UNTRACKED directory to one
     # `?? docs/` line, so on an uncommitted fixture a write into
     # `docs/audit/audit-plan.json` inside the measurement window changes no
     # porcelain line at all: rc1's `"MUTATED" not in text` clause then has
@@ -3525,7 +3527,7 @@ def _cases(check):
           [(s.get("ran"), s.get("measured")) for s in row_none.get("steps")]
           == [(None, M.MEASURED_UNKNOWN)])
 
-    # --- which gate ran, end to end (F312) ---------------------------------
+    # --- which gate ran, end to end -----------------------------------------
     # DRIVEN THROUGH `main` FOR `attempt`'s REASON. `gateSource` is set on the
     # result by `main` and read by `_evidence_io.row_for`, so a case against
     # either half alone passes on a build where the two are not wired together -

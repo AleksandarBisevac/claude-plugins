@@ -107,7 +107,7 @@ would conflict on every merge -- the one thing the sharded manifest layout exist
 to avoid. Sitting next to the manifest, the journal is committable by the same
 commit that carries the change it records.
 
-THAT SPLIT ANSWERS "TWO WRITERS" AND NOT "TWO BRANCHES" (F306). The claim it was
+THAT SPLIT ANSWERS "TWO WRITERS" AND NOT "TWO BRANCHES". The claim it was
 sold on -- parallel work never conflicts on the journal -- holds for two writers
 because they are two file names. It does not hold for ONE writer on two branches,
 which is the ordinary state of a paused phase: the same name, the same month, a
@@ -117,7 +117,7 @@ only one side has, so `merge_rows` RE-CHAINS the union instead -- see the
 `merging` section for why recomputing a link is not the forgery the chain exists
 to catch, and for the three inputs it refuses rather than guesses at.
 
-AND A WRITER ID IS NOT THE ID ITS SESSION KNOWS (F309). `writer_id` names the
+AND A WRITER ID IS NOT THE ID ITS SESSION KNOWS. `writer_id` names the
 file after the session id the WRITER supplied, and the hook that writes most rows
 is handed a different id in its payload from the `$CLAUDE_CODE_SESSION_ID` the
 same session reads from Bash (`hooks/_config._own_identities` measured the pair).
@@ -166,7 +166,7 @@ must never be reported as failed because the journal was unwritable. The callers
 (panel PUTs, the journal-writes hook) treat False as "not logged", never as "the
 write failed" -- and each records the returned path in a sidecar of its own
 (`record_plugin_write`), so guard-bash-writes can tell the plugin's own append
-from a shell write into the journal (F-F3 for the hook, F104 for the panel).
+from a shell write into the journal.
 """
 import errno
 import hashlib
@@ -241,7 +241,7 @@ DETAILS_VERSION = 2
 # THE PLAN -- `task.attempts` is a manifest key, not something the plugin observed
 # about the machine; it is bounded like any other value; and it exposes nothing
 # new, because the number is already in the manifest the row is about. What it is
-# FOR is `/audit:task scope`, which since F271 accepts a WIDENING of `files` on a
+# FOR is `/audit:task scope`, which accepts a WIDENING of `files` on a
 # task that is already running: without the attempt on the row, a trail cannot
 # tell a scope written before the work from one that grew during it, and every
 # reader would take the second for the first. It dates a mid-run `tests.gate`
@@ -510,7 +510,7 @@ def writer_id(actor, fallback=None):
     else:
         raw = str(fallback or "").strip() or ("writer-%d" % os.getpid())
     # Strip once BEFORE the slice (so leading rubbish does not spend the 24-char
-    # budget) and once AFTER it (F-F2: a real UUID is 8-4-4-4-12, so the slice
+    # budget) and once AFTER it (a real UUID is 8-4-4-4-12, so the slice
     # ends exactly on its fourth dash, and a writer id with a trailing `-` or `.`
     # is one character away from reading as another writer's slot). The `or`
     # sits on the FINAL expression, for ids that are nothing but separators.
@@ -549,8 +549,8 @@ def agent_token(value):
 def env_session_id():
     """The session id in THIS PROCESS'S ENVIRONMENT, or None.
 
-    A SESSION HAS MORE THAN ONE NAME, and that is the whole reason this exists
-    (F309). Bash reads `$CLAUDE_CODE_SESSION_ID`; a hook is handed a DIFFERENT
+    A SESSION HAS MORE THAN ONE NAME, and that is the whole reason this exists.
+    Bash reads `$CLAUDE_CODE_SESSION_ID`; a hook is handed a DIFFERENT
     `session_id` in its payload, and `hooks/_config._own_identities` measured the
     pair in a live session rather than assuming they agree. The journal names its
     file after the id the writer supplied, so the hook that writes most rows
@@ -582,13 +582,13 @@ def file_for(directory, ts, actor, fallback=None):
                         % (month_of(ts), writer_id(actor, fallback=fallback)))
 
 
-# --- the plugin's own appends, declared to the guard (F-F3) -------------------
+# --- the plugin's own appends, declared to the guard -------------------
 # An append puts a journal file into `git status`, and `guard-bash-writes` used to
 # blame whatever shell command ran next. The fix is a sidecar naming the files the
 # plugin itself wrote, which that guard subtracts before it reads the journal
-# class. `journal-writes.py` has written one per SESSION since F-F3; the panel
+# class. `journal-writes.py` writes one per SESSION; the panel
 # server is the plugin's other journal writer and is not a session at all, so it
-# needs the same claim under a key of its own (F104).
+# needs the same claim under a key of its own.
 #
 # THIS IS THE SHARED HOME FOR THAT WRITE, and `journal-writes.py` still carries its
 # own copy of it -- a hook may not import from `scripts/`, but it already loads
@@ -605,7 +605,7 @@ PLUGIN_WRITE_KEY = "pluginWrote"
 MAX_WRITER_KEY_CHARS = 40
 
 # The fixed key every CLI writer files under, mirrored in `guard-bash-writes` as
-# `CLI_WRITER` (F287). A script run from Bash is handed no session id -- the id
+# `CLI_WRITER`. A script run from Bash is handed no session id -- the id
 # reaches a hook on its stdin payload and reaches argv nowhere -- so it cannot use
 # the per-session slot `journal-writes.py` writes, and a key per process would
 # fragment the claim exactly as it would have fragmented the panel's. One key for
@@ -793,7 +793,7 @@ def _counted(values):
 
 def session_index(project, config=None):
     """Which session wrote which journal file -- the mapping a file NAME cannot
-    carry (F309).
+    carry.
 
     Returns {"dir", "exists", "env", "files": [...], "mine": [names],
     "unmapped": [names]}, each file entry {"file", "writer", "rows", "first",

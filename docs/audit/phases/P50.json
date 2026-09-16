@@ -222,10 +222,12 @@
       "description": "DONE MEANS: no comment or docstring in the published tree points at a record the reader cannot open, the rule is enforced by a lint rather than remembered, and the existing occurrences are rewritten to keep the constraint and drop the citation. A comment must speak to the logic or the technical fact of the block it sits on. The private register's ids have become this codebase's vocabulary instead, because the entries carry the reasoning and citing the entry felt like citing the reason - but the register is private and the code is published, so such a comment is a claim the reader cannot check, which is this project's most-repeated defect one surface over. The house skill already states the rule with nothing measuring it. One exception is written into the lint rather than assumed: a test case label may name the fault it reproduces, because the mutation harness attributes by that token, and that exception is precisely why the rule has to be written down rather than left to judgement. A comment whose whole content is a citation has no constraint to keep and is deleted.",
       "files": [
         "plugins/audit/scripts/_output.py",
-        "plugins/audit/scripts/_deps.py",
-        "tools/prove-gates.py",
         "plugins/audit/agents/audit-executor.md",
         "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test__output.py"
       ],
       "tests": {

@@ -21,7 +21,7 @@ atomic (temp + os.replace).
 
 WHAT THIS API DELIBERATELY DOES NOT SERVE, recorded here because the route table
 below is where somebody would go to add it, and because a gap with no record is
-indistinguishable from an oversight (F109). Both entries are about /audit:sync.
+indistinguishable from an oversight. Both entries are about /audit:sync.
 
   * `sync pull` is CLI-only BY CONSTRUCTION. It asks two multi-select questions -
     which assigned bugs, which sprint items - and then ADDS bugs and tasks to the
@@ -239,7 +239,7 @@ UI_TEMPLATE = _panel_page.UI_TEMPLATE
 # is when `_panel_page` baked it: a version read later would name whatever is on
 # disk now, which is exactly the thing this constant exists to be compared against.
 #
-# F100: the panel is ephemeral with a per-project pidfile, so a relaunch after an
+# The panel is ephemeral with a per-project pidfile, so a relaunch after an
 # upgrade FINDS the running instance and points at it - and that instance is still
 # serving the page an older build assembled. Re-assembling the page per request
 # does NOT fix it and was measured before being rejected: `raw_template(cache=False)`
@@ -500,7 +500,7 @@ def _redact_token(url):
     a real repo by `git check-ignore`). Printing it to a terminal that Claude
     Code transcribes was the same leak by a different route.
 
-    F114: `--status` redacted and `--stop` did not, one line apart in the same
+    `--status` redacted and `--stop` did not, one line apart in the same
     transcript. Every surface that reads a URL out of the pidfile comes through
     here now; the pidfile itself is the one place the token is written down.
 
@@ -533,8 +533,8 @@ def _ensure_panel_files_ignored(project):
     The pidfile carries a live session token, and "it is gitignored; keep it
     that way" shipped for versions while nothing anywhere wrote the rule —
     `git check-ignore` on a real repo came back empty, one `git add .claude`
-    from putting the token in history. The launch log joined it at F99: the
-    detached launch redirects stderr there, so without a rule every panel
+    from putting the token in history. The launch log joined it at the same
+    point: the detached launch redirects stderr there, so without a rule every panel
     launch would leave an untracked file in `git status`.
 
     The rules are targeted lines in `.claude/.gitignore`; never a blanket
@@ -595,7 +595,7 @@ def _last_line(text):
 def _launch_stderr(project, tail=4000):
     """What the last detached launch left on stderr, or None if it left nothing.
 
-    F99: `/audit:panel` launched with `>/dev/null 2>&1`, so a child that died at
+    `/audit:panel` launched with `>/dev/null 2>&1`, so a child that died at
     startup left EXACTLY the trace a launch that succeeded and was then stopped
     leaves — no pidfile and no message — and the operator could not tell "it
     refused" from "it is gone". The recipes redirect stderr here instead (append
@@ -645,7 +645,7 @@ def _clear_launch_stderr(project):
         return False
 
 
-# --- which build is serving the page (F100) ------------------------------------
+# --- which build is serving the page --------------------------------------------
 def _staleness(assembled, installed):
     """Whether a running panel is serving a page an OLDER build assembled.
 
@@ -683,7 +683,7 @@ def version_state():
     is re-read per request on purpose: an in-place upgrade replaces plugin.json
     under a running server, and that is the case worth catching.
 
-    `ui/panel/version-banner.js` is what renders it (F100), interrupting the
+    `ui/panel/version-banner.js` is what renders it, interrupting the
     reader when — and only when — the two builds disagree. The endpoint landed
     before that part did and was exercised by a case rather than left as untested
     code until it had a caller — the same call the help endpoint made, for the
@@ -697,7 +697,7 @@ def _write_pidfile(project, info):
     _ensure_panel_files_ignored(project)
     # The build stamp is added HERE and not by serve(), so every pidfile this
     # plugin writes carries it and --status always has both halves of the
-    # comparison (F100). A copy, never a mutation of the caller's dict.
+    # comparison. A copy, never a mutation of the caller's dict.
     record = dict(info)
     record.setdefault("version", ASSEMBLED_VERSION)
     with open(path, "w", encoding="utf-8") as fh:
@@ -731,7 +731,7 @@ def status_lines(project, info, alive, stderr, installed):
 
     Pure so the two things `--status` now has to get right can be asserted on
     the lines themselves: that a died launch is distinguishable from a clean
-    stop (F99) and that a running panel says which build it assembled (F100).
+    stop and that a running panel says which build it assembled.
     `stderr` is `_launch_stderr()`'s dict or None, `installed` is the version
     of the plugin whose copy of this file is running - which is the NEW one
     after an upgrade, since the command invokes it out of ${CLAUDE_PLUGIN_ROOT}.
@@ -788,7 +788,7 @@ def status_panel(project):
 def stop_lines(project, info, pid, error):
     """Every line `--stop` prints. Pure, for the same reason `status_lines` is.
 
-    F114: this printed `info["url"]` RAW while `status_lines` redacted the same
+    This printed `info["url"]` RAW while `status_lines` redacted the same
     string one line apart in the same transcript - and the reason `--status`
     hides it (the pidfile is gitignored on purpose, a transcript is not) applies
     here verbatim. The redacted URL still carries the port, which is what
@@ -836,7 +836,7 @@ def serve(project, port=0, open_browser=True):
         # made the common case ("I want the panel") a two-step manual dance.
         print("panel already running: %s  (token hidden)"
               % _redact_token(existing.get("url")))
-        # THE moment F100 bites: the user upgraded, ran /audit:panel again, and
+        # THE moment this bites: the user upgraded, ran /audit:panel again, and
         # this branch hands them the instance that is still serving the old page.
         print(_build_line(_staleness(existing.get("version"),
                                      _output.plugin_version())))
@@ -874,7 +874,7 @@ def serve(project, port=0, open_browser=True):
     _write_pidfile(project, {"pid": os.getpid(), "port": port, "url": url})
     # Listening. Whatever the launch wrapper wrote to the log on the way here was
     # not fatal, so it must not survive to be reported as a cause of death by the
-    # next --status (F99); an empty log IS the success sentinel.
+    # next --status; an empty log IS the success sentinel.
     _clear_launch_stderr(project)
     # The one record of a control surface an operator is assumed to visit: a
     # count and how long ago, nothing about who or what page. Best-effort -

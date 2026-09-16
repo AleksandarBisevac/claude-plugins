@@ -76,7 +76,7 @@ def _cases(check):
         """`txt` decoded, or `empty` when it is not JSON of that shape.
 
         A CASE THAT RAISES TAKES EVERY CASE AFTER IT OUT OF THE RUN AND NAMES
-        NONE OF THEM, WHICH IS F330. `_sxj = json.loads(txt)` sat outside its
+        NONE OF THEM. `_sxj = json.loads(txt)` sat outside its
         `check()` and did exactly that: mutating `sessions --json` to print prose
         dropped sx2 through sx6, named none of them, and left the contract line
         under-reporting its own total -- so the one mutation those cases exist to
@@ -96,8 +96,8 @@ def _cases(check):
     def _cross_second():
         """Sleep just past the next whole second, and no further.
 
-        A CASE ABOUT A SECOND-RESOLUTION TIMESTAMP HAS TO CHOOSE ITS SECOND
-        (F342). `_merge_marker` stamps `max(last row, now)` to the second, so
+        A CASE ABOUT A SECOND-RESOLUTION TIMESTAMP HAS TO CHOOSE ITS SECOND.
+        `_merge_marker` stamps `max(last row, now)` to the second, so
         whether a re-run rebuilds the previous marker byte for byte is decided
         by which second the two runs happen to land in -- and a case that hopes
         for one of them asserts a different thing on a slow machine, which is
@@ -152,7 +152,7 @@ def _cases(check):
                                "via": "panel"}}, config=cfg)
         d = M.journal_dir(proj, cfg)
         files = M.journal_files(d)
-        # F-F3: success is the PATH of the file the row landed in, not a bare
+        # Success is the PATH of the file the row landed in, not a bare
         # True -- the journal-writes hook records that path in its sidecar so
         # guard-bash-writes can tell the plugin's own append from a shell write.
         # Truthiness is unchanged, so every caller that boolean-tests survives.
@@ -320,7 +320,7 @@ def _cases(check):
               bool(M.writer_id({})) and M.writer_id({}) == M.writer_id({}))
         check("e7 a long session id is truncated (a file name is not unbounded)",
               len(M.writer_id({"sessionId": "x" * 200})) == 24)
-        # F-F2: the truncation itself can END on `-` or `.`. A real UUID is
+        # The truncation itself can END on `-` or `.`. A real UUID is
         # 8-4-4-4-12, so its 24-char slice ends exactly on the fourth dash --
         # every real session got a writer id with a trailing `-`, and a rename
         # of that file (or a hand copy that drops the dash) reads as another
@@ -1151,7 +1151,7 @@ def _cases(check):
                   repr(M.verify(mdir, mcfg)["warnings"]))
 
         # --- mg: one writer, two branches, and the verb that resolves it ------
-        # F306. The per-writer file split separates two WRITERS and not two
+        # The per-writer file split separates two WRITERS and not two
         # BRANCHES, so a paused phase landing produces one file with a shared
         # prefix and two tails. Nothing can resolve that by editing -- each
         # divergent row's hash covers a `prev` only its own side has -- and with
@@ -1259,8 +1259,8 @@ def _cases(check):
                   "itself would be a claim this command cannot support",
                   "came from the index" in txt
                   and "Nothing here can say" not in txt, txt)
-            # THE PREMISE OF AN EXEMPTION, MEASURED. The F328 target check does
-            # not run on this path, and the reason it must not is a property of
+            # THE PREMISE OF AN EXEMPTION, MEASURED. The order-aware target check
+            # does not run on this path, and the reason it must not is a property of
             # the conflicted working copy rather than a preference: git built
             # that file out of the two stages, so its parseable rows are the two
             # tails concatenated with markers between them - an order no chain
@@ -1269,17 +1269,17 @@ def _cases(check):
             # check would accept, this goes red and the exemption can be
             # narrowed on evidence instead of being believed.
             gmpremise = M.anchor_verdict(gmmarkers, M.merge_text(gmrows))
-            check("mg3c the F328 target check is NOT asked about the index path, "
-                  "and here is why it must not be: the conflicted working copy "
-                  "this merge replaced does not itself hold the result in order "
-                  "(held=%r, first row it cannot account for %r), so asking "
-                  "would refuse every genuine conflict resolution -- while the "
-                  "loss F328 is about cannot happen here at all, because both "
+            check("mg3c the order-aware target check is NOT asked about the index "
+                  "path, and here is why it must not be: the conflicted working "
+                  "copy this merge replaced does not itself hold the result in "
+                  "order (held=%r, first row it cannot account for %r), so asking "
+                  "would refuse every genuine conflict resolution -- while a "
+                  "stale-extract loss cannot happen here at all, because both "
                   "sides ARE stages of this file"
                   % (gmpremise["held"], gmpremise["row"]),
                   code == 0 and "REFUSED" not in txt
                   and gmpremise["held"] is False, txt)
-            # F342: A RE-RUN IS NOT A ROW SOMEBODY TYPED, AND THE VERDICT MAY
+            # A RE-RUN IS NOT A ROW SOMEBODY TYPED, AND THE VERDICT MAY
             # NOT DEPEND ON WHICH SECOND IT LANDS IN. Re-running the verb over
             # a file it has already resolved was refused with `_conflict_loss`'s
             # sentence -- "A row typed into a conflicted journal while resolving
@@ -1609,7 +1609,7 @@ def _cases(check):
               "to say rather than the thing to assume",
               "Nothing here can say" in txt
               and "came from the index" not in txt, txt)
-        # mh3 USED TO ASSERT THE F328 BUG AS CORRECT BEHAVIOUR. It merged this
+        # mh3 USED TO ASSERT A STALE EXTRACT AS CORRECT BEHAVIOUR. It merged this
         # two-row extract against itself over the LIVE file mh1 had just grown to
         # four rows, and the assertion it made - exit 0, no divergence, nothing
         # re-chained - was true of the two INPUTS while the file went from four
@@ -1632,7 +1632,7 @@ def _cases(check):
               and [r.get("summary") for r in mh3rows] == ["shared", "mine"]
               and [r.get("action") for r in mh3rows].count(M.MERGE_ACTION) == 0
               and M.verify(mh3, mhcfg)["ok"], txt)
-        # F328, AND IT IS THE REALISTIC MISTAKE RATHER THAN AN EXOTIC ONE.
+        # A STALE EXTRACT IS THE REALISTIC MISTAKE RATHER THAN AN EXOTIC ONE.
         # `--ours/--theirs` exists for a conflict resolved days ago, so a side
         # that has fallen behind the live file is what a caller actually reaches
         # for - and `--file` names the TARGET, never a side, so its rows were
@@ -1729,8 +1729,8 @@ def _cases(check):
               == ["shared", "mine", "yours"]
               and M.verify(mn, mhcfg)["ok"], txt)
 
-        # --- F341: the TARGET's own bytes are graded too ----------------------
-        # The F328 repair closed the door it was reported through and left the
+        # --- the TARGET's own bytes are graded too -----------------------------
+        # The stale-extract repair closed the door it was reported through and left the
         # room open. `_merge_input_faults` refuses a torn or unparseable SIDE
         # and says why -- those bytes are not a row, so a merge would drop them
         # and say nothing -- while nothing asked that of the file being
@@ -1792,7 +1792,7 @@ def _cases(check):
               txt and mcafter == mcbefore
               and not M.verify(mc, mhcfg)["ok"], txt)
 
-        # --- F343: --file must name a file in the trail -----------------------
+        # --- --file must name a file in the trail ------------------------------
         # `in_journal` was already in the module and called by nobody. Only the
         # `.jsonl` suffix was checked, so `--file <basename>` -- exactly what an
         # operator copies out of git's conflict message -- resolved against the
@@ -1822,7 +1822,7 @@ def _cases(check):
               code == 2 and "inside the journal directory" in txt
               and not os.path.exists(os.path.join(tmp, "elsewhere.jsonl")), txt)
 
-        # --- F342 on the path that has no index ------------------------------
+        # --- the re-run defect on the path that has no index -------------------
         # The same defect the mg block drives through a real conflict, on the
         # arm where the two sides are files the caller named: re-running over a
         # file this verb already resolved was refused with the STALE EXTRACT
@@ -1933,7 +1933,7 @@ def _cases(check):
                   repr(M.verify(ml, mhcfg)["findings"]))
 
         # --- mj: `merge --json` renders the operation, it does not change it ---
-        # F331. `--json` returned BEFORE the write, so it printed `"ok": true`
+        # `--json` returned BEFORE the write, so it printed `"ok": true`
         # with a full row list over a file it had not touched -- and
         # `--json --dry-run` printed byte-identical output, which left a caller
         # no way at all to tell a write from a preview. Nothing covered
@@ -1996,18 +1996,19 @@ def _cases(check):
         check("mj4 ...and `--json` carries the same failure as DATA: `ok` stays "
               "true because the merge itself was sound, `written` is false, and "
               "`error` is the reason -- a payload with a full row list and no "
-              "`written` key is exactly what F331 was",
+              "`written` key is exactly the shape a pre-write `--json` used to "
+              "return",
               code == 1 and _mj4.get("ok") is True
               and _mj4.get("written") is False
               and _mj4.get("dryRun") is False
               and bool(_mj4.get("error")), txt)
 
-        # --- mr: a REAL append racing the merge's write (F340) ----------------
-        # The F328 repair graded the result against the target and then called
-        # `write_merged`, which took the lock. So the read that graded happened
-        # BEFORE the lock existed, and a row appended in between was graded by
-        # nobody and deleted by `os.replace` -- exit 0, `wrote <name>`, and
-        # `verify` reporting the survivors chain cleanly. That is F328's own
+        # --- mr: a REAL append racing the merge's write -------------------------
+        # The stale-extract repair graded the result against the target and then
+        # called `write_merged`, which took the lock. So the read that graded
+        # happened BEFORE the lock existed, and a row appended in between was
+        # graded by nobody and deleted by `os.replace` -- exit 0, `wrote <name>`,
+        # and `verify` reporting the survivors chain cleanly. That is the same
         # signature moved from "the target was never read" to "read too early".
         #
         # DRIVEN, NOT MOCKED. A separate `audit-journal.py append` PROCESS
@@ -2130,7 +2131,7 @@ def _cases(check):
               and mrrows[-1].get("prev") == mrmarker.get("hash"),
               repr((mrres["findings"], [r.get("action") for r in mrrows])))
 
-        # --- sx: which session wrote which file (F309) -------------------------
+        # --- sx: which session wrote which file ---------------------------------
         # The file NAME carries the writer id the row supplied, truncated to fit
         # a name, and for the hook that writes most rows that is not the id the
         # session reads from Bash. `sessions` is what maps one to the other.
@@ -2168,8 +2169,7 @@ def _cases(check):
             # Through `parsed`, and every read of it is a `.get`: the mutation
             # this case exists for is a `--json` that prints prose, and the
             # unguarded form met it by RAISING - which took sx3 through sx6 out
-            # of the run, named none of them, and under-reported the total
-            # (F330).
+            # of the run, named none of them, and under-reported the total.
             _sxj = parsed(txt, {})
             _sxf = (_sxj.get("files") or [{}])[0]
             check("sx2 ...and the same mapping is available as JSON, keyed by "

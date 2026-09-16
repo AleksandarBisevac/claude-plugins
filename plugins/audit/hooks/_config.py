@@ -36,7 +36,7 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   branches of guard-secrets-read (the shell forms
                                   and the interpreter ones) and the PostToolUse
                                   report in guard-bash-writes all resolve their
-                                  tier through plan_gate_mode below (F52), so one
+                                  tier through plan_gate_mode below, so one
                                   file gets one verdict whichever way it is
                                   written. The secret guards are never graded and
                                   deny at every tier, because reading .env is
@@ -65,7 +65,7 @@ Config keys (all optional; defaults in DEFAULTS below):
         DECIDE WHETHER ITS PLAN-COVERAGE CLASS SPEAKS, and this is the master off
         switch rather than the only one: with it true, that class still resolves a
         tier through plan_gate_mode, so `planGate: "observe"` — or simply a repo
-        with no manifest — silences it (F52). The lock and journal classes bind
+        with no manifest — silences it. The lock and journal classes bind
         their claim to evidence of their own and report at every tier.
   tddReminder             obj   — non-blocking TDD nudge (remind-tdd.py):
         enabled (bool), sourceGlobs [str], testGlobs [str], throttleMinutes (int),
@@ -112,7 +112,7 @@ loaded by path via `_load_scripts_module` and treated as optional, not required.
 
 That sentence is machine-checked — `_deps.py` fails the build on any static
 hooks->scripts import, with no allow-list. It had one, for one import: this
-module's own manifest read, which the checker's first run found (F11) and which
+module's own manifest read, which the checker's first run found and which
 was the only thing standing between the rule and being true.
 
 This module carries no `--selftest` of its own any more; its cases live in
@@ -502,7 +502,7 @@ def git_root_rel(cfg):
 # there deliberately: the config belongs to the project, and a worktree should not
 # need its own copy of it. It is the wrong answer to a second question this plugin
 # also asks - WHICH TREE DID THIS COMMAND TOUCH - and the two came apart the first
-# time an agent worked inside a git worktree (F84). The env var stays pinned to the
+# time an agent worked inside a git worktree. The env var stays pinned to the
 # primary checkout, so `guard-bash-writes` ran `git status` there and told a
 # read-only sweep in the worktree that it had modified files a parallel session was
 # editing in the other tree.
@@ -634,7 +634,7 @@ def command_tree(data, root, cfg):
     command ran, and it tracks a `cd` both within one call and across calls - while
     `CLAUDE_PROJECT_DIR` stayed `<project>` throughout and the hook PROCESS's own
     `os.getcwd()` was `<project>` too, not the shell's. The payload was already
-    carrying the answer; F84 is `repo_root()`'s preference order discarding it. The
+    carrying the answer; the gap was `repo_root()`'s preference order discarding it. The
     empty-cwd branch above is therefore defensive: no payload without the field was
     observed, and the branch exists because a hook must not raise over one.
 
@@ -645,12 +645,13 @@ def command_tree(data, root, cfg):
     directory and therefore this field. It is NOT true of an agent, whose shell
     starts back in the session's directory on every call: `cd <worktree> && x`
     moves nothing this field can see, the paths compare equal, and the short
-    circuit above answers "watched" without asking git at all (F212). Reaching a
+    circuit above answers "watched" without asking git at all. Reaching a
     phase worktree that way is the ordinary shape here, not an exotic one.
 
     `guard-bash-writes.directory_change_basis` is what reads the `cd` in that
     case, and it only ever WITHDRAWS an attribution - inferring a tree from the
-    command text in order to MAKE one is the raw-string reading F51 was about."""
+    command text in order to MAKE one is the same raw-string guessing a command
+    tokenizer exists to replace."""
     watching = git_root_dir(root, cfg)
     cwd = str((data or {}).get("cwd") or "")
     if not cwd:
@@ -909,7 +910,7 @@ def _areas_of_fallback(area):
 # --- a Bash command's heredoc bodies: data, or text a machine will run --------
 # WHY THIS IS HERE AND NOT IN A GUARD. Two guards in this directory have to
 # answer the same question before they grade anything - `guard-secrets-read`
-# (F31/F116: a commit message quoting `cat <key>` is prose, a `python3 - <<PY`
+# (a commit message quoting `cat <key>` is prose, a `python3 - <<PY`
 # body is a program) and `guard-history-rewrite` (which refused a command whose
 # only act was to WRITE A FILE, because the file's content named a force push).
 # A hook may not import another hook; `_config` is the only module all of them
@@ -941,7 +942,7 @@ _STDIN_INTERP = re.compile(
     re.IGNORECASE,
 )
 # The SHELL subset of the line above, tested first because `_STDIN_INTERP` holds
-# for both and the two answers are not interchangeable (F116). A body fed to
+# for both and the two answers are not interchangeable. A body fed to
 # `bash -s` is shell text and the shell-grammar rules must read it; a body fed to
 # `python3 -` is a program in another language, where a shell READ VERB is a word
 # inside a string and the interpreter arms are what grade it.
@@ -953,7 +954,7 @@ _STDIN_SHELL = re.compile(
 def split_heredocs(cmd):
     """(text without heredoc bodies, bodies that are CODE, bodies that are SHELL).
 
-    F31, found while committing a fix to `guard-secrets-read`: the guard refused
+    Found while committing a fix to `guard-secrets-read`: the guard refused
     its own commit, because the message DESCRIBED the write forms it had just
     learned and every branch there scans the whole command text. Probing that
     turned up the mirror defect -- `python3 - <<'PY'` performs exactly what
@@ -964,7 +965,7 @@ def split_heredocs(cmd):
     RUNS it. Prose on its way into a file stops being read as code; a heredoc fed
     to python or node starts being read as the code it is.
 
-    F116 SPLIT THAT ONE BUCKET IN TWO, because "is this code" was never the whole
+    THIS SPLIT THAT ONE BUCKET IN TWO, because "is this code" was never the whole
     question: the LANGUAGE the body is code IN decides which rules may read it. A
     body fed to `bash -s` is shell text; a body fed to `python3 -` is a program in
     a language where a shell read verb is an ordinary word. Both used to arrive in
@@ -1019,7 +1020,7 @@ def split_heredocs(cmd):
 
 
 def runnable_text(cmd):
-    """The command with only the spans nothing executes removed (F116).
+    """The command with only the spans nothing executes removed.
 
     Everything a machine will run in SOME language: the text, shell bodies and
     interpreter bodies. For a rule that is about a CAPABILITY rather than about
@@ -1379,7 +1380,7 @@ def _load_manifest_assembled(path):
     scripts/ first. Nothing in scripts/ shadows a stdlib name today, and that is a
     property of a directory nobody is maintaining for it. It also made this module
     the only static hooks->scripts edge in the tree, which its own docstring says
-    does not exist (F11). Costs 0.136 ms per call, measured, because importlib by
+    does not exist. Costs 0.136 ms per call, measured, because importlib by
     path does not cache in sys.modules — against a 10-second hook budget and at
     most three calls in a run, that is not worth a second mechanism to avoid (D5's
     reasoning, one module down)."""
@@ -1730,7 +1731,7 @@ def manifest_state(root, manifest_rel):
 
     `runningPhase` names the phase behind `phaseRunning` (the phase itself when
     it is in_progress, the OWNER phase when only a task is), so a denial can say
-    "phase P3 is in_progress" instead of the anonymous claim that shipped F-F4.
+    "phase P3 is in_progress" instead of an anonymous claim.
 
     The gate's verdict is graded on this, so the two questions have to be answered
     separately. "No manifest" and "a manifest with nothing running" look identical to
@@ -1845,7 +1846,7 @@ def plan_gate_mode(cfg, state):
     understated in every place it was written down. `require-plan.py` grades the
     Edit/Write path here; `guard-secrets-read.py` grades its shell-write branch
     here, so `sed -i src/x.ts` and `Edit src/x.ts` cannot disagree; and
-    `guard-bash-writes.py` grades its plan-coverage class here (F52) — it did not,
+    `guard-bash-writes.py` grades its plan-coverage class here — it did not,
     and an advisory that cried wolf in a repo which never opted in was how a
     stranger met this plugin. Only the plan-coverage claim is graded. A guard whose
     claim binds to evidence of its own — a secret path, a held lock, a journal file
@@ -2073,7 +2074,7 @@ def redact_paths(root, text, values):
     """`text` with each of `values` respelled by the journal's ONE path redactor,
     or None when that cannot be done and `text` really does contain one.
 
-    THE FIELD BESIDE `file` HAD THE OPPOSITE TREATMENT (F153). `file` is put
+    THE FIELD BESIDE `file` HAD THE OPPOSITE TREATMENT. `file` is put
     through `_journal_io.repo_relative_or_token` by every reader that paints it;
     `reason` — the same row, one cell over — was painted verbatim, and
     `guard-secrets-read` interpolates the payload's path into the message whose
@@ -2183,7 +2184,7 @@ def append_gate_event(logs_dir, event):
     return None
 
 
-# --- which plugin copy is running (F228) ----------------------------------------
+# --- which plugin copy is running ------------------------------------------------
 # `CLAUDE_PLUGIN_ROOT` is fixed when a session STARTS: the harness interpolates it
 # into hooks.json's command strings once, so a session that began before an upgrade
 # goes on executing the copy it started with however many times the plugin is

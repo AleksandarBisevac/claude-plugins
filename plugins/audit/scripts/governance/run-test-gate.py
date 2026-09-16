@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a phase's test gate, and answer the two questions an exit code cannot.
 
-F193, measured live. A docs task's gate was `pre-commit run --all-files`, which
+Measured live. A docs task's gate was `pre-commit run --all-files`, which
 `/audit:init` had read off the repo's own config. Running it MODIFIED five source
 files the task does not own -- `isort` and `black` are fix-in-place, and they
 reported `Passed` BECAUSE they rewrote them. Had the run reached its commit step,
@@ -26,14 +26,14 @@ nobody was asking either:
     files, so a
     file CREATED in one is seen; it does not make the bracket content-aware, so a
     REWRITE of a file that was already untracked is invisible to it. And the
-    answer is a STATUS WORD and not only an exit code (F280, `GATE_MUTATED`): the
+    answer is a STATUS WORD (`GATE_MUTATED`) and not only an exit code: the
     refusal used to survive in the code this process returned and in a paragraph
     addressed to the model, while the row it wrote said `passed`.
   * DID ANYTHING ACTUALLY RUN? Runners that say so are read and the count is
     reported. `pre-commit` prints one line per hook and says `Skipped`; nothing
     read it. A count of zero is reported as `NO CHECK RAN`, which is not the same
     answer as green and must never be spelled like it.
-  * DID THE OS END IT, RATHER THAN THE RUN ANSWERING? F302, driven here. A child
+  * DID THE OS END IT, RATHER THAN THE RUN ANSWERING? A child
     the kernel kills comes back with a code that is merely `!= 0`, so the verdict
     read `sh -c 'kill -9 $$'` and `sh -c 'exit 1'` as ONE answer: exit -9 and
     exit 1, both `GATE RED`, both recorded `failed`. The signal was ALREADY on
@@ -54,7 +54,7 @@ depending on the model remembering holds until a session forgets, a harness runs
 a different orchestrator, or somebody adds a gate by hand next year. The bracket
 lives in code so the gate cannot be run without it.
 
-  * DID IT TOUCH WHAT THE TASK OWNS? F204, and the third shape of the same
+  * DID IT TOUCH WHAT THE TASK OWNS? The third shape of the same
     design. Measured live: a UI vitest suite, two files, nine tests, all green,
     against a diff that was a one-value edit to a JSON manifest. Exit 0, a real
     non-zero count, and no relationship between what ran and what changed. The
@@ -66,7 +66,7 @@ lives in code so the gate cannot be run without it.
 
 WHAT IT DOES NOT DO. It does not narrow the gate to the task's files, and the
 overlap above does not refuse -- it reports. That distinction is the whole of
-F204's decision. Narrowing changes what a per-task gate MEANS for every manifest
+this design's decision. Narrowing changes what a per-task gate MEANS for every manifest
 already written; and the overlap is derived from paths a runner HAPPENS to print,
 which is a heuristic, and a heuristic that refuses manufactures false refusals in
 a guard people would then learn to route around. Where the runner prints no paths
@@ -145,18 +145,18 @@ TIMED_OUT = "timed-out"
 # ...and `could-not-run` IS THE CLASS "this step produced no verdict, for a
 # reason that is not the work's", which is WIDER than the sentence the schema
 # used to carry for it ("the runner never started -- no interpreter, an
-# unreadable command"). The widening is F302's decision and it is recorded here
-# rather than only in a plan, because the next reader meets the word before they
-# meet the fault:
+# unreadable command"). The widening is a deliberate decision and it is recorded
+# here rather than only in a plan, because the next reader meets the word before
+# they meet the reasoning:
 #
 #   * THE CLASS ALREADY HELD MORE THAN THE SENTENCE ADMITTED. `never_started`
 #     below assigns this word off a POSITIVE ZERO - a runner that started, died
 #     before its first test and printed a summary saying none ran - and
 #     `render`'s own banner has described the class as "a missing command, A
 #     RUNNER THAT DIED BEFORE ITS FIRST TEST, a port it could not bind" for as
-#     long as that arm has existed. So the description lagged its own code before
-#     F302, and a killed child is a new MEMBER of an existing class rather than
-#     a new class.
+#     long as that arm has existed. So the description lagged its own code, and
+#     a killed child is a new MEMBER of an existing class rather than a new
+#     class.
 #   * THE WORD IS THE REPAIR, AND THE REPAIR IS THE SAME ONE. Fix the runner and
 #     re-run; do not spend a retry on the task. That is correct verbatim for a
 #     missing interpreter, for a sandbox that could not bind a port, and for an
@@ -222,7 +222,7 @@ _STEP_WORDS = {
 }
 
 # ...AND THE TABLE ABOVE WAS ONE ENTRY WIDE, WHICH MADE A DOCUMENTED RULE
-# UNREACHABLE (F276). `reference/orchestrator.md` step 4c asks a caller to tell
+# UNREACHABLE. `reference/orchestrator.md` step 4c asks a caller to tell
 # "the gates ran and failed" apart from "the gates could NOT run: missing command,
 # runner crash before tests, zero tests collected" -- and every real test runner
 # answered `None` to "how many ran", so the zero that distinction turns on could
@@ -239,8 +239,8 @@ _STEP_WORDS = {
 # THE WORDS ARE THE ONES THAT MEAN A CHECK EXECUTED, and `skipped`, `pending`,
 # `todo`, `deselected` and `total` are deliberately absent from every row. A
 # skipped check is the exact thing `NO CHECK RAN` exists to catch, so counting
-# jest's own `N total` -- which includes them -- would re-open F193's second
-# failure mode one runner along. `error` is out for the same reason from the
+# jest's own `N total` -- which includes them -- would re-open the "gate that did
+# nothing" failure mode one runner along. `error` is out for the same reason from the
 # other end: a pytest collection error is a test that never started.
 _SUMMARY_PAIR = re.compile(r"(\d+) ([a-z]+)")
 # The phrasing both vitest and pytest use for "there were none", which carries no
@@ -267,7 +267,7 @@ _SUMMARY_READERS = (
 
 
 # --- whose writes did the bracket catch ---------------------------------------
-# F280. THE REFUSAL LIVED ONLY IN THE EXIT CODE AND IN PROSE. `render` has printed
+# THE REFUSAL LIVED ONLY IN THE EXIT CODE AND IN PROSE. `render` has printed
 # `GATE MUTATED THE TREE` and returned E_FAIL for as long as the bracket has
 # existed, and `reference/orchestrator.md` tells the model not to commit on such a
 # run -- but `run_status` took no tree argument and had no tree arm, so the ROW
@@ -316,7 +316,7 @@ def _declared_by(line, declared):
 
 
 def classify_mutations(mutated, owns):
-    """`(owned, foreign, basis)` - whose writes the tree bracket caught (F273).
+    """`(owned, foreign, basis)` - whose writes the tree bracket caught.
 
     `_tree_stamp.porcelain` describes the WHOLE repository with no pathspec, so
     the bracket
@@ -335,9 +335,9 @@ def classify_mutations(mutated, owns):
     project, and that has to keep working - so this is two sets with two meanings
     and two responses, not one set with the volume turned down.
 
-    AND THE COST IS REAL, SO IT IS STATED HERE RATHER THAN FOUND LATER. F193
-    ITSELF -- a docs task whose `pre-commit run --all-files` gate rewrote five
-    backend source files -- lands in `foreign` under `--task`, because those
+    AND THE COST IS REAL, SO IT IS STATED HERE RATHER THAN FOUND LATER. The
+    backend source files a docs task's `pre-commit run --all-files` gate
+    rewrote land in `foreign` under `--task`, because those
     files are precisely what that task does not declare. Porcelain reports WHAT
     moved and never WHO moved it, so a gate writing outside its own subject and a
     sibling writing anywhere at all are indistinguishable from these two
@@ -372,8 +372,8 @@ def attributed_mutations(mutated, owned, foreign):
     ONE EXPRESSION, THREE READERS. `run_status`, `render` and `main`'s `--json`
     arm each had to decide what "the gate rewrote its own subject" meant, and two
     of them wrote the fallback out by hand while the third had no arm at all -
-    which is F280 in one sentence. A rule spelled once cannot let the record and
-    the exit code disagree about the same run.
+    which is how the record and the exit code came to disagree about the same
+    run. A rule spelled once cannot let that happen.
 
     THE FALLBACK IS THE DIRECTION A GUARD MAY BE WRONG IN. `owned is None` means
     `classify_mutations` had no declared files to sort by, so nothing can be
@@ -467,8 +467,8 @@ def unattributable_failure(failed, ran_total, before, owns, named):
     in a test file, and a red-first test written against a module that does not
     exist yet, both measure exactly nothing and are both the work's own failure.
     Excusing those records no verdict, spends no retry on work that needs one,
-    and hides the defect - the F323 class, real failures excused as
-    infrastructure. So the zero moves nothing on its own.
+    and hides the defect - real failures excused as infrastructure. So the zero
+    moves nothing on its own.
 
     AND AMBIENT DIRT IS NOT EVIDENCE EITHER, WHICH IS THE THIRD CONJUNCT AND WAS
     MEASURED RATHER THAN REASONED. Driven end to end on a scratch project: the
@@ -564,7 +564,7 @@ def summary_reader(text):
 
 
 def summary_count(text):
-    """How many checks a runner's own SUMMARY line says executed, or None (F276).
+    """How many checks a runner's own SUMMARY line says executed, or None.
 
     Derived from the runner's arithmetic and never from this reader's: counting
     output lines would go wrong the first time a suite name wrapped or a reporter
@@ -586,7 +586,7 @@ def summary_count(text):
 def wrapper_words(command):
     """The per-sub-run words `command`'s runner prints, or None if it wraps none.
 
-    ONE TABLE, TWO QUESTIONS, AND THEY ARE THE SAME QUESTION (F352). A runner
+    ONE TABLE, TWO QUESTIONS, AND THEY ARE THE SAME QUESTION. A runner
     earns a row in `_STEP_WORDS` precisely because its output is a LIST OF
     OTHER RUNS - `Passed` / `Failed` / `Skipped`, one line per hook - so the
     table that tells `ran_count` to tally lines is the table that tells
@@ -604,8 +604,8 @@ def wrapper_words(command):
 def ran_count(command, text):
     """How many checks a runner reported doing, or None when it does not say.
 
-    TWO PROVENANCES BEHIND ONE NUMBER, AND `ended_by_signal` MUST NOT READ IT
-    (F323). Below `_STEP_WORDS` this counts LINES - it is this reader's own
+    TWO PROVENANCES BEHIND ONE NUMBER, AND `ended_by_signal` MUST NOT READ IT.
+    Below `_STEP_WORDS` this counts LINES - it is this reader's own
     arithmetic over a runner that publishes no total - while `summary_count`
     returns the runner's. Both are honest counts and neither is a claim that the
     run reached its end, which is why the question "did the runner speak for its
@@ -792,16 +792,16 @@ def failing_lines(text, limit):
 # made - a marker a runner emitted mid-flight would let a killed step pass for
 # one that answered.
 #
-# AND ONE OF THEM WAS EXACTLY THAT (F352). The TAP row matched a bare `1..N`
+# AND ONE OF THEM WAS EXACTLY THAT. The TAP row matched a bare `1..N`
 # anywhere in the output, and a TAP PLAN is legal at EITHER end - the classic
 # form prints it FIRST. Driven: a plan-first stream killed after its second
 # test answered `reached_a_verdict` True, so a SIGKILLed run was graded `failed`
 # rather than `could-not-run` and spent a retry on work never measured, which is
-# the F302 fault this whole arm exists to prevent. The plan is still read, but
+# exactly what this whole arm exists to prevent. The plan is still read, but
 # only in the position that makes it a close.
 _END_OF_RUN = (
     # mocha `--reporter json`, jest `--json`, vitest `--reporter=json`. This is
-    # F323's own measured case: `mocha --reporter json` at exit 139 carries a
+    # a measured case: `mocha --reporter json` at exit 139 carries a
     # full report and its `stats` object, and the counting readers see none of it.
     ("json-report",
      re.compile(r'"(?:failures|passes|numTotalTests|numFailedTests|'
@@ -815,7 +815,7 @@ _END_OF_RUN = (
     # ...and the TAP plan, ONLY as the last thing in the output. `done_testing()`
     # and every harness that counts as it goes print `1..N` at the end and no
     # tallies at all, so dropping the shape would lose them; matching it anywhere
-    # read the CLASSIC form's opening line as a close (F352). `\s*\Z` allows the
+    # read the CLASSIC form's opening line as a close. `\s*\Z` allows the
     # trailing newline and nothing else after it.
     ("tap-plan", re.compile(r'^[ \t]*1\.\.\d+[ \t]*\s*\Z', re.M)),
     # nunit3-console, whose exit status IS the failure count.
@@ -829,7 +829,7 @@ _END_OF_RUN = (
 
 
 def reached_a_verdict(text, command=None):
-    """Whether the runner's output carries an END-OF-RUN report (F323).
+    """Whether the runner's output carries an END-OF-RUN report.
 
     THE QUESTION `ended_by_signal` ACTUALLY NEEDS, asked on its own rather than
     borrowed from the counter. A process the OS ends does not finish, so it does
@@ -852,18 +852,19 @@ def reached_a_verdict(text, command=None):
         table exists for - the arm could never fire AT ALL, because `ran_count`
         counts LINES there and so never answers None. An OOM-killed
         `pre-commit run --all-files` that had logged one `Passed` hook was
-        recorded `failed` against the task and spent a retry: F302's founding
-        fault, unrepaired for the configuration it was reported against. A line
-        tally is not a verdict, and this function cannot be fooled by one.
+        recorded `failed` against the task and spent a retry: the original
+        incident this function exists to prevent, left unrepaired for this
+        configuration until now. A line tally is not a verdict, and this
+        function cannot be fooled by one.
 
-    A COMPOSITE RUNNER SPEAKS FOR NO STEP BUT ITS OWN, WHICH IS THE OTHER HALF
-    OF F352. `pre-commit` runs OTHER runners and prints one line per hook, so a
+    A COMPOSITE RUNNER SPEAKS FOR NO STEP BUT ITS OWN. `pre-commit` runs OTHER
+    runners and prints one line per hook, so a
     pytest hook's `1 failed, 3 passed in 0.42s` is an end-of-run report for that
     HOOK and mid-flight for the step - the next hook has not started. Measured:
     that exact stream, killed with `mypy`'s line unfinished, made
     `summary_count` answer 4 and this function answer True, so an OOM-killed
-    composite was graded `failed` and spent a retry - F302's founding
-    configuration, reached this time through the summary arm rather than through
+    composite was graded `failed` and spent a retry - the same originating
+    incident, reached this time through the summary arm rather than through
     the line tally. So for a runner `wrapper_words` knows, NOTHING in the output
     is a verdict for the step: not a summary, and not an `_END_OF_RUN` document
     a hook emitted either. `pre-commit` publishes no closing report of its own
@@ -1102,7 +1103,7 @@ def counts_basis(steps, shared):
 
 
 def never_started(exit_code, ran, outcome):
-    """Whether a non-zero step never got as far as running a check (F276).
+    """Whether a non-zero step never got as far as running a check.
 
     `orchestrator.md` step 4c has always drawn this line -- "gates could NOT run
     ... zero tests collected where `tests.add` expects some -> this is NOT the
@@ -1153,7 +1154,7 @@ def _signal_name(number):
 def ended_by_signal(exit_code, text, command=None):
     """`(name, basis)` for a step the OS ENDED; `(None, None)` for one that answered.
 
-    F302. `sh -c 'kill -9 $$'` and `sh -c 'exit 1'` were one row - both `!= 0`,
+    `sh -c 'kill -9 $$'` and `sh -c 'exit 1'` were one row - both `!= 0`,
     both graded a failing test - while the signal sat on the record as
     `steps[].exit` the whole time.
 
@@ -1181,7 +1182,7 @@ def ended_by_signal(exit_code, text, command=None):
     failures really is exit 139.
 
     AND THE SECOND NARROWING IS THE RUNNER'S OWN REPORT, NEVER THIS READER'S
-    COUNT (F323). It used to be `ran is not None`, which is a fact about whether
+    COUNT. It used to be `ran is not None`, which is a fact about whether
     the counting readers in this file recognised the output - a different
     question, wrong in both directions and measured in both:
     `mocha --reporter json` at exit 139 excused 139 real failures as
@@ -1190,7 +1191,7 @@ def ended_by_signal(exit_code, text, command=None):
     the question this actually needed, and it carries the residual risk it cannot
     close. `command` is handed to it rather than kept here: whether a marker in
     the output speaks for THIS step depends on whether the step is one runner or
-    a wrapper around several (F352), and that is a fact about the command.
+    a wrapper around several, and that is a fact about the command.
 
     THE BAND IS DERIVED AND NOT PASTED, which is the difference between this and
     the two numbers a field report can hand you. The reported band is 128 to 165;
@@ -1445,7 +1446,7 @@ def files_named(text):
 
 # The suffixes a test file carries in front of its extension, across the runners
 # this script actually meets. Used to relate `src/foo.test.ts` to `src/foo.ts`
-# (F255) and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
+# and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
 _TEST_MARKS = (".test", ".spec", "_test", "_spec", "-test", "-spec")
 
 
@@ -1526,7 +1527,7 @@ def _is_suite_path(path):
 
 
 def evidence_paths(owned, named):
-    """The printed paths an EMPTY overlap could be negative evidence from (F307).
+    """The printed paths an EMPTY overlap could be negative evidence from.
 
     THE POPULATION TEST. It decides only what an empty overlap MEANS and never
     what matches - the match is untouched, because widening the stem match is
@@ -1550,21 +1551,20 @@ def evidence_paths(owned, named):
       * A VENDORED PATH is a dependency nobody declares - a stack frame under
         `node_modules` is not a file any task owns, so its presence says nothing
         either way.
-      * A SUITE PATH OF THE WORK'S OWN KIND is the F307 case exactly. Jest never
-        prints the sources a suite exercised, so the naming convention was the
-        only bridge and it missed - and what the empty overlap then measured is
-        the naming convention.
+      * A SUITE PATH OF THE WORK'S OWN KIND is exactly the failure mode above.
+        Jest never prints the sources a suite exercised, so the naming
+        convention was the only bridge and it missed - and what the empty
+        overlap then measured is the naming convention.
       * ...WHILE A SUITE PATH OF A DIFFERENT KIND IS THE OPPOSITE, and it is the
-        firing this keeps. F204's founding run - a vitest UI suite, two
-        `.test.js` files, nine tests green, against a one-value edit to a
-        `.json` manifest - printed nothing spelled like that manifest at all.
-        Those suites demonstrably are not about that file, and saying so IS the
-        finding.
+        firing this keeps. A vitest UI suite, two `.test.js` files, nine tests
+        green, against a one-value edit to a `.json` manifest, printed nothing
+        spelled like that manifest at all. Those suites demonstrably are not
+        about that file, and saying so IS the finding.
 
     ANYTHING ELSE IS A PATH THE RUNNER PROCESSED and is kept, which is the other
-    firing that had to survive: F255's second field report is eslint and tsc
-    naming real `.ts` sources, none of them the `.md` that task owned - and so
-    is the same runner against a `.ts`-owning task whose file it never linted. A
+    firing that had to survive: eslint and tsc naming real `.ts` sources, none
+    of them the `.md` that task owned - and so is the same runner against a
+    `.ts`-owning task whose file it never linted. A
     rule reading extensions alone would have gone quiet on the second of those,
     which is why the suite/processed split is the primary reading and the
     extension only chooses between the two SUITE cases.
@@ -1625,7 +1625,7 @@ def declared_coverage_answer(task_files):
 def coverage(task_files, named):
     """`(overlap, basis)` -- which of the task's files the run actually named.
 
-    A RUNNER THAT PRINTS ONLY SUITE PATHS STILL NAMES YOUR WORK (F255). Two field
+    A RUNNER THAT PRINTS ONLY SUITE PATHS STILL NAMES YOUR WORK. Two field
     reports disagreed about this line and both were right about their own run:
     one saw `NO OVERLAP` on 9 of 12 tasks because jest prints suite paths while
     `task.files` lists the sources under them, and the other called this line the
@@ -1660,7 +1660,7 @@ def coverage(task_files, named):
     if subjects:
         basis += ("; %d of them are test paths, matched to the files they are "
                   "named after" % (len([n for n in named if _subject_of(n)]),))
-    # F270. TWO COUNTS ARE NOT A DIAGNOSIS. `NO OVERLAP WITH THIS WORK` was
+    # TWO COUNTS ARE NOT A DIAGNOSIS. `NO OVERLAP WITH THIS WORK` was
     # reported firing on every gate run of one session, including tasks whose own
     # suite went green - and at that rate a line becomes noise people skip, which
     # is the opposite of what it is for. The reported cause was wrong: `named` is
@@ -1672,7 +1672,7 @@ def coverage(task_files, named):
     # stack frames rather than suites - the thing two counts can never show.
     basis += ("; among them: %s"
               % (_output.some_of(sorted(named), budget=SAMPLE_BUDGET),))
-    # F307. AN EMPTY OVERLAP IS ONLY EVIDENCE FROM PATHS THAT COULD HAVE NAMED
+    # AN EMPTY OVERLAP IS ONLY EVIDENCE FROM PATHS THAT COULD HAVE NAMED
     # THIS WORK, and this is the one place the difference shows: a HIT needs no
     # population test at all, because a match is its own proof that the two sets
     # meet. So the question is asked here and nowhere else - see `evidence_paths`
@@ -1770,7 +1770,7 @@ def _resolved(entries, build, preamble=None):
     a literal shell command and refusing it would make this script decide what a
     gate is allowed to be.
 
-    `meta.nodePreamble` IS APPLIED HERE, and it was applied nowhere (F253). The
+    `meta.nodePreamble` IS APPLIED HERE, and it was applied nowhere. The
     document has instructed callers to run it before every build gate since it
     shipped; this script spawns its OWN shell per command, so a preamble the caller
     exported into a different one reaches nothing. Measured on a live run: two gate
@@ -1814,7 +1814,7 @@ def gate_of(manifest, phase_id, task_id=None):
     if not isinstance(build, dict):
         build = {}
     # Read beside `buildCommands` because it is the same kind of declaration: what a
-    # gate entry becomes before a shell sees it (F253).
+    # gate entry becomes before a shell sees it.
     preamble = (manifest.get("meta") or {}).get("nodePreamble")
     if task_id is not None:
         tasks = [t for t in (phases[0].get("tasks") or [])
@@ -2224,7 +2224,7 @@ def run_status(steps, failed, ran_total, cancelled_by, refused, unattributable):
     status alone. Spelling that `not ran_total` would merge the two.
 
     AND `gate-mutated` SITS AT THE VERY BOTTOM, DIRECTLY ABOVE `passed`, BECAUSE
-    IT REPLACES THAT WORD AND NO OTHER (F280). Its claim is "every command ran and
+    IT REPLACES THAT WORD AND NO OTHER. Its claim is "every command ran and
     came back green, and the gate rewrote files the work under test declares" - so
     the first half of it is exactly `passed`'s claim, and every word above denies
     that half: `failed` came back red, `no-checks` counted nothing, and the three
@@ -2242,7 +2242,7 @@ def run_status(steps, failed, ran_total, cancelled_by, refused, unattributable):
     `passed`.
 
     AND `failed` IS THE ONLY WORD `unattributable` DISPLACES, which is where the
-    F323 objection lands: a red excused is a verdict nobody records and a retry
+    objection to excusing a real failure lands: a red excused is a verdict nobody records and a retry
     nobody spends, so the excuse is allowed exactly where the red says nothing
     about the work - `unattributable_failure` is the whole of that judgement and
     holds both halves of it. Every more specific no-verdict word above still wins
@@ -2253,12 +2253,12 @@ def run_status(steps, failed, ran_total, cancelled_by, refused, unattributable):
     `cancelled_by`, `refused` AND `unattributable` HAVE NO DEFAULT. There is one
     production caller,
     and an argument nobody has to pass is an argument a later caller forgets -
-    which would spell an interrupted run `passed` and lose it silently, and is
-    literally how F280 got here: a `run_status` that could not see the tree
-    recorded `passed` over its own `GATE MUTATED THE TREE`. Missing is a
+    which would spell an interrupted run `passed` and lose it silently, exactly
+    the way a `run_status` that could not see the tree once recorded `passed`
+    over its own `GATE MUTATED THE TREE`. Missing is a
     TypeError; an empty `refused` is the caller SAYING the gate rewrote nothing it
     owns. `refused` is `attributed_mutations`' first half, never `treeMutated`
-    itself - the foreign half is the one nothing can attribute (F273) and refusing
+    itself - the foreign half is the one nothing can attribute and refusing
     on it is what halted correct runs.
     """
     outcomes = [st.get("outcome") for st in steps]
@@ -2309,7 +2309,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # the outcome arms below, and not among them, because it takes part in none
     # of them - it says what was measured, never what the run is worth.
     step["measured"] = measured_state(step["ran"])
-    # F302, AND IT SITS BETWEEN THE TWO FOR A REASON. The wrapper's own facts
+    # THIS SITS BETWEEN THE TWO FOR A REASON. The wrapper's own facts
     # outrank it: a timed-out step was killed by OUR teardown, so its `-15` is
     # this process's signal and not the OS ending the run, and reading it here
     # would relabel every timeout as infrastructure. `never_started` below is an
@@ -2320,10 +2320,10 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # cached twice (`_evidence_io.row_for` makes that argument for
     # `treeMutatedOwned`).
     if not step.get("outcome"):
-        # THE STEP'S TEXT AND NOT ITS `ran` (F323). What the arm has to know is
+        # THE STEP'S TEXT AND NOT ITS `ran`. What the arm has to know is
         # whether the runner reached its own last line, and `step["ran"]` answers
         # a different question one of whose two provenances is a line tally this
-        # reader did. The COMMAND goes with it (F352): a marker in the output of
+        # reader did. The COMMAND goes with it: a marker in the output of
         # a step that wraps other runners belongs to one of them, not to the
         # step.
         sig_name, sig_basis = ended_by_signal(step["exit"], text, command)
@@ -2483,7 +2483,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
         basis = "%s; %s" % (basis, own_basis)
     named = files_named("".join(texts)) if texts else None
     overlap, cbasis = coverage(owns, named)
-    # P46.5. THE TOTAL IS THE SIZE OF THE GATE AND NOT THE SIZE OF ITS RUNS. A
+    # THE TOTAL IS THE SIZE OF THE GATE AND NOT THE SIZE OF ITS RUNS. A
     # plain sum over the steps reported one suite twice as twice as much
     # assurance, which is the reading that concealed a duplicated command for a
     # whole audit. `shared_counts` decides what may be added; `additive_total`
@@ -2492,7 +2492,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     ran_total = additive_total(steps, shared)
     failed = failed_steps(steps)
     # THE VERDICT READS THE SAME LIST THE VERDICT LINE REFUSES ON. `render` and
-    # `--json` take the other half of this pair; before F280 the status word took
+    # `--json` take the other half of this pair; before this the status word took
     # neither and could only ever say `passed` over a gate that had rewritten its
     # own subject.
     refused, _reported = attributed_mutations(mutated, owned_changes,
@@ -2608,7 +2608,7 @@ def render(res, out=print):
             out("RETRIED AFTER A SIGNAL: %s - %s" % (st["name"],
                                                      st["retryBasis"]))
     code = E_OK
-    # THE SAME LIST THE STATUS WORD READS, for F280's reason: the verdict line and
+    # THE SAME LIST THE STATUS WORD READS: the verdict line and
     # the record disagreeing about one run is the fault this file keeps being
     # repaired for, and `GATE RED` over a run whose row says `could-not-run` is
     # exactly that shape with the halves swapped.
@@ -2617,13 +2617,14 @@ def render(res, out=print):
         out("GATE RED: %s" % ", ".join(res["failed"]))
         code = E_FAIL
     # THE NO-VERDICT WORDS HAD NO ARM HERE AT ALL, and that was worth finding
-    # before F276 widened the count vocabulary: with `failed` empty, `treeMutated`
+    # before the count vocabulary widened to add these two members: with
+    # `failed` empty, `treeMutated`
     # empty and `ranTotal` unknowable, a run whose step never STARTED fell all the
     # way through to `GATE GREEN` and exit 0. `run_status` had said `could-not-run`
     # the whole time and this function printed the opposite of it. Widening the
     # count without these two arms would have turned an exit-48 sandbox failure
     # from a false red into a false GREEN, which is strictly the worse of the two.
-    # F302. THE BANNER IS THE CLASS AND THE SENTENCE UNDER IT IS THE MEMBER, and
+    # THE BANNER IS THE CLASS AND THE SENTENCE UNDER IT IS THE MEMBER, and
     # that division is load-bearing rather than cosmetic. `reference/
     # orchestrator.md` keys its infrastructure arm on this literal by name -
     # "`GATE COULD NOT RUN` is not the task's failure ... do NOT spend a retry" -
@@ -2727,11 +2728,11 @@ def render(res, out=print):
             "the orchestrator, and commit-audit-state.py at the next "
             "/audit:resume is what makes this durable.")
         code = E_FAIL
-    # F273. TWO SETS, TWO MEANINGS, TWO RESPONSES - see `classify_mutations` for
+    # TWO SETS, TWO MEANINGS, TWO RESPONSES - see `classify_mutations` for
     # what each one can and cannot claim, and `attributed_mutations` for the
     # fallback when there is no ownership to sort by. That fallback was written
     # out by hand here and again in `--json` while the status word had no arm at
-    # all, which is what let one run carry two answers (F280).
+    # all, which is what let one run carry two answers.
     owned_changes, foreign_changes = attributed_mutations(
         res["treeMutated"], res.get("treeMutatedOwned"),
         res.get("treeMutatedForeign"))
@@ -2781,7 +2782,7 @@ def render(res, out=print):
         # second reason to skip the comparison existed - an interrupted run.
         # `None` IS the claim "no comparison was made"; the basis says which.
         out("  basis: %s" % res["treeBasis"])
-    # F204. SAID, NEVER ENFORCED, and said in three distinguishable ways: the
+    # SAID, NEVER ENFORCED, and said in three distinguishable ways: the
     # overlap is empty, the overlap is real, or the question could not be asked.
     # The third is not the first -- see `coverage`.
     if res.get("overlap") is None:
@@ -3049,8 +3050,8 @@ def main(argv, out=print):
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--json", action="store_true", dest="as_json")
     # NARROWS the coverage question to one task. Without it the question is asked
-    # of the PHASE, which is where this script is invoked from - the live F204
-    # incident was a task-level gate, but a flag with no caller states nothing.
+    # of the PHASE, which is where this script is invoked from - a task-level
+    # gate needs this flag, since one with no caller states nothing.
     p.add_argument("--task", dest="task", default=None)
     # The bound a step is held to, recorded on the row that reports a timeout so
     # "timed out" carries the number that makes it actionable rather than leaving
@@ -3171,7 +3172,7 @@ def main(argv, out=print):
         res[_ev.REUSE_KEY] = identity["key"]
         res["reuseBasis"] = identity["basis"]
     # `gateSource` IS RECORDED AND `subject` IS NOT, and the split is the rule
-    # about a cached claim rather than an oversight (F312). Provenance is not
+    # about a cached claim rather than an oversight. Provenance is not
     # recoverable from the row - `_evidence_io.row_for` carries the reasoning -
     # while the subject is: it is the `taskId` the row already holds whenever
     # `gateSource` is `task`, and the `phaseId` otherwise. So one crosses into the
@@ -3188,7 +3189,7 @@ def main(argv, out=print):
                                       manifest, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
-        # ONE TERM, BECAUSE THE STATUS NOW CARRIES BOTH FACTS (F280). This read
+        # ONE TERM, BECAUSE THE STATUS NOW CARRIES BOTH FACTS. This read
         # the owned writes as a SECOND term beside the word, which is precisely
         # the shape of the fault: the exit code refused a run the record called
         # `passed`, and only the exit code was ever right. `run_status` answers
@@ -3200,7 +3201,7 @@ def main(argv, out=print):
         # not enforced, and a machine reader that wants to act on it has the
         # field. Folding it in here would make the decision this entry declined.
         # `treeMutatedForeign` is absent for the same reason and a second one -
-        # it is the half nothing can attribute (F273).
+        # it is the half nothing can attribute.
         return E_OK if res["status"] == "passed" else E_FAIL
     # WHOSE gate ran is printed, not left to be inferred from the id: under
     # `--task` a task with no gate of its own is measured by the PHASE's, and a

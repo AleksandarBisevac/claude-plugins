@@ -212,7 +212,7 @@ def _cases(check):
           and "'data-bypass-armed':'1'" in _over_src
           and "'data-ev':e.event||''" in _over_src
           and "No gate events yet" in _over_src)
-    # gp: the control for the endpoint that card renders the rows of (F110).
+    # gp: the control for the endpoint that card renders the rows of.
     # `POST /api/gate-events/prune` answered with a real verdict for a release
     # while nothing on the page named it, and `commands/logs.md` said so out
     # loud. These are SOURCE-PROPERTY pins and are labelled as such: that the
@@ -247,7 +247,7 @@ def _cases(check):
           and "const GPFEED='plan-gate-events.jsonl';" in M.UI_HTML
           and "/" not in "plan-gate-events.jsonl")
 
-    # gp/F162: the outcome a prune reports when it removed nothing. SOURCE-PROPERTY
+    # gp: the outcome a prune reports when it removed nothing. SOURCE-PROPERTY
     # pins, and labelled so rather than by the behaviour they stand near: what the
     # toast SAYS is text, and whether a reader can read it is a browser claim.
     # `gpReach` itself is a pure function at the panel's top level, which is the
@@ -277,7 +277,7 @@ def _cases(check):
           and "||0" not in _reach and "|| 0" not in _reach
           and "unknown" in _reach)
 
-    # gp/F164: the OTHER half of that statement. `audit-logs.render` prints the
+    # gp: the OTHER half of that statement. `audit-logs.render` prints the
     # `oldest` row and `_HISTORY` together and says so in its own docstring - the
     # note is what a prune cannot decide, the number is the basis that makes it
     # actionable - and the panel rendered the number alone. SOURCE-PROPERTY pins
@@ -295,13 +295,13 @@ def _cases(check):
     # `endswith` vacuous, so it is required to be non-empty in the same expression.
     _hist_cut = ", and `oldest` above is what to aim it with."
     _hist_run = _history[:_history.index(_hist_cut)] if _hist_cut in _history else ""
-    check("gp/F164: the panel says what a prune CANNOT decide, in audit-logs.py's "
+    check("gp: the panel says what a prune CANNOT decide, in audit-logs.py's "
           "own `_HISTORY` words and not a second wording of them - one fact "
           "rendered twice in two spellings is two facts the day one is edited: %r"
           % (_gpnote[-60:],),
           bool(_hist_run) and _gpnote.endswith(_hist_run + ".")
           and _gpnote.startswith("Rows naming somewhere outside this repository"))
-    check("gp/F164: ...and its home is the prune control's own persistent hint, "
+    check("gp: ...and its home is the prune control's own persistent hint, "
           "beside the age box the sentence ends by naming as the lever - never "
           "the toast, which hides in under three seconds and carries one short "
           "line, so a paragraph there is the same defect one layer over",
@@ -311,7 +311,7 @@ def _cases(check):
               _over_src.index("function gpControl(")]
           and ".ovtools [data-gphint]{flex-basis:100%}" in M.UI_HTML)
 
-    # gp/F170: ONE FIELD, ONE WORD, ON ONE CARD. That hint points at columns BY
+    # gp: ONE FIELD, ONE WORD, ON ONE CARD. That hint points at columns BY
     # NAME - the backticked words are the keys of a row as it sits in the feed file
     # - and the table it points at is a few pixels above it. The heading said "why"
     # where the sentence said `reason`, so one of the two names resolved on the page
@@ -333,7 +333,7 @@ def _cases(check):
     _gate_head = _gate_src[_gate_src.index("tableHead(["):]
     _gate_cols = re.findall(r"'([^']*)'", _gate_head[:_gate_head.index("])")])
     _hint_fields = re.findall(r"`([a-z]+)`", _hist_run)
-    check("gp/F170: every field the prune hint names in backticks is a heading "
+    check("gp: every field the prune hint names in backticks is a heading "
           "over the table beside it - a sentence that points at a column the "
           "reader cannot find on the card is a broken pointer, and one field "
           "spelled two ways is how it got broken: hint %r vs headings %r"
@@ -542,7 +542,7 @@ def _cases(check):
     check("shell: an unshown tip does not exist in layout, so it cannot push "
           "any box sideways before anyone hovers it",
           "#hinttip{position:fixed;z-index:200;display:none" in M.UI_HTML)
-    # F9's clamp survives the mechanism change: 272px of tip in a 375px column
+    # The clamp survives the mechanism change: 272px of tip in a 375px column
     # still has no correct anchor, so the geometry is computed - the icon's own
     # x where that fits, the nearest edge where it does not, MEASURED height
     # deciding below-or-above. All of it in JS: the sheet holds no coordinate,
@@ -567,7 +567,7 @@ def _cases(check):
           # driven for real in tools/ui-tests/boot-containment.test.mjs, and
           # this clause only keeps the call site from disappearing.
           and "runContained([startRunPoll,startTipPlacement])" in M.UI_HTML)
-    # F8. Both halves of one rule: a settings row is allowed to shrink, and the
+    # Both halves of one rule: a settings row is allowed to shrink, and the
     # words inside it are allowed to wrap. Either one alone leaves the row exactly
     # as wide as its content, which on a 390px screen was 447px of DOCUMENT.
     # The selector is `.f.cbf`, not `label.f.cbf`: a field's container stopped
@@ -1182,7 +1182,7 @@ def _cases(check):
           "function appliedDiff(rows,res)" in M.UI_HTML
           and "res.applied.map(key)" in M.UI_HTML
           and "'data-cfdiff':'1'" in M.UI_HTML)
-    # F102. A local write finishes faster than a person can see it, so a save with
+    # A local write finishes faster than a person can see it, so a save with
     # no sentence after it is indistinguishable from a save that did nothing - and
     # it was reported as the question "does it save instantly, I see no loader".
     # The count was already here; `what` was spent only on the refusal sentence,
@@ -1275,7 +1275,7 @@ def _cases(check):
           % (_ntc_bad,),
           not _ntc_bad)
 
-    # --- F16: unavailable must not mean unreachable (WCAG 2.2 SC 2.4.3) ---------
+    # --- unavailable must not mean unreachable (WCAG 2.2 SC 2.4.3) --------------
     # `disabled` takes the control OUT of the tab order and accepts .focus() in
     # silence, so after a successful Discard the caret stayed on <body> and the
     # next Tab restarted from the top of the document. WAI-ARIA APG uses
@@ -1589,7 +1589,7 @@ def _cases(check):
           "is a convenience, so naming an id by hand can never stop being "
           "possible",
           "'data-adoparent':ph.id||''" in M.UI_HTML
-          # F211 reordered this label: it used to open with `use the fallback — `
+          # This label was reordered: it used to open with `use the fallback — `
           # and spend the whole 9rem budget before reaching the id, so a
           # truncation lost the one thing the option is about.
           and "['fallback','fallback: '+apFallbackWords(c.fallback)]"
@@ -1654,7 +1654,7 @@ def _cases(check):
           # fifty copies of one sentence.
           and M.UI_HTML.count("'data-apcache'") == 1,
           repr(M.UI_HTML.count("'data-apcache'")))
-    # --- ap: and what the BOARD says, which the cell used to leave out (F101) --
+    # --- ap: and what the BOARD says, which the cell used to leave out ---------
     # A PROPERTY OF THE SOURCE, and text is the right instrument for exactly one
     # part of it: that no two board states share a rendering. The defect was two
     # different facts painting the same pixels - a phase the board agrees with
@@ -1804,7 +1804,7 @@ def _cases(check):
           "a browser deriving it would be the second implementation of the one "
           "rule this key exists to have exactly one of; a line that kept "
           "showing the saved answer beside a changed menu would be the "
-          "stale-reads-as-current defect one lever down (F101)",
+          "stale-reads-as-current defect one lever down",
           "at.value===atChoice?atSaved:('tracking: unsaved edit · saved: '"
           in M.UI_HTML
           and M.UI_HTML.count("atSaved=atWords(") == 1
@@ -1878,13 +1878,13 @@ def _cases(check):
           and "el('span',{class:'cfv '+cls+' unset'},AT_DEFAULT_SENTENCE)"
           in M.UI_HTML,
           repr(M.UI_HTML.count("' — tracked, the default'")))
-    # F211. BOTH selects in the phase cell must be filled THROUGH the width
+    # BOTH selects in the phase cell must be filled THROUGH the width
     # bound, and this is a property of the assembled text rather than of any
     # function's behaviour - so it is pinned here and deliberately not in
     # `ado-panel.test.mjs`, whose point is running the code instead of re-reading
     # it. The failure it guards is silent by construction: a control left
     # unbounded paints a clipped label while every other pin about it passes,
-    # which is the whole of F211 and cost a screenshot to find the first time.
+    # and it cost a screenshot to find the first time.
     #
     # The `fillOptions` SIGNATURE is pinned beside them, because a bound the
     # callers pass and the filler ignores is the same defect one layer down and
@@ -1945,7 +1945,7 @@ def _cases(check):
           # The tables themselves are NOT here.
           and "System.AreaPath" not in M.UI_HTML
           and "Microsoft.VSTS.TCM.ReproSteps" not in M.UI_HTML)
-    # --- asc: the connector banner's shared-claim clause (F147) ---------------
+    # --- asc: the connector banner's shared-claim clause -----------------------
     # PROPERTIES OF THE SOURCE, said as such. What a person SEES here is the
     # banner's wording and its tone, and only a browser gate can judge that;
     # what text is the right instrument for is that the clause exists once,
@@ -2100,7 +2100,7 @@ def _cases(check):
     check("pr7 a dropped proposal shows why, and a materialized one what it "
           "became - the two states that carry their own history",
           "'why declined'" in M.UI_HTML and "'became'" in M.UI_HTML)
-    # --- pr: F93's JavaScript half --------------------------------------------
+    # --- pr: the reserved cell's JavaScript half --------------------------------
     # PROPERTIES OF THE SOURCE, every one of them, and that is why they are here
     # rather than in tools/ui-tests/proposals-cell.test.mjs. What the two
     # functions ANSWER is executed there, against the live Python they mirror;
@@ -2109,8 +2109,8 @@ def _cases(check):
     # calls the one function and the copy sits in a branch it never reaches.
     _prop_js = M.UI_HTML[M.UI_HTML.index("function propReservedCell("):
                          M.UI_HTML.index("function renderProposals(")]
-    check("pr8 the reserved cell is composed ONCE. F93 was this string existing "
-          "in three spellings on the Python side; this file held the fourth and "
+    check("pr8 the reserved cell is composed ONCE: this string existed in three "
+          "spellings on the Python side; this file held the fourth and "
           "the fifth, and they differed in their SEPARATOR - the card joined "
           "with a middle dot and the confirm dialog with parentheses, so the "
           "same phase read as two different pieces of work",
@@ -2159,7 +2159,7 @@ def _cases(check):
           and "props.filter((p) => !p.statusKnown).length" in M.UI_HTML
           and M.UI_HTML.count("=== 'proposed').length") == 1,
           repr(M.UI_HTML.count("=== 'proposed').length")))
-    # --- vb (F100): which build is serving this page ---------------------------
+    # --- vb: which build is serving this page -----------------------------------
     # THE THREE-STATE RULE IS EXECUTED, in tools/ui-tests/version-banner.test.mjs,
     # against the real function and in both mutation directions. These pin the
     # constructs that suite depends on and one thing it cannot see: that the
@@ -3145,7 +3145,7 @@ def _cases(check):
           "const ow=(USAGE.areaOwners||{})[v];" in M.UI_HTML
           and "if(ow)o.title='owner: '+ow;" in M.UI_HTML)
 
-    # --- F5: an empty usage view explains itself ---------------------------
+    # --- an empty usage view explains itself --------------------------------
     # The range presets count back from the wall clock, so on a ledger that
     # stopped in May every preset but 90 selects nothing. That is the normal end
     # state of a finished plan, and precisely when someone opens this tab to ask
@@ -3202,7 +3202,7 @@ def _cases(check):
           and ":d==='range'?(UF.range==='all'?'all time':'last '+UF.range+' days')"
           in M.UI_HTML)
 
-    # --- F6: a share of nothing is undefined, not 100% ---------------------
+    # --- a share of nothing is undefined, not 100% --------------------------
     # `uCoverage` divided by `tot||1` — the `||1` written to dodge a divide by
     # zero — so an empty selection returned 100*(1-0)/1 and the `attributed` tile
     # reported PERFECT coverage of no rows at all, beside three honest zeros, on
@@ -3491,7 +3491,7 @@ def _cases(check):
     check("co: a click on the still-focused input reopens a closed menu (F-P-1c)",
           "inp.addEventListener('click',()=>{if(!(CMOWNER===me&&comboOpen()))render();});"
           in M.UI_HTML)
-    # F90: this case used to be LABELLED with the deferral behaviour while
+    # This case used to be LABELLED with the deferral behaviour while
     # asserting only how the predicate is spelled, so it stayed green through a
     # release in which the behaviour did not hold - the poll consulted
     # `interacting()` three round trips before it acted on the answer. The
@@ -3501,7 +3501,7 @@ def _cases(check):
     check("co: the constructs behind the deferral - interacting() exists, "
           "answers an open combo first, DERIVES its selector from dirtyViews, "
           "and the poll re-asks it after the fetches instead of acting on the "
-          "answer it got before them (F-P-1b, F90)",
+          "answer it got before them (F-P-1b)",
           "function interacting(" in M.UI_HTML
           and "if(comboOpen())return true;" in M.UI_HTML
           # The selector is DERIVED from dirtyViews, never typed here as a
@@ -3702,7 +3702,7 @@ def _cases(check):
     # 1200px, all six tabs, all four dialogs, keeping the smallest instance of each
     # shape. A static file cannot compute a rendered box and does not pretend to.
     #
-    # AND AT ALL THREE DENSITIES (F30, measured 2026-08-19). `--sp-*` are scaled by
+    # AND AT ALL THREE DENSITIES (measured 2026-08-19). `--sp-*` are scaled by
     # `layout.density` - compact .8, comfortable 1.0, spacious 1.25 - and the
     # spacing migration keeps moving declarations onto that scale, so compact can
     # walk a control under the floor without a line of CSS changing. It does: NINE
@@ -4228,8 +4228,8 @@ def _cases(check):
     # builds a button (it always passes a ref), so a klabel inside a <label> is the
     # defect itself; flabel() called with a ref builds one too.
     #
-    # TWO DELIBERATE CHANGES HERE, and F41 forced both. The census was keyed on
-    # `el('label',{class:'f` over 150-character windows, and F41's repair emptied
+    # TWO DELIBERATE CHANGES HERE. The census was keyed on
+    # `el('label',{class:'f` over 150-character windows, and the repair emptied
     # that set - which failed this case rather than passing it, because the
     # vacuity guard is real. Keying it on EVERY el('label', ...) construction
     # instead is strictly more: it now also reads the `class:'inl'` wrappers, which
@@ -4257,9 +4257,10 @@ def _cases(check):
               in M.UI_HTML
           and "el('div',{class:'f wide'},klabel(f.label,f.path,tip),ed)" in M.UI_HTML)
 
-    # --- F41: the i is inside the wrapper's NAME, not merely labelable ----------
-    # F26 repaired klabel and stopped. The rule it discovered was never written
-    # down as a check, so it reached exactly the one builder somebody edited: NINE
+    # --- the i is inside the wrapper's NAME, not merely labelable ---------------
+    # A prior repair fixed klabel and stopped there. The rule it discovered was
+    # never written down as a check, so it reached exactly the one builder
+    # somebody edited: NINE
     # call sites put flabel() inside an el('label', ...) and all nine kept the
     # defect. Two of them (`ado-tag`, `ado-rw`) were caught at 9415a43 only because
     # their wrapper held a SECOND field, which pushed the i's text into the MIDDLE
@@ -4272,7 +4273,7 @@ def _cases(check):
     # `<span tabindex=0>`, which is not labelable. The association was fine. The
     # NAME was not: a label's accessible name is its own subtree, so the i's "i"
     # is in the name of every field those seven wrappers bound - the same fold-in
-    # F26 measured on the six checkboxes that DID bind ("Meter token usage
+    # already measured on the six checkboxes that DID bind ("Meter token usage
     # usage.enabled What is Meter token usage?").
     #
     # And the span i inside a <label> is a live functional bug on top of that: it
@@ -4293,7 +4294,7 @@ def _cases(check):
 
     # THE REPAIR MUST READ CLEAN, or the lint forbids its own remedy and the next
     # person deletes the lint instead of the defect. The pinned builder text
-    # gained hint()'s third argument under F42 — the ref-less i is named after
+    # gained hint()'s third argument — the ref-less i is named after
     # what it explains now, instead of being a focusable element announcing
     # nothing — which changes the literal without touching the property this
     # case is about: the builder still binds by `for` and still holds only the
@@ -4456,13 +4457,13 @@ def _cases(check):
     #
     # So the two klabel entries name the EXPLICIT association -- the control's own
     # id, handed to the <label> that names it -- because tree position is precisely
-    # what failed. TWO of the flabel entries now bind by `for` as well (F28): their
+    # what failed. TWO of the flabel entries now bind by `for` as well: their
     # wrapper held a SECOND field, so the <label> collected that field's text too
     # and the accessible name read "Provenance tag i no provenance tag at all no
     # tag" against a visible "Provenance tag ... no tag" -- SC 2.5.3, measured, and
     # the reason the wrapper is a <span> here.
     #
-    # NOW EVERY ENTRY NAMES AN EXPLICIT BINDING, and F41 is what finished that. The
+    # NOW EVERY ENTRY NAMES AN EXPLICIT BINDING. The
     # remaining flabel entries used to stay POSITIONAL on the reading that a
     # two-argument flabel builds a <span>, which is not labelable, so nothing could
     # get between those wrappers and their field. True, and beside the point: a
@@ -4471,7 +4472,7 @@ def _cases(check):
     # wrappers are <span> now and each field is reached by `for` - so this table no
     # longer has two kinds of entry in it, and `fw0` above is the check that stops
     # a third from being written.
-    # --- F187: the two settings that had no control, and the declaration that
+    # --- the two settings that had no control, and the declaration that
     # --- makes their absence measurable ---------------------------------------
     # SOURCE PROPERTIES ONLY. That the controls exist and save is proven by the
     # browser (`capture-screenshots --only panel` walks `[data-adosetting]` against
@@ -4505,7 +4506,7 @@ def _cases(check):
             "klabel(f.label,f.path,tip,fieldId(f.path)),inp);",
         "placeholder:'not set'":
             "klabel(lbl,p,null,fieldId(p)),inp);",
-        # F187 moved these four wrappers: each now declares the meta.ado setting
+        # These four wrappers were moved: each now declares the meta.ado setting
         # it belongs to, stamped from the same path the control writes to, so the
         # browser check that walks the card reads the page instead of a translation
         # table. The association itself is unchanged - the <label> still wraps the
@@ -4654,7 +4655,7 @@ def _cases(check):
     #     4th argument handed to klabel()/flabel(), which is precisely what those
     #     two builders turn into their `<label for>`. Drop that argument at a
     #     call site and the field keeps its id, keeps its <label> and announces
-    #     its own value again - F26 in the one direction nothing here watched,
+    #     its own value again - the direction nothing here watched,
     #     because the field's own attribute object does not change.
     # A WRAPPING <label> IS DELIBERATELY NOT ONE OF THEM. _FL_LABELLED above
     # records the whole reason: a <label> names its FIRST LABELABLE DESCENDANT,
@@ -4892,7 +4893,7 @@ def _cases(check):
           "const atTop=(c.top+c.bottom)/2<innerHeight/2;" in M.UI_HTML
           and "const by=atTop?-(c.bottom-r.top+GAP):(r.bottom-c.top+GAP);"
               in M.UI_HTML)
-    # F90/C6. This case's LABEL was already right - "a menu whose input lost
+    # This case's LABEL was already right - "a menu whose input lost
     # focus" - and its clauses checked only how the close was spelled, so it
     # stayed green while the guard closed menus whose input had just GAINED
     # focus. The handler runs on the very focus that opens one. The owner test

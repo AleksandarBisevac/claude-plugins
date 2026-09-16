@@ -335,7 +335,7 @@ def main(argv):
         print("\nOK: demo GIF captured")
         return 0
     finally:
-        # F155, AND THE ANSWER HERE IS THE PLAIN CALL - said rather than left for
+        # THE ANSWER HERE IS THE PLAIN CALL - said rather than left for
         # the next reader to work out again. `build_fixture()` initialises a
         # repository and never writes an object into one: no `add`, no `commit`,
         # and the hooks the capture drives only read. A repository nothing was

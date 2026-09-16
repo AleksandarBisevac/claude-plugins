@@ -72,8 +72,8 @@ being removable and start being a dependency a consumer has to install.
 THE ONE EXCEPTION THIS FILE USED TO CARRY IS GONE. Its first run found exactly one violation of
 "hooks import nothing from scripts": `hooks/_config.py`'s guarded, static `import _manifest_io`,
 reached by inserting scripts/ at the FRONT of `sys.path`. It was named in an allow-list here
-(`_KNOWN_HOOKS_EXCEPTIONS`) because that task could only touch this file; it was fixed in its own
-session (F11) by routing the load through the `_load_scripts_module` its own sibling two lines
+(`_KNOWN_HOOKS_EXCEPTIONS`) because that task could only touch this file; it was fixed by
+routing the load through the `_load_scripts_module` its own sibling two lines
 below already used, and the allow-list went with it. The rule is stated without exceptions now,
 which is the only form of it a reader can trust — an allow-list that survives its cause is a
 second place the rule lives, and the next violation would be argued against the list rather than
@@ -548,7 +548,7 @@ LAYERS = (
      # before creating it. A command rather than a helper because the caller is
      # ORCHESTRATOR PROSE, which reaches Python only through Bash - and a
      # `python3 -c` one-liner naming a source path is the shape
-     # `guard-secrets-read` refuses (F20/F22), so the check would be blocked
+     # `guard-secrets-read` refuses, so the check would be blocked
      # exactly where it matters. It reads `_ado_conventions` at L1 and nothing else.
      "check-ado-item",
      "ado-connect",
@@ -618,7 +618,7 @@ LAYERS = (
      # every phase that has started. A command for the reason `check-ado-item` is
      # one - the caller is orchestrator PROSE, which reaches Python only through
      # Bash, and a `python3 -c` naming a source path is the shape
-     # `guard-secrets-read` refuses (F20/F22).
+     # `guard-secrets-read` refuses.
      "verify-invariants",
      # `commit-audit-state` is the WRITE that `verify-invariants` then grades: it
      # commits the phase's manifest file, the journal and the evidence, and
@@ -631,7 +631,7 @@ LAYERS = (
      # root and the action name the pair share.
      "commit-audit-state",
      # `commit-manifest-index` is its sibling over the one path that command may
-     # never carry (F269). The sharded INDEX holds `fileIndex`, `bugs[]` and the
+     # never carry. The sharded INDEX holds `fileIndex`, `bugs[]` and the
      # phase stubs; step 4c forbids a task commit from staging it and
      # `commit-audit-state` refuses it too, both correctly and for the same
      # reason - so until this existed nothing committed the index at all and the
@@ -669,7 +669,7 @@ LAYERS = (
      # the same L1 pair - `_branch` for the plan's own branch names, `_worktrees`
      # for git's list and the sweep plan.
      "manage-worktrees",
-     # `run-test-gate` (F193) is the same shape one step earlier: a door the
+     # `run-test-gate` is the same shape one step earlier: a door the
      # orchestrator PROSE reaches through Bash, doing the thing prose cannot be
      # trusted to remember. It brackets a phase's gate with a working-tree
      # snapshot and reads how many checks actually ran, because a gate that
@@ -737,7 +737,7 @@ LAYERS = (
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 
-# No allow-list. There was one, for exactly one import, and it is gone with the import (F11);
+# No allow-list. There was one, for exactly one import, and it is gone with the import;
 # see the module docstring for why it is not kept "in case".
 
 
@@ -1297,7 +1297,7 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
         edge are judged: the message opens with `imports`, `runtime-loads` or
         `imports and runtime-loads` so the wording names what is actually on the line;
       - a hooks/*.py static import of a scripts/ module name, with no exceptions - there was
-        one, for one import, and both are gone (F11; see the module docstring).
+        one, for one import, and both are gone; see the module docstring.
     A file that will not parse is its own violation in every one of the four passes it
     would otherwise take part in, rather than being dropped from the scan.
     """
@@ -1704,7 +1704,7 @@ def map_drift(guide_path=None):
 
 
 # The hooks rule, as the guide has to state it. Two halves, and the second is the
-# one F11 was about: the required sentence ALONE sat happily beside a paragraph
+# one that went stale: the required sentence ALONE sat happily beside a paragraph
 # that then carved an allowance out of it ("One known pre-existing exception
 # (`hooks/_config.py`'s guarded `import _manifest_io`) is named rather than papered
 # over"), so the guide went on describing an exception for as long as it took
@@ -1755,7 +1755,7 @@ _SELF_LAYER_CLAIM = re.compile(r"^Layer (\d+)\b", re.MULTILINE)
 def layer_doc_drift(script_dir=None, hooks_dir=None, layers=None):
     """[(relname, problem), ...] — a docstring claiming a layer LAYERS disagrees with.
 
-    F230, and it is the third instance of one class. `_doctor_policy`'s docstring
+    This is a recurring class of defect, not a one-off: `_doctor_policy`'s docstring
     opened "Layer 5" and `audit-doctor`'s module table carried a matching column,
     both written when they were true. `_panel_discovery` then came down a layer,
     `_doctor_policy` followed it, `_deps.py`'s own comment was rewritten to record
@@ -1909,7 +1909,7 @@ def uncalled_helper_claims(script_dir=None, hooks_dir=None, tools_dir=None):
     return out
 
 
-# --- explorer_contract_drift: agent contract vs its fallback restatement (F291) ---
+# --- explorer_contract_drift: agent contract vs its fallback restatement -------
 # `/audit:init` spawns `audit:audit-explorer` and parses a JSON array back, and the
 # SHAPE of one element is written by hand in two places: the agent's own contract
 # (`agents/audit-explorer.md`) and a restatement in `commands/init.md`, carried
@@ -1985,7 +1985,7 @@ def _contract_field_names(block):
 
 def explorer_contract_drift(agent_path=None, init_path=None):
     """[(file, problem), ...] - the explorer's return-contract field list, the
-    agent's own doc against `commands/init.md`'s fallback restatement of it (F291).
+    agent's own doc against `commands/init.md`'s fallback restatement of it.
 
     FAILS LOUDLY RATHER THAN COMPARING TWO EMPTY SETS. A file whose contract block
     could not be located, or whose block parsed to no field names at all, is
@@ -2031,8 +2031,8 @@ def explorer_contract_drift(agent_path=None, init_path=None):
     return out
 
 
-# --- commit_spelling_drift: every governance writer's guide paragraph vs its code (F292)
-# F268 moved the fixed, uncollidable commit literal from `commit-audit-state.py`'s
+# --- commit_spelling_drift: every governance writer's guide paragraph vs its code --
+# The fixed, uncollidable commit literal moved from `commit-audit-state.py`'s
 # TYPE into its SCOPE - `chore(audit-state):` rather than `audit-state(P1):` -
 # because commitlint's default type-enum has to accept the type or a repository
 # with husky rejects the commit AFTER the file is already staged. The guide's
@@ -2044,7 +2044,7 @@ def explorer_contract_drift(agent_path=None, init_path=None):
 #
 # ONE INSTANCE OF A TWO-INSTANCE CLASS, AND THE CLASS IS WHAT THIS CHECKS.
 # `commit-manifest-index.py` fixes its own commit's scope for the identical
-# reason (F268 names both) and its guide paragraph has always been correct - the
+# reason and its guide paragraph has always been correct - the
 # asymmetry (one stale, one not) is exactly why a check aimed at a single file
 # would have been the wrong shape: it would have proven nothing about the second
 # writer, and a THIRD one added later would ship undocumented with nothing here
@@ -2148,8 +2148,8 @@ def _governance_commit_writers(governance_dir=None):
 
 def commit_spelling_drift(guide_path=None, governance_dir=None):
     """[(file, problem), ...] - EVERY governance writer's commit-spelling claim
-    in the guide against the `COMMIT_TYPE`/`COMMIT_SCOPE` it actually emits
-    (F292), over the whole class rather than the one instance that happened to
+    in the guide against the `COMMIT_TYPE`/`COMMIT_SCOPE` it actually emits,
+    over the whole class rather than the one instance that happened to
     be stale.
 
     TWO FAILURE MODES ARE NAMED SEPARATELY FROM AN ORDINARY MISMATCH, because
@@ -2305,13 +2305,13 @@ def doc_prose_numbers(doc_paths=None):
     `_policy.py` at 60 against a real 71 and `_refs.py` at 32 against a real 80.
     Measured when the persistence and completeness families were added: THREE
     more, all in the guide, all wrong -- `KNOWN_LAYER_DEBT` written as 17 twice
-    where the table held one entry (F43, which is F39 one document over, copied
-    to a place nothing compared it), and a migration total written as 48 where
-    the tree held eighty-three files. The qualitative half of every one of those
-    notes is worth keeping and is untouched; only the number goes, because only
-    the number rots.
+    where the table held one entry (the same defect recurring in a different
+    document, copied to a place nothing compared it against), and a migration
+    total written as 48 where the tree held eighty-three files. The qualitative
+    half of every one of those notes is worth keeping and is untouched; only the
+    number goes, because only the number rots.
 
-    An unreadable document is NAMED, never skipped -- F21's rule. A skip would
+    An unreadable document is NAMED, never skipped. A skip would
     return the same empty list a clean document returns, and "nothing to report"
     would then mean either "clean" or "could not look", which is the quiet
     direction.
@@ -2801,7 +2801,7 @@ def navigability_violations(script_dir=None, hooks_dir=None):
     for the same reason: a scan that silently passes over a file it could not
     read is claiming a clean answer about it.
 
-    A file that will not OPEN is now named on the same argument (F44). It was
+    A file that will not OPEN is now named on the same argument. It was
     a bare `continue` for as long as the tokenize branch has been a violation,
     which made this function inconsistent with its own docstring: the rule was
     applied to the parser's failure and not to the filesystem's, and an
@@ -2855,13 +2855,13 @@ def navigability_violations(script_dir=None, hooks_dir=None):
 # than that sits inside a function and is not a landmark the left margin gives
 # you - the same reason the .py rule insists on column 0.
 #
-# WHAT THIS CANNOT SEE, NAMED RATHER THAN FIXED (F37). These are LINES matched by a
+# WHAT THIS CANNOT SEE, NAMED RATHER THAN FIXED. These are LINES matched by a
 # regex, and a regex cannot tell a comment from the same characters inside a
 # string. A `// ---- x ----` alone on its line inside a template literal or inside
 # a `/* ... */` block counts as a section marker here, and so would a CSS
 # declaration whose string value is continued across a line break with a
 # backslash. The .py rule two functions up does NOT have this hole, because
-# `tokenize` tells a COMMENT token from a STRING token (F21) - and there is no
+# `tokenize` tells a COMMENT token from a STRING token - and there is no
 # stdlib tokenizer for CSS or JavaScript. Hand-rolling one is not the missing
 # work: it would be a second, unverified parser for two languages, maintained
 # forever to serve one line-counting lint.
@@ -2889,7 +2889,7 @@ def navigability_violations(script_dir=None, hooks_dir=None):
 #
 # THE DIRECTION IS RECORDED, NOT OFFERED AS AN EXCUSE. Over-counting can only make
 # an under-marked file PASS, never make a well-marked one fail - which is the same
-# quiet direction F21 named as the one that hurts. No instance of it is known in
+# quiet direction named above as the one that hurts. No instance of it is known in
 # the shipped assets, and nothing checks that, and nothing here can. `u8` pins the
 # blindness the way `rt4` pins the narrowness of `_runtime_loaded_sibling_names` -
 # as a decision: if a later change closes the hole, that case goes red and is
@@ -2979,7 +2979,7 @@ def ui_asset_names(ui_dir):
 # test asks "do the two agree". A concern can pass one and fail the other, and
 # the contrast pairs did exactly that for as long as they existed.
 #
-# A NEEDLE IS A SPELLING, AND CODE HAS SEVERAL (F130). Every row here began as a
+# A NEEDLE IS A SPELLING, AND CODE HAS SEVERAL. Every row here began as a
 # bare substring copied out of the offending line, which reads as precision and is
 # not: `===1?'':'s'` cannot see `=== 1 ? '' : 's'`, so a hand-rolled plural sat in
 # a panel part for as long as it existed with this rule green over it. A cap of

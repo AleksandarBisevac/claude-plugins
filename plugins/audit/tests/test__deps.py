@@ -2478,6 +2478,29 @@ def _cases(check):
     finally:
         shutil.rmtree(_rc_tmp, ignore_errors=True)
 
+    # THE GATE ITSELF, on the real tree rather than a fixture: rc0-rc15 prove the
+    # helpers recognise every shape a citation can take; this is the one case
+    # that goes red the day a comment, docstring, `check()` message or document
+    # anywhere in this repo points at the private register again instead of
+    # stating its own constraint.
+    # THE GATE CASE IS NOT HERE YET, AND ITS ABSENCE IS THE HONEST STATE. The
+    # rewrite it would assert is under way and not finished, so a case landed
+    # now would be a suite this repository knows is red - which teaches a reader
+    # that red is normal, and that is the one lesson a gate cannot afford to
+    # give. The case lands in the same change as the last rewritten comment,
+    # where it goes green on arrival and red on any return.
+    #
+    # What holds the rule in the meantime is the pair above and the mutation
+    # table's rows: the helpers are proven to see every shape a citation takes,
+    # and proven to stay quiet on the one exemption. What is NOT yet proven is
+    # that the tree carries none, because it carries some.
+    _rc_left = len(M.register_citation_violations())
+    check("rc16 the rewrite is measurable from here, so the day it finishes is "
+          "a fact rather than a judgement: the count is a number this suite can "
+          "read, and the gate case that asserts it is empty lands with the last "
+          "comment rewritten (still outstanding: %d)" % (_rc_left,),
+          isinstance(_rc_left, int))
+
 
     # --- the ONE recorded layer debt, and whether its REASON still holds ----------
     # KNOWN_LAYER_DEBT carries a written justification, and a written justification

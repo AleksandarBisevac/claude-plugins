@@ -437,7 +437,7 @@ def validate_registry(areas, where="meta.areas"):
                             % (awhere, type(rs).__name__))
         skills = entry.get("skills")
         if "skills" in entry:
-            # F203. `null` IS LEGAL HERE and this branch was the only reader that
+            # `null` IS LEGAL HERE and this branch was the only reader that
             # said otherwise. The schema permits it and documents WHY -- "allowed
             # for symmetry with task.skills and EQUIVALENT to []: the area is
             # itself the fallback, so there is nothing beneath it for a null to
@@ -510,7 +510,7 @@ REVIEW_RULE = ("phase.reviewSkill ?? meta.areas[tag].reviewSkill "
                "?? meta.reviewSkill")
 SKILLS_RULE = "then task.skills, deduped, area first"
 # where the rule is stated -> which halves of it that file must carry
-# F301. A phase run stopped after wave 1 of eight and nothing could tell: the
+# A phase run stopped after wave 1 of eight and nothing could tell: the
 # obligation to continue was prose nothing read. `_status_facts.unfinished_runs`
 # now answers the same question from the lock and the ready list, so this row is
 # what keeps the sentence and the fact from drifting apart - the document may not
@@ -565,7 +565,7 @@ def rule_drift(plugin_root=None):
 
 
 # --- the orchestrator's claims, anchored per SECTION --------------------------
-# F282. `rule_drift` above was, measured, the ONLY thing in this repository holding
+# `rule_drift` above was, measured, the ONLY thing in this repository holding
 # any sentence of `reference/orchestrator.md` — a document that governs every
 # `/audit:*` run. Each of its `##` sections was deleted in turn and the whole gate
 # set run: not one deletion was noticed, not by the selftest sweep and not by
@@ -596,8 +596,8 @@ def rule_drift(plugin_root=None):
 #              implements the rule is in THIS file and there is no second module
 #              to read. Catches deletion and rewording only.
 #
-# The rot this document has actually suffered runs both ways (F271, F276 and F269
-# are prescriptions the code refuses; F281 was a prohibition nothing enforced), so
+# The rot this document has actually suffered runs both ways (some rows were
+# prescriptions the code refuses; others were a prohibition nothing enforced), so
 # the "value" rows are the ones that answer both directions and the others say so.
 #
 # Coverage is DERIVED, not claimed. `anchor_coverage()` prints which sections have
@@ -740,8 +740,9 @@ CLAIM_ANCHORS = (
 # code owns. `## Keeping a failed run's record` names the evidence statuses a run
 # can strand, and that list went stale inside the very change that added these
 # anchors: the section was anchored, but only by `audit-state-invariant`, which
-# reads a check NAME - so `claim_drift` was blind to the list itself. F282's own
-# class, in F282's own commit.
+# reads a check NAME - so `claim_drift` was blind to the list itself. The same
+# class of gap the anchors above exist to catch, found in the very commit that
+# added them.
 #
 # The repair is to derive the list rather than restate it. Both directions:
 # a member the enum gained and the section never learned is a finding, and so is
@@ -755,9 +756,9 @@ CLAIM_ANCHORS = (
 # belongs to whichever change adds the status, and this check is what will make
 # the document follow it.)
 #
-# F303. The second row is the same defect one section over, and it is the one that
+# The second row is the same defect one section over, and it is the one that
 # measures what section-scoped coverage buys. `## Phase sign-off` told the reader
-# that `/audit:task scope` refuses a `done` task; F283 had already reversed that.
+# that `/audit:task scope` refuses a `done` task; that had already been reversed.
 # Driven on both trees against one fixture with only the status changed, the
 # released v2.2.0 exits 2 saying scope only rewrites a pending task and this tree
 # exits 0 having widened `files`. The section was ALREADY anchored, several claims
@@ -772,14 +773,15 @@ CLAIM_ANCHORS = (
 # widening settles the INDEX and deliberately records no new work; a reader checks
 # that reasoning, finds it sound, and never re-checks the clause it rests on.
 #
-# A VOCABULARY rather than a value, and for F303's own reason: the failure was the
+# A VOCABULARY rather than a value, and for the same reason as the row above: the
+# failure was the
 # document naming a status the verb does not refuse, which is exactly this shape's
 # second direction. The pattern reads the guard inside `_locked_scope` -- the verb
 # itself rather than a restatement of it -- and accepts either spelling of a status
 # test, so widening that refusal back to `done` and `cancelled` is reported as a
 # member the section never learned instead of as a row that lost its basis.
 #
-# F334. THE FUNCTION BODY IS THE BOUND, AND IT USED TO BE AN UNBOUNDED `.*?`. The
+# THE FUNCTION BODY IS THE BOUND, AND IT USED TO BE AN UNBOUNDED `.*?`. The
 # claim here read "tied to the refusal's own `out(` line so it cannot slide onto
 # the acceptance branch below it" - true INSIDE the function and false for the
 # file, which is the defect rather than the wording: a claim the code did not

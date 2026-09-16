@@ -526,7 +526,7 @@ Windows drives.
 Each hook does `sys.path.insert(0, dirname(__file__)); import _config`. `--selftest`.
 
 `hook_plugin_root()` / `hook_plugin_version()` / `stamp_running_plugin()` /
-`running_plugin_stamps()` are the writer and the reader of the running-copy stamp (F228).
+`running_plugin_stamps()` are the writer and the reader of the running-copy stamp.
 A hook is the only process that knows which plugin copy the harness is executing —
 `CLAUDE_PLUGIN_ROOT` is interpolated into hooks.json's command strings and never exported,
 so `/audit:doctor` has nothing in its environment to read — and disk is therefore the whole
@@ -735,7 +735,7 @@ instruction on purpose: a model that forgets to log a change leaves a gap that l
 like a covered-up one. Config `journal.enabled`. `--selftest` (incl. an end-to-end
 append + verify).
 
-**The two passes, and why the tool is not part of the question (F194).** Edit fragments are
+**The two passes, and why the tool is not part of the question.** Edit fragments are
 not parseable JSON, so a field-level diff can only come from remembering the file as it
 stood before the write. The PreToolUse pass snapshots each recorded path into a
 per-(session, target) slot under `stateDir`; the PostToolUse pass reads that slot, diffs old
@@ -1118,8 +1118,8 @@ filesystem root with a named `ImportError` rather than looping; then it imports 
 and calls `install_path()`. `path_preamble_violations()` COUNTS rather than testing
 membership (a doubled preamble is as wrong as a missing one), and it counts the block's
 **lines** as well as the block — each line of it must occur once. Lines rather than the
-block alone is F94: a file that pastes the preamble once and then repeats only its
-`import _output` / `install_path()` tail carries the TEXT once and bootstraps TWICE, so a
+block alone catches a file that pastes the preamble once and then repeats only its
+`import _output` / `install_path()` tail: it carries the TEXT once and bootstraps TWICE, so a
 count of the whole block read the files under `panel/` doing exactly that as compliant
 while the house rule said this function counted the preamble "once, never twice". It also
 AST-checks that `install_path()` runs above the first sibling import — a preamble below
@@ -1127,9 +1127,9 @@ the imports it exists to enable is decoration. `_output.py` is exempt by name, f
 reasons: it *is* the marker, and it holds `PATH_PREAMBLE` as a string, so a text count over its own source
 would read as compliant.
 
-**`ui_surface_digests()` answers which files a surface's pictures are OF** (F85), and it lives at
+**`ui_surface_digests()` answers which files a surface's pictures are OF**, and it lives at
 the anchor for the same reason the kept-files walk does: two readers at two layers, and a copy in
-either would be the second implementation of "which files" that F85's round exists to remove.
+either would be the second implementation of "which files" this design exists to remove.
 `_refs.screenshot_capture_drift()` at layer 1 holds the rule; `tools/capture-screenshots.mjs`
 asks over a pipe and records the answer beside each image rather than computing its own. Membership
 is **derived from the filing convention** by `ui_surfaces_of()` — `panel/`, `panel-css/`, `report/`
@@ -1150,13 +1150,13 @@ three are how a renamed directory presents, and a digest over the remainder woul
 comparable and about a tree that is not there.
 
 **`prose_number_claims()` is where this repo's most frequent defect goes to die.** A number
-written into prose rots, because nothing compares it to the thing it describes — F29, F39 and
-F43 are all one bug, and every earlier response was to correct the figure, which buys one green
-day. Three families of present-tense claim are recognised, and none was adopted before its
+written into prose rots, because nothing compares it to the thing it describes — this recurred
+more than once under the same shape, and every earlier response was to correct the figure, which
+buys one green day. Three families of present-tense claim are recognised, and none was adopted before its
 sites were counted and checked — an extension that fires on forty correct lines is worse than
 no extension. What each measured on the day it landed: **cardinality** (`its N cases`) found
 51 sites, 9 already wrong; **persistence** (`` `NAME` stayed at N ``) found 2, both already
-wrong — that is F43; **completeness** (`all N of them`, `all N … have`) found 4, 3 already
+wrong; **completeness** (`all N of them`, `all N … have`) found 4, 3 already
 wrong. Re-derive any of them by breaking the check, never by reading this. All three take the same
 remedy — **delete the number** — and the evidence for choosing that over "make it carry its
 basis" is `CONTRIBUTING.md`, whose files-over-500 figure *does* name a command that prints it
@@ -1166,7 +1166,7 @@ regex (this module carries `ast`, `os` and `sys` only, and hooks import it on ev
 call); history stays writable, so `stood at N` and `was still N` are legal and `stayed at N`
 is not; a number carrying its own re-derivation is allowed, and the basis is read across a
 line wrap because every document here is hard-wrapped; and the repair must itself read clean,
-or the lint forbids its own remedy. F59 added one more: the number may be written as
+or the lint forbids its own remedy. The check also covers the number written as
 a **word**, and `_numeral_span()` reads both spellings for every shape so there is no second
 grammar to drift. Its table stops below `ten` on a measurement, not on taste — under `ten` a
 written-out number in this tree is a determiner, a pronoun or an anaphor pointing at an
@@ -1177,7 +1177,7 @@ code in backticks, and a numeral written with an interior separator, which is a 
 measurement and not a count of things — and every one of those is an **under**-count, which is
 the quiet direction, so a clean result means "none of the known shapes", not "no claims".
 
-**WHERE it looks is derived, and that was the other half of the same defect** (F64, F71). The
+**WHERE it looks is derived, and that was the other half of the same defect.** The
 scanned set was a hand-written pair — `.py` under `hooks/` and `scripts/`, plus three named
 documents — so a claim in `tools/`, in `tests/`, in `scripts/ui/*/README.md` or in the plugin's
 own product documents was written where nothing read it, and that is where the claims had gone:
@@ -1277,7 +1277,7 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it.
-`layer_doc_drift()` closes the third leak in that seam (F230): a module may open its docstring
+`layer_doc_drift()` closes the third leak in that seam: a module may open its docstring
 with a layer, and now it has to be the layer `LAYERS` gives it. Two documents said `Layer 5` for
 a module the table had already moved off, both were true when written, and nothing compared
 either to the table — a stale ARGUMENT costs the next reader more than no argument does. Only a
@@ -1293,8 +1293,8 @@ second definition. `_PROSE_DOCS` survives as the three documents that were once 
 and it is now a BLINDNESS check: each claims to be a definition of how this repo works, so a
 derivation that stopped reaching one has gone quiet rather than clean — which is the direction a
 floor derived from the walk itself cannot see. `navigability_violations()` and `ui_navigability_violations()` both **name** an
-asset they could not read and a directory they could not list, rather than skipping it (F44): the
-`.py` side had reported a file it could not *tokenize* since F21 while quietly swallowing one it
+asset they could not read and a directory they could not list, rather than skipping it: the
+`.py` side had already reported a file it could not *tokenize* while quietly swallowing one it
 could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
 report and panel UI gone, printing exactly what a clean tree prints. `--selftest`.
 
@@ -1383,11 +1383,11 @@ borrow the JavaScript module one where the rule under test cannot tell the exten
 assemble the literal from pieces where that shape *is* the fixture — and the function's
 docstring names the file in `tools/` that does each. A fixture nothing creates is
 indistinguishable from a reference that has gone stale, so an exemption class for it would be a
-place to declare away the defect the rule exists to find. Until F68 the convention existed only
-as a lint failure: an hour every new author pays once, and it had been paid before it was
-written down.
+place to declare away the defect the rule exists to find. Until this was written down, the
+convention existed only as a lint failure: an hour every new author pays once, and it had been
+paid before it was documented.
 
-`artifact_version_drift()` (F12) asks the same question of a COMMITTED PAGE rather than of
+`artifact_version_drift()` asks the same question of a COMMITTED PAGE rather than of
 prose. A rendered report stamps the plugin version that produced it, so a report in the tree is
 a published claim about which release the reader is looking at — and the scale demo under
 `docs/` served a stamp several releases behind the plugin while every check over it stayed
@@ -1402,11 +1402,11 @@ without that, a renamed class would take the rule quiet instead of red, and the 
 template is in the candidate set carrying no stamp precisely so a case can tell the two
 apart.
 
-`screenshot_capture_drift()` (F62) asks it of a PICTURE, which is why it cannot be answered the
+`screenshot_capture_drift()` asks it of a PICTURE, which is why it cannot be answered the
 same way. The panel paints its own version in the topbar and every shot starts at the top of the
 page, so each committed PNG under `docs/screenshots/` claims a build — and reading that claim
 back means reading text out of an image. `tools/capture-screenshots.mjs` refuses to compare
-these pixels at all: F18 settled that, and its header declines three repairs by name, including
+these pixels at all — its header declines three repairs by name, including
 masking the topbar box ("a promise never to see drift in the most-looked-at part of the page")
 and writing a fake version into the picture. So the basis is recorded beside the pictures
 instead, by the run that took them — `docs/screenshots/captured-at.json`, one entry per image
@@ -1420,11 +1420,12 @@ make the claim unforgeable, only impossible to break by accident. `demo-gate.gif
 scope on purpose — `tools/capture-demo-gif.py` writes it, so demanding an entry would report a
 missing basis against a producer never asked to record one.
 
-**That version answered only half the question, and F85 is the other half.** "Was this captured
-at this release" is not "does this picture still show the current UI", and the difference was
+**That version answered only half the question, and the source digest below is the other half.**
+"Was this captured at this release" is not "does this picture still show the current UI", and
+the difference was
 live: commits landed under `scripts/ui/` after the last re-capture, the recorded version was
 still current, and this rule was green over pictures of a panel that had since moved. Pixels
-cannot close it — F18 settled that — but the UI's **sources** are committed bytes, so a digest
+cannot close it, but the UI's **sources** are committed bytes, so a digest
 over them is host-independent by construction where the rendered page, which paints the project
 path, is not. Each entry therefore also carries the **surface** it is a picture of and the digest
 of that surface's sources, from `_output.ui_surface_digests()` described above, and
@@ -1438,7 +1439,7 @@ one, and the repair is the capture rather than a default filled in here. The dig
 runs **after** the version comparison, because both repairs are the same command and one finding
 per picture is what a reader can act on.
 
-`handbook_drift()` (F216) asks it of the one published page with **no generator behind it**.
+`handbook_drift()` asks it of the one published page with **no generator behind it**.
 `docs/handbook.html` is served by GitHub Pages beside the live demo and nothing read it: the
 rendered reports are compared byte for byte, `docs/index.html` is proven a byte copy, every
 screenshot records the version it was shot at, and the handbook walked past
@@ -1567,7 +1568,7 @@ verify in one file — `ag6`/`ag7` in `test__journal_io.py` drive exactly that f
 rule for both will get it wrong.** `append(project, entry)` returns the path the row landed
 in, or `False`, and NEVER raises: it records a write that has already succeeded, and such a
 write must not be reported as failed because the record of it could not be written. (The
-path rather than `True` is F-F3 — the `journal-writes` hook puts it in a per-session sidecar
+path rather than `True` is because the `journal-writes` hook puts it in a per-session sidecar
 so `guard-bash-writes` can tell the plugin's own append from a shell write into the trail;
 every caller that boolean-tests the result is unchanged, because a non-empty path is
 truthy.) `write_merged(path, text)` **raises** on anything that stopped it, because it is not
@@ -1614,7 +1615,7 @@ so its rows double-count), and a file whose LINKS were recomputed while every co
 row's content survived.
 
 **That last warning class is new with `merge`, and it is why the git anchor asks about ROWS
-and not about bytes** (F306). "The committed copy is a byte prefix of the working copy" stood
+and not about bytes.** "The committed copy is a byte prefix of the working copy" stood
 in for append-only-across-commits, which is a good proxy for as long as appending is the only
 thing that ever happens to the file. Resolving a divergence re-links every row after the
 divergence point, so the bytes after it are new while no row's CONTENT moved at all — and
@@ -1631,7 +1632,7 @@ the `journal.merge` marker row is required for the benign reading — so no chec
 either, and the warning's job is to send a human to read the extra rows. `_doctor_trail`'s
 `journal_warning_advice` is where that is worded for an operator.
 
-**`merge` is the verb a journal conflict needs and did not have** (F306). One writer on two
+**`merge` is the verb a journal conflict needs and did not have.** One writer on two
 BRANCHES is ordinary while a phase is paused, and the per-writer file split does not separate
 them — so a landing phase produces one file with a shared prefix and two tails, which cannot
 be resolved by editing, because each divergent row's hash covers a `prev` only its own side
@@ -1652,7 +1653,7 @@ verb that admits to it. What it refuses rather than guesses is `_journal_io.merg
 answer and is documented there — the refusal set is the library's contract and this is a
 front end over it.
 
-**`sessions` answers the question a file NAME cannot** (F309). The name carries the writer id
+**`sessions` answers the question a file NAME cannot.** The name carries the writer id
 the ROW supplied, clipped to fit a name, and the hook that writes most rows is handed a
 different id from the one a session reads from Bash — so the mapping lives in the rows, and
 this prints it per file with the `actor.sessionId` and `actor.envSessionId` values behind it,
@@ -1811,7 +1812,7 @@ the id allocation that counts live AND still-parked ids, the collision remap, th
 closure, `plan_for`, `run()` — which takes the index lock, applies, revalidates and writes —
 and `proposal_rows`/`list_view`, the READ side.
 
-**The read side is part of the rule, and it took F91 to notice.** `list` was the one verb no
+**The read side is part of the rule.** `list` was the one verb no
 script produced: `commands/propose.md` specified a table and a model rendered it from that
 prose, so what a user got was whatever the model recalled — an accurate summary, and no table.
 Meanwhile the panel derived its own rows in `_panel_composition`, with a `_parked_blockers`
@@ -1860,7 +1861,7 @@ normally its phase id is free; when it is not, the next free `P<n>` is allocated
 AND still-parked ids, and the payload's task ids and intra-payload refs move with it. An edge
 pointing at a live phase is left alone: rewriting it would silently repoint real work.
 
-**`list` prints its table here** (F91), for the same reason the other three verbs live behind a
+**`list` prints its table here**, for the same reason the other three verbs live behind a
 script: it was described in prose and rendered from prose, so nothing checked it and a user
 asking for the list got a summary instead. `LIST_COLUMNS` is `propose.md`'s own column order,
 measured across the header and every row at once so the columns stay columns; a proposal with no
@@ -1954,7 +1955,7 @@ of testing a path production never takes.
 The gate `/audit:sync push` runs an item through **before** it creates it (layer 7).
 `_ado_conventions` holds the rule; this is the door the orchestrator knocks on, and it is a
 real command rather than a `python3 -c` one-liner for a reason that is not style: a one-liner
-naming a source path is the shape `guard-secrets-read` refuses (F20/F22), so the check would
+naming a source path is the shape `guard-secrets-read` refuses, so the check would
 be blocked on exactly the machines that need it.
 
 **A guard, not an advisory.** `SECURITY.md` splits the two — advisory paths fail open, guards
@@ -1968,7 +1969,7 @@ printing the clean message; `--json` carries the same distinction as `hasStandar
 script can tell them apart too. A caller that cannot would read an unconfigured board as a
 conforming one, which is the quiet failure the whole feature exists to prevent.
 
-**`--item` and `--fetched` are two shapes and two questions** (F106), which is why they are
+**`--item` and `--fetched` are two shapes and two questions**, which is why they are
 two flags and exactly one is required. `--item` grades a payload the connector is ABOUT to
 create — work item type at the top level, a resolved `parent` beside it — and its exit 1
 means *do not create this*. `--fetched` grades the rows `fetch-ado-items.py --out` already
@@ -1985,7 +1986,7 @@ across the rows wins, with a row whose work item type the payload does not carry
 exit 2 rather than folded into a conforming count — an ungraded row reported as clean is the
 silent pass this command exists to stop.
 
-**A `NOTE:` line travels beside the verdict and moves neither half of it** (F120).
+**A `NOTE:` line travels beside the verdict and moves neither half of it.**
 `requireParent` grades the parent the connector RESOLVED, and push resolves none for a bug —
 it creates that card with no parent link and names no third kind to hang — so the rule is
 scoped by work item type from `meta.ado.types`, and the narrowing is PRINTED rather than
@@ -2234,13 +2235,13 @@ names a bug at all — that field is the only thing placing it. The same organiz
 project at `asRequirements` and another at `asTasks`, so a table shipped here would be wrong on the
 second board and confidently so.
 
-**The rank has a source and the name had none** (F143). `levels_from_backlog_config()` takes the
+**The rank has a source and the name had none.** `levels_from_backlog_config()` takes the
 bug rung's rank off `bugsBehavior` and its NAME off `bug_type(ado)`, i.e. `meta.ado.types.bug` —
 the same derivation `inventory()` stamps a bug row with, so the ladder key and the row graded
 against it cannot be two spellings. A literal there filed the rank under a name no work item
 carries on a board that renamed the type, and every bug on the most governed kind of board came
 back `not verified`. `resolve-ado-parent.py --hierarchy-from` is the door that reaches it: the
-function had no caller at all while three documents carried the rule instead (F157).
+function had no caller at all while three documents carried the rule instead.
 
 ### `plugins/audit/scripts/manifest/resolve-ado-parent.py`
 The door onto `_ado_parent` (layer 7), same shape as `check-ado-item.py` over `_ado_conventions`:
@@ -2262,7 +2263,7 @@ plan can be seen.
 of the file reads.** `/audit:sync parents` fetches the project's `backlogconfiguration` and used to
 assemble `meta.ado.hierarchy` from prose, so the rule for placing the bug rung was written out in
 `commands/sync.md`, `reference/tracker-sync.md` and `docs/ado-connector.md` — and moved under all
-three when the name stopped being a literal (F157). The mode prints the block whole, `fetchedAt`
+three when the name stopped being a literal. The mode prints the block whole, `fetchedAt`
 included, so a caller copies an answer instead of following a recipe; the manifest stays the first
 argument because `meta.ado.types.bug` is where the bug rung's name comes from. Exit 2 covers both
 an unreadable payload and one that ranks no backlog level, and it prints nothing on stdout in
@@ -2517,7 +2518,7 @@ sentence has carried a stale figure before: `meta.areas` roots against the tree 
 tags against the registry (v0.28), the capability policy against the plan it governs and
 against this machine's inventory (v0.30, dead patterns v0.38), `meta.buildCommands` runners
 against PATH, the branch-naming convention, and the skills the plan names — first against
-this machine (F195) and then, as a second half, against what a CLONE would load. Every row
+this machine and then, as a second half, against what a CLONE would load. Every row
 is a WARNING at most — a missing directory or an uninstalled runner is a gap in this
 checkout or this machine, never proof the repo is broken, which is the lesson CI's manifest
 job taught by failing over a correct observation. `_leading_executable` resolves what a
@@ -2552,7 +2553,7 @@ on a walk that has nothing to walk, so a removed trail is reported as a removed 
 than as a project that has never recorded anything. Everything else is a WARNING at most,
 and the warnings are not one thing: a torn tail is an interrupted writer, out-of-band drift is
 a recorded document moving with no row to explain it, and a **RE-LINKED** chain is a file whose
-committed rows all survived while the bytes after one of them are new (F306).
+committed rows all survived while the bytes after one of them are new.
 
 **That third class is the one to read carefully, because this check cannot tell what caused
 it.** `audit-journal.py merge` re-links a chain to resolve a divergence — and splicing a
@@ -2562,7 +2563,7 @@ REQUIRED for the harmless reading, so nothing mechanically confirms it: what the
 is that the operator is sent to look, at the extra rows (`audit-journal.py show`) and at the
 merge they already know about (`git log --merges`) — a pointer, never a verdict.
 `journal_warning_advice` is why that is said per class: one repair line for each class actually
-present and none about a class that is not (F329 — one unconditional sentence about out-of-band
+present and none about a class that is not (an earlier unconditional sentence about out-of-band
 drift sent an operator hunting a git checkout that was never there, and an operator who finds
 nothing learns to read the row as noise), and a warning it does not recognise gets a pointer
 instead of a guessed cause.
@@ -2572,7 +2573,7 @@ uncommitted-file warning, keyed by journal-relative path so a live and an archiv
 cannot read as one another. Layer 4, set by the `usage_ledger` load.
 
 `check_running_plugin` answers the question beside it — **which copy of the plugin ran
-them** (F228). `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began
+them.** `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began
 before an upgrade keeps executing the copy it started with, and the harness substitutes that
 variable into a command string rather than exporting it — so this command runs with nothing
 in its environment naming the hooks' root. Disk is the whole channel and there are two things
@@ -2941,12 +2942,12 @@ degraded past and named, the sentence step 4c already writes for the journal.
 **Never an empty commit**, and a fixed literal in the **scope** position. Nothing staged means no
 commit and a line saying so — a stream of empty commits is how a record stops being read. The
 commit itself reads `chore(audit-state):` — `chore` because commitlint's default type-enum has to
-accept it or a repository with husky rejects the commit *after* the file is staged (F268), and
+accept it or a repository with husky rejects the commit *after* the file is staged, and
 `audit-state` sits in the scope because a task commit's scope is its phase id while its type comes
 from `meta.commit.type`, which a manifest may set to anything. `git log --grep audit-state`
 therefore separates the two commit classes for ever.
 
-**And the subject after the colon opens with a fixed lowercase word** (F305) — the line reads
+**And the subject after the colon opens with a fixed lowercase word** — the line reads
 `chore(audit-state): phase P6 — …`. This is the second half of the same repair: `chore` satisfied
 commitlint's default `type-enum`, and the very next default rule refused the commit anyway.
 `subject-case` forbids a subject that *is* sentence-case, start-case, pascal-case or upper-case,
@@ -2959,7 +2960,7 @@ nothing a caller passes can put a capital back in first position — and the pha
 **uppercase** one word further in, since the id was never what the rule objected to, its position
 was. The shape is unconditional and deliberately **not** read from `meta.commit`: that block holds
 a default type and a trailer, records nothing about which commitlint rules a repository
-configures, and a fixed spelling no manifest can move is exactly what F268 bought.
+configures, and a fixed spelling no manifest can move is exactly what this buys.
 
 **It anchors itself in the trail.** After committing it appends an `audit.state.committed`
 journal row whose `details` carry `commit` and `phaseId` — the only handle anything has on such
@@ -2972,7 +2973,7 @@ commit that happened must not be reported as not having happened.
 
 ### `plugins/audit/scripts/governance/commit-manifest-index.py`
 `commit-manifest-index.py <manifest> <phaseId>` — **commit the manifest INDEX on its own, or say
-there is nothing to commit** (F269). `--project` names the directory holding `.claude/` and the
+there is nothing to commit.** `--project` names the directory holding `.claude/` and the
 records, `--subject` supplies the commit subject after the conventional prefix, `--takeover` takes
 a lock a human has confirmed is dead, `--json` prints the whole answer. Exit 0 it ran, 1 it could
 not, 2 usage error, 3 the lock is held by a live process, 4 the lock is stale.
@@ -3015,11 +3016,11 @@ sign-off read as failed and get the step deleted within a day.
 
 **Never an empty commit**, and a fixed literal in the **scope** position. `chore(audit-index):` —
 `chore` because commitlint's default enum has to accept the type or a repository with husky refuses
-the commit *after* the file is staged (F268), and `audit-index` in the scope because a task commit's
+the commit *after* the file is staged, and `audit-index` in the scope because a task commit's
 scope is its phase id and its type comes from `meta.commit.type`, which a manifest may set to
 anything. `git log --grep audit-index` therefore separates the three commit classes for ever.
 
-**And its subject opens with the same fixed lowercase word** (F305), against the identical defect:
+**And its subject opens with the same fixed lowercase word**, against the identical defect:
 with the phase id first the subject *is* sentence-case, which commitlint's default `subject-case`
 refuses along with start-case, pascal-case and upper-case. The reasoning is spelled out under
 `commit-audit-state.py` above and is not restated here; what is specific to this writer is that
@@ -3070,7 +3071,7 @@ omission: this commit touches the phase's own shard, which only that phase's run
 task's own files, which the plan gate has already bound to one task.
 
 ### `plugins/audit/scripts/governance/run-test-gate.py` (v1.4.2)
-Runs a phase's `testGate` and answers the two questions an exit code cannot (F193).
+Runs a phase's `testGate` and answers the two questions an exit code cannot.
 
 **Did the gate change the tree?** `git status --porcelain -uall` before and after. A gate is a
 MEASUREMENT; one with side effects has answered a different question than the one asked, and
@@ -3079,7 +3080,7 @@ a commit built on it carries work no task owns and no review saw. Any difference
 Measured live: a docs task's `pre-commit run --all-files` rewrote five backend source files —
 `isort` and `black` are fix-in-place and reported `Passed` *because* they had.
 
-**Whose writes, though — the bracket has no pathspec** (F273). It describes the whole
+**Whose writes, though — the bracket has no pathspec.** It describes the whole
 repository, so every write landing in its window is caught, including a **sibling executor's**,
 which this file's own orchestrator reference invites by running tasks with disjoint `files` in
 parallel. Measured live on a project whose gates are all read-only (`eslint` with no `--fix`,
@@ -3091,12 +3092,12 @@ subject: `GATE MUTATED THE TREE`, unchanged, still refusing. Paths **outside** i
 `TREE CHANGED OUTSIDE THIS WORK` and do **not** refuse — porcelain reports *what* moved and
 never *who* moved it, so a gate writing outside its subject and a second session writing
 anywhere produce the same two snapshots, and the line names both readings. That is a real cost
-stated rather than hidden: F193's own incident lands in the reported half under `--task`, and
+stated rather than hidden: the incident that motivated this check lands in the reported half under `--task`, and
 what still refuses is the half where a gate's verdict is a claim about bytes it produced
 itself. With no declared files there is nothing to sort by, so both halves are `None` and the
 whole set is attributed to the gate — the direction a guard may be wrong in.
 
-**`-uall` is load-bearing, and its limit is stated rather than left to be assumed** (F224).
+**`-uall` is load-bearing, and its limit is stated rather than left to be assumed.**
 Without it git collapses a **wholly untracked** directory to one `?? dir/` entry, so a
 fix-in-place gate that *creates* a file inside one moves no porcelain line and the bracket
 answers `treeMutated: []` — the value that means KNOWN CLEAN. That is the day-one shape of a
@@ -3115,8 +3116,8 @@ verified, task done. One design, both failure modes, and the exit code separated
 a verdict. A runner that does not report a count yields `None`, printed as not-knowable —
 guessing zero would refuse a passing gate and guessing one would bless a skipped one.
 
-**And the count vocabulary was one entry wide, which made a documented rule unreachable**
-(F276). Only `pre-commit` reported a step count, so jest, vitest, mocha and pytest all answered
+**And the count vocabulary was one entry wide, which made a documented rule unreachable.**
+Only `pre-commit` reported a step count, so jest, vitest, mocha and pytest all answered
 `None` — and with it, `orchestrator.md`'s "gates could NOT run … zero tests collected"
 distinction had nothing to turn on. Each of those runners prints one line of its own arithmetic
 and it is now read, matched on the **output** rather than on the command, because a gate entry
@@ -3391,7 +3392,7 @@ resolves the single in_progress phase or exits 2 naming the choices; `--skills n
 the explicit JSON-null opt-out (v0.37 B1); a held lock prints audit-lock's own message
 (exit 3 live / 4 stale, `--takeover` to seize what a human confirmed dead).
 
-**`add-phase "<title>" --outcome "<…>"` is the same discipline one noun up (F58)** — the writer
+**`add-phase "<title>" --outcome "<…>"` is the same discipline one noun up** — the writer
 behind `/audit:phase add`, and the answer to the one thing nothing in this tree could do:
 append a phase to a plan that already exists. `/audit:init` synthesizes a whole plan,
 `/audit:propose materialize` MOVES a parked payload, `add` needs the phase to be there, and the
@@ -3709,7 +3710,7 @@ carries a **build stamp** as well — written by `_write_pidfile` rather than by
 every pidfile this plugin writes has it and `--status` always holds both halves of the
 comparison below.
 
-**The pidfile is no longer the panel's only per-project artifact** (F99). A detached launch
+**The pidfile is no longer the panel's only per-project artifact.** A detached launch
 that discarded stderr left a launch that FAILED looking exactly like one that succeeded and
 was then stopped — no pidfile, no message, nothing on record — so the recipe appends it to
 `.claude/audit-panel.log` instead, the server empties that file once it is actually
@@ -4034,7 +4035,7 @@ seen every label a suite produced, so it is where they are checked for being two
 one name: an id claimed from more than one `check()` call site, and a whole label printed twice.
 Both arrive as named FAILING cases, because `tools/prove-gates.py` credits a mutation to the
 case whose id went red — an ambiguous id defeats its `RED, WRONG CASE` verdict silently, which
-is why F63 is the one defect that weakens every other proof in the tree. The rule reads the CALL
+is why a duplicated case id is the one defect that weakens every other proof in the tree. The rule reads the CALL
 SITE rather than the occurrence count on purpose: a family driven from one loop (`t3 0 is not a
 tier`, `t3 -3 is not a tier`) is one authored assertion and keeps one name, while two
 hand-written cases claiming `pn10` are two. `prove-gates.py` holds the other end, refusing to
