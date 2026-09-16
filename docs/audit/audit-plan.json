@@ -1354,7 +1354,8 @@
       "P32.9",
       "P34.5",
       "P36.10",
-      "P55.3"
+      "P55.3",
+      "P55.9"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",

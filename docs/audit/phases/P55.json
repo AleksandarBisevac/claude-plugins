@@ -409,6 +409,48 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P55.9",
+      "title": "A case that says it pins the window plants its decoy where the window cannot reach",
+      "status": "pending",
+      "description": "DONE MEANS: widening _areas._CLAIM_WINDOW past the section reddens a case. It does not today - the constant was raised past any document in the tree and the whole sweep stayed green, so the one site that reads it is defended by nothing. oa12 carries a comment asserting the window is load-bearing and that oa12 is what says so, and that comment is the reason nobody looked: it plants its decoy BEFORE the anchor's bullet, while the slice runs forward from the anchor, so no forward widening can ever reach it. What oa12 pins is the slice's left endpoint, which the slice does for free. Add a second laundered document with the decoy planted after the anchor and outside the shipped window, a finding at the shipped value and a non-finding only once the window is widened past it. oa12 stays as it is - a decoy behind the anchor is worth a case, it just is not this one - and the comment above it stops claiming what the new case is the one to claim.",
+      "files": [
+        "plugins/audit/tests/test__areas.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__areas.py: a claim satisfied only by a neighbour's value BEYOND the context window is a finding, so widening the window reddens the case"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-16T05:02:21Z"
