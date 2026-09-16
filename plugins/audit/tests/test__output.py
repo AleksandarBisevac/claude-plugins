@@ -2318,46 +2318,72 @@ def _cases(check):
           and len(_raw) == len(_publishers))
 
 
-    # --- F188: how an acquire result may be read --------------------------------
-    # `_locks.acquire` returns an INT on every path. Two callers named it `handle`
-    # and tested `isinstance(handle, dict)` - never true of an int - so their
-    # release never ran and their status was never read: every write leaked the
-    # index lock, and a REFUSED acquire fell straight into the write and changed
-    # the manifest with no lock held. One misreading, two defects, and a
+    # --- how an acquire result may be read ---------------------------------------
+    # `_locks.acquire` returns an INT on every path. Two callers once named it
+    # `handle` and tested `isinstance(handle, dict)` - never true of an int - so
+    # their release never ran and their status was never read: every write leaked
+    # the index lock, and a REFUSED acquire fell straight into the write and
+    # changed the manifest with no lock held. One misreading, two defects, and a
     # `try/finally` that made the first look handled.
     #
     # Read as SOURCE because the shape is the fault. A behavioural case per caller
-    # is worth having and two exist, but they cannot stop a THIRD caller inventing
-    # the same reading; and `isinstance(x, dict)` on an int raises nothing and
-    # returns a value, so nothing fails until a lock is contended.
-    _lk_callers = ("../scripts/manifest/_proposals.py",
-                   "../scripts/manifest/repair-commits.py",
-                   "../scripts/manifest/repair-tests-add.py",
-                   "../scripts/panel/_panel_write.py")
-    _lk_here = os.path.dirname(os.path.abspath(__file__))
+    # is worth having and some exist, but they cannot stop the NEXT caller
+    # inventing the same reading; `isinstance(x, dict)` on an int raises nothing
+    # and returns a value, so nothing fails until a lock is contended.
+    #
+    # THE MEMBERSHIP IS A WALK, NOT A TABLE. A hand-kept list of callers is
+    # exactly how a new one goes unwatched: nothing re-reads the tree to notice
+    # one, so a caller added under a directory the list's author was not
+    # thinking about opts itself out by being forgotten. `M.py_files` is the
+    # same recursive walk every other source-reading case in this module already
+    # shares (see `px2` above); finding "which file spells `_locks.acquire(`" out
+    # of it costs nothing this suite does not already spend.
+    _lk_callers = []
+    _lk_src_of = {}
     _lk_bad = {}
-    for _rel in _lk_callers:
-        # The same sentinel px2 uses, and for the same reason: this list is
-        # hand-kept, "the file moved" is how it rots, and that has to be a row in
-        # `_lk_bad` rather than an exception nothing attributes to this case.
+    for _lk_rel, _lk_path in M.py_files(M.SCRIPTS_DIR):
+        # A FILE THE WALK NAMES AND CANNOT READ IS A FINDING, not a traceback -
+        # the same posture `px2` takes for the same reason: whether THIS file
+        # calls `_locks.acquire(` could not be checked, and that has to show up
+        # as a row rather than as an exception that takes every later case down
+        # while naming none of them.
         try:
-            _src = io.open(os.path.join(_lk_here, _rel), encoding="utf-8").read()
+            _lk_src = io.open(_lk_path, encoding="utf-8").read()
         except (OSError, UnicodeDecodeError):
-            _lk_bad[_rel] = "cannot be read - this list names a file that moved"
+            _lk_bad[_lk_rel] = ("cannot be read - whether it calls "
+                                "_locks.acquire( could not be checked")
             continue
-        if "_locks.acquire(" not in _src:
-            _lk_bad[_rel] = "no longer calls _locks.acquire - this list is stale"
-            continue
-        for _line in _src.splitlines():
+        _lk_calls_it = False
+        for _lk_line in _lk_src.splitlines():
+            _lk_st = _lk_line.strip()
+            if _lk_st.startswith("#"):
+                continue
+            if "_locks.acquire(" in _lk_st:
+                _lk_calls_it = True
+                break
+        if _lk_calls_it:
+            _lk_callers.append(_lk_rel)
+            _lk_src_of[_lk_rel] = _lk_src
+    for _rel in _lk_callers:
+        for _line in _lk_src_of[_rel].splitlines():
             _st = _line.strip()
             if _st.startswith("#"):
                 continue
             if "isinstance(" in _st and ("handle" in _st or "code" in _st):
                 _lk_bad[_rel] = _st[:70]
+    # THE FLOOR, NOT A COUNT. What follows is not today's tally - run the walk
+    # to see that - it is the least this case accepts before treating itself as
+    # having stopped matching the source, rather than the tree having actually
+    # shed that much at once. Both manifest repairs, the phase-proposal writer
+    # and the panel's write path each take this lock by name below, and none of
+    # them can disappear without a change large enough to carry its own review -
+    # so a walk that lands under this floor is far more likely to have broken
+    # than to be reporting a tree that has genuinely lost that much.
+    _lk_floor = 4
     check("lk4 no caller reads an acquire result as anything but the integer it "
           "is - the release and the refusal both hang off that value, and a "
           "`dict` reading disables both while raising nothing: %r" % (_lk_bad,),
-          not _lk_bad and len(_lk_callers) == 4)
+          not _lk_bad and len(_lk_callers) >= _lk_floor)
 
 
 def _selftest():
