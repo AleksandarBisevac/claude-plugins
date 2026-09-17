@@ -2417,9 +2417,22 @@ def doc_prose_numbers(doc_paths=None):
 #
 # TWO SHAPES, NOT ONE, because the two registers are spelled differently.
 #
-#   fault    `F` + digits, anywhere in a comment, a docstring or a document -
-#            there is no legitimate in-tree use of that shape, so any instance
-#            is a finding.
+#   fault    `F` + digits, OR the same register cited in its OTHER spelling:
+#            `F-` + an optional single component letter + an optional `-` +
+#            digits (`F<n>`, `F-<letter>-<n>`, `F-<letter><n>` and `F-<n>`
+#            are all one vocabulary). A scanner that read only the first
+#            spelling reported a count that LOOKED complete while every
+#            citation in the second spelling sat outside it - the same
+#            defect the rule exists to remove, in a shape it had never
+#            matched. Anywhere in a comment, a docstring, a `check()` message
+#            or any other string literal a reader can see it through - there
+#            is no legitimate in-tree use of either shape, so any instance is
+#            a finding, with ONE exclusion: a ruff/flake8 diagnostic code
+#            happens to share the plain shape, and a code named in a
+#            `noqa:` suppression's own comma-separated list is excluded
+#            STRUCTURALLY, by reading that list, never by naming today's
+#            codes - a citation sitting in the SAME comment AFTER the list is
+#            not part of it and is still a finding.
 #   phase    `P` + digits (+ `.` + digits), but ONLY where it opens a comment or
 #            a docstring paragraph and is immediately followed by a full stop -
 #            the "P42. EXPLANATION" shape this tree's own retrospectives use.
@@ -2430,7 +2443,7 @@ def doc_prose_numbers(doc_paths=None):
 #            repo's own backlog" would be routed around inside a day. That gap
 #            is real and is left to the author, the same way
 #            `_output.prose_number_claims()` leaves its own widenings unenforced.
-_FAULT_TOKEN_RE = re.compile(r"\bF\d{1,4}\b")
+_FAULT_TOKEN_RE = re.compile(r"\bF(?:\d{1,4}|-[A-Z]?-?\d{1,4})\b")
 _PHASE_OPEN_RE = re.compile(r"^P\d+(\.\d+)?\.\s")
 
 # The one in-repo, openable collision with the fault shape: `reference/
@@ -2439,14 +2452,52 @@ _PHASE_OPEN_RE = re.compile(r"^P\d+(\.\d+)?\.\s")
 # citation naming its own paragraph is not the defect this scan exists for.
 _LIVE_GATE_MARKER = "live-gate"
 
+# A `noqa:` directive introduces a comma-separated code list and NOTHING ELSE
+# is part of it: the list ends at the first thing that is not another code.
+# Reading it this way is what makes the exclusion structural rather than a
+# table of today's codes - a diagnostic code shaped like a fault id is ruff's
+# vocabulary wherever it sits in the list, however many codes ship or get
+# renamed, while a citation in the SAME comment AFTER the list
+# (`# noqa: E402  (F<n>: the shape ...)`) is outside it and still a finding;
+# "the line contains noqa" would have swallowed that one too.
+_NOQA_RE = re.compile(r"\bnoqa\s*:\s*", re.IGNORECASE)
+_NOQA_CODE_RE = re.compile(r"[A-Z]+[0-9]+")
+_NOQA_SEP_RE = re.compile(r"[ \t]*,[ \t]*")
+
+
+def _noqa_code_spans(text):
+    """[(start, end)] -- the exact span of every diagnostic code a `noqa:`
+    directive in `text` suppresses, read as the comma-separated list the
+    directive defines rather than as "everything after the word noqa"."""
+    out = []
+    for m in _NOQA_RE.finditer(text):
+        pos = m.end()
+        first = True
+        while True:
+            if not first:
+                sep = _NOQA_SEP_RE.match(text, pos)
+                if sep is None:
+                    break
+                pos = sep.end()
+            code = _NOQA_CODE_RE.match(text, pos)
+            if code is None:
+                break
+            out.append(code.span())
+            pos = code.end()
+            first = False
+    return out
+
 
 def _fault_hits(text):
-    """[(offset, token)] -- every fault-shaped token in `text`, `live-gate` names
-    excluded."""
+    """[(offset, token)] -- every fault-shaped token in `text`, `live-gate`
+    names and a `noqa:` suppression's own code list excluded."""
+    noqa_spans = _noqa_code_spans(text)
     out = []
     for m in _FAULT_TOKEN_RE.finditer(text):
         before = text[:m.start()].rstrip().lower()
         if before.endswith(_LIVE_GATE_MARKER):
+            continue
+        if any(start <= m.start() < end for start, end in noqa_spans):
             continue
         out.append((m.start(), m.group(0)))
     return out
@@ -2488,14 +2539,13 @@ def _py_comment_citations(text):
     return out
 
 
-def _py_docstring_citations(text):
-    """[(lineno, token)] -- a register citation inside a module/class/function
-    docstring. None if `text` will not parse."""
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return None
-    out = []
+def _docstring_constant_ids(tree):
+    """{id(node): lineno} for every module/class/function docstring's own
+    string-literal AST node in `tree` -- the ONE spot `_py_docstring_citations`
+    reads, shared rather than re-derived so `_py_other_literal_citations` can
+    ask "did the docstring scan already claim this literal" without a second
+    copy of the same walk."""
+    out = {}
     nodes = [tree] + [n for n in ast.walk(tree)
                       if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
                                         ast.ClassDef))]
@@ -2504,10 +2554,30 @@ def _py_docstring_citations(text):
         if not doc:
             continue
         body = getattr(node, "body", None) or []
-        lineno = body[0].lineno if body else getattr(node, "lineno", 0)
-        for _off, token in _fault_hits(doc):
+        if not (body and isinstance(body[0], ast.Expr)):
+            continue
+        literal = body[0].value
+        if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
+            out[id(literal)] = body[0].lineno
+    return out
+
+
+def _py_docstring_citations(text):
+    """[(lineno, token)] -- a register citation inside a module/class/function
+    docstring. None if `text` will not parse."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    doc_ids = _docstring_constant_ids(tree)
+    out = []
+    for node in ast.walk(tree):
+        lineno = doc_ids.get(id(node))
+        if lineno is None:
+            continue
+        for _off, token in _fault_hits(node.value):
             out.append((lineno, token))
-        for docline in doc.split("\n"):
+        for docline in node.value.split("\n"):
             phase = _phase_paragraph_hit(docline)
             if phase is not None:
                 out.append((lineno, phase))
@@ -2534,6 +2604,30 @@ def _call_string_literal(node):
     return None
 
 
+def _check_label_constant_ids(tree):
+    """{id(node): lineno} for the string-literal AST node that carries a
+    literal `check(...)` call's own message in `tree` -- the ONE spot
+    `_check_label_citations` reads, shared rather than re-derived so
+    `_py_other_literal_citations` can ask "did the check-label scan already
+    claim this literal, offset 0 exempt" without a second copy of the walk
+    that finds it. A call whose func is not literally named `check`, or
+    whose first argument is not a string literal `_call_string_literal`
+    recognises, carries none."""
+    out = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "check" and node.args):
+            continue
+        literal = _call_string_literal(node.args[0])
+        if literal is None:
+            continue
+        _label, lineno = literal
+        target = (node.args[0].left if isinstance(node.args[0], ast.BinOp)
+                  else node.args[0])
+        out[id(target)] = lineno
+    return out
+
+
 def _check_label_citations(text):
     """[(lineno, token)] -- a register citation inside a `check(...)` call's
     message, with ONE EXCEPTION: a token that IS the call's own leading label is
@@ -2546,19 +2640,49 @@ def _check_label_citations(text):
         tree = ast.parse(text)
     except SyntaxError:
         return None
+    label_ids = _check_label_constant_ids(tree)
     out = []
     for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == "check" and node.args):
+        lineno = label_ids.get(id(node))
+        if lineno is None:
             continue
-        literal = _call_string_literal(node.args[0])
-        if literal is None:
-            continue
-        label, lineno = literal
-        for off, token in _fault_hits(label):
+        for off, token in _fault_hits(node.value):
             if off == 0:
                 continue          # the case's own leading label - the exception
             out.append((lineno, token))
+    return out
+
+
+def _py_other_literal_citations(text):
+    """[(lineno, token)] -- a register citation inside a python string
+    literal that is neither a docstring (`_py_docstring_citations`) nor a
+    literal `check(...)` call's own message (`_check_label_citations`) -- a
+    label handed to a DIFFERENTLY NAMED assertion helper (a wrapper that
+    forwards it to `check()` through a local variable, invisible to a scan
+    that only recognises the call named `check`), help text, a raised or
+    returned message, a value inside a reference table, or any other string a
+    reader can see. The register's vocabulary reaches a reader through a
+    string literal, full stop -- WHICH construct happens to carry it is not
+    part of the question, so this reads every literal the other two scans do
+    not already claim, once each, rather than naming a fourth or fifth
+    construct by hand the same way the first three were.
+
+    None if `text` will not parse.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    claimed = (set(_docstring_constant_ids(tree))
+               | set(_check_label_constant_ids(tree)))
+    out = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if id(node) in claimed:
+            continue
+        for _off, token in _fault_hits(node.value):
+            out.append((node.lineno, token))
     return out
 
 
@@ -2575,19 +2699,25 @@ def register_citation_violations(repo_root=None):
     `doc_prose_numbers()` already reuses the same table for the same reason one
     document-scan over.
 
-    `.py` FILES ARE READ THREE WAYS, because the register's vocabulary reaches
-    this tree through three different constructs: a `#` comment
-    (`_py_comment_citations`), a docstring (`_py_docstring_citations`), and a
-    `check()` call's own message, which is this tree's test suite's equivalent
-    of a docstring and carries the one written exception
-    (`_check_label_citations`). `.md` FILES are read whole, the same as
+    `.py` FILES ARE READ FOUR WAYS, because the register's vocabulary reaches
+    this tree through more than a docstring and a `check()` message: a `#`
+    comment (`_py_comment_citations`), a docstring (`_py_docstring_citations`),
+    a `check()` call's own message, this tree's test suite's equivalent of a
+    docstring and the one construct carrying a written exception
+    (`_check_label_citations`), and every OTHER string literal
+    (`_py_other_literal_citations`) -- a label handed to a differently named
+    helper, help text, a raised or returned message, a value inside a
+    reference table. `.md` FILES are read whole, the same as
     `doc_prose_numbers()` reads them: a document is prose from end to end, so
     there is no comment/docstring distinction to make.
 
     A file that will not tokenize or will not parse is NAMED, never skipped --
     the same rule `prose_claims_in()` and `doc_prose_numbers()` already hold:
     a scan that answers "nothing to report" for a file it could not read
-    reads exactly like a scan that read a clean one.
+    reads exactly like a scan that read a clean one. Parse failure is named
+    ONCE, by the docstring pass -- the label and other-literal passes share
+    the same `ast.parse` and would fail identically, so they are silently
+    skipped rather than repeating the same finding under two more names.
     """
     root = repo_root if repo_root is not None else _output.REPO_ROOT
     out = []
@@ -2615,6 +2745,9 @@ def register_citation_violations(repo_root=None):
         labels = _check_label_citations(text)
         if labels is not None:
             out.extend((rel, ln, tok) for ln, tok in labels)
+        others = _py_other_literal_citations(text)
+        if others is not None:
+            out.extend((rel, ln, tok) for ln, tok in others)
     md_scan = _output.prose_scan_set((".md",), root)
     if md_scan["problem"] is not None:
         out.append((".gitignore", 0, md_scan["problem"]))

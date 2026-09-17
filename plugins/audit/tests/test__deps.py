@@ -2530,6 +2530,49 @@ def _cases(check):
               'def _cases(check):\n'
               '    check("pr7 this cites F281 and formats %r" % (1,), True)\n')
           == [(2, "F281")])
+    # THE HYPHENATED SPELLING, found beside the plain one on the same line - a
+    # component letter with a second hyphen, a component letter with none, and
+    # no component letter at all are one register, not three.
+    check("rc14b the hyphenated spelling is the SAME vocabulary as the plain "
+          "one - a component letter with a second hyphen, a component letter "
+          "with none, and no component letter at all all reach the same "
+          "finding a plain `F<n>` does",
+          M._fault_hits("# F5 and F-P-6 and F-B3 and F-7 name one register")
+          == [(2, "F5"), (9, "F-P-6"), (19, "F-B3"), (28, "F-7")])
+    # THE SUPPRESSION EXCLUSION, structural in both directions - a code the
+    # `noqa:` list actually names is ruff's vocabulary, however many codes are
+    # listed, and a citation sitting in the SAME comment AFTER that list is
+    # outside it and still a finding, so "the line contains noqa" is not the
+    # rule this reads.
+    check("rc14c a code named in a `noqa:` suppression's own comma-separated "
+          "list is ruff's vocabulary, not a citation, however many codes the "
+          "list carries - but a citation in the SAME comment AFTER the list "
+          "is still one",
+          M._fault_hits("# noqa: F401,E402  (F106: the shape this repair "
+                        "keeps)")
+          == [(20, "F106")])
+    # AN ID REACHING A READER THROUGH NEITHER A DOCSTRING NOR A CHECK() MESSAGE
+    # - a plain string constant, and a label handed to a differently named
+    # assertion helper, invisible to a scan that reads only those two
+    # constructs by name.
+    check("rc14d an id reaching a reader through neither a docstring nor a "
+          "`check()` message is found too - an ordinary string constant, and "
+          "a label handed to a helper that is not literally named `check`",
+          M._py_other_literal_citations(
+              'MESSAGE = "F94 sits in an ordinary string"\n'
+              'def _cases(expect):\n'
+              '    expect("w1 and F95 reaches a reader through a helper that '
+              'is not named check", True)\n')
+          == [(1, "F94"), (3, "F95")])
+    check("rc14e NEGATIVE CONTROL: a literal the docstring scan or the "
+          "check() label scan already claims is not counted a second time "
+          "here - a module docstring and an ordinary check() label both stay "
+          "silent",
+          M._py_other_literal_citations(
+              'def f():\n    """F96 documented here."""\n    return 1\n\n\n'
+              'def _cases(check):\n'
+              '    check("c1 this cites F97 mid message", True)\n')
+          == [])
     # END TO END, on a real derived tree - a `.gitignore` so `prose_scan_set`
     # answers rather than reporting the walk itself broken, one `.py` and one
     # `.md` file each carrying one citation of each kind.
@@ -2554,6 +2597,45 @@ def _cases(check):
                   ("GUIDE.md", 1, "F13")]))
     finally:
         shutil.rmtree(_rc_tmp, ignore_errors=True)
+
+    # THE THREE GAPS TOGETHER, on a second derived tree: the hyphenated
+    # spelling beside the plain one, a suppressed linter code excluded while
+    # the citation after it on the SAME line is not, and a citation reaching a
+    # reader through neither a docstring nor a `check()` message.
+    _wide_tmp = tempfile.mkdtemp(prefix="audit-deps-wide-")
+    try:
+        with open(os.path.join(_wide_tmp, ".gitignore"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("__pycache__/\n")
+        with open(os.path.join(_wide_tmp, "wide.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(
+                '# F281 alone, and F-P-6 hyphenated with a component - both '
+                'the\n'
+                '# same vocabulary, and both a finding.\n'
+                'import os  # noqa: F401  (F-B3: kept for callers that '
+                'reflect on this module)\n'
+                'MESSAGE = "reads like a reason string, and F-7 sits inside '
+                'it"\n'
+                '\n'
+                '\n'
+                'def _cases(expect):\n'
+                '    expect("w1 F94 handed to a differently named helper", '
+                'True)\n')
+        _wide_hits = M.register_citation_violations(_wide_tmp)
+        check("rc15b THE THREE GAPS TOGETHER: the hyphenated spelling is "
+              "found beside the plain one, the suppressed `F401` naming "
+              "ruff's own code is NOT a finding while the citation "
+              "immediately after it on the SAME line is, and a citation "
+              "sitting in an ordinary string - a module constant, a label "
+              "handed to a helper that is not named `check` - is found too: "
+              "%r" % (_wide_hits,),
+              sorted(_wide_hits) == sorted([
+                  ("wide.py", 1, "F281"), ("wide.py", 1, "F-P-6"),
+                  ("wide.py", 3, "F-B3"), ("wide.py", 4, "F-7"),
+                  ("wide.py", 8, "F94")]))
+    finally:
+        shutil.rmtree(_wide_tmp, ignore_errors=True)
 
     # THE GATE ITSELF, on the real tree rather than a fixture: rc0-rc15 prove the
     # helpers recognise every shape a citation can take; this is the one case
