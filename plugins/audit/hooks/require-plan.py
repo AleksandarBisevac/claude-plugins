@@ -400,9 +400,18 @@ def _owner_note(root, cfg, state_dir, session_id, rel,
         return None
 
 
+# The two statuses `/audit:task start` refuses outright (a done or cancelled
+# task's `_locked_start` calls this "terminal work" and will not re-open it).
+# Spelled here rather than imported: `_manifest_io.TERMINAL` lives under
+# `scripts/manifest/`, and a hook may not import `scripts/` — the two values
+# are copied, not re-derived, so a third terminal status added there would not
+# silently reach here either.
+_TERMINAL_DECLARING_STATUSES = ("done", "cancelled")
+
+
 def _declaration_note(root, manifest_rel, rel, manifest_exists):
     """The refusal's second sentence and the remedy each audience gets, keyed on
-    WHICH of the two causes actually holds:
+    WHICH of three causes actually holds:
     {"stated": <sentence>|None, "subagent": <clause>, "orchestrator": <clause>}.
 
     The refusal used to state one cause for both. It told a subagent the file was
@@ -414,19 +423,34 @@ def _declaration_note(root, manifest_rel, rel, manifest_exists):
     `_config.in_progress_task_map` filters every other status away before
     `decide` ever looks, so nothing downstream could tell the two apart.
 
-    The state, not the verb, is the load-bearing half of the unstarted remedy:
-    `in_progress` is what opens a task's `files`, and the command is named as the
-    route to it. Written that way because the route may be respelled and the
-    state cannot be — a refusal naming a remedy its reader cannot reach is the
-    fault this repo has already paid for twice.
+    THAT FIX STILL HAD ONE BRANCH FOR "NOT IN_PROGRESS", AND IT ASSUMED
+    UNSTARTED. Against a task that is `done` or `cancelled` it said the same
+    thing it says about a `pending` one — the task has not been started,
+    starting it is the route — which is doubly wrong for terminal work:
+    `/audit:task start` refuses a terminal task by name (`_locked_start`'s own
+    "terminal work is not re-started by this verb"), and the sentence forbids
+    the one thing that IS the route once a phase is signing off —
+    `reference/phase-signoff.md` step 1 mandates a NEW task for a finding in a
+    file whose declaring task is already `done`, precisely because that task's
+    `outcome` describes a run that finished and widening it would make it claim
+    a commit it never staged. So the old branch named a command that refuses,
+    asserted a state ("not started") that is false, and forbade the route the
+    orchestrator's own procedure requires — the same fault the unstarted fix
+    above already paid for, one status over.
 
-    BOTH SUBAGENT CLAUSES NAME A COMMAND, on those same terms. The unstarted one
-    always did; the undeclared one said "it will either widen the scope … or add a
-    task" and left the reader to invent the request, which is a refusal a subagent
-    cannot act on without a human standing over it. The verbs are the
-    orchestrator's and the clause says so — a subagent quoting `/audit:task scope`
-    into its report is the point; running it is what the manifest refusal above
-    exists to stop.
+    The state, not the verb, is the load-bearing half of both remedies:
+    `in_progress` is what opens a task's `files`, "terminal" is what closes the
+    door on restarting one, and the commands are named as ROUTES to those
+    states rather than promises in themselves — a route may be respelled and
+    the state cannot be.
+
+    ALL THREE SUBAGENT CLAUSES NAME A COMMAND, on those same terms. The
+    unstarted one always did; the undeclared one said "it will either widen the
+    scope … or add a task" and left the reader to invent the request, which is
+    a refusal a subagent cannot act on without a human standing over it. The
+    verbs are the orchestrator's and the clause says so — a subagent quoting
+    `/audit:task scope` or `/audit:task add` into its report is the point;
+    running it is what the manifest refusal above exists to stop.
 
     `stated` is None when there is no manifest at all: "no task declares this"
     would be true of an empty file, a missing one and a plan that never mentions
@@ -455,6 +479,28 @@ def _declaration_note(root, manifest_rel, rel, manifest_exists):
         "%s (status \"%s\")" % (d.get("taskId") or "?", d.get("status") or "?")
         for d in declared)
     first = declared[0].get("taskId") or "?"
+    first_status = declared[0].get("status")
+    if first_status in _TERMINAL_DECLARING_STATUSES:
+        return {
+            "stated": ("%s IS declared by %s - but %s is %s, and terminal work "
+                       "is not re-started: `/audit:task start %s` refuses it."
+                       % (rel, named, first, first_status, first)),
+            "subagent": ("report to the orchestrator that %s is already "
+                         "declared by %s, whose status is %s - restarting it "
+                         "is refused, not a route. The route is a NEW task: "
+                         "`/audit:task add \"<title>\" --phase <phaseId>` "
+                         "then `/audit:run <the id that add printed>`, never "
+                         "`/audit:task start %s`"
+                         % (rel, named, first_status, first)),
+            "orchestrator": ("the task declaring it is %s, so `/audit:task "
+                             "start %s` refuses it - add a NEW task for this "
+                             "finding (`/audit:task add \"<title>\" --phase "
+                             "<phaseId>`) and run it (`/audit:run <the id "
+                             "that add printed>`); do not try to restart %s "
+                             "and do not widen its scope instead - a %s task's "
+                             "`outcome` describes a run that already finished"
+                             % (first_status, first, first, first_status)),
+        }
     return {
         "stated": ("%s IS declared by %s - a task's `files` open only while its "
                    "own status is \"in_progress\"." % (rel, named)),

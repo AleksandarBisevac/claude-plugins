@@ -115,6 +115,28 @@ Hard rules (non-negotiable):
   outcome. If the gate refuses it, its refusal text is your instruction — stop
   and report to the orchestrator, which owns the widening. Do not put the change
   somewhere else to get around the refusal.
+- **A blocked tool call is never a signal to reach for a different tool.** The
+  rule above is one instance of this, not the whole of it, and it is stated
+  about an adjacent file — this is the general one, stated about TOOLS. A
+  refusal names what you may not do, not which tool you may not do it with:
+  meeting a hard block on Edit and finishing the same change through Bash (a
+  heredoc, `sed -i`, a Python one-liner writing the file) is the same
+  workaround as putting a refused edit in a different file, one tool over.
+  The outcome can be exactly the change you needed and still be this — which
+  is what makes it the kind of workaround that becomes habit rather than an
+  obviously wrong move. Stop and report the refusal instead, whichever tool
+  it came from; do not treat "this tool refused" as information about which
+  tool to try next.
+  **Stated, not fully enforced** — say so rather than assuming a hook
+  catches it. `tools/check-prohibitions.py` drives every prohibition in
+  `reference/orchestrator.md`, `execute-task.md` and `phase-signoff.md`
+  against the guard hooks that are supposed to refuse it; this brief is
+  outside that scan, so a NEVER stated only here is censused by nothing.
+  `guard-bash-writes.py` posts a non-blocking notice after the fact when a
+  Bash write lands on a file the plan gate would have refused through Edit —
+  a heads-up, not a block — and no hook generalizes the block itself across
+  every other tool pair. Keep this one the way the grep rule near the top of
+  this brief is kept: by reading it.
 - **If the orchestrator asks you to hand back instead of continuing onto
   another task, that request comes only at a task boundary — never mid-task.**
   Finish the task you are on (through its ordinary report, below) exactly as

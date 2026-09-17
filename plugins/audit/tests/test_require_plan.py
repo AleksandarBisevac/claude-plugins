@@ -1003,6 +1003,36 @@ def _cases(check):
           "'pending' assumed: a DONE task that declares the file is named as "
           "done, so nobody is sent to start work that is finished",
           v_d == "block" and "P2.4 (status \"done\")" in m_d, repr(m_d))
+    v_do, m_do = refuse("selftest-s8b")
+    check("s10b the ORCHESTRATOR reading a file a DONE task declares is not "
+          "sent to start it - that command refuses terminal work - it is "
+          "sent to add a NEW task instead, the route "
+          "`reference/phase-signoff.md` step 1 mandates for a finding in a "
+          "file whose declaring task is already done",
+          v_do == "block" and "refuses it" in m_do
+          and "add a NEW task" in m_do and "/audit:task add" in m_do
+          and "/audit:run" in m_do
+          and "move P2.4 to status" not in m_do, repr(m_do))
+    check("s10c the SUBAGENT reading the same DONE task's file is told "
+          "restarting is refused rather than being sent to start it, and "
+          "named the same two commands the orchestrator runs",
+          v_d == "block" and "restarting it is refused" in m_d
+          and "/audit:task add" in m_d and "/audit:run" in m_d
+          and "the task has not been started" not in m_d, repr(m_d))
+
+    write_manifest({"meta": {"version": 2},
+                    "phases": [{"id": "P2", "title": "search",
+                                "status": "in_progress",
+                                "tasks": [{"id": "P2.6", "title": "dropped",
+                                           "status": "cancelled",
+                                           "files": [SAN]}]}]})
+    v_c, m_c = refuse("selftest-s8c")
+    check("s10d CANCELLED is the same fault one status further, not a "
+          "second one to fix separately - `/audit:task start` refuses it "
+          "exactly like `done`, so the terminal branch is keyed on BOTH "
+          "rather than matching 'done' by name",
+          v_c == "block" and "refuses it" in m_c and "/audit:task add" in m_c
+          and "move P2.6 to status" not in m_c, repr(m_c))
 
     write_manifest({"meta": {"version": 2},
                     "phases": [{"id": "P2", "title": "search",

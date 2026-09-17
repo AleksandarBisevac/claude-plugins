@@ -92,7 +92,7 @@ def _cases(check):
                                                                  real_on_disk)
                       if m is not None]
     check("r5 hooks/ statically imports nothing from scripts/ AT ALL - no allow-list, no "
-          "documented exception, because the one there was is fixed (F11): a hook runs on "
+          "documented exception, because the one there was is fixed: a hook runs on "
           "every tool call from a process that may not have scripts/ on its path, so every "
           "scripts/-owned feature is loaded by path and treated as optional: %r"
           % (real_hooks_raw,),
@@ -394,7 +394,7 @@ def _cases(check):
                                      layers=bw_layers)
         bw_by = lambda name: [v for v in bw_hits if v[0] == name]  # noqa: E731
 
-        # THE TAG IS THE WHOLE FIXTURE STEM, NOT ITS FIRST LETTER (F75). `aliaser`
+        # THE TAG IS THE WHOLE FIXTURE STEM, NOT ITS FIRST LETTER. `aliaser`
         # and `attrer` share one, so two of these three cases printed `bw1-a` and a
         # `prove-gates.py` row naming it could credit either - which is the verdict
         # that table exists to make impossible.
@@ -508,8 +508,9 @@ def _cases(check):
                      "`import _manifest_io`) is named rather than papered over.\n")
         excuse_hits = M.hooks_rule_drift(excuse_path)
         check("g0b ...and so is a guide that states it and then carves an allowance out "
-              "of it - which is exactly what shipped until F11, with the sentence above "
-              "it correct the whole time: %r" % (excuse_hits,),
+              "of it - which is exactly what this guide's own rule shipped as for a "
+              "long time, with the sentence above it correct the whole time: %r"
+              % (excuse_hits,),
               len(excuse_hits) == 1 and "still describes an exception" in excuse_hits[0][1])
 
         missing_rule_path = os.path.join(rule_tmp, "gone.md")
@@ -519,7 +520,7 @@ def _cases(check):
         shutil.rmtree(rule_tmp, ignore_errors=True)
 
     # ------------------------------------------- layer_doc_drift: docstrings vs LAYERS
-    # F230. Two documents opened "Layer 5" for a module the table had already moved
+    # Two documents once opened "Layer 5" for a module the table had already moved
     # to 4, and both were true when written — `_panel_discovery` came down, this one
     # followed it, `_deps.py`'s own comment was rewritten, and nothing compared the
     # two docstrings to the table. The fixtures below are the real tree, because a
@@ -650,7 +651,7 @@ def _cases(check):
     finally:
         shutil.rmtree(uh_tmp, ignore_errors=True)
 
-    # ------------------------------------------ explorer_contract_drift (F291)
+    # ------------------------------------------ explorer_contract_drift
     # `/audit:init` spawns the explorer agent and parses a JSON array back; the
     # SHAPE of one element is hand-restated in `commands/init.md` for the
     # fallback path. Nothing in the tree reads either copy, so the two real
@@ -783,8 +784,8 @@ def _cases(check):
     finally:
         shutil.rmtree(ec_tmp, ignore_errors=True)
 
-    # -------------------------------------------- commit_spelling_drift (F292)
-    # F268 moved the fixed literal from commit-audit-state.py's TYPE into its
+    # -------------------------------------------- commit_spelling_drift
+    # The fixed literal moved once, from commit-audit-state.py's TYPE into its
     # SCOPE; the guide kept saying "the type is the fixed literal `audit-state`"
     # for as long as nothing compared the two. GENERALIZED OVER THE CLASS: the
     # real tree carries TWO governance writers that do this
@@ -881,8 +882,9 @@ def _cases(check):
             "gov-code-wrong-b", "guide-code-wrong-b.md",
             "The commit reads `chore(scope-a):`, fixed and uncollidable.",
             # The GUIDE still says the ORIGINAL, once-correct thing; what
-            # moves is the CODE, which is the direction F268 actually was -
-            # a script's own constants reversing while the guide sat still.
+            # moves is the CODE, which is the direction that real drift
+            # actually took - a script's own constants reversing while the
+            # guide sat still.
             "The commit reads `chore(scope-b):`, fixed and uncollidable.",
             scope_b="scope-b-mutated")
         cs2c_hits = M.commit_spelling_drift(code_wrong_b_guide,
@@ -1431,8 +1433,8 @@ def _cases(check):
                   for f, w in nav_broken)
               and M._section_header_names("def (\n") is None)
 
-        # ---- F44: and a file that will not OPEN is named on the same argument ----
-        # The tokenize branch has reported its file since F21; the READ branch was
+        # ---- and a file that will not OPEN is named on the same argument ----
+        # The tokenize branch has always reported its file; the READ branch was
         # a bare `continue` beside it, so this function disagreed with its own
         # docstring and an unreadable file came back looking navigable. The
         # fixture is a real mis-encoded asset rather than a chmod, because the
@@ -1440,7 +1442,7 @@ def _cases(check):
         with open(os.path.join(nav_tmp, "mojibake.py"), "wb") as fh:
             fh.write(b"# \xff\xfe not utf-8\n" + b"pass\n" * M._NAV_MIN_LINES)
         nav_unread = M.navigability_violations(nav_tmp, hooks_dir=nav_hooks)
-        check("n10 a .py that will not DECODE is named, not skipped (F44) - the "
+        check("n10 a .py that will not DECODE is named, not skipped - the "
               "sibling ui rule swallowed exactly this and so did this branch, "
               "which made 'could not read it' print identically to 'nothing "
               "wrong with it': %r"
@@ -1513,10 +1515,10 @@ def _cases(check):
               "rather than guessed at",
               not any(f == "panel.html" for f, _ in M.ui_navigability_violations(ui_tmp)))
 
-        # ---- the hole this rule keeps, pinned as a decision (F37) ----
+        # ---- the hole this rule keeps, pinned as a decision ----
         # A marker is a matched LINE, so a marker-shaped line inside a template
         # literal counts as a section marker. `tokenize` is what closed the same
-        # hole in the .py rule (F21) and there is no stdlib tokenizer for CSS or
+        # hole in the .py rule, and there is no stdlib tokenizer for CSS or
         # JavaScript; the argument, and the cheap tightening that was measured
         # and rejected, are above `_UI_MARKER_RES`.
         #
@@ -1536,7 +1538,7 @@ def _cases(check):
               "lines inside a template literal are counted as section markers, so "
               "stringy.js passes while nostring.js - the identical body without "
               "them - is named. A regex cannot tell a comment from a string and "
-              "neither language has a stdlib tokenizer (F37): %r" % (hole_hits,),
+              "neither language has a stdlib tokenizer: %r" % (hole_hits,),
               not any(f == "stringy.js" for f, _ in hole_hits)
               and any(f == "nostring.js" for f, _ in hole_hits))
     finally:
@@ -1568,12 +1570,13 @@ def _cases(check):
           % (len(_report_lines), len(_report_parts), len(_marked), len(_at_col0)),
           len(_report_parts) >= 2 and len(_marked) >= 2 and not _at_col0)
 
-    # ---- F44: the two quiet answers this function used to give ------------------
+    # ---- the two quiet answers this function used to give ------------------
     # The marker hole u8 pins is a DECISION - closing it costs a hand-rolled lexer
     # for two languages. These two were never a decision: an asset nothing could
     # read came back as an asset with nothing wrong, and a missing scripts/ui/ -
     # the whole report and panel UI gone - printed exactly what a clean tree
-    # prints. Both are the direction F21 named as the one that hurts.
+    # prints. Both are the same direction as the tokenize hole above - the one
+    # that hurts.
     f44_tmp = tempfile.mkdtemp(prefix="audit-deps-f44-")
     try:
         with open(os.path.join(f44_tmp, "mojibake.js"), "wb") as fh:
@@ -1581,7 +1584,7 @@ def _cases(check):
         with open(os.path.join(f44_tmp, "fine.js"), "w", encoding="utf-8") as fh:
             fh.write("x();\n" * 10)
         f44_hits = M.ui_navigability_violations(f44_tmp)
-        check("u10 an asset that will not DECODE is named, never swallowed (F44): %r"
+        check("u10 an asset that will not DECODE is named, never swallowed: %r"
               % (f44_hits,),
               any(f == "mojibake.js" and "unreadable" in w for f, w in f44_hits))
         check("u11 ...and the readable asset beside it is not named, which is what "
@@ -1592,7 +1595,7 @@ def _cases(check):
 
     _f44_gone = M.ui_navigability_violations(os.path.join(f44_tmp, "vanished"))
     check("u12 a ui_dir that cannot be LISTED returns a NAMED finding, not the "
-          "empty list a clean directory returns (F44). `return []` there meant "
+          "empty list a clean directory returns. `return []` there meant "
           "'scripts/ui/ is missing' and 'every asset is navigable' printed the "
           "same way, and the missing directory is the whole report and panel "
           "UI: %r" % (_f44_gone,),
@@ -1646,7 +1649,7 @@ def _cases(check):
     # that must not. Hand-kept, and a row with no sample fails rather than being
     # skipped, because a skipped row is the same silence.
     #
-    # SEVERAL SPELLINGS PER ROW, WHICH IS F130. One sample per row was the shape
+    # SEVERAL SPELLINGS PER ROW. One sample per row was the shape
     # this table had, and it was written by copying the offending line - the same
     # line the needle was written from - so the proof was a value compared with
     # itself. It said the needle could fire, and could not say the needle sees the
@@ -1794,11 +1797,11 @@ def _cases(check):
           % (_blind,), not _blind)
     check("sc14 ...and does NOT fire on the repaired form, or on the calls that "
           "merely look like it (noisy: %r)" % (_noisy,), not _noisy)
-    # sc13 is only as strong as the variety of what it is handed, and the version
-    # that let F130 through handed it one string per row. A row whose samples are
-    # all the same spelling proves the needle can fire and nothing else, so more
-    # than one spelling is the floor - and a needle with nothing it must decline
-    # cannot be shown to be narrower than "anything".
+    # sc13 is only as strong as the variety of what it is handed, and the
+    # version that let the old bug through handed it one string per row. A row
+    # whose samples are all the same spelling proves the needle can fire and
+    # nothing else, so more than one spelling is the floor - and a needle with
+    # nothing it must decline cannot be shown to be narrower than "anything".
     _thin = sorted(c for c, (h, m) in _SAMPLES.items() if len(h) < 2 or not m)
     check("sc15 every row is proved against more than one spelling of what it "
           "forbids, and against something it must decline - one sample per row "
@@ -1850,7 +1853,7 @@ def _cases(check):
     finally:
         shutil.rmtree(_slack_fixture, ignore_errors=True)
 
-    # F130, END TO END. sc13 proves the NEEDLE sees a space; this runs the LIVE
+    # END TO END. sc13 proves the NEEDLE sees a space; this runs the LIVE
     # lint over a tree containing the spelling that defeated it, because those are
     # different claims and the registry only ever made the weaker one. The
     # spelling here is the shape that sat in a panel part with this rule green
@@ -1868,7 +1871,7 @@ def _cases(check):
             return M.shared_concern_violations(_f130)
 
         _spaced = _f130_says("const t = n + ' change' + (n === 1 ? '' : 's');\n")
-        check("sc16 a hand-rolled plural written WITH SPACES is caught (F130). "
+        check("sc16 a hand-rolled plural written WITH SPACES is caught. "
               "The needle was the offending line with its spaces removed, so "
               "this exact source read green for as long as it existed: %r"
               % (_spaced,),
@@ -1896,7 +1899,7 @@ def _cases(check):
     # a regex literal containing a quote. The direction of every failure here is
     # UNDER-counting, which reads as "no duplication".
     #
-    # EACH FIXTURE CARRIES ITS OWN LABEL TAG (F75). One `check()` call site is one
+    # EACH FIXTURE CARRIES ITS OWN LABEL TAG. One `check()` call site is one
     # authored assertion, so `_harness.label_faults()` is right to stay quiet about
     # a family sharing an id - but `prove-gates.py` credits a mutation to the case
     # whose id went red, and it refuses a row naming an id that more than one case
@@ -2280,12 +2283,12 @@ def _cases(check):
           "per module, so they accrue one stale number per module; two of the "
           "five case counts were already wrong when the first family landed "
           "(_policy 60 vs 71, _refs 32 vs 80), and all three of the persistence "
-          "and completeness claims were wrong when these two did (F43): %r"
+          "and completeness claims were wrong when these two did: %r"
           % (_dpn[:6],),
           _dpn == [])
     # Vacuity FIRST: "no claims" and "read nothing" print identically otherwise.
     #
-    # TWO TERMS, F69's shape. `scan_floor()` holds the scanned set against the
+    # TWO TERMS. `scan_floor()` holds the scanned set against the
     # candidate count the walk produced, which catches an exemption row that grew;
     # the second term is a PLAIN recursive walk for `.md` under the plugin, which
     # needs no `.gitignore` and so cannot fail the way the derivation can. A
@@ -2325,13 +2328,14 @@ def _cases(check):
                        "plugins/audit/scripts/ui/", ".claude/skills/"))
     check("dpn2c ...and the set reaches the PRODUCT - the plugin's README, its "
           "commands, its reference docs, its skills and agents - plus the "
-          "per-surface part counts under `scripts/ui/`, which is where F64 was "
-          "found: %r" % (_dpn_product,),
+          "per-surface part counts under `scripts/ui/`, which is where a "
+          "stale one was found: %r" % (_dpn_product,),
           "plugins/audit/README.md" in _dpn_scan["paths"]
           and all(_dpn_product.values()))
     check("dpn2 an unreadable document returns a NAMED finding, not the same "
-          "empty list a clean one returns - F21's rule, and the reason a clean "
-          "dpn0 means 'looked and found nothing' rather than 'could not look'",
+          "empty list a clean one returns - the same rule as the unreadable-"
+          "file cases above, and the reason a clean dpn0 means 'looked and "
+          "found nothing' rather than 'could not look'",
           M.doc_prose_numbers(["/nonexistent/GUIDE.md"])
               == [("GUIDE.md", 0, "<unreadable: GUIDE.md>")])
     check("dpn3 the shape is defined ONCE - doc_prose_numbers delegates to "
@@ -2344,10 +2348,10 @@ def _cases(check):
                    or l.startswith("def _case_claim")])
     # POSITIVE CONTROL. dpn0 asserts an empty list, which is also what a scanner
     # that reads nothing returns; dpn1 proves the bytes arrived and this proves
-    # the predicate is still wired to them. The fixture is F43's own sentence,
-    # the wrap that carries a basis, and a historical line - so it fails if the
-    # scan dies, if the basis stops being read across the wrap, or if history
-    # stops being writable.
+    # the predicate is still wired to them. The fixture is a persistence claim
+    # that really shipped, the wrap that carries a basis, and a historical
+    # line - so it fails if the scan dies, if the basis stops being read
+    # across the wrap, or if history stops being writable.
     _dpn_tmp = tempfile.mkdtemp(prefix="audit-deps-dpn-")
     try:
         _dpn_doc = os.path.join(_dpn_tmp, "FIXTURE.md")
@@ -2357,13 +2361,14 @@ def _cases(check):
                      "all 83 of them (`73042a1` - print it with\n"
                      "`python3 -c \"...\"`); a migrated file still exits 0.\n")
         _dpn_hits = M.doc_prose_numbers([_dpn_doc])
-        check("dpn4 POSITIVE CONTROL: F43's own sentence IS reported, with its "
-              "line number, while the historical line and the wrapped line whose "
-              "basis lands on the next one are both left alone. dpn0 is an empty "
-              "list, and an empty list is also what a broken scanner returns: %r"
+        check("dpn4 POSITIVE CONTROL: the persistence claim's own sentence IS "
+              "reported, with its line number, while the historical line and "
+              "the wrapped line whose basis lands on the next one are both "
+              "left alone. dpn0 is an empty list, and an empty list is also "
+              "what a broken scanner returns: %r"
               % (_dpn_hits,),
               _dpn_hits == [("FIXTURE.md", 1, "stayed at 17")])
-        # F59: the docs are where the word-spelled count was FOUND, so the
+        # The docs are where the word-spelled count was first found, so the
         # delegation has to carry that spelling too - a `_deps` that saw only
         # digits would be the second grammar dpn3 forbids, arriving as a gap
         # instead of as a `def`. The LAST line is the second direction: a
@@ -2383,11 +2388,12 @@ def _cases(check):
         check("dpn5 a count spelled as a WORD is reported by the DOC scan too, "
               "with its line number, while the historical line, the line whose "
               "basis lands on the next one, and a number-word below the table's "
-              "floor are all left alone. F59 was found in a comment, and the "
-              "same claim in a document is the same defect: %r"
+              "floor are all left alone. The same word-spelled shape was first "
+              "found in a comment, and the same claim in a document is the "
+              "same defect: %r"
               % (_dpn_word_hits,),
               _dpn_word_hits == [("WORDS.md", 1, "thirteen cases")])
-        # F76: the delegation carries the SENTENCE scope too, and a document is
+        # The delegation carries the SENTENCE scope too, and a document is
         # where wrapping is worst - every one of these is hard-wrapped, so a
         # tense marker and its number routinely land on different lines. Both
         # directions are in one fixture: line 2's number is excused by a marker
@@ -2411,7 +2417,7 @@ def _cases(check):
               "does not. One finding, and which line it names is the whole "
               "assertion: %r" % (_dpn_wrap_hits,),
               _dpn_wrap_hits == [("WRAP.md", 3, "131 cases")])
-        # F311: the RATIO family arrives through the same delegation, and the
+        # The RATIO family arrives through the same delegation, and the
         # document half is where it matters most - a `.md` is where a count gets
         # quoted from a command's output and the command then gets edited out.
         # All four lines are one distinction: line 1 quotes a tally and names no
@@ -2902,7 +2908,7 @@ def _cases(check):
           "extension: %r" % (M.ui_navigability_violations(),),
           M.ui_navigability_violations() == [])
 
-    # --- panel routes and the controls that reach them (F110) --------------------
+    # --- panel routes and the controls that reach them --------------------------
     # THE JOIN NOTHING CHECKED. The route table is Python and the controls are
     # JavaScript, so every half of `POST /api/gate-events/prune` was tested and the
     # pairing was tested by nothing - the endpoint answered with a real verdict for
@@ -2925,8 +2931,9 @@ def _cases(check):
           and "POST /api/gate-events/prune" in _pr_live
           and "/api/gate-events/prune" in _pr_calls)
     check("pr3 the prune endpoint is reached from the Plan gate card and nowhere "
-          "else - the control F110 was about, named by the file that draws the "
-          "rows it prunes: %r" % (_pr_calls.get("/api/gate-events/prune"),),
+          "else - the control this whole check exists for, named by the file "
+          "that draws the rows it prunes: %r"
+          % (_pr_calls.get("/api/gate-events/prune"),),
           _pr_calls.get("/api/gate-events/prune") == ["overview.js"])
 
     _pr_tmp = tempfile.mkdtemp(prefix="audit-deps-routes-")
@@ -3526,7 +3533,7 @@ def _cases(check):
           and all(isinstance(w, str) and len(w) >= M._MIN_MIRROR_REASON
                   for _k, _r, w in M.KNOWN_CONFIG_MIRRORS))
 
-    # --- the merged-block accessor (F168) ------------------------------------
+    # --- the merged-block accessor --------------------------------------------
     # THE READER THIS RULE COULD NOT SEE. `usage.pricingAsOf` reaches the panel
     # through `usage_cfg(config)`, which leaves no key on the line for the walk to
     # anchor at - so `panel/_panel_usage.py` was absent from that key's reader
@@ -3556,7 +3563,7 @@ def _cases(check):
     _ck_block_none = os.path.join(_ck_block, "no-hooks-here")
     try:
         _ck_bhits = M.config_read_violations(_ck_block, _ck_block_none, ())
-        check("ck18 F168 ITSELF: one reader takes the block from "
+        check("ck18 THE MERGED-BLOCK BUG ITSELF: one reader takes the block from "
               "`usage_cfg(config)` and serves the value as typed, the other "
               "reaches the same key through the config it was named for and "
               "trims it - and that is now a finding naming both files and both "

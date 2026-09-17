@@ -2731,10 +2731,18 @@ CITATION_SCAN_EXEMPT = (
      "and the helpers built on them are proven by handing them the exact "
      "shapes they must recognise, spelled as arguments on purpose -- the same "
      "house rule the prose-number scan's test-file rows state, applied to "
-     "this scan's own vocabulary rather than borrowed from theirs. The cost "
-     "is the thing to disagree with, and it is real: a stray citation "
-     "anywhere else in this one suite, outside those fixtures, goes "
-     "unguarded"),
+     "this scan's own vocabulary rather than borrowed from theirs. THE ROW "
+     "CANNOT BE NARROWED TO THAT FIXTURE BLOCK: this table exempts by PATH, "
+     "the same way `_output.PROSE_SCAN_EXEMPT` does, and neither reads a line "
+     "range, so narrowing would need the walk itself to grow that "
+     "granularity -- a bigger change than one row can carry. What the cost "
+     "used to hide was real: comments about OTHER test families, unrelated "
+     "to this scanner, cited the private register in plain prose outside "
+     "the fixture block and were swept out by hand rather than caught by "
+     "anything. What is accepted from here on is narrower and is a "
+     "commitment, not a measurement: a citation added anywhere in this file "
+     "outside the fixtures those cases build goes unguarded again until a "
+     "reader notices"),
 )
 
 
