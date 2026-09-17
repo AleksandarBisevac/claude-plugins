@@ -114,7 +114,7 @@ def _cases(check):
     check("mv12 a boolean id is a finding: `bool` is an `int` subclass, so a "
           "check that only asks isinstance(x, int) accepts `true` as a work-item "
           "id - which `meta.version` already excluded by name, so the tree "
-          "disagreed with itself about one question (F15)",
+          "disagreed with itself about one question",
           any("integer work-item id" in x for x in f), f)
     # Both directions, because excluding bool is one line and over-excluding is
     # the same line: a real id must still pass, and `False` must fail like `True`.
@@ -542,8 +542,8 @@ def _cases(check):
     check("mv36 ...and the claim both of those rest on - that this is NOT the "
           "tree's only schema walk - is COUNTED rather than written down: every one "
           "of the %d files under scripts/ that reads `$defs` is one this comment "
-          "accounts for. F50 was the opposite claim in three comments with nothing "
-          "counting, so the symmetric difference is the case: %r"
+          "accounts for. The opposite claim used to sit in three comments with "
+          "nothing counting it, so the symmetric difference is the case: %r"
           % (len(_walk_files), sorted(set(_defs_readers) ^ set(_walk_files))),
           set(_defs_readers) == set(_walk_files) and len(_walk_files) > 1,
           repr(_defs_readers))
@@ -681,10 +681,10 @@ def _cases(check):
                                       "could-not-run", "empty-gate"))
           and _te_near == []
           # ...and the description SAYS what each word means, which is the only
-          # thing standing between this enum and a consumer who guesses. F280
-          # arrived through the gap between a word the runner could produce and a
-          # word the schema declared, so a member with no sentence about it is
-          # half an addition.
+          # thing standing between this enum and a consumer who guesses. The gap
+          # between a word the runner could produce and a word the schema
+          # declared is exactly how that happens, so a member with no sentence
+          # about it is half an addition.
           and all(("'%s'" % w) in str((_te_props.get("status") or {})
                                       .get("description") or "")
                   for w in _te_enum))

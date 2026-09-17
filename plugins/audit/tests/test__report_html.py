@@ -675,7 +675,7 @@ def _cases(check):
           M.tev_view(_ptr, {"status": "sandbagged"}, True)["label"] == "Sandbagged"
           and M.tev_view(_ptr, {"status": ""}, True)["label"]
           == "Unrecognised status")
-    # F280, AND THE CLASS THIS CLOSES. `TEV_RUN_STATUSES`, `TEV_LABELS` and
+    # AND THE CLASS THIS CLOSES. `TEV_RUN_STATUSES`, `TEV_LABELS` and
     # `TEV_ORDER` are three LITERAL tables spelled here rather than read - the
     # layer graph refuses the edge to the module that owns the enum, and this
     # file walks no schema. Nothing held them against the schema, so the enum
@@ -750,7 +750,7 @@ def _cases(check):
     check("tv9b ...and a clean run carries the badge alone, so tv9 is counting "
           "a marker and not counting spans",
           M._tev_cell(M.tev_view(_ptr, _row(), True)).count("<span") == 1)
-    # F312. The drawer already prints `scope`, which is the POINTER SUBJECT, so a
+    # The drawer already prints `scope`, which is the POINTER SUBJECT, so a
     # reader looking for "which gate ran" met a field answering a different
     # question. These cases hold the new line to what the row SAYS and to nothing
     # else - the row is where the claim has to come from, and a renderer that

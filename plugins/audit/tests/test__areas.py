@@ -258,7 +258,7 @@ def _cases(check):
           "the ledger whether the identity exists; that is the doctor's question",
           not f and not w, repr((f, w)))
 
-    # --- F203: `skills: null` on an AREA -------------------------------------
+    # --- `skills: null` on an AREA ---------------------------------------------
     # THREE READERS OF ONE RULE, one of them out of step. The schema permits null
     # and documents why -- "allowed for symmetry with task.skills and EQUIVALENT
     # to []: the area is itself the fallback, so there is nothing beneath it for a
@@ -414,7 +414,7 @@ def _cases(check):
     finally:
         shutil.rmtree(_fake, ignore_errors=True)
 
-    # --- F282: deleting a section of orchestrator.md turns a named case red ------
+    # --- deleting a section of orchestrator.md turns a named case red ------------
     # The measurement this block answers: each of the document's `##` sections was
     # deleted in turn and the whole gate set run, and NOT ONE deletion was
     # noticed. `rule_drift` above survived every one of them because its sentence
@@ -454,8 +454,8 @@ def _cases(check):
     check("oa3 DELETING A SECTION IS A FINDING, and it names the section: "
           "cutting '## %s' out reports every claim anchored to it rather than "
           "passing because the rest of the document is intact. This is the "
-          "measurement F282 records - each section was deleted in turn and not "
-          "one deletion was noticed by anything" % killed,
+          "same measurement taken above - each section was deleted in turn and "
+          "not one deletion was noticed by anything" % killed,
           killed in names
           and [c for c, p in after if c.startswith("lock-exit")]
           and all("nowhere to live" in p for c, p in after
@@ -486,8 +486,8 @@ def _cases(check):
           repr((M.claim_drift(text=body), M.claim_drift())))
     extra = body + "\n## Frobnication\n\nSomething new nobody anchored.\n"
     check("oa6 a NEW section with no anchor and no declared reason is a finding "
-          "- a section in neither set is the silent mass F282 measured, and "
-          "arriving quietly is how it got that big",
+          "- a section in neither set is the silent drift this check exists to "
+          "catch, and arriving quietly is how a document accumulates it",
           any(c == "Frobnication" and "neither set" in p
               for c, p in M.claim_drift(text=extra)),
           repr(M.claim_drift(text=extra)))
@@ -724,7 +724,7 @@ def _cases(check):
         check("oa23 ...and a VERB that starts refusing a status the document "
               "does not name is a finding under a document nobody touched. "
               "Without this half the anchor only ever watches the prose, which "
-              "is how F283 reversed the code and left the clause standing",
+              "lets a reversed guard leave the prose clause standing unnoticed",
               any(c == "scope-refusal-statuses" and "'done'" in p
                   and "does not name it" in p for c, p in _widened),
               repr([p for c, p in _widened
@@ -732,7 +732,7 @@ def _cases(check):
     finally:
         M.LIST_ANCHORS = _saved_lists
         shutil.rmtree(_scratch23, ignore_errors=True)
-    # --- F334: the window this row searches, and what bounds it ---------------
+    # --- the window this row searches, and what bounds it -----------------------
     # THE PATTERN USED TO BE UNBOUNDED - `.*?` under `re.S` - and the shape it
     # anchors on is not unique to the verb it names: a status test beside an
     # `out(` prefix is ordinary code here, where the row above it anchors on a
@@ -760,16 +760,16 @@ def _cases(check):
         check("oa26 a DELETED guard is reported as a deleted guard: with the "
               "status test gone from `_locked_scope`, the row says the file no "
               "longer carries the vocabulary it is anchored to and says nothing "
-              "about a member. F334 read the NEXT verb's guard instead and "
-              "blamed the document for not naming a status `scope` had stopped "
-              "refusing",
+              "about a member. An unbounded scan used to read the NEXT verb's "
+              "guard instead and blame the document for not naming a status "
+              "`scope` had stopped refusing",
               _verb_src.count(_guard_test) == 1 and _blinded != _verb_src
               and any("no longer carries the vocabulary" in p for p in _gone)
               and not any("does not name it" in p or "no such member" in p
                           for p in _gone),
               repr(_gone))
         # ...and the case above is DISCRIMINATING rather than green by luck. The
-        # pre-F334 spelling is derived from the row's own pattern instead of
+        # guard spelling here is derived from the row's own pattern instead of
         # copied, so it cannot drift from what it claims to compare, and it must
         # still find a match in these same bytes: the deletion case only proves
         # a bound while there is something below the function for an unbounded

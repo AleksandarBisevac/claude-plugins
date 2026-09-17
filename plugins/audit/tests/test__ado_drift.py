@@ -233,8 +233,8 @@ def _cases(check):
     _ids = [r["adoId"] for r in _inv]
     check("ad19 the inventory carries every INTEGER-linked item, phases first, and "
           "skips a null link, a phase with no tasks, and `id: true` - which would "
-          "otherwise pass for a work-item id because bool subclasses int (the F15 "
-          "shape the validator already refuses): %r" % (_ids,),
+          "otherwise pass for a work-item id because bool subclasses int (a shape "
+          "the manifest validator already refuses): %r" % (_ids,),
           _ids == [4001, 5120, 4890, 4891]
           and [r["kind"] for r in _inv] == ["phase", "task", "bug", "bug"])
     check("ad20 the breakdown counts what is NOT recorded too - `unknown` is how "

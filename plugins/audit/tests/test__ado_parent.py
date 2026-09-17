@@ -330,7 +330,7 @@ def _cases(check):
           "letter: %r" % (M.unparented_types({"types": {"bug": "Defect"}}),),
           M.unparented_types({"types": {"bug": "Defect"}}) == ("Defect",))
 
-    # --- bugs: in the inventory, out of the plan (F101) ------------------------
+    # --- bugs: in the inventory, out of the plan --------------------------------
     # A LINKED BUG HAD NO MANIFEST SIDE AT ALL. `status` fetches its
     # `System.Parent` exactly as it does a phase's and had nothing to compare it
     # with, so the row is what the manifest RECORDS - and the fallback, which is
@@ -436,7 +436,7 @@ def _cases(check):
               "read as 'this project ranks nothing'" % (_junk,),
               M.levels_from_backlog_config(_junk) is None)
 
-    # --- F143: the payload gives the bug's RANK and never its NAME -------------
+    # --- the payload gives the bug's RANK and never its NAME --------------------
     # The name used to be the literal "Bug" - a shipped table of one row inside
     # the one function whose entire argument is that no table may ship. `Defect`
     # is the fixture value because it is what a board that renamed its bug type
@@ -478,7 +478,7 @@ def _cases(check):
           and len(_dblind["unverified"]) == 1
           and _dblind["unverified"][0]["code"] == "B0")
     # THE SECOND DIRECTION, and it looks vacuous on purpose: it passes on the
-    # pre-F143 code by construction and is the only case that fails when the
+    # old, name-keyed code by construction and is the only case that fails when the
     # placement becomes unconditional. `asTasks` would put the bug at rank 1,
     # the type list puts it at 2, so the two versions cannot agree by accident.
     _named = {"bugsBehavior": "asTasks",
@@ -632,7 +632,7 @@ def _cases(check):
           "never assumed into a refusal: %r" % (_codes(_res),),
           _codes(_res) == ([], [], [], ["B0"])
           and "Deliverable" in (_res["unverified"] or [{}])[0].get("message", ""))
-    # F185. THE PHRASE HAS TO SAY WHOSE TYPE, and it did not: a rank is missing
+    # THE PHRASE HAS TO SAY WHOSE TYPE, and it did not: a rank is missing
     # either because a row carries no type or because its type is not in the
     # fetched levels, independently for the child and the parent - four answers,
     # and the sentence keyed on whether a type NAME was None, which is two. So a

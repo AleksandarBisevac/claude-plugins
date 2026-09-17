@@ -140,7 +140,7 @@ def _cases_body(check, tmp, outside):
           and aged.count("not applied") == 0)
 
     # -------------------------------------------- the limit this prune states
-    # F154. Rows an older release wrote can hold a whole shell command in `file`
+    # Rows an older release wrote can hold a whole shell command in `file`
     # or an absolute path in `reason`, both writers are fixed, and neither fix
     # reaches what is on disk. Nothing in a row says which release wrote it, so
     # the rule keeps them - and "Nothing to remove" is then a true statement
@@ -284,7 +284,7 @@ def _cases_body(check, tmp, outside):
               refused_run.returncode == 1
               and refused_run.stdout.count("REFUSED") == 1
               and far.read_bytes() == far_before)
-        # F144, at THIS door. `render` puts a finding through verbatim, so a
+        # At THIS door. `render` puts a finding through verbatim, so a
         # refusal sentence naming its directory resolved reaches a terminal and a
         # CI log as the operator's home directory. The redaction is `_gate_feed`'s
         # (the panel's own redactor keys on `path`, which a refusal leaves None),

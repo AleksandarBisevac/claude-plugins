@@ -848,7 +848,7 @@ def _cases(check):
               M.shard_dir_to_retire({"phases": [{"id": "P1", "shard": 7}]},
                                     _lsharded)[0] == "")
 
-        # F257. There was no shared resolver, so `/audit:phase 2` matched nothing
+        # There was no shared resolver, so `/audit:phase 2` matched nothing
         # and the failure was whatever each script happened to print.
         _rp = {"phases": [{"id": "P1"}, {"id": "P2"}, {"id": "BF1"}]}
         check("rp1 an exact id resolves, which is every call site that already "

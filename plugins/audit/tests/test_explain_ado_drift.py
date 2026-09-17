@@ -9,7 +9,7 @@ everything a caller can get wrong and everything the printed answer promises:
   list of items, a manifest that is not an object, a missing file — each answers
   "I could not read this" rather than "no drift here", because a table of zero rows
   reads as a clean board. That is the same reasoning `check-ado-item.py` writes
-  down for its own exit 2, and the same defect class as `F-P-16`.
+  down for its own exit 2, and the same defect class in a different door.
 - **Exit 0 does not mean "nothing found".** The exit code says whether the QUESTION
   could be answered. `ed7` pins that a row which would overwrite somebody still
   exits 0 — because a refusal here would label the normal state of a shared board

@@ -77,8 +77,7 @@ def _cases(check):
           "with no stop - the negative half, so t4 cannot pass on a rule that "
           "always refuses",
           ok["transport"] == M.TRANSPORT_AZ and ok["stop"] is None)
-    # F98's other half, found by the agent that fixed it. The reading grew a
-    # `saw` field carrying the exit code and the stderr, and the report prints
+    # The reading grew a `saw` field carrying the exit code and the stderr, and the report prints
     # it between this rung's basis and this remedy — so "run `az extension list`
     # by hand and read its error" had become an instruction to re-run a command
     # whose answer is already on screen. A remedy that names the line beats one

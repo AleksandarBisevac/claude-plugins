@@ -63,8 +63,8 @@ def _mentions_url(node):
 
     Subtrees under `_redact_token(...)` are safe and are not descended into.
     `"url"` as a bare constant counts, because the pidfile hands its URL out as
-    `info.get("url")` - the string, not a name - and that is the spelling F114
-    printed raw."""
+    `info.get("url")` - the string, not a name - and that is the spelling that
+    got printed raw."""
     if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
             and node.func.id == "_redact_token"):
         return False
@@ -89,8 +89,9 @@ def _printed(fn, *args):
     """The lines `fn` prints, as data.
 
     Three of the panel's surfaces are `print` and a return code rather than a
-    value; F114 is a claim about what they PRINT, so the claim is made about the
-    lines themselves and not about a substring of a transcript nobody captured."""
+    value; the claim here is about what they PRINT, so the claim is made about
+    the lines themselves and not about a substring of a transcript nobody
+    captured."""
     buf, real = io.StringIO(), sys.stdout
     sys.stdout = buf
     try:
@@ -332,7 +333,7 @@ def _cases(check):
     # `.get`, not `[...]`: a response that stopped carrying the key is exactly what
     # these two are about, and a check that dies subscripting it exits 1 with a
     # traceback instead of a named failure — which is how a mutation goes red for
-    # the wrong reason and proves nothing (F3, one level down).
+    # the wrong reason and proves nothing.
     # The drawer prints these one after the other under two headings. Byte-equal
     # is not two voices, it is the same sentence twice — and it is the shape of
     # the duplication this whole endpoint exists to avoid.
@@ -404,7 +405,7 @@ def _cases(check):
     # cases that RENDER a report moved to _panel_state.py (P12.3); what stays is
     # the route that reaches it and the button that opens it.
     #
-    # F-P-8: this searched the WHOLE of this file's own source, so each literal
+    # This searched the WHOLE of this file's own source, so each literal
     # found the assertion line spelling it — the check matched itself, and renaming
     # the route in do_POST left the suite green while the routes it claims to guard
     # went unguarded. It reads the handler slices instead, which end at
@@ -464,8 +465,8 @@ def _cases(check):
         pass
     check("i1 writing the pidfile ensures a targeted .claude/.gitignore rule",
           "audit-panel.json" in _gi_lines)
-    check("i1b ...and the launch log rides the same rule: F99 sends the detached "
-          "child's stderr into .claude/, so without it every panel launch would "
+    check("i1b ...and the launch log rides the same rule: the detached "
+          "child's stderr goes into .claude/, so without it every panel launch would "
           "leave an untracked file in `git status`",
           "audit-panel.log" in _gi_lines)
     check("i1c the note above each rule is its OWN line - git reads `#` as a "
@@ -492,7 +493,7 @@ def _cases(check):
         fh.write("")                        # .claude is a FILE: rule unwritable
     check("i5 an unwritable rule reports False so callers warn instead of "
           "claiming", M._ensure_panel_files_ignored(_proj_bad) is False)
-    # i6 (F148): the paths the panel WRITES and the rules it writes for them are
+    # i6: the paths the panel WRITES and the rules it writes for them are
     # one fact, and this file used to spell it three times - `_pidfile` and
     # `_log_path` each carried a literal of their own beside the rule table. A
     # rename in either left `_PANEL_PRIVATE_FILES` ignoring a name nothing
@@ -510,7 +511,7 @@ def _cases(check):
           % (_written, _ruled),
           _written and _written == _ruled)
 
-    # --- F114: no surface prints the session token ------------------------------
+    # --- no surface prints the session token -------------------------------------
     # `--status` hid it and `--stop` printed it in full, one line apart in the
     # same transcript. The token dies with the process, so what --stop printed
     # was spent - but --status does not hide it because it is live, it hides it
@@ -553,7 +554,7 @@ def _cases(check):
     # The deliberate exception, COUNTED rather than assumed: --no-open has to
     # hand the operator a URL they will paste into a browser themselves, so it
     # prints the live one and warns on the next line. A second unredacted print
-    # appearing anywhere in this file is exactly the shape F114 was, and the
+    # appearing anywhere in this file is exactly the shape this guards against, and the
     # count is what tells the two apart - `_redact_token` being present somewhere
     # would not.
     _raw_prints = _raw_url_prints(_hsrc)
@@ -562,7 +563,7 @@ def _cases(check):
           "token: %r" % (_raw_prints,),
           len(_raw_prints) == 1 and "avoid pasting it" in _hsrc)
 
-    # --- F99: a launch that died must leave a reason ----------------------------
+    # --- a launch that died must leave a reason -------------------------------
     # `/audit:panel` launched with `>/dev/null 2>&1`, so a child that died at
     # startup left EXACTLY the trace a launch that succeeded and was then stopped
     # leaves: no pidfile, no message, nothing on record. The defect was the
@@ -636,7 +637,7 @@ def _cases(check):
           M._clear_launch_stderr(_f99) is True
           and M._launch_stderr(_f99) is None
           and M._clear_launch_stderr(os.path.join(tmp, "never-launched")) is True)
-    # F99 is a class, not an instance: there are two detached launch recipes and
+    # This is a class, not an instance: there are two detached launch recipes and
     # BOTH discarded stderr. A guard pinning only the one that was reported would
     # let the next one in.
     _recipes = [os.path.join(M._output.PLUGIN_ROOT, "commands", "panel.md"),
@@ -657,7 +658,7 @@ def _cases(check):
           == sorted(os.path.basename(r) for r in _present)
           and not _silent)
 
-    # --- F100: which build is serving the page ----------------------------------
+    # --- which build is serving the page --------------------------------------
     # The panel is ephemeral with a per-project pidfile, so a relaunch after an
     # upgrade finds the running instance and points at it - and that instance
     # assembled its page at IMPORT, under whichever build was installed then.

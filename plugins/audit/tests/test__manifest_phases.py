@@ -186,9 +186,9 @@ def _cases(check):
           "be satisfied by one that always fires: %r" % (_f3,),
           [x for x in _f3 if "adoTracked" in x] == [])
 
-    # --- ta: what a `tests.add` entry NAMES, and where it must name one (F294) ---
+    # --- ta: what a `tests.add` entry NAMES, and where it must name one ---------
     # The schema documents `tests.add` as FREE PROSE, and `audit-task.py`'s
-    # `files` union treated every entry as a path on F258's premise that a tdd
+    # `files` union treated every entry as a path on the premise that a tdd
     # task "creates the file it names in tests.add BY DEFINITION". True of the
     # tasks that name one, false of the field: the scope filled up with
     # assertions and `fileIndex` grew keys no path can ever match.
@@ -242,7 +242,7 @@ def _cases(check):
           "carry a colon, one is a single word, one ends in a dotted number "
           "and one has a SLASH in its first word, so no single test decides "
           "them all: %r" % (_ta_invented,), _ta_invented == [])
-    # F294's own defect, one shape narrower, and it shipped in the first draft:
+    # The same defect, one shape narrower, and it shipped in the first draft:
     # a separator with no filename after it. Driven then - `--tests-add "n/a"`
     # put `n/a` into `files` AND into `fileIndex`, a key no path can match.
     _ta_bare = ["/", "\\", "n/a", "n/a: not applicable here", "docs/",
@@ -277,9 +277,10 @@ def _cases(check):
         """(findings, warnings) for one phase of `(id, status, mode, entries)`.
 
         Through `_walk_phases` and not through a rule of its own, which is the
-        point of F294's second draft: the check rides the pass that already
-        visits every task with its phase, beside F254's rule about the same
-        field. A rule with a walk of its own was a third pass and a second copy
+        point of this check's second draft: the check rides the pass that already
+        visits every task with its phase, beside the expectRedFirst rule about
+        the same field. A rule with a walk of its own was a third pass and a
+        second copy
         of this filter.
         """
         tasks = [_task(tid, status=status,
@@ -310,7 +311,7 @@ def _cases(check):
           "names the promise the change is recorded against: %r"
           % (_ta_live_one[-90:],),
           "3.0.0" in _ta_live_one and "COMPATIBILITY.md" in _ta_live_one)
-    # F296's sibling defect, one module over: the first draft emitted
+    # A related defect, one module over: the first draft emitted
     # `phases[P0].tasks[P0.1]: …`, which is the shape reserved for a task with
     # NO id, so `_warning_groups.locator()` returned None and the line could
     # never be grouped or attributed to its phase - silently opting out of the
@@ -339,8 +340,8 @@ def _cases(check):
     check("ta7 SECOND-DIRECTION CASE: a DONE or CANCELLED tdd task carrying "
           "the same entry draws nothing - the exemption is part of the rule "
           "rather than a carve-out, because a settled task's tests.add is a "
-          "RECORD and F283 leaves its scope append-only, so a line there would "
-          "be permanent with no remedy: %r" % (_ta_done_w,),
+          "RECORD whose scope stays append-only once settled, so a line there "
+          "would be permanent with no remedy: %r" % (_ta_done_w,),
           _ta_done_w == [] and _ta_done_f == [])
     _ta_ok_f, _ta_ok_w = _ta_walk([("P0.1", "pending", "tdd",
                                     [_TA_NAMED, "tests/x.spec.ts"])])
@@ -390,8 +391,9 @@ def _cases(check):
               len([x for x in _ta_tied_w if "tests.add" in x])),),
           _ta_tied_idx["task_ids"] == ["P0.1"]
           and len([x for x in _ta_tied_w if "tests.add" in x]) == 1)
-    # #6's reconciliation, pinned rather than argued. F254 asks whether a
-    # red-first task named a case AT ALL and reads `expectRedFirst`, which is
+    # #6's reconciliation, pinned rather than argued. The expectRedFirst rule
+    # asks whether a red-first task named a case AT ALL and reads `expectRedFirst`,
+    # which is
     # what DECLARES that intent; this rule asks whether the case it named can be
     # found, and the `files` union it exists for does not read that field at
     # all. So a hand-edited `expectRedFirst: false` exempts one and not the
@@ -404,9 +406,10 @@ def _cases(check):
                              "expectRedFirst": False, "gate": []})]
     _ta_rf_idx, _ta_rf_f, _ta_rf_w = M._walk_phases(
         [_phase(status="in_progress", tasks=_ta_norf)])
-    check("ta12 `expectRedFirst: false` exempts F254's rule and NOT this one, "
-          "which is deliberate: that field declares the red-first intent F254 "
-          "is about, and the `files` union this rule exists for never reads "
+    check("ta12 `expectRedFirst: false` exempts the expectRedFirst rule and "
+          "NOT this one, which is deliberate: that field declares the "
+          "red-first intent that rule is about, and the `files` union this "
+          "rule exists for never reads "
           "it - so requiring it here would let a hand edit opt a task out of a "
           "rule about a field it has no bearing on: %r"
           % ([x[:60] for x in _ta_rf_w],),

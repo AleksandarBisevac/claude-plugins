@@ -160,7 +160,7 @@ def _cases(check):
               levels(rep, "manifest") == ["WARNING"], repr(levels(rep, "manifest")))
         check("fresh repo: plan gate reports the observe tier",
               "observe" in detail(rep, "plan gate"), detail(rep, "plan gate"))
-        # F52: the shell-write guard shares this tier and goes SILENT in it, where
+        # The shell-write guard shares this tier and goes SILENT in it, where
         # the plan gate still records. A quiet guard and a broken guard look the
         # same from outside, so the tier line is the one place that can say which
         # this is - and a line nothing asserts is a line that rots.
@@ -174,7 +174,7 @@ def _cases(check):
               levels(rep, "hooks") == ["WARNING"], repr(levels(rep, "hooks")))
         check("the hooks warning names the likely cause (not enabled)",
               "enabled" in hooks_fix, hooks_fix)
-        # F228. `diagnose()` owns the ORDER, and this row's order is its meaning:
+        # `diagnose()` owns the ORDER, and this row's order is its meaning:
         # "hooks" says whether anything has run here and "running plugin" says
         # WHICH COPY ran it. The pair is what stops a guard several releases
         # behind sitting silently in force while this command answers about the
@@ -194,7 +194,7 @@ def _cases(check):
               levels(rep, "running plugin") == ["WARNING"]
               and "NOT ESTABLISHED" in detail(rep, "running plugin"),
               detail(rep, "running plugin"))
-        # F-E2: an absent ledger DIRECTORY used to read "<path> exists but
+        # An absent ledger DIRECTORY used to read "<path> exists but
         # holds no rows yet" - a diagnostic asserting the existence of a
         # directory nothing ever created. Missing and empty are two branches.
         check("ledger: a missing directory reads 'no ledger yet' and names "
@@ -828,7 +828,7 @@ def _cases(check):
               levels(rep, "journal") == ["OK"]
               and "disabled" in detail(rep, "journal"), detail(rep, "journal"))
 
-        # D4 / F-F1: journal git hygiene. The git anchor only pins committed
+        # D4: journal git hygiene. The git anchor only pins committed
         # history, so a journal file that has sat UNTRACKED for more than 7
         # days is work the anchor cannot protect - a WARNING that names it,
         # never a FINDING (absence of a commit is not evidence of forgery).
@@ -982,7 +982,7 @@ def _cases(check):
                 json.dump({"manifestPath": "plan.json",
                            "journal": {"dir": "trail2"}}, fh)
 
-        # --- journal basename collision (F-D-1) ---------------------------
+        # --- journal basename collision -----------------------------------
         # The same basename live AND archived: an already-anomalous state
         # that verify() flags as a duplicate WARNING. never-committed must
         # still count ONLY the untracked file -- the status lookup is keyed
@@ -1051,7 +1051,7 @@ def _cases(check):
               detail(rep, "manifest"))
         os.remove(os.path.join(tmp, "plan.json"))
 
-        # F-E3 sibling: a proposal whose status is OUTSIDE the vocabulary
+        # A sibling case: a proposal whose status is OUTSIDE the vocabulary
         # (proposed|materialized|dropped) is real tracked work too - the ok
         # line must count it rather than let it vanish into "0 phases, 0 tasks".
         with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:
@@ -1265,7 +1265,7 @@ def _cases(check):
                   detail(repc, "completions"))
 
             # record ts vs completedAt drift beyond 24h -> WARNING. The drift is
-            # derived from `now` (F-A1: a hardcoded date here went red the day the
+            # derived from `now` (a hardcoded date here went red the day the
             # calendar caught up with it) - 48h guarantees the >24h gap forever.
             drifted = time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                     time.gmtime(time.time() + 48 * 3600))
@@ -1318,7 +1318,7 @@ def _cases(check):
                   "WARNING" in levels(repc, "completions")
                   and "does not carry the journal" in detail(repc, "completions"),
                   detail(repc, "completions"))
-            # The half this case was missing, and F33 is what it cost: asserting
+            # The half this case was missing: asserting
             # only that the warning FIRES let the all-clear print beside it for
             # as long as the two lines both existed. A run that says a task is
             # short a journal file and that every task is clean has answered the

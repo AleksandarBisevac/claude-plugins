@@ -66,7 +66,7 @@ def _cases(check):
     # disagree about it. The check below pins that the planGate control exists,
     # so this exemption cannot outlive the control that justifies it.
     #
-    # `ui` (th, F-P-6) is exempt for the policy reason, not the enforce one: it
+    # `ui` (th) is exempt for the policy reason, not the enforce one: it
     # HAS a surface, and that surface is the Appearance tab — a token editor
     # with a live preview, light/dark pairs and a contrast check. A text field
     # here holding a theme name beside it would be a second control writing the

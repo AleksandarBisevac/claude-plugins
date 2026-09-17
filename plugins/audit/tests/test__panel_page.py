@@ -187,7 +187,7 @@ def _cases(check):
           "function planGateField(" in M.UI_HTML
           and "'planGate':()=>planGateField(cfg)" in M.UI_HTML)
     check("gt: its preset reads planGate FIRST and the legacy enforce:true as "
-          "'deny' - inside the field's own slice (the F-D1 lesson)",
+          "'deny' - inside the field's own slice",
           "cfg.planGate??(cfg.enforce===true?'deny':'')" in _pgf)
     check("gt: a change writes planGate and deletes enforce - one statement of "
           "the tier survives a save",
@@ -630,7 +630,7 @@ def _cases(check):
           "const row=el('button',{class:'ovrow'+(open?' open':''),type:'button',"
           in M.UI_HTML
           and "role:'button'" not in M.UI_HTML)
-    # ov (F-P-5): pressing a phase used to LEAVE this tab for Composition — the
+    # ov: pressing a phase used to LEAVE this tab for Composition — the
     # tab that edits tasks, models and skills. "Show me this phase" answered
     # with a form, and the Overview filters left behind. It opens in place now;
     # Composition is a named button inside the detail, not the default.
@@ -2068,7 +2068,7 @@ def _cases(check):
           "data-t=policy>Policy<" in M.UI_HTML and "<div id=policy" in M.UI_HTML
           and "'policy'" in M.UI_HTML[M.UI_HTML.index("const TABS=["):
                                        M.UI_HTML.index("],SCROLL={}")])
-    # --- pr (F-P-32): Proposals ------------------------------------------------
+    # --- pr: Proposals ------------------------------------------------------
     # Parked phases had no surface in the panel at all: /audit:init can park every
     # synthesized phase, and the tab that shows the plan showed nothing. These pin
     # the constructs the browser checks depend on; the behaviour itself is driven
@@ -2209,7 +2209,7 @@ def _cases(check):
           and _vb_shell.group(1) == _vb_band.group(1)
           and _vb_shell.group(2) == _vb_band.group(2),
           repr((_vb_shell and _vb_shell.groups(), _vb_band and _vb_band.groups())))
-    # --- th (F-P-6): Appearance ------------------------------------------------
+    # --- th: Appearance ------------------------------------------------------
     # The panel and the report share ONE token layer, and every value in it is a
     # custom property — so "change the look" is "change those values", and the
     # server compiles them by substitution (see _ui_theme's th1: the default
@@ -3385,7 +3385,7 @@ def _cases(check):
           and "menu.__place=place;" in M.UI_HTML
           and "m.__place()" in M.UI_HTML)
 
-    # --- F-P-3 (px): the capability table, expanded ---------------------------
+    # --- px: the capability table, expanded --------------------------------
     # Behaviour is driven in capture-screenshots --check (assertPolicyExpand):
     # same rows in both views, one filter, Esc gives the focus back. These pin
     # the constructs that make those properties structural rather than lucky.
@@ -3435,7 +3435,7 @@ def _cases(check):
           and "dialog.polfull[open]{display:flex" in M.UI_HTML
           and "box-shadow:var(--shadow-md);display:flex" not in M.UI_HTML)
 
-    # --- F-P-2 (uc): spend with no plan behind it is NAMED, and highlighted ---
+    # --- uc: spend with no plan behind it is NAMED, and highlighted ---------
     # "--" is the ledger's storage key for a row with no phase/task; it used to
     # reach the screen as those two characters (and, in the ranked list, as
     # "-- unattributed"), which reads as a missing value rather than as the
@@ -3464,7 +3464,7 @@ def _cases(check):
           and "vals.map(v=>[v,uKey(v)])" in M.UI_HTML)
     check("uc: the label wears the warn role, as text and not as a badge",
           ".uncat{color:var(--warn)" in M.UI_HTML)
-    # --- F-P-1 (co): the combo menu is ONE overlay on <body> ------------------
+    # --- co: the combo menu is ONE overlay on <body> -------------------------
     # Reproduced in a real browser before the fix (repro numbers in the plan):
     # a filter on tr.phase:hover>td made the td the containing block of the
     # fixed menu inside it, so the menu jumped ~550px on hover and grew the
@@ -3624,8 +3624,8 @@ def _cases(check):
           and "storageGet(UFSTORE)" in _boot
           and _boot.index("uApplyFragment") < _boot.index("renderUsage"))
     check("fp: clearAll clears the store AND the fragment INSIDE its own "
-          "slice (the F-D1 lesson: a pin outside the function it vouches for "
-          "vouches for nothing)",
+          "slice (a pin outside the function it vouches for vouches for "
+          "nothing)",
           "storageDrop(UFSTORE)" in
           M.UI_HTML.split("function clearAll()")[1][:400]
           and "syncUFHash('')" in M.UI_HTML.split("function clearAll()")[1][:400])

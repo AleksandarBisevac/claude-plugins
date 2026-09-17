@@ -88,7 +88,7 @@ def _obs(contained, trees=None, parent_dirty=False, phase_dirty=False,
         # Supplied, because `cleanup_plan` fails CLOSED without them: a case that
         # omitted these would refuse every cleanup and pass its assertions for a
         # reason that has nothing to do with what it claims to measure. `standingIn`
-        # joined that list in 2.1.1 (F245) - it used to be None, which the plan read
+        # joined that list in 2.1.1 - it used to be None, which the plan read
         # as "nowhere" and now reads as "never asked".
         "standingIn": W.CWD_OUTSIDE,
         "owned": owned if owned is not None else OWNED_OK,
@@ -141,7 +141,7 @@ def _cases(check):
     check("a3 ...and it hands over the exact command, so the human is not left to "
           "reconstruct it from the mode name",
           ans["command"].startswith("git "), ans["command"])
-    # F249. `auto` used to be read BEFORE the merge plan's own refusal, so a run
+    # `auto` used to be read BEFORE the merge plan's own refusal, so a run
     # that could not merge for a real reason - a `parentBranch` this clone does not
     # have, a dirty parent worktree - came back exit 0 saying "the human will do
     # this deliberately". `orchestrator.md` maps that exact shape to "signed off and
@@ -179,7 +179,7 @@ def _cases(check):
     check("b2 ...and it still exits 0: the parent contains the branch, which is "
           "the question this command answers",
           code == M.E_OK, "exit=%d" % (code,))
-    # F249. `main()` stamped `mergedAt` on `answer["merged"]`, which is "THIS RUN
+    # `main()` stamped `mergedAt` on `answer["merged"]`, which is "THIS RUN
     # performed a merge" - and this path performs none, while its cleanup runs on
     # the VERIFIED containment. So the idempotent re-run the design advertises, and
     # the re-run `orchestrator.md` tells a human to make after merging by hand,
@@ -191,7 +191,7 @@ def _cases(check):
           ans["verified"]["answer"] == W.CONTAINED
           and ans["merged"] is False,
           "verified=%r merged=%r" % (ans["verified"]["answer"], ans["merged"]))
-    # --- F249: the preview previews the CLEANUP, not just the merge ------------
+    # --- the preview previews the CLEANUP, not just the merge --------------------
     # The plan is built with `settled` read off disk, where `mergedAt` is null by
     # construction before sign-off — so the preview blocked both cleanup halves and
     # printed a merge and nothing else, while the same command without --dry-run
@@ -219,7 +219,7 @@ def _cases(check):
           "the merge lands" in str(dry.get("previewAssumes")),
           repr(dry.get("previewAssumes")))
 
-    # --- F249: --no-ff is honoured or refused, never dropped -------------------
+    # --- --no-ff is honoured or refused, never dropped ---------------------------
     # `git fetch . <b>:<p>` cannot make a merge commit, so on the no-checkout path
     # the flag used to be silently ignored: the run fast-forwarded, reported
     # success, and produced a different history than the one asked for. It matters
@@ -248,7 +248,7 @@ def _cases(check):
           "--no-ff" in _nf_ok["merge"]["argv"]
           and "--ff-only" not in _nf_ok["merge"]["argv"],
           repr(_nf_ok["merge"]["argv"]))
-    # --- F308: the remedy was reachable and then blocked one step later --------
+    # --- the remedy was reachable and then blocked one step later ---------------
     # The parent is checked out nowhere BECAUSE every worktree holds an audit
     # branch, so a reader does what n2's remedy says and adds one - and a worktree
     # git has just added holds no installed dependencies, so the commit hook that
@@ -425,8 +425,8 @@ def _cases(check):
           "exit=%d done=%r" % (code, ans["cleanupDone"]))
 
     # --- the invariant that keeps the design honest ---------------------------
-    # `--no-ff` IS ONE OF THE DIMENSIONS, and it was not until F308. Every
-    # combination here ran with the flag absent, so the merge these assertions
+    # `--no-ff` IS ONE OF THE DIMENSIONS NOW, but it used to be absent from
+    # every combination here, so the merge these assertions
     # swept was always the `--ff-only` one and the branch that composes the
     # `--no-ff` argv was outside all three of them. Measured: putting
     # `--no-verify` into that branch turned n5 red and left h3 green, which is a
@@ -454,8 +454,8 @@ def _cases(check):
     # that could not see the argv it was a sweep about.
     check("h0 THE CORPUS THE THREE NEGATIVES BELOW SWEEP: `close()` really "
           "issued calls over every combination, and both merge spellings are "
-          "among them. `--no-ff` composes its own argv, and until F308 no "
-          "combination here ever took that branch - so a sweep that cannot say "
+          "among them. `--no-ff` composes its own argv, and no combination here "
+          "used to take that branch - so a sweep that cannot say "
           "which merges it saw is a sweep that proves nothing about the one it "
           "missed",
           every and any("--ff-only" in c for c in every)
@@ -477,14 +477,14 @@ def _cases(check):
                             for c in every for a in c),
           "%d call(s) recorded, no forcing argument in any of them"
           % (len(every),))
-    # F308's guard, and it guards the FIX rather than the bug. The tempting
+    # This guard protects the FIX rather than the bug. The tempting
     # repair once a linked worktree's missing hook bootstrap has aborted a merge
     # commit is to put `--no-verify` in this command's own argv, which would skip
     # hooks on every merge it ever makes and skip them silently. The flag is
     # named in one refusal's remedy and belongs in the operator's shell, on one
     # commit they typed - so it must appear in no call this command issues.
     check("h3 ...and no run ever skips a hook: `--no-verify` is advice in one "
-          "refusal (F308) and appears in no argv, over the same combinations. "
+          "refusal and appears in no argv, over the same combinations. "
           "Putting it here instead would trade one blocked merge for a hook "
           "that stops running and says nothing",
           every and not any("--no-verify" in a for c in every for a in c),

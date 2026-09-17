@@ -185,7 +185,7 @@ def _cases(check):
     tmp = tempfile.mkdtemp(prefix="panel-write-selftest-")
     proj = os.path.join(tmp, "proj")
 
-    # --- th (F-P-6): the Appearance tab's two calls -------------------------
+    # --- th: the Appearance tab's two calls ---------------------------------
     _thp = tempfile.mkdtemp(prefix="audit-theme-write-")
     os.makedirs(os.path.join(_thp, ".claude"), exist_ok=True)
     _st = M.theme_state(_thp)
@@ -975,7 +975,7 @@ def _cases(check):
     check("composition diff skips an unknown id (the patch refuses it a line later)",
           M._composition_changes(_cm, {"tasks": {"P9.9": {"model": "x"}}}) == [])
 
-    # --- F187: a phase can be put IN an area, not only at creation -------------
+    # --- a phase can be put IN an area, not only at creation ---------------------
     # `meta.areas` has had an editor since areas existed and `audit-task
     # add-phase --area` writes a tag at CREATION; nothing wrote it afterwards. A
     # registry you can curate while nothing can be assigned to it is half a
@@ -1083,7 +1083,7 @@ def _cases(check):
         def append(project, entry):
             raise RuntimeError("disk on fire")
 
-    # F104's two stubs. `append` returns a PATH here, which is what the real
+    # Two stubs. `append` returns a PATH here, which is what the real
     # module does and what the claim has to be built from; the fixture path is
     # deliberately unrelated to anything this fixture would produce, so a version
     # that re-derived the name instead of forwarding the one it was given cannot
@@ -1113,8 +1113,8 @@ def _cases(check):
     # of them, because a stub that hit both would pass with either guard removed -
     # which is how the first draft of these cases came to assert neither.
     class _JOldBool(object):
-        """`append` reports success WITHOUT naming a file (its shape before
-        F-F3), on an install that does have the recorder."""
+        """`append` reports success WITHOUT naming a file (an older shape),
+        on an install that does have the recorder."""
 
         calls = []
 
@@ -1149,7 +1149,7 @@ def _cases(check):
               and _ent.get("target") == "m.json"
               and set(_ent) == {"action", "target", "summary", "actor"})
         check("the actor is the viewer, tagged with how the write arrived - and "
-              "carrying NO session id (F111). The panel's only session identity "
+              "carrying NO session id. The panel's only session identity "
               "is its lock's pid, and `_journal_io.writer_id()` takes a session "
               "id as the writer id, so passing it put `panel-<pid>` into the "
               "COMMITTED file name - the one field `genesis_prev()` makes "
@@ -1179,7 +1179,7 @@ def _cases(check):
         check("a journal that throws never breaks the write it is recording",
               _fs == {"journaled": False, "journaledWhy": "failed"})
 
-        # F104: the panel server is a detached process this plugin launched, so
+        # The panel server is a detached process this plugin launched, so
         # the per-session sidecar guard-bash-writes reads can never name what the
         # panel appended - the operator's session did not append it. It leaves its
         # own claim, keyed by a constant because a panel is one per project.
@@ -1434,7 +1434,7 @@ def _cases(check):
     check("the chain the panel wrote verifies",
           _jv["ok"] and not _jv["findings"])
 
-    # --- F111: what the panel names the file it COMMITS -----------------------
+    # --- what the panel names the file it COMMITS ------------------------------
     # `tools/check-committed-pii.py` refuses a journal file whose writer id is
     # none of the shapes this plugin mints, because the name is the one field
     # with no repair path - `genesis_prev()` seeds the chain from those bytes. The
@@ -1462,7 +1462,7 @@ def _cases(check):
           "match anything: %r" % (M._panel_session(),),
           not any(re.match(s, M._panel_session()) for s in _WRITER_SHAPES))
 
-    # --- F104: and it declares the append to guard-bash-writes ----------------
+    # --- and it declares the append to guard-bash-writes ------------------------
     # Without this the guard read the panel's row as a shell write into the audit
     # trail: the chain verified clean, so nothing was corrupted, but the
     # attribution was wrong and only a manual check could say so.
@@ -2009,7 +2009,7 @@ def _cases(check):
     finally:
         _sh2.rmtree(_pp_tmp, ignore_errors=True)
 
-    # --- F260: a lock this session already holds is not a conflict ------------
+    # --- a lock this session already holds is not a conflict --------------------
     # `set-priority.py` refused with exit 3 naming a pid that was the operator,
     # mid take-lock / write / write / release - the flow the lock exists for. The
     # dangerous half of the repair is the RELEASE: proceeding is useless if the
@@ -2226,7 +2226,7 @@ def _cases(check):
     finally:
         _shutil.rmtree(_ng_proj, ignore_errors=True)
 
-    # --- the sweep's rows: one shape, three consumers (F248) ------------------
+    # --- the sweep's rows: one shape, three consumers ----------------------------
     # `POST /api/worktrees/sweep` had no case anywhere, and the defect it hid was a
     # list of pre-joined STRINGS where every other panel write emits change rows.
     # `_fmt_change` dereferences `row.get("target")`, so each of these went through

@@ -77,7 +77,7 @@ def _fake(script, listing=LIST, admin_root=None, ours=()):
                 os.remove(marker)
         # THE MARKER CARRIES THE BRANCH THE LISTING SAYS THAT PATH HOLDS, read out
         # of `listing` rather than written twice: the provenance gate compares the
-        # two (F246), so a fixture that invented a branch here would be asserting
+        # two, so a fixture that invented a branch here would be asserting
         # its own invention. `ours` may name a path with an explicit branch as a
         # pair, which is how the mismatch case is driven.
         held = {}
@@ -263,7 +263,7 @@ def _run_cases(check, root):
           and owned["actions"][0]["path"] == "/wt-p2",
           "unowned=%d owned=%d" % (len(unowned["actions"]),
                                    len(owned["actions"])))
-    # F246. The marker names the phase and the branch it was written for, and only
+    # The marker names the phase and the branch it was written for, and only
     # `createdBy` used to be read - so the worktree-to-phase join was made from
     # whatever branch git reports NOW. An operator who runs `git switch` inside a
     # phase worktree to look at something hands that still-open directory to another

@@ -160,7 +160,7 @@ def _cases(check):
               build({"test": "pytest", "lint": "if x; then y; fi"},
                     which=present), "buildCommands"))
 
-    # dp10 REVERSED on purpose (F-P-28). It used to pin SILENCE here, on the
+    # dp10 REVERSED on purpose. It used to pin SILENCE here, on the
     # argument that an ok line would be "a claim about a document that is not
     # there". That conflated two different things: not claiming the manifest is
     # fine, and saying nothing at all. Every neighbour in this report names an
@@ -298,7 +298,7 @@ def _cases(check):
                 "skills": {"default": "deny",
                            "allow": ["nope-a", "nope-b", "nope-c", "nope-d"]}}
         rep = policy(dead)
-        # F205, ON THE SURFACE THAT PINNED THE DEFECT. This asserted that four
+        # ON THE SURFACE THAT PINNED THE DEFECT. This asserted that four
         # dead patterns were counted and THREE were named, so the truncation had
         # a case defending it - which is how a count that was always right kept
         # a basis that did not support it. Counted rather than found, because a
@@ -350,14 +350,14 @@ def _cases(check):
               % (_detail(rep, "policy"),),
               "would be refused" not in _detail(rep, "policy"))
 
-        # --- F195: the skills the plan NAMES, against this machine -------------
+        # --- the skills the plan NAMES, against this machine ---------------------
         # `check_build_commands` already grades this class one dependency over -
         # "runner not on PATH here ... that gate cannot run on this machine". A
         # gate whose runner is absent and a reviewer whose skill is absent are the
         # same shape, and one of them got silence. Measured live on a manifest
         # naming a hand-placed SKILL.md that exists in no marketplace.
         # Entries carry a portability verdict now, and a fixture that omits it is
-        # the honest shape for "this machine could not say" - so the F195 cases
+        # the honest shape for "this machine could not say" - so these cases
         # below stay about resolution alone, and the ones after them supply a
         # verdict on purpose.
         def _skills(mf, inv, cfg=None):
@@ -377,7 +377,7 @@ def _cases(check):
               "reviewer: %r" % (_detail(rep, "skills"),),
               "'code-review-and-quality'" in _detail(rep, "skills")
               and "P1 review skill" in _detail(rep, "skills")
-              # F233: this read `!= "finding"` and could not fail. `Report.finding`
+              # This read `!= "finding"` and could not fail. `Report.finding`
               # writes "FINDING", so the comparison was true of every row it would
               # ever see, and the half of dp27 that names the TIER was asserting
               # nothing for as long as the case had existed.

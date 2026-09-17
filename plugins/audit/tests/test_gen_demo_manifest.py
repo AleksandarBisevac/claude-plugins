@@ -494,7 +494,7 @@ def _cases(check):
           bool(shipped_as_of) and demo_as_of == shipped_as_of,
           "demo=%r shipped=%r" % (demo_as_of, shipped_as_of))
 
-    # --- schema coverage (F35) ---------------------------------------------
+    # --- schema coverage -----------------------------------------------------
     # The fixture is what the project SHOWS, so a schema field it never carries
     # is a feature nobody sees working. Measured before this existed: 129 fields
     # defined, 75 carried, 54 missing - and nothing in the tree could say so.
@@ -521,7 +521,7 @@ def _cases(check):
                    if not (isinstance(v, str) and len(v.strip()) >= 40))
     check("every exemption states a reason, not a shrug: %r" % (_mute,),
           bool(M.SCHEMA_EXEMPTIONS) and _mute == [])
-    # --- F239: a REVISIT trigger nobody reads ---------------------------------
+    # --- a REVISIT trigger nobody reads -----------------------------------------
     _rt_live = M.revisit_trigger_drift()
     check("rt1 THE LIVE CLAIM: no exemption is excusing itself on a REVISIT "
           "trigger that has already come true. `meta.branch` sat behind 'REVISIT "
@@ -605,7 +605,7 @@ def _cases(check):
           "objects contribute no fields to their parent: %r" % (_stray,),
           _stray == [])
 
-    # --- the lease, and the exemption that holds it back (F48) --------------
+    # --- the lease, and the exemption that holds it back ------------------------
     # `phase.claim` and its fields are the one region SCHEMA_EXEMPTIONS holds
     # back on POLICY: the default output is rendered into committed artifacts,
     # so a lease there publishes a demo permanently held by a session that does
@@ -712,7 +712,7 @@ def _cases(check):
               "p.add_argument('--with-claim', action='store_true')\n")
           == ["--with-claim"])
 
-    # F34: every phase declares the tier its orchestrator runs at. Without it
+    # Every phase declares the tier its orchestrator runs at. Without it
     # `gen-demo-usage` mapped `None` through `TIER_TO_MODEL.get(tier,
     # DEFAULT_MODEL)` and all 148 orchestrator rows in the 40x5 demo printed
     # `claude-sonnet-5` as though the manifest had chosen it - a model
@@ -954,7 +954,7 @@ def _cases(check):
         _gate = _loader.load_script("run-test-gate.py", modname="run_test_gate")
         # EVERY INPUT IS READ OFF THE ROW rather than passed as a constant:
         # `run_status` grew a fourth input when the interrupt path learned to
-        # record and a fifth when the tree bracket reached the verdict (F280),
+        # record and a fifth when the tree bracket reached the verdict,
         # and hardcoding absence for either would assert that this generator
         # never fabricates such a run instead of comparing what it did
         # fabricate. `cancelledBy` is absent on every row today, and the day one
@@ -998,7 +998,7 @@ def _cases(check):
         check("the validator reports no warnings", not warnings,
               "; ".join(warnings[:3]))
 
-        # --- F48: the claim path, end to end ----------------------------
+        # --- the claim path, end to end ------------------------------------
         # generate -> split into shards -> load back -> the real validator's
         # walk. This is the leg nothing had: `_check_claim` returns on its
         # first line when a phase carries no claim, so the walk above proves

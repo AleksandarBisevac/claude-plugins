@@ -455,7 +455,7 @@ def _cases(check):
               % (_rolled,),
               "%d parked proposal(s)" % _rolled in _detail(rep, "manifest"))
 
-        # F14 said this next branch could never execute, on the reading that the
+        # This branch was believed to never execute, on the reading that the
         # validator makes every out-of-vocabulary proposal status a finding — and
         # a finding takes the OTHER arm, so the count could not print. Measured:
         # false. `_check_proposals` skips an entry whose `payload` is not a dict
@@ -483,14 +483,14 @@ def _cases(check):
               "1 parked proposal(s)" in _detail(rep, "manifest")
               and "2 legacy proposal(s)" in _detail(rep, "manifest"))
         _mrows = [r for r in rep.rows if r["check"] == "manifest"]
-        check("ds20c ...and it prints from the VALID arm, which is the half F14 "
+        check("ds20c ...and it prints from the VALID arm, which is the half once "
               "believed impossible - a legacy entry is tolerated rather than a "
               "finding, so the manifest is valid and the count is reachable: %r"
               % ([r["level"] for r in _mrows],),
               any(r["level"] == "OK" and "valid" in r["detail"]
                   for r in _mrows))
 
-        # THE VOCABULARY IS THE MANIFEST'S, NOT THIS CHECK'S (F142). The words
+        # THE VOCABULARY IS THE MANIFEST'S, NOT THIS CHECK'S. The words
         # were spelled here as a literal tuple while `_manifest_vocab` holds the
         # real one - and this line is the one that DECIDES what counts as out of
         # vocabulary, so the copy was not merely redundant, it was authoritative
@@ -576,7 +576,7 @@ def _cases(check):
               _levels(rep, "layout") == ["OK"]
               and "single-file layout" in _detail(rep, "layout")
               and "one phase loads them all" in _detail(rep, "layout"))
-        # F13's fault in one line: the line used to name /audit:migrate, which
+        # In one line: the line used to name /audit:migrate, which
         # turned a supported layout into a to-do. Absence is the assertion, and it
         # is checked for the PREFIX rather than one command name - renaming the
         # command must not be a way for the nudge to come back under a new spelling.

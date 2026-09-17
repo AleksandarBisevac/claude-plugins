@@ -82,7 +82,7 @@ def _cases(check):
     uh = M._usage_section(_u)
     um = M._usage_md(_u)
 
-    # uc (F-P-2): the empty bucket is named, not printed as its storage key.
+    # uc: the empty bucket is named, not printed as its storage key.
     _uc_html = M._ranked(_u, "byPhase", "By phase")
     check("uc the phase with no id is named from the shared label map in the "
           "ranked list, and its storage key never reaches the page",
@@ -316,7 +316,7 @@ def _cases(check):
     check("u21b counts are singularised (1 phase, not '1 phases')",
           ("1 phase \u00b7"
            in M._usage_context({"counts": {"phases": 1, "people": 3}})))
-    # Not anchored to `title` sitting immediately after the class: F17 put
+    # Not anchored to `title` sitting immediately after the class: an earlier fix put
     # `tabindex="0"` between them, and this pin is about what the tooltip SAYS,
     # not about attribute order. The row may also carry a data- attribute, so the
     # gap is matched lazily and bounded to the one tag.

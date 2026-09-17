@@ -158,7 +158,7 @@ def _cases_body(check, tmp, outside):
           no_ts["kept"] == 1 and no_ts["classes"][M.CLASS_AGED] == 0)
 
     # ------------------------------------------------------- how far back
-    # F154. Rows an older release wrote can hold a whole shell command in `file`
+    # Rows an older release wrote can hold a whole shell command in `file`
     # or an absolute path in `reason`; both writers are fixed, neither fix
     # reaches disk, and nothing in a row records which release wrote it - so
     # this module refuses to guess (gf5 pins that) and reports the one lever
@@ -296,7 +296,7 @@ def _cases_body(check, tmp, outside):
               "%r" % (res["findings"],),
               reason.count(str(elsewhere)) == 0
               and reason.count(str(outside)) == 0)
-        # F144. The needle used to be `str(slogs)` - the fixture's OWN logs
+        # The needle used to be `str(slogs)` - the fixture's OWN logs
         # directory, absolute - and the case asserted it appeared ONCE. That is
         # the leak spelled as a requirement: on a real machine that string is the
         # operator's home directory and user name, and it travels to

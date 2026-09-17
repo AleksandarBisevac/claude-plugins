@@ -142,12 +142,12 @@ def _cases(check):
               and "P9.9" in _detail(rep, "completions")
               and "outside the pipeline" in _detail(rep, "completions"))
 
-        # ------------------------------------------------------ F205, and dc8 is
-        # why it shipped: one unrecorded task cannot tell a full list from a
-        # bounded one, so every fixture above this line passed against a line that
-        # counted the whole set and named a prefix of it. These two sit here
-        # rather than at the end of the file because they are dc8 with the set
-        # made big enough to lie.
+        # ---------------------------------------------------------------------
+        # A single unrecorded task cannot tell a full list from a bounded one:
+        # dc8's one-task fixture would still pass a check that counted the
+        # whole set but only named a prefix of it. These two sit here rather
+        # than at the end of the file because they are dc8 with the set made
+        # big enough to catch that.
         four = ["P12.2", "P12.3", "P12.10", "P12.14"]
         mf = _manifest([_task(t, completedAt="2026-05-01T00:00:00Z")
                         for t in four])
@@ -310,7 +310,7 @@ def _cases(check):
                   "wrong id: %r" % (_detail(rep, "completions"),),
                   "no usage-ledger rows: P1.9" in _detail(rep, "completions"))
 
-            # ------------------------------------------------ --deep (F33)
+            # ------------------------------------------------ --deep ---------
             # The deep arm asks whether the task's own commit carries the
             # journal file that records it. Its finding was invisible to the
             # all-clear guard, so a run printed the warning and "all carry
@@ -398,7 +398,7 @@ def _cases(check):
                   and "chained records" in _detail(rep, "completions"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    # F88: the spoken basis for an unchecked trail. Inside `_cases` on purpose -
+    # The spoken basis for an unchecked trail. Inside `_cases` on purpose -
     # written first as its own `_f88_cases(check)` beside the runner, which calls
     # `_cases` and nothing else, so both checks were dead and the tally never
     # moved. A suite that grows by a function nobody calls reads exactly like a

@@ -276,7 +276,7 @@ def _cases(check):
           "a raise",
           isinstance(M._run_status(_lvmiss, {}, {}).get("gate"), dict))
 
-    # --- F113 (rd): what the `file` cell is allowed to say on a screen -----------
+    # --- rd: what the `file` cell is allowed to say on a screen -----------------
     # `audit-logs.py prune` counts an out-of-repository row by CLASS and never
     # echoes its path; this card rendered the same rows verbatim - the operator's
     # user name, the temp root and the session slug, in the one card

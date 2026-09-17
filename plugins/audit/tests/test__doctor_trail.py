@@ -141,14 +141,14 @@ def _cases(check):
         rep = base.Report()
         M.check_ledger(rep, tmp, {}, mrel)
         check("dt6 a ledger directory that was never created reads 'no ledger "
-              "yet' and NAMES where it would live. F-E2: it used to say '<path> "
+              "yet' and NAMES where it would live. It used to say '<path> "
               "exists but holds no rows', asserting the existence of a directory "
               "nothing ever made: %r" % (_detail(rep, "usage ledger"),),
               "no ledger yet" in _detail(rep, "usage ledger")
               and os.path.join(tmp, ".claude", "usage")
               in _detail(rep, "usage ledger"))
         check("dt7 ...and never uses the word 'exists' about it, which is the "
-              "half of F-E2 a presence assertion would miss",
+              "half a presence assertion would miss",
               "exists" not in _detail(rep, "usage ledger"))
 
         ledger = os.path.join(tmp, ".claude", "usage")
@@ -286,8 +286,8 @@ def _cases(check):
               and M._journal_never_committed(_journal_io,
                                              os.path.join(tmp, "nope")) is None)
 
-        # ------------------------------- which WARNING class, and its fix (F329)
-        # THE PAIR IS THE POINT. F306 made a re-linked file a warning instead of
+        # ------------------------------- which WARNING class, and its fix -------
+        # THE PAIR IS THE POINT. A re-linked file was made a warning instead of
         # a finding, and the fix text stayed the single sentence about
         # out-of-band drift - so the highest-stakes new class told an operator
         # to look for a git checkout that does not exist. dt43 fails when the
@@ -300,7 +300,7 @@ def _cases(check):
         # AND THE SAME PAIR AGAIN ONE LEVEL DOWN (F344a). `_anchor_warning` says
         # two different things and both open with the same clause, so `relink`
         # keyed on that clause answered for a file where NO row moved and none
-        # arrived - F329's own defect, reintroduced by the repair. dt46 is the
+        # arrived - the same misclassification, reintroduced by the repair. dt46 is the
         # never-fires direction for the re-spelling; dt43's closing clause is
         # the over-fire direction, and either goes red if the prose that carries
         # a class moves, which is the price of classifying on text at all.
@@ -360,7 +360,7 @@ def _cases(check):
             check("dt46 ...while a committed copy merely RE-SPELLED - same "
                   "rows, same order, other bytes - is its own class and must "
                   "NOT draw the re-link advice, which tells the operator to go "
-                  "and read rows that do not exist. This is F329's defect one "
+                  "and read rows that do not exist. This is the same defect one "
                   "level up, and it survived because both warnings open with "
                   "the same clause: %r / %r"
                   % (_detail(rep, "journal"), _fix(rep, "journal")),
@@ -641,7 +641,7 @@ def _cases(check):
               and all(w in _fix(rep, "journal") for w in unrec)
               and "no repair text" in _fix(rep, "journal"))
 
-        # ------------------------------------------- check_running_plugin (F228)
+        # ------------------------------------------- check_running_plugin -------
         # THREE OUTCOMES, and the third is the one this file exists to keep
         # honest: they agree, they differ, or the running copy could not be
         # determined - and the last is not the first. Every fixture below is a

@@ -172,7 +172,7 @@ def _cases(check):
     finally:
         shutil.rmtree(_np, ignore_errors=True)
 
-    # --- the basename, and where it is asked (F47) ---------------------------------
+    # --- the basename, and where it is asked -----------------------------------------
     # `report_paths` used to reach `render-report.py` - an ENTRY POINT at layer 7 -
     # for `_report_basename`, a pure naming rule `_report_html` owns at layer 2.
     # That was one of the two call sites under the sole `_deps.KNOWN_LAYER_DEBT`

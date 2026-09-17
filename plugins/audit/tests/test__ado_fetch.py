@@ -31,7 +31,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _ado_fetch as M                             # noqa: E402
-import _ado_conventions as _conv                   # noqa: E402  (F106: the shape
+import _ado_conventions as _conv                   # noqa: E402  (the shape
 #   this module PRODUCES is graded by that one, and the cases below hand it the
 #   producer's own return value rather than a fixture that resembles it)
 
@@ -225,7 +225,7 @@ def _cases(check):
           "answer",
           items == [{"id": 4001, "fields": {"System.State": "Active"}}])
 
-    # F106: THE PRODUCER'S OWN RETURN VALUE, handed to the guard built for
+    # THE PRODUCER'S OWN RETURN VALUE, handed to the guard built for
     # exactly this false accusation. A fixture that merely resembled a fetch was
     # what let it through - `rest_payload_reason` keyed off `rev`/`url`/`_links`/
     # `relations`, `as_items` strips all four, and the item that HAD a parent was

@@ -357,8 +357,8 @@ def _cases(check):
     # at60-at64: the SHAPE CHECK the validator runs. Found by asking
     # `validate-manifest.py` rather than by reading it: `adoParent = "x"` was
     # refused and named, `status = 17` was refused and named, and
-    # `adoTracked = "yes"` was ACCEPTED in silence with exit 0 - F203 inverted,
-    # the schema forbidding what the validator waved through. Both halves of the
+    # `adoTracked = "yes"` was ACCEPTED in silence with exit 0 - the schema
+    # forbidding what the validator waved through. Both halves of the
     # rule are cased, because a check that only ever fires is as wrong as one
     # that never does.
     check("at60 an ABSENT declaration is legal and silent - absent means "

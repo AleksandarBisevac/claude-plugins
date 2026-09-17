@@ -566,7 +566,7 @@ def _cases(check):
           % (M._check_ado_parents(_covered, _covered["phases"]),),
           M._check_ado_parents(_covered, _covered["phases"]) == ([], []))
 
-    # --- F120: the board demands what the connector cannot supply -------------
+    # --- the board demands what the connector cannot supply ---------------------
     # `_covered` is the fixture on purpose: every phase declares its own parent,
     # so `_require_parent_warnings` is silent over it and any warning below is
     # the BUG one and not that one leaking. Push creates a bug card with no

@@ -85,7 +85,7 @@ def _cases(check):
     # `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)`, which cannot fail. A tier it has
     # never heard of is not an error - it is a row relabelled DEFAULT_MODEL - so a
     # drift between the two files crashes nothing and leaves the demo's by-model
-    # chart quietly wrong. Measured before this case existed, ON THE PRE-F34
+    # chart quietly wrong. Measured before this case existed, ON THE EARLIER
     # FIXTURE (40x5, before phases declared a tier of their own): mutating
     # `RISK_MODEL["high"]` from "opus" to "mythos" kept every suite in the tree
     # green while 132 opus rows became sonnet and the demo's total spend fell from
@@ -105,7 +105,7 @@ def _cases(check):
           bool(tiers) and unmapped == [],
           "tiers=%r unmapped=%r" % (tiers, unmapped))
 
-    # F34, and it is the same failure one level up. `emit` reads the ORCHESTRATOR
+    # This is the same failure one level up. `emit` reads the ORCHESTRATOR
     # row's tier off `ph.get("model")`, and a phase that declares none maps
     # through the same `TIER_TO_MODEL.get(tier, DEFAULT_MODEL)` — so 148 of the
     # 40x5 demo's 482 rows (31%) printed `claude-sonnet-5` as though the manifest
@@ -140,7 +140,7 @@ def _cases(check):
     # ...and every id it can emit must price at its OWN row. `rates_for` falls
     # back to `_default`, which is Opus-tier on purpose, so a renamed or retired
     # model id does not fail either - it silently re-prices the demo UPWARD
-    # (mutating "claude-sonnet-5" to "claude-sonnet-6" took the PRE-F34 fixture
+    # (mutating "claude-sonnet-5" to "claude-sonnet-6" took the earlier fixture
     # from $414.28 to $461.08 with every suite green, because "cost is priced per
     # row and non-zero" above is satisfied by the fallback). Asked through the real
     # resolver rather than by looking the key up here, so a dated id like

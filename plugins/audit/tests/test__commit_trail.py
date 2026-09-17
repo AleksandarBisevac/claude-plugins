@@ -130,7 +130,7 @@ def _cases(check):
               "authoritative-looking empty sentence",
               "no recorded commit" in M.summary([]), M.summary([]))
 
-        # --- F88: a shallow clone cannot accuse ---------------------------------
+        # --- a shallow clone cannot accuse ---------------------------------------
         # Driven against a REAL truncated clone rather than a stubbed predicate.
         # `--depth 1` is what `actions/checkout` does by default, and the SHA the
         # manifest records is deliberately one the graft cut away - so the fixture
@@ -204,7 +204,7 @@ def _cases(check):
               M.is_shallow(os.path.join(tmp, "nope-not-a-repo")) is None)
 
         # --- resolve(): one SHA, before it is ever written ----------------------
-        # P43.2. `/audit:task done` grades the SHA it is HANDED, so it needs the
+        # `/audit:task done` grades the SHA it is HANDED, so it needs the
         # existence question asked of ONE id rather than of a manifest. Lifted
         # out of `dangling` rather than spelled a second time in the writer -
         # this module's docstring says why - so these cases pin that the lifted

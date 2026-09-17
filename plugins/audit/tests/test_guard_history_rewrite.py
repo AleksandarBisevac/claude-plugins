@@ -113,12 +113,12 @@ def _cases(check):
               "someone mid-conflict",
               v == "allow", repr((v, why)))
 
-        # --- F278: the verb has to be in SUBCOMMAND position ------------------
+        # --- the verb has to be in SUBCOMMAND position --------------------------
         # The patterns read `\bgit\b[^|;&]*\bVERB\b`, which lets any text sit
         # between the two - so a COMMIT MESSAGE naming one of these operations was
         # graded as performing it. This refused a real commit documenting the rule,
         # and then refused the probe written to measure it. It is
-        # `guard-secrets-read`'s F267 in a second hook, and it earns the same
+        # `guard-secrets-read`'s class of defect in a second hook, and it earns the same
         # repair: grade the operation, not the text.
         #
         # THE PAIR IS THE POINT. gh6b-gh6e are the "prose is not an operation" half
@@ -143,7 +143,7 @@ def _cases(check):
               "<path> rebase` is the spelling a script uses, and a guard that "
               "missed it would be quiet in exactly the automated case",
               v == "deny", repr((v, why)))
-        # gh6g IS A RECORDED DECISION, REVERSED (F283) - INVERTED, NOT DELETED.
+        # gh6g IS A RECORDED DECISION, REVERSED - INVERTED, NOT DELETED.
         # It used to assert the OPPOSITE: that a message spelling a whole
         # forbidden command is still refused, carried as a "known cost" and
         # defended because the same raw-text property kept an
@@ -179,7 +179,7 @@ def _cases(check):
                 ("gh6j", 'echo "never run git stash push" >> NOTES.md',
                  "not a git command at all, and it was refused")):
             v, why = _decide(repo, _cmd)
-            check("%s REVERSED (F283): a quoted argument spelling a whole "
+            check("%s REVERSED: a quoted argument spelling a whole "
                   "forbidden command is ALLOWED - %s. Tokenized, the message is "
                   "ONE word, so the operation is absent and the refusal has "
                   "nothing to bind to" % (_cid, _arm),
@@ -241,7 +241,7 @@ def _cases(check):
         check("gh13 a non-Bash tool is not this guard's business at all",
               M.decide({"tool_name": "Edit", "tool_input": {}})[0] == "allow")
 
-        # --- F281: git stash is refused, git stash list and show stay allowed,
+        # --- git stash is refused, git stash list and show stay allowed,
         # --- and git push is untouched ----------------------------------------
         # Read as ONE case in four parts, because each part alone is a rule that
         # is either useless or harmful:
@@ -251,7 +251,7 @@ def _cases(check):
         #     is weakened until it over-fires. A hook refusing `git stash list`
         #     gets switched off, and then gh15 protects nothing;
         #   * gh17 is the same allow half asked of PROSE, a path and a grep
-        #     pattern - the F267/F278 class, in a third hook.
+        #     pattern - the same class, in a third hook.
         # `_G` builds the verb rather than spelling it, so this file's own text
         # cannot be mistaken for the command by anything that greps sources.
         _G = "git " + "stash"
@@ -292,7 +292,7 @@ def _cases(check):
                 ("gh17g", "grep -rn stash plugins/", "a grep of the tree"),
                 ("gh17h", "git stashes", "a longer word starting with the verb"),
                 ("gh17i", "git log --grep rebase",
-                 "the same shape one verb over, unquoted this time - the F278 "
+                 "the same shape one verb over, unquoted this time - the earlier "
                  "case was written with quotes, so this is the half that was "
                  "believed rather than measured"),
                 ("gh17j", "git " + "stash-list",
@@ -319,7 +319,7 @@ def _cases(check):
         check("gh18e ...and a pipe whose SECOND half merely greps for the word "
               "is not one",
               v == "allow" and why == "", repr((v, why)))
-        # --- F283: the three ways the token reading could UNDER-fire -----------
+        # --- the three ways the token reading could UNDER-fire ---------------
         # This is the only way the reversal can be worse than what it replaced, so
         # each hole has its own case and each was proven red by removing the thing
         # that closes it.
@@ -385,7 +385,7 @@ def _cases(check):
               "which is what would have hidden gh27: the sub-verb `show` "
               "answers before the mangled argument is ever looked at",
               v == "allow" and why == "", repr((v, why)))
-        # --- F284: THE SPELLINGS TABLE ----------------------------------------
+        # --- THE SPELLINGS TABLE ------------------------------------------------
         # THIS IS THE DURABLE HALF OF THE WHOLE FILE. Every regression a code
         # review found in the tokenizer was a SPELLING of an operation the guard
         # already knew: a newline instead of `&&`, `/usr/bin/git` instead of
@@ -490,7 +490,7 @@ def _cases(check):
         # reason, no push requested and no remote named, and the author's way past
         # it was to write the file with a different tool, which is a guard being
         # routed around. And the claim was false: `guard-secrets-read` had told
-        # the two apart since F31, so the question was answerable and had an
+        # the two apart before, so the question was answerable and had an
         # answer in this very directory. It now lives in `_config.split_heredocs`,
         # which both guards call.
         #

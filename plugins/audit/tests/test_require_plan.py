@@ -167,7 +167,7 @@ def _cases(check):
     check_custom("a5 custom-path lockfile allowed", "allow",
                  payload("Write", "planning/plan.json.lock", content="{}",
                          sid="selftest-session-a4"))
-    # F262. The plan is the ORCHESTRATOR's, and the exemption said otherwise: a
+    # The plan is the ORCHESTRATOR's, and the exemption said otherwise: a
     # subagent refused a source file could widen its own scope instead, and on a
     # live run four tasks out of five took that route because it was the only door
     # left open. A task that edits the plan it is judged by is a task nobody can
@@ -607,7 +607,7 @@ def _cases(check):
           "IS the approval", code in (0, None) and spoke == "")
     shutil.rmtree(gproj, ignore_errors=True)
 
-    # (h) what a refusal SAYS, by actual cause (F-F4), and the bypass TTL (B4).
+    # (h) what a refusal SAYS, by actual cause, and the bypass TTL (B4).
     # The deny used to claim "A phase is in_progress" whether or not one was -
     # enforce:true with an empty repo produced a sentence that was flatly false,
     # and nothing pinned the text, which is how the bug shipped.
@@ -644,7 +644,7 @@ def _cases(check):
     v, m = deny_msg(cfg_graded, "selftest-h3")
     hok("h3 a real running phase is NAMED - 'phase P3', not 'a phase'",
         v == "block" and "Phase P3 is in_progress" in m, repr(m))
-    # F251/F262. The remedy used to be one text for everybody: "add a task
+    # The remedy used to be one text for everybody: "add a task
     # covering this file to <manifest>". A subagent may not edit the manifest and
     # has no channel to the human, so that line sent it into an action it is
     # forbidden to take - one executor stopped to ask the operator which of two
@@ -665,7 +665,7 @@ def _cases(check):
         _vs == "block" and "YOU ARE A SUBAGENT" in _ms
         and "report to the orchestrator" in _ms
         and "add a task covering this file" not in _ms, repr(_ms))
-    # F284. THE REMEDY IT NAMES HAS TO EXIST WHERE THE READER IS STANDING. This
+    # THE REMEDY IT NAMES HAS TO EXIST WHERE THE READER IS STANDING. This
     # sentence promised a widening flatly, and at sign-off that is false:
     # `in_progress_task_map` reads only `in_progress` tasks, sign-off runs when
     # every task is `done`, so nothing is covered - and widening a finished task

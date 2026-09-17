@@ -110,7 +110,7 @@ def _cases(check):
           "never keep its own id",
           "P5" not in M.parked_ids(m5, skip=("PROP-1",)))
 
-    # ---- (ap) F296: add-phase's allocator returns highest-plus-one -----------
+    # ---- (ap) add-phase's allocator returns highest-plus-one -----------------
     # THE FIXTURE HAS A GAP IN IT, and that is the whole design of these cases:
     # over a plan with no gap the two rules answer identically, so a taken set
     # without one is a case that cannot go red under either allocator. `P2` is
@@ -365,7 +365,7 @@ def _cases(check):
           empty["rows"] == [] and empty["phaseCount"] == 0
           and empty["hidden"] == 0 and empty["total"] == 0)
 
-    # ---- the status a row carries, and the one it was WRITTEN with (F93) ----
+    # ---- the status a row carries, and the one it was WRITTEN with ----------
     # A row normalises a MISSING status to `proposed` so a badge has something
     # to paint. `/audit:status` classifies by the RAW one, because an entry
     # carrying no status is exactly what its legacy footer exists to report and
@@ -400,7 +400,7 @@ def _cases(check):
           set(M.HISTORY_STATUS) | set(["proposed"])
           == set(M._vocab.PROPOSAL_STATUS))
 
-    # ---- the reserved cell, which three surfaces print (F93) ----
+    # ---- the reserved cell, which three surfaces print -----------
     cell = _manifest([_prop("PROP-1", payload=_payload("P4", tasks=("a", "b"))),
                       _prop("PROP-2", payload=_payload("P5", tasks=("a",))),
                       _prop("PROP-3")])
@@ -431,7 +431,7 @@ def _cases(check):
           M.reserved_cell({"hasPayload": False, "phaseId": "P9",
                            "taskCount": 3}) == "-")
 
-    # --- F188: the lock is a STATUS CODE, and both things done with it were wrong
+    # --- the lock is a STATUS CODE, and both things done with it were wrong ----
     # `_locks.acquire` returns an int on every path. This module named it `handle`
     # and tested it with `isinstance(..., dict)`, which is never true of an int -
     # so the release in the `finally` never ran and every write left the index lock

@@ -844,7 +844,7 @@ def _cases(check):
 
     # Assembled at runtime, not written out: a literal here would plant itself in
     # THIS file and the second half of the case would fail on its own text - which
-    # is the same self-matching bug (F-P-8) that made a panel route check find its
+    # is the same self-matching bug that made a panel route check find its
     # own assertion line.
     _ms_needle = "def " + "covered_repo_paths("
     check("m1 module_source() reads the module it is HANDED, and this is the "

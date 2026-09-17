@@ -162,7 +162,7 @@ def _cases(check):
         check("a declared date is reported as declared, and travels with it",
               M.usage_state(proj)["pricingAsOfDeclared"] is True
               and M.usage_state(proj)["pricingAsOf"] == "2026-01-02")
-        # --- F168: the rate basis, trimmed at the door -------------------------
+        # --- the rate basis, trimmed at the door -------------------------------
         # `_declared_as_of` decides on the TRIMMED config value and this payload
         # served the MERGED one as typed, so the two disagreed about one config
         # value inside one dict literal. The fixture is padded rather than clean

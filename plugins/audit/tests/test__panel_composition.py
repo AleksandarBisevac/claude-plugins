@@ -168,7 +168,7 @@ def _cases(check):
                     "tasks": [{"id": "P1.1", "title": "t", "status": "done",
                                "ado": {"id": 7,
                                        "lastSyncedAt": "2026-08-03T00:00:00Z"}},
-                              # A bool id is the F15 shape the validator holds:
+                              # A bool id is the shape the validator holds:
                               # `True` is an int in Python and would count as a
                               # work item id anywhere the guard is written as
                               # `isinstance(x, int)` alone.
@@ -216,7 +216,7 @@ def _cases(check):
           % (_lk_odd["linked"],),
           _lk_odd["linked"] == {"tasks": 0, "bugs": 0, "phases": 0})
 
-    # --- F147: the work items MORE THAN ONE manifest item claims --------------
+    # --- the work items MORE THAN ONE manifest item claims ----------------------
     # Nothing validates that a work-item id is claimed once, so a push writes
     # every claimant to the same card and the last one wins. Grouping the walk
     # the banner already does is the only place that fact is available offline.
@@ -405,7 +405,7 @@ def _cases(check):
               "meta": {"ado": {"parentCandidates": {"items": []}}},
               "phases": []})["adoParents"]["basis"]))
 
-    # --- F101: and what the BOARD says, which the row used to leave out --------
+    # --- and what the BOARD says, which the row used to leave out ---------------
     # THE DEFECT WAS TWO FACTS PAINTING ONE CELL. Both values above are read out
     # of the manifest, so a phase the board agrees with and a phase nobody has
     # ever compared were the same pixels - and on the board this was found on,
@@ -488,7 +488,7 @@ def _cases(check):
                     "adoParent": {"id": 101, "source": "declared"}}]})["phases"]
     check("bp8 the block rides EVERY phase row of /api/state - without that "
           "the panel cannot show any of this, however well the derivation "
-          "works, which is the shape F101 was: the answer existed one surface "
+          "works, which is the same shape: the answer existed one surface "
           "away and never reached the cell: %r"
           % ([r.get("adoParentBoard", {}).get("state") for r in _bp_rows],),
           # .get throughout, for ap3's reason: the mutation this case is for
@@ -576,7 +576,7 @@ def _cases(check):
                 .get("basis"))))
     check("at5 both halves ride EVERY phase row, which is the half that cannot "
           "be derived: the rule can be perfect and the cell still show nothing, "
-          "and that IS what F101 was one lever down - the answer existed a "
+          "and that IS the same failure one lever down - the answer existed a "
           "surface away and never reached the row: %r"
           % (sorted(set(tuple(sorted(k for k in r if k.startswith("adoTracked")))
                         for r in _at_view["phases"])),),
@@ -999,7 +999,7 @@ def _cases(check):
               and _ev_r1["coverage"] == 1
               and _ev_r1["steps"] == [["unit", 0, 12, 900, None]],
               repr(_ev_r1))
-        # F280, THE PAYLOAD'S HALF. The verdict this surface paints is the one
+        # THE PAYLOAD'S HALF. The verdict this surface paints is the one
         # the ledger recorded, and the panel's `EVWORD` table is held against the
         # plan schema's enum by `test__panel_page.py` - so what is left for THIS
         # file to prove is that nothing in between translates the word. A payload

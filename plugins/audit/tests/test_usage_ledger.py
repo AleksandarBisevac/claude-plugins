@@ -133,7 +133,7 @@ def _cases(check):
           == ("P3", "P3.2", "task"))
 
     # --- author ------------------------------------------------------------
-    # A FIXTURE REPOSITORY, NOT `"."` (F119). These cases passed the PROCESS CWD as
+    # A FIXTURE REPOSITORY, NOT `"."`. These cases passed the PROCESS CWD as
     # the project root, so the identity they hashed was whatever the directory the
     # suite happened to be launched from carried: the developer's own address from
     # inside a checkout, and `$USER` through `resolve_author`'s fallback from
@@ -465,7 +465,7 @@ def _cases(check):
             check("discover: %s returns a path in this platform's own separator"
                   % label, got == os.path.normpath(got))
 
-        # The walk is bounded by the repo itself (F-E1). Unbounded, a manifest
+        # The walk is bounded by the repo itself. Unbounded, a manifest
         # inside a repo with no ledger walked PAST the repo root, found
         # ~/.claude/usage -- the user's global Claude state, which exists on
         # nearly every machine that ever ran Claude Code -- and rendered every

@@ -171,7 +171,7 @@ def _cases(check):
               "- the case that fails if the flag is hard-coded either way",
               u1["showCost"] is True, u1["showCost"])
 
-        # --- the rate basis, trimmed at the door (F160) --------------------
+        # --- the rate basis, trimmed at the door ----------------------------
         # The plan schema asks only `minLength: 1`, so a string of spaces
         # VALIDATES and every renderer downstream tests this value for truth.
         # Untrimmed it printed "rates as of" followed by nothing - a basis with

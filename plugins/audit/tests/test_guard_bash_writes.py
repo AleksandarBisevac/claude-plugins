@@ -1064,7 +1064,7 @@ def _cases(check):
     # stop inheriting dirt, and a `cd`-prefixed WRITE must keep being warned about.
     # Run through `decide` rather than the predicate alone, because the predicate
     # answering correctly and the verdict still landing is a real failure mode -
-    # F-P-24's absorb branch is what turns the answer into silence.
+    # The absorb branch is what turns the answer into silence.
     s = "bw-cd"
     seed(s)
     _expect("cd1 `cd <dir> && grep` no longer inherits another writer's file",
@@ -1798,7 +1798,7 @@ def _cases(check):
     finally:
         _sh.rmtree(tmp_i, ignore_errors=True)
 
-    # (rw) F-P-24: a command that cannot write is not the author of new dirt.
+    # (rw) a command that cannot write is not the author of new dirt.
     #
     # Reported twice in one session, both times for a pure `git ls-files` + `grep`
     # over a file a SECOND session had just created. The guard was diffing the tree

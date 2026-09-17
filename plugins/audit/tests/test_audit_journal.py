@@ -109,7 +109,7 @@ def _cases(check):
     def _month_shift(n):
         """YYYY-MM for `n` months before the current month. Computed, never
         hardcoded -- a hardcoded date goes red the day the calendar catches
-        up with it (the doctor's F-A1 lesson)."""
+        up with it."""
         t = time.gmtime()
         y, m = t.tm_year, t.tm_mon - n
         while m < 1:
@@ -747,7 +747,7 @@ def _cases(check):
             check("k4 restored byte-for-byte, it verifies again",
                   M.verify(gdir, gcfg)["ok"], repr(M.verify(gdir, gcfg)))
 
-            # k5-k8 (F-B3): the anchor is BATCHED - one porcelain per
+            # k5-k8: the anchor is BATCHED - one porcelain per
             # directory decides who pays the single-file check. Fixture: two
             # committed-clean writer files + one committed-then-appended one.
             M.append(gdir, {"action": "manifest.edit", "target": "",
@@ -832,7 +832,7 @@ def _cases(check):
             finally:
                 _journal_io._git_anchor_finding = _orig_anchor
 
-            # k9-k10 (F-D-1): status keys are JOURNAL-RELATIVE PATHS, not
+            # k9-k10: status keys are JOURNAL-RELATIVE PATHS, not
             # basenames. The journal dir here sits three levels deep
             # (docs/audit/journal), so these go red if porcelain's
             # repo-root-relative paths are ever mapped onto the directory
@@ -864,7 +864,7 @@ def _cases(check):
                      if e["file"] == "archive/" + aname9]
             check("k9 a forged ARCHIVED twin of a live basename is caught "
                   "through the batched path - the twin answers for ITSELF, "
-                  "its live namesake cannot answer for it (F-D-1)",
+                  "its live namesake cannot answer for it",
                   not resk["ok"] and aent9
                   and any("committed past changed" in f
                           for f in aent9[0]["findings"]),

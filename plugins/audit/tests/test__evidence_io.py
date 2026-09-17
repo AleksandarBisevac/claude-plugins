@@ -161,7 +161,7 @@ def _cases(check):
               "recorded without saying whose it was could never be pointed "
               "back at the plan. WHICH GATE ran is a different question and "
               "ev35 is where it is asked; this clause used to say `the scope it "
-              "was measured at`, which is the misreading that made F312 "
+              "was measured at`, which is the misreading that made the gap "
               "invisible for as long as one value answered both",
               row["runId"] == "R1" and row["scope"] == "task"
               and row["taskId"] == "P1.2" and row["phaseId"] == "P1"
@@ -405,7 +405,7 @@ def _cases(check):
               % (sorted(k for k in row if k.startswith("cancel")),),
               "cancelledBy" not in row and "cancelledBy" not in ru)
 
-        # F312. WHERE THE `steps` LIST CAME FROM. `steps` names the entries that
+        # WHERE THE `steps` LIST CAME FROM. `steps` names the entries that
         # ran and nothing beside them says which declaration held those entries,
         # so once a task can be measured by a gate of its own OR by the phase's,
         # two rows with different `steps` differ for two reasons a reader cannot
@@ -433,7 +433,7 @@ def _cases(check):
               % (sorted(k for k in row if k.startswith("gate")),),
               "gateSource" not in row and "gateSource" not in ru)
 
-        # F280. THE WORD THE RUNNER COULD NOT SAY, AND THE CACHE THAT REPEATED
+        # THE WORD THE RUNNER COULD NOT SAY, AND THE CACHE THAT REPEATED
         # IT. `run_status` took no tree argument, so a gate that passed every
         # command and rewrote the file it was grading came through here as
         # `passed` and `pointer_for` cached that onto `task.testEvidence` -- the

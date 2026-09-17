@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Cases for `governance/commit-manifest-index.py` — the verb that lands the shared
-index without taking a phase's work with it (F269).
+index without taking a phase's work with it.
 
 WHAT THIS FILE IS ABOUT, in one line: the commit carries the INDEX and nothing
 else. Every case that proves it carried the index is paired with one that proves
@@ -39,7 +39,7 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 import _scoped_commit as _scoped                   # noqa: E402  (the shared header bound)
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
-# commitlint's default `subject-case`, transcribed ONCE and imported (F305). The
+# commitlint's default `subject-case`, transcribed ONCE and imported. The
 # rule is commitlint's and belongs to neither writer, so a second transcription
 # here is how these two commands would come to be graded against two readings of
 # it - the same argument that keeps the staging discipline in `_scoped_commit`.
@@ -282,7 +282,7 @@ def _cases(check):
               and M.COMMIT_TYPE in ("build", "chore", "ci", "docs", "feat", "fix",
                                     "perf", "refactor", "revert", "style", "test"))
 
-        # --- the subject a commitlint repository will take (F305) -------------
+        # --- the subject a commitlint repository will take ---------------------
         # THE SAME FAULT THIS FILE'S SIBLING HAD, and the reason it is asserted
         # separately rather than trusted from there: the two writers compose the
         # subject in two copies of one format string, so one of them can be

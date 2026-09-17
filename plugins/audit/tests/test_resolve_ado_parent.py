@@ -294,7 +294,7 @@ def _cases(check):
               _code == 0
               and len([x for x in _out.splitlines()
                        if x.startswith("WARNING:") and "INERT" in x]) == 1)
-        # --- bugs: asked about here, and reported apart (F101) ----------------
+        # --- bugs: asked about here, and reported apart ------------------------
         # WHAT WAS MISSING WAS THE MANIFEST SIDE. `status` fetches a linked
         # bug's `System.Parent` like any other item's, and this door walked
         # phases and tasks only - so a linked bug got no `parent?` verdict and
@@ -415,11 +415,11 @@ def _cases(check):
                        if " -> " in x]) == 1)
 
         # --- the ladder mode: the block `/audit:sync parents` writes ----------
-        # F157. `levels_from_backlog_config` had no caller at all: the command
+        # `levels_from_backlog_config` had no caller at all: the command
         # file, the reference doc and the connector guide each carried the RULE
         # for building `meta.ado.hierarchy` by hand, and the rule had moved
         # under them - the bug rung's rank comes from `bugsBehavior` and its
-        # NAME from `meta.ado.types.bug` (F143), so prose telling a reader to
+        # NAME from `meta.ado.types.bug`, so prose telling a reader to
         # write `Bug` filed that rank under a name no work item carries on a
         # board that renamed the type.
         _payload = _write(tmp, "backlogconfig.json", BACKLOG)

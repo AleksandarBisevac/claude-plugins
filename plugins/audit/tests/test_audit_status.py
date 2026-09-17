@@ -116,7 +116,7 @@ def _cases(_record):
                                  % (token, _check_sites[token]))
         _record(name, ok, detail)
 
-    # ca (F-P-4): cancelled is TERMINAL. A plan whose dropped work still gates
+    # ca: cancelled is TERMINAL. A plan whose dropped work still gates
     # everything behind it deadlocks — nothing is ready, and no command can make
     # it ready without lying about what happened.
     _ca = copy.deepcopy(_fixture())
@@ -476,7 +476,7 @@ def _cases(_record):
           and "+1 legacy proposal(s) (free-form) - /audit:propose list"
               in _txt_out,
           _txt_out[-200:])
-    # F93. The block now takes its rows from `_proposals.proposal_rows`, which
+    # The block now takes its rows from `_proposals.proposal_rows`, which
     # NORMALISES a missing status to `proposed` so a badge has something to
     # paint. Routing this surface through that reading would have moved an
     # entry carrying NO status out of the legacy footer and into the parked
@@ -506,8 +506,8 @@ def _cases(_record):
               for ln in _txt_ns.split("\n")))
     # The cell itself is `_proposals.reserved_cell` and nothing else. Pinned by
     # IDENTITY as well as by output: a copy of the function that happened to
-    # agree today would pass the render assertion and still be the third
-    # spelling F93 is about.
+    # agree today would pass the render assertion and still be a third,
+    # independent spelling of the same rule.
     _fx_cell = copy.deepcopy(_fx)
     _fx_cell["proposals"] = [
         {"id": "PROP-1", "name": "Two tasks", "status": "proposed",
@@ -1069,7 +1069,7 @@ def _cases(_record):
               == M._usage_line(_ug_sum_t, _ug_thin)
               and M._budget_lines(_ug_sum_f, _ug_full)
               == M._budget_lines(_ug_sum_t, _ug_thin))
-        # --- the rate basis, trimmed at the door (F160) --------------------
+        # --- the rate basis, trimmed at the door ----------------------------
         # The plan schema asks only `minLength: 1` of `meta.usage.pricingAsOf`,
         # so a string of spaces VALIDATES - and `_usage_line` tests the value
         # for truth, so it printed "rates as of" followed by nothing, beside a
@@ -1621,7 +1621,7 @@ def _cases(_record):
         _sh_dv.rmtree(_dtmp, ignore_errors=True)
 
     # --- (ap) the CLI contract itself: --help, and one JSON document on stdout ----
-    # F32, both halves. `--help` used to be read as a MANIFEST PATH ("ERROR: cannot
+    # Both halves. `--help` used to be read as a MANIFEST PATH ("ERROR: cannot
     # read/parse --help", exit 2), so the seven `--fail-on` condition names had no
     # user-reachable listing at all. And `--gate --json` printed the payload and then
     # the `GATE ...` line on the SAME stream, so `| jq` died on "Extra data".
@@ -1639,7 +1639,8 @@ def _cases(_record):
     import io as _io_ap
 
     def _cli_io(argv):
-        """(exit code, stdout, stderr) - the STREAMS, which is what F32 is about."""
+        """(exit code, stdout, stderr) - the STREAMS, which is what this pair of
+        cases is about."""
         _o, _e = _io_ap.StringIO(), _io_ap.StringIO()
         with _ctx_ap.redirect_stdout(_o), _ctx_ap.redirect_stderr(_e):
             _c = M.main(argv)
@@ -1985,7 +1986,7 @@ def _cases(_record):
           repr([w for w in ("failing-tests", "no-test-evidence")
                 if w not in _o_h]))
 
-    # F1. `evidence_rows` carries an id-less subject ON PURPOSE - dropping it
+    # `evidence_rows` carries an id-less subject ON PURPOSE - dropping it
     # would shrink a gate the reader believes covers the plan - so a row reaches
     # the gate line with `id: None`, and `%s` over that printed the WORD `None`
     # into the one sentence somebody reads while a build is red. Repaired at the
@@ -2021,7 +2022,7 @@ def _cases(_record):
           _ev_noid_red_line == "1 subject(s): task - failed"
           and "None" not in _ev_noid_red_line)
 
-    # F4. The column is EARNED, the way `_report_page._present_columns` earns an
+    # The column is EARNED, the way `_report_page._present_columns` earns an
     # optional column: a plan that has never recorded a run renders exactly as it
     # did before the feature existed rather than paying seven characters on every
     # task row for a cell that is `-` in all of them.
@@ -2229,12 +2230,12 @@ def _cases(_record):
             os.environ["CLAUDE_PROJECT_DIR"] = _bd_env
         _sh_bd.rmtree(_bd_root, ignore_errors=True)
 
-    # --- (uf) F301: a run that stopped mid-phase, driven end to end ------------
+    # --- (uf) a run that stopped mid-phase, driven end to end -------------------
     # The fact and its three states are pinned next door, over the same
     # `unfinished_runs`. What only THIS suite can reach is the wiring: which
     # invocations pay for the lock read, that the payload gains the block only
     # when asked, that the gate line names the run, and that the HUMAN RENDER
-    # says so at all - which is the half F301 was actually about. Nothing had
+    # says so at all - which is the half that actually mattered. Nothing had
     # failed; nobody had looked.
     #
     # A REAL REPOSITORY AND A REAL LOCK, taken through the product's own writer,
@@ -2343,7 +2344,7 @@ def _cases(_record):
                                      "unfinished-run"])
             check("uf4 END TO END: the lock is held, two tasks are ready, and "
                   "the gate FAILS naming the phase, the work left and the "
-                  "command that picks it up. This is F301 - the state was "
+                  "command that picks it up - the state was "
                   "knowable the whole time and nothing read it: %r"
                   % (_o4.strip()[-200:],),
                   _uf_took and _c4 == 1

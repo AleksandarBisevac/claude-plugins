@@ -109,7 +109,7 @@ def _cases(record):
         record(name, ok, detail)
 
     check("v1 valid manifest passes", None)
-    # ca (F-P-4): a phase can finish WITHOUT being done — the feature it was for
+    # ca: a phase can finish WITHOUT being done — the feature it was for
     # is dropped, part of the work landed, the phase closes. Industry calls that
     # cancelled (Linear "Canceled", Jira "Won't Do", GitHub "closed as not
     # planned", ADO "Removed"); the manifest's bugs already had `wontfix` and
@@ -139,7 +139,7 @@ def _cases(record):
           lambda m: m["phases"][0]["tasks"][0].update(status="doing"))
     check("v3 bad tests.mode", "tests.mode 'yolo' not in",
           lambda m: m["phases"][0]["tasks"][0]["tests"].update(mode="yolo"))
-    # F254. A live run met this on the largest security change of a phase, written
+    # A live run met this on the largest security change of a phase, written
     # by `/audit:init`: mode tdd, expectRedFirst true, and nothing named to prove
     # red with. A WARNING and not a finding — the repair is to name the case, and an
     # existing plan must not go red over a field it was written without.
@@ -157,7 +157,7 @@ def _cases(record):
     # warning that IS there: the second direction needs the absence, and a case
     # that cannot express it would pass over a rule warning on every tdd task.
     _v3d = copy.deepcopy(_valid_manifest())
-    # NAMING A CASE MEANS NAMING ITS FILE (F294), which narrowed what this
+    # NAMING A CASE MEANS NAMING ITS FILE, which narrowed what this
     # fixture has to carry: the entry used to be a bare sentence, and the `ta`
     # group below now requires the documented `<path>: <what it asserts>` shape
     # of a tdd task that can still be committed against. Both halves of this
@@ -682,7 +682,7 @@ def _cases(record):
     # (ma) meta.ado itself has a shape - "ado": "org" used to draw neither
     # finding nor warning ("ado" sits in KNOWN_META; _check_ado covered only
     # item-level links), so _check_identity_map inherited the blind spot by
-    # silently returning on a non-dict. F-C-1 of the v0.38 round.
+    # silently returning on a non-dict.
     m_ma1 = copy.deepcopy(_valid_manifest())
     m_ma1["meta"]["ado"] = "my-org"
     f_ma1, _ = M.validate(m_ma1)
@@ -816,7 +816,7 @@ def _cases(record):
     check("av17 phase ado as a string is a finding",
           "phase P0: ado must be an object",
           lambda m: m["phases"][0].update(ado="WI-7"))
-    # F1 (live gate): phase PBIs have their OWN state vocabulary - a third
+    # Phase PBIs have their OWN state vocabulary - a third
     # stateMap block, keyed by the same status names tasks use.
     check("av18 a stateMap.phase block is clean and known", None,
           lambda m: _with_ado(m, stateMap={"phase": {"done": "Done",
@@ -1043,9 +1043,10 @@ def _cases(record):
            _ds_one == _ds_two and len(_ds_one[0]) == 1, _ds_one)
 
     # --- ta: MOVED, with the rule -------------------------------------------
-    # F294's parse and the rule that requires it live in `_manifest_phases`
-    # now, beside F254's rule about the same field and inside the one walk, so
-    # their cases live in `test__manifest_phases.py`. What stayed here is `v3d`
+    # That parse and the rule that requires it live in `_manifest_phases`
+    # now, beside the expectRedFirst rule about the same field and inside the
+    # one walk, so their cases live in `test__manifest_phases.py`. What stayed
+    # here is `v3d`
     # above, which is `_valid_manifest()`'s own tdd entry and had to learn the
     # shape like every other fixture.
     _ta_named_entry = "src/cart/total.ts: two stacked percentage discounts"

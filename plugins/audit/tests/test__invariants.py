@@ -205,7 +205,7 @@ def _audit_state(root, audit, index_path, kind, with_evidence=True):
         _write_json(index_path, index)
         staged.append("docs/audit/audit-plan.json")
     _git(root, "add", *staged)
-    # The spelling `commit-audit-state.py` really writes (F268): the fixed literal
+    # The spelling `commit-audit-state.py` really writes: the fixed literal
     # is the SCOPE, so the type is one commitlint accepts. Nothing here parses the
     # subject - `audit_state_commits` finds these through the journal trail - but a
     # fixture that spells it the old way is a second answer waiting to be believed.
@@ -371,7 +371,7 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         # the file that is already on disk.
         shard["tasks"][1]["dependsOn"] = ["P9.9"]
     if invalid_state in ("fileindex", "fileindex-unsettled"):
-        # F250's shape instead: a task whose `files` grew mid-phase. The shard is
+        # A different shape instead: a task whose `files` grew mid-phase. The shard is
         # committed (step 4c stages it) and the index is NOT (step 4c forbids it),
         # so the state this commit recorded pairs a file with no fileIndex entry.
         # This is what a real run produces 39 and 93 times; nothing the operator
@@ -903,7 +903,7 @@ def _cases(check):
               len(valid["breaches"]) == 1
               and broken["sha2"][:12] in valid["breaches"][0])
 
-        # F250. `task.files` lives in the phase shard and `fileIndex` lives in the
+        # `task.files` lives in the phase shard and `fileIndex` lives in the
         # index, and step 4c forbids a task commit from staging the index - so a
         # scope corrected mid-run commits a shard the committed index does not
         # pair with, and EVERY later commit reports it. Measured on two separate

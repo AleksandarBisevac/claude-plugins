@@ -155,7 +155,7 @@ def _state_rows(fx):
             if r.get("action") == _invariants.ACTION_STATE_COMMITTED]
 
 
-# --- commitlint's default `subject-case`, transcribed (F305) ------------------
+# --- commitlint's default `subject-case`, transcribed --------------------------
 # THE RULE, NOT A READING OF IT, and `test_commit_manifest_index.py` imports these
 # rather than transcribing them a second time - the rule is commitlint's and
 # belongs to neither writer, and two transcriptions is how the two commands come to
@@ -169,8 +169,9 @@ def _state_rows(fx):
 # `@commitlint/ensure` decides each one by TRANSFORMING the subject and asking
 # whether the result IS the subject, so the transforms are what is written below
 # and the assertion is the question commitlint asks. A case aimed at the single arm
-# that bit (F305 was sentence-case) would be satisfied by a subject the next
-# default rule still rejects, which is precisely how F268 came to need F305.
+# that bit (the one that was sentence-case) would be satisfied by a subject the
+# next default rule still rejects, which is precisely how a header-length fix
+# came to need a subject-case fix too.
 #
 # THE WORD SPLIT IS lodash's ONLY NEAR ENOUGH, AND IT CANNOT PRODUCE A FALSE PASS.
 # `startCase` and `camelCase` reach lodash `words()`, whose full unicode behaviour
@@ -216,7 +217,7 @@ FORBIDDEN_CASES = (("sentence-case", _sentence_case),
                    ("upper-case", _upper_case))
 
 # `header-max-length`, another of the same default set, and it is pinned here
-# because F305's repair SPENT some of it: the fixed lowercase word lengthened
+# because that fix SPENT some of it: the fixed lowercase word lengthened
 # every header these two commands write. "it fits today" is not the claim worth
 # making - what this stops is the next edit of a `DEFAULT_SUBJECT` crossing a line
 # nothing was watching, which is the shape of the whole fault.
@@ -313,7 +314,7 @@ def _cases(check):
               and "phaseId" in _journal_io.DETAILS_KEYS)
 
         subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
-        # F268 REVERSED HALF OF THIS PIN, and the trigger is named rather than
+        # A later fix REVERSED HALF OF THIS PIN, and the trigger is named rather than
         # implied. The property it exists for is separability: a spelling a task
         # commit can never collide with, so `git log --grep` tells the two apart
         # for ever. That property was originally spent on the TYPE, which made the
@@ -345,7 +346,7 @@ def _cases(check):
               M.COMMIT_TYPE in ("build", "chore", "ci", "docs", "feat", "fix",
                                 "perf", "refactor", "revert", "style", "test"))
 
-        # --- the subject a commitlint repository will take (F305) -------------
+        # --- the subject a commitlint repository will take ---------------------
         # ASKED OF THE SUBJECT git ACTUALLY RECORDED, not of the string the module
         # composed: this is the line commitlint's hook would be handed, and the
         # composed-string half is cas8e.
@@ -353,7 +354,7 @@ def _cases(check):
                                    M.DEFAULT_SUBJECT)
         check("cas8c ...and the SUBJECT is out of reach of every case "
               "commitlint's default `subject-case` forbids, rather than of the "
-              "one that bit. F268 satisfied `type-enum` and the very next default "
+              "one that bit. The fix satisfied `type-enum` and the very next default "
               "rule refused the commit anyway - the phase id leading a lowercase "
               "sentence IS sentence-case - so the subject now opens with a fixed "
               "lowercase word this command owns, and all of the forbidden cases "
@@ -379,7 +380,8 @@ def _cases(check):
                          ("upper-case", "THE RECORD OF A RUN")))
         check("cas8d ...and that judgement can fire on each of them: a subject "
               "that IS one of the four is reported as that one, sentence-case "
-              "included, which is the arm F305 was. Without this cas8c is a green "
+              "included, which is the arm that originally failed. Without this "
+              "cas8c is a green "
               "light from a check that may be asserting nothing: %r" % (fired,),
               all(label in names for label, names in fired.items())
               and fired["sentence-case"] == ["sentence-case"]
@@ -643,7 +645,7 @@ def _cases(check):
                   fx["root"], _evidence_io.evidence_dir(fx["root"]))
               and row_target != SHARD_REL)
 
-        # --- the row is explained on the run that WROTE it (F286) -------------
+        # --- the row is explained on the run that WROTE it ---------------------
         # A FRESH REPOSITORY RATHER THAN `fx`. The claim is about the run that
         # CREATES the condition, and `fx` has been run twice by now - the second
         # run committed nothing, so reading its output would be asking whether a

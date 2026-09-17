@@ -102,7 +102,7 @@ def _cases(check):
         `test_audit_doctor`'s note about `az` writing into the operator's home
         directory.
 
-        The stderr text is returned rather than the rows alone because F158's
+        The stderr text is returned rather than the rows alone because the
         progress notice is NOT a report row and cannot be one: every row is
         collected and rendered after all the checks have run, which is after the
         wait the notice is about.
@@ -281,7 +281,7 @@ def _cases(check):
           % (_fix,),
           "az extension add --name azure-devops" in _fix)
 
-    # --- the probe says what it is waiting for, and for how long (F158) ---
+    # --- the probe says what it is waiting for, and for how long ------------
     # `az` on PATH is the one place this read-only command waits on a
     # third-party CLI. The bound was always there; what was missing was saying
     # so, so these cases are about STDERR rather than about a row.

@@ -765,7 +765,7 @@ def _cases(check):
               code == 3 and "locked" in txt)
         os.remove(mpathl + ".lock")
 
-        # ---- (n) named-manifest project resolution (F-C-1) -------------------
+        # ---- (n) named-manifest project resolution ----------------------------
         # Naming another project's manifest from this cwd must not journal (or
         # lock, or note file existence) into THIS repo -- the class
         # audit-usage's resolve_ledger already solved. cwd and
@@ -799,7 +799,7 @@ def _cases(check):
         frows = [r for r in (jm2.read_all(projn_foreign) if jm2 else [])
                  if r.get("action") == "task.add"]
         check("n1 a NAMED manifest journals beside ITSELF, not into the "
-              "cwd/env repo (F-C-1)", code == 0 and len(frows) == 1)
+              "cwd/env repo", code == 0 and len(frows) == 1)
         check("n2 ...and the cwd/env repo's journal is untouched (no dir "
               "even exists)",
               not os.path.isdir(os.path.join(projn_home, "docs", "audit",
@@ -842,7 +842,7 @@ def _cases(check):
               "cwd (audit-usage's resolve_project order)",
               code == 0 and task_in(mpe, "P2.4") is not None)
 
-        # F-C-2: MARKERLESS trees (no .claude, no .git anywhere above). The
+        # MARKERLESS trees (no .claude, no .git anywhere above). The
         # fallback root must keep the journal in a sane place INSIDE the
         # manifest's tree -- never doubled, never outside.
         def mk_bare(name, manifest, rel="docs/audit/audit-plan.json"):
@@ -861,7 +861,7 @@ def _cases(check):
         brows = [r for r in (jm2.read_all(projb) if jm2 else [])
                  if r.get("action") == "task.add"]
         check("n7 a markerless default-layout tree journals beside its "
-              "manifest, where default readers find it (F-C-2)",
+              "manifest, where default readers find it",
               code == 0 and len(brows) == 1)
         check("n7b ...and the layout is not doubled -- docs/audit/docs "
               "never appears",

@@ -202,7 +202,7 @@ def _cases_output(record, path):
            fcode == 1 and len(flines) == 2
            and "INVALID: 2 finding(s)" in ftext)
 
-    # --- F115: the summary has to be derivable from the body -------------------
+    # --- the summary has to be derivable from the body ---------------------------
     # The defect this pins closed printed a pair of WARNING lines and a total in
     # the twenties, both true, with nothing on the surface joining them. So the
     # assertion is not the literal tail: it is the tail rebuilt FROM THE LINES the

@@ -279,7 +279,7 @@ def _cases(check):
         st = M.manifest_state(tmp_f, rel)
         check("f5 in_progress phase -> phaseRunning", st["phaseRunning"] is True)
         check("f5b ...and the state NAMES the phase, so a denial can say which "
-              "plan is holding the pen (F-F4)", st["runningPhase"] == "P1",
+              "plan is holding the pen", st["runningPhase"] == "P1",
               repr(st))
         check("f6 manifest + running phase -> deny", M.plan_gate_mode({}, st) == "deny")
 
@@ -375,13 +375,13 @@ def _cases(check):
               and M.plan_gate_knob({}) is None
               and M.plan_gate_knob({"planGate": "warn"}) == "warn")
 
-        # (f23) F52's CLAIM half. The grading transplant landed in
+        # (f23) THE CLAIM ABOUT WHAT THIS KNOB AFFECTS. The grading transplant landed in
         # `guard-bash-writes.py`, and every surface that describes the knob went on
         # saying the plan gate was the only thing affected by it - so a reader who
         # set `planGate: "observe"` could not discover that a second hook had gone
         # quiet, and a reader who set `bashWriteCheck.enabled: true` could not
-        # discover that it was no longer the only key deciding. F52's own words:
-        # what erodes is a claim, not a mood.
+        # discover that it was no longer the only key deciding. What erodes here
+        # is a claim, not a mood.
         #
         # DERIVED FROM THE CALLERS, never a hand-written list - a hook that starts
         # grading on this resolver without being documented is the exact regression,
@@ -509,7 +509,7 @@ def _cases(check):
               M.append_gate_event(None, None) is None
               and M.append_gate_event(tmp_k / "logs2", "not a dict") is None)
 
-        # F136. A COMMAND IS NOT A FILE, and it used to be written as one:
+        # A COMMAND IS NOT A FILE, and it used to be written as one:
         # `guard-secrets-read` fell back to `tool_input.command` for `file`, and a
         # command is not an ABSOLUTE path, so every reader's redactor resolved it
         # against the repo root, called it inside, and painted it verbatim. The
@@ -563,7 +563,7 @@ def _cases(check):
               _ktext.count(_leaky_cmd) == 0
               and set(krow4) == {"ts", "event"}, repr(krow4))
 
-        # F153. THE SAME CHANNEL ONE FIELD OVER. `file` is put through the
+        # THE SAME CHANNEL ONE FIELD OVER. `file` is put through the
         # journal's redactor by every reader that paints it; `reason` sat beside
         # it unredacted while `guard-secrets-read` interpolated the payload's
         # path into the message whose first line becomes that cell. These are the
@@ -997,7 +997,7 @@ def _cases(check):
         shutil.rmtree(tmp_h, ignore_errors=True)
 
     # (w) command_tree — WHICH TREE DID THIS COMMAND RUN IN, which is not the
-    # question `repo_root` answers. F84: `repo_root` says where the CONFIG lives
+    # question `repo_root` answers. `repo_root` says where the CONFIG lives
     # and CLAUDE_PROJECT_DIR wins there on purpose, because the config belongs to
     # the project and a worktree should not need its own copy. It stays pinned to
     # the primary checkout while an agent works inside a worktree, so
@@ -1442,7 +1442,7 @@ def _cases(check):
           == M.mcp_operation("mcp__fs__write_file") == "write_file"
           and M.mcp_operation("Edit") == "" and M.mcp_operation(None) == "")
 
-    # --- which plugin copy is running (F228) ------------------------------------
+    # --- which plugin copy is running --------------------------------------------
     # `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began
     # before an upgrade keeps executing the copy it started with. A hook is the
     # only process that knows which copy that is - the harness substitutes the

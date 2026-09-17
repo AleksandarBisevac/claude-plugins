@@ -210,7 +210,7 @@ def _cases(check):
         check("c6 authorMode none is honoured here too - a project that refuses to "
               "record who spends must not have it recorded here instead",
               v == "journal" and e["actor"]["author"] is None, repr(e["actor"]))
-        # F-B2: the ledger module behind _author loads through _config's cache.
+        # The ledger module behind _author loads through _config's cache.
         # Honest accounting: production calls _author once per hook process, so
         # the cache is a selftest/parity win (suites drive it dozens of times,
         # each uncached call re-executing a ~1800-line module) - plus the same
@@ -394,7 +394,7 @@ def _cases(check):
                   "taskId": "P1.1", "phaseId": "P1", "from": "in_progress",
                   "to": "done", "completedAt": "2026-08-11T00:00:00Z"},
               repr(comp))
-        # F194 REVERSED THIS CASE, and the reversal is the fix. It used to assert
+        # A LATER FIX REVERSED THIS CASE, and the reversal is the fix. It used to assert
         # the Post pass DELETED the slot, which made the pre-image a one-shot
         # belonging to the Pre pass that wrote it - and a Pre pass runs only for an
         # edit tool, so the session's next write kept its derived rows only if it
@@ -504,7 +504,7 @@ def _cases(check):
         entries = M.post_entries(payload("Edit", man_rel, sid="pp-5"), cfg=cfg,
                                  root=pproj)
         check("h7 a cache miss falls back to the generic summary AND SAYS SO - "
-              "F194: a bare `Edit wrote <path>` row was indistinguishable from a "
+              "a bare `Edit wrote <path>` row was indistinguishable from a "
               "write where nothing this hook tracks had moved, so the derived "
               "rows went missing in a shape no reader could act on",
               len(entries) == 1
@@ -699,7 +699,7 @@ def _cases(check):
               and json.dumps(_rows[0]).count("example.test") == 0,
               repr(_rows))
 
-        # --- f: F194, the Bash lane ------------------------------------------
+        # --- f: the Bash lane ---------------------------------------------------
         # THE FAULT. `task.complete`, `task.commit` and `phase.signoff` came out of
         # a diff whose baseline was written by a PreToolUse pass registered only on
         # the edit tools, and `classify()` returns None for every other tool. A
@@ -979,7 +979,7 @@ def _cases(check):
               M.post_entries(f_bash("f-10b"), cfg=post_cfg, root=_f10b_dir) == []
               and not os.path.isdir(os.path.join(_f10b_dir, ".claude", "state")))
         # f11: the P0-S row and the manifest rows share one Bash call, and both
-        # land. The lane was one `return` before F194, so "either/or" is exactly
+        # land. The lane was one `return` before this fix, so "either/or" is exactly
         # the shape a careless fix would have kept.
         f_write(manifest_doc(status="in_progress"))
         M._write_slot(fproj, cfg, f_bash("f-11"), man_rel)
@@ -1051,7 +1051,7 @@ def _cases(check):
               and "status blocked->done" in _f13_by.get(_f13_rel, ""),
               repr(_f13_by))
         # f14 END TO END, for the reason d0-d4 and s6-s7 exist: an entry dict is a
-        # decision, not evidence. The claim F194 makes is about the CHAIN, and a
+        # decision, not evidence. The claim this makes is about the CHAIN, and a
         # claim about the chain has to be made against the chain - through main(),
         # over stdin, with a Bash payload and no `file_path` in it.
         eproj = os.path.join(tmp, "f194-e2e")
@@ -1121,7 +1121,7 @@ def _cases(check):
               and not [w for w in _e_res["warnings"] if "never saw" in w],
               repr((_e_res["rows"], _e_res["warnings"])))
 
-        # --- F261: the Bash lane's FIRST call had no baseline ------------------
+        # --- the Bash lane's FIRST call had no baseline --------------------------
         # Reported from a live run as `docs/audit/phases/P0.json has changed since
         # the last row that recorded it -- an edit the journal never saw`, after a
         # `mergedAt` stamp made through a heredoc. The offered cause was that
@@ -1195,7 +1195,7 @@ def _cases(check):
         # --- mcp: an MCP server's write tool shares the sweep lane -------------
         # An MCP call reaches no edit-tool matcher, so `classify()` returned None
         # for it and a manifest written through a filesystem server left the chain
-        # verifying over a history missing the event - F194's fault, one transport
+        # verifying over a history missing the event - the same fault, one transport
         # further on. The lane needs no rule about which MCP operations write: it
         # compares digests, so the question is whether the FILE moved.
         def _mcp_lane(proj_name, pre_payload_of, post_payload_of, *, move=True):
@@ -1356,7 +1356,7 @@ def _cases(check):
               and wrows[1].get("details", {}).get("taskId") == "P1.1",
               repr((wres, [r.get("action") for r in wrows])))
 
-        # --- j: the F-F3 sidecar -----------------------------------------------
+        # --- j: the sidecar ---------------------------------------------------
         # The append above put the journal file into git status, and
         # guard-bash-writes' next Bash pass used to blame the shell command for
         # it. After every successful append, main() records the written file's

@@ -54,7 +54,7 @@ def _cases(check):
     import tempfile
 
 
-    # F-C-1: substring pins about MARKUP must not read the embedded scripts.
+    # Substring pins about MARKUP must not read the embedded scripts.
     # report.js and the payload blobs are embedded whole in every rendered
     # document, so a literal like `<th>` in script SOURCE counted as a table
     # column -- v0.36 D even shipped a `'<' + 'th>'` string-split in report.js
@@ -102,7 +102,7 @@ def _cases(check):
     rc = M.main([mp, "--out-dir", tmp])
     check("c1 CLI exits 0", rc == 0)
 
-    # th (F-P-6): a report is a FILE — mailed, published, opened months later —
+    # th: a report is a FILE — mailed, published, opened months later —
     # so the theme is COMPILED INTO it rather than referenced. Rendered with a
     # project theme on disk, the stylesheet must carry that value and still be a
     # whole stylesheet (the token block alone loses every rule in report.css,
@@ -263,7 +263,7 @@ def _cases(check):
           re.search(r"\.fill\{[^}]*display:\s*block", M._CSS) is not None)
     # A reveal animation with only a `from` keyframe leaves its end state to be
     # synthesised, and `fill-mode:both` can then hold the element at the from-state.
-    # The keyframe name goes in the LABEL'S FIRST TOKEN and not after it (F75): the
+    # The keyframe name goes in the LABEL'S FIRST TOKEN and not after it: the
     # id is what `prove-gates.py` credits a mutation to, and it refuses one that two
     # cases printed - so `u14k` said which animation only to a human reader.
     for _kf in ("fillIn", "fadeUp"):
@@ -901,7 +901,7 @@ def _cases(check):
     # The header, the cells and both colspans have to agree, or the table skews.
     # Counted over _markup(): report.js legitimately builds `<th>` rows for the
     # usage heatmap, and counting the whole document read its SOURCE as a
-    # phantom column (F-C-1) -- the v0.36 `'<' + 'th>'` split in report.js
+    # phantom column -- the v0.36 `'<' + 'th>'` split in report.js
     # existed only to dodge this pin, and is gone now.
     _fh = M.render_html(_fresh, M._load_status_lib().rollup(_fresh, [], []), "r", None)
     _fhm = _markup(_fh)
@@ -963,7 +963,7 @@ def _cases(check):
                         r'data-seg="archived"', _sgh) is not None
           and re.search(r'<tr class="task" data-phase="S1"[^>]*'
                         r'data-seg="archived"', _sgh) is not None)
-    # vw (F-P-4): the archive toggle is gone. Which phases are on screen is a
+    # vw: the archive toggle is gone. Which phases are on screen is a
     # NAMED view — active (the default) / archived / all — because "done rows
     # are hidden until you find the toggle" is a rule a reader has to discover,
     # and the one they discovered it through was an empty-looking plan. The
@@ -974,7 +974,7 @@ def _cases(check):
             {"id": "B1.2", "title": "t", "status": "cancelled"},
             {"id": "B1.3", "title": "t", "status": "done"}]}]}
     _blh = M.render_html(_blm, _lib.rollup(_blm, [], []), "r", None)
-    # NUMBERED, PREFIX KEPT (F75). Three hand-written cases printing one `bl` are
+    # NUMBERED, PREFIX KEPT. Three hand-written cases printing one `bl` are
     # three authored assertions with one id between them, so no mutation table row
     # can name any of them; the family still reads down as a family.
     check("bl1 a phase in progress says how many of its tasks are STUCK - the "
@@ -1337,7 +1337,7 @@ def _cases(check):
           "given back by name",
           "function muteNative" in uh and "function restoreNative" in uh
           and "node.setAttribute('title', node.__tip)" in uh)
-    # Was 2 — the hover transition and an inline copy in beforeprint. F17 added a
+    # Was 2 — the hover transition and an inline copy in beforeprint. A later fix added a
     # focus transition and funnelled every CLOSE (Escape, focusout, beforeprint)
     # through one `hide()`. So the count is 3 and its shape changed: two mark-to-
     # mark transitions that legitimately swap `current`, plus one funnel. Raised
@@ -1378,7 +1378,7 @@ def _cases(check):
                       ("inactive", "decoration", "invisible", "user-agent",
                        "essential")))
 
-    # --- F17: the tooltip is reachable without a pointer (WCAG 2.2 SC 1.4.13) ----
+    # --- the tooltip is reachable without a pointer (WCAG 2.2 SC 1.4.13) ----------
     # u24d restored the CARRIER — `title` is back in the accessibility tree, so a
     # screen-reader user and a JS-off reader are served. What that did not fix is
     # the SIGHTED KEYBOARD reader: browsers do not surface a native `title` on
@@ -1404,7 +1404,7 @@ def _cases(check):
     # layer — `"setTimeout" not in uh` was the first thing written here and it
     # asserted nothing at all, because `uh` is the whole rendered page and the
     # report uses setTimeout elsewhere. A negative over the wrong region is the
-    # exact defect F21 records, so the region is cut out and named.
+    # exact same class of defect, so the region is cut out and named.
     _tiplayer = uh[uh.index("// Hover layer for the Usage charts."):
                    uh.index("// --- the date range over the usage views")]
     check("f17d-scope the slice really is the hover layer and not the whole page "
@@ -1415,7 +1415,7 @@ def _cases(check):
           "the reader, not for the clock",
           "setTimeout" not in _tiplayer)
     check("f17e the rank rows are actually focusable — the layer is unreachable "
-          "otherwise, which is the whole of F17",
+          "otherwise, which is the whole point here",
           'class="rank" tabindex="0"' in uh)
     check("u24c the floating tooltip is suppressed for print",
           "@media print{.rtip{display:none!important}" in uh)
@@ -1699,7 +1699,8 @@ def _cases(check):
     # the whole feature must be absent from its markup - and the STYLE block has
     # to come out before asking, because `data-tev` and `dt3` are written in the
     # stylesheet, which ships inline in every document. A negative over the wrong
-    # region is F21, and this one would have been asserting that the CSS exists.
+    # region is the same defect, and this one would have been asserting that the
+    # CSS exists.
     _nostyle = re.sub(r"(?is)<style\b.*?</style\s*>", "", _markup(html_out))
     check("tv-r1 a plan that points at no recorded run renders none of the test "
           "gate: no attribute, no column, no chip row, no third drawer group",

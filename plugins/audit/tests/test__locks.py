@@ -422,7 +422,7 @@ def _cases(check):
           and M.acquire("/nonexistent-audit-locks-xyz", "index",
                         out=lambda *_a: None) == M.E_ERR)
 
-    # F260. `set-priority.py` refused with exit 3 and `pid N is running on this
+    # `set-priority.py` refused with exit 3 and `pid N is running on this
     # host` — and that pid was the operator, mid take-lock / write / write /
     # release, which is the flow the lock exists for. `release` has always asked
     # whose it is; only `acquire` never did.

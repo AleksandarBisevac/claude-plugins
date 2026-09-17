@@ -258,7 +258,7 @@ def _markup(doc):
 def _body(doc):
     """...and without the inline <style> either, for the NEGATIVE pins.
 
-    F-C-1 one surface over. `data-tev` and `dt3` are both written in the report's
+    `data-tev` and `dt3` are both written in the report's
     stylesheet, which ships inline in every document, so `"data-tev" not in doc`
     is false on a page that renders none of this feature - the check would have
     been asserting the CSS exists. A negative over the wrong region is the defect
@@ -423,7 +423,7 @@ def _cases(check):
           "being sorted in among words this build understands",
           M._ordered({"passed", "zz-new", "failed"},
                      _report_html.TEV_ORDER) == ["passed", "failed", "zz-new"])
-    # F280, THE REPORT'S HALF, AND IT IS THE ONE THING THAT HOLDS TODAY. The
+    # THE REPORT'S HALF, AND IT IS THE ONE THING THAT HOLDS TODAY. The
     # verdict a mutating gate now records reaches this surface through
     # `_report_html.tev_view`'s default arm, which NAMES the word instead of
     # folding it into `failed` - the reading the schema demands by hand and the

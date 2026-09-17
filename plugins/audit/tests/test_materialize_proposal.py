@@ -101,7 +101,7 @@ def _cases(check):
         check("mz27 a refused plan exits 1", M.main([path, "plan", "PROP-9"]) == 1)
 
         # ---- the `list` table: printed by the script, not remembered ----
-        # F91. This subcommand was the one `propose.md` described in prose and
+        # This subcommand was the one `propose.md` described in prose and
         # rendered from prose, so what a user got was whatever the model recalled
         # - which, live, was an accurate SUMMARY and no table at all. The columns
         # below are `propose.md`'s own, in its order.
@@ -150,7 +150,7 @@ def _cases(check):
         with open(lpath, "r", encoding="utf-8") as fh:
             check("mz41 ...and listing writes nothing: `list` is read-only and "
                   "takes no lock", len(json.load(fh)["proposals"]) == 4)
-        # F93. The payload column is `_proposals.reserved_cell` and not a copy
+        # The payload column is `_proposals.reserved_cell` and not a copy
         # of it. Pinned by IDENTITY because a second implementation that agreed
         # with this table today would pass mz36 and mz37 unchanged and still be
         # the duplication - which is how the SAME cell ended up spelled a third

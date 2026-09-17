@@ -660,7 +660,7 @@ def _cases(check):
           "the source", pay["schemas"]["config"].endswith(".json"))
 
     # --- (ch) a documented flag's VALUES against the parser that takes them -----
-    # F265. `/audit:status --view pending` was advertised by the command doc and
+    # `/audit:status --view pending` was advertised by the command doc and
     # refused by the parser, and the whole gate set was green: `command_flag_drift`
     # compares flag NAMES between two documents and asks no parser anything. These
     # cases are the instrument, and they are pure so the failure modes can be

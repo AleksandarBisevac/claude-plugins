@@ -343,7 +343,7 @@ def _cases(check):
           and M._ready_block(_m, dict(_s, ready=[], priorityNote=None))
           == ([], []))
 
-    # --- F141: `parked` is decided in `_status_facts`, not a third time here ---
+    # --- `parked` is decided in `_status_facts`, not a third time here ---------
     # The fixture carries ONE parked entry and TWO dropped ones on purpose: a
     # predicate that answered `dropped` instead would report a different number
     # from this data, which is what lets pg19 below tell the two apart. A fixture

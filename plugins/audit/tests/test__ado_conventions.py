@@ -202,7 +202,7 @@ def _cases(check):
     check("ac49 ...and admitted for a good one under both, so a bare-tag list "
           "did not narrow the prefixed rule either: %r" % (_both,),
           _both == [[], []])
-    # --- F186: the open axis ---------------------------------------------------
+    # --- the open axis -----------------------------------------------------------
     # A prefix's list is a CLOSED enum, and some axes are open by nature -
     # `release:2026-08`, `sprint:24`, `ticket:41207`. Closed, each new value costs
     # a manifest edit, and until it lands the conformance gate refuses work that
@@ -270,7 +270,7 @@ def _cases(check):
     check("ac16 a board that does not require a parent does not get the finding",
           M.conformance_violations(_task(parent=None), _noparent) == [])
 
-    # --- F120: the rule is scoped by kind, and the exemption is SPOKEN --------
+    # --- the rule is scoped by kind, and the exemption is SPOKEN --------------
     # The fixture is a BUG with no parent on a board that requires one — the
     # exact payload push builds for `/audit:sync push bugs`, which is the one
     # kind the connector creates without a parent link. Before this, that
@@ -303,13 +303,13 @@ def _cases(check):
     # stopped naming which rule had narrowed passed it unchanged.
     check("ac65 ...and the skip SAYS it skipped, opening with the rule that "
           "narrowed and naming the type - a rule that quietly stopped applying "
-          "is the silent pass the typeless half of F106 already cost this "
+          "is the same silent pass the typeless case above already cost this "
           "file: %r" % ((_note or "")[:60],),
           _note is not None and "Bug" in _note
           and _note.startswith("`requireParent` was NOT applied"))
     # THE SECOND DIRECTION, and it looks vacuous on purpose: it is the only case
     # that fails if the exemption becomes unconditional, which would exempt
-    # every kind and put F120 back as a silent pass instead of a refusal.
+    # every kind and turn this back into a silent pass instead of a refusal.
     check("ac66 a TASK draws no exemption sentence at all over that same board, "
           "which is the case that fails if the exemption stops reading the "
           "type: %r" % (M.parent_rule_exemption(_task(), BOARD, _BUGS),),
@@ -318,7 +318,7 @@ def _cases(check):
           "parent, because there is no rule there to have narrowed",
           M.parent_rule_exemption(_bug, _noparent, _BUGS) is None)
     # The LOUD default. A caller that has not been taught the question gets the
-    # pre-F120 refusal — wrong, but visible — rather than a pass nobody asked
+    # old, kind-blind refusal — wrong, but visible — rather than a pass nobody asked
     # for. Same bytes as ac63, only the argument dropped.
     check("ac68 an unpassed `unparented` exempts NOTHING, so a caller that "
           "never learned the question keeps the loud old answer instead of "
@@ -353,8 +353,8 @@ def _cases(check):
           M.parent_rule_exemption(_defect, BOARD, _renamed) is not None
           and M.parent_rule_exemption(_bug, BOARD, _renamed) is None)
     # The exemption narrows requireParent and NOTHING else, or a bug would stop
-    # being graded against the board's real standard - which is the failure
-    # F106's quiet half already demonstrated.
+    # being graded against the board's real standard - which is the same failure
+    # a rule that quietly stops applying already causes.
     _bad_bug = {"type": "Bug",
                 "fields": {"System.Title": "x", "System.Description": "no marker",
                            "System.Tags": "type:nope"}}
@@ -451,7 +451,7 @@ def _cases(check):
     check("ac30 `parentWorkItem` is a known meta.ado key",
           "parentWorkItem" in _ado.KNOWN_ADO)
 
-    # F-P-16: the two payload shapes OVERLAP, which is why this needed a guard
+    # The two payload shapes OVERLAP, which is why this needed a guard
     # rather than documentation. A fetched item carries `fields`, so the tag
     # rules really do read its tags - and then `requireParent` fires on an item
     # that HAS a parent, because the parent lives elsewhere in that shape.
@@ -468,7 +468,7 @@ def _cases(check):
     check("ac33 ...while the shape the connector actually sends is left alone - "
           "a guard that refused both shapes would just be off",
           M.rest_payload_reason(_task()) is None)
-    # ac34 REWRITTEN AT F106, AND THE OLD ANSWER WAS THE BUG. It pinned that a
+    # ac34 REWRITTEN, AND THE OLD ANSWER WAS THE BUG. It pinned that a
     # payload merely missing `type` drew no refusal, on the reasoning that a
     # missing type is a conformance question while only REST decoration proves a
     # shape mistake. What it was really protecting is the half ac33 holds - a
@@ -489,10 +489,11 @@ def _cases(check):
           M.rest_payload_reason({"fields": {"System.Tags": "x"}}) is not None)
     # Without this, the guard could be satisfied by a rule that never runs.
     check("ac35 ...proven by the fetched item still being graded when the guard "
-          "is not consulted, which is exactly the false accusation F-P-16 names",
+          "is not consulted, which is exactly the false parent accusation this "
+          "guard exists to prevent",
           any("parent" in v for v in M.conformance_violations(_fetched, BOARD)))
 
-    # --- F106: the producer's own output, not a fixture resembling one ---------
+    # --- the producer's own output, not a fixture resembling one -----------------
     # Measured live against `test-audit-lab/DC application` work item #121: the
     # top-level keys `_ado_fetch.as_items()` emits are `fields` and `id`, the
     # parent is INSIDE `fields`, and every REST marker is stripped. This is the
@@ -525,8 +526,8 @@ def _cases(check):
           _graded.get("type") == "Issue" and _graded.get("parent") == 101
           and M.rest_payload_reason(_graded) is None)
     check("ac56 ...and the parent finding is GONE over those same bytes, which "
-          "is the F106 verdict undone by translating the payload rather than by "
-          "loosening the rule: %r"
+          "is the false-parent refusal undone by translating the payload rather "
+          "than by loosening the rule: %r"
           % (M.conformance_violations(_graded, _BOARD121),),
           M.conformance_violations(_graded, _BOARD121) == [])
     _raw = M.conformance_violations(_batched, _BOARD121)
@@ -535,8 +536,8 @@ def _cases(check):
           "anything is graded: %r" % (_raw,),
           len([v for v in _raw if "carries none" in v]) == 1)
     check("ac58 ...and that grade now SAYS the type-scoped rules never ran "
-          "instead of passing them in silence - the quiet half of F106 and the "
-          "more dangerous one, since a refusal at least gets argued with: %r"
+          "instead of passing them in silence - the quieter and more dangerous "
+          "failure, since a refusal at least gets argued with: %r"
           % (_raw[:1],),
           len([v for v in _raw if "requiredFields" in v]) == 1)
     # The second direction. This looks vacuous and is the only case that fails
@@ -568,7 +569,7 @@ def _cases(check):
           "shape rather than as an empty pass - garbage in, refusal out",
           M.rest_payload_reason(M.as_gradable_item("nope")) is not None)
 
-    # F-P-18: the two blocks were each valid and disagreed with each other, so a
+    # The two blocks were each valid and disagreed with each other, so a
     # standard that refused every item the connector writes validated clean.
     _BASE = {"organization": "https://dev.azure.com/o", "project": "p"}
     _prefix_only = {"tagVocabulary": {"audit": ["plugin"]}}
@@ -596,7 +597,8 @@ def _cases(check):
     # leave the connector's own bare tag out of it, and validate clean.
     _f, _w = _meta(conventions={"tagVocabulary": {"*": ["FE"]}})
     check("ac52 a `*` list that does not admit the connector's own bare tag is "
-          "the same F-P-18 contradiction and is warned about too: %r" % (_w[:1],),
+          "the same block-vs-block contradiction and is warned about too: %r"
+          % (_w[:1],),
           any("provenance tag" in x for x in _w) and _f == [])
     # REWRITTEN AT U-PARENT, on purpose. This pair used to pin the opposite: a
     # `requireParent` with no `parentWorkItem` drew a warning, which was right

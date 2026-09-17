@@ -34,13 +34,13 @@ import _manifest_vocab as _vocab                   # noqa: E402  (the words a la
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    # uc (F-P-2): the empty bucket has ONE name, and it is not its storage key.
+    # uc: the empty bucket has ONE name, and it is not its storage key.
     check("the empty usage bucket is named once, for all three surfaces: the "
           "ledger's \"--\" (no phase/task) and its attr bucket are the same fact "
           "to a reader, and neither reaches a screen as its storage key",
           M.label("--") == M.label("unattributed") == M.UNCATEGORIZED
           and M.UNCATEGORIZED not in ("--", "unattributed"))
-    # --- th (F-P-6): the token layer as data --------------------------------
+    # --- th: the token layer as data ----------------------------------------
     check("th1 the stylesheet round-trips through the theme model BYTE FOR "
           "BYTE - the default theme is read OUT of TOKEN_CSS, so the two can "
           "never drift, and shipping the editor changes nothing on screen",
@@ -617,7 +617,7 @@ def _cases(check):
     check("ua8 a LONE \\r counts too - the check is about the byte, not about "
           "the CRLF pair, so old-Mac endings are not waved through",
           M.cr_violations([("report.css", "a{}\rb{}")]) == ["report.css"])
-    # THE LIVE CLAIM, and until F242 there was none. ua6-ua8 prove the FUNCTION
+    # THE LIVE CLAIM, and there used to be none. ua6-ua8 prove the FUNCTION
     # over fixtures; nothing asked it about the real assets, so the rule was
     # stated, asserted and never applied - its docstring even claimed "both
     # callers" it no longer had. `declared_asset_drift` two cases down is called

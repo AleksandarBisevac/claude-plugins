@@ -90,9 +90,10 @@ def _cases(check):
                # shared-name case that named them would be asserting an alias
                # nothing calls rather than that there is one implementation.
                "unevidenced", "GAP_BEFORE", "GAP_SINCE", "GAP_UNDATED",
-               # F301's reader. The command aliases it because its gate-line
-               # renderer spells it unqualified, so it belongs on this list for
-               # the same reason every name above does.
+               # The reader for a run that stopped mid-phase. The command
+               # aliases it because its gate-line renderer spells it
+               # unqualified, so it belongs on this list for the same reason
+               # every name above does.
                "unfinished_runs")
     _forked = sorted(n for n in _shared
                      if getattr(_CMD, n, None) is not getattr(M, n))
@@ -164,7 +165,8 @@ def _cases(check):
           hasattr(_CMD, "usage_summary") and not hasattr(M, "usage_summary")
           and hasattr(_CMD, "discovery_block")
           and not hasattr(M, "discovery_block"))
-    check("b7 ...and so did every BLOCK BUILDER, F301's included. Each of the "
+    check("b7 ...and so did every BLOCK BUILDER, the unfinished-run one "
+          "included. Each of the "
           "four shells out or walks a directory, which is why the reader that "
           "grades one lives here and the read that produces it does not - and "
           "b3 above is what would go red if `locks_block` came down",
@@ -330,7 +332,7 @@ def _cases(check):
           "stranded-skills" in M.CONDITIONS
           and "stranded-skills" not in M.DEFAULT_GATE)
 
-    # --- (ur) a run that stopped mid-phase: F301 -------------------------------
+    # --- (ur) a run that stopped mid-phase ---------------------------------------
     # `/audit:phase P5` means "run every ready task, then sign off". A phase
     # planned as waves of parallel subagents committed wave one, named wave two
     # and ENDED THE TURN. Nothing had blocked it and no gate had been asked
@@ -444,8 +446,8 @@ def _cases(check):
             pid=os.getpid(), out=_ur_quiet))
         _ur_s1 = _ur_sum()
         _ur_rows = M.unfinished_runs(_ur_s1)
-        check("ur3 A LOCK HELD WITH READY WORK LEFT IS AN UNFINISHED RUN - F301, "
-              "and the sentence carries the phase, how much was left, the "
+        check("ur3 A LOCK HELD WITH READY WORK LEFT IS AN UNFINISHED RUN, and "
+              "the sentence carries the phase, how much was left, the "
               "liveness basis that makes the claim checkable and the command "
               "that picks it up: %r" % (_ur_rows,),
               _ur_took and _ur_rows is not None and len(_ur_rows) == 1
@@ -520,7 +522,7 @@ def _cases(check):
         check("ur7 A STALE LOCK COUNTS TOO, and its sentence is the other one. "
               "The liveness verdict resolves every uncertainty to LIVE, so "
               "`gone` is the positive finding that the holder was probed and is "
-              "not there - and F301 was noticed a day later, when the session "
+              "not there - and this was noticed a day later, when the session "
               "that stopped had long exited and its lock was stale. A rule that "
               "graded only live locks would have had nothing to say about the "
               "instance it was written for: %r" % (_ur_stale,),
@@ -584,7 +586,7 @@ def _cases(check):
           and M.PASSED_EVIDENCE not in M.NO_SIGN_OFF_EVIDENCE
           and M.NO_GATE_EVIDENCE not in M.NO_SIGN_OFF_EVIDENCE,
           repr(sorted(M.NO_SIGN_OFF_EVIDENCE)))
-    # F280, NAMED RATHER THAN DERIVED. te1 drives every word in the set, so it
+    # NAMED RATHER THAN DERIVED. te1 drives every word in the set, so it
     # would have covered this one the moment it was added - and te2's own
     # argument is that a loop over a set cannot notice the set changing. This is
     # the word whose ABSENCE was the fault, so it gets a case that names it and
@@ -722,7 +724,7 @@ def _cases(check):
           and _te_empty["testEvidence"]["recorded"] == 0,
           repr(_te_empty.get("testEvidence")))
 
-    # --- F302, one level out: an infrastructure failure is not a failing test -
+    # --- one level out: an infrastructure failure is not a failing test ---------
     # The runner recorded `failed` for a run the OS killed, so `failing-tests`
     # counted it as a red suite. The word on the record is `could-not-run` now
     # (see `run-test-gate.ended_by_signal`) and this is the other half: the
@@ -805,7 +807,7 @@ def _cases(check):
           and isinstance(_te_ru, dict)
           and (_te_ru.get("testEvidence") or {}).get("recorded") == 0)
 
-    # F2. `evidence_subjects` promises a subject LIST, and `block.get(key) or []`
+    # `evidence_subjects` promises a subject LIST, and `block.get(key) or []`
     # kept that promise only for the keys that happen to hold one. `recorded` is an
     # int and `byStatus` a dict, so a non-zero count came back AS THE INT out of a
     # function whose every caller feeds it to `len()`, to a list comprehension and
@@ -837,7 +839,7 @@ def _cases(check):
           == [("PE.2", "quarantined")],
           repr(sorted(M.EVIDENCE_SUBJECT_KEYS)))
 
-    # F3. The two conditions read the SAME scopes. `failing-tests` always read
+    # The two conditions read the SAME scopes. `failing-tests` always read
     # both, and a `no-test-evidence` that read only tasks was blind to exactly the
     # sign-off it exists to ask about - `run-test-gate.py --record` points
     # `phase.testEvidence` at the phase gate, and no task pointer stands in for it.

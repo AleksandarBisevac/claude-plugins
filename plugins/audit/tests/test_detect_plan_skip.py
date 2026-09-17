@@ -64,7 +64,7 @@ def _cases(check):
     check("g2 fresh state file kept", fresh.exists())
     check("g3 foreign json untouched", foreign.exists())
     check("g4 missing dir is a no-op", M._gc_state(tmp / "nope") == 0)
-    # F-B1: the journal pre-image slot holds file BYTES, and nothing deletes
+    # The journal pre-image slot holds file BYTES, and nothing deletes
     # it when a session dies between the Pre and Post passes - it must age
     # out with the rest of the session state instead of accumulating.
     stale_pre = tmp / "journal-preimage-dead-session.abcdef123456.json"
@@ -80,7 +80,7 @@ def _cases(check):
     os.utime(stale_note, (old, old))
     check("g6 a stale ownership-advisory throttle slot is swept with the rest",
           M._gc_state(tmp, now=now) == 1 and not stale_note.exists())
-    # F228: the stamp naming which plugin copy is executing the hooks is rewritten
+    # The stamp naming which plugin copy is executing the hooks is rewritten
     # on every prompt, so a slot that ages past the line belongs to a session that
     # ended - session state like the rest, and it accumulates forever if this
     # sweep does not know the prefix.
@@ -157,7 +157,7 @@ def _cases(check):
     # two say the same thing about a raise, and the harness's form also carries
     # the exception TYPE, which a bare `str(exc)` does not - see `_harness`'s
     # docstring for why the per-case guard exists at all beside `run()`'s.
-    # THE FIXTURE PROMPT IS THE CASE (F161). Its distinctive words are what a
+    # THE FIXTURE PROMPT IS THE CASE. Its distinctive words are what a
     # person types AROUND the keyword, and the assertions below count where they
     # come to rest rather than looking for them - the pre-fix hook put the same
     # snippet into three sinks, so "present somewhere" cannot tell the two
@@ -210,7 +210,7 @@ def _cases(check):
           "'contains the keyword' is not enough: the pre-fix snippet started "
           "with the keyword too: %r" % (_b_reason,),
           _b_reason == M.ARMED_REASON % "#no-plan")
-    check("b7 ...and it carries none of the prompt's own words (F161). The "
+    check("b7 ...and it carries none of the prompt's own words. The "
           "keyword is typed in the same sentence as the work, and that "
           "sentence has no root to redact it against: %r" % (_b_reason,),
           _b_secret not in _b_reason)
@@ -245,7 +245,7 @@ def _cases(check):
     finally:
         _sh.rmtree(tmp_i, ignore_errors=True)
 
-    # (r) which plugin copy is executing the hooks (F228)
+    # (r) which plugin copy is executing the hooks
     # DRIVEN AS A PROCESS, because the fact only exists in one. `CLAUDE_PLUGIN_ROOT`
     # is interpolated into hooks.json's command strings when a session starts and
     # is never exported, so a hook's own location is the only record of which copy

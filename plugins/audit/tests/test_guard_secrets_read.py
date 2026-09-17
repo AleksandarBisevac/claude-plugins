@@ -125,8 +125,8 @@ def _cases(check):
     # Rule #1's arm used to grep the WHOLE body for a secret-filename token,
     # so writing a sentence that names one was refused as reading one. Reported
     # from a live run and reproduced twice inside a single command here: the
-    # refusal said "Reading a secret file" about prose that read nothing. F-P-7
-    # made exactly this repair on the WRITE arm; this is the read side of it.
+    # refusal said "Reading a secret file" about prose that read nothing. The
+    # same repair was made on the WRITE arm; this is the read side of it.
     #
     # THE PAIR IS THE POINT. b1/b3/b5/b7 above are the "still refused" half and
     # they must keep passing; these are the "prose is not a read" half. Either
@@ -351,7 +351,7 @@ def _cases(check):
     _expect("w5 node -e write to *.spec.ts allowed", "allow",
           bash("node -e \"fs.writeFileSync('src/foo/a.spec.ts','test')\""),
           use_cfg=cfg_enforced)
-    # (w6/w7) F-A-1 asked whether a test-suffix NAME in a data format keeps the
+    # (w6/w7) asked whether a test-suffix NAME in a data format keeps the
     # test exemption, and the answer is still no - `_config.matches_exempt`
     # carries that carve-out for every gate at once, which is why this file no
     # longer spells it. What changed since is the question asked FIRST: the
@@ -359,7 +359,7 @@ def _cases(check):
     # deliberately not among them, so no consumer's package.json, tsconfig.json
     # or fixture is gated by EITHER Bash write form. w6 is that agreement
     # asserted as a pair - the two spellings of one write, one verdict - because
-    # the cheaper door F-A-1 closed was the eval arm disagreeing with its
+    # the cheaper door this closed was the eval arm disagreeing with its
     # neighbour, and it had been left open in the other direction ever since.
     # The file is still gated where its extension does not matter: `Edit`.
     check("w6 `tsconfig.test.json` gets ONE verdict from both Bash write forms, "
@@ -746,7 +746,7 @@ def _cases(check):
                  "files": ["src/declared-by-a-task.ts"]}]}]}),
         encoding="utf-8")
 
-    # (s23+) F-B-1: the inline-eval heuristics judge each CLAUSE on its own
+    # (s23+) the inline-eval heuristics judge each CLAUSE on its own
     # facts. A redirect in clause one plus an eval in clause two used to be read
     # as one command and denied — reproduced live with exactly s23's command
     # (a selftest run redirected to a log, then a harmless one-liner).
@@ -770,7 +770,7 @@ def _cases(check):
     # `_clauses` split on `;`, `|` and `&` and not on a newline, so every
     # multi-line Bash block was judged as ONE clause -- the eval marker taken
     # from one line, the write target from another, and the two paired without
-    # ever having come from the same command. This is F-B-1's own defect
+    # ever having come from the same command. This is the same defect
     # surviving in the spelling nobody tried, and it was measured by minimizing
     # a refusal the operator hit while investigating a different report.
     _f209_bare = "open('plugins/audit/tmp.json','w').write('x')"
@@ -832,7 +832,7 @@ def _cases(check):
           "could widen what a single clause may do",
           M._clauses(_s26_unb) == [_s26_unb], repr(M._clauses(_s26_unb)))
 
-    # (s27+) F-P-7: the eval-write backstop matched a WRITE CALL and a SOURCE
+    # (s27+) the eval-write backstop matched a WRITE CALL and a SOURCE
     # PATH anywhere in the same clause, never checking that the two were the
     # same thing. `>` inside the code (a comparison, or a redirect to /tmp) fed
     # the write half; the quoted name of the file being READ fed the target
@@ -878,11 +878,11 @@ def _cases(check):
     _expect("s32 ...and a read of one file plus a write of another is a write",
           "block",
           bash('python3 -c "s=open(\'a.json\').read(); open(\'src/b.ts\',\'w\').write(s)"'))
-    # The `>` alternative LEFT the write-call pattern with F-P-7, so the case it
+    # The `>` alternative LEFT the write-call pattern behind, so the case it
     # used to cover is pinned here against the branch that actually owns it — a
     # shell redirect is _source_write_hit's grammar, graded like require-plan's
-    # gate. (That pattern is `_WRITE_CALL_EXPR` now; `_WRITE_CALL` was retired with
-    # F-7 below, and naming a symbol that no longer exists sends a reader grepping
+    # gate. (That pattern is `_WRITE_CALL_EXPR` now; `_WRITE_CALL` was retired
+    # below, and naming a symbol that no longer exists sends a reader grepping
     # for nothing.)
     _expect("s33 an eval whose OUTPUT is redirected into source is still caught, "
           "by the shell-write branch rather than by the eval one", "block",
@@ -896,8 +896,8 @@ def _cases(check):
                   'python3 -c "open(\'src/x.ts\',\'w\').write(1)"') == ["src/x.ts"]
           ) else "block", bash("true"))
 
-    # (F-7) THE PATH DID NOT HAVE TO BE A LITERAL, and requiring one is what let
-    # fifteen source edits through in a single session. F-P-7 narrowed this branch
+    # THE PATH DID NOT HAVE TO BE A LITERAL, and requiring one is what let
+    # fifteen source edits through in a single session. A later fix narrowed this branch
     # to "the path the write call NAMES", correctly - and the pattern read a name
     # only when it was spelled in quotes in the argument, so `p = '...'` followed by
     # `open(p, 'w')` matched no write call at all. Same capability, same target,
@@ -907,7 +907,7 @@ def _cases(check):
     # Each case below is PAIRED with the literal form above (s31/s32): if the fix
     # had over-corrected into "a write shape and a path in the same clause", s41
     # would still pass and s39 would go red, which is the direction that matters.
-    _expect("s50 F-7: a path bound to a VARIABLE is the same write as a path "
+    _expect("s50 a path bound to a VARIABLE is the same write as a path "
           "spelled inline", "block",
           bash('python3 -c "p=\'src/app.ts\'; open(p,\'w\').write(x)"'))
     _expect("s51 ...and through the heredoc form, which is what the session "
@@ -1085,7 +1085,7 @@ def _cases(check):
     _tokvar = "$API_TOKEN"
     _doc = ("To inspect the deploy key run `cat %s` and paste nothing from it "
             "into a ticket." % _key)
-    _expect("s66 F116: creating a markdown file whose PROSE quotes a read command "
+    _expect("s66 creating a markdown file whose PROSE quotes a read command "
             "naming a key file is a write - a heredoc body fed to `cat` is text "
             "the shell hands to a file and never runs", "allow",
             bash("cat > notes.md <<'EOF'\n# Runbook\n%s\nEOF" % _doc))
@@ -1128,7 +1128,7 @@ def _cases(check):
           == [(0, 0), (1, 1), (0, 1)],
           repr([(M._shell_text(_views).count(w), M._runnable_text(_views).count(w))
                 for w in ("databody", "shellbody", "codebody")]))
-    _expect("s74 F31's rule reaching the branch it never reached: a commit message "
+    _expect("s74 a rule reaching the branch it never reached: a commit message "
             "that NAMES a key file is prose the shell hands to git on stdin",
             "allow",
             bash("git commit -F - <<'MSG'\ndocs: say why `cat %s` is not a debug "
@@ -1152,7 +1152,7 @@ def _cases(check):
             bash("build > src/app.ts"), use_cfg=cfg_enforced)
 
     # (s35+) The original symptom - a read-only one-liner refused as a
-    # write - is gone with F-P-7 above. Measuring the same function again found
+    # write - is gone, per the fix above. Measuring the same function again found
     # it wrong in BOTH directions instead, which is the shape a heuristic decays
     # into when only one side is ever tested.
     #
@@ -1236,7 +1236,7 @@ def _cases(check):
           bash("node <<'JS'\nrequire('fs').writeFileSync('src/a.ts',x)\nJS"))
     # The other direction, and it is the one that blocked a commit: a heredoc fed
     # to something that is NOT an interpreter is DATA. Prose that documents a
-    # write is not a write, and refusing it is the F20 class again - the reader
+    # write is not a write, and refusing it is the same class of failure again - the reader
     # learns to route around, and routing around is the blind spot.
     _expect("s47 prose in a commit message that quotes a write is not a write",
           "allow",
@@ -1588,7 +1588,7 @@ def _cases(check):
     # mere presence of `direnv` never fails d1; it fails only these. `direnv`
     # LOADING an env so a test can run is the tool working as intended, and
     # refusing it is how a guard teaches people to route around it - the same
-    # lesson F-P-7 cost, one layer up.
+    # lesson a previous fix cost, one layer up.
     _expect("d5 `direnv exec` running an ordinary command is not a dump",
           "allow", bash("direnv exec . npm test"))
     _expect("d6 ...nor is `direnv allow`, which grants and prints nothing",
@@ -1676,7 +1676,7 @@ def _cases(check):
                         "tool_input": {"command": "direnv exec . npm test",
                                        "dangerouslyDisableSandbox": "false"},
                         "cwd": str(tmp)}, cfg=cfg)[0] == "allow")
-    # (s75/s76) F116's pair for THIS arm, filed here because the payload builder
+    # (s75/s76) the pair for THIS arm, filed here because the payload builder
     # above is what they need. The sandbox branch read the raw command too, so an
     # unsandboxed session writing a runbook that merely names the dotenv file was
     # told it had reached the environment layer.
@@ -1691,7 +1691,7 @@ def _cases(check):
             bash_unsandboxed("direnv exec . printenv VERCEL_SCOPE"))
 
     # (d19) The false positive item 5 names, kept as a pin rather than fixed:
-    # F-P-7 already narrowed the eval branch to the paths a write call NAMES, so
+    # A previous fix already narrowed the eval branch to the paths a write call NAMES, so
     # a read-only one-liner over a .json is allowed today. s27/s34 above are the
     # counting form of this; this is the exact command from the report.
     _expect("d19 a read-only inline eval over a .json warns about nothing",
@@ -1704,8 +1704,8 @@ def _cases(check):
     # command position" as "any SUBSTRING of the command text" was not, and it
     # made a word weigh exactly as much as a command. Its first victim was the
     # commit message of that very fix, written as a `git commit -F -` heredoc
-    # that DESCRIBED the work - which is F31's lesson, one branch over, arriving
-    # again because only F31's branch had learned it.
+    # that DESCRIBED the work - which is a lesson learned one branch over,
+    # arriving again because only that branch had learned it.
     #
     # WHERE THE LINE IS DRAWN, because that is the entire argument. An allow-list
     # of legal WRAPPERS cannot be written: miss `sudo`, `xargs` or a container
@@ -1744,7 +1744,7 @@ def _cases(check):
     _expect("d25b a different program that starts with the emitter's name is a "
           "different program", "block", bash("echo-server printenv"))
 
-    # (d26-d27) F31 is untouched, which is the other thing this could have
+    # (d26-d27) that branch is untouched, which is the other thing this could have
     # broken. A heredoc body is data only when what it feeds does not execute
     # it; `python3 - <<PY` is `python3 -c` spelled differently and is graded as
     # one - for Rule #2 now exactly as for Rule #1 before.
@@ -2026,7 +2026,7 @@ def _cases(check):
               and _rw[-1].get("event") == "ask.shown"
               and _rw[-1].get("mode") == "ask", repr(_rw))
 
-        # F136. `file` fell back to `tool_input.command`, so the whole shell call
+        # `file` fell back to `tool_input.command`, so the whole shell call
         # was written into the field every reader treats as a path - and a command
         # is not an ABSOLUTE path, so the panel's redactor resolved it against the
         # repo root, found it inside, and painted the home directory in it. The
@@ -2074,7 +2074,7 @@ def _cases(check):
               and _rw[-1].get("file") == "**/.env*"
               and "program" not in _rw[-1], repr(_rw[-1]))
 
-        # F153. THE SAME CHANNEL ONE FIELD OVER. `file` is redacted by every
+        # THE SAME CHANNEL ONE FIELD OVER. `file` is redacted by every
         # reader that paints it; `reason` - the cell beside it - was painted
         # verbatim, and the Read/Grep branches interpolate the payload's path
         # into the message whose FIRST LINE is that cell. So one row published

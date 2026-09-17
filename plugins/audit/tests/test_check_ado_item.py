@@ -105,7 +105,7 @@ def _cases(check):
               "was measured against: %r" % (out.strip()[:70],),
               code == 0 and "conforms" in out)
 
-        # F-P-16: exit 2, and specifically NOT 1. A 1 says "this item does not
+        # Exit 2, and specifically NOT 1. A 1 says "this item does not
         # belong on the board"; saying that about a payload we could not read
         # is the confident wrong answer the guard exists to stop.
         item_fetched = _write(tmp, "fetched.json", {
@@ -248,7 +248,7 @@ def _cases(check):
               "conventions at all - the two blocks are graded independently",
               M.main([m_reserved, "--item", item_good]) == 2)
 
-        # --- F106: --item and --fetched over the SAME bytes -----------------
+        # --- --item and --fetched over the SAME bytes -------------------------
         # The row is the one measured live (`test-audit-lab/DC application` work
         # item #121, parent #101): top-level keys `fields` and `id`, the parent
         # INSIDE `fields`, no REST marker anywhere. This is what
@@ -282,7 +282,7 @@ def _cases(check):
 
         check("ci22 the batched row a real fetch produces is refused as the "
               "wrong SHAPE (2) by --item even though it carries no REST marker "
-              "- the marker was never the tell, and F106 is the shape that "
+              "- the marker was never the tell, and this is the shape that "
               "slipped past it",
               M.main([m_121, "--item", row_one]) == 2)
         code_f, out_f = _run([m_121, "--fetched", row_one])
@@ -397,7 +397,7 @@ def _cases(check):
               and _payload["notGradeable"] == 1 and _payload["total"] == 2
               and _payload["conforms"] is False)
 
-        # --- F120: the one kind push creates without a parent ---------------
+        # --- the one kind push creates without a parent -----------------------
         # BOARD requires a parent, and this is the payload `/audit:sync push
         # bugs` builds: a bug create, with no `parent` key, because push hangs
         # phases and tasks and names no third kind. It used to come back "must

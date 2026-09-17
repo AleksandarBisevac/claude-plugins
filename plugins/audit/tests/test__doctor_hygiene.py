@@ -239,7 +239,7 @@ def _cases(check):
                   "not ignored yet" in _detail(rep, "hygiene")
                   and "ledger" in _detail(rep, "hygiene"))
 
-            # ------------------------------ the panel's launch log (F99)
+            # ------------------------------ the panel's launch log -----------
             # It leaks the MACHINE where the pidfile leaks a CREDENTIAL: the
             # log is a dead launch's stderr, so what lands in it is a
             # traceback spelling absolute paths, and a home directory is a
@@ -324,7 +324,7 @@ def _cases(check):
         check("dh19 the panel files this check looks for are the same set "
               "panel-server writes ignore rules for - %r vs %r. Add the missing "
               "row rather than merging the tables: two homes is the recorded "
-              "answer (F148, argued above `_PANEL_FILES` in _doctor_hygiene.py), "
+              "answer (argued above `_PANEL_FILES` in _doctor_hygiene.py), "
               "because the tables share only their keys and a shared key list "
               "would leave this very case standing. A file in one table and not "
               "the other either self-ignores and is never reported, or is "

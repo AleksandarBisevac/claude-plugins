@@ -134,7 +134,7 @@ def _cases(check):
     check("the shipped template passes its own validator cleanly",
           not f and not w)
 
-    # th (F-P-6)
+    # ui: the theme key accepts absent, a preset name, or a path
     check("ui: absent is fine", M.validate_config({})[0] == [])
     check("ui: a preset name validates",
           M.validate_config({"ui": {"theme": "slate-teal"}})[0] == [])
@@ -387,7 +387,7 @@ def _cases(check):
     f, w = M.validate_config({"guardEdits": {"typo": 1}})
     check("unknown nested key -> warning only", not f and len(w) == 1)
 
-    # --- the root vocabulary is one vocabulary (F79, F80) --------------------
+    # --- the root vocabulary is one vocabulary -----------------------------
     # cv1 is the case that would have caught the gap it was written for: `ui` was
     # read by `_ui_theme`, written by the panel, validated here and defaulted by
     # the hooks, and absent from the schema - where `additionalProperties: true`

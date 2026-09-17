@@ -151,7 +151,7 @@ def _cases(check):
               "BY AUTHOR" in text and "a@x.io" in text)
         check("render: both models listed",
               "claude-opus-5" in text and "claude-haiku-4-5" in text)
-        # uc (F-P-2): a row with no phase and no task is ordinary — ad-hoc
+        # uc: a row with no phase and no task is ordinary — ad-hoc
         # edits, `#no-plan`, work outside the plan — and it used to print as
         # the ledger's storage key ("--   unattributed", "--      (no task)"),
         # three spellings of one fact across three surfaces. The word now comes
@@ -199,7 +199,7 @@ def _cases(check):
               "would manufacture a basis instead of stating one",
               "rates as of" not in text)
 
-        # --- the rate basis, trimmed at the door (F160) ---------------------
+        # --- the rate basis, trimmed at the door -----------------------------
         # The plan schema asks only `minLength: 1`, so a string of spaces
         # VALIDATES and this line tested it for truth: "rates as of" followed by
         # nothing. `rate_basis` is the one door both readers in this file go

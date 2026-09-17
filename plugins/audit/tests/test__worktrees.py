@@ -629,7 +629,7 @@ def _cases(check):
           M.phase_settled(dict(done_phase, mergedAt=None),
                           TERM)["settled"] is False,
           M.phase_settled(dict(done_phase, mergedAt=None), TERM)["why"][:60])
-    # F247. The filter that skipped a non-dict task removed it from the OPEN list
+    # The filter that skipped a non-dict task removed it from the OPEN list
     # rather than refusing on it, so a `tasks` array of bare ids read as a phase
     # whose every task is terminal - and `settled` is one of the two PERMISSION
     # gates, not a report. The sweep does not revalidate the manifest, so a
@@ -705,7 +705,7 @@ def _cases(check):
                        verbs=())["actions"] == [],
           "no verbs, no actions")
 
-    # --- F244: the plan must act on the record it MEASURED --------------------
+    # --- the plan must act on the record it MEASURED ----------------------------
     # `git worktree add --force <path> <branch>` legally puts two records on one
     # branch. The measurements are per RECORD (owned by path, dirty by path); a
     # cleanup that re-resolves by branch takes the first holder, so both safety
@@ -744,7 +744,7 @@ def _cases(check):
                if s["action"] == "branch-delete"],
           repr([s["action"] for a in twin_plan["actions"] for s in a["steps"]]))
 
-    # --- F245: standing-in is CONTAINMENT, and an unestablished cwd refuses ----
+    # --- standing-in is CONTAINMENT, and an unestablished cwd refuses ------------
     nested = [{"path": "/x/repo-P1", "branch": "feature/p1"},
               {"path": "/x/repo-P1-old", "branch": "feature/old"}]
     check("s4 the caller is inside a worktree when it is inside a SUBDIRECTORY of "
@@ -763,7 +763,7 @@ def _cases(check):
     # The two sides of this comparison come from different places: git's porcelain
     # prints POSIX separators on every platform, `os.getcwd()` on Windows gives
     # backslashes. A boundary built from `os.sep` compares one spelling against the
-    # other and answers False - F245 silently returning on one platform. Caught by
+    # other and answers False - silently returning wrong on one platform. Caught by
     # windows-latest on the 2.1.1 candidate; asserted here on every platform.
     _mixed = [{"path": "C:/x/repo-P1", "branch": "feature/p1"}]
     check("s5b a git-printed path and a Windows cwd are the same worktree - the "
@@ -797,7 +797,7 @@ def _cases(check):
           and any("where this process is standing" in b["why"]
                   for b in _unset["blocked"]),
           repr([b["why"][:70] for b in _unset["blocked"]]))
-    # --- F246: the marker has to describe the work that is in the tree --------
+    # --- the marker has to describe the work that is in the tree ----------------
     _mk = tempfile.mkdtemp()
     try:
         _adm = os.path.join(_mk, "admin")
@@ -849,7 +849,7 @@ def _cases(check):
                                                        "branch-delete"],
           repr([s["action"] for s in _outside["steps"]]))
 
-    # --- F249: the deletion is guarded on where the branch points -------------
+    # --- the deletion is guarded on where the branch points ----------------------
     # `git branch -d` grades from HEAD. On the no-checkout merge path the parent is
     # by construction checked out NOWHERE, so HEAD is never the parent - measured on
     # a real repository, a branch proven contained in `develop` is refused with

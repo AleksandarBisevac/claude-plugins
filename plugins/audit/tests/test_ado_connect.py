@@ -66,7 +66,7 @@ def _completed(code, stdout="", stderr=""):
 def _plan_block(lines):
     """The PLAN head line and every row under it, as the model must paste them.
 
-    Contiguity is the assertion: F95 was a confirm gate reaching a user with the
+    Contiguity is the assertion: a confirm gate once reached a user with the
     counts living only inside an option label, so what has to be pinned is that
     the door emits ONE block to paste and not a set of facts to re-render.
     """
@@ -259,7 +259,7 @@ def _cases(check):
                                    "types": {"bug": "Bug", "task": "Task",
                                              "pbi": "Product Backlog Item"}}}}
     again = _run(configured, READY, OK_SCRUM)
-    # F184's SECOND FIXTURE, and its absence is why the fault lived: "already
+    # THE SECOND FIXTURE, and its absence is why the bug lived: "already
     # configured" here never carried a `connection` block, so no case ever ran the
     # branch that claims to replace one. A manifest configured by hand, or by a
     # version before the evidence block existed, is the same shape.
@@ -308,7 +308,7 @@ def _cases(check):
           sum(1 for line in ok["lines"]
               if "(not counted above) meta.ado.connection" in line) == 1
           and ok["data"]["connection"]["fetchedAt"] == NOW)
-    # F184. WHICH OF THE TWO WORDINGS APPEARS IS THE CLAIM, and it was made
+    # WHICH OF THE TWO WORDINGS APPEARS IS THE CLAIM, and it was made
     # unconditionally: a FIRST connect announced it was replacing evidence that
     # had never been recorded. `plan["evidence"]` is the prior block or None, so
     # the line about replacing is earned rather than assumed - and it names WHEN,
@@ -380,7 +380,7 @@ def _cases(check):
           and sum(1 for line in again["lines"]
                   if "This command wrote nothing" in line) == 1)
 
-    # --- the PLAN is a block to paste, not facts to re-render (F95) ---
+    # --- the PLAN is a block to paste, not facts to re-render ---------
     fresh_block = _plan_block(ok["lines"])
     again_block = _plan_block(again["lines"])
     check("r21 the plan is ONE contiguous block: the head line carries all three "
@@ -401,7 +401,7 @@ def _cases(check):
           and " to set, " in again_block[0]
           and again_block[-1].strip().startswith("decline "))
 
-    # --- one message, two causes: what the door actually saw (F98) ---
+    # --- one message, two causes: what the door actually saw ---------
     #
     # Every reading below comes from `extension_reading`, which takes no I/O -
     # which is the only reason a machine with no `az` can reach the sandbox
@@ -520,7 +520,7 @@ def _cases(check):
               "over names them",
               sum(1 for line in out.splitlines()
                   if "acme" in line and "web" in line) >= 1)
-        # --- the command file and this script are one contract (F97) ---
+        # --- the command file and this script are one contract ---------
         #
         # Nothing compared them, and the drift was silent because the caller is a
         # model that adapts: `commands/sync.md` told the reader to reach for the
