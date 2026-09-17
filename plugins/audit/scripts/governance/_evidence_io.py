@@ -206,7 +206,11 @@ def recorded_paths(project, manifest_path, config=None):
     rels, dropped = [], []
     for path in writes:
         try:
-            rel = os.path.relpath(os.path.realpath(path), root).replace(os.sep, "/")
+            # Excluded against what `git ls-files` prints, which is always "/"
+            # regardless of platform - the same reason every other published
+            # path here goes through the one helper instead of a hand-rolled
+            # replace.
+            rel = _output.posix_rel(os.path.realpath(path), root)
         except Exception as exc:
             dropped.append((path, "could not be compared against the resolved "
                                   "project root: %s" % (exc,)))
@@ -1803,7 +1807,10 @@ def project_config_for(manifest_path, project_dir=None):
     except Exception:
         config = {}
     try:
-        config["manifestPath"] = os.path.relpath(
+        # "/" separators regardless of platform: this key is what every other
+        # reader of `config` expects to hold a manifest path, and the manifest
+        # is stored with forward slashes.
+        config["manifestPath"] = _output.posix_rel(
             os.path.abspath(manifest_path), os.path.abspath(project))
     except Exception:
         pass

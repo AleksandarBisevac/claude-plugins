@@ -2281,6 +2281,7 @@ def _cases(check):
         "../scripts/status/_doctor_completions.py",
         "../scripts/status/_doctor_trail.py",
         "../scripts/governance/_invariants.py",
+        "../scripts/governance/_evidence_io.py",
         # THESE TWO NEVER CALLED IT AND THAT IS A DECISION, not an accident. Both
         # say so in their own words: across Windows drives `os.path.relpath`
         # RAISES, and a redactor or a log renderer that raises hands its caller an
