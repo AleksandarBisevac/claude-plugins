@@ -1714,7 +1714,8 @@
       "P52.4",
       "P54.6",
       "P55.5",
-      "P56.5"
+      "P56.5",
+      "P55.14"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1746,7 +1747,8 @@
       "P55.8",
       "P55.10",
       "P55.12",
-      "P50.5"
+      "P50.5",
+      "P55.14"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",

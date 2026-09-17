@@ -568,7 +568,7 @@
     {
       "id": "P55.12",
       "title": "The sibling writer's persisted path goes through the same helper",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: scripts/manifest/repair-tests-add.py builds the relative path it records into the trail through _output.posix_rel rather than by hand, and px2's publisher table names it. It is the second instance of the same defect: the value is right today because the hand-rolled spelling happens to be what the helper does, and nothing breaks until a copy leaves the separator fix off. The behavioural suite cannot see it on this platform, because the two spellings produce the same string there - the source-level rule is the only thing that can, which is why the table has to name the file.",
       "files": [
         "plugins/audit/scripts/manifest/repair-tests-add.py",
@@ -595,21 +595,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "19c48d6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "repair-tests-add.py builds the persisted relative path with _output.posix_rel, matching its twin's call site, and px2's publisher tuple names the file.",
+        "descriptive": "The second writer's path into the trail goes through the one helper, and the table that enforces that names it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T04:37:26Z",
+      "completedAt": "2026-09-17T04:37:27Z",
+      "verifiedBy": [
+        "posix-rel-source-check-catches-it"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "19c48d6",
+        "at": "2026-09-17T04:37:27Z"
+      }
     },
     {
       "id": "P55.13",
       "title": "The mutating sweep refuses to overwrite work the tree has not committed",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: tools/prove-gates.py will not mutate a file the tree has not committed without being told to. It copies a file, mutates it, and copies the original back, which is right when nothing else is writing. Two things go wrong when something is: an edit made between the copy and the restore is overwritten by the restore - REASONED, not observed, and not to be written down as though it happened - and, which DID happen, the sweep's own mid-run mutation shows in git status and is indistinguishable from the work of the agent whose worktree it is. Agent progress is read from the worktree here because a transcript does not grow, so a sweep running in that worktree silently suspends the one signal the orchestrator trusts; it was read wrong, acted on, and reported to the user as destroyed work that never existed. A file about to be mutated that is dirty is a refusal naming the file, with a deliberate way past it for the case where the dirt IS what is being proven.",
       "files": [
         "tools/prove-gates.py",
@@ -621,6 +628,54 @@
           "tools/prove-gates.py: a row whose target is dirty is refused by name rather than mutated, and the refusal can be overridden deliberately"
         ],
         "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "19c48d6",
+      "outcome": {
+        "technical": "redfirst.sh asks git for the file's own state before taking its backup and refuses with the file named when it differs from HEAD or is untracked, failing loud when git cannot be asked; --allow-dirty is the deliberate bypass and the EXIT/TERM/INT restore is unchanged.",
+        "descriptive": "The script that mutates a file to prove a check refuses one it did not write, so its own mid-run state can never be mistaken for somebody's work."
+      },
+      "startedAt": "2026-09-17T04:37:27Z",
+      "completedAt": "2026-09-17T04:37:27Z",
+      "verifiedBy": [
+        "redfirst-refuses-a-dirty-file"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "19c48d6",
+        "at": "2026-09-17T04:37:27Z"
+      }
+    },
+    {
+      "id": "P55.14",
+      "title": "The evidence writer persists a path with no separator fix at all",
+      "status": "pending",
+      "description": "DONE MEANS: both hand-rolled relative paths in the evidence writer go through _output.posix_rel, and px2's publisher table names the file. TWO SITES, NOT THE SAME SEVERITY. One repeats the hand-rolled spelling the helper exists to replace, which is correct today and wrong the day a copy drops the separator fix - the same class as the two writers already repaired. The other applies NO separator fix at all and persists the result into a stored config under the key every other reader expects to hold a manifest path: on a platform whose separator is not the forward slash it writes the platform's spelling into a value the product compares against manifest paths, which are stored with forward slashes. That is a wrong value on a supported platform, not a duplication. Nothing caught it because the rule reads a hand-kept table this file is not in, and the behavioural suites cannot see it on this platform at all, since both spellings produce the same string here - so it is invisible to the source rule by omission and to the behavioural rule by platform.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
         "gate": [
           "selftests",
           "validate",
