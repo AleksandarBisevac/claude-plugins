@@ -235,7 +235,8 @@
         "plugins/audit/tests/test__deps.py",
         "tools/prove-gates.py",
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test__output.py"
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/_ui_theme.py"
       ],
       "tests": {
         "mode": "tdd",
