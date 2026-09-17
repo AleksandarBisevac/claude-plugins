@@ -1450,6 +1450,168 @@ def _cases(check):
     finally:
         shutil.rmtree(scope_out, ignore_errors=True)
 
+    # (wt) A WORKTREE OF THE PROJECT IS NOT "OUTSIDE THE REPOSITORY". Reported
+    # live: an edit landing in a linked worktree, with CLAUDE_PROJECT_DIR still
+    # naming the checkout the session STARTED in, reached (r)'s own
+    # out-of-scope branch and was allowed with nothing recorded at all - which
+    # is the shape a real session runs in, since the project directory is the
+    # checkout the session started in and a worktree is the recommended way to
+    # run one task. `within_root` cannot tell that apart from a genuinely
+    # unrelated location by itself; `_config.path_tree` is the second question
+    # that can.
+    if not _git:
+        print("SKIP wt* (git is not on PATH)")
+    else:
+        wtroot = Path(tempfile.mkdtemp(prefix="require-plan-worktree-"))
+        try:
+            def _git_repo(path):
+                path.mkdir(parents=True, exist_ok=True)
+                _sp.run([_git, "init", "-q", str(path)], check=True,
+                        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                _sp.run([_git, "-C", str(path), "config", "user.email",
+                        "t@t.t"], check=True, stdout=_sp.DEVNULL,
+                        stderr=_sp.DEVNULL)
+                _sp.run([_git, "-C", str(path), "config", "user.name", "t"],
+                        check=True, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+
+            def _commit(path, msg):
+                _sp.run([_git, "-C", str(path), "add", "-A"], check=True,
+                        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                _sp.run([_git, "-C", str(path), "commit", "-q", "-m", msg],
+                        check=True, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+
+            def _write_manifest_at(path, phase_status):
+                d = path / "docs" / "audit"
+                d.mkdir(parents=True, exist_ok=True)
+                obj = {"phases": [{"id": "P1", "status": phase_status,
+                                   "tasks": [{"id": "P1.1",
+                                             "status": phase_status,
+                                             "files": []}]}]}
+                with open(d / "audit-plan.json", "w", encoding="utf-8") as fh:
+                    json.dump(obj, fh)
+
+            wmain = wtroot / "main"
+            _git_repo(wmain)
+            (wmain / "src.py").write_text("x = 1\n", encoding="utf-8")
+            _commit(wmain, "before the manifest existed")
+            _write_manifest_at(wmain, "in_progress")
+            _commit(wmain, "phase running")
+            wlinked = wtroot / "linked"
+            _sp.run([_git, "-C", str(wmain), "worktree", "add", "-q",
+                     str(wlinked), "-b", "feature"], check=True,
+                    stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+
+            wtcfg = dict(_config.DEFAULTS)
+            wtsd = wtroot / "state"
+            wtld = wtroot / "logs"
+
+            def wt(name, expected, project_dir, target_file, *, sid,
+                  tool="Edit", ti_extra=None):
+                _prev = os.environ.get("CLAUDE_PROJECT_DIR")
+                os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
+                try:
+                    if ti_extra is not None:
+                        ti = dict(ti_extra)
+                        data = {"tool_name": tool, "tool_input": ti,
+                                "session_id": sid, "cwd": str(project_dir)}
+                    else:
+                        data = payload(tool, str(target_file), new_string=big,
+                                      old_string="x = 1\n", sid=sid)
+                        data["cwd"] = str(project_dir)
+                    got, msg = M.decide(data, cfg=wtcfg, state_dir=wtsd,
+                                        logs_dir=wtld, event="PreToolUse")
+                    check(name, got == expected,
+                          "expected %s, got %s (%s)" % (expected, got, msg))
+                    return msg
+                finally:
+                    if _prev is None:
+                        os.environ.pop("CLAUDE_PROJECT_DIR", None)
+                    else:
+                        os.environ["CLAUDE_PROJECT_DIR"] = _prev
+
+            wt("wt1 an edit IN the linked worktree, CLAUDE_PROJECT_DIR naming "
+               "the MAIN checkout, is judged - the reported gap, and the row "
+               "that goes red if the gate stops re-rooting onto a worktree",
+               "block", wmain, wlinked / "src.py", sid="wt-sess-1")
+            wt("wt2 the SAME edit with CLAUDE_PROJECT_DIR naming the worktree "
+               "itself agrees with wt1 - a worktree's own manifest governs it "
+               "either way, and this case never leaves `root` in the first "
+               "place so it is untouched by whatever wt1's own mutation is",
+               "block", wlinked, wlinked / "src.py", sid="wt-sess-2")
+            wt("wt3 an MCP write into the same worktree file gets the SAME "
+               "verdict Edit gets - the plan gate re-roots the same way "
+               "however the write arrived",
+               "block", wmain, None, sid="wt-sess-3", tool="mcp__fs__write",
+               ti_extra={"path": str(wlinked / "src.py"), "content": big})
+
+            # A GENUINELY UNRELATED REPOSITORY, as opposed to (r)'s temp file
+            # that names no git tree at all - the case a widened `path_tree`
+            # can reach and (r)'s cannot, since (r)'s scenario never gets past
+            # "git names no working tree" to ask `_shares_repository` anything.
+            wother = wtroot / "other"
+            _git_repo(wother)
+            (wother / "b.py").write_text("x = 1\n", encoding="utf-8")
+            _commit(wother, "unrelated repo")
+            wt("wtu1 a file in a SEPARATE, unrelated repository stays outside "
+               "the plan - the row that goes red if the gate is widened until "
+               "it claims a stranger's checkout as its own worktree",
+               "allow", wmain, wother / "b.py", sid="wt-sess-4")
+
+            # THE SECOND, INDEPENDENT CAUSE investigated rather than guessed
+            # at: a linked worktree pinned to a commit that predates the
+            # in_progress phase carries its OWN, weaker evidence - no manifest
+            # at all, at that commit - so it settles on "observe" (never
+            # blocks) at ITS OWN project directory, with no cross-tree bug
+            # involved at all. The re-rooting fix must consult THAT tree's
+            # evidence rather than either silently allowing (the old bug) or
+            # borrowing the sibling's stronger one, so both configurations
+            # below must agree with EACH OTHER on "observe", not on "block".
+            c1 = _sp.run([_git, "-C", str(wmain), "rev-parse", "HEAD~1"],
+                        check=True, capture_output=True, text=True,
+                        timeout=20).stdout.strip()
+            wstale = wtroot / "stale"
+            _sp.run([_git, "-C", str(wmain), "worktree", "add", "-q",
+                     str(wstale), c1], check=True, stdout=_sp.DEVNULL,
+                    stderr=_sp.DEVNULL)
+            check("wt5a the stale worktree really does predate the manifest - "
+                  "the fixture's own precondition, not an assumption",
+                  not (wstale / "docs" / "audit" / "audit-plan.json").exists())
+            v_stale_own = wt("wt5b the stale worktree, at its OWN project "
+                             "directory, is graded on ITS OWN evidence - no "
+                             "manifest there yet, so it observes rather than "
+                             "blocks", "observe", wstale, wstale / "src.py",
+                             sid="wt-sess-5")
+            v_stale_cross = wt("wt5c ...and CROSS-tree, naming the ACTIVE "
+                               "worktree as CLAUDE_PROJECT_DIR, agrees with "
+                               "wt5b rather than inheriting the active tree's "
+                               "stronger evidence or falling back to a silent "
+                               "allow", "observe", wlinked, wstale / "src.py",
+                               sid="wt-sess-6")
+            check("wt5d ...and not merely the SAME TIER: the two configurations "
+                  "give the identical reason too, so a re-rooted read really "
+                  "did open the same file the own-root read opened rather "
+                  "than answering from a different one that happens to share "
+                  "a tier name",
+                  v_stale_own == v_stale_cross, repr((v_stale_own, v_stale_cross)))
+
+            # UNPLACEABLE, THE THIRD ANSWER `path_tree` CAN GIVE. Forced here
+            # rather than found on disk - no existing directory fails to
+            # contain a real absolute path on any filesystem this suite runs
+            # on - which is exactly why `path_tree` needed to be reached
+            # through this one seam and not discovered by searching for a
+            # fixture.
+            _orig_nearest = _config._nearest_existing_dir
+            _config._nearest_existing_dir = lambda p: None
+            try:
+                wt("wt6 a tree this process cannot even ask git about is a "
+                   "REFUSAL, not a guess - the guard fails loud rather than "
+                   "defaulting to the cheaper 'not my business' answer",
+                   "block", wmain, wtroot / "ghost" / "x.py", sid="wt-sess-7")
+            finally:
+                _config._nearest_existing_dir = _orig_nearest
+        finally:
+            shutil.rmtree(str(wtroot), ignore_errors=True)
+
     # (m) AN MCP SERVER'S WRITE TOOL IS THE SAME WRITE. It reaches no edit-tool
     # matcher, so a filesystem server's `write_file` used to walk past this gate
     # while `Edit` of the same path was refused - the disagreement `sed -i` had,

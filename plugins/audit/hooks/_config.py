@@ -576,7 +576,7 @@ def _git_rev_parse(cwd, fields):
     return lines if len(lines) == len(fields) else None
 
 
-def _shares_repository(cwd, common_dir, watching):
+def _shares_repository(cwd, common_dir, watching, ours=None):
     """Is the `.git` behind `cwd` the same one the watched tree uses?
 
     Separates a linked worktree of THIS repository from an unrelated checkout,
@@ -606,8 +606,17 @@ def _shares_repository(cwd, common_dir, watching):
     asserted in a comment.
 
     It costs the second `git rev-parse` of the pass, and only ever runs once the
-    trees have already been established to differ."""
-    ours = _git_rev_parse(watching, ["--git-common-dir"])
+    trees have already been established to differ.
+
+    `ours` LETS A CALLER THAT ALREADY ASKED HAND THE ANSWER IN, rather than
+    paying for that same question twice: `path_tree` below needs `watching`'s
+    own `--git-common-dir` one branch before it can even reach this function
+    (to tell "no repository to compare against" apart from everything else), so
+    without this it would ask git the identical question a second time on every
+    call. None (the default) re-derives it exactly as before, so `command_tree`
+    above is unchanged."""
+    if ours is None:
+        ours = _git_rev_parse(watching, ["--git-common-dir"])
     if not ours or not ours[0]:
         return False
     return _same_dir(os.path.join(str(cwd), common_dir),
@@ -690,6 +699,121 @@ def command_tree(data, root, cfg):
             "basis": ("a linked worktree of the same repository"
                       if _shares_repository(cwd, got[1], watching)
                       else "a separate git repository")}
+
+
+def _nearest_existing_dir(path):
+    """The nearest existing directory containing `path`, climbing from `path`
+    itself when it is already one, else from its parent - or None when the
+    climb runs out (an unrooted relative fragment, or a parent chain that
+    never bottoms out).
+
+    Almost every caller's first step already answers this: an Edit target
+    must exist to be edited, and an ordinary Write lands in a directory that
+    is already there. This exists for the one shape neither of those is - a
+    Write whose whole parent chain is still being created - which is also the
+    one case `path_tree` below has nothing to ask `git -C` about at all."""
+    try:
+        p = Path(str(path))
+    except Exception:
+        return None
+    seen = set()
+    while True:
+        s = str(p)
+        if s in seen:
+            return None
+        seen.add(s)
+        if os.path.isdir(s):
+            return s
+        parent = p.parent
+        if parent == p:
+            return None
+        p = parent
+
+
+def path_tree(file_path, root, cfg):
+    """Where a FILE lands, for a caller that already knows `file_path` is not
+    under `root` (`within_root` answered False) - the plan gate's own "is this
+    even mine" question, asked of a PATH rather than of `command_tree`'s `cwd`.
+
+    -> {"root": the tree to judge this edit under - `root` unchanged, or a
+                 different tree's own toplevel,
+        "placed": whether that answer may be trusted at all,
+        "basis": the clause a verdict may quote}
+
+    `root` UNCHANGED is the answer for two different reasons, and both mean
+    "not my business" rather than "judged elsewhere":
+      * this project names no git repository to compare against in the first
+        place, so "is this a worktree of it" has no question to answer - a
+        consuming repo need not be a git checkout for the rest of this plugin
+        to work, and this one question does not get to require one where
+        nothing else does;
+      * git DOES answer for `file_path`, and the answer is a repository other
+        than this one, or no repository at all - the case `within_root` sends
+        here in the first place: a helper script under the system temp
+        directory names no git tree, and this project's own manifest can never
+        have an opinion about it.
+
+    A LINKED WORKTREE OF THIS SAME REPOSITORY is the one case that is not
+    `root`: `file_path`'s own toplevel comes back instead, so every manifest
+    read that follows opens the file that TREE actually holds on disk. A
+    worktree does not share an uncommitted edit with its sibling - the two can
+    disagree about whether a phase is even running - so `root`'s own manifest
+    is not a stand-in for it and answering with `root` here would be exactly
+    that stand-in.
+
+    `placed` IS FALSE FOR ONE REASON ONLY, and "git said no" is not it: no
+    EXISTING directory contains `file_path` at all, so there is nowhere to run
+    `git -C` from and therefore no confident "not a repository" to fall back
+    on either - both answers above need a place to stand and this gives them
+    none. That is narrower than "git could not answer", which also covers git
+    missing from PATH or a call that timed out; both of those already read as
+    "no repository here" in the paragraph above, a residual `_git_rev_parse`
+    already carries and this does not try to resolve a second time.
+
+    PAID FOR ONLY BY A CALLER WHOSE CHEAP CHECK ALREADY FAILED. The ordinary
+    edit, inside the tree the session started in, never reaches this function
+    and never pays for the git calls inside it - `within_root` answers it with
+    no process started at all."""
+    watching = git_root_dir(root, cfg)
+    ours = _git_rev_parse(watching, ["--git-common-dir"])
+    if not ours or not ours[0]:
+        return {"root": str(root), "placed": True,
+                "basis": "this project names no git repository to compare "
+                         "against"}
+    start = _nearest_existing_dir(file_path)
+    if start is None:
+        return {"root": str(root), "placed": False,
+                "basis": "no existing directory contains %s" % file_path}
+    got = _git_rev_parse(start, ["--show-toplevel", "--git-common-dir"])
+    if not got or not got[0]:
+        return {"root": str(root), "placed": True,
+                "basis": "git names no working tree for %s" % start}
+    if _shares_repository(start, got[1], watching, ours=ours):
+        return {"root": got[0], "placed": True,
+                "basis": "a linked worktree of the same repository"}
+    return {"root": str(root), "placed": True,
+            "basis": "a separate git repository"}
+
+
+def in_project(file_path, root, cfg):
+    """Is `file_path` this project's business - `within_root`, widened to a
+    linked worktree of the same repository via `path_tree`.
+
+    A YES/NO QUESTION FOR A CANDIDATE FILTER, not the verdict `path_tree`
+    itself hands to a caller that has already committed to ONE file. Used
+    where several locators share a payload and each is asked in turn "is this
+    even a candidate" before anything is decided about any of them
+    (`_mcp_plan_target`): a locator this returns False for is skipped so the
+    next one gets a turn, exactly as `within_root` already did, and one this
+    returns True for is handed to the caller's own `decide()` pass, which asks
+    `path_tree` again and re-roots properly - so an unplaceable tree is never
+    silently swallowed here, only ever skipped as "not a candidate" the same
+    way a truly unrelated one already was.
+    """
+    if within_root(root, file_path):
+        return True
+    placement = path_tree(file_path, root, cfg)
+    return bool(placement["placed"]) and placement["root"] != str(root)
 
 
 def state_dir(root, cfg):

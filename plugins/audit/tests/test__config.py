@@ -1107,6 +1107,95 @@ def _cases(check):
               "the layer rule forces stays honest",
               _by_lock_same and _by_lock_diff and _by_tree_same and _by_tree_diff,
               repr((_by_lock_same, _by_lock_diff, _by_tree_same, _by_tree_diff)))
+
+        # (pt) path_tree — WHICH TREE DOES A FILE ITSELF LAND IN, asked of a
+        # PATH rather than of `command_tree`'s `cwd`: the question
+        # `require-plan.py` asks once its own cheap `within_root` check has
+        # already answered no. Reuses w1-w9's own fixtures (a real linked
+        # worktree, a real unrelated checkout) rather than building new ones.
+        _pt1 = M.path_tree(str(wlink), wprim, wcfg)
+        check("pt1 a file inside the LINKED WORKTREE re-roots onto its own "
+              "toplevel, not onto `root` - the manifest a caller reads next "
+              "has to be the one this tree actually holds",
+              _pt1["placed"] is True and M._same_dir(_pt1["root"], wlink)
+              and _pt1["basis"] == "a linked worktree of the same repository",
+              repr(_pt1))
+        _pt2 = M.path_tree(str(wother / "b.py"), wprim, wcfg)
+        check("pt2 a file inside a SEPARATE, unrelated repository stays "
+              "unrooted - `root` unchanged, named as what it is",
+              _pt2["placed"] is True and _pt2["root"] == str(wprim)
+              and _pt2["basis"] == "a separate git repository", repr(_pt2))
+        _nogit = wroot / "nogit"
+        _nogit.mkdir(parents=True, exist_ok=True)
+        _pt3 = M.path_tree(str(wroot / "elsewhere.py"), _nogit, wcfg)
+        check("pt3 a PROJECT with no git identity of its own has no "
+              "'worktree of it' question to ask - allowed as unrelated, the "
+              "same verdict a consuming repo that is not a git checkout has "
+              "always gotten from every OTHER step in this file",
+              _pt3["placed"] is True and _pt3["root"] == str(_nogit)
+              and "no git repository to compare against" in _pt3["basis"],
+              repr(_pt3))
+
+        # (ne) _nearest_existing_dir — what `path_tree` climbs before it asks
+        # git anything at all.
+        check("ne1 an existing directory is its own answer",
+              M._same_dir(M._nearest_existing_dir(str(wprim)), wprim))
+        _deep = wprim / "brand" / "new" / "chain" / "leaf.py"
+        check("ne2 a path whose whole parent chain is still being created "
+              "climbs to the nearest directory that DOES exist - which is "
+              "what lets a Write into a new worktree subdirectory be placed "
+              "correctly instead of refused for having no directory to ask "
+              "git from",
+              M._same_dir(M._nearest_existing_dir(str(_deep)), wprim))
+        _real_isdir = os.path.isdir
+        os.path.isdir = lambda p: False
+        try:
+            check("ne3 NOTHING existing at all - forced here rather than "
+                  "found on disk, since a real absolute path always bottoms "
+                  "out at a directory that exists - answers None, which is "
+                  "`path_tree`'s own UNPLACEABLE branch and never a guess",
+                  M._nearest_existing_dir(str(wprim)) is None)
+        finally:
+            os.path.isdir = _real_isdir
+        _pt4 = M.path_tree(str(wprim / "x.py"), wprim, wcfg)
+        _orig_ned = M._nearest_existing_dir
+        M._nearest_existing_dir = lambda p: None
+        try:
+            _pt5 = M.path_tree(str(wother / "b.py"), wprim, wcfg)
+        finally:
+            M._nearest_existing_dir = _orig_ned
+        check("pt4 UNPLACEABLE is reached through `_nearest_existing_dir` "
+              "returning None, and `path_tree` widens nothing to cover it - "
+              "`root` is still reported unchanged (the caller decides what a "
+              "refusal means; this function only says it cannot vouch for "
+              "the answer)",
+              _pt4["placed"] is True   # the ordinary run, untouched by ne3/pt5
+              and _pt5["placed"] is False and _pt5["root"] == str(wprim)
+              and "no existing directory" in _pt5["basis"], repr((_pt4, _pt5)))
+
+        # (ip) in_project — the CANDIDATE filter `_mcp_plan_target` asks per
+        # locator, before `decide()` commits to one and re-roots properly.
+        check("ip1 a file inside `root` is a candidate, cheaply - the "
+              "ordinary MCP locator, answered with no git call at all",
+              M.in_project(str(wprim / "pkg"), wprim, wcfg) is True)
+        check("ip2 a file inside a linked worktree IS a candidate too - the "
+              "widening `_mcp_plan_target` needed so an MCP write into a "
+              "worktree is not skipped the way `within_root` alone skipped "
+              "it", M.in_project(str(wlink), wprim, wcfg) is True)
+        check("ip3 a file inside a SEPARATE repository is NOT a candidate - "
+              "the direction that fails if this widens into judging a "
+              "stranger's checkout",
+              M.in_project(str(wother / "b.py"), wprim, wcfg) is False)
+        M._nearest_existing_dir = lambda p: None
+        try:
+            _ip4 = M.in_project(str(wother / "b.py"), wprim, wcfg)
+        finally:
+            M._nearest_existing_dir = _orig_ned
+        check("ip4 UNPLACEABLE reads as 'not a candidate' here rather than "
+              "raising - this is a filter choosing among several locators, "
+              "not the verdict `decide()` itself hands back for the one it "
+              "settles on, so it never needs to refuse",
+              _ip4 is False)
     finally:
         shutil.rmtree(str(wroot), ignore_errors=True)
 

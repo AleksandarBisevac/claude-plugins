@@ -25,9 +25,16 @@ Decision order (ALLOW = silent exit 0; BLOCK = permissionDecision "deny" JSON
 on stdout + exit 0 — the canonical PreToolUse protocol — PreToolUse only;
 ASK = permissionDecision "ask" when planGate pins that tier):
   1. No file_path / unknown tool / parse error → ALLOW (never break legit work).
-  1b. Target is OUTSIDE the consuming repository → ALLOW, naming the scope. Out
-     of scope is not "unknown": a manifest names paths in its own tree, so no
-     plan could ever cover this one (_config.within_root).
+  1b. Target is outside `root` (_config.within_root said no) → asked a SECOND
+     question before any verdict: is it a LINKED WORKTREE of this same
+     repository (_config.path_tree)? If so this is not out of scope at all —
+     the plan gate re-roots onto that tree's own toplevel and every step below
+     runs exactly as it would have from inside it, manifest included. Only a
+     tree that is genuinely unrelated (a different repository, or none at
+     all) is OUT OF SCOPE → ALLOW, naming the scope: a manifest names paths in
+     its own tree, so no plan could ever cover this one. And a tree this
+     process cannot even ask git about → BLOCK, naming what could not be
+     established — a guard does not guess at its own jurisdiction.
   2. Target matches an exempt glob (from config) → ALLOW.
   3. Target belongs to a task whose status == "in_progress" in the manifest →
      ALLOW. On the PostToolUse pass a covered edit may additionally carry the
@@ -193,10 +200,31 @@ def _now_iso():
     return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
 
 
-# The only denial in this plugin that is not about the plan. It is about who is
-# holding the pen: another session has this manifest's lock and is alive, so this
-# write would land on top of theirs. Says the holder, what they are doing, the
-# basis for calling them alive, and the one command that resolves it.
+# A REFUSAL ABOUT JURISDICTION RATHER THAN THE PLAN - the first of two such
+# refusals in this file, and this one fires earlier than either: every OTHER
+# block here says the plan does not cover a file; this one says the gate
+# cannot even tell whether the file is its business at all, which is a
+# question `_config.path_tree` asks only once `within_root` has already
+# answered no. Refusing rather than allowing is deliberate here and nowhere
+# else in this file's out-of-scope handling: an edit this process cannot place
+# is not the same claim as one it placed and found unrelated, and folding the
+# two together is exactly how a worktree of this project went unjudged.
+_CANNOT_PLACE = (
+    "%s cannot be placed: %s.\n"
+    "This project is a git repository, and an edit outside it is judged "
+    "against whichever tree git says it actually belongs to - a linked "
+    "worktree of this same repository is still the plan's business, and a "
+    "truly unrelated location is not. This process could not ask that "
+    "question at all, so it will not guess at the answer either way.\n"
+    "Run the edit somewhere `git -C` can reach (an existing directory), or "
+    "point CLAUDE_PROJECT_DIR at the tree the file actually sits in."
+)
+
+# THE SECOND, AND THE ONE THAT IS ABOUT CONCURRENCY RATHER THAN COVERAGE OR
+# JURISDICTION. It is about who is holding the pen: another session has this
+# manifest's lock and is alive, so this write would land on top of theirs.
+# Says the holder, what they are doing, the basis for calling them alive, and
+# the one command that resolves it.
 # What a SUBAGENT is told when it reaches for the plan itself. Its own
 # constant rather than a branch inside the refusal below, because this is a
 # different refusal: the file is not out of scope, it is out of AUTHORITY, and the
@@ -605,6 +633,16 @@ def _mcp_plan_target(ti, root, cfg):
     already exempt, and the others reach this gate through nothing — under-coverage,
     named, and the same residual `_source_write_hit` carries for a command that
     writes two files.
+
+    A CANDIDATE OUTSIDE `root` IS NOT NECESSARILY OUT OF SCOPE. `_config.in_project`
+    widens the old `within_root` filter to a linked worktree of this same
+    repository, for the reason `decide()`'s own 1b step carries at length: an
+    MCP write into a worktree of the project is the project, one linked tree
+    over, and treating it as unrelated skipped it exactly the way the older
+    Edit/Write path used to. The locator returned here is not yet re-rooted —
+    `decide()` asks the same question again for whichever one wins and commits
+    to the answer — so this is only ever a "still a candidate" filter, never a
+    verdict.
     """
     payload = _config.mcp_payload(ti)
     if payload["writeBasis"] is None:
@@ -622,7 +660,7 @@ def _mcp_plan_target(ti, root, cfg):
         low = loc.lower()
         if not any(low.endswith(e) for e in exts):
             continue
-        if not _config.within_root(root, loc):
+        if not _config.in_project(loc, root, cfg):
             continue
         if _matches_exempt(rel, exempt):
             fallback = fallback if fallback is not None else loc
@@ -681,17 +719,69 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     refused for want of plan coverage no plan could ever have given it,
     #     because a manifest can only name paths in its own tree.
     #
-    #     ALLOW, and say which scope. A file outside the repo is not "unknown",
-    #     which is what the fail-open paths above are for; it is none of this
-    #     gate's business, and the difference is worth printing - a silent pass
-    #     here would be the same verdict with the reason thrown away. Placed
-    #     before every step that follows because all of them are questions
-    #     about a repo-relative path, the manifest clause included: nothing
-    #     outside the tree can be the manifest, cover a task, or spend the
-    #     session's one trivial-file slot.
+    #     BUT "OUTSIDE `root`" IS NOT YET "OUTSIDE THE PROJECT", and treating
+    #     them as one and the same was the gap this step used to have. `root`
+    #     is CLAUDE_PROJECT_DIR - the checkout the SESSION started in - and an
+    #     agent's own recommended way of running one task is a WORKTREE of
+    #     that same checkout, which sits beside it on disk rather than under
+    #     it. An edit landing there names a `file_path` this cheap check calls
+    #     "outside", exactly as it would for the system temp file above,
+    #     though it is not outside the project at all - it is the project, one
+    #     linked working tree over, and that tree carries its own manifest
+    #     (its own uncommitted edits, possibly its own branch entirely; a
+    #     worktree shares no working-directory state with its sibling). Calling
+    #     that "not my business" was an unjudged edit inside the very plan this
+    #     gate exists to hold agents to - worse than a missed refusal, because
+    #     nothing here even recorded that a decision was skipped.
+    #
+    #     So a miss here asks a SECOND, more expensive question before
+    #     concluding anything: `_config.path_tree` asks git whether
+    #     `file_path` sits inside a linked worktree of THIS repository. Three
+    #     answers, and only one of them is new:
+    #       * a linked worktree of this project -> re-root onto ITS toplevel
+    #         and keep going. Every step from here down reads `rel` and the
+    #         manifest off the tree that actually holds the file, which is the
+    #         only tree whose evidence about it can be trusted;
+    #       * genuinely unrelated (a different repository, or none at all, or
+    #         this project names no git repository to compare against in the
+    #         first place) -> ALLOW, and say which scope, exactly as before -
+    #         a silent pass here would be the same verdict with the reason
+    #         thrown away;
+    #       * UNPLACEABLE - no existing directory even contains `file_path`,
+    #         so there is nothing to run `git -C` against and therefore no
+    #         confident "not a repository" to fall back on either -> BLOCK.
+    #         This is the one branch that is new in KIND, not only in wording:
+    #         a guard that cannot tell whether a file is its own jurisdiction
+    #         does not default to the cheaper answer, it says so.
+    #
+    #     Paid for only on this rarer path: the ordinary edit, inside the tree
+    #     the session started in, is answered by `within_root` with no process
+    #     started at all, exactly as before.
     if not _config.within_root(root, file_path):
-        return ("allow",
-                "outside the repository at %s: %s" % (root, file_path))
+        placement = _config.path_tree(file_path, root, cfg)
+        if not placement["placed"]:
+            return ("block", _CANNOT_PLACE % (file_path, placement["basis"]))
+        if placement["root"] != str(root):
+            # `placement["root"]` is git's OWN spelling of the worktree's
+            # toplevel (`--show-toplevel`), which git always answers fully
+            # resolved - so pairing it with `file_path` exactly as the tool
+            # payload spelled it can leave a symlinked path component on only
+            # one side of the subtraction. `_rel_path` is a bare
+            # `os.path.relpath`, with no symlink resolution of its own (that
+            # is `within_root`'s job, not this one's), so an unresolved
+            # `file_path` against a resolved root does not cancel down to the
+            # short relative path a manifest's `files` entry actually holds -
+            # it comes back as a `../..` climb back OUT of the worktree,
+            # which no `files` entry could ever match. Resolving `file_path`
+            # here, once, is what keeps both sides of that subtraction in the
+            # same spelling; the messages below still quote the ORIGINAL
+            # `file_path` the tool call named, only `rel` is computed this way.
+            root = Path(placement["root"])
+            rel = _rel_path(root, os.path.realpath(str(file_path)))
+        else:
+            return ("allow",
+                    "outside the repository at %s (%s): %s"
+                    % (root, placement["basis"], file_path))
 
     # 2a. the manifest itself, its lockfile and its phase shards ARE the plan —
     #     never gated, even when a custom manifestPath falls outside the exempt
