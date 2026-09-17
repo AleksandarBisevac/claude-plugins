@@ -1,0 +1,84 @@
+{
+  "id": "P58",
+  "title": "Release 3.0.0 obligations",
+  "status": "in_progress",
+  "description": "What the published contract owes at the major bump, and the followers a bump stales.",
+  "desiredOutcome": "Every promise COMPATIBILITY.md dated to this release is delivered in code, and the document records it as delivered rather than pending.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P58.1",
+      "title": "The deprecation the contract dated to this release is delivered",
+      "status": "done",
+      "description": "DONE MEANS: a tests.add entry naming no file is a FINDING for a tdd task that is not done or cancelled, and the published contract records the deprecation as delivered rather than pending. COMPATIBILITY.md promises it in its own words - from 2.3.0 an entry naming no file is a warning whose text names the release the refusal arrives in, and at 3.0.0 it becomes a finding - and that document is a contract rather than a description, so shipping the major without it makes the document false. MEASURED BEFORE DECIDING: zero entries in this project's own plan and zero in the shipped example name no file, so the flip costs neither. The warning's text currently announces the future refusal; a finding announces nothing, it refuses, and the sentence has to change with it - including the pointer to the repair script, which is still the right advice for a plan written before the rule. The terminal and non-tdd exemptions stay exactly as they are: a settled task's tests.add is a record of work already judged.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "COMPATIBILITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: a tests.add entry naming no file on a live tdd task is a finding, while the terminal and non-tdd exemptions stay silent"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "b454dff",
+      "outcome": {
+        "technical": "The unnamed tests.add entry is appended to findings rather than warnings for a graded task, the announcing clause is removed from its text and from three documents that repeated it, and repair-tests-add.py excludes this rule's own finding from the two validator gates that would otherwise stop it repairing the entries it exists for.",
+        "descriptive": "The deprecation the contract dated to this release refuses instead of warning, and the script that repairs it still runs."
+      },
+      "startedAt": "2026-09-17T23:57:20Z",
+      "completedAt": "2026-09-17T23:57:20Z",
+      "verifiedBy": [
+        "verdict-revert",
+        "terminal-widen",
+        "the three-shape fixture"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b454dff",
+        "at": "2026-09-17T23:57:20Z"
+      }
+    }
+  ],
+  "startedAt": "2026-09-17T23:57:20Z"
+}

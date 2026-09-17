@@ -333,6 +333,12 @@
       "title": "The instructions cost what they are worth",
       "status": "in_progress",
       "shard": "phases/P57.json"
+    },
+    {
+      "id": "P58",
+      "title": "Release 3.0.0 obligations",
+      "status": "in_progress",
+      "shard": "phases/P58.json"
     }
   ],
   "fileIndex": {
@@ -1190,7 +1196,8 @@
       "P42.5",
       "P50.2",
       "P50.6",
-      "P57.5"
+      "P57.5",
+      "P58.1"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -1545,7 +1552,8 @@
       "P47.2",
       "P47.4",
       "P51.6",
-      "P51.8"
+      "P51.8",
+      "P58.1"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1553,7 +1561,8 @@
       "P47.2",
       "P47.4",
       "P51.6",
-      "P51.8"
+      "P51.8",
+      "P58.1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
