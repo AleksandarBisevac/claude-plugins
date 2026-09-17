@@ -2169,7 +2169,7 @@
     {
       "id": "BUG-2",
       "title": "journal_dir returns mixed path separators; j12 red on Windows",
-      "status": "open",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-08-10T22:11:27+02:00",
       "reportedBy": "CI run 31427419994 (first Windows leg over the v0.29+ backlog)",
@@ -2183,13 +2183,13 @@
         "plugins/audit/scripts/governance/audit-journal.py"
       ],
       "taskId": "BF1.1",
-      "fixedIn": null,
-      "notes": "Fix the class: normalize at the API, not at the comparison."
+      "fixedIn": "1fef95e",
+      "notes": "Both returns normalise, so one spelling reaches every reader and the climbing segment a root-level manifest used to produce is gone."
     },
     {
       "id": "BUG-3",
       "title": "panel policy view exceeds the 1560px capture viewport on Linux",
-      "status": "open",
+      "status": "fixed",
       "severity": "low",
       "reportedAt": "2026-08-10T22:11:27+02:00",
       "reportedBy": "CI run 31427419994 (manifest validation job)",
@@ -2203,13 +2203,13 @@
         "tools/capture-screenshots.mjs"
       ],
       "taskId": "BF1.2",
-      "fixedIn": null,
-      "notes": "Viewport is the lever the check names; 1680 leaves margin."
+      "fixedIn": "cf19fa7",
+      "notes": "The capture viewport is taller than the height the policy view was measured at, so no row sits behind the save bar in a shot."
     },
     {
       "id": "BUG-4",
       "title": "ui/ assets CRLF-converted on Windows checkout; cross-line pins fail",
-      "status": "open",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-08-10T22:20:18+02:00",
       "reportedBy": "CI run 31428171362 (Windows leg, after BF1 fixed j12)",
@@ -2225,13 +2225,13 @@
         "plugins/audit/scripts/report/_report_ui.py"
       ],
       "taskId": "BF2.1",
-      "fixedIn": null,
-      "notes": "Fix the class: eol contract in .gitattributes + a named LF guard beside each reader."
+      "fixedIn": "5698c12",
+      "notes": "The byte-precise build inputs are declared to git, so a checkout that rewrites line endings cannot change what the assembled surfaces hash to."
     },
     {
       "id": "BUG-5",
       "title": "sub-cent cost rule proven one module away from where it renders",
-      "status": "open",
+      "status": "fixed",
       "severity": "low",
       "reportedAt": "2026-08-10T23:36:53+02:00",
       "reportedBy": "P13.3 mutation pass (recorded as F10 in the private fault ledger)",
@@ -2245,8 +2245,8 @@
         "plugins/audit/scripts/report/_report_usage.py"
       ],
       "taskId": "P16.1",
-      "fixedIn": null,
-      "notes": "The F3/u8 class one level down: green for the wrong reason."
+      "fixedIn": "31287b1",
+      "notes": "The consumer's own suite now spends under a cent, so a delegation that stopped delegating would be caught there rather than only next door."
     },
     {
       "id": "BUG-6",
