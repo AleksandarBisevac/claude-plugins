@@ -874,7 +874,8 @@
       "P57.5",
       "P50.7",
       "P50.5",
-      "P50.8"
+      "P50.8",
+      "P50.9"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -907,7 +908,8 @@
       "P36.15",
       "P51.2",
       "P53.3",
-      "P50.5"
+      "P50.5",
+      "P50.9"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2"
@@ -1748,7 +1750,8 @@
       "P55.10",
       "P55.12",
       "P50.5",
-      "P55.14"
+      "P55.14",
+      "P50.9"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -1777,7 +1780,8 @@
       "P57.5",
       "P50.7",
       "P50.5",
-      "P50.8"
+      "P50.8",
+      "P50.9"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"
