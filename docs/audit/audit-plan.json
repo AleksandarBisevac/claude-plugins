@@ -1797,7 +1797,8 @@
       "P50.7",
       "P50.5",
       "P50.8",
-      "P50.9"
+      "P50.9",
+      "P55.22"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"

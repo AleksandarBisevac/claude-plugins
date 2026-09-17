@@ -225,7 +225,7 @@
     {
       "id": "P50.5",
       "title": "A comment states its constraint, and a lint holds the rule",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: no comment or docstring in the published tree points at a record the reader cannot open, the rule is enforced by a lint rather than remembered, and the existing occurrences are rewritten to keep the constraint and drop the citation. A comment must speak to the logic or the technical fact of the block it sits on. The private register's ids have become this codebase's vocabulary instead, because the entries carry the reasoning and citing the entry felt like citing the reason - but the register is private and the code is published, so such a comment is a claim the reader cannot check, which is this project's most-repeated defect one surface over. The house skill already states the rule with nothing measuring it. One exception is written into the lint rather than assumed: a test case label may name the fault it reproduces, because the mutation harness attributes by that token, and that exception is precisely why the rule has to be written down rather than left to judgement. A comment whose whole content is a citation has no constraint to keep and is deleted.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -262,14 +262,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "36476a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Register citations are zero across every scanned surface: scripts, hooks, tools, the documents and the suites, with two files exempt for reasons stated per scan and the remaining strays inside one of them recorded as that row's named cost.",
+        "descriptive": "A comment states its constraint, and the lint that holds the rule answers for the tree rather than for one spelling of it."
       },
       "startedAt": "2026-09-15T23:01:17Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-17T13:35:56Z",
+      "verifiedBy": [
+        "the rule",
+        "driven on the main tree after each slice"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "36476a3",
+        "at": "2026-09-17T13:35:56Z"
+      }
     },
     {
       "id": "P50.6",
@@ -435,7 +443,7 @@
     {
       "id": "P50.9",
       "title": "The citation scan owns its exempt list instead of borrowing one written for another scan",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the citation scan's exempt files are its own, each row carrying the reason THIS scan has for it, and the ids it then reports are cleared. The scan currently reuses the prose-number scan's table. One row there carves out a suite because that file holds the PROSE-NUMBER scanner's fixtures - a text scanner can only be shown to fire by handing it the literal it must recognise, and building the literal would move it out of the fixture and into the assertion. That reasoning is sound for that scan and the row names its own cost, a stale count in that one suite going unguarded. Nothing ever accepted that cost for citations, and this scan's own fixtures live in a different file. The result is roughly two dozen real ids standing in comments and case labels of that suite while the rule reports zero - the fifth time this release that this rule's zero has meant less than it reads. Where a row genuinely holds for both scans it says so twice, which costs a line and removes the inheritance. Then clear what the scan reports once it can see them.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -466,16 +474,25 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "36476a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The citation scan reads its own CITATION_SCAN_EXEMPT rather than the prose-number scan's table; the shared row appears in both with a reason written for each scan; the generated report carries its own row because the file is ignored and its presence would otherwise move the answer; rc17 plants a citation at the formerly exempt path and rc18 keeps the table honest.",
+        "descriptive": "The scan's exempt files are its own, each row carrying the reason that scan has, so its zero is a claim about the tree rather than about a borrowed list."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T13:31:22Z",
+      "completedAt": "2026-09-17T13:35:56Z",
+      "verifiedBy": [
+        "stub-the-scan",
+        "put-the-inheritance-back",
+        "reintroduce-a-citation"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "36476a3",
+        "at": "2026-09-17T13:35:56Z"
+      }
     }
   ],
   "startedAt": "2026-09-15T23:01:16Z"

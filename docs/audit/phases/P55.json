@@ -1014,6 +1014,46 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P55.22",
+      "title": "The citation scanner's own suite carries strays outside its fixture zone",
+      "status": "pending",
+      "description": "DONE MEANS: the suite that holds the citation scanner's fixtures carries register ids ONLY inside those fixtures, and the exemption row's named cost shrinks to what it has to be. The row exempts the whole file because a text scanner can only be shown to fire by handing it the literal it must recognise - true of the fixture zone and of nothing else. Outside it the file carries stray citations in comments about unrelated test families, which the row itself names as its accepted cost rather than hiding. Clear those, and leave the fixtures alone. Consider whether the exemption can be narrowed from the file to the region that needs it, and if it cannot, say why in the row rather than widening the silence.",
+      "files": [
+        "plugins/audit/tests/test__deps.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-16T05:02:21Z"
