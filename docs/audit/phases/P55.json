@@ -1100,7 +1100,7 @@
     {
       "id": "P55.23",
       "title": "The plan gate judges an edit inside a worktree of the project it is guarding",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: an edit landing in a git worktree of the project is judged by the plan gate, and a tree the gate cannot place is a refusal to answer rather than a silent allow. DRIVEN ACROSS THREE TREES with the change large enough to clear the gate's own trivial-change slot: an edit in the main checkout denies, an edit in a worktree denies when the project directory names that worktree, and the SAME edit ALLOWS SILENTLY when the project directory names the main checkout - which is the shape a real session runs in, since the project directory is the checkout the session started in and the agent works in a worktree of it. The gate resolves the manifest from the project directory, the file sits under a different root, and it is never judged: no refusal, no advisory, nothing. This is the same root-resolution question the write guard's relative-path repair just answered, one hook over, and the repair there is the model - read where the thing actually is rather than assuming it sits under one root. It matters more here than anywhere because the gate exists so a subagent cannot wander outside the plan, and a worktree is the recommended way to run one. ONE THING IS UNEXPLAINED AND MUST NOT BE GUESSED AT: one of the two worktrees driven allowed the edit in every configuration, including with its own project directory and its own copy of the hook, where its sibling denied. Establish why before designing, and if it turns out to be a second cause, say so.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -1130,16 +1130,25 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "59bec13",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_config.path_tree asks git, only after the cheap containment check fails, whether a path sits in a linked worktree of the same repository; require-plan re-roots onto that tree's top level so every manifest read opens what that tree holds, allows a genuinely unrelated location while naming the basis, and blocks when no directory can be placed at all. The tracker write path got the same repair.",
+        "descriptive": "An edit inside a worktree of the project is judged by the plan gate, and a tree the gate cannot place is a refusal rather than a silent allow."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T22:11:51Z",
+      "completedAt": "2026-09-17T22:11:51Z",
+      "verifiedBy": [
+        "worktree-rerooting-disabled",
+        "same-repository-widened",
+        "the driven table across every live worktree"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "59bec13",
+        "at": "2026-09-17T22:11:51Z"
+      }
     }
   ],
   "startedAt": "2026-09-16T05:02:21Z"
