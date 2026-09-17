@@ -157,6 +157,11 @@ tests_add_path = _phases.tests_add_path
 tests_add_graded = _phases.tests_add_graded
 tests_add_mentions = _phases.tests_add_mentions
 tests_add_repair = _phases.tests_add_repair
+# The finding text itself, named so a caller that has to tell this finding
+# apart from any other (`repair-tests-add.py`'s pre-write guard, below) reads
+# the same constant the walk writes into `f` rather than a second copy of the
+# sentence.
+TESTS_ADD_UNNAMED_FINDING = _phases.TESTS_ADD_UNNAMED_FINDING
 REPAIR_NAMED = _phases.REPAIR_NAMED
 REPAIR_REWRITE = _phases.REPAIR_REWRITE
 REPAIR_UNNAMED = _phases.REPAIR_UNNAMED

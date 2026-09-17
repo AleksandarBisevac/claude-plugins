@@ -1059,9 +1059,9 @@ The migration behind the `tests.add` shape rule. The schema asks for
 `"<path>: <what it asserts>"` because that leading path is what `/audit:task add` and `scope`
 carry into a task's `files` and the `fileIndex`, and `_invariants.commit_scope` grades a commit
 against that list; an entry written as a sentence therefore leaves the case file outside the
-scope the work is graded against. The validator says so on every unfinished `tdd` task and names
-the release the refusal arrives in — and **an announcement with no way through strands every plan
-written before it**, which is what this is.
+scope the work is graded against. The validator says so on every unfinished `tdd` task and refuses
+it — and **a refusal with no way through would strand every plan written before the rule**, which
+is what this is: the migration this rule's own message points at.
 
 **The only path it writes is one the entry already spells.** An entry that mentions
 `tests/cart.spec.ts` in its prose is rewritten to open with it; an entry mentioning no path, or

@@ -393,16 +393,14 @@ def _cases(check):
         #
         # THE VALIDATOR IS THE OTHER HALF OF THE SAME REPAIR, and this is where
         # the two meet: a `tdd` task that can still be committed against owes
-        # the path shape, and `_manifest_rules._check_tests_add_shape` says so.
+        # the path shape, and the walk's rule about `tests.add` says so.
         #
-        # IT IS A WARNING THROUGH THE 2.x LINE AND THIS CASE ASSERTS THE WRITE
-        # SUCCEEDS. That is the direction it was written in an hour ago and it
-        # asserted the opposite - refused, rolled back, exit 1 - so it is
-        # DRIVEN rather than edited: `COMPATIBILITY.md` promises a manifest
-        # that validates keeps validating through the major line, and refusing
-        # here would break that promise for a field the schema documents as
-        # free prose. The refusal arrives at 3.0.0 and the warning is what
-        # announces it, which is why the text has to carry the release.
+        # REFUSED AND ROLLED BACK FROM 3.0.0. `COMPATIBILITY.md` promised a
+        # manifest that validates keeps validating through the 2.x line and
+        # named 3.0.0 as where the shape stops being merely advised - so this
+        # add, whose only defect is a `tdd` task's tests.add entry naming no
+        # file, is refused by the same revalidate-after-write every other
+        # invariant here goes through, and nothing it attempted is kept.
         with open(_tp_mp, "rb") as _fh:
             _tp_before = _fh.read()
         code, _tp_tdd = run(["add", "Tdd with prose", "--phase", "P2",
@@ -412,24 +410,22 @@ def _cases(check):
         with open(_tp_mp, "rb") as _fh:
             _tp_after = _fh.read()
         _tp_written = task_in(_tp_mp, "P2.6") or {}
-        check("tp8 the SAME entry at `tdd` mode is WRITTEN and warned about, "
-              "not refused: the manifest changed, the entry is in the task "
-              "verbatim, and the report carries the deprecation with the "
-              "release it bites in. Byte inequality is half the assertion, "
-              "because a rolled-back write also prints warnings: %r"
+        check("tp8 the SAME entry at `tdd` mode is REFUSED and rolled back: "
+              "the manifest is byte-identical to before the call, and the "
+              "finding names the entry and the shape it owes - a `tdd` task "
+              "that can still be committed against has owed this shape since "
+              "3.0.0 enforced what 2.3.0 only announced: %r"
               % (_tp_tdd[-300:],),
-              code == 0 and _tp_after != _tp_before
-              and (_tp_written.get("tests") or {}).get("add") == [_TP_PROSE]
+              code == M.E_INVALID and _tp_after == _tp_before
               and "names no file" in _tp_tdd
-              and "FINDING AT 3.0.0" in _tp_tdd
+              and "<path>: <what it asserts>" in _tp_tdd
               and _TP_PROSE in _tp_tdd)
-        check("tp8b ...and `files` still gained nothing from it, which is the "
-              "half the warning is ABOUT: the write being allowed does not "
-              "make the scope complete, so the note this verb prints and the "
-              "validator's deprecation are two different sentences about one "
-              "entry: %r" % (_tp_written.get("files"),),
-              _tp_written.get("files") == []
-              and "name no file" in _tp_tdd)
+        check("tp8b ...and the rollback is COMPLETE: the task the call "
+              "attempted never lands at all, not merely with an incomplete "
+              "`files` union - a refused add that still left a task behind "
+              "would be the half-write this verb exists to refuse: %r"
+              % (_tp_written,),
+              _tp_written == {})
         # `scope` is the OTHER two write sites, and the same file-union defect
         # reached all three. The verb an operator reaches for when reality
         # differed from the plan is the last place that should hand back a

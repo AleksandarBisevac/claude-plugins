@@ -58,23 +58,24 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   validating against every later one in the major line. The repository rule behind
   this is in `CONTRIBUTING.md` under *Hard rules*, and it predates this document.
 
-  **The `tests.add` path requirement is the first thing announced under this promise
-  rather than excused from it, and the promise HOLDS through the whole 2.x line.** A task in
-  `tests.mode: "tdd"` that is **not** `done` or `cancelled` should write each
-  `tests.add` entry as `"<path>: <what it asserts>"`. From **2.3.0** an entry naming
-  no file is a **warning**, and its text names both the shape to write and the
-  release the refusal arrives in; at **3.0.0** it becomes a **finding**. Nothing
-  that validated before 2.3.0 stops validating inside 2.x — that is the promise, and
-  the warning is what buys the time to act on it.
+  **The `tests.add` path requirement was the first thing announced under this promise
+  rather than excused from it, and the promise held through the whole 2.x line.** A task in
+  `tests.mode: "tdd"` that is **not** `done` or `cancelled` must write each
+  `tests.add` entry as `"<path>: <what it asserts>"`. **2.3.0** made an entry naming
+  no file a **warning**, and its text named both the shape to write and the release
+  the refusal would arrive in; **3.0.0** is that release — the entry is now a
+  **finding**, and validation refuses it. Nothing that validated before 2.3.0 stopped
+  validating inside 2.x — that was the promise, and the warning is what bought the
+  time to act on it.
 
-  **Why the interim is a warning and not a permanent softness.** The rule exists
+  **Why the interim was a warning and not a permanent softness.** The rule exists
   because of what the field is *for* at that mode: `/audit:task add` and `scope` put
   the path an entry names into the task's `files` precisely so `commit_scope` will
   allow the case file the task says it will create — and when the entry is prose
   there is no path to carry, so the permission was never granted and the task's own
-  commit trips a scope the operator had just set. That is worth refusing, and it
-  will be refused. What a major release buys is the ORDER: announce, then enforce.
-  A rule that only ever warns would be the softer answer this is not.
+  commit trips a scope the operator had just set. That was worth refusing, and 3.0.0
+  refuses it. What a major release buys is the ORDER: announce, then enforce. A rule
+  that only ever warns would be the softer answer this is not.
 
   **What the rule's shape bounds, and what it does not.** The schema stays
   permissive, so nothing about the field's *type* changed; `regression` and
@@ -86,13 +87,16 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 
   **And a plan written before the rule has a migration, which is what makes the
   announcement fair.** `plugins/audit/scripts/manifest/repair-tests-add.py <manifest>`
-  reports every entry the warning reaches and, with `--apply`, rewrites the ones that
+  reports every entry the rule reaches and, with `--apply`, rewrites the ones that
   already spell their path inside the sentence — putting that path in front and keeping
   the sentence whole. It will not guess one for an entry that names no file, or names
   several; those are listed with the task that holds them, because a wrong path in
   `files` is worse than a sentence. Announcing a refusal with no way through would
   strand every plan generated before it, which is the half of *announce, then enforce*
-  that is easy to leave out.
+  that is easy to leave out. It runs on a manifest carrying only this finding, too:
+  the finding this rule produces is excluded from the tool's own pre- and post-write
+  checks, because refusing to touch precisely the plans it exists for would leave
+  the announcement with no way through after all.
 
   **It reached this plugin's own workflow, and that was found by review rather than
   by the corpus.** Three prescriptions produced entries the rule warns about:

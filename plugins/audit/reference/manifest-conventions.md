@@ -125,9 +125,9 @@ the repo-relative file the case will live in — even when it does not exist yet
 leading path is what `/audit:task add` and `scope` carry into the task's `files` and
 the `fileIndex`, so an entry opening with prose puts nothing there and leaves the case
 file outside the scope commit-scope grades the task against. On a `tdd` task that is
-not yet `done` or `cancelled` the validator **warns** when an entry names no file, and
-that becomes a **finding at 3.0.0** (`COMPATIBILITY.md` → *Validation stays additive*).
-For `regression` and `gate-only` the shape is recommended, not required.
+not yet `done` or `cancelled` the validator **refuses** an entry naming no file
+(`COMPATIBILITY.md` → *Validation stays additive*). For `regression` and `gate-only`
+the shape is recommended, not required.
 
 **`testEvidence` is deliberately NOT in that list**, and its absence is the fact rather than an
 omission: it is written by the recorder when a gate actually runs, and absent means *no run has

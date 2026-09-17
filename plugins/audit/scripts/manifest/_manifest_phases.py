@@ -338,6 +338,12 @@ _TESTS_ADD_LEAD = re.compile(r"\A\s*([^\s:]+)\s*(?::|\Z)")
 _PATHISH_EXT = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,7}\Z")
 _DOTFILE = re.compile(r"\A\.[A-Za-z][A-Za-z0-9_.-]+\Z")
 
+# NAMED ONCE, read by two callers that must agree on which finding this is: the
+# walk below, which produces it, and `repair-tests-add.py`'s pre-write guard,
+# which has to tell "this is the entry I am here to fix" apart from "the plan
+# was already broken by something else" without restating the sentence.
+TESTS_ADD_UNNAMED_FINDING = "this tests.add entry names no file"
+
 
 def tests_add_path(entry):
     """The path a `tests.add` entry NAMES, or None when it names none.
@@ -384,11 +390,11 @@ def tests_add_path(entry):
 def tests_add_graded(task):
     """Whether the `"<path>: <what it asserts>"` rule reaches this task's entries.
 
-    ONE FILTER, TWO CALLERS. The walk below warns about the entries this
-    accepts and `repair-tests-add.py` offers to rewrite exactly those, so a
-    second expression of it would be a migration repairing entries the
-    validator never complained about, or leaving ones it did. The neighbouring
-    rule about the same field was born as a second copy of this same filter and
+    ONE FILTER, TWO CALLERS. The walk below flags the entries this accepts and
+    `repair-tests-add.py` offers to rewrite exactly those, so a second
+    expression of it would be a migration repairing entries the validator
+    never complained about, or leaving ones it did. The neighbouring rule
+    about the same field was born as a second copy of this same filter and
     had drifted before anybody read the two together, which is the argument for
     naming it rather than repeating it.
 
@@ -405,9 +411,9 @@ def tests_add_graded(task):
 
 
 # --- what a one-shot repair may do to an entry -----------------------------------
-# The rule above announces a refusal that arrives at a major, and an announcement
-# with no migration behind it strands every plan written before it. So this is the
-# other half: what can be repaired mechanically, and what has to be handed back.
+# The rule above refuses, and a refusal with no migration behind it strands every
+# plan written before it. So this is the other half: what can be repaired
+# mechanically, and what has to be handed back.
 #
 # NOTHING HERE INVENTS A PATH. The only path a repair may write is one the entry
 # ITSELF already spells - moving an author's own token to the front is reading the
@@ -676,11 +682,12 @@ def _walk_phases(phases):
             # the scope verb leaves it append-only, so a line about
             # one names nothing anybody can act on.
             #
-            # A WARNING THROUGH THE 2.x LINE. `COMPATIBILITY.md` promises that a
-            # manifest which validates keeps validating, and this shape was legal
-            # for a field the schema documents as prose - so the rule warns, its
-            # text names the release the refusal arrives in, and 3.0.0 is where it
-            # becomes a finding. The order is announce, then enforce.
+            # ANNOUNCED AS A WARNING THROUGH THE 2.x LINE, ENFORCED FROM 3.0.0.
+            # `COMPATIBILITY.md` promised that a manifest which validates keeps
+            # validating through 2.x, and named this release as where the shape
+            # a `tdd` task's `tests.add` entry must have stops being merely
+            # advised: the order it promised was announce, then enforce, and
+            # this is the enforcement half landing.
             if tests_add_graded(task):
                 add_val = tests.get("add")
                 if add_val is not None and not isinstance(add_val, list):
@@ -695,17 +702,16 @@ def _walk_phases(phases):
                 for entry in _safe_list(add_val):
                     if tests_add_path(entry) is not None:
                         continue
-                    w.append("%s: this tests.add entry names no file, so the "
-                             "`files` union has no path to carry and "
-                             "commit-scope will refuse the case this task says "
-                             "it will create. Write it as \"<path>: <what it "
-                             "asserts>\" - THIS BECOMES A FINDING AT 3.0.0 "
+                    f.append("%s: %s, so the `files` union has no path to "
+                             "carry and commit-scope will refuse the case "
+                             "this task says it will create. Write it as "
+                             "\"<path>: <what it asserts>\" "
                              "(COMPATIBILITY.md -> Validation stays additive). "
                              "For a plan written before the rule, "
                              "`scripts/manifest/repair-tests-add.py <manifest>` "
                              "reports every entry like this one and rewrites "
                              "the ones that already spell their path: "
-                             "%r" % (twhere, entry))
+                             "%r" % (twhere, TESTS_ADD_UNNAMED_FINDING, entry))
             # THE DERIVED GATE, READ BACK. `/audit:init` step 5.3 narrows a
             # task's `tests.gate` to the paths that task names and reaches the
             # phase's wide gate only as its last arm, with a reason in the

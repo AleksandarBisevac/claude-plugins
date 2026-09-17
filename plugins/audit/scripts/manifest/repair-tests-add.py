@@ -173,6 +173,21 @@ def report(manifest):
 
 
 # --- writing ----------------------------------------------------------------------
+def _findings_besides_tests_add(findings):
+    """`findings`, minus the ones this tool exists to act on.
+
+    ONE FILTER, TWO CALLERS, for the same reason `tests_add_graded` is: every
+    entry `report()` already read as REWRITE or OWED puts exactly this finding
+    into `_rules.validate()`'s list, now that the rule it comes from is a
+    finding rather than a warning. Left unfiltered, the pre-write gate below
+    would refuse to run on precisely the plans this repairs, and the post-write
+    gate would read an entry it correctly left OWED as proof the write broke
+    the plan. Filtering both the same way is what keeps them from disagreeing
+    about what "some OTHER problem" means.
+    """
+    return [x for x in findings if _rules.TESTS_ADD_UNNAMED_FINDING not in x]
+
+
 def rewrite(manifest, rows):
     """Apply the rewritable rows in place; return the ones that landed.
 
@@ -205,20 +220,27 @@ def apply_repair(mpath, manifest, ans):
 
     TWO REFUSALS, WORDED APART, because they are two different situations and a
     reader handed the wrong one goes looking in the wrong place. A plan that
-    ALREADY has findings is refused before anything is touched, and the message
-    says the repair is not what broke it - the same reading `migrate-manifest.py`
-    takes of its own source. A plan the rewrite would break is refused after,
-    with a sentence that says so. Collapsing them into "the result would be
-    invalid" is what makes an operator go hunting for a bug in the migration
-    over a plan that was already failing to validate.
+    ALREADY has some OTHER finding is refused before anything is touched, and
+    the message says the repair is not what broke it - the same reading
+    `migrate-manifest.py` takes of its own source. A plan the rewrite would
+    break is refused after, with a sentence that says so. Collapsing them into
+    "the result would be invalid" is what makes an operator go hunting for a
+    bug in the migration over a plan that was already failing to validate.
+
+    "OTHER" IS LOAD-BEARING. The finding this repair exists to act on is
+    excluded from both gates by `_findings_besides_tests_add` - a plan carrying
+    only that finding is exactly this tool's reason to exist, and refusing to
+    touch it would leave the pointer `_manifest_phases.py` prints for it
+    (this file) unable to do what it says.
     """
     project = project_of(mpath)
     before, _bw = _rules.validate(manifest)
-    if before:
+    other_before = _findings_besides_tests_add(before)
+    if other_before:
         return False, ("the plan already has validator finding(s) and the "
                        "repair is not what put them there, so nothing was "
                        "written - fix the plan first, then re-run: "
-                       + "; ".join(before[:3])), []
+                       + "; ".join(other_before[:3])), []
     # The lock is asked for only where there is one to ask for: `acquire` answers
     # the same error for "not a git repository" as for a real failure, so refusing
     # on every non-zero code would refuse every write in a project with no lock
@@ -233,10 +255,11 @@ def apply_repair(mpath, manifest, ans):
     try:
         applied = rewrite(manifest, ans["rewrite"])
         findings, _warnings = _rules.validate(manifest)
-        if findings:
+        other_findings = _findings_besides_tests_add(findings)
+        if other_findings:
             return False, ("the repair would have made the plan invalid, so "
                            "nothing was written: "
-                           + "; ".join(findings[:3])), []
+                           + "; ".join(other_findings[:3])), []
         # Written back in whatever layout it arrived in: a phase lives in a shard
         # under the sharded form, and a whole-file dump would flatten it.
         if _mio.is_sharded(_mio.read_json(mpath)):

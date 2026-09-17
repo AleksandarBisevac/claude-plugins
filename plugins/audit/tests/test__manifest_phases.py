@@ -292,25 +292,26 @@ def _cases(check):
         return _f, [x for x in _w if "tests.add" in x]
 
     _ta_live_f, _ta_live_w = _ta_walk([("P0.1", "pending", "tdd", [_TA_PROSE])])
-    _ta_live_one = (_ta_live_w or [""])[0]
-    check("ta5 a PENDING tdd task whose tests.add entry names no file is "
-          "WARNED about, and the line names the task, the entry and the "
-          "release the refusal arrives in - the union promises commit-scope a "
-          "path there, so an entry it cannot read is a case file the task will "
-          "create and the plan gate will refuse. A warning and not a finding "
-          "because COMPATIBILITY.md promises a manifest that validates keeps "
-          "validating: enforcement waits for 3.0.0 and this announces it: %r"
-          % (_ta_live_w,),
-          _ta_live_f == [] and len(_ta_live_w) == 1
+    _ta_live_one = (_ta_live_f or [""])[0]
+    check("ta5 a PENDING tdd task whose tests.add entry names no file is a "
+          "FINDING, and the line names the task and the entry - the union "
+          "promises commit-scope a path there, so an entry it cannot read is "
+          "a case file the task will create and the plan gate will refuse. A "
+          "finding and not a warning because the deprecation "
+          "COMPATIBILITY.md announced at 2.3.0 is the enforcement 3.0.0 "
+          "carries: %r"
+          % (_ta_live_f,),
+          _ta_live_w == [] and len(_ta_live_f) == 1
           and "P0.1" in _ta_live_one and _TA_PROSE in _ta_live_one
-          and "<path>: <what it asserts>" in _ta_live_one
-          and "FINDING AT 3.0.0" in _ta_live_one)
-    check("ta5b ...and the deprecation SAYS WHEN IT BITES, which is what makes "
-          "it a deprecation rather than noise: a reader told only that their "
-          "entry is wrong has no reason to act this release, and the pointer "
-          "names the promise the change is recorded against: %r"
+          and "<path>: <what it asserts>" in _ta_live_one)
+    check("ta5b ...and the line still carries the BASIS that makes the "
+          "refusal checkable rather than an opinion, and it no longer speaks "
+          "of a release still to come - that phrasing was only ever true "
+          "while 3.0.0 had not shipped: %r"
           % (_ta_live_one[-90:],),
-          "3.0.0" in _ta_live_one and "COMPATIBILITY.md" in _ta_live_one)
+          "COMPATIBILITY.md" in _ta_live_one
+          and "FINDING AT 3.0.0" not in _ta_live_one
+          and "BECOMES A FINDING" not in _ta_live_one)
     # A related defect, one module over: the first draft emitted
     # `phases[P0].tasks[P0.1]: …`, which is the shape reserved for a task with
     # NO id, so `_warning_groups.locator()` returned None and the line could
@@ -319,9 +320,12 @@ def _cases(check):
     import _warning_groups as _wg
     _ta_loc = _wg.locator(_ta_live_one)
     check("ta5c ...and the line is ATTRIBUTABLE: `locator()` parses it as a "
-          "task-kind line whose ident is the task id, which is what lets the "
-          "grouping and the phase attribution reach it. `phases[..].tasks[i]` "
-          "is reserved for a task with no id and parses as nothing: %r"
+          "task-kind line whose ident is the task id, the same shape every "
+          "per-item message in this walk carries whether it lands in "
+          "findings or warnings - `_wg.collapse()` never reads a finding, but "
+          "nothing about the SHAPE itself is warning-only. "
+          "`phases[..].tasks[i]` is reserved for a task with no id and parses "
+          "as nothing: %r"
           % (_ta_loc,),
           _ta_loc is not None and _ta_loc[0] == "task"
           and _ta_loc[1] == "P0.1"
@@ -332,8 +336,8 @@ def _cases(check):
                                         [_TA_PROSE])])
     check("ta6 ...and so is an in_progress or blocked one: the rule is about "
           "whether a commit can still be graded against the task, and all "
-          "three of those states still have one coming: %r" % (_ta_prog_w,),
-          len(_ta_prog_w) == 2 and _ta_prog_f == [])
+          "three of those states still have one coming: %r" % (_ta_prog_f,),
+          len(_ta_prog_f) == 2 and _ta_prog_w == [])
     _ta_done_f, _ta_done_w = _ta_walk([("P0.1", "done", "tdd", [_TA_PROSE]),
                                        ("P0.2", "cancelled", "tdd",
                                         [_TA_PROSE])])
@@ -383,14 +387,15 @@ def _cases(check):
     _ta_tied_idx, _ta_tied_f, _ta_tied_w = M._walk_phases(
         [_phase(status="in_progress", tasks=_ta_tied_tasks)])
     check("ta11 the rule rides the SHARED walk, and the index proves the pass "
-          "ran: the same call that warns also records the task id, so a loop "
-          "that stopped visiting tasks would take this warning and every "
-          "downstream check's evidence with it - which is what makes silence "
-          "here mean 'nothing was owed' rather than 'nothing was read': %r"
+          "ran: the same call that raises this finding also records the task "
+          "id, so a loop that stopped visiting tasks would take this finding "
+          "and every downstream check's evidence with it - which is what "
+          "makes silence here mean 'nothing was owed' rather than 'nothing "
+          "was read': %r"
           % ((_ta_tied_idx["task_ids"],
-              len([x for x in _ta_tied_w if "tests.add" in x])),),
+              len([x for x in _ta_tied_f if "tests.add" in x])),),
           _ta_tied_idx["task_ids"] == ["P0.1"]
-          and len([x for x in _ta_tied_w if "tests.add" in x]) == 1)
+          and len([x for x in _ta_tied_f if "tests.add" in x]) == 1)
     # #6's reconciliation, pinned rather than argued. The expectRedFirst rule
     # asks whether a red-first task named a case AT ALL and reads `expectRedFirst`,
     # which is
@@ -412,8 +417,8 @@ def _cases(check):
           "rule exists for never reads "
           "it - so requiring it here would let a hand edit opt a task out of a "
           "rule about a field it has no bearing on: %r"
-          % ([x[:60] for x in _ta_rf_w],),
-          len([x for x in _ta_rf_w if "tests.add entry names no file" in x]) == 1
+          % ([x[:60] for x in _ta_rf_f],),
+          len([x for x in _ta_rf_f if "tests.add entry names no file" in x]) == 1
           and [x for x in _ta_rf_w if "expectRedFirst and no tests.add" in x]
           == [])
     # #10: a hand-edited string `add` used to yield one warning per non-slash
@@ -439,12 +444,12 @@ def _cases(check):
                       tests={"mode": "tdd", "add": [_TA_PROSE],
                              "expectRedFirst": True, "gate": []})])]})
     check("ta14 ...and the rule reaches `validate()` through the walk, which is "
-          "the only reason any of the above is a gate: read off the WARNING "
-          "list with the findings asserted empty in the same breath, since a "
-          "manifest whose only defect is this shape still validates through "
-          "the 2.x line - the promise being kept: %r"
-          % ([x[:70] for x in _ta_v_w],),
-          any("names no file" in x for x in _ta_v_w) and _ta_v_f == [])
+          "the only reason any of the above is a gate: read off the FINDING "
+          "list with the warnings asserted empty in the same breath - a "
+          "manifest whose only defect is this shape no longer validates, "
+          "which is the enforcement `COMPATIBILITY.md` named 3.0.0 for: %r"
+          % ([x[:70] for x in _ta_v_f],),
+          any("names no file" in x for x in _ta_v_f) and _ta_v_w == [])
 
 
     # --- the derived gate, read back ---
@@ -548,11 +553,11 @@ def _cases(check):
           and len([x for x in _tg_vw if "testGate verbatim" in x]) == 1)
 
     # --- tr: what a ONE-SHOT REPAIR may do to an entry written before the rule --
-    # The warning above announces a refusal that arrives at a major, and an
-    # announcement with no migration behind it strands every plan written before
-    # it. `repair-tests-add.py` is that migration and this is the derivation under
-    # it: the ONLY path it may write is one the entry itself already spells, so
-    # the cases below are mostly about what it REFUSES to read as a path.
+    # The finding above refuses, and a refusal with no migration behind it
+    # strands every plan written before the rule. `repair-tests-add.py` is that
+    # migration and this is the derivation under it: the ONLY path it may write
+    # is one the entry itself already spells, so the cases below are mostly
+    # about what it REFUSES to read as a path.
     _tr_graded = [
         # (task, graded?) - the filter the walk and the migration share, so a
         # repair cannot be offered for an entry nothing warned about.
@@ -577,24 +582,24 @@ def _cases(check):
     _tr_filter = [(t.get("id") if isinstance(t, dict) else t, want,
                    M.tests_add_graded(t))
                   for t, want in _tr_graded if M.tests_add_graded(t) != want]
-    check("tr1 `tests_add_graded` is the ONE filter the walk's warning and the "
+    check("tr1 `tests_add_graded` is the ONE filter the walk's finding and the "
           "migration both read: tdd and not settled, in both directions - a "
           "second expression of it would offer to repair entries nothing "
-          "complained about, or skip ones warned about every run, and the "
+          "complained about, or skip ones flagged on every run, and the "
           "neighbouring rule about this same field was born as exactly such a "
           "copy and had drifted before anyone read the two together: %r"
           % (_tr_filter,), _tr_filter == [])
     _tr_walked = M._walk_phases([_phase(status="in_progress", tasks=[
-        t for t, _want in _tr_graded if isinstance(t, dict)])])[2]
-    _tr_warned = sorted(set(
+        t for t, _want in _tr_graded if isinstance(t, dict)])])[1]
+    _tr_flagged = sorted(set(
         _wg.locator(x)[1] for x in _tr_walked
         if "tests.add entry names no file" in x and _wg.locator(x)))
-    check("tr2 ...and the WALK really reads it: the tasks warned about over one "
+    check("tr2 ...and the WALK really reads it: the tasks flagged over one "
           "phase are exactly the ones the filter accepts, so the migration's "
           "offer and the validator's complaint cannot come apart: %r"
-          % (_tr_warned,),
-          _tr_warned == sorted(t["id"] for t, want in _tr_graded
-                               if want and isinstance(t, dict)))
+          % (_tr_flagged,),
+          _tr_flagged == sorted(t["id"] for t, want in _tr_graded
+                                if want and isinstance(t, dict)))
     _tr_mentions = [
         ("a case in tests/cart.spec.ts for stacked discounts",
          ["tests/cart.spec.ts"]),
@@ -690,11 +695,10 @@ def _cases(check):
                                 "again"),),
           M.tests_add_repair("tests/a.spec.ts twice: tests/a.spec.ts again")[0]
           == M.REPAIR_REWRITE)
-    check("tr13 ...and the WARNING itself names the migration, which is what "
-          "makes announcing a refusal fair: a rule that says an entry becomes "
-          "illegal at the next major, over plans generated before the shape "
-          "was asked for, strands every one of them unless the line that "
-          "reports it also says what to run: %r" % (_ta_live_one[-170:],),
+    check("tr13 ...and the FINDING itself names the migration - a refusal "
+          "over a plan generated before the shape was asked for strands the "
+          "plan unless the line that reports it also says what to run: %r"
+          % (_ta_live_one[-170:],),
           "repair-tests-add.py" in _ta_live_one)
     _tr_junk = [M.tests_add_repair(v) for v in (None, 7, "", "   ", [])]
     check("tr12 a non-string, an empty string and whitespace are UNNAMED "
