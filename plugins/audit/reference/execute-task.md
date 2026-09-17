@@ -417,7 +417,21 @@ not need to.
           disagree — measured on live runs at 39 and 93 occurrences — and `manifest-revalidated`
           records those as **deferred** rather than as breaches. It then asks the pairing of the
           manifest **as it stands**, so the debt is real and is settled once: land the index change
-          in its own commit before sign-off. `/audit:task scope` re-derives `fileIndex` for you.
+          in its own commit before sign-off, with the script that already does this correctly —
+          `/audit:task scope` re-derives `fileIndex` for you, and
+          ```
+          python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" \
+              <manifestPath> <phaseId>
+          ```
+          commits the index **alone**, under the lock, and refuses rather than committing nothing
+          or committing it beside work that does not belong with it. Its name used to reach a human
+          only inside `commit-task-work.py`'s refusal — after a task commit had already been turned
+          away for staging the index — which is too late for a caller who commits by hand instead:
+          a hand commit that sweeps up the index without the shard it now names leaves the manifest
+          invalid **at that commit**, because the index then names a task the checked-out shard does
+          not carry. `/audit:task add`, `add-phase`, `scope`, `retarget`, `cancel`, `start` and
+          `done` each print this same pointer themselves, the moment a write of theirs leaves the
+          index dirty, so the tool is discoverable before that mistake and not only after it.
         - **The journal and the evidence travel in this commit, and the script stages both** —
           `journal.dir` (default `<manifest dir>/journal`) and `evidence.dir` (default
           `<manifest dir>/evidence`), each only if it exists inside `<gitRoot>`, and each reported

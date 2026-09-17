@@ -67,15 +67,18 @@ Usage:
   list of IDS has no value that reads as content the way `--gate ""` reads
   as an empty COMMAND, and `retarget --area ""` already draws that line.
   `--description -` reads the brief off STDIN instead of off argv,
-  which is where a brief goes that must reach the manifest with its
-  backticks intact; a heredoc with a QUOTED word is the shell-proof form.
-  A description consisting of the single character `-` cannot be spelled
-  from this flag, and is not a description. Every flag in PROSE_FLAGS takes
-  that `-` and is checked the same way -- `PROSE_FLAGS` is the list,
-  and it is a tuple rather than a sentence here so a flag added to it cannot
-  be added to a prose enumeration nobody updates. STDIN IS ONE STREAM, so at
-  most one flag per call may claim it and a call where two do is refused
-  before anything is read, naming the two.
+  which is where a brief goes whose exact characters must survive: backticks
+  a shell would run as command substitution, but also a colon, a paren or a
+  comma sitting next to whitespace in code quoted straight into the prose --
+  the check tests for that SHAPE and never for a backtick, so text with none
+  at all can still be refused off argv. A heredoc with a QUOTED word is the
+  shell-proof form either way. A description consisting of the single
+  character `-` cannot be spelled from this flag, and is not a description.
+  Every flag in PROSE_FLAGS takes that `-` and is checked the same way --
+  `PROSE_FLAGS` is the list, and it is a tuple rather than a sentence here so
+  a flag added to it cannot be added to a prose enumeration nobody updates.
+  STDIN IS ONE STREAM, so at most one flag per call may claim it and a call
+  where two do is refused before anything is read, naming the two.
   `done` closes a task the way `start` opens one, and it is the only verb
   here whose flag is REQUIRED for the record rather than for the field:
   `--commit` is the SHA the work landed in, without which the close is the
@@ -174,6 +177,11 @@ Design decisions, each mirroring a precedent rather than inventing one:
     `resolve_briefs` holds the halves: the one-stream arbitration, the refusal
     off argv, and the NOTE on a stdin value that already has a hole in it --
     which is not refused, because that route is the door out of a false positive.
+    `shell_eaten_gap` tests the WHITESPACE SHAPE a deletion leaves, never the
+    presence of a backtick, so code quoted straight into a brief -- a ternary, a
+    colon-joined pair -- trips the same refusal with no shell and no backtick
+    anywhere in the call; the refusal names the shape it matched rather than
+    assuming the cause, and `_marked_excerpt` marks the exact span.
 
   * HEAL (v0.37 A4). Reuses _panel_write._heal_phase_status on the target
     phase: a write this code makes must not persist a pending phase that
@@ -261,6 +269,12 @@ import _task_outputs as _touts  # noqa: E402  (what an `outputs` pattern may be 
 #                                            one rule this verb, the validator and the
 #                                            plan gate all read)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
+import _worktrees             # noqa: E402  (which worktree the caller is standing in,
+#                                            and its branch -- a downward edge, L7 -> L1,
+#                                            the same list `close-phase.py` and
+#                                            `manage-worktrees.py` already read rather than
+#                                            a second `git worktree list` walk of this
+#                                            command's own)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
 
@@ -525,16 +539,20 @@ _GAP_SHAPES = (
 
 
 def shell_eaten_gap(text):
-    """(what it looks like, the words either side of it), or None if the brief
-    reads whole.
+    """(what it looks like, the window around it, and the match's start/end
+    OFFSETS WITHIN THAT WINDOW), or None if the brief reads whole.
 
     THE FIRST GAP AND THEN IT STOPS. A brief with two holes needs the same repair
     as a brief with one, and printing a list of them invites the reader to grade a
     severity that does not exist -- every one of them is a deleted clause.
 
-    The excerpt is returned rather than described so the caller can `%r` it: the
-    evidence IS whitespace, and whitespace quoted into a sentence is invisible
-    exactly where the reader has to look.
+    THE OFFSETS ARE WHAT LET A CALLER POINT AT THE MATCH rather than merely quote
+    the window around it: this function tests the whitespace-adjacency SHAPES in
+    `_GAP_SHAPES` and no backtick at all, so the window alone answered "something
+    in here looks wrong" and left a reader to find which characters that was --
+    across a run of spaces or a code snippet quoted into prose, that guess is not
+    free. `_marked_excerpt` is what turns the offsets into a caret under the
+    exact span.
     """
     if not isinstance(text, str) or not text:
         return None
@@ -542,8 +560,46 @@ def shell_eaten_gap(text):
         found = pattern.search(text)
         if found:
             start = max(0, found.start() - 30)
-            return what, text[start:found.end() + 30]
+            return what, text[start:found.end() + 30], \
+                found.start() - start, found.end() - start
     return None
+
+
+# THE WINDOW, POINTED AT RATHER THAN MERELY QUOTED. `%r` alone shows the window's
+# whitespace (which is the evidence) but not WHICH characters in it matched, and a
+# window with more than one run of spaces leaves the reader to guess. Escaping is
+# done a character at a time rather than by slicing `repr()`'s output: `repr` picks
+# its escaping for the string AS A WHOLE (which quote character it wraps with), so
+# an offset computed against the raw text can drift from an offset into that
+# string by however many characters an earlier escape added. One loop building
+# both the shown text and the caret line from the SAME per-character lengths keeps
+# the two in lockstep by construction, which slicing a second computation could not
+# promise.
+_VISIBLE_ESCAPES = {"\t": "\\t", "\n": "\\n", "\r": "\\r"}
+
+SEEN_PREFIX = "  Seen at: "
+
+
+def _marked_excerpt(excerpt, rel_start, rel_end):
+    """(the `Seen at:` line, the caret line beneath it) for a window
+    `shell_eaten_gap` returned, `rel_start`/`rel_end` being the match's own
+    offsets into `excerpt`.
+
+    ORDINARY CHARACTERS, SPACES INCLUDED, ARE LEFT ALONE -- they already read as
+    themselves in a terminal, and substituting a glyph for one would make the
+    excerpt harder to compare against the operator's own text than the thing it
+    is meant to clarify. Only the whitespace shapes in `_VISIBLE_ESCAPES` (a
+    tab, a newline, a carriage return) are made visible, because a caret alone
+    could not disambiguate any of those from a plain space.
+    """
+    shown, marks = [], []
+    for i, ch in enumerate(excerpt):
+        disp = _VISIBLE_ESCAPES.get(ch, ch)
+        shown.append(disp)
+        marks.append(("^" if rel_start <= i < rel_end else " ") * len(disp))
+    seen_line = SEEN_PREFIX + "'" + "".join(shown) + "'"
+    mark_line = (" " * len(SEEN_PREFIX)) + " " + "".join(marks)
+    return seen_line, mark_line
 
 
 # EVERY FLAG WHOSE VALUE IS THE OPERATOR'S OWN PROSE. The stdin-and-gap check above
@@ -577,6 +633,18 @@ def shell_eaten_gap(text):
 # reads whole and is not.
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
                "technical")
+
+# THE ONE PLACE `--help` SAYS ANYTHING ABOUT THE STDIN ESCAPE. Before this, none
+# of the flags in PROSE_FLAGS carried a `help=` at all -- `--help` printed the
+# bare flag name and left the route out of the whole class of refusal
+# undiscoverable for a caller who had not yet been refused, or whose text holds
+# no backtick to go looking for. Framed on the SHAPE the check reads and not on
+# backticks alone, because `_GAP_SHAPES` is whitespace-adjacency and none of
+# its entries is a backtick.
+_PROSE_HELP = ("free text, written into the manifest verbatim; pass - to read "
+              "it off stdin instead of argv, which no shell rewrites -- worth "
+              "reaching for whenever the text might trip a whitespace-adjacency "
+              "check on argv, backticks or not")
 
 # ...AND THE TITLE, WHICH IS NOT A FLAG AT ALL. The check above closed the
 # class for flags and left this, which put the guard on the CORRECTION path and not
@@ -649,12 +717,22 @@ def read_brief(value, flag, stream=None):
     return text, True, None
 
 
-def brief_gap_refusal(flag, what, excerpt):
+def brief_gap_refusal(flag, what, excerpt, rel_start, rel_end):
     """The refusal for a prose flag that reached argv with a hole in it.
 
     It has to say WHAT WAS SEEN and WHAT TO DO, because a reader told only that
     their input was malformed retypes the same command -- and the same shell eats
     the same clause a second time.
+
+    IT NAMES WHAT MATCHED, NOT A CAUSE THE CHECK NEVER TESTED FOR. Reported live:
+    a nested ternary (`foo() ? (a ? 280 : 70) : 0`), passed through a list-form
+    call with NO SHELL ANYWHERE, tripped one of the same whitespace-adjacency
+    shapes (`_GAP_SHAPES`) this function is refusing on now -- and the sentence
+    used to say outright that a backtick span had been eaten, when there was no
+    backtick in the text at all. `shell_eaten_gap` tests for the SHAPE and
+    never for a backtick, so this reads the mechanism as one thing the shape is
+    CONSISTENT with rather than the diagnosis, and the marker below is what
+    lets the reader tell the two apart without reading the regex.
 
     THE COMMAND THE READER RETYPES COMES FIRST, and every reason after it in one
     sentence. Nothing is cut: this carried the same facts in the opposite order
@@ -663,6 +741,7 @@ def brief_gap_refusal(flag, what, excerpt):
     before reaching them. A refusal is read in the order it is printed, and the
     reader wants the way out first and the argument for it second.
     """
+    seen_line, mark_line = _marked_excerpt(excerpt, rel_start, rel_end)
     return (
         "[audit-task] %s carries %s. Pass it on stdin, which no shell rewrites "
         "and this writes through unchanged:\n"
@@ -671,20 +750,26 @@ def brief_gap_refusal(flag, what, excerpt):
         "    BRIEF\n"
         "  QUOTE the heredoc word ('BRIEF'): an unquoted <<BRIEF expands its "
         "body exactly as the double quotes did.\n"
-        "  Seen at: %r\n"
-        "  Inside double quotes a backtick span is COMMAND SUBSTITUTION: the "
-        "words between the backticks are RUN and replaced by their output, "
-        "which for prose is nothing.\n"
-        "  Refused rather than written, because the text that would reach the "
-        "manifest is missing exactly the clause its author thought worth "
-        "quoting, and no reader downstream can tell that from ordinary prose.\n"
+        "%s\n"
+        "%s\n"
+        "  The check above tests every whitespace-adjacency SHAPE it knows and "
+        "no backtick at all, so the marker is what actually matched -- not a "
+        "diagnosis of why. One way this shape appears: inside double quotes, a "
+        "backtick span is COMMAND SUBSTITUTION, and the words between the "
+        "backticks are RUN and replaced by their output, which for prose is "
+        "nothing -- but the check cannot tell that apart from code quoted "
+        "straight into the brief (a ternary, a path, a colon-joined pair), which "
+        "reads the same once it sits in this text.\n"
+        "  Refused rather than written, because the marked span above is "
+        "exactly what would reach the manifest, and this route cannot tell a "
+        "shell-deleted clause from an operator's own punctuation.\n"
         "  Text arriving on stdin is never REFUSED for this -- it is written as "
-        "you typed it, with a note saying what was seen -- so if the whitespace "
-        "is what you meant, that route is still the way in."
-        % (flag, what, flag, excerpt))
+        "you typed it, with a note saying what was seen -- so if the marked "
+        "span is what you meant, that route is still the way in."
+        % (flag, what, flag, seen_line, mark_line))
 
 
-def stdin_gap_note(flag, what, excerpt):
+def stdin_gap_note(flag, what, excerpt, rel_start, rel_end):
     """The NOTE for prose that arrived on stdin already carrying a gap.
 
     A NOTE AND NOT A REFUSAL, and that is a decision rather than an omission.
@@ -701,15 +786,18 @@ def stdin_gap_note(flag, what, excerpt):
     from a brief somebody meant. So the run continues and the reader is told, at
     the moment the evidence exists, with the two readings side by side.
     """
+    seen_line, mark_line = _marked_excerpt(excerpt, rel_start, rel_end)
     return (
-        "[audit-task] note: the text on stdin for %s carries %s. Seen at: %r\n"
+        "[audit-task] note: the text on stdin for %s carries %s.\n"
+        "%s\n"
+        "%s\n"
         "  It is being written VERBATIM, because stdin is the way out of a "
         "false positive and a guard with no door gets routed around -- so if "
-        "that whitespace is what you meant, nothing here is wrong.\n"
+        "the marked span is what you meant, nothing here is wrong.\n"
         "  But if you wrote the heredoc word UNQUOTED (`<<BRIEF`), the shell "
         "expanded the body exactly as double quotes would and the clause was "
         "already gone before this read it. Quote it (`<<'BRIEF'`) and run "
-        "again." % (flag, what, excerpt))
+        "again." % (flag, what, seen_line, mark_line))
 
 
 def stdin_contest_refusal(claiming, flags):
@@ -790,9 +878,9 @@ def resolve_briefs(args, out, stream=None):
             # other advisory in these verbs is DATA in JSON mode -
             # `filesNotOnDisk`, `testsAddNamingNoFile` - and this is now too.
             # The human branch prints it below, once, in the same order.
-            args.stdin_notes.append(stdin_gap_note(flag, gap[0], gap[1]))
+            args.stdin_notes.append(stdin_gap_note(flag, *gap))
             continue
-        out(brief_gap_refusal(flag, gap[0], gap[1]))
+        out(brief_gap_refusal(flag, *gap))
         return E_USAGE
     if not args.as_json:
         for note in args.stdin_notes:
@@ -1433,6 +1521,122 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
     return written
 
 
+# THE SECOND-ORDER TRAP `commit-task-work.py` DOES NOT CLOSE. That script
+# refuses a task commit that stages the index, on purpose (two phases must be
+# able to merge without meeting on one file) -- so a write here that dirtied
+# BOTH the shard and the index leaves the index sitting uncommitted, and
+# nothing said so at the moment it happened. A caller who commits the shard by
+# hand and never runs the one script that lands the index alone produces a
+# manifest that fails to validate AT that commit, because the index then names
+# a task the checked-out shard does not carry -- reproduced in a scratch
+# repository rather than assumed.
+def _index_dirty_note(written, mpath, project, phase_id):
+    """The note owed when THIS write left the shared index dirty beside the
+    phase shard it also touched -- or None when this write is one file, not
+    two (a single-file manifest, or a sharded write that never moved a
+    mirrored key and never touched `fileIndex`).
+
+    `written` ALREADY KNOWS THE ANSWER, so nothing further is asked of the
+    manifest to tell: `_write_add`'s own docstring says shard first,
+    index-precedent order, so the index sitting LAST behind a first entry is
+    exactly what a dual write with the index looks like from here.
+
+    NAMED HERE, NOT ONLY IN THE REFUSAL THAT FOLLOWS THE MISTAKE.
+    `commit-task-work.py`'s own refusal already names `commit-manifest-
+    index.py` -- but only once a caller has staged the index and been turned
+    away for it, by which point a hand commit may already have carried the
+    shard on alone. This is the same name at the moment the state is CREATED.
+    """
+    index_rel = _output.posix_rel(mpath, project)
+    if len(written) < 2 or written[-1] != index_rel:
+        return None
+    return (
+        "  the manifest index (%s) is now DIRTY alongside the shard this "
+        "wrote, and a task commit will not carry it -- orchestrator.md step "
+        "4c refuses to stage the index in a task commit on purpose, which is "
+        "what lets two phases merge with no conflict there. Land it on its "
+        "own, before or beside the next commit:\n"
+        "    python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py\" "
+        "%s %s" % (index_rel, mpath, phase_id))
+
+
+def _index_dirty_key(note):
+    """`{"indexDirtyNote": note}` for a verb's `--json` block, or `{}` --
+    `stdin_notes_key`'s shape, so a machine reader tells "nothing to say" from
+    "this release does not carry the key" the same way for both."""
+    return {"indexDirtyNote": note} if note else {}
+
+
+# THE PROMISE `reference/orchestrator.md` STATES FOR **run** AND THESE VERBS
+# CROSS. "A phase run therefore touches only its own shard -- which is exactly
+# why two phase branches merge without a manifest conflict" is true of a run:
+# it stays on the phase it is executing. Every verb here takes a task or phase
+# id from wherever the caller happens to be STANDING, and a write that lands in
+# phase X's shard while the caller is on phase Y's branch is the exact merge
+# conflict that sentence says the layout avoids -- reproduced live: same tree,
+# two branches, one shard, a real conflict in the file the layout exists to
+# keep conflict-free.
+#
+# A WARNING, NOT A REFUSAL. Naming it is the whole fix: the writer then knows
+# to expect a merge, rather than being surprised by one when the branches
+# meet. Nothing here is wrong enough to stop -- `run` and `next` still resolve
+# and commit through their own branch machinery regardless of what this prints.
+#
+# NOT THE SAME SHAPE AS THE `commit-scope` invariant. That check starts from
+# COMMITS the plan records (`task.commit`, a phase's merge) and asks what each
+# one staged. This starts from a PATH -- the shard this write is about to touch
+# -- and asks a containment question about a branch, never a commit the plan
+# records anywhere.
+def _phase_branch_note(git_root, phase, cwd=None, run=None):
+    """The warning owed when this write lands in `phase`'s shard while the
+    caller stands on a branch OTHER than the one recorded for it, or None
+    when there is nothing to compare.
+
+    SILENT WHEN THE PHASE RECORDS NO BRANCH AT ALL, and that was true of most
+    of them the day this was measured against this project's own manifest:
+    fewer than a fifth of its phases carried one, and every phase running
+    that day carried none. A check keyed only on a populated `branch` is
+    therefore silent across the whole of THIS repository's dogfood run --
+    which is exactly where a wrong condition would have been noticed, so that
+    silence is recorded here as a stated limit rather than discovered later.
+    The alternative (deriving the expected branch from `_branch.compose` when
+    none is recorded) was rejected: a composed name is a PREDICTION of what
+    `run` would create, never a record of what git actually holds, and
+    warning off a guess is the false-positive shape this repository's own
+    fault register already has entries about.
+
+    SILENT WHEN GIT CANNOT ANSWER, for the same reason one door over
+    (`_panel_write.standing_elsewhere`): a missing git, a directory that is
+    not a repository, or a worktree list git refuses to print leaves nothing
+    to compare the recorded branch against, and a warning built on a guess is
+    worse than none.
+    """
+    branch = (phase or {}).get("branch")
+    if not branch:
+        return None
+    listing = _worktrees.list_worktrees(git_root, run=run)
+    if listing["error"]:
+        return None
+    here = _worktrees.standing_in(listing["trees"], cwd or os.getcwd())
+    standing = (here or {}).get("branch")
+    if not standing or standing == branch:
+        return None
+    return (
+        "  WARNING: phase %s is recorded on branch %s, and this write just "
+        "landed from %s -- a DIFFERENT branch. The promise that a phase run "
+        "touches only its own shard belongs to `run`, not to this verb: this "
+        "call took an id from wherever you are standing, so phase %s's shard "
+        "now holds edits made from two branches. Expect a merge conflict "
+        "there when the two meet, rather than being surprised by one."
+        % (phase.get("id"), branch, standing, phase.get("id")))
+
+
+def _phase_branch_key(note):
+    """`{"branchNote": note}` for a verb's `--json` block, or `{}` --
+    `_index_dirty_key`'s shape, for the same reason."""
+    return {"branchNote": note} if note else {}
+
+
 # --- the journal ---------------------------------------------------------------
 def _journal_row(project, config, mpath, action, summary, details):
     """One journal row, appended in-process via audit-journal's `append`.
@@ -2002,6 +2206,10 @@ def _locked_add(args, project, config, mpath, title, out):
     jres = _journal_add(project, config, mpath, task_id, phase_id, title,
                         healed)
     waiting = _waiting_on(assembled, task)
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     if args.as_json:
         result = {"ok": True, "id": task_id, "phase": phase_id,
                   "title": title, "task": task, "written": written,
@@ -2028,6 +2236,8 @@ def _locked_add(args, project, config, mpath, title, out):
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        result.update(_phase_branch_key(branch_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s added to %s -- %s" % (task_id, phase_id, title))
@@ -2080,6 +2290,10 @@ def _locked_add(args, project, config, mpath, title, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the task.add row")
     out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    if branch_note:
+        out(branch_note)
     for line in _readiness_lines(waiting, task_id):
         out(line)
     return 0
@@ -2211,6 +2425,10 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
 
     jres = _journal_cancel(project, config, mpath, kind, tid, phase_id,
                            reason, cascade)
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     if args.as_json:
         result = {"ok": True, "id": tid, "kind": kind, "phase": phase_id,
                   "reason": reason, "at": now, "cascaded": cascaded,
@@ -2219,6 +2437,8 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        result.update(_phase_branch_key(branch_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
@@ -2229,6 +2449,10 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the %s.cancel row" % kind)
     out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    if branch_note:
+        out(branch_note)
     return 0
 
 
@@ -2545,6 +2769,10 @@ def _locked_start(args, project, config, mpath, tid, out):
 
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
                           healed)
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     # REPORTED, NEVER REFUSED. The plan gate is what this verb serves, and the
     # case it serves is a task whose edits are being denied -- so a blocker list
     # is something the operator has to see and `/audit:run` is where readiness
@@ -2570,6 +2798,8 @@ def _locked_start(args, project, config, mpath, tid, out):
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        result.update(_phase_branch_key(branch_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if was["status"] == "in_progress":
@@ -2598,6 +2828,10 @@ def _locked_start(args, project, config, mpath, tid, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the task.start row")
     out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    if branch_note:
+        out(branch_note)
     return 0
 
 
@@ -2958,6 +3192,8 @@ def _locked_done(args, project, config, mpath, tid, out):
         return E_INVALID
 
     jres = _journal_done(project, config, mpath, tid, phase_id, was, node)
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     open_left = _still_open(phase)
     outcome = node.get("outcome") if isinstance(node.get("outcome"), dict) else {}
     if args.as_json:
@@ -2983,6 +3219,8 @@ def _locked_done(args, project, config, mpath, tid, out):
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        result.update(_phase_branch_key(branch_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s done in %s -- was %s" % (tid, phase_id, was["status"]))
@@ -3030,6 +3268,10 @@ def _locked_done(args, project, config, mpath, tid, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the task.done row")
     out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    if branch_note:
+        out(branch_note)
     return 0
 
 
@@ -3255,6 +3497,13 @@ def _locked_phase_add(args, project, config, mpath, title, out):
 
     jres = _journal_phase_add(project, config, mpath, pid, title,
                               phase["desiredOutcome"])
+    index_note = _index_dirty_note(written, mpath, project, pid)
+    # ALWAYS None HERE, and not asked for: `_build_phase` seeds `branch: None`
+    # (manifest-conventions -> New phase template), so a phase this write just
+    # created has nothing yet for `_phase_branch_note` to compare against --
+    # kept as a named constant rather than omitted so the JSON/report wiring
+    # below is the same shape on every verb.
+    branch_note = None
     waiting = _waiting_on(assembled, phase)
     if args.as_json:
         result = {"ok": True, "id": pid, "title": title, "phase": phase,
@@ -3265,6 +3514,8 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        result.update(_phase_branch_key(branch_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] phase %s added -- %s" % (pid, title))
@@ -3283,6 +3534,10 @@ def _locked_phase_add(args, project, config, mpath, title, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the phase.add row")
     out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    if branch_note:
+        out(branch_note)
     if waiting:
         out("  waiting on: %s" % ", ".join(waiting))
     out("  next: /audit:task add \"<the first task>\" --phase %s" % pid)
@@ -3790,6 +4045,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
         return E_INVALID
 
     jres = _journal_scope(project, config, mpath, tid, phase_id, changes, node)
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     # THE PAYOFF FOR COMPUTING READINESS HERE, and the reason it is computed unconditionally: the live case
     # was a task parked behind a `dependsOn` id, rescoped precisely so it could
     # run. "Can it run now" is the question that call was asking.
@@ -3821,6 +4080,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        result.update(_phase_branch_key(branch_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s scoped in %s" % (tid, phase_id))
@@ -3920,6 +4181,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out("WARNING: " + line)
     if not jres.get("journaled"):
         out("  note: not journaled (%s)" % jres.get("journaledWhy"))
+    if index_note:
+        out(index_note)
+    if branch_note:
+        out(branch_note)
     return 0
 
 
@@ -4080,6 +4345,10 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         return E_INVALID
 
     jres = _journal_retarget(project, config, mpath, pid, changes)
+    index_note = _index_dirty_note(written, mpath, project, pid)
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    branch_note = _phase_branch_note(git_root, node, cwd=git_root)
     if args.as_json:
         result = {"ok": True, "id": pid, "changes": changes,
                   "written": written,
@@ -4087,6 +4356,8 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        result.update(_phase_branch_key(branch_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s retargeted" % (pid,))
@@ -4103,6 +4374,10 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         out("WARNING: " + line)
     if not jres.get("journaled"):
         out("  note: not journaled (%s)" % jres.get("journaledWhy"))
+    if index_note:
+        out(index_note)
+    if branch_note:
+        out(branch_note)
     return 0
 
 
@@ -4526,13 +4801,13 @@ def build_parser():
     p.add_argument("--risk", choices=["low", "med", "high"], default=None)
     p.add_argument("--blocked-by", dest="blocked_by", default=None)
     p.add_argument("--depends-on", dest="depends_on", default=None)
-    p.add_argument("--description", default="")
+    p.add_argument("--description", default="", help=_PROSE_HELP)
     # `retarget --rename "<new title>"`. Not `--title`: this verb's
     # POSITIONAL slot is called `title` and carries the phase id, so the flag
     # would shadow it. A phase title is not decoration - `_branch.slugify` turns
     # it into the branch's `{slug}` - which is why it is corrected through a verb
     # that can refuse rather than by hand.
-    p.add_argument("--rename", default="", metavar="TITLE")
+    p.add_argument("--rename", default="", metavar="TITLE", help=_PROSE_HELP)
     p.add_argument("--tests-mode", dest="tests_mode",
                    choices=["tdd", "regression", "gate-only"], default=None)
     p.add_argument("--tests-add", dest="tests_add", action="append",
@@ -4548,12 +4823,12 @@ def build_parser():
     p.add_argument("--gate-clear", dest="gate_clear",
                    action="store_true")
     p.add_argument("--project-dir", dest="project_dir", default=None)
-    p.add_argument("--reason", default=None)
+    p.add_argument("--reason", default=None, help=_PROSE_HELP)
     # add-phase only. `--id` rather than a positional: the title is the
     # positional every verb here already spends, and an OPTIONAL id read off
     # position two would be indistinguishable from the optional `manifest`.
     p.add_argument("--id", dest="phase_id", default=None)
-    p.add_argument("--outcome", default=None)
+    p.add_argument("--outcome", default=None, help=_PROSE_HELP)
     p.add_argument("--area", default=None)
     p.add_argument("--review-skill", dest="review_skill", default=None)
     # `done` only. The SHA of the commit the task's work landed in, which is what
@@ -4567,8 +4842,8 @@ def build_parser():
     # `add-phase` and `retarget`, and reusing one flag for two different fields on
     # two different nouns is how a caller writes the right words into the wrong
     # place.
-    p.add_argument("--descriptive", default=None, metavar="TEXT")
-    p.add_argument("--technical", default=None, metavar="TEXT")
+    p.add_argument("--descriptive", default=None, metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--technical", default=None, metavar="TEXT", help=_PROSE_HELP)
     # `verifiedBy`: the test names this task added, the field `reference/
     # orchestrator.md` step 4b fills beside the outcome. A comma list of names for
     # `--blocked-by`'s reason, and `--verified-by ""` empties it for the same one.

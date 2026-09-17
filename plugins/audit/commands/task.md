@@ -48,6 +48,16 @@ itself; hold the lock by hand (conventions → Concurrency lock) only around wri
 with Edit — which is now the `move` subcommand and nothing else. **Creating a phase is
 `/audit:phase add` and is no longer done here by hand** (see step 1).
 
+**In the sharded layout, a write here can leave the shared index sitting dirty beside the
+phase shard it also touched** — `add-phase` always does; `add`/`scope`/`retarget`/`cancel`/
+`start`/`done` do it whenever a mirrored stub key (`status`, `title`, …) or `fileIndex` moves.
+A task commit will not carry that index (`orchestrator.md` step 4c refuses it on purpose, so
+two phases can merge without a conflict there), so it needs its own commit —
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" <manifestPath>
+<phaseId>` lands it alone, under the same lock. **The script prints this itself, naming that
+exact command, the moment its own write leaves the index dirty** — read it off the output
+rather than remembering the rule here.
+
 ## Subcommand: `add "<title>" [--phase <id>]`
 
 The add is a SCRIPT call, not a hand-templated edit. `scripts/manifest/audit-task.py` allocates
@@ -79,10 +89,13 @@ per add is the class of error the script exists to delete.
      parallel task by hand.
 2. **Gather the answers** (ask only for what's missing; propose sensible defaults):
    - `--description` — problem, approach, key decisions. **If the brief contains
-     backticks, pass it on stdin with `--description -`** (see *A brief the shell
-     has eaten is refused* below) — inside double quotes a backtick span is
-     command substitution, and the shell deletes it before this script is
-     started.
+     backticks, OR any code-shaped punctuation next to whitespace (a ternary, a
+     colon-joined pair), pass it on stdin with `--description -`** (see *A brief
+     the shell has eaten is refused* below) — inside double quotes a backtick
+     span is command substitution and the shell deletes it before this script is
+     started, but the script's own check tests the whitespace SHAPE such a
+     deletion leaves and never the backtick itself, so brief text with none can
+     still be refused off argv.
    - `--files a,b` — repo-relative paths this task touches (Glob/Grep to verify they
      exist; the script notes misses but allows new-file paths).
    - `--outputs docs/audit/evidence/**,docs/reports/*.md` — patterns for what this
@@ -234,7 +247,17 @@ script accepted it, and a whole phase ran against a brief with a hole in it.
 So a `--description` that arrives **off argv** carrying the whitespace such a
 deletion leaves behind — a gap before a comma, a run of spaces inside a sentence, a
 full stop with nothing in front of it — is **refused**, exit `2`, before the lock is
-taken and with nothing written. The message names the span it saw and the route out.
+taken and with nothing written. The message marks the exact characters it matched
+inside the printed window and names the route out.
+
+**The check tests that whitespace SHAPE and never a backtick**, so a brief with no
+shell and no backtick anywhere in it can still be refused — a nested ternary
+(`foo() ? (a ? 280 : 70) : 0`) trips the identical refusal, because ` :` hugs the
+word in front of it the same way a shell-deleted clause would. The message says so:
+it names the shape it matched rather than assuming a shell was ever involved, and
+the marker is what lets you tell your own punctuation from real damage without
+reading the regex. **This is the route to reach for whether or not you see a
+backtick** — `--help` on the flag says as much now, which it did not before.
 
 **The route out is `--description -`**, and it is the fix rather than a bypass: the
 brief is read from **stdin**, which no shell rewrites and which this stores verbatim.

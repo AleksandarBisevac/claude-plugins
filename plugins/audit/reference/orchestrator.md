@@ -42,6 +42,14 @@ either layout (the scripts and hooks assemble transparently), but WRITES must ta
   **shard**. Edit the SHARD, never the index. **Structural** writes (adding a phase/task/bug,
   `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock. A phase run therefore touches
   **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
+  **That promise belongs to `run`, not to this verb, for every verb `scripts/manifest/audit-task.py`
+  exposes** (`add`, `scope`, `retarget`, `cancel`, `start`, `done`) — each takes a task or phase id from
+  wherever the caller happens to be standing, so a call against phase X's id while standing on phase
+  Y's branch lands in X's shard from the wrong branch, which is the merge conflict this promise says
+  the layout avoids. The script prints a **warning, never a refusal** — naming both branches — the
+  moment a write of its own lands this way; it stays silent when the target phase records no branch at
+  all, which is most of them, and when git cannot be asked at all, since neither leaves anything to
+  compare the write against.
 - **Single-file layout** (no phase carries a `shard`; `meta.version: 2` or absent): it's all
   one file, as before.
 - **Neither layout is legacy, and a mutating command should not nudge.** The two shapes are a

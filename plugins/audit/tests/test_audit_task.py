@@ -61,7 +61,11 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # reads),
 # pd (P43.2, the `done` verb: the close, and the SHA that makes it a record),
 # tw (P46.2: the tree the caller stands in against the tree the verb writes),
-# sd (seed: the smallest honest plan, written where none was).
+# sd (seed: the smallest honest plan, written where none was),
+# gm (P55.19: the marker inside the gap window, and a cause the check tested
+# for rather than one it did not), bn (P55.20: a shard write naming the
+# phase's own branch against the one the caller stands on), ix (P55.21: the
+# index left dirty beside a shard, and the tool that lands it).
 def _cases(check):
     import contextlib
     import io
@@ -633,6 +637,173 @@ def _cases(check):
         check("y5 sharded rollback restores shard AND index byte-for-byte",
               code == 1 and open(shard_of["P2"], "rb").read() == p2_before
               and open(mpaths, "rb").read() == idx_before2)
+
+        # ---- (ix) the index left dirty beside a shard, and the tool that lands it
+        # Reported from a live project: `/audit:task add` (and `add-phase`,
+        # `scope`, `retarget`, `cancel`, `start`, `done` whenever a mirrored
+        # stub key or `fileIndex` moves) can write the phase's shard AND the
+        # shared index in ONE call, and nothing said the index was now sitting
+        # uncommitted -- `commit-task-work.py` refuses to stage it (on
+        # purpose, so two phases merge without a conflict there), so the only
+        # way to land it is a SEPARATE tool this write never named.
+        ixp, ixmp = mk("ix-sharded", base_manifest(), sharded=True)
+        # `add-phase` is the row this class can be relied on to hit every
+        # time: `_write_add`'s `index_dirty` is unconditional for a brand-new
+        # stub, so there is no flag combination that skips it.
+        code, ix_txt = run(["add-phase", "Second wave", "--outcome", "ships",
+                            "--project-dir", ixp])
+        check("ix1 a brand-new phase writes BOTH its shard and the index in "
+              "one call, and the write says the index is now dirty and names "
+              "the tool that lands it -- before now that tool's name reached "
+              "a human only in the refusal that follows the mistake: %r"
+              % (ix_txt[-320:],),
+              code == 0 and "commit-manifest-index.py" in ix_txt
+              and "DIRTY" in ix_txt)
+        ix_phase = [p for p in _mio.load_manifest(ixmp)["phases"]
+                    if p.get("title") == "Second wave"][0]
+        check("ix2 ...and the invocation it prints names THIS write's phase "
+              "id, not a stale one left over from an earlier call in the "
+              "same process: %r" % (ix_txt[-200:],),
+              ix_phase["id"] in ix_txt.rsplit("commit-manifest-index.py", 1)[-1])
+        code, ix_json_txt = run(["add-phase", "Third wave", "--outcome",
+                                 "ships", "--project-dir", ixp, "--json"])
+        ix_json = json.loads(ix_json_txt)
+        check("ix3 the SAME note travels in --json as its own key, the "
+              "`stdinNotes` shape: present with the sentence when there is "
+              "one to make, so a machine caller can act on it without "
+              "scraping human prose: %r" % (ix_json.get("indexDirtyNote"),),
+              code == 0 and bool(ix_json.get("indexDirtyNote"))
+              and "commit-manifest-index.py" in ix_json["indexDirtyNote"])
+        # SECOND-DIRECTION CASE, and the one that decides whether this can
+        # ship: an ordinary write that touches only the shard must say
+        # NOTHING about the index, or the note becomes a line every plain
+        # `add` prints and nobody reads.
+        code, ix_quiet_txt = run(["add", "Quiet add", "--phase", "P2",
+                                  "--project-dir", ixp])
+        check("ix4 SECOND-DIRECTION CASE: a write that dirties only the "
+              "shard names no tool and no index, because there is nothing "
+              "to land: %r" % (ix_quiet_txt[-200:],),
+              code == 0 and "commit-manifest-index.py" not in ix_quiet_txt
+              and "DIRTY" not in ix_quiet_txt)
+        code, ix_quiet_json_txt = run(["add", "Quiet add json", "--phase",
+                                       "P2", "--project-dir", ixp, "--json"])
+        ix_quiet_json = json.loads(ix_quiet_json_txt)
+        check("ix5 ...and the JSON key is ABSENT rather than null or empty, "
+              "the same 'nothing to say' shape `stdinNotes`/`projectBasis` "
+              "already use, so a reader can tell 'nothing dirty' from 'this "
+              "release carries no such key': %r"
+              % (sorted(ix_quiet_json.keys()),),
+              code == 0 and "indexDirtyNote" not in ix_quiet_json)
+        # THE OTHER LAYOUT, where there is no separate index to leave dirty
+        # at all -- the manifest IS the index, so the class this note exists
+        # for cannot occur there.
+        ixf_proj, ixf_mp = mk("ix-single", base_manifest())
+        code, ixf_txt = run(["add-phase", "Single file wave", "--outcome",
+                             "ships", "--project-dir", ixf_proj])
+        check("ix6 the SINGLE-FILE layout never carries this note: there is "
+              "one file and not two, so nothing was left dirty BESIDE "
+              "anything: %r" % (ixf_txt[-160:],),
+              code == 0 and "commit-manifest-index.py" not in ixf_txt)
+
+        # ---- (bn) a write naming another phase's shard says which branch ------
+        # The sharded layout promises a phase RUN touches only its own shard,
+        # which is why two phase branches merge cleanly -- true of `run`, never
+        # of these verbs, which take an id from wherever the caller happens to
+        # be standing. Reproduced live: same tree, two branches, one shard, a
+        # real merge conflict in the file the layout exists to keep
+        # conflict-free.
+        def bn_repo(name, phase_branch, checkout_branch):
+            """A sharded, git-backed project with P2 recorded on
+            `phase_branch` (or carrying none at all when `phase_branch` is
+            None), currently checked out on `checkout_branch`."""
+            m = base_manifest()
+            if phase_branch:
+                m["phases"][1]["branch"] = phase_branch
+            proj, mpath = mk(name, m, sharded=True, git=True)
+            subprocess.run(["git", "-C", proj, "checkout", "-q", "-b",
+                            checkout_branch],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for argv in (["config", "user.email", "t@example.com"],
+                        ["config", "user.name", "Test User"],
+                        ["add", "-A"], ["commit", "-qm", "seed"]):
+                subprocess.run(["git", "-C", proj] + argv,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            return proj, mpath
+
+        bn1_proj, bn1_mp = bn_repo("bn-mismatch", "audit/p2-original",
+                                    "mainline")
+        code, bn1_txt = run(["cancel", "P2", "--reason", "dropped",
+                             "--project-dir", bn1_proj])
+        check("bn1 a write into P2's shard from branch `mainline`, while P2 "
+              "is recorded on `audit/p2-original`, prints a WARNING naming "
+              "BOTH branches and the phase -- naming it is the whole fix, "
+              "because the writer then knows to expect a merge: %r"
+              % (bn1_txt[-320:],),
+              code == 0 and "WARNING: phase P2" in bn1_txt
+              and "audit/p2-original" in bn1_txt and "mainline" in bn1_txt
+              and "merge conflict" in bn1_txt)
+        bn1_json = run(["cancel", "P2", "--reason", "dropped", "--json",
+                        "--project-dir",
+                        bn_repo("bn-mismatch-json", "audit/p2-json",
+                               "mainline")[0]])
+        bn1_parsed = json.loads(bn1_json[1])
+        check("bn1b ...and the SAME fact travels in --json as its own key: %r"
+              % (bn1_parsed.get("branchNote"),),
+              bn1_json[0] == 0 and bool(bn1_parsed.get("branchNote"))
+              and "audit/p2-json" in bn1_parsed["branchNote"])
+        bn2_proj, bn2_mp = bn_repo("bn-match", "audit/p2-original",
+                                   "audit/p2-original")
+        code, bn2_txt = run(["cancel", "P2", "--reason", "dropped",
+                             "--project-dir", bn2_proj])
+        check("bn2 SECOND-DIRECTION CASE: standing on the SAME branch the "
+              "phase records draws no warning at all -- the ordinary "
+              "`/audit:phase run` flow, which must stay quiet or the note "
+              "becomes a line every phase commit prints: %r"
+              % (bn2_txt[-200:],),
+              code == 0 and "WARNING: phase" not in bn2_txt)
+        bn3_proj, bn3_mp = bn_repo("bn-nobranch", None, "mainline")
+        code, bn3_txt = run(["cancel", "P2", "--reason", "dropped",
+                             "--project-dir", bn3_proj])
+        check("bn3 SECOND-DIRECTION CASE, AND THE ONE THAT DECIDES WHETHER "
+              "THIS SHIPS: a phase recording NO branch at all draws no "
+              "warning either, whatever branch the caller stands on -- "
+              "measured over this project's own manifest, fewer than a "
+              "fifth of its phases carry a branch and every phase running "
+              "as this was written carries none, so a check keyed only on a "
+              "populated branch is silent across this repository's own "
+              "dogfood run. That silence is the stated condition, not a "
+              "gap: %r" % (bn3_txt[-200:],),
+              code == 0 and "WARNING: phase" not in bn3_txt)
+        bn3_json = run(["cancel", "P3", "--reason", "dropped", "--json",
+                        "--project-dir",
+                        bn_repo("bn-nobranch-json", None, "mainline")[0]])
+        bn3_parsed = json.loads(bn3_json[1])
+        check("bn3b ...and the JSON key is ABSENT rather than null, the same "
+              "shape `indexDirtyNote` already uses: %r"
+              % (sorted(bn3_parsed.keys()),),
+              bn3_json[0] == 0 and "branchNote" not in bn3_parsed)
+        bn4_m = base_manifest()
+        bn4_m["phases"][1]["branch"] = "audit/p2-original"
+        bn4_proj, bn4_mp = mk("bn-nogit", bn4_m, sharded=True)
+        code, bn4_txt = run(["cancel", "P2", "--reason", "dropped",
+                             "--project-dir", bn4_proj])
+        check("bn4 SECOND-DIRECTION CASE: with no git repository at all to "
+              "ask, a recorded branch still draws no warning -- a claim "
+              "with no way to verify it is refused the same way "
+              "`standing_elsewhere` refuses one door over, never guessed: "
+              "%r" % (bn4_txt[-200:],),
+              code == 0 and "WARNING: phase" not in bn4_txt)
+        with open(os.path.join(_output.PLUGIN_ROOT, "reference",
+                               "orchestrator.md"), "r",
+                  encoding="utf-8") as _bn_fh:
+            _bn_orc_src = _bn_fh.read()
+        check("bn5 `reference/orchestrator.md` gains the boundary the verbs "
+              "cross -- the promise it states is `run`'s, and this document "
+              "used to state it unhedged",
+              "touches\n  **only its own shard**" in _bn_orc_src
+              and "belongs to `run`, not to this verb" in
+              _bn_orc_src.replace("\n", " "))
 
         # ---- (h) the A4 heal ------------------------------------------------
         healm = base_manifest()
@@ -3173,6 +3344,85 @@ def _cases(check):
               not M.shell_eaten_gap("It ends here.  And starts again.")
               and not M.shell_eaten_gap("a line\n   indented on")
               and not M.shell_eaten_gap("run git fetch . b:p here"))
+
+        # ---- (gm) the refusal marks what it matched ----------------------------
+        # Reported live: a nested ternary -- `foo() ? (a ? 280 : 70) : 0` --
+        # passed through a LIST-FORM call with NO SHELL ANYWHERE tripped the
+        # same whitespace-adjacency check the `eb` group above drives with a
+        # real shell-eaten backtick, and the refusal explained itself in terms
+        # of a backtick span being eaten. There were no backticks: the check
+        # tests `_GAP_SHAPES` and none of them is one.
+        gm_brief = "foo() ? (a ? 280 : 70) : 0"
+        gm_what, gm_excerpt, gm_rs, gm_re = M.shell_eaten_gap(gm_brief)
+        check("gm0 fixture check: the ternary matches the space-before-a-mark "
+              "shape on exactly the space+colon after `280`, and the excerpt "
+              "is the whole short brief -- so the assertions below are "
+              "checking a real match and not an empty one: %r"
+              % ((gm_what, gm_excerpt, gm_excerpt[gm_rs:gm_re]),),
+              gm_what == "whitespace before a mark that hugs the word in "
+                         "front of it"
+              and gm_excerpt == gm_brief and gm_excerpt[gm_rs:gm_re] == " :")
+        gm_proj, gm_mp = mk("gm-ternary", base_manifest())
+        code, gm_txt = run(["add", "Ternary brief", "--phase", "P2",
+                            "--description", gm_brief,
+                            "--project-dir", gm_proj])
+        check("gm1 the ternary trips the SAME refusal an eaten backtick does, "
+              "off a call this harness makes with `M.main(argv, ...)` -- an "
+              "argv list, never a shell: %r" % (gm_txt[:160],),
+              code == 2 and "hugs the word in front of it" in gm_txt)
+        # INDEPENDENTLY COMPUTED, NOT TAKEN FROM `M._marked_excerpt` -- calling
+        # the function under test to build the expectation it is then checked
+        # against is the shortcut `no-silent-pass` warns about: a bug INSIDE
+        # `_marked_excerpt` would move the expectation and the check together
+        # and neither could ever fail. `gm0` already proved `gm_rs`/`gm_re`/
+        # `gm_excerpt` are right against fixed literals, so the caret line
+        # is rebuilt here from those primitives alone.
+        gm_expect_marks = "".join("^" if gm_rs <= i < gm_re else " "
+                                  for i in range(len(gm_excerpt)))
+        gm_seen_line = M.SEEN_PREFIX + "'" + gm_excerpt + "'"
+        gm_mark_line = (" " * len(M.SEEN_PREFIX)) + " " + gm_expect_marks
+        check("gm2 a MARKER sits inside the printed window, aligned under the "
+              "exact characters that matched -- the excerpt line and an "
+              "INDEPENDENTLY built caret line both appear, in that order, so "
+              "a reader is pointed at the characters that matched rather "
+              "than left to count spaces across the whole excerpt: %r"
+              % ((gm_seen_line, gm_mark_line),),
+              gm_seen_line in gm_txt and gm_mark_line in gm_txt
+              and gm_txt.index(gm_seen_line) < gm_txt.index(gm_mark_line))
+        check("gm3 the message never claims the untested cause as fact: it "
+              "says COMMAND SUBSTITUTION is ONE way this shape appears and "
+              "that the check cannot tell that apart from code quoted "
+              "straight into the brief -- which is what actually happened "
+              "here, with no shell and no backtick anywhere in the call: %r"
+              % (gm_txt[-460:],),
+              "COMMAND SUBSTITUTION" in gm_txt
+              and "cannot tell that apart from code quoted straight into "
+                  "the brief" in gm_txt
+              and "`" not in gm_brief)
+        # SECOND-DIRECTION CASE, and the one that decides whether this reads
+        # as a repair rather than a rewording: the OLD sentence asserted the
+        # cause as fact, and it must be gone rather than merely joined by a
+        # hedge.
+        check("gm4 SECOND-DIRECTION CASE: the retired sentence -- which "
+              "asserted a deleted clause as fact rather than a shape that is "
+              "consistent with one -- does not survive beside the new one: "
+              "%r" % (gm_txt[-460:],),
+              "is missing exactly the clause its author thought worth "
+              "quoting" not in gm_txt)
+        check("gm5 the STDIN escape works for text with no backticks at all "
+              "-- it is the fix for the SHAPE, not only for backtick damage: "
+              "%r" % (gm_brief,),
+              run_on_stdin(["add", "Ternary via stdin", "--phase", "P2",
+                            "--description", "-",
+                            "--project-dir", gm_proj], gm_brief + "\n")[0] == 0)
+        gm_help = M.build_parser().format_help()
+        check("gm6 `--help` on the flag itself now says something -- before "
+              "this it printed the bare flag name and the stdin escape was "
+              "undiscoverable to a caller who had not yet been refused, and "
+              "whose text has no backtick to go looking for: %r"
+              % (gm_help[gm_help.index("--description"):
+                         gm_help.index("--description") + 160],),
+              "stdin" in gm_help and "whitespace-adjacency" in gm_help)
 
         # ---- (pf) the CLASS `--description` was one member of -------------------
         # The eb group fixed one flag. Two more carry the operator's own prose
