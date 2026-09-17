@@ -44,8 +44,8 @@ and refuses if one is held). Let `PANEL="${CLAUDE_PLUGIN_ROOT}/scripts/panel/pan
 ### Why the launch keeps its stderr
 
 A detached launch that discarded stderr left a failed launch looking **exactly** like a
-launch that succeeded and was then stopped — no pidfile, no message, nothing on record
-(F99). The log is emptied by the server itself once it is actually listening, so anything
+launch that succeeded and was then stopped — no pidfile, no message, nothing on record.
+The log is emptied by the server itself once it is actually listening, so anything
 left in it belongs to a launch that never got up, and `--status` prints its last line.
 `.claude/audit-panel.log` is gitignored by the panel itself, beside the pidfile.
 

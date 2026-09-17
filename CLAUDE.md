@@ -4,7 +4,7 @@ A Claude Code plugin marketplace (`quality-gates` → plugin `audit`). Python he
 CLI scripts**, not a package: there is no `[project]` table, nothing is installed, nothing is
 published. It dogfoods its own plugin, so its hooks fire on your edits.
 
-**Which tier the plan gate is in is not a property this file may assert** (F57). The gate grades
+**Which tier the plan gate is in is not a property this file may assert.** The gate grades
 itself on evidence — observe with no manifest, warn with a manifest but nothing running, deny once
 a phase is `in_progress` — and this sentence used to say edits "run under" it, which reads as the
 denying tier while only the weakest reading was true: the dogfood manifest's phases were all
@@ -49,7 +49,7 @@ two copies of a procedure is one copy and one lie.
   is noise. See `CONTRIBUTING.md` for the worked example (cost, and the five surfaces that
   render it).
 - **Do not write a number into prose when something already prints it.** This is the repo's
-  most frequent defect (F29, F39, F43 are one bug three times), and it is now a lint:
+  most frequent defect (the same bug, found three separate times), and it is now a lint:
   `_output.prose_number_claims()` over every `.py` this repo keeps and
   `_deps.doc_prose_numbers()` over every `.md` — both sets **derived** off `.gitignore`, so a
   file added here is scanned by default and excluding one means a row in
@@ -57,7 +57,7 @@ two copies of a procedure is one copy and one lie.
   present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``),
   completeness (`all N of them`, `all N … have`) or ratio (`N of M <noun>` — the tally a
   command prints, quoted with no command beside it) claim — and the number may be spelled as a
-  word, which is F59: `_numeral_span()` reads both spellings, for every shape it knows, from
+  word: `_numeral_span()` reads both spellings, for every shape it knows, from
   one fixed table. Three things stay legal on purpose: **history** (`it stood at N that day`),
   a number **carrying the command that re-derives it** — the basis may sit on the next line,
   because prose wraps — and the repair itself, which is to delete the number and keep the
@@ -95,7 +95,7 @@ Five things beyond the code, and four of them fail CI *by name* if missed:
    imports and above the first sibling import. Copy it from any neighbour;
    `path_preamble_violations()` counts its LINES (once, never twice) and checks the
    ordering, and `depth_sensitive_paths()` fails any file that reads `__file__` outside
-   it. **Lines, not the whole block** — that was F94: a file repeating only the
+   it. **Lines, not the whole block** — a file repeating only the
    `import _output` / `install_path()` tail carries the text once and bootstraps twice,
    so a count of the block read it as compliant. `hooks/` gets none of this — hooks may
    not import `scripts/`, so they resolve by basename through
@@ -202,7 +202,7 @@ python3 tools/check-rendered-artifacts.py  # the artifacts vs a fresh render AND
 python3 tools/check-committed-pii.py       # ...and that none of them names a machine
 python3 tools/check-example-ledgers.py     # ...and that no committed evidence row
                                            # records a verdict the runner cannot
-                                           # produce (F297), and that every commit
+                                           # produce, and that every commit
                                            # a committed manifest names resolves -
                                            # refusing on a clone too shallow to ask
 python3 plugins/audit/scripts/demo/gen-demo-usage.py \
@@ -325,7 +325,7 @@ bug whose fix task is `done` is already closed and blocks nothing.
 A Release is created **for** a tag, so it comes after the push. The tag is a git object;
 the Release is the page a reader lands on, and the README's `curl` pins make the tag a
 published claim — the Releases page had drifted to presenting a long-superseded version
-as Latest while the README pinned a far newer tag (F222). `CONTRIBUTING.md` carries the
+as Latest while the README pinned a far newer tag. `CONTRIBUTING.md` carries the
 step; what belongs here is that it is now checked, that the check lives in the **release**
 set alone because it asks a remote, and that it refuses rather than passing when it cannot
 ask:

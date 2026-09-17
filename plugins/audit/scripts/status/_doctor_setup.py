@@ -593,7 +593,7 @@ def check_manifest(rep, project, cfg):
         n_parked = sum(1 for x in (manifest.get("proposals") or [])
                        if isinstance(x, dict)
                        and _status_facts.is_parked_proposal(x.get("status")))
-        # Same rule as audit-status's legacy footer (F-E3): a status outside
+        # Same rule as audit-status's legacy footer: a status outside
         # the proposals vocabulary is still tracked work and must be counted.
         #
         # THROUGH `_manifest_vocab.PROPOSAL_STATUS`, and the copy this replaces was

@@ -210,7 +210,7 @@ def version_key(tag):
     """`(major, minor, patch)` for a `v<semver>` tag. Pure.
 
     Numeric, not lexical: `v0.9.0` sorts above `v0.28.0` as text, and reading the
-    Releases page against a tag chosen that way would have reproduced F222's
+    Releases page against a tag chosen that way would have reproduced the exact
     symptom inside the check written to catch it.
     """
     parts = tag[1:].split(".")
@@ -509,7 +509,7 @@ def _cases(check_case):
 
     check_case("r3 the newest tag is chosen NUMERICALLY. This is the case that "
                "fails on a lexical sort, which would pick v0.9.0 and reproduce "
-               "F222's own symptom inside the check written to catch it: %r"
+               "the exact symptom inside the check written to catch it: %r"
                % (newest_tag(_tags),),
                newest_tag(_tags) == "v1.8.0"
                and newest_tag(["v2.0.0", "v10.0.0"]) == "v10.0.0"
@@ -594,7 +594,7 @@ def _cases(check_case):
         "releases/tags/v1.8.0": (None, "absent"),
         "releases/latest": ({"tag_name": "v0.28.0"}, "ok")}))
     _code, _lines = report(_f222)
-    check_case("v2 F222 ITSELF, as the page actually stood: the newest tag has "
+    check_case("v2 THE BUG ITSELF, as the page actually stood: the newest tag has "
                "no Release and Latest names a far older version. BOTH are "
                "reported, because publishing the missing Release and Latest "
                "moving are one repair only when nothing else drifted: %r"

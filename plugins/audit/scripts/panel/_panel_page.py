@@ -130,7 +130,7 @@ UI_HTML = UI_HTML.replace("__COST_BAND_PARAMS__",
 # are concatenated for the reader, who cannot tell which half produced which.
 UI_HTML = UI_HTML.replace("__CONTRAST_PAIRS__",
                           json.dumps([list(p) for p in _theme.CONTRAST_PAIRS]))
-# th (F-P-6): the token block is substituted LAST, and into two copies.
+# th: the token block is substituted LAST, and into two copies.
 # UI_TEMPLATE keeps the marker so do_GET can dress the page in THIS project's
 # theme per request — a theme is a file on disk, and the reader who just saved
 # one reloads to see it. UI_HTML is that same finished page wearing the DEFAULT,

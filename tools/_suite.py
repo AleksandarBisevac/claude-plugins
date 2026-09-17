@@ -12,15 +12,15 @@ saying `FAILURES` where the house says `SELFTEST FAILED`, and one saying nothing
 all. `_harness`' own docstring records that spelling as a DEFECT rather than a variant:
 a suite whose last line reads the same whether it passed or failed leaves the numbers
 as its only sentinel. So the fix was documented, adopted, and had never reached these
-files (F73).
+files.
 
 `run` is re-exported here, not reimplemented. A second copy of mutate-print-tally is
 how the hand-rolled printers came to disagree in the first place - and `attempt` comes
 with it, because a tool with a probe that must not abort the suite wants the same
 answer `tests/` already has rather than a local `try` written a tenth way.
 
-`remove_tree` is here for the same reason and it is the second thing this file carries
-(F155). Git writes its loose objects READ-ONLY. On POSIX that is invisible, because
+`remove_tree` is here for the same reason and it is the second thing this file carries.
+Git writes its loose objects READ-ONLY. On POSIX that is invisible, because
 unlinking a file needs a writable DIRECTORY and not a writable file; on windows the
 attribute is read off the file itself, `os.unlink` raises, and `shutil.rmtree` leaves
 `.git/objects/**` behind - SILENTLY, because every caller in this tree spells the call
@@ -47,13 +47,13 @@ importing its own test tree. `tools/` ships with nothing; it is development mach
 in the same sense `tests/` is, and the marketplace payload is `plugins/audit/`.
 
 AND THE RULES, BECAUSE AN EXEMPTION THAT EXISTS ONLY AS THE ABSENCE OF AN IMPORT IS
-WHAT F73 WAS. `hand_rolled_runners()` reads every tool's `_selftest` and reports one
+EASY TO LOSE TRACK OF. `hand_rolled_runners()` reads every tool's `_selftest` and reports one
 that tallies its own cases instead of delegating here. `unsafe_removal_violations()`
 reads every tool's removals and reports a bare `shutil.rmtree` in a tool that builds a
 repository with objects in it. Both are derived from the tree, so the NEXT tool is
 covered the day it is written rather than the day somebody remembers - which is the
-answer to F155, whose call sites were enumerated by hand and whose next one would
-not have been.
+same answer for the removal helper, whose call sites used to be enumerated by hand and
+whose next one would not have been.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -257,8 +257,8 @@ def removal_problem(source):
 
     THE RULE IS PER MODULE AND NOT PER TREE, which is the whole of what it buys.
     Nothing static can say which of a module's directories will hold the `.git` -
-    that is the judgement F155 asked of a reader at every site, and it came back
-    wrong more than once. Asking the module instead costs nothing: on a tree with
+    that is the judgement every removal call site used to ask of a reader, and it
+    came back wrong more than once. Asking the module instead costs nothing: on a tree with
     no read-only file the careful removal's second half never runs, so uniformity
     inside a repository-building tool is free and the judgement is gone.
     """
@@ -318,7 +318,7 @@ def _cases(check):
           os.path.isfile(os.path.join(TESTS_DIR, "_harness.py"))
           and TESTS_DIR in sys.path)
 
-    # F73's actual complaint, asserted rather than described: a suite that ends the
+    # The actual complaint, asserted rather than described: a suite that ends the
     # same way whether it passed or failed has the numbers as its only sentinel.
     # Both directions are needed - the failing line must be the house spelling AND
     # the passing line must not be it, or a runner that always said SELFTEST FAILED
@@ -360,10 +360,10 @@ def _cases(check):
           runner_problem(_delegating) is None
           and runner_problem(_delegating.replace("import run",
                                                  "import attempt, run")) is None)
-    # THE SECOND DIRECTION, and the fixture is the pre-F73 body verbatim in
+    # THE SECOND DIRECTION, and the fixture is the old hand-rolled body verbatim in
     # miniature - the seven-way copy, including the sentinel that read the same
     # on both paths. A rule that accepted this would have accepted the tree as it
-    # stood, which is the state that made F73 an entry rather than a preference.
+    # stood, which is what made this worth enforcing rather than a preference.
     _hand_rolled = ("def _cases():\n"
                     "    return [('d1 a case', True, 'why')]\n"
                     "\n"
@@ -389,7 +389,7 @@ def _cases(check):
           "nobody looked at",
           (runner_problem("def _selftest(:\n") or "").startswith("does not parse"))
 
-    # --- F155: the removal, and the rule that keeps it reachable from here -----
+    # --- the removal, and the rule that keeps it reachable from here -----
     check("s11 `remove_tree` IS `_harness.remove_tree`, the same function object "
           "the suites under tests/ call - not a copy. This fact is allowed exactly "
           "two homes, `tests/_harness.py` and the deliberate copy in the sweep "

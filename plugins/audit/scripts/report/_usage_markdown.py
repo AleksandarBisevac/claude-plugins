@@ -94,7 +94,7 @@ def _usage_md(u):
         for k, v in sorted(data.items(), key=lambda kv: -kv[1]["tokens"]):
             # One decimal, matching the ranked list this table mirrors. The
             # two-decimal form is the hover affordance, and Markdown has no hover.
-            # uc (F-P-2): the Markdown twin is read by people too — the same
+            # uc: the Markdown twin is read by people too — the same
             # word as the HTML and the CLI, never the storage key.
             cells = [_theme.UNCATEGORIZED if k == "--" else k,
                      _fmt_tokens(v["tokens"])]

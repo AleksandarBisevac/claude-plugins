@@ -507,7 +507,7 @@ def main(argv):
 # suffix rather than the next free number - `a3b` next to `a3`, not `a14` at the
 # bottom of the file's numbering. The label set was `a0 a1 a2 a3 a14 a4 a5 a12 a6
 # ... a10 a13 a11` and the next free label was therefore not discoverable by
-# reading, which is how F61's first attempt collided with `a5`. `_harness.run()`
+# reading, which is how the first attempt at fixing this collided with `a5`. `_harness.run()`
 # now catches a collision by name, so this is about a reader's next label rather
 # than about a proof - and it is a convention on purpose, not a lint: a suite
 # that groups its cases by topic is right to, and a rule demanding one global
@@ -691,8 +691,8 @@ def _cases(check):
     # had to be applied to every path rather than added inside those branches -
     # the same reasoning the `refs_reads()` line at the top of `select()` carries.
     #
-    # Measured, not guessed: these are the two files F64 and F71 were found in, and
-    # they were also the two that selected the wrong side of this. Anything under
+    # Measured, not guessed: these are the two files where each half of this bug
+    # was found, and they were also the two that selected the wrong side of this. Anything under
     # `plugins/audit/commands/` or `tests/` was already covered by another branch.
     doc = sel("plugins/audit/scripts/ui/report-css/README.md")
     check("a14 a `.md` whose branch answers about a RENDERED surface still "

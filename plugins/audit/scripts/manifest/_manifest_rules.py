@@ -210,7 +210,7 @@ def _check_meta(manifest):
         f.append("meta.version: missing or not an integer")
     # meta.ado: the whole connector config goes through check_ado_meta --
     # the ONE front door shared with the panel's write_ado, so the CLI
-    # and the panel cannot disagree. (It keeps F-C-1's object-or-null rule
+    # and the panel cannot disagree. (It keeps the object-or-null rule
     # and folds in _check_identity_map.)
     if "ado" in meta:
         af, aw = check_ado_meta(meta.get("ado"))

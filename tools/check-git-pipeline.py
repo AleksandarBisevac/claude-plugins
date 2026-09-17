@@ -367,7 +367,7 @@ def check_trail_missing(fx):
 
     THE DISTINCTION IS THE POINT. `unchecked` is what a shallow clone produces -
     git was asked and could not answer past the graft boundary - and folding the
-    two together is the F88 class: the doctor's remedy for `missing` NULLS the
+    two together is a real failure class: the doctor's remedy for `missing` NULLS the
     recorded SHAs, so a clone that could not answer would have destroyed a trail
     that was intact. A repository this gate creates itself is never shallow, so
     `missing` is the answer that proves the accusation path is reachable at all.
@@ -454,7 +454,7 @@ def check_rewrite_denies_force_push(fx):
 def check_journal_wiring(fx):
     """`journal-writes.py` through the launcher: both passes, and the chained rows.
 
-    F53. Two hooks carry the product's own adjectives - this one is "auditable" -
+    Two hooks carry the product's own adjectives - this one is "auditable" -
     and neither was driven through `py-launch.sh` by anything. The Pre pass caches
     the manifest's bytes and the Post pass diffs them, so a hook whose wiring was
     broken in either direction would simply write nothing, which is what a hook that
@@ -668,7 +668,7 @@ def check_journal_file_deleted(fx):
 def check_meter_wiring(fx):
     """`meter-usage.py` through the launcher, and the ledger's author is git's.
 
-    F53's other half - this hook is what "measurable" rests on. The author is the
+    The other of the two hooks with an adjective riding on it - this one is what "measurable" rests on. The author is the
     assertion that needs the repository: `resolve_author` asks
     `git config --get user.email` and falls back to `$USER`, so on a fixture with
     no `.git` the row carries whoever ran the gate and the check would be green for
@@ -935,7 +935,7 @@ def check_close_phase_already_contained(fx):
 
 
 def check_close_phase_deletes_after_no_checkout_merge(fx):
-    """The branch really goes after a merge into a parent checked out NOWHERE (F249).
+    """The branch really goes after a merge into a parent checked out NOWHERE.
 
     This is the topology `merge_plan` calls `no-checkout`, and it is the ordinary one
     on a machine where you work on feature branches: the development branch has no
@@ -991,7 +991,7 @@ def check_close_phase_deletes_after_no_checkout_merge(fx):
 
 
 def check_close_phase_stamps_already_contained(fx):
-    """An already-landed phase is STAMPED, not merely cleaned up (F249).
+    """An already-landed phase is STAMPED, not merely cleaned up.
 
     The gate on the write used to be "this run performed a merge", which is false on
     exactly this path - and the cleanup beside it gates on the VERIFIED containment,
@@ -1319,12 +1319,12 @@ def journal_rows(fx):
 def reset_journal(fx):
     """Empty the journal directory so a check counts only its own rows.
 
-    THE CAREFUL REMOVAL EVEN THOUGH THIS TREE HOLDS NO OBJECTS (F155). What is
+    THE CAREFUL REMOVAL EVEN THOUGH THIS TREE HOLDS NO OBJECTS. What is
     under here is the journal's own text, and a plain removal would take it on
     either platform. The rule this file now answers to is per MODULE and not per
     directory, and that is the point of it: "which of these trees has a `.git` in
-    it" is the judgement F155 asked at every site and it came back wrong more than
-    once. On a tree with no read-only file the helper's second half never runs, so
+    it" is the judgement every removal call site used to ask and it came back wrong
+    more than once. On a tree with no read-only file the helper's second half never runs, so
     uniformity inside a repository-building tool costs nothing and removes the
     judgement.
     """
@@ -1469,7 +1469,7 @@ def main(argv):
         return code
     finally:
         if not keep:
-            # F155. `root` IS a git repository with commits in it, so its loose
+            # `root` IS a git repository with commits in it, so its loose
             # objects are read-only and `shutil.rmtree` cannot unlink them on
             # windows - with `ignore_errors=True` it would leave `.git/objects/**`
             # in the system temp and say nothing at all.
@@ -1622,7 +1622,7 @@ def _live_run():
                 bad = [(r["name"], r["detail"]) for r in rows if not r["ok"]]
                 _LIVE.update({"ok": not bad and bool(rows), "text": repr(bad)})
         finally:
-            # F155, AND THIS IS THE SITE THAT WAS LIVE RATHER THAN THEORETICAL:
+            # THIS IS THE SITE THAT WAS LIVE RATHER THAN THEORETICAL:
             # the windows leg of CI runs the whole sweep, the sweep runs this
             # file's `--selftest` with the temp roots pinned at a scratch
             # directory, and it refuses a file that left anything in it. A

@@ -667,7 +667,7 @@ inventory of legal wrappers cannot be written and would be short by one), `diren
 join it, and `.envrc` — the file the live report was actually about — joins the secret sets.
 `process.env` moved from the secret-FILE rule to the environment rule: the whole object and a
 token-shaped name are refused, one ordinary named variable is not, and being refused as "reading
-a secret file's contents" was the same false-positive class as F-P-7 one layer up. Finally the
+a secret file's contents" was the same false-positive class fixed one layer up. Finally the
 hook reads `dangerouslyDisableSandbox` off `tool_input` and refuses the COMBINATION of the
 sandbox being off with a command that reaches the environment layer — bounded to the
 combination, because an unsandboxed run is legitimate and denying all of them gets the plugin
@@ -692,8 +692,8 @@ recorded.
 
 A guard that refused every `reset --hard` would fire on correct work, and a guard that fires on
 correct work gets switched off, after which it protects nothing. That failure mode is already in
-this project's history (F-P-24, and the read-vs-write class `guard-secrets-read` was fixed for
-before it), so the ancestry check is not an optimisation — it is the reason the guard is allowed
+this project's history — `guard-secrets-read`'s read-vs-write class was fixed for the same reason
+before it — so the ancestry check is not an optimisation — it is the reason the guard is allowed
 to exist. `tests/test_guard_history_rewrite.py` is written the same way round: its ALLOW cases
 are the load-bearing ones, and each is proven red by a mutation chosen to tell the two versions
 apart rather than merely to break something.

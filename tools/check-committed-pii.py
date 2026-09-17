@@ -58,7 +58,7 @@ paragraph above reasons about OTHER repositories -- only a rule reading the
 committed file can prove nothing else writes there; a list of report names would
 be right here and wrong everywhere else -- and yet the root was `__file__`'s
 grandparent and the command took no path, so the one tree it could never be
-pointed at was the one where the leak was found (F112). `--repo <path>` is that
+pointed at was the one where the leak was found. `--repo <path>` is that
 path. `findings()`, `tracked_paths()` and `domain_files()` always took it.
 
 AND THE BASELINE DOES NOT TRAVEL WITH IT. Its rows name bytes in THIS project's
@@ -68,7 +68,7 @@ which is the failure mode of a shipped exemption table, and it would land on
 exactly the person who needs the finding. So a `--repo` naming any tree but this
 one is scanned with the table not consulted, and the closing line says so.
 
-AND IT CANNOT READ AN IMAGE, WHICH IS SAID HERE BECAUSE THE GAP IS REAL (F137).
+AND IT CANNOT READ AN IMAGE, WHICH IS SAID HERE BECAUSE THE GAP IS REAL.
 Every committed screenshot under `docs/screenshots/` is a picture of a rendered
 surface - the same surfaces this file scans as text - and one of them, the plan
 gate card, paints file paths that on a real project name the operator's machine.
@@ -490,7 +490,7 @@ def ok_line(run):
         basis = ("; BASELINE NOT consulted - the tree named by --repo is not the "
                  "repository that table describes, and one project's exemptions "
                  "do not clear another project's findings")
-    # THE WORD `TEXT` IS THE REPAIR FOR F137, and it is one word because the
+    # THE WORD `TEXT` IS THE REPAIR, and it is one word because the
     # over-claim was one word wide. "No committed artifact carries machine
     # identity" is false about a repository that also commits screenshots of these
     # very surfaces, and a headline that over-claims is worse than a narrow one
@@ -580,7 +580,7 @@ def _captured(argv):
 
 
 def _foreign_cases(check):
-    """The half F112 was: the tool pointed at a tree that is not this repository.
+    """Half of what was wrong: the tool pointed at a tree that is not this repository.
 
     Split out so the fixture trees are built and removed in one place, and so the
     `finally` covers every case below rather than the first one that raises.
@@ -621,8 +621,8 @@ def _foreign_cases(check):
         rows = findings(leaky)
         seen = sorted((r[1], r[2]) for r in rows)
         check("q13 `--repo` scans the tree it is GIVEN and reports that tree's "
-              "findings, which is the whole of F112 - the tool exists because a "
-              "user found their own name in a committed journal on a real "
+              "findings, which is exactly why the tool exists - a user found their "
+              "own name in a committed journal on a real "
               "project, and until this flag it could only ever be run here: %r"
               % (seen,),
               seen == [(1, "journal-actor-host"), (2, "journal-actor-host"),
@@ -702,7 +702,7 @@ def _foreign_cases(check):
               set(_echo.values()) == set([0])
               and clean not in ok_line(crun))
     finally:
-        # F155. Each of these is a real repository with a file STAGED into it, and
+        # Each of these is a real repository with a file STAGED into it, and
         # staging is enough: `git add` writes a loose object and writes it
         # read-only. On windows `os.unlink` reads that attribute off the file and
         # raises, so `shutil.rmtree` leaves `.git/objects/**` behind - and
@@ -890,7 +890,7 @@ def _cases(check):
     # with no value reported as an unrecognised argument - the two messages
     # differ because they quote different words, so distinctness was satisfied by
     # the wrong diagnosis. What the reader needs is the KIND.
-    # -- the vocabulary offered to a caller, which is F137's half of this file --
+    # -- the vocabulary offered to a caller, the other half of this file --
     # THE FIXTURE IS A WINDOWS TEMP ROOT, and it is chosen rather than convenient:
     # `capture-screenshots.mjs` builds its fixtures under the platform temp
     # directory on windows, which is per-user and therefore SPELLS the user's

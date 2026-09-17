@@ -365,7 +365,7 @@ def render(rows, args, manifest, window, show_cost, pt=None):
         return "\n".join(out)
 
     def label_for(by, key):
-        # uc (F-P-2): one word for the empty bucket, shared with the report and
+        # uc: one word for the empty bucket, shared with the report and
         # the panel. It used to be spelled twice here alone ("--   unattributed"
         # and "--      (no task)") and differently again on the other two
         # surfaces; the storage key stays "--" in the ledger and in --attr.

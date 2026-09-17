@@ -300,7 +300,7 @@ def _check_connection(ado, findings, warnings):
 def _conventions_contradictions(ado):
     """Where `conventions` and the rest of `meta.ado` disagree. Returns warnings.
 
-    F-P-18. Both blocks were graded alone and both were valid, so a standard that
+    Both blocks were graded alone and both were valid, so a standard that
     refused every item the connector writes validated clean; the operator found
     out at push time, when the conformance gate refused each CREATE and the push
     created nothing.

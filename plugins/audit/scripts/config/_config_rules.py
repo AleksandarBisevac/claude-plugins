@@ -306,7 +306,7 @@ def validate_config(obj):
                 findings.append("tddReminder.inProgressPolicy must be one of %s"
                                 % (IN_PROGRESS_POLICY,))
 
-    # th (F-P-6): `ui.theme` is a preset NAME or a path to a theme file. The
+    # th: `ui.theme` is a preset NAME or a path to a theme file. The
     # shape is all this can judge: whether a named preset exists, or a path
     # resolves, is a question about a live tree and belongs to the doctor and
     # the panel (the same split the skills inventory already uses).

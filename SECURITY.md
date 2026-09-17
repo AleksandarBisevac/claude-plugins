@@ -170,8 +170,8 @@ that fires on a read is one people route around, and the plain `git push` this
 plugin's own reference document forbids is deliberately not refused for the same
 reason. `tools/check-prohibitions.py` drives **both** halves of that pair on an
 ordinary run — the refusal and the reads-stay-allowed — so neither claim can
-quietly stop being true. (Until F284 only the refusal half was a gate and the
-reads half was a selftest case, which means a hook that started refusing
+quietly stop being true. (Before this was tightened, only the refusal half was a gate
+and the reads half was a selftest case, which means a hook that started refusing
 `git stash list` would have shipped green.)
 
 **And both of its arms bind to the operation rather than to the command text.**
@@ -660,7 +660,7 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    the class: a manifest write no static reading of the command could find.
 
    **This paragraph used to say it detects ANY shell write into an unplanned
-   source file. It does not, and has not since F-P-24.** The real predicate is
+   source file. It does not, and has not since the predicate was narrowed.** The real predicate is
    narrower than that, and every exemption below is there because the broad
    version was reporting something that was not true. The count that used to
    stand here rotted the first time an exemption was added; the list is the
@@ -689,7 +689,7 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
      payload naming the tree the session started in, so it matches the watched
      tree and the notice never fires. That shape is the ordinary one for an agent
      reaching a phase worktree, whose shell starts in the session's directory on
-     every call. There the `cd` itself is the evidence (F212): the finding is
+     every call. There the `cd` itself is the evidence: the finding is
      still reported, and the authorship claim is withdrawn instead of guessed at.
      The claim survives only where every directory change in the command names a
      literal path landing inside the watched tree; a destination the payload
@@ -699,12 +699,12 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    - **A NEW dirty path**, relative to a baseline the session's first Bash pass
      seeds silently — not every unplanned write, only one that appears between
      two of this hook's own looks at the tree.
-   - **It can prove a command harmless; it cannot prove one guilty.** F-P-24
-     bound the evidence to the operation instead of to the tree: a command
+   - **It can prove a command harmless; it cannot prove one guilty.** The
+     evidence is bound to the operation instead of to the tree: a command
      provably unable to write is absorbed and no path is attributed to it. That
      only ever *removes* an attribution — an unrecognised command is still
      watched exactly as before. **The proof is taken over shell TOKENS, not over
-     the command text** — before F51 it read the raw string, so a metacharacter
+     the command text** — before this was fixed it read the raw string, so a metacharacter
      inside a quoted search pattern was taken for shell syntax and `grep -n
      "cost > 5"` was a redirect. Redirects that name no file are dropped
      (`2>/dev/null`, `2>&1`); any other `>` in the same command survives. A
@@ -726,7 +726,7 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
      which the sentence above could not see, because a subagent's payload carries
      the same `session_id` as the main agent, so every agent of one session
      writes to ONE state file and a peer agent has no sibling file to be found
-     in (F227). What the payload does carry is an `agent_id`, on a subagent's
+     in. What the payload does carry is an `agent_id`, on a subagent's
      calls only, so the writers inside a session are stamped in the file they
      share and a peer that acted between this writer's previous look and this one
      withdraws the claim exactly as a peer session does. The window is per

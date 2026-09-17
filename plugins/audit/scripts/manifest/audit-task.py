@@ -109,7 +109,7 @@ Exit codes:
 
 Design decisions, each mirroring a precedent rather than inventing one:
 
-  * PROJECT (F-C-1). Which root owns the journal, the lock, the config and
+  * PROJECT. Which root owns the journal, the lock, the config and
     the file-existence notes is decided by `_panel_write.PROJECT_BASES`, which
     is that order AND the clause each row is chosen for, in one place because
     every verb here now PRINTS the clause. Naming another project's manifest
@@ -1116,7 +1116,7 @@ def _rescope_refusal(tid, task, blockers):
 # An ALIAS, not a copy. The body moved into `_panel_write` when `set-priority.py`
 # needed the same answer: a second command deriving "which project owns this
 # manifest" by its own walk is a second answer, and the two would drift on exactly
-# the markerless case F-C-2 was about. The name stays here because this file spells
+# the markerless case. The name stays here because this file spells
 # it unqualified and its suite asks for it by hand.
 _project_of_manifest = _panel_write.project_of_manifest
 
@@ -1126,7 +1126,7 @@ def resolve_basis(args):
     config and the file notes -- and the row of `_panel_write.PROJECT_BASES`
     that chose it.
 
-    F-C-1: keying this off the cwd while the manifest was explicitly named
+    Keying this off the cwd while the manifest was explicitly named
     wrote the `task.add` journal row into the CWD repo's journal -- the exact
     class audit-usage's resolve_ledger solved ("When a manifest was named,
     search upward from IT"). The order below IS the table's order, top-down,
@@ -1465,7 +1465,7 @@ def _journal_row(project, config, mpath, action, summary, details):
     mod = _panel_write._journalmod()
     if mod is None or not hasattr(mod, "append_from_cli"):
         return {"journaled": False, "journaledWhy": "unavailable"}
-    # THE PLACEMENT RULE (F-C-2): the journal lands in a sane place INSIDE
+    # THE PLACEMENT RULE: the journal lands in a sane place INSIDE
     # the named manifest's tree -- never doubled, never outside. A project
     # with a config keeps its own answer (config=None -> audit-journal's
     # load_config resolves journal.dir/manifestPath/enabled exactly as
@@ -2086,7 +2086,7 @@ def _locked_add(args, project, config, mpath, title, out):
 
 
 # --- cancel: finished, but not done ---------------------------------------------
-# ca (F-P-4, v0.40): a phase or task can end without landing — the feature was
+# ca (v0.40): a phase or task can end without landing — the feature was
 # dropped, the approach abandoned — and until this verb the only way to say so
 # was to hand-edit the manifest. Three things then went unrecorded, every time:
 # WHY (the reason lived in somebody's memory), WHEN (no stamp), and THAT IT

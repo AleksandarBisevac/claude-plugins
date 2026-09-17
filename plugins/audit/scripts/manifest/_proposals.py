@@ -441,8 +441,8 @@ def proposal_rows(manifest):
 
     These rows are the panel's OWN state key rather than a corner of its
     composition view: that view is the plan EDITOR, and a parked phase is not part
-    of the plan yet. Mixing the two is exactly the confusion F-P-32 was reported
-    about, and it is the same reason the rows live here rather than beside the
+    of the plan yet. Mixing the two produced exactly this confusion once already,
+    and it is the same reason the rows live here rather than beside the
     phase and task rows.
     """
     out = []

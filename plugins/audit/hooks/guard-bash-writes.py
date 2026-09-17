@@ -10,7 +10,7 @@ Two branches by tool_name:
       files went through guard-edits + require-plan already) — unless it lands
       outside the watched tree, which is silent and records nothing.
   Bash → if the command is PROVABLY READ-ONLY, absorb whatever appeared and
-      attribute nothing (F-P-24: with a second agent in the same checkout, "new
+      attribute nothing (with a second agent in the same checkout, "new
       to me" stopped meaning "written by this call", and a `git ls-files | grep`
       was blamed twice in one session for a file another session had just
       created). Otherwise diff `git status --porcelain` (run in the configured
@@ -28,13 +28,13 @@ this hook's own fault history rather than an oversight. The mechanism would fit 
 `git status` sees a write whatever made it, which is exactly the tool-agnostic
 observation the Bash branch exists for. What does not fit is everything that keeps
 the observation from becoming a FALSE ACCUSATION. The Bash branch absorbs whatever
-appeared when the command is PROVABLY READ-ONLY (F-P-24, a `git ls-files | grep`
+appeared when the command is PROVABLY READ-ONLY (a `git ls-files | grep`
 blamed twice in one session for another session's file); an MCP call cannot be
 proven read-only without a list of read verbs, which is the one thing this plugin
 does not read. And `_config.command_tree` asks git from the directory the payload
 names, while an MCP payload names no working directory and its server may not even
 run on this machine. So the branch would report findings it could not attribute and
-could not absorb — F-P-24 reinstated, with the repair unavailable.
+could not absorb — the same false-attribution bug, reinstated, with the repair unavailable.
 
 WHAT THAT LEAVES UNCOVERED, said plainly: an MCP write with no write basis in its
 payload (a rename, a delete, a one-line edit — `_config.mcp_payload`) reaches
@@ -702,7 +702,7 @@ def writing_statement(command, cwd, watching, rel):
 def _command_is_read_only(command):
     """Can this shell command be proven unable to write? Default: NO.
 
-    F-P-24. The guard used to decide from the TREE alone - it diffed
+    The guard used to decide from the TREE alone - it diffed
     `git status --porcelain` against its own last snapshot and attributed anything
     new to whatever Bash command ran next. With a second session working in the
     same checkout, "new" routinely means "somebody else wrote it", and the blame
@@ -1471,7 +1471,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         return ("silent", "baseline seeded: %d pre-existing dirty path(s)"
                 % len(dirty))
 
-    # F-P-24: a command that cannot write is not the author of anything new.
+    # A command that cannot write is not the author of anything new.
     #
     # The new dirt is still ABSORBED into seenDirty rather than left pending: it
     # came from outside this session (another agent in the same checkout, an editor,

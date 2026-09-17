@@ -265,7 +265,7 @@ _EVAL_SHAPE = {
                 "which is the same capability as python -c and is graded as one"),
 }
 
-# F-P-7: the write CALL and the path it writes, captured TOGETHER. The old
+# The write CALL and the path it writes, captured TOGETHER. The old
 # pattern matched a write-shaped fragment anywhere in the clause and left the
 # target to a second, unrelated search — so `>` inside the code (a comparison,
 # `len(x)>3`, or a redirect into /tmp) paired with the quoted name of the file
@@ -283,7 +283,7 @@ _EVAL_SHAPE = {
 # Every write shape this knows, capturing the path ARGUMENT rather than requiring it
 # to be a quoted literal.
 #
-# IT USED TO DEMAND THE LITERAL, and that is F-7: a path arriving through a variable
+# IT USED TO DEMAND THE LITERAL: a path arriving through a variable
 # did not match a write call at all, so the write was not merely unclassified, it was
 # invisible. The argument is captured here and RESOLVED by `_resolve_write_expr`,
 # which reads a literal, a join of literals, or one hop of binding.
@@ -488,9 +488,9 @@ def _resolve_write_expr(expr, bindings):
 def _eval_write_targets(clause):
     """Every path this clause actually WRITES, from the write calls themselves.
 
-    F-P-7 narrowed this from "a write shape and a path in the same clause" to "the
-    path the write call NAMES", and that narrowing is what F-7 walked through: the
-    pattern required the name to be a quoted LITERAL in the argument position, so
+    This narrows detection from "a write shape and a path in the same clause" to
+    "the path the write call NAMES" - and that narrowing still walked through when
+    the pattern required the name to be a quoted LITERAL in the argument position, so
 
         p = 'src/app.ts'
         open(p, 'w').write(...)
@@ -501,7 +501,7 @@ def _eval_write_targets(clause):
     Measured after the fact: fifteen source edits in one session went through it.
 
     So the argument is RESOLVED rather than required to be a literal - one hop of
-    binding, plus a join for a concatenation. F-P-7's property survives: a path that
+    binding, plus a join for a concatenation. The narrowing still holds: a path that
     merely shares the clause is still not a target, because only the expression the
     write call actually names is read.
     """
@@ -519,7 +519,7 @@ def _eval_write_targets(clause):
     return out
 # Every shape that READS a path in an interpreter body, with the path in the
 # argument position. The mirror of `_WRITE_CALL_EXPR`, and it exists for the
-# reason F-P-7 gives about that one: a token that merely SHARES a clause with a read
+# same reason as that one: a token that merely SHARES a clause with a read
 # shape is not a read. Write modes are excluded here on purpose — `open(p, 'w')` is
 # the write arm's business, and grading it as a read would refuse creating a file
 # whose name resembles a secret.
@@ -1230,7 +1230,7 @@ def _ungoverned_write_target(targets, root, cfg):
         this my repository", and only one of the two can be answered correctly
         on a machine whose repo lives under a temp root.
       * NOT EXEMPT, against the project's own `exemptGlobs` through
-        `_config.matches_exempt` — which carries the carve-out F-A-1 put in
+        `_config.matches_exempt` — which carries a carve-out put in
         this file by hand: a test-suffix NAME in a pure data/markup format
         (`tsconfig.test.json`) is build configuration, not a test, and keeps no
         exemption. Shared rather than copied, so the Edit path and these two
@@ -1698,7 +1698,7 @@ def _decide_core(data, root, cfg):
                     ".claude/audit.config.json. Reading file names is fine; "
                     "contents are not. Ask the user to paste any value you "
                     "actually need." % extra_word)
-        # F-B-1: the two inline-eval heuristics run PER CLAUSE. Over the whole
+        # The two inline-eval heuristics run PER CLAUSE. Over the whole
         # command, a redirect in clause one plus an eval in clause two used to
         # combine into a deny neither clause earns. A single-clause command is
         # judged exactly as before (see _clauses).
@@ -1740,7 +1740,7 @@ def _decide_core(data, root, cfg):
         # red if a tier ever reached one of those branches are the `pg` group in
         # plugins/audit/tests/test_guard_secrets_read.py.
         #
-        # F-P-7: judged on the paths the write calls NAME, not on a write shape
+        # Judged on the paths the write calls NAME, not on a write shape
         # and a path that merely share a clause. And graded on the same tier
         # the shell arm below is graded on, which it was not — a `.ts` file
         # an in_progress task declared was refused through `python3 -c` and

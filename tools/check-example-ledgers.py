@@ -4,7 +4,7 @@
 WHY THIS EXISTS. `examples/acme-store/` ships an evidence ledger, and one run in it
 recorded `status: "passed"` while `observations.treeMutated` named a file the task
 itself declares. That row was a FAITHFUL recording of what the runner did before
-F280 was fixed -- which is exactly what makes it a fault rather than a typo. F280
+this was fixed -- which is exactly what makes it a fault rather than a typo. The fix
 gives such a run its own verdict (`gate-mutated`), so the row became
 unproducible, and the showcase would have gone on publishing a verdict no current
 run can reach. The word is published four times over: the ledger row, the phase
@@ -33,7 +33,7 @@ than `_deps`'. A `*_violations` name inside a gate module would also make
 THE VOCABULARY IS DERIVED FROM THE SCHEMA, NEVER LISTED HERE. `COMPATIBILITY.md`
 declines to promise the enum is closed, so a list in this file would be a second
 description of a set that is explicitly allowed to grow -- the defect this
-repository names most often, and the one that produced F292 and F299. The schema is
+repository names most often, and the one that produced this exact gap more than once. The schema is
 also the right source rather than `_status_facts.KNOWN_EVIDENCE`: a committed ledger
 is DATA measured against a published contract, and `test__manifest_vocab` already
 pins that the code and the schema agree, so reading both here would add a third
@@ -268,7 +268,7 @@ def contradiction_findings(rel, rows):
     """[(rel, lineno, why), ...] -- rows whose own observations deny their verdict.
 
     One rule, for the reason the module docstring gives: `passed` beside a tree the
-    gate rewrote. F280 gave that run its own word, so a row still spelling it
+    gate rewrote. The fix gave that run its own word, so a row still spelling it
     `passed` is recording a verdict the runner can no longer reach.
     """
     out = []
@@ -279,8 +279,8 @@ def contradiction_findings(rel, rows):
         if mutated:
             out.append((rel, lineno, (
                 "records %r while its own observations.treeMutated names %s - a "
-                "gate that rewrote the tree has its own verdict since F280, so "
-                "this row publishes a result no current run can produce"
+                "gate that rewrote the tree has had its own verdict since this was "
+                "fixed, so this row publishes a result no current run can produce"
                 % (PASSED, ", ".join(str(m) for m in mutated[:3])))))
     return out
 
@@ -667,11 +667,11 @@ def _cases(check):
           # half silent in exactly the way a truncated clone does.
           and _counts.get("commits", 0) >= 20)
 
-    # el3. The vocabulary is DERIVED, so it must contain the word F280 added and
+    # el3. The vocabulary is DERIVED, so it must contain the mutated-tree word and
     # must come from the schema rather than from a list in this file.
     _vocab, _vp = schema_statuses()
-    check("el3 the vocabulary is read from the schema and carries F280's member, "
-          "because a list here would be a second description of a set "
+    check("el3 the vocabulary is read from the schema and carries the mutated-tree "
+          "member, because a list here would be a second description of a set "
           "COMPATIBILITY.md refuses to close: %r / %s" % (sorted(_vocab), _vp),
           _vp is None and "gate-mutated" in _vocab and "passed" in _vocab)
 
@@ -688,11 +688,11 @@ def _cases(check):
           "and wrong are different answers",
           status_findings("x/evidence/a.jsonl", [(1, {"runId": "r"})], _known) == [])
 
-    # el6. The fault itself: F297's row.
+    # el6. The fault itself: the row that started this.
     _c = contradiction_findings("x/evidence/a.jsonl", [
         (4, {"runId": "r1", "status": "passed",
              "observations": {"treeMutated": ["src/checkout/validate.ts"]}})])
-    check("el6 F297's OWN ROW: `passed` beside a non-empty treeMutated is a "
+    check("el6 the fault's OWN ROW: `passed` beside a non-empty treeMutated is a "
           "finding, naming the file: %r" % (_c,),
           len(_c) == 1 and "validate.ts" in _c[0][2])
 

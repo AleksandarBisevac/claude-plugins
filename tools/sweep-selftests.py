@@ -37,7 +37,7 @@ OUTPUT IS COLLECTED AND PRINTED SORTED, never interleaved. A parallel runner who
 log is in completion order is a log you cannot diff against yesterday's, and
 "which file was it" is the first question a red sweep has to answer.
 
-AND EVERY CHILD RUNS IN AN EMPTY DIRECTORY IT IS EXPECTED TO LEAVE EMPTY (F119). A
+AND EVERY CHILD RUNS IN AN EMPTY DIRECTORY IT IS EXPECTED TO LEAVE EMPTY. A
 suite is run with its cwd AND `TMPDIR` pointed at a scratch directory holding one
 file it did not put there, and the file is red if anything was added to that
 directory, or the file that was already in it was removed or rewritten. Suites here
@@ -45,7 +45,7 @@ had been leaking git fixtures into whatever directory `TMPDIR` named for a long
 time, and none of the gates could see it because `TMPDIR` is normally the system
 temp. `run_one` and `scratch_debris` say what each half of that buys.
 
-AND THE HOME DIRECTORY IS A SECOND WATCHED DIRECTORY (F138). `TMPDIR` closes the
+AND THE HOME DIRECTORY IS A SECOND WATCHED DIRECTORY. `TMPDIR` closes the
 channel a leaked `mkdtemp` uses; an absolute path under `$HOME` was still invisible,
 and this product's state lives exactly there - a config tree, a usage ledger, a
 panel pidfile - so a suite that resolves one of them wrongly writes somewhere no
@@ -160,7 +160,7 @@ def covered_paths():
 
 
 # --- the scratch directory a child is run in ----------------------------------
-# F119: a suite reached outside its own temp directory and destroyed what was there.
+# A suite reached outside its own temp directory and destroyed what was there.
 # The suite that was blamed had no `subprocess` in it at all - what it had was a
 # fixture root allocated with `tempfile.mkdtemp()` and never removed. That is
 # invisible on a developer's machine, because `mkdtemp` answers to `TMPDIR` and
@@ -393,7 +393,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     where `tempfile` reads `TMP` and `TEMP` rather than `TMPDIR`.
 
     THE HOME DIRECTORY IS A SECOND SUCH DIRECTORY, watched the same way and reported
-    under its own channel (F138). It is allocated BESIDE the working one rather than
+    under its own channel. It is allocated BESIDE the working one rather than
     inside it: nesting would add two characters to the root of every fixture path a
     child builds, and windows still refuses a path past its own limit - the deepest
     fixture in this tree is a git object under a linked worktree.
@@ -862,7 +862,7 @@ def _cases(check):
           "leaking because the codec changed: %r" % (g,),
           (not g["ok"]) and "DELETED" in g["why"])
 
-    # -- the home directory, which is the second watched one (F138) ------------
+    # -- the home directory, which is the second watched one ------------
     _where = os.path.join("SOMEWHERE", "else")
     _pinned = home_env(_where)
     _needed = set(["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
@@ -891,7 +891,7 @@ def _cases(check):
     # script, and `sys.executable <path>` does not care about the extension, so the
     # honest fix is a name that makes no claim rather than an exemption.
     #
-    # AND THE WORK DIRECTORY IS REMOVED IN A `finally` (F119). This block used to
+    # AND THE WORK DIRECTORY IS REMOVED IN A `finally`. This block used to
     # end with a bare `mkdtemp()` and no cleanup, so the runner that now refuses a
     # leaking suite was itself one of the leaking files.
     work = tempfile.mkdtemp(prefix="sweep-selftest-")
@@ -927,7 +927,7 @@ def _cases(check):
               "green row (code %r)" % (ran["code"],),
               ran["code"] != 0)
 
-        # THE EXACT F119 SHAPE: a `mkdtemp` with no cleanup, in a child that
+        # THE EXACT LEAK SHAPE: a `mkdtemp` with no cleanup, in a child that
         # otherwise passes. It leaks into `TMPDIR`, not into the cwd, which is why
         # an empty working directory on its own would report this as clean.
         leaks = _fixture("fixture_leaks",
@@ -985,7 +985,7 @@ def _cases(check):
               "child's debris: %r" % (ran["debris"],),
               ran["code"] == 0 and ran["debris"] == [])
 
-        # -- F138: the channel TMPDIR pinning alone cannot see ------------------
+        # -- the channel TMPDIR pinning alone cannot see ------------------
         # THE CHILD WRITES ONLY IF THE HOME IT WAS HANDED CARRIES THE PLANTED
         # FILE, and that guard is not caution - it is what makes this case safe to
         # run. A fixture that wrote to `~` unconditionally would litter a real home

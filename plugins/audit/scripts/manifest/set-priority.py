@@ -107,7 +107,7 @@ def _resolve_project(args, mpath):
     """{"root", "basis", "why"} — which root owns the journal, the lock and the
     config, and the row of `_panel_write.PROJECT_BASES` that chose it.
 
-    F-C-1's rule, and the function that answers it is `_panel_write`'s so that
+    The same rule, and the function that answers it is `_panel_write`'s so that
     `audit-task.py` and this command cannot drift: an explicit --project-dir
     wins, otherwise a NAMED manifest derives the project upward from ITSELF.
     There is no env fallback here because the manifest is always named — the

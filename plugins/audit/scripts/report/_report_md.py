@@ -150,7 +150,7 @@ def render_md(manifest, summary, usage=None, evidence=None):
                 cell(b.get("severity") or "—"), cell(b.get("taskId") or "—"),
                 cell(bfixed[:9])))
         out.append("")
-    # Parked proposals (F-P-32). The twin carries them for the same reason the HTML
+    # Parked proposals. The twin carries them for the same reason the HTML
     # does: an all-parked plan renders zero phases, and a document that shows
     # nothing does not read as "the proposals are elsewhere". A dropped one keeps
     # its reason, because that is what archiving instead of deleting is for.

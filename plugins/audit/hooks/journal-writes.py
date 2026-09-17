@@ -189,7 +189,7 @@ def _author(root, cfg):
     panel can line up with `my changes` here. Costs one `git config` read, and only
     on a manifest or config write — never on an ordinary edit.
 
-    The module arrives through `_config._ledger_lib()` (F-B2) — the same cached
+    The module arrives through `_config._ledger_lib()` — the same cached
     one-load seam the journal and areas modules use. In production that saves
     almost nothing (one call per hook process); the win is parity and the
     selftests, which call this dozens of times per run."""

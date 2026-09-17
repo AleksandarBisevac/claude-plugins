@@ -2,7 +2,7 @@
 """Every COMMITTED rendered artifact must match what its source renders today.
 
 WHY THIS EXISTS. `examples/acme-store/acme-store-audit.html` is the report a new
-user opens first, and it carried the pre-F28 `aria-label`s -- the ones a speech
+user opens first, and it carried OUTDATED `aria-label`s -- the ones a speech
 user cannot reach -- for as long as it took somebody to notice, because the
 source was fixed and the artifact was not. CI did render the example, to a temp
 directory, and grepped THAT. A check that renders its own copy can never see a
@@ -602,7 +602,7 @@ def _cases(check):
     # it asserted was "parsing did not crash" while claiming to assert the epoch.
     _ra_stamp = "generated 2023-11-14 22:13 UTC"
     _ra_want = calendar.timegm((2023, 11, 14, 22, 13, 0, 0, 0, 0))
-    # F89. The pair a render is given must be ABSOLUTE and must not be re-based on
+    # The pair a render is given must be ABSOLUTE and must not be re-based on
     # the repo, because a generated fixture lives in a temp directory and on Windows
     # a temp directory routinely sits on another drive - where `relpath` raises
     # rather than returning something wrong. The old form made the pair relative to
@@ -657,7 +657,7 @@ def _cases(check):
                   for rel, _b in GENERATED_ARTIFACTS))
 
     # --- the coverage this tool DEFERS, and the recipes it prints -------------
-    # F122. The docstring above says docs/index.html is covered by a byte-copy
+    # The docstring above says docs/index.html is covered by a byte-copy
     # check somewhere else. These cases are what stop that from being a sentence:
     # the page must be declared as a copy, must stay OUT of the render tables, and
     # the check it defers to must still exist on every side that declares it.
@@ -789,7 +789,7 @@ def _write_working(root, rel, text):
 
 
 def _head_cases(check):
-    """F221. The arm that asks what the COMMIT carries, driven against real git.
+    """The arm that asks what the COMMIT carries, driven against real git.
 
     Split out of `_cases` because it allocates a repository per case and the
     allocation has to be undone in `finally`; folding it in would put four
@@ -821,7 +821,7 @@ def _head_cases(check):
               _clean["differs"] == [] and _clean["unlooked"] == []
               and _clean["compared"] == 1)
 
-        # THE SCENARIO F221 IS ABOUT, driven rather than described: re-render, leave
+        # THE SCENARIO THIS ARM EXISTS FOR, driven rather than described: re-render, leave
         # the result unstaged. The arm above this one compares the fresh render with
         # the file ON DISK and is perfectly satisfied; the commit still carries the
         # old bytes, and a `git archive` of it - which has no working tree at all -

@@ -215,7 +215,7 @@ TOKEN_CSS = """
    toggle reads a white page through dark checkboxes and a dark date picker. */
 /* The reduced-motion opt-out, in the token layer because it is a USER PREFERENCE
    like `prefers-color-scheme` beside it, and because it belongs to both surfaces.
-   It lived in report.css alone (F25): the panel gated two decorations behind
+   It lived in the report's stylesheet alone: the panel gated two decorations behind
    `no-preference` and left everything else running, so the `.btn` transition
    measured 0.22s inside a context launched with `reducedMotion:'reduce'` --
    200 elements still moving. Measured after: zero.
@@ -271,7 +271,7 @@ STATUS = {
     "in_progress": "In progress",
     "blocked": "Blocked",
     "done": "Done",
-    # ca (F-P-4): the second terminal state — the work will not be done. Named
+    # ca: the second terminal state — the work will not be done. Named
     # "Cancelled" rather than "Dropped"/"Deprecated" because that is the word
     # the trackers use for it (Linear Canceled, Jira Won't Do, GitHub closed as
     # not planned, ADO Removed), and a plan is read beside them.
@@ -294,7 +294,7 @@ TESTS_MODE = {
     "regression": "Regression",
     "gate-only": "Gate only",
 }
-# The empty bucket, named once (F-P-2). The usage ledger groups spend by phase,
+# The empty bucket, named once. The usage ledger groups spend by phase,
 # task and branch with "--" standing for a row that has none, and its `attr`
 # dimension carries "unattributed" for the same fact from the other side: work
 # with no plan behind it — ad-hoc edits, `#no-plan`, sessions outside the plan.
@@ -341,7 +341,7 @@ def label(value, mapping=None):
 
 
 # --- themes: the token layer as data ---------------------------------------------
-# th (F-P-6). Everything above is ONE stylesheet, and every colour, radius and
+# th. Everything above is ONE stylesheet, and every colour, radius and
 # type step in it is already a custom property — which means the visual system
 # is editable without touching a rule, IF something can read the values out and
 # put different ones back. That is all a "theme" is here.

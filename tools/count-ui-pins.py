@@ -34,7 +34,7 @@ import json
 import os
 import sys
 
-# ANCHORED TO THIS FILE, NOT TO THE CWD (F119). These were repo-relative, so the
+# ANCHORED TO THIS FILE, NOT TO THE CWD. These were repo-relative, so the
 # walk below found nothing whenever the tool was run from anywhere but the
 # repository root - and this tool exits 0 by design, so "no pins here" printed as a
 # change budget of nothing rather than as a scanner that had not looked. `p0` is
@@ -264,7 +264,7 @@ def _cases(check):
           real["pins"]["cssShaped"]
           == real["perTarget"]["_CSS"] + real["perTarget"]["TOKEN_CSS"])
 
-    # F119. `p0` is the case that reddened, and this is the case that says WHY: the
+    # `p0` is the case that reddened, and this is the case that says WHY: the
     # roots were repo-relative, so the walk found nothing from any directory but the
     # repository root, and this tool exits 0 by design - a scanner that had not
     # looked printed as a change budget of nothing. `p0` can only ever say that a

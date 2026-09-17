@@ -321,7 +321,7 @@ def _short_date(iso):
 def _stamp(iso):
     """ISO timestamp -> 'YYYY-MM-DD HH:MM', the date part when there is no time.
 
-    tm (F-P-4): the table showed the DATE a task finished and kept the clock in
+    tm: the table showed the DATE a task finished and kept the clock in
     a tooltip. "Which of these two finished first" is the question this column
     is asked on a busy day, and the answer was a hover away - on paper, not
     available at all. The value is the manifest's own string, cut rather than
@@ -351,7 +351,7 @@ def _timing_cell(task):
 
 
 def _commit_cell(task):
-    """The commit, with one press that copies the WHOLE sha (F-P-4).
+    """The commit, with one press that copies the WHOLE sha.
 
     The column shows nine characters because a table cannot carry forty, and
     nine is not what `git cherry-pick` wants - so a reader who needed the sha
@@ -1019,7 +1019,7 @@ def _detail_row(task, phase, owners, ncol, seg, pid, workers=None, view=None,
                 portability=None):
     """The row under a task row: everything the compact row had to leave out.
 
-    ex (F-P-4). The table is read at a glance and acted on in detail, and those
+    ex. The table is read at a glance and acted on in detail, and those
     are different densities. The compact row answers "where is this" — id,
     title, status, risk, when, commit — and the detail row answers "what
     happened and who do I ask", in two labelled groups because the questions

@@ -386,7 +386,7 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
     for k, v in head:
         label = k
         if key == "byPhase":
-            # uc (F-P-2): the empty bucket wears the shared word, not its key.
+            # uc: the empty bucket wears the shared word, not its key.
             label = "%s %s" % (k, u["phaseTitles"].get(k, "")) if k != "--" \
                 else _theme.UNCATEGORIZED
         colour = ("var(--viz-%d)" % slots[k]) if (slots and k in slots) \

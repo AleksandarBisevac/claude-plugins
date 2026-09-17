@@ -163,7 +163,7 @@ SCRIPT = _script()
 
 
 def css_with_tokens(token_css):
-    """The report's stylesheet wearing a DIFFERENT token block (th, F-P-6).
+    """The report's stylesheet wearing a DIFFERENT token block (th).
 
     The concatenation lives here, in one place, for the reason `CSS` above does:
     a caller that assembled the sheet itself would eventually assemble it

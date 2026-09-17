@@ -64,9 +64,9 @@ one operation:
 
 A guard that refused every `reset --hard` would fire on correct work, and a guard
 that fires on correct work gets switched off - after which it protects nothing.
-That failure mode is recorded in this project's own history (F-P-24, and the
-`guard-secrets-read` read-vs-write class before it), so the ancestry check is not
-an optimisation. It is the reason the guard is allowed to exist.
+That failure mode is recorded in this project's own history - the
+`guard-secrets-read` read-vs-write class was fixed for the same reason before it -
+so the ancestry check is not an optimisation. It is the reason the guard is allowed to exist.
 
 TWO ARMS, TWO ACTIVATION CONDITIONS, and they are not interchangeable. The
 history arm asks whether a COMMIT the manifest records would stop being

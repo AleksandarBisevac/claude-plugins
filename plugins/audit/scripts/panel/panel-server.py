@@ -64,7 +64,7 @@ tell a read route from a write one. Those boundaries are a contract, and
 `_harness.between()` raises rather than widening a slice when one moves. The
 boundary names are deliberately NOT spelled out in this docstring: a marker
 written here would be found HERE, above the code, and the slices would run over
-prose instead of over routes - which is exactly the self-matching bug (F-P-8) that
+prose instead of over routes - which is exactly the self-matching bug that
 made one of those cases find its own assertion line.
 """
 import argparse
@@ -198,7 +198,7 @@ build_state = _panel_state.build_state
 # site) is what keeps this panel's byte shape stated once.
 _atomic_write_json = _panel_write._atomic_write_json
 write_policy = _panel_write.write_policy
-# th (F-P-6): the Appearance tab's two calls.
+# th: the Appearance tab's two calls.
 theme_state = _panel_write.theme_state
 write_theme = _panel_write.write_theme
 write_areas = _panel_write.write_areas
@@ -309,7 +309,7 @@ def _make_handler(project, token):
             if path == "/":
                 if not self._host_ok():
                     self._send(403, "forbidden", "text/plain"); return
-                # th (F-P-6): the token block is swapped per REQUEST, not at
+                # th: the token block is swapped per REQUEST, not at
                 # import: a theme is a file on disk, and the reader who just
                 # saved one reloads to see it. The default costs one string
                 # compare (resolve_theme finds nothing and hands back TOKEN_CSS

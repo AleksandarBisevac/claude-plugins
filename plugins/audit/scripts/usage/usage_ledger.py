@@ -704,7 +704,7 @@ def find_ledger_dir(manifest_path, rel=None, project_dir=None):
     `examples/acme-store/audit-plan.json` it resolves to the enclosing repo and
     silently renders THAT project's spend under the example's name.
 
-    The walk is bounded twice (F-E1):
+    The walk is bounded twice:
 
       * It stops at the first ancestor containing `.git` — directory OR file,
         because worktrees and submodules mark themselves with a gitfile. A

@@ -451,7 +451,7 @@ def provenance_tag_violations(tag, conventions):
     and a second copy of the tag rule there would be a second answer the first
     time either one learned a prefix.
 
-    F-P-18: `meta.ado.tag` defaults to `audit-plugin`, which has no prefix, so a
+    `meta.ado.tag` defaults to `audit-plugin`, which has no prefix, so a
     board whose `tagVocabulary` admits only prefixed tags refuses every item the
     connector creates - and the manifest still validated clean, because each
     block was graded alone. Nothing was wrong with either block; they disagreed.

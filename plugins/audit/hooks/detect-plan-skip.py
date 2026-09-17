@@ -64,7 +64,7 @@ _GC_PREFIXES = ("plan-gate-", "tdd-reminder-", "bash-writes-",
                 "config-error-notified-", "plan-bypass-",
                 # journal-writes.py's Pre-pass slot: it holds pre-image BYTES
                 # and its normal lifecycle (Post pass consumes it) never runs
-                # when a session dies between the two passes (F-B1).
+                # when a session dies between the two passes.
                 "journal-preimage-",
                 # require-plan.py's ownership-advisory throttle (v0.34 D2):
                 # which area tags this session has already been nudged about.

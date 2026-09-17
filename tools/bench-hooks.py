@@ -563,7 +563,7 @@ def measure(repeats=9, hooks_dir=None):
         return {"baseline_ms": round(baseline, 2), "repeats": repeats,
                 "lanes": lanes}
     finally:
-        # F156. What stood here was a call to `_output.rmtree_quiet()` behind a
+        # What stood here was a call to `_output.rmtree_quiet()` behind a
         # `hasattr` for it - and no such helper has ever existed, in `_output` or
         # anywhere else, so the condition was false on every run and the statement
         # was a no-op wearing a defensive coat. The `isdir` guard below it existed
@@ -571,7 +571,7 @@ def measure(repeats=9, hooks_dir=None):
         # `ignore_errors=True` already tolerates a directory that is not there.
         #
         # A PLAIN REMOVAL IS THE RIGHT ONE HERE, which is the other half of the
-        # judgement and is recorded rather than left to the next reader (F155).
+        # judgement and is recorded rather than left to the next reader.
         # This fixture is a `src/` directory of text; nothing under it is a git
         # repository, so there are no read-only loose objects for windows to
         # refuse to unlink. The tree that DOES need the careful removal reaches it
@@ -599,7 +599,7 @@ def render_report(data):
 
 
 def render_budget_findings(violations):
-    # RENAMED FROM `render_violations` (F231). It is a FORMATTER - it turns
+    # RENAMED FROM `render_violations`. It is a FORMATTER - it turns
     # `budget_violations`' findings into lines a human reads - and the old name
     # ended in a reporting shape, so `prove-gates`' name arm derived it as a lint
     # and demanded a red-first proof for a function that returns no verdict. That
@@ -630,7 +630,7 @@ def render_gate(report):
     """The whole verdict, with the condition that makes it true. Returns text.
 
     THE CONDITION IS NOT AN APPENDIX. `10 hook(s) within budget` with no interpreter
-    named is the sentence F87 is about: it was read as a property of the system and
+    named is exactly the risk: it was read as a property of the system when
     it was a property of one machine. So the versions come first, the per-version
     verdicts follow, and the versions nobody could measure are named LAST and out
     loud - a gap said plainly is the difference between a narrow answer and a wrong
@@ -832,11 +832,11 @@ def _cases(check):
           and "subprocess" in render_budget_findings(
               [(_FIX_GREEDY, ["subprocess"], ("subprocess",))]))
 
-    # --- the condition the verdict is true under (F87) -------------------------
+    # --- the condition the verdict is true under -------------------------
     _found = discover_interpreters()
     check("h11 the running interpreter is always among the discovered ones, and "
           "each carries the version it actually reports - a gate that named no "
-          "interpreter is the sentence F87 is about: %r"
+          "interpreter is exactly the risk this closes: %r"
           % ([v for _p, v in _found["found"]],),
           any(os.path.realpath(p) == os.path.realpath(sys.executable)
               for p, _v in _found["found"])
@@ -853,7 +853,7 @@ def _cases(check):
           [n for n, _w in _named["unusable"]] == [_FIX_NO_PYTHON]
           and _named["found"] == _found["found"])
 
-    # THE F87 REGRESSION CASE. The allowance was written out as three module names
+    # THE REGRESSION CASE THIS CLOSES. The allowance was written out as three module names
     # and `hashlib` drags a fourth on 3.9, so `journal-writes.py` was over budget on
     # a version this plugin promises while every interpreter anyone had run it on
     # said `within budget`.

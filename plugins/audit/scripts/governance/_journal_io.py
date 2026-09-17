@@ -1875,7 +1875,7 @@ def _git_status_sets(directory):
     when the question cannot be asked at all (no git binary, not a
     repository, git errored).
 
-    This is F-B3's batching seam, shared with the doctor's journal-hygiene
+    This is the batching seam shared with the doctor's journal-hygiene
     check: verify() used to pay `git ls-files` + `git show` per journal file,
     every file, every call -- O(files) subprocesses over a directory that is
     almost entirely tracked-and-clean. A file porcelain does not mention is
@@ -1884,7 +1884,7 @@ def _git_status_sets(directory):
     `git show` is then paid only for tracked-but-dirty files -- the 0-2 active
     writers of the moment -- O(1 + dirty).
 
-    Paths, not basenames (F-D-1): with archive/ the same basename can sit
+    Paths, not basenames: with archive/ the same basename can sit
     live AND archived, and under basename keys the tracked archive twin
     answered for the untracked live file -- the doctor's never-committed
     check counted both and could name the wrong one as oldest. Porcelain
@@ -2494,13 +2494,13 @@ def verify(project, config=None):
     if not out["exists"]:
         out["ok"] = not out["findings"]
         return out
-    # F-B3: one porcelain for the whole directory decides which files pay the
+    # One porcelain for the whole directory decides which files pay the
     # single-file anchor check. None = git unavailable, ask per file (the
     # primitive fails open on its own); a path in neither set is tracked and
     # clean, so the committed copy equals the working copy and the prefix
     # holds trivially; untracked files are skipped for the same reason the
     # primitive skips them (no committed past = nothing to anchor to).
-    # Keyed by journal-relative path (F-D-1) -- `where` below, never the
+    # Keyed by journal-relative path -- `where` below, never the
     # basename, so a live and an archived twin never answer for one another.
     status_sets = _git_status_sets(directory)
     latest = {}                    # target -> (ts, stateHash, file)

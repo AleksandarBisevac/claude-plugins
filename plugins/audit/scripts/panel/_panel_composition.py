@@ -963,7 +963,7 @@ def _composition_view(manifest, boundary=None):
             "phaseId": ph.get("id"), "status": t.get("status"),
             "model": t.get("model"),
             "skills": _skills_of(t),
-            # ov (F-P-5): Overview shows what the REPORT's table shows, so
+            # ov: Overview shows what the REPORT's table shows, so
             # it needs the same four values. They ride the composition
             # payload rather than a second endpoint — this is one manifest
             # read either way, and the Composition tab ignores what it does

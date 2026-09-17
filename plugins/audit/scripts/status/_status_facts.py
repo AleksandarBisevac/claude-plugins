@@ -326,7 +326,7 @@ areas_of = _areas.areas_of
 effective_bug_status = _mio.effective_bug_status
 
 
-# ca (F-P-4): the two ways a phase or task can be FINISHED. `done` is the work
+# ca: the two ways a phase or task can be FINISHED. `done` is the work
 # landed; `cancelled` is the work will not be done — the feature was dropped, the
 # approach abandoned — and it is terminal in exactly the same sense. Readiness
 # treats a cancelled blocker as settled on purpose: a plan whose dropped work

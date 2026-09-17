@@ -272,7 +272,7 @@ DEFAULTS = {
     # precedence rule for. One key, one purpose, and `_evidence_io.evidence_dir`
     # is what reads it.
     "evidence": {"dir": None},
-    # th (F-P-6): the panel's and the report's LOOK. `theme` is a preset name or
+    # th: the panel's and the report's LOOK. `theme` is a preset name or
     # a path to a theme file; absent means "search" -- .claude/audit.theme.json
     # in the project, then ~/.claude/audit.theme.json, then the built-in. No
     # hook reads this; it lives here because DEFAULTS is the one place the whole

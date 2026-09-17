@@ -165,7 +165,7 @@ _GATE_LABELS = {
 # So the rule rather than the decree: density follows the data. A plan on day one
 # renders id/title/status and little else; a finished one renders all nine; and a
 # repo that has never touched Azure DevOps never sees an ADO column at all.
-# ex (F-P-4): which of the optional columns the COMPACT row carries. The rest
+# ex: which of the optional columns the COMPACT row carries. The rest
 # (model, the work item, the outcome) live in the detail row, where they have
 # room to be complete rather than truncated. Chosen by what a reader scans for:
 # where is it, how risky is it, when did it land, which commit. The outcome was
@@ -279,7 +279,7 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
         if shas:
             stamp = ('<span class="stamp" title="Last commit recorded in this '
                      'phase">%s</span>' % e(shas[-1][:7]))
-    # bl (F-P-4): blocked TASKS inside a phase that is not itself blocked. The
+    # bl: blocked TASKS inside a phase that is not itself blocked. The
     # phase chip answers "is this phase blocked"; nothing answered "is anything
     # in it stuck", which is the question that decides whether a phase in
     # progress is actually moving. Emitted only when it says something the chip
@@ -340,7 +340,7 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
             "outcome": lambda: "<td class=muted>%s</td>" % e(_outcome_text(t)),
         }
         tview = tviews.get(str(t.get("id")))
-        # ex (F-P-4): the compact row plus a control that opens the rest. The
+        # ex: the compact row plus a control that opens the rest. The
         # button lives in the id cell and carries the task id, so a keyboard
         # reader tabs id -> detail rather than hunting a bare chevron.
         out.append(
@@ -402,7 +402,7 @@ def _head_block(meta, css, fragment):
         '<html lang="en">',
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">']
-    # th (F-P-6): the project's own theme when it has one. The report is a FILE —
+    # th: the project's own theme when it has one. The report is a FILE —
     # mailed, published, opened months later — so the stylesheet is embedded
     # compiled, never fetched, and a theme travels with the report rather than
     # living in a panel.
@@ -641,7 +641,7 @@ def _table_tools(manifest, summary, evidence=None):
         'placeholder="Filter phases &amp; tasks by text…">'
         '<span class="tbl">Phase status:</span><span id="audit-phase-status">%s</span>'
         '%s'
-        # vw (F-P-4): WHICH phases are on screen, said out loud. The archive used
+        # vw: WHICH phases are on screen, said out loud. The archive used
         # to be a toggle nobody found — a plan with forty done phases opened
         # looking half-empty and there was no control saying why. Three named
         # views, the default is the work that is left, and the select carries
@@ -800,7 +800,7 @@ def _usage_block(usage):
 def _proposals_block(manifest, show=True):
     """Parked phases: what was synthesized and not taken on. Nothing when empty.
 
-    F-P-32. An `/audit:init` that parks everything left this report showing zero
+    An `/audit:init` that parks everything left this report showing zero
     phases and no hint that eight proposals existed - and a report that renders
     nothing does not read as "the proposals are not shown here", it reads as
     "there is nothing". The whole content of the plan was invisible on the one

@@ -175,7 +175,7 @@ def project_of_manifest(mpath):
     manifest (starting at its own directory) that holds a `.claude/` dir or a
     `.git` entry.
 
-    MARKERLESS fallback (F-C-2): when the manifest sits in the default layout
+    MARKERLESS fallback: when the manifest sits in the default layout
     (`<T>/docs/audit/<file>`), the root is `<T>` -- taking the manifest's own
     directory doubled the layout (the journal's default rel re-appended
     `docs/audit` under `.../docs/audit`). Anywhere else the root is the
@@ -206,7 +206,7 @@ def project_of_manifest(mpath):
 # positional is required; the clause it prints is still this one.
 #
 # The KEY is what a caller passes to `project_basis`; the CLAUSE is what an
-# operator reads. Order is the rule itself, top-down, and F-C-1 set it: keying
+# operator reads. Order is the rule itself, top-down: keying
 # the root off the cwd while the manifest was explicitly named wrote one repo's
 # journal row into another's.
 PROJECT_BASES = (

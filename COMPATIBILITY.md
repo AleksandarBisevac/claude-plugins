@@ -58,8 +58,8 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   validating against every later one in the major line. The repository rule behind
   this is in `CONTRIBUTING.md` under *Hard rules*, and it predates this document.
 
-  **F294 is the first thing announced under this promise rather than excused from
-  it, and the promise HOLDS through the whole 2.x line.** A task in
+  **The `tests.add` path requirement is the first thing announced under this promise
+  rather than excused from it, and the promise HOLDS through the whole 2.x line.** A task in
   `tests.mode: "tdd"` that is **not** `done` or `cancelled` should write each
   `tests.add` entry as `"<path>: <what it asserts>"`. From **2.3.0** an entry naming
   no file is a **warning**, and its text names both the shape to write and the
@@ -80,7 +80,7 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   permissive, so nothing about the field's *type* changed; `regression` and
   `gate-only` entries stay free prose, which is the shape most of them have; and a
   `done` or `cancelled` task is exempt, because its `tests.add` is a record of work
-  already judged and F283 leaves its scope append-only — a line there would be
+  already judged and a closed task's scope stays append-only — a line there would be
   permanent with no remedy. The repair for a live one is to name the file:
   `/audit:task scope <id> --tests-add "<path>: …"`.
 
@@ -297,7 +297,7 @@ depending on an implementation:
   a sentence, and the permission the union exists to grant was never granted. An entry naming
   no file adds nothing and the command says which entries those were. Nothing already written
   is rewritten or stops being read; what changes is what the next `add` or `scope` derives.
-  The half of F294 that **is** under the contract is the validator rule beside it, and it is
+  The part of this change that **is** under the contract is the validator rule beside it, and it is
   recorded as a deprecation under *Validation stays additive* above rather than here — it
   warns from 2.3.0 and refuses at 3.0.0,
 - `plugins/audit/reference/orchestrator.md` and the prose the model reads,

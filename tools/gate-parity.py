@@ -1653,7 +1653,7 @@ NOT_AN_EXEMPTION = {
     "PRESETS": "theme presets - a named palette per preset, not an excuse",
     "VERDICT_HELP": "what each invariant verdict means, printed beside it",
     "_EVAL_SHAPE": "the two spellings of an inline eval, used to name the form the "
-                   "operator actually typed in a refusal (F256)",
+                   "operator actually typed in a refusal",
     "_FILE_REFUSALS": "a RULE table, and the opposite of an exemption: each row is "
                       "a prefix a `--files` entry may NOT open with, and the "
                       "sentence beside it is the clause the refusal prints to say "
@@ -1700,7 +1700,7 @@ NOT_AN_EXEMPTION = {
                                 "of journal warning, and the opposite of an "
                                 "exemption: a class with no row gets a POINTER and "
                                 "no cause rather than borrowing another class's "
-                                "sentence, which is the defect F329 repaired - so a "
+                                "sentence, which is a defect this repairs - so a "
                                 "row makes the check say more, never less",
 }
 

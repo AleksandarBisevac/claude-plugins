@@ -351,7 +351,7 @@ def _ado_meta(manifest):
 def _require_parent_warnings(ado, rows):
     """`conventions.requireParent` graded against the PLAN, not against a hunch.
 
-    F-P-18's warning lived in `_manifest_ado`, where only the `ado` block is
+    This warning used to live in `_manifest_ado`, where only the `ado` block is
     visible, and fired whenever `requireParent` was true and `parentWorkItem`
     was unset. That was right while one integer parented the whole manifest and
     became a FALSE ALARM the moment a phase could declare its own: the commonest

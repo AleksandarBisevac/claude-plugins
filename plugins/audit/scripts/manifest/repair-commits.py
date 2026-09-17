@@ -75,7 +75,7 @@ def project_of(mpath):
     `manifestPath` against it a second time and lands in
     `docs/audit/docs/audit/journal/` - which is what this did until it was run
     against a real repo. `audit-task._resolve_project` solved the same class
-    (F-C-1) and this follows it.
+    and this follows it.
     """
     here = os.path.dirname(os.path.abspath(mpath)) or "."
     for _ in range(8):

@@ -220,8 +220,8 @@ python3 tools/check-committed-pii.py
 
 # ...and the same committed files read for CONTENT rather than bytes. One row in the
 # example's evidence ledger recorded `passed` while its own observations named a file
-# the gate had rewritten: a faithful record of the pre-F280 runner, and so a verdict
-# no current run can produce. Nothing read that ledger, because unlike the usage
+# the gate had rewritten: a faithful record of how the runner used to behave, and so
+# a verdict no current run can produce. Nothing read that ledger, because unlike the usage
 # ledger below it is hand-written narrative that no generator derives - which is the
 # defect rather than the one stale row. It measures every committed row against the
 # schema's published vocabulary (derived, never listed - COMPATIBILITY.md declines to
@@ -237,7 +237,7 @@ python3 tools/check-example-ledgers.py
 
 # ...and the third question about the same committed files: the example's usage
 # ledger is DERIVED from its manifest, so a phase added to the example desynchronises
-# the two silently. This regenerates it and diffs. It ran only in CI until F232, and
+# the two silently. This regenerates it and diffs. It ran only in CI at first, and
 # it cost a red run on a release candidate that had already been built, tagged and
 # pushed - the exemption that permitted the absence read "same throwaway demo tree",
 # which described a different check. `verify.sh` runs it with a temp dir for you.
@@ -252,9 +252,9 @@ python3 plugins/audit/scripts/demo/gen-demo-usage.py \
 # absolute one bounds the share of the screen an open filter panel may pin over the
 # table; the relative one compares this document's filter chrome against the figure
 # recorded for it in `tools/ui-checks/report-layout-baseline.json`, so a fixture that
-# moves a long way is reported even where the absolute bar is not crossed — which is
-# what F219 was: one shipped example grew to nearly four times its height under a bar
-# it never reached, and only its neighbour failing gave it away. A move you meant is
+# moves a long way is reported even where the absolute bar is not crossed — one shipped
+# example once grew to nearly four times its height under a bar it never reached, and
+# only its neighbour failing gave it away. A move you meant is
 # blessed by re-running that gate on the one document with `--record` and committing
 # the line that changed; the failure prints the command. Recording refuses on a report
 # with any other failure, and `ui-checks/layout-baseline.mjs` is where the tolerance
@@ -315,7 +315,7 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   `path_preamble_violations()` counts rather than testing membership (a doubled
   preamble is as wrong as a missing one), and it counts the block's **lines** as
   well as the block — each line of it must occur once. Lines rather than the block
-  alone is F94: a file that pastes the preamble once and then repeats only its
+  alone matters because a file that pastes the preamble once and then repeats only its
   `import _output` / `install_path()` tail carries the text once and bootstraps
   twice, so a count of the whole block read it as compliant. It also AST-checks
   that `install_path()` runs above the first sibling import.
@@ -453,7 +453,7 @@ undone. A tag is a git object a reader has to know to look for; a Release is the
 page GitHub shows them, and the README's `curl` pins make the tag a published
 claim. Nothing here created one for a long time, and the Releases page drifted
 until it presented a long-superseded version as Latest while the README told
-readers to fetch from a far newer tag (F222). The notes come from that version's
+readers to fetch from a far newer tag. The notes come from that version's
 `CHANGELOG.md` section, which is what every backfilled entry carries:
 
 ```bash
@@ -754,13 +754,14 @@ when, and the tense carries it:
 
 The scanner reads the SENTENCE the number sits in, not the line, so a past marker earlier in the
 same sentence covers a number further along it — and a marker in the previous sentence does not.
-That is F76, and it cuts both ways on purpose.
+That sentence-scoped reading cuts both ways on purpose.
 
 **What none of these buys you.** A unit is not a count and is not read at all: a duration, a byte
 size or a line count passes the lint whatever tense it is in, because the family was surveyed over
 this tree and refused — honest prose outnumbered real claims in every cut of it, and `pn27` holds
 the measurement that decided so. A stale measurement is therefore YOUR job, not the build's. The
-same is true of `the N <noun>` with an ordinary noun, which is the shape F59's own instance wore.
+same is true of `the N <noun>` with an ordinary noun — a shape a real stale count has worn before,
+slipping past every scan.
 
 ### typing/dataclasses/annotations stay banned (standing since P9.3's AST enforcement)
 

@@ -288,7 +288,7 @@ def main(argv):
     cli_basename = None
     # A boolean flag, popped before the positional check below counts arguments.
     # Off by default: a parked proposal is part of the plan's story, and hiding it
-    # by default is what made an all-parked report read as an empty one (F-P-32).
+    # by default is what made an all-parked report read as an empty one.
     show_proposals = "--no-proposals" not in args
     args = [a for a in args if a != "--no-proposals"]
     for flag in ("--out-dir", "--format", "--summary-file", "--basename"):
@@ -356,7 +356,7 @@ def main(argv):
     usage = load_usage(manifest, manifest_path)
     evidence = load_evidence(manifest, manifest_path, boundary=boundary)
 
-    # th (F-P-6): resolve the look once — project theme, then the user's, then
+    # th: resolve the look once — project theme, then the user's, then
     # the built-in — and hand the compiled sheet to every writer below. A theme
     # that failed to load says so on stderr and the report still renders: a
     # look is decoration, and decoration never takes the document down.

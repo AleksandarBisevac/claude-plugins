@@ -406,8 +406,8 @@ def _journal_never_committed(jr, directory):
     UNTRACKED for more than 7 days, or None when there is nothing to say.
 
     Rides audit-journal's own porcelain seam (`_git_status_sets`) -- one
-    subprocess for the whole directory, the same batched read verify() uses
-    (F-B3). Age by MTIME, not by the filename's month: a file opened on the
+    subprocess for the whole directory, the same batched read verify() uses.
+    Age by MTIME, not by the filename's month: a file opened on the
     30th is a day old on the 1st, and punishing it for its name teaches people
     the warning is noise. The 7-day line is the one the state GC already draws
     (_GC_MAX_AGE) -- older than any session state is allowed to live. Never
@@ -426,7 +426,7 @@ def _journal_never_committed(jr, directory):
     ("never committed" about a committed file) would teach people to ignore
     the true one.
 
-    Keyed by JOURNAL-RELATIVE PATH, not basename (F-D-1): with archive/ the
+    Keyed by JOURNAL-RELATIVE PATH, not basename: with archive/ the
     same basename can sit live (untracked) AND archived (tracked+committed),
     and a basename lookup let the committed twin inflate the count and
     mis-name the oldest. The path key counts exactly the untracked files,
