@@ -65,6 +65,7 @@ import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
 import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
+import _evidence_io  # noqa: E402  (the OTHER ledger `planCost` reads - gate scope + reuse)
 
 
 def _load(name, filename):
@@ -954,6 +955,16 @@ def main(argv):
             "bands": ul.cost_bands(
                 manifest, rows, meta_usage if isinstance(meta_usage, dict) else {}),
             "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
+            # The claim `plugins/audit/README.md`'s Token usage section makes
+            # about the plan itself, re-derived from THIS project's own two
+            # ledgers rather than asserted: `_evidence_io.read_rows` is the
+            # SAME reader `/audit:doctor` and `verify-invariants.py` use, so a
+            # torn or unreadable row is counted there exactly as it would be
+            # here. Unfiltered by `--since`/`--phase`/etc - the three
+            # comparisons this folds together are already narrow, and a
+            # window on top would only thin them further.
+            "planCost": ul.plan_cost_claim(
+                manifest, rows, _evidence_io.read_rows(project)["rows"]),
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0

@@ -238,6 +238,137 @@ def _cases(check):
           "rather than whatever order the tallies dict happened to iterate",
           [g["name"] for g in gc] == ["flaky-new", "lint", "typecheck"])
 
+    # gate_scope_comparison: a task's own narrowed gate against its phase's,
+    # on the SAME task - answerable only when a task was measured both ways.
+    _ev_one_scope_each = [
+        {"taskId": "P1.1", "gateSource": "phase", "durationMs": 4000,
+         "runId": "r1"},
+        {"taskId": "P1.2", "gateSource": "task", "durationMs": 500,
+         "runId": "r2"},
+    ]
+    scope_refused = M.gate_scope_comparison(_ev_one_scope_each)
+    check("scope: refuses when no task in the history was ever measured "
+          "under both its own narrowed gate and its phase's",
+          scope_refused["verdict"] == M.CANNOT_COMPARE
+          and scope_refused["tasksRecorded"] == 2)
+    _ev_both_scopes = [
+        {"taskId": "P1.1", "gateSource": "phase", "durationMs": 4000,
+         "runId": "r1"},
+        {"taskId": "P1.1", "gateSource": "task", "durationMs": 500,
+         "runId": "r2"},
+        {"taskId": "P1.1", "gateSource": "task", "durationMs": 700,
+         "runId": "r3"},
+        {"taskId": "P1.2", "gateSource": "phase", "durationMs": 300,
+         "runId": "r4"},
+        # noise this reading must survive without being fooled by it:
+        {"taskId": "P1.1", "gateSource": "task", "durationMs": True,
+         "runId": "bool-not-a-duration"},
+        {"taskId": "P1.1", "gateSource": None, "durationMs": 900,
+         "runId": "no-scope-declared"},
+        "not-a-row-at-all",
+    ]
+    scope_cmp = M.gate_scope_comparison(_ev_both_scopes)
+    check("scope: answers only for the task actually measured under both "
+          "scopes - P1.2 never took its narrowed path and is left out",
+          scope_cmp["verdict"] == "compared" and len(scope_cmp["tasks"]) == 1
+          and scope_cmp["tasks"][0]["taskId"] == "P1.1")
+    check("scope: durations are the mean of each scope's own runs, and a "
+          "boolean durationMs is dropped rather than read as one",
+          scope_cmp["tasks"][0]["narrowedRuns"] == 2
+          and scope_cmp["tasks"][0]["narrowedMeanMs"] == 600.0
+          and scope_cmp["tasks"][0]["phaseRuns"] == 1
+          and scope_cmp["tasks"][0]["phaseMeanMs"] == 4000.0
+          and scope_cmp["tasks"][0]["savedMs"] == 3400.0)
+
+    # gate_reuse_comparison: a run that reused a verdict against the run it
+    # repeated - answerable only when a reuseKey carries BOTH.
+    _ev_no_shared_key = [
+        {"reuseKey": "k1", "verdictSource": "reused", "durationMs": 50,
+         "runId": "rA", "phaseId": "P1", "taskId": "P1.1"},
+        {"reuseKey": "k2", "verdictSource": None, "durationMs": 900,
+         "runId": "rB", "phaseId": "P1", "taskId": "P1.2"},
+    ]
+    reuse_refused = M.gate_reuse_comparison(_ev_no_shared_key)
+    check("reuse: refuses when no reused row shares an identity with a "
+          "row this history actually measured",
+          reuse_refused["verdict"] == M.CANNOT_COMPARE
+          and reuse_refused["reusedRowsSeen"] == 1)
+    _ev_shared_key = [
+        {"reuseKey": "k1", "verdictSource": None, "durationMs": 1200,
+         "runId": "measured-1", "phaseId": "P1", "taskId": "P1.1"},
+        {"reuseKey": "k1", "verdictSource": None, "durationMs": 1400,
+         "runId": "measured-2", "phaseId": "P1", "taskId": "P1.1"},
+        {"reuseKey": "k1", "verdictSource": "reused", "durationMs": 40,
+         "runId": "reused-1", "phaseId": "P1", "taskId": "P1.1"},
+        # noise: no identity at all, and a boolean duration
+        {"reuseKey": None, "verdictSource": "reused", "durationMs": 10,
+         "runId": "orphan-reuse"},
+        {"reuseKey": "k1", "verdictSource": "reused", "durationMs": True,
+         "runId": "bool-not-a-duration"},
+    ]
+    reuse_cmp = M.gate_reuse_comparison(_ev_shared_key)
+    check("reuse: pairs the reused run against the mean of the measured "
+          "runs sharing its identity, naming the run it came from",
+          reuse_cmp["verdict"] == "compared" and len(reuse_cmp["runs"]) == 1
+          and reuse_cmp["runs"][0]["runId"] == "reused-1"
+          and reuse_cmp["runs"][0]["measuredMeanMs"] == 1300.0
+          and reuse_cmp["runs"][0]["avoidedRunMs"] == 40.0
+          and reuse_cmp["runs"][0]["savedMs"] == 1260.0)
+
+    # sibling_spend_comparison: one task's spend against its phase-mates' -
+    # reuses cost_bands' own sample floor, scoped to one phase.
+    sib_manifest = {"phases": [
+        {"id": "PA", "tasks": [{"id": "PA.%d" % i, "status": "done"}
+                               for i in range(1, 6)]},
+        {"id": "PB", "tasks": [{"id": "PB.1", "status": "done"},
+                               {"id": "PB.2", "status": "done"}]},
+    ]}
+    sib_rows = (
+        [mkrow(i, "claude-opus-5", "a@x", "PA.%d" % i, "PA", "task", cost)
+         for i, cost in enumerate((10.0, 20.0, 30.0, 40.0, 50.0), start=1)]
+        + [mkrow(i, "claude-opus-5", "a@x", "PB.%d" % i, "PB", "task", cost)
+           for i, cost in enumerate((5.0, 7.0), start=1)])
+    sib_cmp = M.sibling_spend_comparison(sib_manifest, sib_rows)
+    check("sibling: PA clears the sample floor and is answered, PB does not "
+          "and is named rather than silently missing",
+          sib_cmp["verdict"] == "compared" and sib_cmp["gate"] == M.SIBLING_GATE
+          and "PB" in sib_cmp["shortPhases"]
+          and all(tid.startswith("PA.") for tid in sib_cmp["tasks"]))
+    _pa30 = sib_cmp["tasks"]["PA.3"]           # its own cost is 30.0
+    _pa_siblings = [10.0, 20.0, 40.0, 50.0]    # every OTHER PA task's cost
+    check("sibling: the spread quoted for one task is its OWN phase-mates, "
+          "excluding itself, matching the project's own percentile reader",
+          _pa30["costUSD"] == 30.0 and _pa30["siblingCount"] == 4
+          and _pa30["siblingMedianUSD"] == round(M._percentile(_pa_siblings, 50), 4)
+          and _pa30["siblingP25USD"] == round(M._percentile(_pa_siblings, 25), 4)
+          and _pa30["siblingP75USD"] == round(M._percentile(_pa_siblings, 75), 4))
+    sib_all_short = M.sibling_spend_comparison(
+        {"phases": [{"id": "PB", "tasks": [{"id": "PB.1", "status": "done"},
+                                           {"id": "PB.2", "status": "done"}]}]},
+        [mkrow(1, "claude-opus-5", "a@x", "PB.1", "PB", "task", 5.0),
+         mkrow(2, "claude-opus-5", "a@x", "PB.2", "PB", "task", 7.0)])
+    check("sibling: refuses, naming the gate and every phase that fell "
+          "short of it, when NO phase in the history clears the floor",
+          sib_all_short["verdict"] == M.CANNOT_COMPARE
+          and sib_all_short["gate"] == M.SIBLING_GATE
+          and sib_all_short["shortPhases"] == ["PB"])
+    sib_no_data = M.sibling_spend_comparison(sib_manifest, [])
+    check("sibling: a history with no cost-attributed task at all names "
+          "THAT gap - never 'fell short', which would claim a phase was "
+          "even in the running",
+          sib_no_data["verdict"] == M.CANNOT_COMPARE
+          and sib_no_data["shortPhases"] == []
+          and "no usage ledger data" in sib_no_data["reason"])
+
+    # plan_cost_claim: the three comparisons together, and never a fourth
+    # field that folds them into the single ratio this whole design refuses.
+    pc = M.plan_cost_claim(sib_manifest, sib_rows, _ev_both_scopes)
+    check("planCost: assembles the three named comparisons, each independently "
+          "verdicted, and nothing else",
+          set(pc.keys()) == {"gateScope", "gateReuse", "siblingSpend"}
+          and pc["gateScope"]["verdict"] == "compared"
+          and pc["siblingSpend"]["verdict"] == "compared")
+
 
 def _selftest():
     return _harness.run(_cases)

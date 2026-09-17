@@ -1193,6 +1193,36 @@ the model, the work item and what the task waits on. A search that matches rows 
 view hides says so, and offers the one press that shows them; the view and every filter
 survive a reload, including over `file://` where the URL fragment cannot be written.
 
+**Does the plan pay for itself?** That is the argument the whole product rests on, and it is
+exactly the kind of claim this README refuses everywhere else without a basis — so rather than
+assert one ratio, `/audit:usage --json` carries a `planCost` block naming the three comparisons
+that are actually honest, each **answered or refused on its own**:
+
+* a task's own **narrowed** gate against its **phase's** gate, on the same task — from the
+  [test evidence](#test-evidence) ledger's `gateSource`;
+* a gate run that **reused** a verdict against the run it repeated — from the same ledger's
+  reuse identity;
+* one task's **spend** against the spend of its **sibling tasks in the same phase** — from this
+  section's own ledger, reusing cost bands' sample floor scoped to one phase instead of the
+  whole project.
+
+A single number here would be the most quotable figure this product could print and the least
+checkable, so there isn't one: each comparison names its subjects (which task, which phase,
+which run) when the history supports it, and says so plainly when it does not —
+`"verdict": "could-not-prove"`, never a ratio computed over a history too thin to carry it. Run
+it over your own project's ledgers to see which of the three yours can answer:
+
+```bash
+/audit:usage --json | python3 -c "import json,sys;print(json.dumps(json.load(sys.stdin)['planCost'],indent=2))"
+```
+
+An ordinary gate run measures a task's gate under exactly the scope its manifest declares, and a
+tree is only ever reused when its content, its declared gate and its declared files all match a
+prior run — so the first two comparisons need a **deliberate** second run under the other scope,
+or a genuine repeat, before they have anything to compare. On a project too young to have taken
+either, the honest answer is that history does not carry them yet, not a ratio built from what
+little there is.
+
 ## Audit trail
 
 Who changed the plan, when, and to what. Every edit-tool write to the manifest (index or

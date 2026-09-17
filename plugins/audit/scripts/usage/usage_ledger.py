@@ -129,8 +129,10 @@ from _usage_core import (  # noqa: E402,F401  (re-exported, see above)
 from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
     MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
 from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)
-    BAND_ORDER, COST_BAND_PARAMS, MIN_TASKS_FOR_PROJECTION, band_of, cost_bands,
-    context_shape, gate_catches, phase_budgets, retry_cost, unit_economics)
+    BAND_ORDER, CANNOT_COMPARE, COST_BAND_PARAMS, MIN_TASKS_FOR_PROJECTION,
+    SIBLING_GATE, band_of, context_shape, cost_bands, gate_catches,
+    gate_reuse_comparison, gate_scope_comparison, phase_budgets, plan_cost_claim,
+    retry_cost, sibling_spend_comparison, unit_economics)
 from _usage_routing import (  # noqa: E402,F401  (re-exported, see above)
     ATTEMPT_TOLERANCE, MIN_ADVICE_SAVING_PCT, MIN_ADVICE_SAVING_USD,
     MIN_ROUTING_EVIDENCE, RISK_ORDER, routing)

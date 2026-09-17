@@ -48,7 +48,8 @@ _output.install_path()
 from _usage_core import aggregate  # noqa: E402  (the hottest thing a report runs)
 from _usage_coverage import coverage, monthly_activity  # noqa: E402
 from _usage_economics import (  # noqa: E402
-    context_shape, cost_bands, phase_budgets, retry_cost, unit_economics)
+    context_shape, cost_bands, phase_budgets, retry_cost, sibling_spend_comparison,
+    unit_economics)
 from _usage_routing import routing  # noqa: E402
 from _usage_spend import cache_profile, compare, series  # noqa: E402
 
@@ -222,6 +223,17 @@ def _bench_cases(manifest, rows):
     third folds a caller-supplied tally rather than a ledger read that grows with
     `_BENCH_SIZES`: nothing about its cost scales with row count, so timing it at
     several sizes would print the same number three times and call that a shape.
+
+    `CANNOT_COMPARE`/`SIBLING_GATE` are constants, not passes, so `bn5`'s own scan
+    (`callable(v)`) already leaves them out without a name here. `gate_scope_comparison`
+    and `gate_reuse_comparison` are absent for `gate_catches`' reason and not by
+    analogy with it: both read the EVIDENCE ledger, a different rows entirely from
+    the `rows` fixture this function builds, so there is nothing of the right
+    shape to scale them against at `_BENCH_SIZES` without a second fixture this
+    module does not carry. `plan_cost_claim` is absent because it only calls the
+    three above it — one of which is timed here and two of which are not — so a
+    fourth number for it would restate `sibling_spend_comparison`'s own cost under
+    a different label plus two calls an empty evidence list makes free.
     """
     return (
         ("aggregate", lambda: aggregate(rows, "day")),
@@ -233,6 +245,7 @@ def _bench_cases(manifest, rows):
         ("context_shape", lambda: context_shape(manifest, rows)),
         ("phase_budgets", lambda: phase_budgets(manifest, rows)),
         ("retry_cost", lambda: retry_cost(manifest, rows)),
+        ("sibling_spend_comparison", lambda: sibling_spend_comparison(manifest, rows)),
         ("routing", lambda: routing(manifest, rows)),
         ("coverage", lambda: coverage(rows)),
         ("monthly_activity", lambda: monthly_activity(manifest, rows)),

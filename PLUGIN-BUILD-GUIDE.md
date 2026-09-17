@@ -361,7 +361,7 @@ L7:
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _commit_trail, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups
-  audit-usage -> _areas, _cli_fmt, _fmt, _loader, _locks, _output, _ui_theme
+  audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _output, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
@@ -1507,7 +1507,10 @@ module does exactly what its section did:
   it speaks; an absent phase budget renders as nothing rather than 0% or 100%; retried and
   blocked spend are reported apart and never summed into "waste". `COST_BAND_PARAMS` is the one
   statement of the relative basis's shape — `panel-server.py` serialises that exact dict into
-  the page so `panel.js` cannot restate it differently.
+  the page so `panel.js` cannot restate it differently. Since P56.6, also `gate_scope_comparison`,
+  `gate_reuse_comparison`, `sibling_spend_comparison` and the `plan_cost_claim` that folds them
+  — the plan's own cost against the same work without one, as three named comparisons that each
+  answer or refuse (`CANNOT_COMPARE`) rather than a single ratio nothing could check.
 * **`_usage_routing.py`** — `routing` and its advice. Cost per completed task per model WITHIN a
   risk band, never a bare spend-share ratio, and advice only where this repo's own evidence
   supports it: enough tasks on both models in that band, no worse mean attempts, real rates on
@@ -3499,7 +3502,13 @@ drawing, no ANSI, no emoji) so the command file can print it verbatim without pa
 to reformat a JSON rollup. With `--by phase|task|model|author|agent|day|hour|session|branch|
 attr` it prints one focused table; without it, the full dashboard. `--backfill` re-reads every
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
-path that rewrites (and therefore locks) rather than only appending.
+path that rewrites (and therefore locks) rather than only appending. `--json`'s payload also
+carries `planCost` (since P56.6): `_usage_economics.plan_cost_claim`, read against BOTH ledgers
+this command's project has — the usage ledger already loaded for everything else, and
+`_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in
+the OTHER, evidence, ledger. Unfiltered by the CLI's own `--since`/`--phase`/etc: the three
+comparisons it folds together are already narrow, so a window on top would only thin them
+further.
 
 ### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/layout.md` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:

@@ -708,9 +708,9 @@ def _cases(check):
     # The second direction, and it is the one that looks vacuous: rx1 passes by
     # construction if the five modules define NOTHING (a filter that narrows to
     # empty must never read as 'all clear'). Only a literal count fails then.
-    check("rx3 ...and there are 18 + 24 of them, so rx1 cannot be green over an "
+    check("rx3 ...and there are 18 + 30 of them, so rx1 cannot be green over an "
           "empty or gutted module",
-          len(_core_public) == 18 and len(_analytics_public) == 24,
+          len(_core_public) == 18 and len(_analytics_public) == 30,
           "got %d + %d" % (len(_core_public), len(_analytics_public)))
 
 

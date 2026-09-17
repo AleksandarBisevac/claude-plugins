@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 What the work cost, and what the plan said it could: `unit_economics`,
-`cost_bands`/`band_of`, `phase_budgets`, `retry_cost`.
+`cost_bands`/`band_of`, `phase_budgets`, `retry_cost`. And, since P56.6, what the
+PLAN ITSELF costs against the same work done without one: `gate_scope_comparison`,
+`gate_reuse_comparison`, `sibling_spend_comparison` and the `plan_cost_claim` that
+names which of the three a given history can actually support - see their own
+`# --- the plan's own cost ---` section below for why each refuses rather than
+guessing when a record is too thin.
 
 One of four passes cut out of `_usage_analytics.py` (U3.2) on its own
 `# --- cost per unit of work ---` marker, every body moved by line range.
@@ -388,6 +393,266 @@ def gate_catches(tallies, floor):
             row["verdict"] = "catches"
         out.append(row)
     return out
+
+
+# --- the plan's own cost, against the same work done without one ---------------
+# THE CLAIM THE WHOLE PRODUCT RESTS ON, AND UNTIL THIS TASK NOTHING MEASURED IT.
+# "Working through the plan costs less than working without one" is exactly the
+# shape of claim this repo refuses everywhere else when nothing carries its
+# basis - so the obvious shortcut is a single ratio, and a single ratio with no
+# named subjects would be the most quotable number this product could print and
+# the least checkable, because repeating it costs nothing and checking it costs
+# re-deriving what it never named.
+#
+# Three comparisons are honest because a real PAIR of runs exists behind each
+# one, not because they are convenient to compute:
+#
+#   * a task's own NARROWED gate against its PHASE's gate, on the SAME task -
+#     `gate_scope_comparison`, reading `run-test-gate.py`'s own `gateSource`;
+#   * a gate run that REUSED a verdict against the run it repeated -
+#     `gate_reuse_comparison`, reading the same file's reuse identity;
+#   * one completed task's spend against the spread of its SIBLING tasks' -
+#     the other tasks its own phase ran - `sibling_spend_comparison`.
+#
+# EACH ANSWERS WITH NAMED SUBJECTS OR REFUSES, and the refusal is never a
+# fallback to a default the way an absent phase budget or a thin cost-band
+# sample already refuse elsewhere in this file. It is spelled with the word
+# this tree already uses for an attempted comparison a record cannot support:
+# `_refs.RED_FIRST_CANNOT` is that same spelling for a red-first proof that was
+# attempted and refused for a reason that is not the work's; this is that word
+# again for a comparison history is too thin to make, not a second convention
+# invented beside it - which is why the string is defined here rather than
+# imported, exactly as `_refs.py` itself defines `RED_FIRST_CANNOT` beside
+# `run-test-gate.py`'s own `CANNOT_RUN` instead of importing it.
+CANNOT_COMPARE = "could-not-prove"
+
+# The per-phase sample floor `sibling_spend_comparison` uses - NOT a second
+# number invented for this claim. It IS `MIN_TASKS_FOR_PROJECTION`, because the
+# argument for suppressing a percentile below it is the same argument whether
+# the pool being read is the whole project or one phase of it.
+SIBLING_GATE = MIN_TASKS_FOR_PROJECTION
+
+
+def gate_scope_comparison(evidence_rows):
+    """One task's own narrowed gate against its phase's, on the SAME task.
+
+    `run-test-gate.py` resolves a task's gate to exactly ONE scope by
+    declaration - `gateSource` is `task` when the manifest's task carries a
+    gate of its own, `phase` otherwise - so an ordinary run is recorded under
+    whichever one the declaration picked, for the whole of that task's life.
+    Seeing one recorded under BOTH scopes means an operator deliberately took
+    the other path too (`--task` against a task with no gate of its own, or a
+    bare phase run that also covers a task that has one): a real, occasional
+    event, and this reads only occurrences of it rather than assuming every
+    task must have taken both.
+
+    Refuses with `CANNOT_COMPARE` when no task was ever measured both ways.
+    `tasksRecorded` says how many tasks carry a gate run of EITHER scope, so a
+    refusal here names how thin the history is rather than leaving a bare "no".
+    """
+    by_task = {}
+    for row in (evidence_rows or []):
+        if not isinstance(row, dict):
+            continue
+        tid = row.get("taskId")
+        src = row.get("gateSource")
+        dur = row.get("durationMs")
+        if not tid or src not in ("task", "phase"):
+            continue
+        if isinstance(dur, bool) or not isinstance(dur, (int, float)):
+            continue
+        slot = by_task.setdefault(tid, {"task": [], "phase": []})
+        slot[src].append(dur)
+
+    both = [(tid, s) for tid, s in sorted(by_task.items())
+            if s["task"] and s["phase"]]
+    if not both:
+        return {
+            "verdict": CANNOT_COMPARE,
+            "compares": "one task's own narrowed gate against its phase's gate",
+            "reason": ("%d task(s) carry a recorded gate run and none of them "
+                      "was ever measured under both scopes - an ordinary run "
+                      "takes exactly one, so this needs a deliberate run this "
+                      "history does not carry" % (len(by_task),)),
+            "tasksRecorded": len(by_task),
+        }
+    tasks_out = []
+    for tid, s in both:
+        narrowed_ms = sum(s["task"]) / len(s["task"])
+        phase_ms = sum(s["phase"]) / len(s["phase"])
+        tasks_out.append({
+            "taskId": tid,
+            "narrowedRuns": len(s["task"]), "phaseRuns": len(s["phase"]),
+            "narrowedMeanMs": round(narrowed_ms, 1),
+            "phaseMeanMs": round(phase_ms, 1),
+            "savedMs": round(phase_ms - narrowed_ms, 1),
+        })
+    return {"verdict": "compared",
+            "compares": "one task's own narrowed gate against its phase's gate",
+            "tasks": tasks_out}
+
+
+def gate_reuse_comparison(evidence_rows):
+    """A gate run that reused a verdict against the run it repeated.
+
+    Grouped by `reuseKey`, `run-test-gate.py`'s own identity for "the same
+    tree content, the same declared gate, the same declared files" (its
+    `REUSE_LIMIT` states what the key does not establish). A key carrying both
+    a `reused` row and a `measured` one is the pair this needs: the measured
+    row is what running the gate again would have cost, and the reused row is
+    what it actually cost - `durationMs` on a reused row is real wall time
+    (computing the identity, printing the result), never zero, so the saving
+    is READ off the two rather than asserted.
+
+    Refuses with `CANNOT_COMPARE` when no key has both. `reusedRowsSeen` counts
+    every row this history ever recorded with a reused verdict at all, so a
+    refusal says whether the MECHANISM has ever fired, or only never lined up
+    with a measured run sharing its identity.
+    """
+    by_key = {}
+    for row in (evidence_rows or []):
+        if not isinstance(row, dict):
+            continue
+        key = row.get("reuseKey")
+        dur = row.get("durationMs")
+        if not key or isinstance(dur, bool) or not isinstance(dur, (int, float)):
+            continue
+        slot = by_key.setdefault(key, {"reused": [], "measured": []})
+        which = "reused" if row.get("verdictSource") == "reused" else "measured"
+        slot[which].append({"runId": row.get("runId"),
+                            "phaseId": row.get("phaseId"),
+                            "taskId": row.get("taskId"), "durationMs": dur})
+
+    reused_seen = sum(len(s["reused"]) for s in by_key.values())
+    runs_out = []
+    for key, s in sorted(by_key.items()):
+        if not (s["reused"] and s["measured"]):
+            continue
+        taken_ms = sum(m["durationMs"] for m in s["measured"]) / len(s["measured"])
+        for r in s["reused"]:
+            runs_out.append({
+                "reuseKey": key, "runId": r["runId"], "phaseId": r["phaseId"],
+                "taskId": r["taskId"], "avoidedRunMs": round(r["durationMs"], 1),
+                "measuredMeanMs": round(taken_ms, 1),
+                "savedMs": round(taken_ms - r["durationMs"], 1),
+            })
+    if not runs_out:
+        return {
+            "verdict": CANNOT_COMPARE,
+            "compares": ("a gate run that reused a verdict against the run it "
+                        "repeated"),
+            "reason": ("%d distinct gate identity group(s) are recorded in "
+                      "this history, %d row(s) of which ever carried a reused "
+                      "verdict at all, and none of those shares an identity "
+                      "with a row this history actually measured"
+                      % (len(by_key), reused_seen)),
+            "reusedRowsSeen": reused_seen,
+        }
+    return {"verdict": "compared",
+            "compares": "a gate run that reused a verdict against the run it repeated",
+            "runs": runs_out}
+
+
+def sibling_spend_comparison(manifest, rows):
+    """One completed task's spend against the spread of its sibling tasks' -
+    the other tasks its own phase ran, each its own agent's spend.
+
+    Reuses the sample floor `cost_bands` already states (`SIBLING_GATE ==
+    MIN_TASKS_FOR_PROJECTION`) rather than inventing a second number, scoped to
+    ONE PHASE instead of the whole project: a percentile off a handful of
+    tasks is noise wherever the pool it is drawn from. A phase short of the
+    floor is named in `shortPhases` - carried on BOTH a `compared` and a
+    `CANNOT_COMPARE` return, because a phase that fell short is excluded from
+    `tasks` either way and a reader comparing two phases deserves to know one
+    of them was never in the running rather than reading its absence as
+    nothing to see. A task never appears in `tasks` unless its own phase
+    cleared the floor.
+    """
+    tasks = task_index(manifest)
+    cost_by_task, phase_by_task = {}, {}
+    for row in (rows or []):
+        tid = row.get("taskId")
+        if not tid or tid not in tasks:
+            continue
+        cost_by_task[tid] = cost_by_task.get(tid, 0.0) + _cost(row)
+        pid = row.get("phaseId")
+        if pid and tid not in phase_by_task:
+            phase_by_task[tid] = pid
+
+    by_phase = {}
+    for tid, cost in cost_by_task.items():
+        if (tasks.get(tid) or {}).get("status") != "done":
+            continue
+        pid = phase_by_task.get(tid)
+        if not pid:
+            continue
+        by_phase.setdefault(pid, []).append((tid, cost))
+
+    tasks_out, short_phases = {}, []
+    for pid, items in sorted(by_phase.items()):
+        if len(items) < SIBLING_GATE:
+            short_phases.append(pid)
+            continue
+        for tid, cost in items:
+            siblings = [c for other, c in items if other != tid]
+            tasks_out[tid] = {
+                "phaseId": pid, "costUSD": round(cost, 4),
+                "siblingCount": len(siblings),
+                "siblingMedianUSD": round(_percentile(siblings, 50), 4),
+                "siblingP25USD": round(_percentile(siblings, 25), 4),
+                "siblingP75USD": round(_percentile(siblings, 75), 4),
+            }
+    if not tasks_out:
+        # TWO DIFFERENT GAPS, ONE EMPTY RESULT - and the reason says which. An
+        # `rows` with no cost attributable to ANY task never populates
+        # `by_phase` at all, which is a different fact from a phase that DID
+        # attribute cost but never reached the floor; folding the two into one
+        # sentence would read "0 phase(s) fell short" over a history that
+        # never had a phase to fall short WITH.
+        if not by_phase:
+            reason = ("no phase in this history has even one completed, "
+                      "cost-attributed task to compare - there is no usage "
+                      "ledger data here yet, only the plan")
+        else:
+            reason = ("%d phase(s) have completed, cost-attributed tasks and "
+                      "none of them clears the sample floor cost bands "
+                      "already uses" % (len(short_phases),))
+        return {
+            "verdict": CANNOT_COMPARE,
+            "compares": ("one task's spend against the spend of its sibling "
+                        "tasks in the same phase"),
+            "reason": reason,
+            "gate": SIBLING_GATE,
+            "shortPhases": short_phases,
+        }
+    return {"verdict": "compared",
+            "compares": ("one task's spend against the spend of its sibling "
+                        "tasks in the same phase"),
+            "gate": SIBLING_GATE,
+            "tasks": tasks_out,
+            # Named even on an answered call - a phase that fell short of the
+            # floor is excluded from `tasks` silently otherwise, and a reader
+            # comparing two phases deserves to know one of them was never in
+            # the running rather than reading its absence as "nothing to see".
+            "shortPhases": short_phases}
+
+
+def plan_cost_claim(manifest, rows, evidence_rows):
+    """The three honest comparisons behind "the plan costs less than working
+    without one" - `_usage_economics.py`'s own module docstring lists them, and
+    `plugins/audit/README.md`'s Token usage section is what an operator reads.
+
+    Never a single ratio. A reader wanting ONE number from this has asked the
+    wrong question, and the shape of this return says so before they can build
+    one: three named comparisons, each independently `compared` or
+    `CANNOT_COMPARE`, and no field here sums or averages them into an answer
+    none of the three actually gave.
+    """
+    return {
+        "gateScope": gate_scope_comparison(evidence_rows),
+        "gateReuse": gate_reuse_comparison(evidence_rows),
+        "siblingSpend": sibling_spend_comparison(manifest, rows),
+    }
 
 
 if __name__ == "__main__":
