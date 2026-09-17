@@ -920,7 +920,7 @@
     {
       "id": "P55.19",
       "title": "The prose refusal marks the span it matched and stops naming a cause it never tested",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the refusal that rejects a brief on argv says what it actually matched, and the caller can tell a ternary from a lost substitution. The check reads five whitespace-adjacency shapes and tests for no backtick at all; the message volunteers command substitution as the explanation, which is why a report of it named a cause that was not present. It already prints a window around the hit - what is missing is a marker INSIDE that window pointing at the character that matched. Measured over this project's own plan, one hit in over a thousand prose strings, and that one a run of spaces: the false-positive rate against ordinary prose is near zero and the class that misfires is CODE QUOTED INTO PROSE, which is what a plan imported from an engineering report carries. The stdin escape is real and drives clean, and it is documented under the framing IF THE BRIEF CONTAINS BACKTICKS - which an operator whose text has none reads as somebody else's problem. The flag's own help text says nothing at all.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -950,21 +950,30 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "75c667c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "shell_eaten_gap returns the matched offsets and a caret line is built under the span; the refusal names the shape it matched and gives command substitution as one reading among two; every prose flag gained help text naming the stdin route.",
+        "descriptive": "The refusal marks what it matched instead of diagnosing a cause it never tested for."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T22:40:09Z",
+      "completedAt": "2026-09-17T22:44:45Z",
+      "verifiedBy": [
+        "p5519-tighten-shape",
+        "p5519-widen-shape",
+        "p5519-tighten-cause"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "75c667c",
+        "at": "2026-09-17T22:44:45Z"
+      }
     },
     {
       "id": "P55.20",
       "title": "A verb that writes another phase's shard says which branch that phase is on",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: a verb writing a shard names the target phase's branch when it differs from the one the caller is standing on, and the document stops promising more than the layout delivers. Every script that writes a shard was swept: none prints branch context. The nearest thing compares TREES rather than branches, which is why it stays silent on the case that bit - same tree, two branches, one shard, a real merge conflict in the file the layout exists to keep conflict-free. A warning, not a refusal: naming it is the whole fix, because the writer then knows to expect a merge. NOT the same shape as the commit-scope check, which starts from commits the plan records and asks what each staged; this starts from a path and asks a containment question about commits the plan records nowhere. And note before designing the condition: fewer than a fifth of this project's own phases carry a branch at all and every running one has none, so a check keyed only on a populated branch would be silent in the dogfood. The document's sentence about a phase run touching only its own shard gains the boundary the verbs cross.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -994,21 +1003,29 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "75c667c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_phase_branch_note warns when a verb writes an existing phase's shard while git has a different branch checked out, reading the branch from the worktree listing rather than composing it, and returns nothing when the phase records no branch or there is no repository to ask.",
+        "descriptive": "A write into another phase's shard says which branch that phase is on, and stays silent when it has nothing to compare."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T22:44:45Z",
+      "completedAt": "2026-09-17T22:44:45Z",
+      "verifiedBy": [
+        "p5520-tighten-branch",
+        "p5520-widen-branch"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "75c667c",
+        "at": "2026-09-17T22:44:45Z"
+      }
     },
     {
       "id": "P55.21",
       "title": "The verb that dirties the index says what to do about it, and the tool that lands it is findable",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the verb that writes both the shard and the index says that the index is now dirty and names the tool that lands it, and that tool is discoverable before the mistake rather than only in the refusal that follows it. The first-order trap is already closed - the commit step no longer asks for a hand-composed pathspec and the script refuses when the index is staged. What is unchanged is the silence at the moment the state is created. The second-order failure was reproduced in a scratch repository: file a task mid-run, commit by hand, and the manifest AT that commit does not validate - the index names a task whose shard is not in it - with the invariants reporting both breaches against the recorded commit. Anyone checking out that commit gets an invalid plan. The tool that already does the right thing is named in no command page, no reference document, no agent brief and not in the README; the only place its name reaches a human is the refusal that fires after the mistake.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1039,16 +1056,24 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "75c667c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_index_dirty_note fires when a write's own record shows the shard and the index landed together, naming commit-manifest-index.py with the phase id; the two documents describing the commit step name it as well.",
+        "descriptive": "The verb that dirties the index says so and names the tool that lands it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T22:44:45Z",
+      "completedAt": "2026-09-17T22:44:45Z",
+      "verifiedBy": [
+        "p5521-tighten-index",
+        "p5521-widen-index"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "75c667c",
+        "at": "2026-09-17T22:44:45Z"
+      }
     },
     {
       "id": "P55.22",
