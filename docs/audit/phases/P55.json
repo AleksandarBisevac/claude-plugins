@@ -605,6 +605,49 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P55.13",
+      "title": "The mutating sweep refuses to overwrite work the tree has not committed",
+      "status": "pending",
+      "description": "DONE MEANS: tools/prove-gates.py cannot silently destroy uncommitted work in a file it mutates. It takes a copy before mutating and writes that copy back afterwards, which is right when the tree is still - and when the tree is not still, the copy it took is older than the file and the restore is a silent overwrite. That happened: an agent edited a document while the sweep was running and its change was gone with no error anywhere, while its other files were untouched, so a partial loss read as a complete tree. The repair is the tool refusing rather than the operator remembering: a file it is about to mutate that is dirty is a refusal naming the file, with a way to say go ahead anyway for the case where the dirt IS the thing being proven. The register already carried this mechanism as a source of contradictory results; what is new is that the same mechanism destroys work, and the two have different repairs.",
+      "files": [
+        "tools/prove-gates.py",
+        "tools/redfirst.sh"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/prove-gates.py: a row whose target is dirty is refused by name rather than mutated, and the refusal can be overridden deliberately"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-16T05:02:21Z"

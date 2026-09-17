@@ -1256,7 +1256,8 @@
       "P46.5",
       "P53.3",
       "P50.5",
-      "P55.11"
+      "P55.11",
+      "P55.13"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -2097,6 +2098,9 @@
     ],
     "plugins/audit/scripts/manifest/repair-tests-add.py": [
       "P55.12"
+    ],
+    "tools/redfirst.sh": [
+      "P55.13"
     ]
   },
   "bugs": [
