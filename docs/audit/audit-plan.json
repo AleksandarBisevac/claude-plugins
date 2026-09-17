@@ -873,7 +873,8 @@
       "P55.6",
       "P57.5",
       "P50.7",
-      "P50.5"
+      "P50.5",
+      "P50.8"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1137,7 +1138,8 @@
       "P18.9",
       "P21.3",
       "P34.5",
-      "P36.10"
+      "P36.10",
+      "P50.8"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1257,7 +1259,8 @@
       "P53.3",
       "P55.11",
       "P55.13",
-      "P50.5"
+      "P50.5",
+      "P50.8"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -1300,7 +1303,8 @@
       "P32.7",
       "P32.2",
       "P34.6",
-      "P40.2"
+      "P40.2",
+      "P50.8"
     ],
     "tools/verify.sh": [
       "P19.2",
@@ -1359,13 +1363,15 @@
       "P34.5",
       "P36.10",
       "P55.3",
-      "P55.9"
+      "P55.9",
+      "P50.8"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
       "P41.4",
       "P48.4",
-      "P53.10"
+      "P53.10",
+      "P50.8"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1768,7 +1774,8 @@
       "P47.3",
       "P57.5",
       "P50.7",
-      "P50.5"
+      "P50.5",
+      "P50.8"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"

@@ -374,6 +374,54 @@
         "commit": "1fb58f0",
         "at": "2026-09-17T01:09:23Z"
       }
+    },
+    {
+      "id": "P50.8",
+      "title": "The citation rule's vocabulary comes from the register's numbering, not from a sample of it",
+      "status": "pending",
+      "description": "DONE MEANS: the rule reports nothing AND a plain search for the register's id shapes finds nothing in published source, which are two different sentences and have not been the same one all release. The register numbers a follow-up entry by fusing a letter onto the digits. That spelling has no word boundary where the rule expects one, so it has never matched, in either the plain or the hyphenated form - and the tree carries it in both. This is the fourth gap in one rule in one release and they are all the same question answered partially. The repair is to state the vocabulary once from the register's own numbering rather than from a sample of it: a base number, an optional component letter, an optional trailing letter. The case that goes red must be over the SHAPE rather than over today's examples, because a case naming the examples is the same defect a layer down. Then clear what the widened rule reports.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test__areas.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: an id carrying a trailing letter is the same vocabulary as one without, in both the plain and the hyphenated form, and the case asserts the shape rather than the examples"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-15T23:01:16Z"
