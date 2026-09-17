@@ -294,7 +294,7 @@
     {
       "id": "P56.6",
       "title": "The plan's own cost is compared against the same work done ad hoc",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the product can answer whether working through the plan costs less than working without it, from this project's own recorded runs, and refuses to answer where the history cannot support it. This is the claim the whole design rests on and nothing in the product measures it - which is the shape this repository refuses everywhere else: a claim carries the basis that makes it true, and when the basis is missing the missing basis is the thing to say. The comparison must name what it compared, because the honest version is narrow: a task run under a narrowed gate against the same task run under the phase's, a re-run avoided against one taken, an agent's spend against the spread of its siblings. A single ratio with no named subjects would be the most quotable number in the product and the least checkable, which is worse than none.",
       "files": [
         "plugins/audit/scripts/usage/_usage_economics.py",
@@ -325,16 +325,29 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9c43711",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_usage_economics gained gate_scope_comparison, gate_reuse_comparison and sibling_spend_comparison plus plan_cost_claim assembling exactly those three; each returns named subjects or a could-not-prove verdict with the reason, never a fallback ratio, and audit-usage --json carries them under planCost.",
+        "descriptive": "The product can ask whether the plan pays for itself, names what any answer compared, and over every history this project has it says the question cannot be answered yet."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T03:08:52Z",
+      "completedAt": "2026-09-17T03:08:52Z",
+      "verifiedBy": [
+        "sibling-gate-weakened-red",
+        "sibling-gate-weakened-pass",
+        "scope-refusal-red",
+        "scope-refusal-pass",
+        "reuse-refusal-red",
+        "reuse-refusal-pass",
+        "plan-cost-claim-widened"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9c43711",
+        "at": "2026-09-17T03:08:52Z"
+      }
     }
   ],
   "startedAt": "2026-09-16T17:58:07Z"
