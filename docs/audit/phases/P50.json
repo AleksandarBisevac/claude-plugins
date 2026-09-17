@@ -324,7 +324,7 @@
     {
       "id": "P50.7",
       "title": "The citation rule reads one spelling where the tree uses two, and convicts a linter's own codes",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the rule that grades published comments answers one question - what is a citation - in one place, and its count is a claim about the tree rather than about one spelling. THREE GAPS, ONE ANSWER. It matches a plain F followed by digits; the register also uses a hyphenated component form, a letter for the component and then the number, and a search over the tree finds lines carrying it in quantity - the same defect in a spelling the rule has never matched, so its remainder has been reporting a number that reads complete while a second remainder sat outside it. It convicts a linter's own diagnostic codes, because one of them has exactly the shape it looks for: those lines are not citations, the tree carries them in quantity, and the suppression context has to be excluded structurally rather than by a special case naming today's codes. And it reads three constructs - comment, docstring, case message - so an id in help text or a reason string is invisible to it, which is how lines were found by a plain search after the rule called a slice clean. Splitting these into three fixes would leave three patterns to keep in step, which is the defect one level up. The remaining comment slices run AFTER this lands, so their worklists are the whole question rather than a third of it.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -353,16 +353,26 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1fb58f0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One expression recognises both id spellings and all four scans call it; a noqa suppression's comma-separated code list is parsed and excluded structurally, leaving a citation written after the list still reported; and a fourth scan reads string literals the docstring and case-label scans do not already claim, with a shared claimed-set so nothing is counted twice.",
+        "descriptive": "The rule answers one question in one place, so its count is a claim about the tree rather than about one spelling."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T01:09:22Z",
+      "completedAt": "2026-09-17T01:09:23Z",
+      "verifiedBy": [
+        "row1_hyphenated_reverted",
+        "row2_suppression_widens",
+        "row3_suppression_narrows",
+        "prove-gates --only register_citation"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1fb58f0",
+        "at": "2026-09-17T01:09:23Z"
+      }
     }
   ],
   "startedAt": "2026-09-15T23:01:16Z"
