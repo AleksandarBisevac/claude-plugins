@@ -81,7 +81,7 @@
     {
       "id": "P50.2",
       "title": "The README leads with what the baseline cannot do",
-      "status": "in_progress",
+      "status": "done",
       "description": "DONE MEANS: a reader who knows what a coding agent already does learns, in the first screen, what this adds that the agent cannot do alone, and the command list stops being the opening. The measurement behind the packaging decision is that most of the value is in the parts that need a manifest, and the document opens with a list of commands, which is the shape of a reference rather than an argument. The three things the baseline genuinely cannot do are a plan a tool refuses to let you leave, an evidence record that survives the session, and a guard that fires on an operation rather than on a spelling - and each is one sentence. The boundary belongs in the same screen: this is one repository, deliberately, and says so, because an undefined feature that ships is worse than a stated limit.",
       "files": [
         "plugins/audit/README.md",
@@ -110,14 +110,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eb8cf82",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/README.md opens with a reference-not-introduction pointer to the quickstart, then three sentences naming what a coding agent cannot do alone - a plan a tool refuses to let you leave, an evidence record that survives the session, and a guard binding to what a call does rather than how it was spelled - followed by the one-repository-per-manifest boundary, before any command list.",
+        "descriptive": "A reader learns in the first screen what this adds that their agent cannot do alone, and where the boundary is."
       },
       "startedAt": "2026-09-15T23:01:16Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-16T23:59:07Z",
+      "verifiedBy": [
+        "read against the document as it stands"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "eb8cf82",
+        "at": "2026-09-16T23:59:07Z"
+      }
     },
     {
       "id": "P50.3",
