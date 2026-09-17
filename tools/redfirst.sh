@@ -2,7 +2,8 @@
 # tools/redfirst.sh — break the thing a check guards, prove the check goes red,
 # and put the file back in the same command.
 #
-#   tools/redfirst.sh <file> --replace <old> <new> [--render] -- <gate command...>
+#   tools/redfirst.sh <file> --replace <old> <new> [--render] [--allow-dirty] -- \
+#     <gate command...>
 #
 # Example:
 #   tools/redfirst.sh plugins/audit/scripts/ui/report/areas.js \
@@ -23,6 +24,14 @@
 # --render re-renders the committed artifacts after mutating, for gates that read a
 # rendered file rather than the source. Without it, a source mutation is invisible
 # to those gates and the run would report a green gate as a weak check.
+#
+# REFUSES A FILE THAT IS ALREADY DIRTY, unless told otherwise. Something else can be
+# writing to this tree while this runs - another agent, a human - and from outside,
+# this script's own mid-mutation state is indistinguishable from that: both are a
+# file differing from HEAD. Restoring over a file that already carried a real edit
+# either overwrites that edit or reads, wrongly, as though the edit had been
+# destroyed. --allow-dirty is the deliberate way past this, for the one case where
+# the dirt itself is what is being proven.
 set -u
 
 here=$(dirname "$0")
@@ -30,7 +39,7 @@ root=$(cd "$here/.." && pwd)
 cd "$root" || exit 2
 
 usage() {
-  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
 }
 
@@ -38,17 +47,34 @@ usage() {
 FILE=$1; shift
 [ -f "$FILE" ] || { echo "redfirst: no such file: $FILE" >&2; exit 2; }
 
-OLD=""; NEW=""; RENDER=0
+OLD=""; NEW=""; RENDER=0; ALLOW_DIRTY=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --replace) OLD=${2:-}; NEW=${3:-}; shift 3 ;;
-    --render)  RENDER=1; shift ;;
-    --)        shift; break ;;
-    *)         echo "redfirst: unexpected argument $1" >&2; usage ;;
+    --replace)     OLD=${2:-}; NEW=${3:-}; shift 3 ;;
+    --render)      RENDER=1; shift ;;
+    --allow-dirty) ALLOW_DIRTY=1; shift ;;
+    --)            shift; break ;;
+    *)             echo "redfirst: unexpected argument $1" >&2; usage ;;
   esac
 done
 [ $# -ge 1 ] || usage
 [ -n "$OLD" ] || { echo "redfirst: --replace needs a non-empty <old>" >&2; exit 2; }
+
+# THE GUARD: refuse to mutate a file that is not what HEAD has, unless told to
+# proceed anyway. `git status --porcelain` reports nothing for a path that is
+# tracked and matches HEAD, and a line for anything else - modified, staged,
+# untracked - so an empty result is the only spelling of "safe to mutate and
+# restore". A git failure (no repository, no git on PATH) is answered the same
+# way a real difference is: refused, because a mutation this cannot vouch for
+# is exactly the case the guard exists for, not an exemption from it.
+if [ "$ALLOW_DIRTY" -eq 0 ]; then
+  DIRTY=$(git status --porcelain -- "$FILE" 2>&1)
+  DIRTY_RC=$?
+  if [ "$DIRTY_RC" -ne 0 ] || [ -n "$DIRTY" ]; then
+    echo "redfirst: REFUSED (DIRTY): $FILE is not what HEAD has ($DIRTY) - restoring over it would either overwrite whatever put it there or be read as having destroyed that work when neither happened; pass --allow-dirty if the dirt itself is what this run is proving" >&2
+    exit 2
+  fi
+fi
 
 BACKUP=$(mktemp "${TMPDIR:-/tmp}/redfirst-XXXXXX")
 cp "$FILE" "$BACKUP"

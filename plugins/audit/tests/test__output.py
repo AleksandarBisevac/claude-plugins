@@ -2274,6 +2274,7 @@ def _cases(check):
         "../scripts/manifest/audit-task.py",
         "../scripts/manifest/set-priority.py",
         "../scripts/manifest/repair-commits.py",
+        "../scripts/manifest/repair-tests-add.py",
         "../scripts/panel/_panel_write.py",
         "../scripts/panel/_panel_state.py",
         "../scripts/panel/_panel_composition.py",

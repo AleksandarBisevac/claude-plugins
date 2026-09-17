@@ -252,7 +252,9 @@ def apply_repair(mpath, manifest, ans):
     # be written - but the failure is said, not swallowed. `append_from_cli`
     # because this is a script an operator runs from Bash, and an append no writer
     # claims is what the Bash guard reports as a shell write into the trail.
-    rel = os.path.relpath(mpath, project).replace(os.sep, "/")
+    # Persisted row: "/" separators regardless of platform, like every other
+    # journal path.
+    rel = _output.posix_rel(mpath, project)
     touched = []
     for row in applied:
         if row["taskId"] not in touched:
