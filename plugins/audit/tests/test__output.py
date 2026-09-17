@@ -388,9 +388,9 @@ def _cases(check):
           M.redundant_constants() == [])
 
     # ---------------------------------------- a count whose evidence was truncated
-    # F205: the doctor told a live client repo that four tasks were marked done
-    # with no completion record and then named three. The renderer first, then the
-    # lint that keeps the shape from coming back.
+    # THE MOTIVATING CASE: the doctor told a live client repo that four tasks were
+    # marked done with no completion record and then named three. The renderer
+    # first, then the lint that keeps the shape from coming back.
     fits = M.some_of(["P12.2", "P12.3", "P12.10", "P12.14"])
     check("te1 a list inside the budget is rendered whole, with NO tail. THE "
           "SECOND-DIRECTION CASE for the whole family, and it is meant to read "
@@ -414,7 +414,8 @@ def _cases(check):
     check("te2 ...and one that does NOT fit says how many it left out, exactly. "
           "Read back off the rendering rather than compared with a number spelled "
           "here: shown plus hidden has to be the whole set, which is the property "
-          "F205 broke and a hard-coded expectation would only restate: %r -> "
+          "the motivating case broke and a hard-coded expectation would only "
+          "restate: %r -> "
           "%d shown + %d hidden of %d"
           % (over, len(shown), hidden, len(long_ids)),
           hidden > 0 and len(shown) + hidden == len(long_ids)
@@ -447,8 +448,9 @@ def _cases(check):
         # not this defect: nothing in the line is untrue.
         _wt("nocount.py", 'def r(a):\n'
                           '    return "thing(s): %s" % (", ".join(a[:3]),)\n')
-        # A count beside a slice of something ELSE - an abbreviated SHA, which is
-        # the shape sitting next to F205 in the file it was found in.
+        # A count beside a slice of something ELSE - an abbreviated SHA, which can
+        # legitimately sit right next to the truncated-evidence shape in the same
+        # file.
         _wt("other.py", 'def r(a, sha):\n'
                         '    return "%d thing(s): %s" % (len(a), sha[:12])\n')
         # The remainder stated, literal cap: `hooks/meter-usage.py`'s spelling,
@@ -465,8 +467,9 @@ def _cases(check):
         _wt("varsilent.py", 'def r(a, limit):\n'
                             '    return "%d thing(s): %s" % (len(a),\n'
                             '                                ", ".join(a[:limit]))\n')
-        # The slice applied to a WRAPPED collection, which is how three of F205's
-        # siblings were written.
+        # The slice applied to a WRAPPED collection - `sorted(a)[:3]` beside
+        # `len(a)` - a shape this tree's own truncating helpers really use, not
+        # merely a hypothetical one.
         _wt("inner.py", 'def r(a):\n'
                         '    return "%d thing(s): %r" % (len(a), sorted(a)[:3])\n')
 
@@ -482,8 +485,8 @@ def _cases(check):
               "nocount.py" not in named)
         check("te7 a count beside a slice of a DIFFERENT thing is silent - an "
               "abbreviated SHA is width, not evidence dropped from the set being "
-              "counted, and the two sit in adjacent lines of the file F205 was "
-              "found in", "other.py" not in named)
+              "counted, and the two shapes can legitimately sit in adjacent lines "
+              "of the same file", "other.py" not in named)
         check("te8 the remainder STATED is silent, in both spellings - a literal "
               "cap and one held in a variable. Read structurally: the tail phrase "
               "differs at those two sites, so a rule looking for the words would "
@@ -496,8 +499,8 @@ def _cases(check):
               "varsilent.py" in named)
         check("te10 a slice of a WRAPPED collection is still a slice of it - "
               "`sorted(a)[:3]` beside `len(a)`. A key built from the outermost "
-              "expression alone walks past this, and it is how three of F205's "
-              "siblings were spelled", "inner.py" in named)
+              "expression alone walks past this, and it is a shape this tree's "
+              "own helpers are really spelled in", "inner.py" in named)
     finally:
         shutil.rmtree(tev, ignore_errors=True)
 
@@ -1167,7 +1170,7 @@ def _cases(check):
         with open(os.path.join(pre, "too_late.py"), "w", encoding="utf-8") as fh:
             fh.write("import os\nimport sys\n\nimport _sibling  # noqa: E402\n\n"
                      + M.PATH_PREAMBLE)
-        # F94, the shape a whole-block count CANNOT see: one correct preamble
+        # The shape a whole-block count CANNOT see: one correct preamble
         # followed by a repeat of its last two statements. The files under
         # `panel/` carried exactly this while the lint returned nothing for them.
         # The tail is SLICED off `PATH_PREAMBLE` rather than typed out - a fixture
@@ -1224,7 +1227,7 @@ def _cases(check):
               "ok.py" not in hits and sorted(hits) == ["doubled.py", "missing.py",
                                                        "partial.py",
                                                        "too_late.py"])
-        check("pp11 F94: a file carrying ONE preamble and then repeating its TAIL "
+        check("pp11 a file carrying ONE preamble and then repeating its TAIL "
               "is named. The whole-block count finds one occurrence and says "
               "nothing, so only the line check fires - the same division of "
               "labour pp9 pins the other way round: %r" % (hits.get("partial.py"),),
@@ -1364,14 +1367,15 @@ def _cases(check):
           _pn_live == [])
     # Vacuity FIRST, because "no claims" and "read no files" print identically.
     #
-    # TWO TERMS, F69's shape, and the second one is not derived from the thing it
-    # measures. `scan_floor()` holds the scanned set against the CANDIDATE count
-    # the same walk produced, which catches an exemption row that grew to swallow
-    # a directory but cannot catch the walk itself collapsing - both fall
-    # together. So the other half of this case is a PLAIN recursive walk of the
-    # three directories that have to exist, which needs no `.gitignore` and so
-    # cannot fail the way the derivation can: if the pruning ever starts eating
-    # the plugin, the derived set drops below a walk that knows nothing about it.
+    # TWO TERMS - one absolute, one derived - and the second one is not derived
+    # from the thing it measures. `scan_floor()` holds the scanned set against
+    # the CANDIDATE count the same walk produced, which catches an exemption row
+    # that grew to swallow a directory but cannot catch the walk itself collapsing
+    # - both fall together. So the other half of this case is a PLAIN recursive
+    # walk of the three directories that have to exist, which needs no
+    # `.gitignore` and so cannot fail the way the derivation can: if the pruning
+    # ever starts eating the plugin, the derived set drops below a walk that
+    # knows nothing about it.
     _pn_scan = M.prose_scan_set((".py",))
     _pn_plain = (len(M.py_files(M.SCRIPTS_DIR)) + len(M.py_files(M.HOOKS_DIR))
                  + len(M.py_files(M.TESTS_DIR)))
@@ -1431,9 +1435,10 @@ def _cases(check):
           "about edge cases does not become a violation",
           M._prose_number_claim("the edge cases this guard cannot see") is None
           and M._prose_number_claim("in most cases the answer is no") is None)
-    check("pn8 PERSISTENCE is caught - F43's shape, and F39's. A claim that a "
-          "number has not changed is the purest form of the rot, because the "
-          "sentence's whole job is to be checked against the present",
+    check("pn8 PERSISTENCE is caught - the same defect recurring in this shape "
+          "more than once. A claim that a number has not changed is the purest "
+          "form of the rot, because the sentence's whole job is to be checked "
+          "against the present",
           M._prose_number_claim("`KNOWN_LAYER_DEBT` stayed at 17 and the map "
                                 "did not move") == "stayed at 17"
           and M._prose_number_claim("`KNOWN_LAYER_DEBT` is still 17 and "
@@ -1497,7 +1502,7 @@ def _cases(check):
           and M._prose_number_claim("holds the selftest cases that assert")
               is None)
     check("pn13 a count spelled as a WORD is the same claim in a different "
-          "spelling - F59, which sat in a comment block every gate reads because "
+          "spelling - one that sat in a comment block every gate reads because "
           "no lint was looking at that spelling. One numeral reader serves every "
           "shape, so the word form cannot reach one family and miss another",
           M._prose_number_claim("its thirteen cases live in `tests/test_x.py`")
@@ -1569,9 +1574,10 @@ def _cases(check):
                    if "isdigit" in ln]
     check("pn17 every shape reads its number through the ONE span reader - a "
           "family added later that asked a token whether it is a digit itself "
-          "would see digits and miss words, which is F59 wearing a new shape. "
-          "COUNTED over the source rather than asserted present, because the "
-          "defect is a second reader existing at all. TWO occurrences, not one, "
+          "would see digits and miss words, which is the same word-spelling gap "
+          "wearing a new shape. COUNTED over the source rather than asserted "
+          "present, because the defect is a second reader existing at all. TWO "
+          "occurrences, not one, "
           "and the pair is spelled out rather than tallied: one asks whether a "
           "TOKEN is a numeral, the other whether a CHARACTER is a digit, which "
           "is the tokenizer's separator rule and runs before any shape sees "
@@ -1708,13 +1714,13 @@ def _cases(check):
           and M._words("7/7 and 0.01") == ["7/7", "and", "0.01"])
 
     # --- pn24-pn28: the SENTENCE a number sits in, and two families refused ---
-    # F76. The tense escape read the physical line, and a line is neither the unit
-    # a tense belongs to nor the unit prose arrives in. The first line below is the
-    # real one it was found on: a stale count sat unread behind a past marker two
-    # clauses earlier, about something else entirely.
+    # THE MOTIVATING CASE: the tense escape read the physical line, and a line is
+    # neither the unit a tense belongs to nor the unit prose arrives in. The
+    # first line below is the real one it was found on: a stale count sat unread
+    # behind a past marker two clauses earlier, about something else entirely.
     check("pn24 the tense escape reads the SENTENCE the numeral sits in, not the "
           "physical line - a marker in an earlier sentence on the same line used "
-          "to excuse a live count (F76's false negative, on the line it was found "
+          "to excuse a live count (a false negative, on the line it was found "
           "on). The second half is what fails if the scope narrows past a "
           "sentence to a clause: a marker inside the number's OWN sentence still "
           "excuses it, which is what keeps the decision record writable",
@@ -1750,8 +1756,9 @@ def _cases(check):
           and M._prose_number_claim("the suite keeps all 146 cases") == "146 cases")
     # SECOND DIRECTION, and it is the only case here that fails when the boundary
     # rule gets GREEDY. It looks vacuous - both lines are ordinary recollection
-    # and neither was a finding before F76 either - and it is the whole reason the
-    # rule asks what follows a stop. Each half names its own mutation: read every
+    # and neither was a finding before this rule closed the sentence-boundary gap
+    # either - and it is the whole reason the rule asks what follows a stop.
+    # Each half names its own mutation: read every
     # stop as a boundary and a dotted filename cuts the sentence in two, leaving
     # the tense behind in the first half; read a run of stops as boundaries and an
     # elided tag pair cuts one sentence into four, which is how a docstring's own
@@ -1767,9 +1774,9 @@ def _cases(check):
           and M._prose_number_claim("used to hold `<style>...</style>` and 7 "
                                     "cases") is None
           and M._prose_number_claim("it holds `x.py` and 7 cases") == "7 cases")
-    # F70 AND F65: two families MEASURED AND REFUSED, recorded as cases because a
-    # docstring saying "cannot see" is not checkable and the next author will
-    # reach for exactly these shapes.
+    # TWO FAMILIES MEASURED AND REFUSED, recorded as cases because a docstring
+    # saying "cannot see" is not checkable and the next author will reach for
+    # exactly these shapes.
     #
     # A MEASUREMENT - a duration, a byte count, a line count - is invisible here,
     # and the units family that would read it was surveyed over this whole tree
@@ -1780,9 +1787,9 @@ def _cases(check):
     # reason and they are real ones from this tree: a THRESHOLD, a configured
     # constant and a hypothetical are numbers that must stay, and they are the
     # shape a units family cannot tell from a claim.
-    # F77. The bound matters as much as the rule: an underscore glues a token
-    # only where WORD CHARACTERS flank it, so a trailing one still ends the token
-    # and the numeral after it keeps whatever noun follows. The second half is the
+    # THE BOUND matters as much as the rule: an underscore glues a token only
+    # where WORD CHARACTERS flank it, so a trailing one still ends the token and
+    # the numeral after it keeps whatever noun follows. The second half is the
     # direction that fails if this is ever applied to any underscore at all.
     _f77_line = '    x = y[1] == case_id(z)'
     check("pn29 an identifier is ONE word, so a numeric index in front of a name "
@@ -1830,7 +1837,7 @@ def _cases(check):
           and M._prose_number_claim("It was one file and is six, because the "
                                     "checks shared it for one reason") is None)
 
-    # F311. THE RATIO FAMILY, and every case below is about ONE distinction: a
+    # THE RATIO FAMILY, and every case below is about ONE distinction: a
     # count quoted from what a command prints is legal when the command is named
     # and is a copy with no basis when it is not. That is the question
     # `_carries_basis()` already decides for a bare cardinality, which is why
@@ -1841,9 +1848,9 @@ def _cases(check):
     # quotation: a ratio shows its own whole, so it looks self-verifying, and a
     # denominator is not a basis because nothing re-derives it either.
     check("pn30 a RATIO with no command beside it is a finding, in BOTH "
-          "spellings and mixed - F59's rule is that no shape reads a digit and "
-          "a word by different rules, and a family added after it must read "
-          "them through `_numeral_span()` rather than growing its own reader",
+          "spellings and mixed - no shape may read a digit and a word by "
+          "different rules, and a family added after this one must read them "
+          "through `_numeral_span()` rather than growing its own reader",
           M._prose_number_claim("anchored 13 of 14 sections")
               == "13 of 14 sections"
           and M._prose_number_claim("anchored thirteen of fourteen sections")
@@ -1879,10 +1886,11 @@ def _cases(check):
           and M._prose_number_claim(_pn_wrapped[0], _pn_wrapped[1]) is None
           and M._prose_number_claim(_pn_wrapped[0], "and read the split off it.")
               == "13 of 14 sections")
-    # ...and the REFUSAL, which is the other half of F311 and is refused rather
-    # than missing. `five claims deep` is `the N <noun>` with an ordinary noun,
-    # the shape F59's own instance wore; the noun is unbounded, so reading it
-    # means reading every count in every sentence. The small-word reading exists
+    # ...and the REFUSAL, which is the other half of the ratio family and is
+    # refused rather than missing. `five claims deep` is `the N <noun>` with an
+    # ordinary noun - the same shape a word-spelled numeral wears when nothing
+    # bounds its noun; the noun is unbounded, so reading it means reading every
+    # count in every sentence. The small-word reading exists
     # for a shape that supplies its own bound and is OFF everywhere else - both
     # halves are pinned here, because a widening in either would turn this tree
     # red on prose that is doing its job.
@@ -1953,7 +1961,8 @@ def _cases(check):
     # markers must not excuse a sentence that does not carry one - without the
     # second half this passes on a `_looks_historical` that returns True always.
     check("pn34 the repair of a ratio reads clean, and the past-tense markers "
-          "F311 added to `_PAST` excuse only the sentences that carry them",
+          "the ratio family added to `_PAST` excuse only the sentences that "
+          "carry them",
           M._prose_number_claim("anchored every section but one - print the "
                                 "split with `python3 x.py --coverage`") is None
           and M._prose_number_claim("measured that day: 13 of 14 sections were "
@@ -2005,7 +2014,7 @@ def _cases(check):
           and M._prose_number_claim("45% of this tree (22,363 of 49,393 lines) "
                                     "moved") is None)
 
-    # --- us: which files a surface's pictures are OF (F85) --------------------
+    # --- us: which files a surface's pictures are OF --------------------------
     # `_refs.screenshot_capture_drift()` and `tools/capture-screenshots.mjs` both
     # need this answer and neither may hold its own copy of it, so every case here
     # is about the ONE walk they share. The rule's own cases live beside sc1-sc10

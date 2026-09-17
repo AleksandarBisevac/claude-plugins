@@ -449,8 +449,8 @@ TABLE = (
  # a version reporting nothing reads exactly like a tree with no citations left
  # to find.
  ("register_citation_violations", S + "_deps.py", "replace",
-  "def register_citation_violations(repo_root=None):",
-  "def register_citation_violations(repo_root=None):\n    return []",
+  "def register_citation_violations(repo_root=None, table=None):",
+  "def register_citation_violations(repo_root=None, table=None):\n    return []",
   DEP, "rc15"),
  # TWO CONSTRAINTS, and this row has now lost each of them once. The target must
  # be a file the rule APPLIES to (>= `_deps._NAV_MIN_LINES`) AND one carrying

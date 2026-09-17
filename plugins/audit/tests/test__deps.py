@@ -2673,6 +2673,55 @@ def _cases(check):
           "(still standing: %d)" % (_rc_left,),
           _rc_left == 0)
 
+    # THE SEPARATION ITSELF: `CITATION_SCAN_EXEMPT` is this scan's own table, not
+    # `_output.PROSE_SCAN_EXEMPT` reused. A path the NUMBER scan exempts for a
+    # reason that has nothing to do with citations - the test file that holds
+    # THAT scan's own fixtures - carries no exemption of its own here, so a real
+    # citation sitting there is still found rather than swallowed by a borrowed
+    # reason.
+    _disc_tmp = tempfile.mkdtemp(prefix="audit-deps-rc-disc-")
+    try:
+        with open(os.path.join(_disc_tmp, ".gitignore"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("__pycache__/\n")
+        _disc_dir = os.path.join(_disc_tmp, "plugins", "audit", "tests")
+        os.makedirs(_disc_dir)
+        with open(os.path.join(_disc_dir, "test__output.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("# F909 a real citation, not this scanner's own fixture\n")
+        _disc_hits = M.register_citation_violations(_disc_tmp)
+        check("rc17 a path the prose-number scan exempts for ITS OWN reason - "
+              "`plugins/audit/tests/test__output.py` - carries no row of its own "
+              "in `CITATION_SCAN_EXEMPT`, so a real citation placed there is "
+              "still found. This is the case that goes red the day the citation "
+              "scan is made to read `_output.PROSE_SCAN_EXEMPT` again instead of "
+              "its own table: %r" % (_disc_hits,),
+              _disc_hits == [("plugins/audit/tests/test__output.py", 1,
+                              "F909")])
+    finally:
+        shutil.rmtree(_disc_tmp, ignore_errors=True)
+
+    # THE TABLE ITSELF: every row names a file really in this tree and a reason
+    # that is not empty, no path repeats, and the three paths this repair turns
+    # on are on the sides `rc17` and the docstring above both depend on - the
+    # premise checked, not just the shape.
+    _cs_rows = M.CITATION_SCAN_EXEMPT
+    _cs_bad = [p for p, w in _cs_rows if not w.strip()]
+    _cs_dead = [p for p, w in _cs_rows
+                if not os.path.exists(os.path.join(_output.REPO_ROOT,
+                                                    p.replace("/", os.sep)))]
+    check("rc18 every row `CITATION_SCAN_EXEMPT` carries names a file really in "
+          "this tree and a reason that is not empty, no path repeats, this "
+          "scan's own fixture file IS exempt, and the number scan's fixture "
+          "file is NOT: %r" % (_cs_bad + _cs_dead,),
+          not _cs_bad and not _cs_dead
+          and len(_cs_rows) == len(set(p for p, _w in _cs_rows))
+          and _output.prose_scan_exemption(
+                  "plugins/audit/tests/test__deps.py", _cs_rows) is not None
+          and _output.prose_scan_exemption(
+                  "plugins/audit/tests/test__output.py", _cs_rows) is None
+          and _output.prose_scan_exemption("CHANGELOG.md", _cs_rows) is not None)
+
 
     # --- the ONE recorded layer debt, and whether its REASON still holds ----------
     # KNOWN_LAYER_DEBT carries a written justification, and a written justification

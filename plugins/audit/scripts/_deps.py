@@ -2695,18 +2695,62 @@ def _py_other_literal_citations(text):
     return out
 
 
-def register_citation_violations(repo_root=None):
+# --- the citation scan's OWN exempt rows ------------------------------------
+# A ROW HERE HOLDS FOR THIS SCAN, stated in ITS OWN words, never borrowed from
+# `_output.PROSE_SCAN_EXEMPT` even where the path is the same one. The two
+# scans read the same walk over the same tree but a different vocabulary, and
+# a reason that excuses a number claim does not thereby excuse a fault or
+# phase citation -- the two rows this table shares a PATH with the other
+# table (`CHANGELOG.md`) say so in their own sentence rather than pointing at
+# the other one's.
+#
+# `plugins/audit/tests/test__output.py` earns no row here: it holds the
+# prose-number scanner's OWN fixtures, and a fixture built for one scan's
+# vocabulary is not thereby a fixture for the other's. That absence is the
+# whole repair -- it is what lets this scan see the file at all. A row
+# pointing back at the other table instead of stating its own reason is
+# what `test__deps.py`'s `rc17` case exists to catch: it plants a citation
+# under `test__output.py`'s own path in a throwaway tree and requires this
+# scan to still find it, which only holds while this table is read.
+CITATION_SCAN_EXEMPT = (
+    ("CHANGELOG.md",
+     "released history: a citation naming what a past release fixed IS the "
+     "record of that fix, sitting beside its own description in the very "
+     "entry that shipped it -- not a pointer to a private note with nothing "
+     "on the other end, which is the defect this scan exists to catch"),
+    ("docs/audit/audit-report.md",
+     "rendered from the manifest, and the manifest's own task text is where a "
+     "register id legitimately appears -- the plan IS the record, so a report "
+     "quoting it is quoting the thing the id points at rather than pointing "
+     "away from the reader. It is also gitignored as a FILE, which this walk "
+     "does not read, so without this row the answer moves with whether "
+     "anybody happened to render a report in this checkout -- which is the "
+     "same reason the number scan's table carries it, stated for this scan"),
+    ("plugins/audit/tests/test__deps.py",
+     "holds THIS scanner's own fixtures: `_fault_hits`, `_phase_paragraph_hit` "
+     "and the helpers built on them are proven by handing them the exact "
+     "shapes they must recognise, spelled as arguments on purpose -- the same "
+     "house rule the prose-number scan's test-file rows state, applied to "
+     "this scan's own vocabulary rather than borrowed from theirs. The cost "
+     "is the thing to disagree with, and it is real: a stray citation "
+     "anywhere else in this one suite, outside those fixtures, goes "
+     "unguarded"),
+)
+
+
+def register_citation_violations(repo_root=None, table=None):
     """[(rel, lineno, token)] -- a comment, docstring or document citing a
     fault/phase id from the private register instead of stating its own
     constraint.
 
-    THE FILE SET IS `_output.PROSE_SCAN_EXEMPT`'S, reused rather than
-    duplicated: `CHANGELOG.md` is released history there for the same reason a
-    citation naming what a past release fixed is a historical record and not a
-    dangling pointer, and the two test-fixture rows exist so a suite whose job
-    is proving this scanner fires does not have to dodge its own scan --
-    `doc_prose_numbers()` already reuses the same table for the same reason one
-    document-scan over.
+    THE FILE SET IS `CITATION_SCAN_EXEMPT`'S -- this scan's own rows, each
+    carrying the reason THIS scan has for it, never the prose-number scan's
+    `_output.PROSE_SCAN_EXEMPT`. The two tables share the same walk and, for
+    `CHANGELOG.md`, the same path, because a released-history entry really is
+    exempt from both scans -- but each table says so in its own sentence, so
+    a row can hold for one scan and not the other without either table lying
+    about its own reason. `table` stays overridable for a case proving that:
+    the default is this module's own rows.
 
     `.py` FILES ARE READ FOUR WAYS, because the register's vocabulary reaches
     this tree through more than a docstring and a `check()` message: a `#`
@@ -2729,8 +2773,9 @@ def register_citation_violations(repo_root=None):
     skipped rather than repeating the same finding under two more names.
     """
     root = repo_root if repo_root is not None else _output.REPO_ROOT
+    rows = CITATION_SCAN_EXEMPT if table is None else table
     out = []
-    py_scan = _output.prose_scan_set((".py",), root)
+    py_scan = _output.prose_scan_set((".py",), root, rows)
     if py_scan["problem"] is not None:
         return [(".gitignore", 0, py_scan["problem"])]
     for rel in py_scan["paths"]:
@@ -2757,7 +2802,7 @@ def register_citation_violations(repo_root=None):
         others = _py_other_literal_citations(text)
         if others is not None:
             out.extend((rel, ln, tok) for ln, tok in others)
-    md_scan = _output.prose_scan_set((".md",), root)
+    md_scan = _output.prose_scan_set((".md",), root, rows)
     if md_scan["problem"] is not None:
         out.append((".gitignore", 0, md_scan["problem"]))
     else:

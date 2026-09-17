@@ -2369,9 +2369,16 @@ PROSE_SCAN_EXEMPT = (
 )
 
 
-def prose_scan_exemption(rel):
-    """The declared reason `rel` is out of the prose scan, or None."""
-    for path, why in PROSE_SCAN_EXEMPT:
+def prose_scan_exemption(rel, table=PROSE_SCAN_EXEMPT):
+    """The declared reason `rel` is out of a scan reusing this walk, or None.
+
+    `table` defaults to `PROSE_SCAN_EXEMPT` - this scan's own rows - so every
+    existing caller is unchanged. A DIFFERENT scan sharing the walk (the
+    register-citation scan reads the same tree for a different vocabulary)
+    hands its own table instead, so a path is judged by the rows written for
+    THAT scan and never by another scan's reasons.
+    """
+    for path, why in table:
         if path.endswith("/"):
             if rel.startswith(path):
                 return why
@@ -2380,13 +2387,20 @@ def prose_scan_exemption(rel):
     return None
 
 
-def prose_scan_set(exts, repo_root=None):
-    """`{"paths", "candidates", "exempted", "problem"}` - what the prose scan reads.
+def prose_scan_set(exts, repo_root=None, table=PROSE_SCAN_EXEMPT):
+    """`{"paths", "candidates", "exempted", "problem"}` - what a scan sharing
+    this walk reads.
 
     `problem` is a string or None, and it is the loud half. A tree whose
     `.gitignore` cannot be read yields no paths, and "read no files" must not print
     the way "found no claims" prints - which is the whole reason this returns the
     candidate count alongside the paths rather than just the paths.
+
+    `table` is the exemption rows candidates are judged against, defaulting to
+    this module's own `PROSE_SCAN_EXEMPT`. THE WALK IS SHARED, THE EXEMPTIONS
+    ARE NOT: a caller reading the same derived file set for a different
+    vocabulary hands its own table so its exemptions carry its own reasons
+    rather than inheriting another scan's.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     patterns, problem = _ignored_dirs(root)
@@ -2395,7 +2409,7 @@ def prose_scan_set(exts, repo_root=None):
                 "problem": ".gitignore is %s" % problem}
     candidates = kept_files(root, patterns, tuple(exts))
     exempted = [rel for rel in candidates
-                if prose_scan_exemption(rel) is not None]
+                if prose_scan_exemption(rel, table) is not None]
     skip = set(exempted)
     return {"paths": [rel for rel in candidates if rel not in skip],
             "candidates": len(candidates), "exempted": exempted,
