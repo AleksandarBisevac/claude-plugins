@@ -444,7 +444,7 @@ def _cases(check):
                                 policy, no_ff=no_ff)
                     M.close("/repo", pl, "feature/p2", "dev", run=run)
                     every.extend(calls)
-    # F330b. EVERY ASSERTION BELOW IS A NEGATIVE OVER `every`, so all three are
+    # EVERY ASSERTION BELOW IS A NEGATIVE OVER `every`, so all three are
     # true of an empty corpus - a `close()` that stopped issuing calls, a `plan`
     # that started refusing every combination, or a rename inside `_fake` would
     # make them the calmest lines in the file while sweeping nothing. Each one

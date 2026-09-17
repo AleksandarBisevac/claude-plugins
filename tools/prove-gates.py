@@ -1124,7 +1124,7 @@ TABLE = (
  ("claim_drift", S + "manifest/_areas.py", "replace",
   r'def _locked_scope\((?:(?!\n\S).)*?node',
   r'def _locked_scope\(.*?node', ARE, "oa26"),
- # F330a. The refusal that keeps an EMPTY vocabulary from agreeing with any
+ # The refusal that keeps an EMPTY vocabulary from agreeing with any
  # document. Blinding it does not go quiet - it turns every word the section
  # names into "a status the code does not produce", so the run stays non-zero
  # while pointing at the wrong side, which is why the case asserts the
@@ -1855,7 +1855,7 @@ ALLOW = (
  ("claim_drift", S + "manifest/_areas.py", "replace",
   "    hits = [(name, body) for name, body in sections if name.startswith(prefix)]",
   "    hits = [(name, body) for name, body in sections]", ARE, "oa5"),
- # F330a's other direction. Make the empty-vocabulary refusal UNCONDITIONAL and
+ # `oa28`'s other direction. Make the empty-vocabulary refusal UNCONDITIONAL and
  # every list row reports an empty vocabulary on every run - the shape a guard
  # gets switched off for. It reddens several neighbours as well, which does not
  # affect the verdict: it keys on the named case, and `oa29` is the one that

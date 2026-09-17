@@ -3486,9 +3486,9 @@ def _cases(check):
           # place it inside showTab without pinning the lines around it.
           and " closeCombo();   // the menu is on <body>," in M.UI_HTML)
     check("co: a mousedown anywhere in the menu keeps the input's focus, so a "
-          "scrollbar drag or a click on the footer no longer closes it (F-P-1d)",
+          "scrollbar drag or a click on the footer no longer closes it",
           "CMENU.addEventListener('mousedown',e=>e.preventDefault());" in M.UI_HTML)
-    check("co: a click on the still-focused input reopens a closed menu (F-P-1c)",
+    check("co: a click on the still-focused input reopens a closed menu",
           "inp.addEventListener('click',()=>{if(!(CMOWNER===me&&comboOpen()))render();});"
           in M.UI_HTML)
     # This case used to be LABELLED with the deferral behaviour while
@@ -3501,7 +3501,7 @@ def _cases(check):
     check("co: the constructs behind the deferral - interacting() exists, "
           "answers an open combo first, DERIVES its selector from dirtyViews, "
           "and the poll re-asks it after the fetches instead of acting on the "
-          "answer it got before them (F-P-1b)",
+          "answer it got before them",
           "function interacting(" in M.UI_HTML
           and "if(comboOpen())return true;" in M.UI_HTML
           # The selector is DERIVED from dirtyViews, never typed here as a

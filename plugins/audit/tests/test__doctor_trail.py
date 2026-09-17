@@ -297,7 +297,7 @@ def _cases(check):
         # committed file, and a recorded document edited behind the journal's
         # back.
         #
-        # AND THE SAME PAIR AGAIN ONE LEVEL DOWN (F344a). `_anchor_warning` says
+        # AND THE SAME PAIR AGAIN ONE LEVEL DOWN. `_anchor_warning` says
         # two different things and both open with the same clause, so `relink`
         # keyed on that clause answered for a file where NO row moved and none
         # arrived - the same misclassification, reintroduced by the repair. dt46 is the
@@ -538,8 +538,8 @@ def _cases(check):
               and "RE-LINKED" not in unknown["fix"])
 
         # A REAL TORN TAIL, because the table claimed every class it holds goes
-        # red when its sentence is reworded and this one had no case at all
-        # (F344c): rewording `verify`'s partial-line warning left the whole
+        # red when its sentence is reworded and this one had no case at all:
+        # rewording `verify`'s partial-line warning left the whole
         # suite green while the class silently lost its advice. dt47 also
         # carries the second direction of dt48's pointer - a list where every
         # warning IS recognised must not draw one, which is the wrong
@@ -566,7 +566,7 @@ def _cases(check):
               and "a torn tail is an interrupted writer" in _fix(rep, "journal")
               and "no repair text" not in _fix(rep, "journal"))
 
-        # F344b, and the fixture is real rather than two hand-written strings:
+        # dt48's fixture is real, rather than two hand-written strings:
         # the same basename living AND archived is a class `verify` emits with
         # no row in the table, standing beside a drift warning that has one.
         # The bug dropped the unrecognised half entirely whenever anything else

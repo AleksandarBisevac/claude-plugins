@@ -301,7 +301,7 @@ def _cases(check):
     check("...and both values of expectRedFirst occur, so the pairing is "
           "observed rather than satisfied by one constant",
           {ts.get("expectRedFirst") for _tid, ts in _tests} == {True, False})
-    # --- F304b: a task gate and a phase gate are two questions --------------
+    # --- a task gate and a phase gate are two questions ---------------------
     # A PHASE gate asks whether the repository is still whole and runs once, over
     # everything the phase's tasks touched together. A TASK gate asks whether ONE
     # diff did what it was asked to and runs on every attempt. `/audit:init` gave

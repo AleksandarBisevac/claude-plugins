@@ -2573,6 +2573,28 @@ def _cases(check):
               'def _cases(check):\n'
               '    check("c1 this cites F97 mid message", True)\n')
           == [])
+    # THE TRAILING LETTER - the register's own follow-up numbering, fused onto
+    # the base number with no separator between them. It is stated once, after
+    # the base number, so it applies to every shape that base number reaches
+    # through - a case naming today's citations by spelling would be the same
+    # gap one layer down, so this asserts the SHAPE: a base number, its
+    # optional component letter, and a trailing letter, each independent of
+    # the others.
+    check("rc14f a trailing letter fused onto the base number reaches the "
+          "same finding in EVERY shape the base number itself reaches it in "
+          "- plain, a component letter with a second hyphen, a component "
+          "letter with none, and no component letter at all",
+          M._fault_hits("# F5a and F-P-6c and F-B3d and F-7e name one "
+                        "register, including its follow-ups")
+          == [(2, "F5a"), (10, "F-P-6c"), (21, "F-B3d"), (31, "F-7e")])
+    check("rc14g NEGATIVE CONTROL: the trailing slot holds exactly ONE "
+          "letter, never a run of them - an ordinary word that merely STARTS "
+          "with the base number is not a follow-up citation, so a rule "
+          "widened to swallow a whole trailing run would convict prose the "
+          "register never numbered",
+          M._fault_hits("a word merely starting with F12abc is not a "
+                        "follow-up id, unlike F12 alone")
+          == [(65, "F12")])
     # END TO END, on a real derived tree - a `.gitignore` so `prose_scan_set`
     # answers rather than reporting the walk itself broken, one `.py` and one
     # `.md` file each carrying one citation of each kind.
@@ -2637,28 +2659,19 @@ def _cases(check):
     finally:
         shutil.rmtree(_wide_tmp, ignore_errors=True)
 
-    # THE GATE ITSELF, on the real tree rather than a fixture: rc0-rc15 prove the
-    # helpers recognise every shape a citation can take; this is the one case
-    # that goes red the day a comment, docstring, `check()` message or document
+    # THE GATE ITSELF, on the real tree rather than a fixture: rc0-rc14g prove
+    # the helpers recognise every shape a citation can take, including a
+    # trailing letter fused onto the base number - this is the one case that
+    # goes red the day a comment, docstring, `check()` message or document
     # anywhere in this repo points at the private register again instead of
     # stating its own constraint.
-    # THE GATE CASE IS NOT HERE YET, AND ITS ABSENCE IS THE HONEST STATE. The
-    # rewrite it would assert is under way and not finished, so a case landed
-    # now would be a suite this repository knows is red - which teaches a reader
-    # that red is normal, and that is the one lesson a gate cannot afford to
-    # give. The case lands in the same change as the last rewritten comment,
-    # where it goes green on arrival and red on any return.
-    #
-    # What holds the rule in the meantime is the pair above and the mutation
-    # table's rows: the helpers are proven to see every shape a citation takes,
-    # and proven to stay quiet on the one exemption. What is NOT yet proven is
-    # that the tree carries none, because it carries some.
     _rc_left = len(M.register_citation_violations())
-    check("rc16 the rewrite is measurable from here, so the day it finishes is "
-          "a fact rather than a judgement: the count is a number this suite can "
-          "read, and the gate case that asserts it is empty lands with the last "
-          "comment rewritten (still outstanding: %d)" % (_rc_left,),
-          isinstance(_rc_left, int))
+    check("rc16 THE GATE: the real tree carries no citation of the private "
+          "register left to find, in any shape the helpers above recognise - "
+          "the count is what the case reads, so a citation coming back is "
+          "what turns this red rather than someone happening to grep for it "
+          "(still standing: %d)" % (_rc_left,),
+          _rc_left == 0)
 
 
     # --- the ONE recorded layer debt, and whether its REASON still holds ----------

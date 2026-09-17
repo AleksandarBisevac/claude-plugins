@@ -2417,22 +2417,31 @@ def doc_prose_numbers(doc_paths=None):
 #
 # TWO SHAPES, NOT ONE, because the two registers are spelled differently.
 #
-#   fault    `F` + digits, OR the same register cited in its OTHER spelling:
-#            `F-` + an optional single component letter + an optional `-` +
-#            digits (`F<n>`, `F-<letter>-<n>`, `F-<letter><n>` and `F-<n>`
-#            are all one vocabulary). A scanner that read only the first
-#            spelling reported a count that LOOKED complete while every
-#            citation in the second spelling sat outside it - the same
-#            defect the rule exists to remove, in a shape it had never
-#            matched. Anywhere in a comment, a docstring, a `check()` message
-#            or any other string literal a reader can see it through - there
-#            is no legitimate in-tree use of either shape, so any instance is
-#            a finding, with ONE exclusion: a ruff/flake8 diagnostic code
-#            happens to share the plain shape, and a code named in a
-#            `noqa:` suppression's own comma-separated list is excluded
-#            STRUCTURALLY, by reading that list, never by naming today's
-#            codes - a citation sitting in the SAME comment AFTER the list is
-#            not part of it and is still a finding.
+#   fault    `F` + a base number, OR the same register cited in its OTHER
+#            spelling: `F-` + an optional single component letter + an
+#            optional `-` + the base number (`F<n>`, `F-<letter>-<n>`,
+#            `F-<letter><n>` and `F-<n>` are all one vocabulary). EITHER
+#            spelling may also carry a trailing lower-case letter the
+#            register fuses onto the base number to spell a follow-up entry
+#            (`F<n><f>`, `F-<letter>-<n><f>`, and so on for every combination
+#            above) -- stated ONCE, after the whole alternation, because the
+#            trailing letter is a fact about the base number in general, not
+#            a property either spelling owns on its own. A scanner that read
+#            only the first spelling reported a count that LOOKED complete
+#            while every citation in the second spelling sat outside it, and
+#            a scanner that read both spellings but not the trailing letter
+#            later reported a count that again LOOKED complete while a
+#            follow-up entry's own spelling sat outside it: the same defect
+#            the rule exists to remove, each time in a shape it had not yet
+#            been made to match. Anywhere in a comment, a docstring, a
+#            `check()` message or any other string literal a reader can see
+#            it through - there is no legitimate in-tree use of any of these
+#            shapes, so any instance is a finding, with ONE exclusion: a
+#            ruff/flake8 diagnostic code happens to share the plain shape,
+#            and a code named in a `noqa:` suppression's own comma-separated
+#            list is excluded STRUCTURALLY, by reading that list, never by
+#            naming today's codes - a citation sitting in the SAME comment
+#            AFTER the list is not part of it and is still a finding.
 #   phase    `P` + digits (+ `.` + digits), but ONLY where it opens a comment or
 #            a docstring paragraph and is immediately followed by a full stop -
 #            the "P42. EXPLANATION" shape this tree's own retrospectives use.
@@ -2443,7 +2452,7 @@ def doc_prose_numbers(doc_paths=None):
 #            repo's own backlog" would be routed around inside a day. That gap
 #            is real and is left to the author, the same way
 #            `_output.prose_number_claims()` leaves its own widenings unenforced.
-_FAULT_TOKEN_RE = re.compile(r"\bF(?:\d{1,4}|-[A-Z]?-?\d{1,4})\b")
+_FAULT_TOKEN_RE = re.compile(r"\bF(?:\d{1,4}|-[A-Z]?-?\d{1,4})[a-z]?\b")
 _PHASE_OPEN_RE = re.compile(r"^P\d+(\.\d+)?\.\s")
 
 # The one in-repo, openable collision with the fault shape: `reference/

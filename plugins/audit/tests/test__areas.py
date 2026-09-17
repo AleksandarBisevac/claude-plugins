@@ -791,7 +791,7 @@ def _cases(check):
                     bool(re.search(_pat, _blinded, re.S)))))
     finally:
         shutil.rmtree(_scratch, ignore_errors=True)
-    # --- F330a: an empty vocabulary is a finding about the SCAN ---------------
+    # --- an empty vocabulary is a finding about the SCAN -----------------------
     # A pattern can match and still parse to nothing - the enum is emptied, or a
     # capture is narrowed to a group that no longer holds a member - and an empty
     # set agrees with EVERY document, so the set difference both directions of
