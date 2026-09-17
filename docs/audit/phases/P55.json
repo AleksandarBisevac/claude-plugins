@@ -666,7 +666,7 @@
     {
       "id": "P55.14",
       "title": "The evidence writer persists a path with no separator fix at all",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: both hand-rolled relative paths in the evidence writer go through _output.posix_rel, and px2's publisher table names the file. TWO SITES, NOT THE SAME SEVERITY. One repeats the hand-rolled spelling the helper exists to replace, which is correct today and wrong the day a copy drops the separator fix - the same class as the two writers already repaired. The other applies NO separator fix at all and persists the result into a stored config under the key every other reader expects to hold a manifest path: on a platform whose separator is not the forward slash it writes the platform's spelling into a value the product compares against manifest paths, which are stored with forward slashes. That is a wrong value on a supported platform, not a duplication. Nothing caught it because the rule reads a hand-kept table this file is not in, and the behavioural suites cannot see it on this platform at all, since both spellings produce the same string here - so it is invisible to the source rule by omission and to the behavioural rule by platform.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -676,6 +676,317 @@
         "mode": "regression",
         "add": [],
         "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8782b7e",
+      "outcome": {
+        "technical": "Both hand-rolled relative paths in _evidence_io go through _output.posix_rel - the one compared against version-control output and the one persisted as the stored manifest path - and px2's publisher tuple names the file.",
+        "descriptive": "The evidence writer spells a persisted path the way every other writer does, and the rule that enforces that finally names it."
+      },
+      "startedAt": "2026-09-17T06:05:30Z",
+      "completedAt": "2026-09-17T06:05:31Z",
+      "verifiedBy": [
+        "row1-recorded-paths",
+        "row2-project-config"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8782b7e",
+        "at": "2026-09-17T06:05:31Z"
+      }
+    },
+    {
+      "id": "P55.15",
+      "title": "The write guard reads the command's own working directory before it resolves a target",
+      "status": "pending",
+      "description": "DONE MEANS: the shell-write arm of the secrets guard resolves a relative write target against the directory the command actually ran in, and withdraws when it cannot establish one. Driven three ways today: a relative file name written from a directory outside the repository is BLOCKED with the refusal naming a repository-relative path that does not exist; the same command with an explicit change of directory first is also blocked; the same write with an absolute path outside the repository is allowed. The verdict turns on how the path was spelled rather than on where it lands, which is this register's longest-running defect class. The sibling post-hook already reads that working directory and carries a whole message for a command that ran in another tree; this hook contains no reference to it. The helper that decides whether a destination is resolvable already withdraws on expansions, substitutions, globs and a home shorthand, because those cannot be resolved from the text - a bare relative name cannot either, without the working directory the payload carries.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a relative write target is resolved against the command's own working directory, and a write landing outside the repository is not refused as though it were inside"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.16",
+      "title": "The write guard's interpreter arms match the interpreters its refusal names",
+      "status": "pending",
+      "description": "DONE MEANS: every interpreter the guard's refusal text names has a write arm, and the KNOWN LIMIT note names what is still uncovered. One interpreter's three-argument open and its in-place edit flag - the direct twin of the stream editor's in-place flag, which is covered - both drive ALLOW today, while the refusal lists that interpreter among the forms it claims to watch. The post-hook still reports the file afterwards, so the write is not invisible; what is missing is the block, which is the difference between a guard and a notice. A limit a guard states is a limit a reader can work with; a limit it does not state reads as coverage.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: the interpreters the refusal names and the interpreters the expression set covers are the same set"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.17",
+      "title": "The gate's note stops naming a command that refuses when the declaring task is done",
+      "status": "pending",
+      "description": "DONE MEANS: the plan gate's explanatory note tells a reader of a DONE task's file the route the sign-off procedure actually mandates. It has one branch for a file whose declaring task is not running and it assumes that task is merely unstarted, so against a done task it says the task has not been started, that starting it is the route, and - in its last clause - not to add a second task for a file the plan already declares. Driven: starting a done task exits non-zero and refuses, and adding a task is exactly what phase sign-off now mandates. The refusal names a command that refuses, asserts a state that is false, and forbids the correct route. That function's own docstring says it exists because a refusal naming a remedy its reader cannot reach is a fault already paid for twice here.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: the note for a file declared by a DONE task names the add route and does not tell the reader to start it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.18",
+      "title": "A blocked tool call is a stop-and-report, whatever tool was blocked",
+      "status": "pending",
+      "description": "DONE MEANS: the executor's own brief carries a flat rule that a blocked tool call is never a signal to reach for a different tool, stated about TOOLS rather than about an adjacent file. What it says today is that a refusal is the executor's instruction and that it must not put the change somewhere else - correct, and scoped to an adjacent file and to relocating a change. The only do-not-work-around sentence in the agent and reference documents sits in a bullet about secrets, so an executor reading it as scoped to secrets is not obviously misreading. An operator watched an executor meet a hard block on one tool and finish the work through another; the outcome was correct, which is what makes it the kind of workaround that becomes habit.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "tools/check-prohibitions.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.19",
+      "title": "The prose refusal marks the span it matched and stops naming a cause it never tested",
+      "status": "pending",
+      "description": "DONE MEANS: the refusal that rejects a brief on argv says what it actually matched, and the caller can tell a ternary from a lost substitution. The check reads five whitespace-adjacency shapes and tests for no backtick at all; the message volunteers command substitution as the explanation, which is why a report of it named a cause that was not present. It already prints a window around the hit - what is missing is a marker INSIDE that window pointing at the character that matched. Measured over this project's own plan, one hit in over a thousand prose strings, and that one a run of spaces: the false-positive rate against ordinary prose is near zero and the class that misfires is CODE QUOTED INTO PROSE, which is what a plan imported from an engineering report carries. The stdin escape is real and drives clean, and it is documented under the framing IF THE BRIEF CONTAINS BACKTICKS - which an operator whose text has none reads as somebody else's problem. The flag's own help text says nothing at all.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: the refusal marks the matched span and states the shape it matched rather than a substitution it did not test for"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.20",
+      "title": "A verb that writes another phase's shard says which branch that phase is on",
+      "status": "pending",
+      "description": "DONE MEANS: a verb writing a shard names the target phase's branch when it differs from the one the caller is standing on, and the document stops promising more than the layout delivers. Every script that writes a shard was swept: none prints branch context. The nearest thing compares TREES rather than branches, which is why it stays silent on the case that bit - same tree, two branches, one shard, a real merge conflict in the file the layout exists to keep conflict-free. A warning, not a refusal: naming it is the whole fix, because the writer then knows to expect a merge. NOT the same shape as the commit-scope check, which starts from commits the plan records and asks what each staged; this starts from a path and asks a containment question about commits the plan records nowhere. And note before designing the condition: fewer than a fifth of this project's own phases carry a branch at all and every running one has none, so a check keyed only on a populated branch would be silent in the dogfood. The document's sentence about a phase run touching only its own shard gains the boundary the verbs cross.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: writing a shard whose phase names a different branch than the caller stands on prints that, and writing one that does not is silent"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P55.21",
+      "title": "The verb that dirties the index says what to do about it, and the tool that lands it is findable",
+      "status": "pending",
+      "description": "DONE MEANS: the verb that writes both the shard and the index says that the index is now dirty and names the tool that lands it, and that tool is discoverable before the mistake rather than only in the refusal that follows it. The first-order trap is already closed - the commit step no longer asks for a hand-composed pathspec and the script refuses when the index is staged. What is unchanged is the silence at the moment the state is created. The second-order failure was reproduced in a scratch repository: file a task mid-run, commit by hand, and the manifest AT that commit does not validate - the index names a task whose shard is not in it - with the invariants reporting both breaches against the recorded commit. Anyone checking out that commit gets an invalid plan. The tool that already does the right thing is named in no command page, no reference document, no agent brief and not in the README; the only place its name reaches a human is the refusal that fires after the mistake.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a verb that leaves the index dirty says so and names the tool that lands it"
+        ],
+        "expectRedFirst": true,
         "gate": [
           "selftests",
           "validate",

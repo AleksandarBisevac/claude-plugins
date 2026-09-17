@@ -537,7 +537,8 @@
       "P47.1",
       "P56.3",
       "P56.4",
-      "P50.5"
+      "P50.5",
+      "P55.18"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -664,7 +665,9 @@
       "P51.6",
       "P51.7",
       "P54.5",
-      "P57.2"
+      "P57.2",
+      "P55.19",
+      "P55.21"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -723,7 +726,9 @@
       "P42.4",
       "P44.1",
       "P51.3",
-      "P54.1"
+      "P54.1",
+      "P55.15",
+      "P55.16"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -771,7 +776,8 @@
       "P54.2",
       "P54.5",
       "P53.8",
-      "P55.4"
+      "P55.4",
+      "P55.17"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -822,7 +828,8 @@
       "P49.4",
       "P56.3",
       "P56.4",
-      "P57.1"
+      "P57.1",
+      "P55.20"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -1432,7 +1439,8 @@
       "P44.2",
       "P54.5",
       "P53.8",
-      "P55.4"
+      "P55.4",
+      "P55.17"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
@@ -1454,7 +1462,9 @@
       "P42.4",
       "P44.1",
       "P51.3",
-      "P54.1"
+      "P54.1",
+      "P55.15",
+      "P55.16"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -1485,7 +1495,10 @@
       "P54.5",
       "P54.6",
       "P49.4",
-      "P50.5"
+      "P50.5",
+      "P55.19",
+      "P55.20",
+      "P55.21"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1510,7 +1523,10 @@
       "P51.6",
       "P51.7",
       "P54.6",
-      "P49.4"
+      "P49.4",
+      "P55.19",
+      "P55.20",
+      "P55.21"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1875,7 +1891,8 @@
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
-      "P36.1"
+      "P36.1",
+      "P55.18"
     ],
     "plugins/audit/tests/test_validate_manifest.py": [
       "P32.2",
@@ -2115,6 +2132,9 @@
     ],
     "tools/redfirst.sh": [
       "P55.13"
+    ],
+    "plugins/audit/reference/execute-task.md": [
+      "P55.21"
     ]
   },
   "bugs": [
