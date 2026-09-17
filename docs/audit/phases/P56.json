@@ -29,7 +29,7 @@
     {
       "id": "P56.1",
       "title": "The surface reports what a run cost and how much of it was context",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the cost surface distinguishes the tokens a run read for the first time from the ones it re-read, and reports the highest context each run reached. Today every figure is one total, which cannot tell an operator whether a task was expensive because it did a lot or because it lived a long time - and those have opposite repairs. Measured here, an agent past three hours paid nearly three times per turn what a short one paid, all of it in material that had already been read once. Without this split the claim that a plan costs less than ad hoc work has no basis, which is the rule this project applies to every other claim it makes. A transcript too thin to support the split says so rather than reporting a zero.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -61,16 +61,28 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c926c9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The ledger scan records the largest single-turn context per row; context_shape reports newTokens and reReadTokens per task always, and maxContext with a basis field that distinguishes measured from predates-tracking rather than emitting a zero; the outlier advisory names which of the two causes tripped it and gives that cause's repair.",
+        "descriptive": "The cost surface tells what a run read for the first time from what it re-read, and says so rather than guessing when the history cannot support the split."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T01:58:01Z",
+      "completedAt": "2026-09-17T01:58:01Z",
+      "verifiedBy": [
+        "context-peak-never-overridden",
+        "context-basis-never-overfires",
+        "outlier-cause-direction",
+        "context-shape-import-breaks",
+        "context-shape-keyerror-cascade",
+        "context-shape-hangs"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c926c9c",
+        "at": "2026-09-17T01:58:01Z"
+      }
     },
     {
       "id": "P56.2",
@@ -126,7 +138,7 @@
     {
       "id": "P56.3",
       "title": "A brief carries the task's files, and an agent that explores says why",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: an executor is handed the paths its task declares and the one question it would otherwise grep for, so exploring the tree is a deliberate step it justifies rather than the default first move. The plan already records which files a task touches and which task last declared each of them, and the lookup that answers the second landed this release - what is missing is that the spawn carries either. An agent that greps a repository pays for the repository, and that cost is the difference between planned and ad hoc work rather than a detail of it.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -157,21 +169,28 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c926c9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup.py gained brief_lookup and a brief verb folding file_lookup over a task's declared files in one call, task-only so a phase id misses; execute-task.md, orchestrator.md and the executor agent hand it over at the spawn.",
+        "descriptive": "A brief carries the files the task declares and who last declared them, so searching the repository is a step an agent justifies rather than its first move."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T01:58:01Z",
+      "completedAt": "2026-09-17T01:58:01Z",
+      "verifiedBy": [
+        "brief-lookup-task-only"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c926c9c",
+        "at": "2026-09-17T01:58:01Z"
+      }
     },
     {
       "id": "P56.4",
       "title": "One task per agent, and a context that has grown hands back",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the procedure spawns one task per agent and says what an agent does when its context outgrows the work left in it. Measured on this release, an agent living past three hours paid nearly three times per turn, because every later turn carries everything earlier and the cache is rewritten as it lapses - so a long agent is expensive in a way that has nothing to do with the difficulty of its task. The plan's task is the natural boundary and the orchestration document already prefers continuing an agent to re-spawning one, which is right for skills and context and wrong past a point nothing names. The bound is a configured number rather than a rule of thumb, because the right value differs per project, and an agent that reaches it hands back what it has with a summary the next one starts from rather than stopping mid-task.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -203,16 +222,23 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c926c9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_config gained executor.maxHours with a default and a reader refusing non-positive, non-numeric and boolean values; the schema, the config rules and the panel form recognise the key, and execute-task.md states the bound and the hand-back with a case comparing the document against the live default.",
+        "descriptive": "An agent's life has a configured bound, and the procedure says what an agent does when its context has outgrown the work left in it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T01:58:01Z",
+      "completedAt": "2026-09-17T01:58:02Z",
+      "verifiedBy": [
+        "maxhours-bool-exclusion"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c926c9c",
+        "at": "2026-09-17T01:58:02Z"
+      }
     },
     {
       "id": "P56.5",
