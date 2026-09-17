@@ -101,6 +101,21 @@ Config keys (all optional; defaults in DEFAULTS below):
         REFUSED (the function returns None) rather than folded into "own-tests"
         — a typo here would otherwise make the cheap default look like a
         deliberate choice.
+  executor.maxHours      number — how many hours a single spawned executor may
+        be CONTINUED onto further tasks (never re-spawned) before the
+        orchestrator stops preferring that and hands it back instead. Default 3
+        — the point measured here where a continued agent's per-turn cost
+        roughly triples, almost entirely in material it had already read once,
+        because every later turn still carries everything earlier and the
+        cache is rewritten as it lapses. No hook reads this either;
+        `executor_context_bound_hours` below is read by the orchestrator at
+        the same moment it decides whether to hand a running agent its next
+        task (`reference/execute-task.md`'s continuation rule) rather than
+        spawn a fresh one. A value that is not a positive number is REFUSED
+        (the function returns None), the same shape `executor_gate_policy`
+        uses for its own key and for the same reason — zero, negative or
+        garbled is a mistake nobody meant, and folding it into the default
+        would make the mistake look like a decision.
 
 This module also hosts the path/manifest helpers the hooks share (rel_path,
 within_root, matches_exempt, strip_line_suffix, in_progress_*).
@@ -292,7 +307,11 @@ DEFAULTS = {
     # gate on every task was paying for two full-suite runs where one recorded
     # run already stands as proof. See RUNS_GATE_MODES and executor_gate_policy
     # below, and the "executor.runsGate" entry above for the vocabulary.
-    "executor": {"runsGate": "own-tests"},
+    #
+    # "maxHours" bounds continuing the SAME agent across tasks, never a single
+    # task's own runtime — see executor_context_bound_hours below and the
+    # "executor.maxHours" entry above for why 3.
+    "executor": {"runsGate": "own-tests", "maxHours": 3},
 }
 
 
@@ -1915,6 +1934,43 @@ def executor_gate_policy(cfg):
     except Exception:
         return DEFAULTS["executor"]["runsGate"]
     return reading if reading in RUNS_GATE_MODES else None
+
+
+def executor_context_bound_hours(cfg):
+    """`executor.maxHours`: how many hours a single spawned executor may be
+    CONTINUED onto further tasks (never re-spawned) before the orchestrator
+    stops preferring that, the DOCUMENTED DEFAULT when the key is ABSENT, or
+    None when it is set to something outside its vocabulary — a positive
+    number, and nothing else.
+
+    Absent-vs-invalid is the same distinction `executor_gate_policy` draws
+    for its own key, for the same reason: most projects write nothing here
+    and should get a sane bound without asking for one, while zero, a
+    negative number or a non-numeric value is a mistake nobody meant, and
+    folding it into the default would make the mistake read as a decision.
+    `validate_config` (`scripts/config/_config_rules.py`) reports that
+    mistake as a FINDING at the file level; this is what a caller sees for
+    it at the value level.
+
+    Resolved by the ORCHESTRATOR — not by any hook — at the moment
+    `reference/execute-task.md`'s continuation rule asks whether a running
+    agent should be handed its next task or handed back instead; the
+    resolved number is not itself enforced by anything mechanical, the same
+    way `executor.runsGate`'s resolution is a fact folded into a prompt
+    rather than a value any code path checks. The default this returns
+    (`DEFAULTS["executor"]["maxHours"]`) is the same figure
+    `reference/execute-task.md` states for the reader who never sets the
+    key — `tests/test__config.py` reads both and fails if they part ways."""
+    try:
+        block = (cfg or {}).get("executor")
+        if not isinstance(block, dict) or "maxHours" not in block:
+            return DEFAULTS["executor"]["maxHours"]
+        reading = block["maxHours"]
+    except Exception:
+        return DEFAULTS["executor"]["maxHours"]
+    if isinstance(reading, bool) or not isinstance(reading, (int, float)):
+        return None
+    return reading if reading > 0 else None
 
 
 # --- utc stamps ---------------------------------------------------------------

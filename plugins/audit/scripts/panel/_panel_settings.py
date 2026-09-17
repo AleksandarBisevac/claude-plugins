@@ -276,6 +276,15 @@ FIELD_HELP = {
         "run is evidence. never trusts the recorded run entirely; own-tests (the "
         "default) runs only the test(s) the task added; full runs every command in "
         "the task's gate, same as leaving this unset.",
+    "executor.maxHours":
+        "How many hours a single spawned executor may be continued onto further "
+        "tasks — never re-spawned — before the orchestrator prefers handing it "
+        "back instead, with a summary, over another task. Below this, continuing "
+        "keeps the context it already paid for; at or past it, every later turn "
+        "still carries everything earlier while the cache backing it is "
+        "rewritten as it lapses, so the same continuation starts costing close "
+        "to three times as much per turn for reasons that have nothing to do "
+        "with the task in front of it.",
 }
 
 # The manifest levers the Composition tab edits. A separate dict on purpose: these
@@ -583,6 +592,8 @@ SETTINGS_GROUPS = (
         "fields": (
             {"path": "executor.runsGate", "label": "What the executor runs itself",
              "kind": "enum", "enum": "runsGate"},
+            {"path": "executor.maxHours", "label": "Hours before an agent hands back",
+             "kind": "number", "min": 0},
         ),
     },
 )

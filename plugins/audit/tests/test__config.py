@@ -1625,6 +1625,58 @@ def _cases(check):
           "fourth, unreachable spelling of the vocabulary",
           M.DEFAULTS["executor"]["runsGate"] in M.RUNS_GATE_MODES)
 
+    # --- executor.maxHours (P56.4) -----------------------------------------------
+    # The bound on CONTINUING an agent across tasks, never on a single task's own
+    # runtime: absent resolves to the documented default, any positive number
+    # resolves to itself, and anything else - zero, negative, or not a number at
+    # all - is REFUSED, the same shape executor.runsGate uses two groups above.
+    check("mh1 absent resolves to the documented default",
+          M.executor_context_bound_hours({})
+          == M.DEFAULTS["executor"]["maxHours"]
+          and M.executor_context_bound_hours(None)
+          == M.DEFAULTS["executor"]["maxHours"])
+    check("mh2 an executor block present but with no maxHours key is absent "
+          "the same way - a container with nothing IN it is still unconsidered",
+          M.executor_context_bound_hours({"executor": {}})
+          == M.DEFAULTS["executor"]["maxHours"])
+    for _hours in (1, 3, 0.5, 12, 100):
+        check("mh3 %r resolves to itself" % (_hours,),
+              M.executor_context_bound_hours({"executor": {"maxHours": _hours}})
+              == _hours)
+    # THE OVER-FIRE ARM. A getter that fell back to the default on anything
+    # outside the vocabulary would make zero, a negative figure or a garbled
+    # value indistinguishable from the deliberate default - these must NOT come
+    # back as the default's own number.
+    for _bad in (0, -1, -0.5, "3", None, True, False, [3], {"h": 3}):
+        _got = M.executor_context_bound_hours({"executor": {"maxHours": _bad}})
+        check("mh4 a value outside the vocabulary - not a positive number - is "
+              "refused, not read as the default: %r -> %r" % (_bad, _got),
+              _got is None)
+    check("mh5 a non-dict executor block is the same absence a malformed "
+          "config anywhere else in this module degrades to, not a raise",
+          M.executor_context_bound_hours({"executor": 3})
+          == M.DEFAULTS["executor"]["maxHours"]
+          and M.executor_context_bound_hours({"executor": [3]})
+          == M.DEFAULTS["executor"]["maxHours"])
+    check("mh6 the default itself is a legal reading of its own vocabulary - a "
+          "positive number - so it is never an unreachable fourth spelling",
+          M.DEFAULTS["executor"]["maxHours"] > 0)
+
+    # The orchestration document states the SAME bound it reads, so a reader
+    # never has to trust a second, hand-copied digit: built from the live
+    # DEFAULT rather than typed as a literal here, so this fails the moment the
+    # two part ways in EITHER direction rather than only when someone remembers
+    # to update a hard-coded "3".
+    _exec_task_doc = _text(os.path.join(
+        _output.PLUGIN_ROOT, "reference", "execute-task.md"))
+    _bound_needle = "executor.maxHours` (default %s" % (
+        M.DEFAULTS["executor"]["maxHours"],)
+    check("mh7 reference/execute-task.md's continuation rule states this "
+          "same default, in the sentence that names the key, rather than "
+          "leaving the reader to trust a copy of the digit: wanted %r"
+          % (_bound_needle,),
+          _bound_needle in _exec_task_doc)
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -42,7 +42,15 @@ Attribution, highest precision first (nothing is ever dropped):
 
 Rows are aggregated per HOUR BUCKET, so the ledger keeps enough resolution for the
 report's trend line and day x hour heatmap while staying small, and so a full
-`--backfill` re-scan produces the same shape as incremental metering.
+`--backfill` re-scan produces the same shape as incremental metering. Summing
+loses one thing a bucket cannot recover afterwards: how big any SINGLE turn
+inside it was. `maxContext` is carried alongside the summed token fields for
+exactly that reason — the largest `in + cacheW5m + cacheW1h + cacheR` seen
+across the messages a row folds together, which is what lets a reader ask "how
+much context was this run actually carrying" rather than only "how much did it
+read in total". A row written before this field existed carries no such key at
+all, which `_usage_economics.context_shape` reads as "cannot answer", never as
+zero.
 
 Storage (see the plugin README "Usage" section):
 
@@ -122,7 +130,7 @@ from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
     MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
 from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)
     BAND_ORDER, COST_BAND_PARAMS, MIN_TASKS_FOR_PROJECTION, band_of, cost_bands,
-    gate_catches, phase_budgets, retry_cost, unit_economics)
+    context_shape, gate_catches, phase_budgets, retry_cost, unit_economics)
 from _usage_routing import (  # noqa: E402,F401  (re-exported, see above)
     ATTEMPT_TOLERANCE, MIN_ADVICE_SAVING_PCT, MIN_ADVICE_SAVING_USD,
     MIN_ROUTING_EVIDENCE, RISK_ORDER, routing)
@@ -414,6 +422,24 @@ def _usage_counts(usage):
     }
 
 
+# Tokens read for the FIRST time on a turn (and so newly written to cache) versus
+# tokens pulled back OUT of the cache because they were already read on some
+# earlier turn. Both are named here once so `_context_of` and every reader of a
+# finished row agree on which raw fields make up which half.
+NEW_KEYS = ("in", "cacheW5m", "cacheW1h")
+REREAD_KEY = "cacheR"
+
+
+def _context_of(counts):
+    """The size of the prompt ONE turn actually carried: every token billed for
+    it, read or re-read alike. `counts` is `_usage_counts`'s own return shape (or
+    a ledger row, which carries the same four fields under the same names) —
+    `out` is excluded on purpose, because generated tokens are not context a
+    later turn has to carry forward."""
+    return (sum(int(counts.get(k) or 0) for k in NEW_KEYS)
+            + int(counts.get(REREAD_KEY) or 0))
+
+
 def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     """Tail one transcript file from its cursor offset.
 
@@ -502,9 +528,12 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         if slot is None:
             slot = groups[key] = {k: 0 for k in TOKEN_KEYS}
             slot["msgs"] = 0
-        for k, v in _usage_counts(usage).items():
+            slot["maxContext"] = 0
+        counts = _usage_counts(usage)
+        for k, v in counts.items():
             slot[k] += v
         slot["msgs"] += 1
+        slot["maxContext"] = max(slot["maxContext"], _context_of(counts))
 
     if len(recent) > RECENT_IDS_CAP:
         recent = recent[-RECENT_IDS_CAP:]
@@ -549,6 +578,11 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
             }
             for k in TOKEN_KEYS:
                 row[k] = counts[k]
+            # The largest single turn folded into this row — see `_context_of`
+            # and the module docstring for why a summed row cannot answer this
+            # on its own, and why an OLD row simply has no such key rather than
+            # a zero standing in for "not measured".
+            row["maxContext"] = counts["maxContext"]
             # Price at WRITE time and store the result, so a later rate change never
             # silently rewrites history.
             row["costUSD"] = round(price(counts, model, pricing), 6)

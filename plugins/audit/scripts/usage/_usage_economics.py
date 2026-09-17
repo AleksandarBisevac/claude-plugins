@@ -231,6 +231,74 @@ def phase_budgets(manifest, rows):
             "anyOver": any(p["over"] for p in out)}
 
 
+# Tokens read for the FIRST time versus tokens pulled back OUT of the cache
+# because a prior turn already read them. `usage_ledger.NEW_KEYS`/`REREAD_KEY`
+# name the same split at the row level; this module cannot import a peer
+# (`usage_ledger.py` sits one layer ABOVE this one, since it re-exports this
+# module rather than the other way round), so the two field-name tuples are
+# declared once each, at the layer that reads them, rather than shared.
+_NEW_KEYS = ("in", "cacheW5m", "cacheW1h")
+
+
+def context_shape(manifest, rows):
+    """Per task: what was read for the first time, what was re-read out of
+    cache, and the highest single-turn context any of its runs reached.
+
+    Answers the question a plain cost total cannot — whether a task was
+    expensive because it did a lot of NEW work or because it lived long
+    enough to keep re-paying for context it had already read. The two have
+    OPPOSITE repairs (narrow the task's scope; hand the remaining work to a
+    fresh agent instead of continuing this one), so folding them into one
+    number throws away the one thing an operator would act on.
+
+    `newTokens`/`reReadTokens` are summed from fields every row this ledger
+    has ever written carries (`in`/`cacheW5m`/`cacheW1h` versus `cacheR`), so
+    they always have a basis — a task with recorded spend always has both.
+    The per-turn peak does not: it is written only by a scanner new enough to
+    have tracked it (see `usage_ledger.py`'s module docstring), so a task
+    whose rows include even one written before that lands cannot support the
+    claim. `contextBasis` says which case a caller is looking at, and
+    `maxContext` is `None` rather than a number that would silently read as
+    "this task's peak was small" — the rule this whole module already follows
+    for a phase with no declared budget, applied here to a different gap."""
+    tasks = task_index(manifest)
+    out = {}
+    for row in rows:
+        tid = row.get("taskId")
+        if not tid or tid not in tasks:
+            continue
+        slot = out.get(tid)
+        if slot is None:
+            slot = out[tid] = {"newTokens": 0, "reReadTokens": 0,
+                               "maxContext": 0, "contextBasis": "measured"}
+        for k in _NEW_KEYS:
+            try:
+                slot["newTokens"] += int(row.get(k) or 0)
+            except (TypeError, ValueError):
+                pass
+        try:
+            slot["reReadTokens"] += int(row.get("cacheR") or 0)
+        except (TypeError, ValueError):
+            pass
+        if "maxContext" not in row:
+            # ONE row missing the field is enough to void the peak for the
+            # whole task: a max computed over only the rows that DO carry it
+            # could silently be lower than the true peak, which is a wrong
+            # answer dressed as a careful one. Never reversed below — once a
+            # task's basis is voided for THIS call, no later row un-voids it.
+            slot["contextBasis"] = "predates-tracking"
+        elif slot["contextBasis"] != "predates-tracking":
+            try:
+                slot["maxContext"] = max(slot["maxContext"],
+                                         int(row.get("maxContext") or 0))
+            except (TypeError, ValueError):
+                pass
+    for slot in out.values():
+        if slot["contextBasis"] == "predates-tracking":
+            slot["maxContext"] = None
+    return out
+
+
 def band_of(bands, task_id):
     """The band for one task, or None when banding is suppressed/unknown."""
     if not bands or not bands.get("sufficient"):

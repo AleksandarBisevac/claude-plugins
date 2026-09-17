@@ -536,6 +536,91 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- context: read once vs re-read, and the peak a single turn reached --
+    # WHY a task got expensive has two causes with OPPOSITE repairs - a lot of
+    # NEW work (narrow the task) or a long-lived run re-paying for context it
+    # already read (hand the rest to a fresh agent) - and a single cost total
+    # cannot tell them apart. `_context_of` and `context_shape` are that split.
+    check("ctx1 _context_of counts every billed field except `out` - a "
+          "generated token is not context a later turn has to carry forward",
+          M._context_of({"in": 3, "out": 999, "cacheW5m": 2, "cacheW1h": 1,
+                         "cacheR": 5}) == 11)
+
+    ctx_manifest = {"phases": [{"id": "PC", "tasks": [
+        {"id": "PC.1", "status": "done"}, {"id": "PC.2", "status": "done"}]}]}
+
+    # PC.1: one big new-read turn, one small re-read turn.
+    pc1_rows = [
+        {"taskId": "PC.1", "in": 100, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 5,
+         "maxContext": 100},
+        {"taskId": "PC.1", "in": 1, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 200,
+         "maxContext": 201},
+    ]
+    shape = M.context_shape(ctx_manifest, pc1_rows)
+    check("ctx2 newTokens/reReadTokens sum the raw fields every row has "
+          "always carried, across every row naming this task: %r"
+          % (shape.get("PC.1"),),
+          shape["PC.1"]["newTokens"] == 101 and shape["PC.1"]["reReadTokens"] == 205)
+    check("ctx3 maxContext is the PEAK single turn (201), never the sum of "
+          "the rows it comes from (101 + 205 = 306)",
+          shape["PC.1"]["maxContext"] == 201
+          and shape["PC.1"]["contextBasis"] == "measured")
+
+    # PC.2: one row predates the field entirely - the peak has to say so
+    # rather than reporting the max of what it COULD see, which would
+    # silently understate the truth whenever the missing row was the bigger
+    # one of the two.
+    pc2_rows = [
+        {"taskId": "PC.2", "in": 5, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0,
+         "maxContext": 5},
+        {"taskId": "PC.2", "in": 5, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0},
+    ]
+    shape2 = M.context_shape(ctx_manifest, pc2_rows)
+    check("ctx4 a task with even one row that predates maxContext tracking "
+          "reports None and says why, never a zero and never the partial "
+          "max of the rows that do carry it: %r" % (shape2.get("PC.2"),),
+          shape2["PC.2"]["maxContext"] is None
+          and shape2["PC.2"]["contextBasis"] == "predates-tracking")
+    check("ctx5 ...but newTokens/reReadTokens still answer - that split has "
+          "no missing-basis case, because every row this ledger has ever "
+          "written carries the raw fields it is built from",
+          shape2["PC.2"]["newTokens"] == 10 and shape2["PC.2"]["reReadTokens"] == 0)
+
+    check("ctx6 a row naming a task the manifest does not have is excluded, "
+          "never folded into a bucket nobody asked for - the same "
+          "`task_index` filter cost_bands/unit_economics already apply",
+          "GHOST" not in M.context_shape(
+              ctx_manifest, [{"taskId": "GHOST", "in": 1, "maxContext": 1}]))
+
+    # --- context: the SCANNER tracks the peak, never the sum -----------------
+    ctx_tmp = tempfile.mkdtemp(prefix="usage-ledger-context-")
+    try:
+        ctx_proj = os.path.join(ctx_tmp, "projects")
+        os.makedirs(ctx_proj)
+        ctx_main = os.path.join(ctx_proj, "sess-ctx.jsonl")
+
+        def usage_entry(mid, ts, in_tokens, cache_read):
+            return json.dumps({
+                "type": "assistant", "timestamp": ts, "gitBranch": "audit/ctx",
+                "message": {"id": mid, "model": "claude-opus-5", "usage": {
+                    "input_tokens": in_tokens, "output_tokens": 1,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": cache_read}}})
+
+        with open(ctx_main, "w", encoding="utf-8") as fh:
+            # context 50, then context 10 - both in the same hour bucket, so
+            # they fold into ONE row and the row must keep the larger figure.
+            fh.write(usage_entry("ctx-A", "2026-08-06T07:00:00Z", 40, 10) + "\n")
+            fh.write(usage_entry("ctx-B", "2026-08-06T07:05:00Z", 5, 5) + "\n")
+        ctx_rows, _ = M.scan_transcripts(ctx_main, "sess-ctx", {}, {},
+                                         {"backfillOnFirstRun": True})
+        check("ctx7 one bucket folding two turns carries the LARGER turn's "
+              "context (50), never their sum (60) and never the other one "
+              "(10): %r" % (ctx_rows,),
+              len(ctx_rows) == 1 and ctx_rows[0]["maxContext"] == 50)
+    finally:
+        shutil.rmtree(ctx_tmp, ignore_errors=True)
+
     # --- ig: the ledger dir is self-ignoring --------------------------------
     # It holds person identities and per-machine cursors; a `*` .gitignore
     # written by every dir-creating writer keeps `git add .claude` from
@@ -623,9 +708,9 @@ def _cases(check):
     # The second direction, and it is the one that looks vacuous: rx1 passes by
     # construction if the five modules define NOTHING (a filter that narrows to
     # empty must never read as 'all clear'). Only a literal count fails then.
-    check("rx3 ...and there are 18 + 23 of them, so rx1 cannot be green over an "
+    check("rx3 ...and there are 18 + 24 of them, so rx1 cannot be green over an "
           "empty or gutted module",
-          len(_core_public) == 18 and len(_analytics_public) == 23,
+          len(_core_public) == 18 and len(_analytics_public) == 24,
           "got %d + %d" % (len(_core_public), len(_analytics_public)))
 
 

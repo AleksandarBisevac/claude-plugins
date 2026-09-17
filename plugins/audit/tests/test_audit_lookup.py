@@ -31,9 +31,11 @@ def _manifest():
     return {
         "phases": [
             {"id": "P1", "status": "done", "tasks": [
-                {"id": "P1.1", "status": "done"},
+                {"id": "P1.1", "status": "done",
+                 "files": ["src/a.py", "src/c.py"]},
                 {"id": "P1.2", "status": "cancelled",
                  "outcome": {"descriptive": "Cancelled: superseded by P1.3"}},
+                {"id": "P1.3", "status": "pending"},
             ]},
             {"id": "P2", "status": "cancelled", "summary": "Cancelled: scope dropped",
              "tasks": []},
@@ -139,6 +141,43 @@ def _cases(check):
           and payload["lastStatus"] == "cancelled"
           and payload["declaringTasks"] == ["P1.1", "P1.2"])
 
+    # --- brief --------------------------------------------------------------
+    # The one thing a spawn prompt is missing: `task.files` is already handed
+    # to an executor, but who last declared each of those paths is not - and
+    # that is the question `brief_lookup` answers in one call, folding
+    # `file_lookup` over a task's own `files` instead of leaving an agent to
+    # grep the manifest or the journal for it.
+    found, msg = M.brief_lookup(man, "P9.9")
+    check("al14 a task id this manifest does not have at all is a miss, "
+          "exactly like the other three questions: %r" % (msg,),
+          found is False and "P9.9" in msg)
+
+    found, msg = M.brief_lookup(man, "P2")
+    check("al15 a PHASE id is a miss here, never an empty-files answer - "
+          "`files` is a task field, and brief_lookup does not inherit "
+          "cancel_lookup's phase reading just because a phase id resolves "
+          "fine there: %r" % (msg,),
+          found is False)
+
+    found, payload = M.brief_lookup(man, "P1.3")
+    check("al16 a task that declares no files yet is a legitimate answer, "
+          "not a miss - the question was answerable and the plan simply "
+          "names nothing here yet: %r" % (payload,),
+          found is True and payload["files"] == [])
+
+    found, payload = M.brief_lookup(man, "P1.1")
+    check("al17 brief_lookup is file_lookup folded over the task's OWN "
+          "files, in the task's own declared order - one entry per "
+          "declared path, including one `fileIndex` never recorded, so a "
+          "caller does not have to tell the two cases apart itself: %r"
+          % (payload,),
+          found is True and payload["files"] == [
+              {"path": "src/a.py", "declaringTasks": ["P1.1", "P1.2"],
+               "last": "P1.2", "lastStatus": "cancelled"},
+              {"path": "src/c.py", "declaringTasks": [], "last": None,
+               "lastStatus": None},
+          ])
+
     # --- CLI: main(), a real manifest on disk, --json and the exit code ----
     tmp = _harness.fixture_root("audit-lookup-")
     try:
@@ -169,6 +208,15 @@ def _cases(check):
               "- a caller scripting this cannot mistake a miss for a match: "
               "%r" % (rc,),
               rc == M.E_NOMATCH and "no match" in out.getvalue())
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = M.main([mpath, "brief", "P1.1", "--json"])
+        payload = json.loads(out.getvalue())
+        check("al18 the CLI answers `brief` for a real manifest on disk and "
+              "exits 0 on a match: %r" % (payload,),
+              rc == M.E_OK and payload["found"] is True
+              and payload["answer"]["files"][0]["last"] == "P1.2")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

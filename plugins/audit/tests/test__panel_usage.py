@@ -305,7 +305,7 @@ def _cases(check):
           "hide behind a duplicate: %r"
           % (sorted(set(_up_empty) ^ set(_up_full)),),
           set(_up_empty) == set(_up_full)
-          and len(_up_empty) == len(_up_full) == 19
+          and len(_up_empty) == len(_up_full) == 20
           and _up_full["facts"] and not _up_empty["facts"])
     check("up2 ...and one level down, where `counts` was the second literal "
           "nobody was comparing either: %r"
@@ -386,14 +386,15 @@ def _cases(check):
               {"id": "P1", "title": "readable", "budgetUSD": 5},
               {"id": ["unhashable"], "title": "boom"}]}) == ({}, {}, {}))
     check("up11 _usage_derived is fail-soft per BLOCK and keyed by payload "
-          "name: with the ledger module gone entirely, routing and monthly "
-          "come back empty while the two area blocks still answer - one broken "
-          "card costs the tab that card, never the tab",
+          "name: with the ledger module gone entirely, routing, monthly and "
+          "context come back empty while the two area blocks still answer - "
+          "one broken card costs the tab that card, never the tab",
           M._usage_derived(None, {
               "meta": {"areas": {"a": {"root": "s", "owner": " jo@x "}}},
               "phases": [{"id": "P1", "area": "a", "tasks": []}]}, [], {})
           == {"routingAdvice": [], "monthlyPlan": {},
-              "phaseAreas": {"P1": ["a"]}, "areaOwners": {"a": "jo@x"}})
+              "phaseAreas": {"P1": ["a"]}, "areaOwners": {"a": "jo@x"},
+              "contextShape": {}})
 
 
     shutil.rmtree(tmp, ignore_errors=True)

@@ -122,7 +122,8 @@ def _cases(check):
               all(set(r).issubset({
                   "ts", "author", "sessionId", "agentId", "agentType", "phaseId",
                   "taskId", "attr", "model", "branch", "repo", "msgs", "costUSD",
-                  "in", "out", "cacheW5m", "cacheW1h", "cacheR"}) for r in rows))
+                  "in", "out", "cacheW5m", "cacheW1h", "cacheR", "maxContext"})
+                  for r in rows))
 
         # (b) re-running the same event is a no-op — the cursor holds the offset
         n2 = M.meter(payload, ul=ul, cfg=cfg, root=tmp)
@@ -247,6 +248,35 @@ def _cases(check):
             check("h9 a corrupt warnedTasks value is ignored, not fatal",
                   M.advise(ul, adv_led, band_man(5), {"showCost": True},
                            {"warnedTasks": "nonsense"}, [hot]) is not None)
+
+            # An outlier task's cost has two causes with OPPOSITE repairs, and
+            # the advisory has to say which: HOT above is dominated by NEW
+            # tokens (in=1, cacheR=0 on every row), so it keeps the original
+            # "split or re-scope" wording. HOT2 is the other shape — same
+            # cost, dominated by RE-READS — and must get the other repair.
+            def band_man2(n_done):
+                return {"phases": [{"id": "P1", "tasks":
+                        [{"id": "T%d" % i, "status": "done"}
+                         for i in range(n_done)]
+                        + [{"id": "HOT2", "status": "in_progress"}]}]}
+
+            hot2 = dict(cheap[0], taskId="HOT2", costUSD=90.0,
+                       ts="2026-08-07T10", **{"in": 1, "cacheR": 50})
+            ul.append_rows(adv_led, [hot2])
+            msg2 = M.advise(ul, adv_led, band_man2(5), {"showCost": True}, {},
+                            [hot2])
+            check("h10 a task whose cost is dominated by RE-READS gets the "
+                  "opposite repair - hand it to a fresh executor - never the "
+                  "'split or re-scope' wording an equally expensive but "
+                  "NEW-work-dominated task (HOT, above) still gets: %r"
+                  % (msg2,),
+                  msg2 and "HOT2" in msg2 and "fresh executor" in msg2
+                  and "splitting it or re-scoping" not in msg2)
+            check("h11 ...and the ORIGINAL wording is untouched for the "
+                  "new-work-dominated case - h1's message never mentions a "
+                  "fresh executor",
+                  msg and "fresh executor" not in msg
+                  and "splitting it or re-scoping" in msg)
 
             # (i) session summary — said once at the end, in the place the work
             # happened, and silent when the session did nothing.

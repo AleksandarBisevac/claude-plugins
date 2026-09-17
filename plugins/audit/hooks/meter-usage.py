@@ -45,7 +45,11 @@ The only exceptions to "prints nothing" are two `systemMessage`s, neither of whi
 is a decision:
 
   * when the task in flight passes the project's own outlier cost band, said once
-    while there is still time to act;
+    while there is still time to act — and worded for WHICH of two causes
+    tripped it, since they take opposite repairs (`_outlier_action` below):
+    a lot of new work narrows by scoping the task down, while a long-lived
+    run re-paying for context it already read is fixed by handing what is
+    left to a fresh agent instead;
   * on SessionEnd, one line saying what the session cost.
 
 Both are advice and block nothing — and a Stop hook could not block even if it
@@ -91,6 +95,37 @@ def _load_ledger_lib():
 
 
 # --- advisory + session summary -----------------------------------------------
+def _outlier_action(ul, manifest, all_rows, tid):
+    """Which of two OPPOSITE repairs the outlier advisory below should say.
+
+    A task crossing the cost band answers one of two different questions and
+    a plain total cannot tell them apart: did it do a lot of NEW work, or did
+    it live long enough to keep re-paying for context it had already read?
+    The first is narrowed by scoping the task down; the second is not fixed
+    by that at all — the fix is to stop paying for the old context, which
+    means handing what is left to a fresh agent rather than continuing this
+    one. `_usage_economics.context_shape` is the split; this reads ONE task's
+    entry out of it and turns the comparison into the sentence fragment the
+    advisory splices in.
+
+    Defaults to the NEW-work phrasing on any missing or unreadable data —
+    that is the behaviour this advisory has always had, not a new claim, so a
+    task `context_shape` cannot place (or a manifest/row shape it cannot
+    read) degrades to the prior wording rather than guessing the other one.
+    """
+    try:
+        shape = (ul.context_shape(manifest, all_rows) or {}).get(tid) or {}
+        reread = int(shape.get("reReadTokens") or 0)
+        new = int(shape.get("newTokens") or 0)
+    except Exception:
+        reread, new = 0, 0
+    if reread > new:
+        return ("handing what is left to a fresh executor rather than "
+                "continuing this one - most of its cost is re-reading "
+                "context it already read, not new work")
+    return "splitting it or re-scoping before the next attempt"
+
+
 def advise(ul, ledger, manifest, ucfg, cursor, rows):
     """The one thing this hook ever says out loud: that the task in flight has
     crossed the project's own outlier threshold, while there is still time to act.
@@ -146,8 +181,9 @@ def advise(ul, ledger, manifest, ucfg, cursor, rows):
                else "this project's p90 completed task")
         mult = spent / bands["outlier"] if bands.get("outlier") else 0
         head = "%s is running %.1fx past %s." % (tid, mult, why)
-    return ("[audit] %s Consider splitting it or re-scoping before the next "
-            "attempt. This is advice, not a gate — nothing is blocked." % head)
+    action = _outlier_action(ul, manifest, all_rows, tid)
+    return ("[audit] %s Consider %s. This is advice, not a gate — nothing is "
+            "blocked." % (head, action))
 
 
 def session_summary(ul, ledger, ucfg, session_id):

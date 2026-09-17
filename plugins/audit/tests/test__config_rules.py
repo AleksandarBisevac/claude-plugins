@@ -277,6 +277,24 @@ def _cases(check):
     check("a misspelled executor key -> warning only, and no finding hides "
           "behind it: %r" % ((f, w),),
           not f and any("executor" in x for x in w))
+
+    # --- executor.maxHours -------------------------------------------------------
+    # The same shape as runsGate above, for the bound on CONTINUING an agent
+    # across tasks: a positive number validates clean, and anything outside
+    # that vocabulary is a FINDING rather than a silent read of the default.
+    for _hrs in (1, 3, 0.5, 100):
+        f, w = M.validate_config({"executor": {"maxHours": _hrs}})
+        check("%r validates clean" % (_hrs,), not f and not w)
+    for _bad in (0, -1, "3", True, [3]):
+        f, w = M.validate_config({"executor": {"maxHours": _bad}})
+        check("a value outside the vocabulary is a FINDING, not a silent "
+              "read of the default: %r -> %r" % (_bad, f),
+              any("executor.maxHours" in x for x in f))
+    f, w = M.validate_config({"executor": {"maxHours": 3}})
+    check("a recognised maxHours key never warns as unknown, the same "
+          "regression runsGate's KNOWN_EXECUTOR entry already guards: %r"
+          % (w,),
+          not w)
     f, w = M.validate_config({"journal": {"strictManifestState": "ask"}})
     check("journal.strictManifestState 'ask' is a legal, known key",
           not f and not w)

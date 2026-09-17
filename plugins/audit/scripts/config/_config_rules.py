@@ -88,7 +88,7 @@ PORTABILITY_MODES = ("strict", "warn", "off")
 # Mirror of hooks/_config.py RUNS_GATE_MODES (that module stays the source of
 # truth for `executor_gate_policy`); the selftest below pins the two together,
 # the same shape PLAN_GATE_MODES above mirrors PLAN_GATE_TIERS.
-KNOWN_EXECUTOR = {"runsGate"}
+KNOWN_EXECUTOR = {"runsGate", "maxHours"}
 RUNS_GATE_MODES = ("never", "own-tests", "full")
 
 
@@ -438,14 +438,16 @@ def _check_journal(journal, findings, warnings):
 
 
 def _check_executor(executor, findings, warnings):
-    """The executor's own gate-running policy.
+    """The executor's own gate-running policy, and how long it may be
+    CONTINUED across tasks before the orchestrator hands it back.
 
     A FINDING rather than a warning, for `portability`'s reason: only a finding
-    refuses the panel's save, and a value outside RUNS_GATE_MODES is exactly the
-    typo `hooks/_config.executor_gate_policy` refuses to fold into the default -
-    stored anyway, it would be read back as neither the word written nor the
-    default, which is the silent-misread this validator's own contract exists
-    to catch."""
+    refuses the panel's save, and a value outside RUNS_GATE_MODES (or outside
+    `maxHours`'s own vocabulary, a positive number) is exactly the typo
+    `hooks/_config.executor_gate_policy`/`executor_context_bound_hours` refuse
+    to fold into their defaults - stored anyway, it would be read back as
+    neither the word/number written nor the default, which is the
+    silent-misread this validator's own contract exists to catch."""
     if executor is None:
         return
     if not isinstance(executor, dict):
@@ -459,6 +461,14 @@ def _check_executor(executor, findings, warnings):
         findings.append("executor.runsGate must be one of %s - a value outside "
                         "this vocabulary is refused rather than read as the "
                         "default" % (RUNS_GATE_MODES,))
+    if "maxHours" in executor:
+        _hrs = executor["maxHours"]
+        if (isinstance(_hrs, bool) or not isinstance(_hrs, (int, float))
+                or _hrs <= 0):
+            findings.append("executor.maxHours must be a positive number - a "
+                            "value outside this vocabulary is refused rather "
+                            "than read as the default, the same shape "
+                            "executor.runsGate uses above")
 
 
 def _check_bands(bands, findings, warnings):

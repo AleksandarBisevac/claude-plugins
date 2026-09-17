@@ -6,12 +6,13 @@ An agent asking "why was this task cancelled", "what did this bug conclude" or
 "which task last touched this file" today has one way to find out: render the
 whole manifest, or the whole journal, and read past everything else in it to find
 the one row that answers the question. That cost grows with the project, not with
-the question. This is the answer to each of the three, read where the plugin
+the question. This is the answer to each of those, read where the plugin
 already keeps it and handed back with the pointer that lets a reader check it:
 
     audit-lookup.py <manifest> cancel <taskOrPhaseId> [--json]
     audit-lookup.py <manifest> bug <bugId> [--json]
     audit-lookup.py <manifest> file <path> [--json]
+    audit-lookup.py <manifest> brief <taskId> [--json]
 
 THE FILE QUESTION IS A LOOKUP, NOT A SEARCH. `fileIndex` already records which
 tasks declared a path, in the order they were added - `manifest-conventions.md`'s
@@ -22,11 +23,22 @@ told so. IT NEVER RETURNS THE NEAREST THING - there is no fuzzy or prefix match
 here, because a lookup that guessed at a similar path would be answering a
 question nobody asked.
 
+`brief` IS `file` FOLDED OVER ONE TASK'S OWN DECLARED FILES, so a spawn prompt
+can carry the answer instead of the question. An executor is already handed
+`task.files`; what it lacked was the one fact it would otherwise grep the
+manifest or the journal for - who else last declared each of those same paths -
+and answering that per path at spawn time is what turns "explore the tree" from
+an agent's default first move into a deliberate step it has to justify, because
+the plan already told it what grepping would have found.
+
 A MATCH THAT FINDS NOTHING SAYS SO. `cancel` on an id this manifest does not have
 at all, `bug` on an id not in `bugs[]`, `file` on a path `fileIndex` never
-recorded: all three exit non-zero with the plain sentence that nothing was found,
-never a nearest guess dressed as an answer. An id that DOES exist but was never
-cancelled is a different, legitimate answer - not a miss - and says so too.
+recorded, `brief` on a task id this manifest does not have (or that names a
+phase, since `files` is a task field): all four exit non-zero with the plain
+sentence that nothing was found, never a nearest guess dressed as an answer. An
+id that DOES exist but was never cancelled is a different, legitimate answer -
+not a miss - and says so too; so is a task `brief` finds that simply declares
+no files yet.
 
 READ-ONLY. This never writes the manifest, the ledger or the journal.
 
@@ -178,6 +190,43 @@ def file_lookup(manifest, path):
                             % (path, len(declaring))}
 
 
+def brief_lookup(manifest, task_id):
+    """`(found, payload_or_message)` for "what does `task_id`'s own spawn brief
+    owe about the files it declares" - `file_lookup` folded over every path
+    in `task.files`, ONE CALL rather than one per path.
+
+    An executor is already handed `task.files` in its spawn prompt
+    (`reference/execute-task.md` step 3); what it is NOT handed is the one
+    question it would otherwise grep the manifest or the journal to answer -
+    which task last declared each of those same paths. `file_lookup` already
+    answers that per path; this is the fold that makes it a single lookup at
+    spawn time instead of `len(task.files)` of them, so exploring the tree
+    for a fact the plan already carries becomes a deliberate, justified step
+    rather than an agent's default first move.
+
+    TASK ONLY, unlike `cancel_lookup` above: `files` is a task field, so a
+    phase id here is a miss rather than an answer with an empty list -
+    `cancel_lookup` reads a phase for a different reason and `brief_lookup`
+    does not inherit it. A task with no declared files is a legitimate answer
+    (`files: []`), never a miss: the question was answerable and the plan
+    simply names nothing for this task yet."""
+    kind, node = _find_node(manifest, task_id)
+    if node is None or kind != "task":
+        return False, "no task %r in this manifest" % (task_id,)
+    entries = []
+    for path in (node.get("files") or []):
+        found, payload = file_lookup(manifest, path)
+        entries.append({
+            "path": path,
+            "declaringTasks": payload["declaringTasks"] if found else [],
+            "last": payload["last"] if found else None,
+            "lastStatus": payload["lastStatus"] if found else None,
+        })
+    return True, {"id": task_id, "files": entries,
+                  "pointer": "%s.files against fileIndex in the manifest"
+                            % (task_id,)}
+
+
 # --- cli --------------------------------------------------------------------------
 def _render_human(question, node_id, found, payload):
     if not found:
@@ -197,6 +246,18 @@ def _render_human(question, node_id, found, payload):
                % (node_id, payload["status"], payload["notes"] or "(none)",
                   payload["fixedIn"] or "(none)"),
                "pointer: %s" % (payload["pointer"],)]
+    if question == "brief":
+        if not payload["files"]:
+            return ["%s declares no files yet" % (node_id,)]
+        lines = ["%s declares %d file(s):" % (node_id, len(payload["files"]))]
+        for entry in payload["files"]:
+            if entry["last"] is None:
+                lines.append("  %s: not in fileIndex yet" % (entry["path"],))
+            else:
+                lines.append("  %s: last declared by %s (status: %s)"
+                             % (entry["path"], entry["last"], entry["lastStatus"]))
+        lines.append("pointer: %s" % (payload["pointer"],))
+        return lines
     # question == "file"
     return ["%s: last declared by %s (status: %s), %d task(s) total"
            % (node_id, payload["last"], payload["lastStatus"],
@@ -235,6 +296,11 @@ def build_parser():
     file_p = sub.add_parser("file", parents=[common],
                             help="which task last touched this file")
     file_p.add_argument("path")
+    brief_p = sub.add_parser(
+        "brief", parents=[common],
+        help="who last declared each file this task itself declares - "
+             "one call, for a spawn prompt, instead of one `file` call per path")
+    brief_p.add_argument("id")
     return p
 
 
@@ -257,6 +323,9 @@ def main(argv):
         node_id = args.id
     elif args.question == "bug":
         found, payload = bug_lookup(manifest, args.id)
+        node_id = args.id
+    elif args.question == "brief":
+        found, payload = brief_lookup(manifest, args.id)
         node_id = args.id
     else:
         found, payload = file_lookup(manifest, args.path)

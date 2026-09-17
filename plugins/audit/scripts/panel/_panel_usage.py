@@ -104,6 +104,11 @@ def _usage_shape(**overrides):
         "phaseAreas": {},
         "areaOwners": {},
         "bands": {},
+        # Per task: what was read for the first time versus what was
+        # re-read out of cache, and the highest single-turn context any of
+        # its runs reached — `_usage_economics.context_shape`. Empty here for
+        # the same reason `bands` is: nothing has been read yet on this exit.
+        "contextShape": {},
         "counts": _ledger_counts([]),
         "rolled": False,
         "totalRows": 0,
@@ -231,7 +236,7 @@ def _usage_manifest_slice(manifest):
 
 
 def _usage_derived(ul, manifest, rows, ucfg):
-    """The four blocks that need the assembled MANIFEST, keyed by payload key.
+    """The blocks that need the assembled MANIFEST, keyed by payload key.
 
     Returned as payload keys so the caller hands them straight to `_usage_shape`
     and no name is spelled twice on the way. Each is independently fail-soft:
@@ -278,8 +283,19 @@ def _usage_derived(ul, manifest, rows, ucfg):
     except Exception:
         area_owners = {}
 
+    # Per task: read-once vs re-read tokens, and the highest single-turn
+    # context any of its runs reached — the split a plain cost total cannot
+    # make, and the two causes of an expensive task have opposite repairs.
+    # Fail-soft like every other block here: one card going quiet is not the
+    # same failure as the whole tab failing to load.
+    try:
+        context_shape = ul.context_shape(manifest, rows)
+    except Exception:
+        context_shape = {}
+
     return {"routingAdvice": advice, "monthlyPlan": monthly_plan,
-            "phaseAreas": phase_areas, "areaOwners": area_owners}
+            "phaseAreas": phase_areas, "areaOwners": area_owners,
+            "contextShape": context_shape}
 
 
 # --- what the gates caught, from a DIFFERENT ledger than the rest of this file ---

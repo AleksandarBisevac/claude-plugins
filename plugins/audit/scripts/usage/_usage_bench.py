@@ -48,7 +48,7 @@ _output.install_path()
 from _usage_core import aggregate  # noqa: E402  (the hottest thing a report runs)
 from _usage_coverage import coverage, monthly_activity  # noqa: E402
 from _usage_economics import (  # noqa: E402
-    cost_bands, phase_budgets, retry_cost, unit_economics)
+    context_shape, cost_bands, phase_budgets, retry_cost, unit_economics)
 from _usage_routing import routing  # noqa: E402
 from _usage_spend import cache_profile, compare, series  # noqa: E402
 
@@ -230,6 +230,7 @@ def _bench_cases(manifest, rows):
         ("cache_profile", lambda: cache_profile(rows)),
         ("unit_economics", lambda: unit_economics(manifest, rows)),
         ("cost_bands", lambda: cost_bands(manifest, rows)),
+        ("context_shape", lambda: context_shape(manifest, rows)),
         ("phase_budgets", lambda: phase_budgets(manifest, rows)),
         ("retry_cost", lambda: retry_cost(manifest, rows)),
         ("routing", lambda: routing(manifest, rows)),

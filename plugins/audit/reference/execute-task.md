@@ -70,6 +70,18 @@ not need to.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.
+   - **Alongside `task.files`, run the one question an executor would otherwise grep the manifest
+     or the journal for, and paste the answer in — never the command.**
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-lookup.py" <manifestPath> brief <taskId>
+     ```
+     This folds `fileIndex` over the task's own `files`, one call, and answers which task last
+     declared each of them. It is context the plan already carries, so an executor that has it
+     has no need to search the tree for it — which is what turns exploring from this agent's
+     default first move into a deliberate step it justifies in its own outcome when it does reach
+     for one. A task with no declared files yet gets an empty answer, which is itself worth
+     pasting in rather than silently skipping the step: it tells the executor the plan has nothing
+     to say about its files, not that you forgot to ask.
    - **Test discipline by `task.tests.mode`:**
      - `tdd` → write a test asserting each item in `task.tests.add` that **FAILS on current code** first
        (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` should be true.)
@@ -283,6 +295,22 @@ not need to.
      there on. Carrying on with the SAME task needs nothing — a message naming no task leaves
      attribution where the spawn description put it, which is coarse rather than wrong. It costs
      nothing and nothing breaks without it, so never let it hold up a hand-off.
+   - **One task per agent is the default shape, and continuing across the bullet above is a
+     bounded exception to it, not a standing preference.** Below `executor.maxHours` (default 3
+     when the key is absent — `hooks/_config.executor_context_bound_hours(cfg)`, refusing rather
+     than guessing on anything that is not a positive number) the bullet above is still the right
+     call: hand the running agent its next task's id and let it keep the context it has already
+     paid for. AT OR PAST it, stop preferring that. Every later turn of a continued agent still
+     carries everything earlier, and the cache backing that context is rewritten as it lapses, so
+     an agent continued past the bound pays close to three times per turn what it paid before —
+     almost all of it material it had already read once — for reasons that have nothing to do
+     with the difficulty of the task in front of it. So: ask it to hand back instead of handing it
+     another task — a short summary a fresh agent starts from (what is finished, what is left,
+     anything not already in the plan), never a stop mid-task — then spawn a FRESH executor for
+     the next ready task, briefed from that summary the same way a retry is briefed from the last
+     attempt below. **Nothing measures an agent's own elapsed time for you** — no hook watches a
+     subagent's clock, so reading the bound against how long THIS agent has actually been running,
+     from when it was spawned (step 3) or last continued, is yours.
    - **A retry is not a fresh start: when `task.attempts > 1`, the prompt carries what the
      last attempt already proved.** Nothing of one attempt reaches the next on its own, so an
      executor re-runs the gate to rediscover a red you have already recorded and then walks

@@ -12,6 +12,18 @@ do not exceed its scope.
 
 Hard rules (non-negotiable):
 
+- **The prompt already carries which task last declared each of your `files`
+  — do not grep the manifest, the journal or the repository to re-derive it.**
+  That answer (`audit-lookup.py brief <taskId>`, folded in by the
+  orchestrator before you were spawned) is exactly the fact exploring the
+  tree would otherwise cost you the whole repository to find. If what you
+  were handed does not answer the question in front of you, exploring
+  further is fine — but say so, and say why, in your returned outcome,
+  rather than treating a search of the tree as your default first move.
+  Nothing mechanically stops you from grepping anyway — no hook reads which
+  tools you called before you had an answer — so this is a rule you keep by
+  reading it, not one enforced against you the way the plan gate enforces
+  `files` scope.
 - **First** invoke each skill listed by the orchestrator (via the Skill tool)
   before touching code — conventions before edits.
 - **Test discipline** exactly as ordered:
@@ -103,6 +115,15 @@ Hard rules (non-negotiable):
   outcome. If the gate refuses it, its refusal text is your instruction — stop
   and report to the orchestrator, which owns the widening. Do not put the change
   somewhere else to get around the refusal.
+- **If the orchestrator asks you to hand back instead of continuing onto
+  another task, that request comes only at a task boundary — never mid-task.**
+  Finish the task you are on (through its ordinary report, below) exactly as
+  you would anyway; the hand-back is about what happens AFTER, not about the
+  work in front of you. What it asks for beyond the ordinary outcome is a
+  short summary a FRESH executor starts from: what is finished, what is left
+  on the plan, and anything about the tree or the task you have already
+  learned that is not already written into the plan itself — never a re-read
+  of files a fresh agent can read for itself.
 
 Report back a structured outcome:
 

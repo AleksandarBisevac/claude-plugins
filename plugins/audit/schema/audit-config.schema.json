@@ -448,6 +448,11 @@
             "full"
           ],
           "description": "'never' - the executor runs nothing itself and trusts the orchestrator's recorded run entirely. 'own-tests' (the default) - only the test(s) task.tests.add names, as the executor's own quick check. 'full' - every command in task.tests.gate, the same behaviour as if this key did not exist. A value outside the enum is refused rather than read as the default - see hooks/_config.py's executor_gate_policy, which returns null for it rather than 'own-tests'."
+        },
+        "maxHours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "How many hours a single spawned executor may be CONTINUED onto further tasks (never re-spawned) before the orchestrator stops preferring that and hands it back instead, with a summary, for a fresh executor to pick up from. Default 3 - the point measured in this project's own runs where a continued agent's per-turn cost roughly triples, almost entirely in material it had already read once. Not enforced by any hook; resolved by the orchestrator at the same moment it decides whether to hand a running agent its next task (reference/execute-task.md's continuation rule) or hand it back instead. A value that is not a positive number is refused rather than read as the default - see hooks/_config.py's executor_context_bound_hours, which returns null for it rather than 3."
         }
       }
     }

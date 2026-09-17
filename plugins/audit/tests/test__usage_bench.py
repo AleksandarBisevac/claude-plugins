@@ -137,7 +137,7 @@ def _cases(check):
     check("bn5b ...and it found the passes at all: the four modules' public "
           "passes, with exactly the two named exclusions left untimed",
           len(_own_public) - len(_own_public & _timed) == 2
-          and len(_own_public & _timed) == 10,
+          and len(_own_public & _timed) == 11,
           "%d found, %d timed" % (len(_own_public), len(_own_public & _timed)))
     # A scripted clock, not sleeps: elapsed 4.0, 1.0, 3.0 over three runs. The
     # three candidate answers are far apart on purpose - minimum 1.0, mean 2.67,
