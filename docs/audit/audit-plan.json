@@ -684,7 +684,8 @@
       "P44.1",
       "P47.1",
       "P55.4",
-      "P56.4"
+      "P56.4",
+      "P55.23"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -777,7 +778,8 @@
       "P54.5",
       "P53.8",
       "P55.4",
-      "P55.17"
+      "P55.17",
+      "P55.23"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1440,7 +1442,8 @@
       "P54.5",
       "P53.8",
       "P55.4",
-      "P55.17"
+      "P55.17",
+      "P55.23"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",

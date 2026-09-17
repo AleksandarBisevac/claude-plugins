@@ -715,7 +715,7 @@
     {
       "id": "P55.15",
       "title": "The write guard reads the command's own working directory before it resolves a target",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the shell-write arm of the secrets guard resolves a relative write target against the directory the command actually ran in, and withdraws when it cannot establish one. Driven three ways today: a relative file name written from a directory outside the repository is BLOCKED with the refusal naming a repository-relative path that does not exist; the same command with an explicit change of directory first is also blocked; the same write with an absolute path outside the repository is allowed. The verdict turns on how the path was spelled rather than on where it lands, which is this register's longest-running defect class. The sibling post-hook already reads that working directory and carries a whole message for a command that ran in another tree; this hook contains no reference to it. The helper that decides whether a destination is resolvable already withdraws on expansions, substitutions, globs and a home shorthand, because those cannot be resolved from the text - a bare relative name cannot either, without the working directory the payload carries.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -744,21 +744,32 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3a1e659",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The shell-write arm resolves a relative target against the directory the command ran in, following every change-of-directory clause, and withdraws into the existing unresolvable-destination path when that cannot be established; the manifest comparison three lines away got the same repair.",
+        "descriptive": "The guard decides on where a write lands rather than on how its path was spelled."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T14:16:40Z",
+      "completedAt": "2026-09-17T14:16:40Z",
+      "verifiedBy": [
+        "cwd-write-target",
+        "cwd-manifest-target",
+        "cwd-missing-defaults",
+        "cwd-popd-guesses",
+        "cwd-cd-loses-accumulation"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3a1e659",
+        "at": "2026-09-17T14:16:40Z"
+      }
     },
     {
       "id": "P55.16",
       "title": "The write guard's interpreter arms match the interpreters its refusal names",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: every interpreter the guard's refusal text names has a write arm, and the KNOWN LIMIT note names what is still uncovered. One interpreter's three-argument open and its in-place edit flag - the direct twin of the stream editor's in-place flag, which is covered - both drive ALLOW today, while the refusal lists that interpreter among the forms it claims to watch. The post-hook still reports the file afterwards, so the write is not invisible; what is missing is the block, which is the difference between a guard and a notice. A limit a guard states is a limit a reader can work with; a limit it does not state reads as coverage.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -787,21 +798,31 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3a1e659",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The in-place flag is read out of a bundle for every interpreter the refusal names, including the backup-suffix form, plus a three-argument open arm; the case-insensitivity is scoped to the interpreter name so an include-path flag is not read as the in-place one.",
+        "descriptive": "Every interpreter the refusal names is watched, in the spelling people actually write."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T14:16:40Z",
+      "completedAt": "2026-09-17T14:16:40Z",
+      "verifiedBy": [
+        "perl-inplace-removed",
+        "perl-open3-removed",
+        "perl-inplace-case-insensitive",
+        "the driven spelling table"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3a1e659",
+        "at": "2026-09-17T14:16:40Z"
+      }
     },
     {
       "id": "P55.17",
       "title": "The gate's note stops naming a command that refuses when the declaring task is done",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the plan gate's explanatory note tells a reader of a DONE task's file the route the sign-off procedure actually mandates. It has one branch for a file whose declaring task is not running and it assumes that task is merely unstarted, so against a done task it says the task has not been started, that starting it is the route, and - in its last clause - not to add a second task for a file the plan already declares. Driven: starting a done task exits non-zero and refuses, and adding a task is exactly what phase sign-off now mandates. The refusal names a command that refuses, asserts a state that is false, and forbids the correct route. That function's own docstring says it exists because a refusal naming a remedy its reader cannot reach is a fault already paid for twice here.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -830,21 +851,28 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d746500",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_declaration_note gained a branch for a declaring task in a terminal status, routing both audiences to the add-then-run sequence phase sign-off mandates instead of to a start verb that refuses.",
+        "descriptive": "The refusal names a route its reader can take."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T14:13:11Z",
+      "completedAt": "2026-09-17T14:13:12Z",
+      "verifiedBy": [
+        "collapse-terminal-branch"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d746500",
+        "at": "2026-09-17T14:13:12Z"
+      }
     },
     {
       "id": "P55.18",
       "title": "A blocked tool call is a stop-and-report, whatever tool was blocked",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the executor's own brief carries a flat rule that a blocked tool call is never a signal to reach for a different tool, stated about TOOLS rather than about an adjacent file. What it says today is that a refusal is the executor's instruction and that it must not put the change somewhere else - correct, and scoped to an adjacent file and to relocating a change. The only do-not-work-around sentence in the agent and reference documents sits in a bullet about secrets, so an executor reading it as scoped to secrets is not obviously misreading. An operator watched an executor meet a hard block on one tool and finish the work through another; the outcome was correct, which is what makes it the kind of workaround that becomes habit.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
@@ -871,16 +899,23 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d746500",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-executor.md carries a rule that a blocked tool call is never a signal to reach for a different tool, and states that it is not mechanised, naming what the prohibition checker reads and what the related hook actually does.",
+        "descriptive": "A blocked tool call is a stop-and-report, whatever tool was blocked - stated, and honest about not being enforced."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-17T14:13:11Z",
+      "completedAt": "2026-09-17T14:13:12Z",
+      "verifiedBy": [
+        "read against check-prohibitions.py's own scope"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d746500",
+        "at": "2026-09-17T14:13:12Z"
+      }
     },
     {
       "id": "P55.19",
@@ -1018,7 +1053,7 @@
     {
       "id": "P55.22",
       "title": "The citation scanner's own suite carries strays outside its fixture zone",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the suite that holds the citation scanner's fixtures carries register ids ONLY inside those fixtures, and the exemption row's named cost shrinks to what it has to be. The row exempts the whole file because a text scanner can only be shown to fire by handing it the literal it must recognise - true of the fixture zone and of nothing else. Outside it the file carries stray citations in comments about unrelated test families, which the row itself names as its accepted cost rather than hiding. Clear those, and leave the fixtures alone. Consider whether the exemption can be narrowed from the file to the region that needs it, and if it cannot, say why in the row rather than widening the silence.",
       "files": [
         "plugins/audit/tests/test__deps.py"
@@ -1042,6 +1077,57 @@
       "model": "sonnet",
       "skills": [],
       "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d746500",
+      "outcome": {
+        "technical": "Every register citation outside test__deps.py's fixture block is rewritten as the constraint it stood in for, the fixtures are untouched, and the exemption row records that and why the exemption cannot be narrowed below a whole file.",
+        "descriptive": "The scanner's own suite carries ids only where a scanner can be shown to fire, and the row says so."
+      },
+      "startedAt": "2026-09-17T14:13:11Z",
+      "completedAt": "2026-09-17T14:13:12Z",
+      "verifiedBy": [
+        "the scan functions called directly over the file with no exemption"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d746500",
+        "at": "2026-09-17T14:13:12Z"
+      }
+    },
+    {
+      "id": "P55.23",
+      "title": "The plan gate judges an edit inside a worktree of the project it is guarding",
+      "status": "pending",
+      "description": "DONE MEANS: an edit landing in a git worktree of the project is judged by the plan gate, and a tree the gate cannot place is a refusal to answer rather than a silent allow. DRIVEN ACROSS THREE TREES with the change large enough to clear the gate's own trivial-change slot: an edit in the main checkout denies, an edit in a worktree denies when the project directory names that worktree, and the SAME edit ALLOWS SILENTLY when the project directory names the main checkout - which is the shape a real session runs in, since the project directory is the checkout the session started in and the agent works in a worktree of it. The gate resolves the manifest from the project directory, the file sits under a different root, and it is never judged: no refusal, no advisory, nothing. This is the same root-resolution question the write guard's relative-path repair just answered, one hook over, and the repair there is the model - read where the thing actually is rather than assuming it sits under one root. It matters more here than anywhere because the gate exists so a subagent cannot wander outside the plan, and a worktree is the recommended way to run one. ONE THING IS UNEXPLAINED AND MUST NOT BE GUESSED AT: one of the two worktrees driven allowed the edit in every configuration, including with its own project directory and its own copy of the hook, where its sibling denied. Establish why before designing, and if it turns out to be a second cause, say so.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: an edit inside a worktree of the project is judged, and a tree the gate cannot place is refused rather than allowed in silence"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
