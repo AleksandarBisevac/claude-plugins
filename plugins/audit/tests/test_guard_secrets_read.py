@@ -1185,6 +1185,134 @@ def _cases(check):
           bash('python3 -c "import os; os.replace(\'/tmp/new\', \'src/app.ts\')"'))
     _expect("s41 shutil.copy onto source is a write", "block",
           bash('python3 -c "import shutil; shutil.copy(\'/tmp/a\', \'src/app.ts\')"'))
+
+    # (pl) PERL IS THE FOURTH INTERPRETER THIS FILE'S OWN REFUSAL TEXT ALREADY
+    # NAMES (`_EVAL_SHAPE["-c"]`: "ruby/perl -e ...") without either of its two
+    # write shapes ever driving a verdict. `perl -i` is the direct twin of
+    # `sed -i`, already covered three cases up; Perl's THREE-argument `open`
+    # is the same write call Python's two-argument `open` already is, with
+    # the mode argument in the middle instead of at the end. Both used to
+    # drive allow - the clause was correctly read as an eval body (its `-pe`
+    # or `-e` matches the inline-eval heuristic), but a write-CALL pattern has
+    # no notion of a command-line FLAG, and a two-argument `open()` pattern
+    # has no notion of a THIRD argument.
+    #
+    # THE FLAG HAS TO BE READ OUT OF A BUNDLE, AND THE FIRST DRAFT DID NOT.
+    # `-i` unbundled and `-i.bak` were the only spellings caught at first, and
+    # `perl -pi -e` - the spelling the manual page gives first, and the one a
+    # person actually reaches for - drove ALLOW: three of its four common
+    # spellings denied and the commonest one did not, which is this whole
+    # register's own defect class read back onto the fix meant to close it.
+    # pl1b is that spelling; it is the case that must have failed before this
+    # widening existed.
+    _expect("pl1 perl -i rewrites its file in place, exactly as sed -i does, "
+          "and used to drive allow for exactly the reason sed -i does not: "
+          "there was no PATTERN reading the flag at all", "block",
+          bash("perl -i -pe 's/a/b/' src/app.ts"), use_cfg=cfg_enforced)
+    _expect("pl1b ...and BUNDLED, which is how the manual page spells it "
+          "first and how it is actually typed: `-pi` names the same flag "
+          "`-i` does, and reading only the unbundled spelling is this "
+          "register's own defect class - a verdict decided by how the flag "
+          "was spelled - recurring inside the fix for it", "block",
+          bash("perl -pi -e 's/a/b/' src/app.ts"), use_cfg=cfg_enforced)
+    _expect("pl1c ...bundled AND carrying a backup suffix in one token, "
+          "which is the fourth spelling this same clause has to read: "
+          "`-pi.bak` is `-p` and `-i` together, with `.bak` left over as "
+          "`-i`'s attached argument", "block",
+          bash("perl -pi.bak -e 's/a/b/' src/app.ts"), use_cfg=cfg_enforced)
+    _expect("pl2 ...and the second direction: the SAME flag on a file "
+          "outside the repository is still none of this gate's business, so "
+          "pl1 is not this arm learning to convict every perl -i", "allow",
+          bash("perl -i -pe 's/a/b/' /tmp/outside-perl-probe.pl"),
+          use_cfg=cfg_enforced)
+    _expect("pl2b ...and the bundled spelling reads the same way outside "
+          "the repository too - pl1b is not this arm convicting every "
+          "bundle that happens to contain the letter", "allow",
+          bash("perl -pi -e 's/a/b/' /tmp/outside-perl-probe2.pl"),
+          use_cfg=cfg_enforced)
+    check("pl3 the extraction itself, counted rather than only found: perl "
+          "-i's target is a trailing bare word, not a call argument, so it "
+          "is read the same way sed -i's already is - over the whole clause, "
+          "which also carries the script's own text: %r"
+          % (M._eval_write_targets("perl -i -pe 's/a/b/' src/app.ts"),),
+          M._eval_write_targets("perl -i -pe 's/a/b/' src/app.ts")
+          == ["src/app.ts"])
+    check("pl3b ...and the bundled spelling extracts the identical target, "
+          "which is the row that would have come back empty before the "
+          "bundle was read: %r"
+          % (M._eval_write_targets("perl -pi -e 's/a/b/' src/app.ts"),),
+          M._eval_write_targets("perl -pi -e 's/a/b/' src/app.ts")
+          == ["src/app.ts"])
+    _expect("pl4 perl's THREE-argument open() is the same write call "
+          "Python's two-argument open() already is", "block",
+          bash("perl -e \"open(FH, '>', 'src/app.ts'); print FH 1;\""),
+          use_cfg=cfg_enforced)
+    _expect("pl5 ...and the second direction for the new alternative: the "
+          "TWO-argument form opens for READING, so pl4 is not 'any open() "
+          "naming a path' - the mode argument is still what decides",
+          "allow", bash("perl -e \"open(FH, 'src/app.ts'); print <FH>;\""),
+          use_cfg=cfg_enforced)
+    # THE ONE PERL SPELLING THIS STILL DOES NOT REACH, named here rather than
+    # left to be found: the BAREWORD form of the same three-argument open,
+    # with no parentheses at all (`open FH, '>', $path`). No call syntax
+    # means no boundary this - or any other - alternative in
+    # `_WRITE_CALL_EXPR` can anchor on, which is the same limit that pattern
+    # already states for `open(os.path.join(a, b), 'w')`: a call this cannot
+    # find the edges of is a call this cannot read.
+    _expect("pl6 KNOWN LIMIT: perl's bareword open (no parentheses) is not "
+          "covered - named as a decision so a later reader does not assume "
+          "coverage the expression cannot give", "allow",
+          bash("perl -e \"open FH, '>', 'src/app.ts'; print FH 1;\""),
+          use_cfg=cfg_enforced)
+    # THE OVER-FIRE THIS ADDITION OWES A CASE FOR. `-I` is Perl's
+    # include-path flag - a different flag doing a different thing - and a
+    # case-insensitive match on `-i` cannot tell the two apart. Reported
+    # against this very fix: a read-only `perl -Ilib -e "..." src/app.ts`
+    # named `src/app.ts` a write target on the strength of a capital letter.
+    _expect("pl7 ...and the second direction: perl's `-I` include-path flag "
+          "is not `-i` wearing a different case, so a command that never "
+          "asked for an in-place edit does not become one", "allow",
+          bash("perl -Ilib -e \"print 1\" src/app.ts"),
+          use_cfg=cfg_enforced)
+    check("pl7b the extraction itself stays empty for the capital flag: %r"
+          % (M._eval_write_targets("perl -Ilib -e \"print 1\" src/app.ts"),),
+          M._eval_write_targets("perl -Ilib -e \"print 1\" src/app.ts") == [])
+
+    # (rb) RUBY IS THE SAME QUESTION, ASKED OF THE SAME FLAG, AND IT WAS NOT
+    # ASKED AT ALL. `_EVAL_SHAPE["-c"]` names "ruby/perl -e ..." in one
+    # breath, Ruby's `-i` is the identical in-place flag with the identical
+    # bundling, and the pattern that covered Perl was written to match the
+    # WORD "perl" - so `ruby -pi -e`, `ruby -i -pe` and `ruby -p -i -e` all
+    # drove allow, not just the bundled spelling. The repair is not a second
+    # copy of the Perl pattern: `_INPLACE_EDIT_INTERPRETERS` is the one tuple
+    # both languages are read from, so the covered set is what that tuple
+    # lists rather than what happens to have been typed into a pattern once
+    # per interpreter.
+    _expect("rb1 ruby's `-pi` is perl's `-pi` under a different interpreter "
+          "name, read from the SAME tuple rather than a second copy of the "
+          "pattern", "block",
+          bash("ruby -pi -e 's/a/b/' src/app.ts"), use_cfg=cfg_enforced)
+    _expect("rb2 ...and unbundled, which is the spelling that was allowed "
+          "even before bundling was the question - this pattern never "
+          "matched the WORD \"ruby\" at all until now", "block",
+          bash("ruby -i -pe 's/a/b/' src/app.ts"), use_cfg=cfg_enforced)
+    _expect("rb3 ...and as three separate flags, which is the third live "
+          "spelling reported for this same interpreter", "block",
+          bash("ruby -p -i -e 's/a/b/' src/app.ts"), use_cfg=cfg_enforced)
+    _expect("rb4 the second direction: the identical flag on a file outside "
+          "the repository is still none of this gate's business, so rb1-rb3 "
+          "are not this arm learning to convict every ruby -i", "allow",
+          bash("ruby -pi -e 's/a/b/' /tmp/outside-ruby-probe.rb"),
+          use_cfg=cfg_enforced)
+    _expect("rb5 ruby shares perl's `-I` include-path flag too, and it is "
+          "not `-i` wearing a different case here either", "allow",
+          bash("ruby -Ilib -e \"print 1\" src/app.ts"), use_cfg=cfg_enforced)
+    check("rb6 the extraction itself, for the spelling that was allowed "
+          "before this fix existed: %r"
+          % (M._eval_write_targets("ruby -pi -e 's/a/b/' src/app.ts"),),
+          M._eval_write_targets("ruby -pi -e 's/a/b/' src/app.ts")
+          == ["src/app.ts"])
+
     # The target here was `tools/build.mjs` while this arm carried its own
     # extension list. `.mjs` is not in `tddReminder.sourceGlobs`, so neither
     # Bash form gates it now and the case would have gone on asserting the
@@ -1455,9 +1583,9 @@ def _cases(check):
           "manifest, while the literal path still is - the strict rule keeps "
           "its subject and stops inheriting one from `..` arithmetic",
           M._manifest_write_hit('echo x > "$X/../docs/audit/audit-plan.json"',
-                                str(tmp), cfg) is None
+                                str(tmp), cfg, str(tmp)) is None
           and M._manifest_write_hit("echo x > docs/audit/audit-plan.json",
-                                    str(tmp), cfg)
+                                    str(tmp), cfg, str(tmp))
           == "docs/audit/audit-plan.json")
     # WHAT THIS DELIBERATELY DOES NOT DO, said as a case so it is a decision
     # rather than a gap somebody finds later. A word the shell resolves is
@@ -1492,6 +1620,102 @@ def _cases(check):
               "python3 -c \"open('$(pwd)/app.ts','w')\"") == []
           and M.decide(bash("sed -i 's/a/b/' $(pwd)/app.ts"),
                        cfg=cfg_enforced)[0] == "allow")
+
+    # (cw) THE WORKING DIRECTORY THIS HOOK NEVER USED TO READ. Every write arm
+    # above resolved a bare relative target against the REPOSITORY ROOT,
+    # never against the directory the command actually ran in - so the same
+    # relative name was refused when spelled from inside the tree and refused
+    # AGAIN, under a path that does not exist, when spelled from outside it
+    # or reached through a `cd`. `cwd` (the payload's own field, the same one
+    # `guard-bash-writes.directory_change_basis` already reads) is what tells
+    # the two apart now.
+    import shutil as _sh_cw
+    _cw_outside = Path(tempfile.mkdtemp(prefix="guard-secrets-cwdoutside-"))
+    try:
+        def _bash_at(cmd, cwd):
+            return {"tool_name": "Bash", "tool_input": {"command": cmd},
+                    "cwd": cwd}
+
+        _cw_write = "sed -i 's/a/b/' notes.py"
+        _expect("cw1 a relative name run from a directory OUTSIDE the "
+              "repository lands outside it, and is none of this gate's "
+              "business - it used to be refused under a repo-relative path "
+              "that does not exist", "allow",
+              _bash_at(_cw_write, str(_cw_outside)), use_cfg=cfg_enforced)
+        _expect("cw2 ...and the same write reached through `cd <elsewhere> "
+              "&&` first, which moves the shell before the write runs - the "
+              "second of the two spellings that used to be refused",
+              "allow",
+              _bash_at("cd %s && %s" % (_cw_outside, _cw_write), str(tmp)),
+              use_cfg=cfg_enforced)
+        _expect("cw3 the control: the identical relative name from the "
+              "SESSION's own directory is still refused - cw1/cw2 are not "
+              "this arm quietly switching off", "block",
+              _bash_at(_cw_write, str(tmp)), use_cfg=cfg_enforced)
+        _expect("cw4 ...and a `cd` INTO a subdirectory of the repository "
+              "resolves the relative name against THAT subdirectory, not "
+              "against the root or against the session's own directory - "
+              "the positive case a withdrawal alone cannot prove", "block",
+              _bash_at("cd src && %s" % _cw_write, str(tmp)),
+              use_cfg=cfg_enforced)
+        check("cw4b ...and the refusal names the NESTED path, which is what "
+              "cw4 actually reads: %r"
+              % (M.decide(_bash_at("cd src && %s" % _cw_write, str(tmp)),
+                          cfg=cfg_enforced),),
+              "src/notes.py"
+              in M.decide(_bash_at("cd src && %s" % _cw_write, str(tmp)),
+                          cfg=cfg_enforced)[1])
+
+        # (cw4c) THE MANIFEST ARM ASKS THE SAME QUESTION, for the same reason
+        # `_manifest_write_hit` already asks `resolvable_destination` before
+        # it - a relative word compared against a repo-relative literal
+        # without first being placed is a claim about wherever the shell
+        # happened to stand, not about the manifest.
+        check("cw4c a write reached from OUTSIDE the repository under the "
+              "manifest's own relative spelling is not the manifest - the "
+              "same question `_manifest_write_hit` already asks of a mark, "
+              "asked now of an unplaced cwd too",
+              M._manifest_write_hit("echo x > docs/audit/audit-plan.json",
+                                    str(tmp), cfg, str(_cw_outside)) is None,
+              repr(M._manifest_write_hit(
+                  "echo x > docs/audit/audit-plan.json", str(tmp), cfg,
+                  str(_cw_outside))))
+    finally:
+        _sh_cw.rmtree(str(_cw_outside), ignore_errors=True)
+
+    # (cw5-cw7) FAIL-LOUD: WHEN THE WORKING DIRECTORY CANNOT BE ESTABLISHED
+    # AT ALL, THIS MUST NOT READ AS "OUTSIDE THE REPOSITORY" - that would be
+    # a different, false claim invented to fill the gap. It reads as the
+    # SAME withdrawal a mark in the target's own text already gets: unstated
+    # rather than falsely settled, either way.
+    check("cw5 no `cwd` in the payload at all is unestablished, not a silent "
+          "fallback to this process's own directory or to the root: %r"
+          % (M.decide({"tool_name": "Bash",
+                       "tool_input": {"command": _cw_write}},
+                      cfg=cfg_enforced),),
+          M.decide({"tool_name": "Bash", "tool_input": {"command": _cw_write}},
+                   cfg=cfg_enforced)
+          == ("allow",
+              "bash: write destination not established (notes.py): the "
+              "shell resolves it and the payload does not carry the result, "
+              "so the plan cannot be asked about it"))
+    _expect("cw6 an EMPTY `cwd` is the same withdrawal as a missing one",
+          "allow", _bash_at(_cw_write, ""), use_cfg=cfg_enforced)
+    check("cw7 a `cd` to a target THIS CANNOT READ - an expansion, exactly "
+          "the mark `resolvable_destination` already refuses to guess "
+          "through - ends the walk for every write that follows it in the "
+          "same command, extending that withdrawal rather than inventing a "
+          "second one: %r"
+          % (M.decide(_bash_at("cd $ELSEWHERE && %s" % _cw_write, str(tmp)),
+                      cfg=cfg_enforced),),
+          "destination not established"
+          in M.decide(_bash_at("cd $ELSEWHERE && %s" % _cw_write, str(tmp)),
+                      cfg=cfg_enforced)[1])
+    check("cw8 `popd` needs a push stack this process never saw a `pushd` "
+          "build, so it is unresolvable on its own rather than guessed at",
+          "destination not established"
+          in M.decide(_bash_at("popd && %s" % _cw_write, str(tmp)),
+                      cfg=cfg_enforced)[1])
 
     # (pg1) THE HALF THAT MUST NOT MOVE, asserted as a matrix rather than as a
     # case. `scripts/config/_help.py` publishes the rule these arms live under -
@@ -1821,14 +2045,16 @@ def _cases(check):
               "the in-repo path and declines to name the out-of-repo one, "
               "which is what xs1/xs2 read downstream",
               M._source_write_hit("sed -i 's/a/b/' %s" % _out_x, str(tmp),
-                                  cfg_enforced)["hit"] is None
+                                  cfg_enforced, str(tmp))["hit"] is None
               and M._source_write_hit("sed -i 's/a/b/' src/app.ts", str(tmp),
-                                      cfg_enforced)["hit"] == "src/app.ts")
+                                      cfg_enforced, str(tmp))["hit"]
+              == "src/app.ts")
         check("xs4 a command writing BOTH keeps the in-repo finding - declining "
               "the out-of-scope target must skip that target, never abandon "
               "the scan",
               M._source_write_hit("sed -i 's/a/b/' %s src/app.ts" % _out_x,
-                                  str(tmp), cfg_enforced)["hit"] == "src/app.ts")
+                                  str(tmp), cfg_enforced, str(tmp))["hit"]
+              == "src/app.ts")
         # xs5/xs6 REPRODUCE THE WINDOWS SPELLINGS ON EVERY PLATFORM, because what
         # broke was the TOKENISER and a tokeniser has no platform. Only the
         # extraction is asserted - `within_root` is os.path.realpath's caller and

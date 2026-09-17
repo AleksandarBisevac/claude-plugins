@@ -130,6 +130,7 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _config  # noqa: E402
@@ -306,6 +307,16 @@ _EVAL_SHAPE = {
 # literal-only pattern this replaced missed it too, for the same reason it missed a
 # bare name -- it is a call, not a path. Naming the limit is what keeps a later
 # reader from assuming coverage the expression can not give.
+#
+# A SECOND, AND NAMED HERE TOO: Perl's three-argument `open` is only read in its
+# PARENTHESISED form, `open($fh, '>', $path)`. The bareword spelling this language
+# also allows -- `open FH, '>', $path`, with no call syntax at all -- names no
+# boundary this pattern (or any other alternative below) can anchor on, so it
+# matches nothing here. `_EVAL_SHAPE`'s refusal already tells the operator which
+# spelling was refused; this is the one Perl spelling that is not.
+_PERL_OPEN3 = (
+    r"|open\s*\(\s*[^,)]+?\s*,\s*['\"](?:\+?>>?|\+<)['\"]\s*,\s*([^,)]+?)\s*[,)]"
+)
 _WRITE_CALL_EXPR = re.compile(
     r"(?:open\s*\(\s*([^,)]+?)\s*,\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
     # `(?:fs\.)?` USED TO BE OPTIONAL AROUND A BARE `write`/`append`, and
@@ -326,8 +337,61 @@ _WRITE_CALL_EXPR = re.compile(
     r"|File\.(?:open|write)\s*\(\s*([^,)]+?)\s*[,)]"
     r"|Path\s*\(\s*([^,)]+?)\s*\)\s*\.\s*write_(?:text|bytes)"
     r"|(?:os\.(?:replace|rename)|shutil\.(?:copy2?|copyfile|move))\s*\(\s*"
-    r"(?:['\"][^'\"]*['\"]|[\w.]+)\s*,\s*([^,)]+?)\s*[,)])",
+    r"(?:['\"][^'\"]*['\"]|[\w.]+)\s*,\s*([^,)]+?)\s*[,)]"
+    + _PERL_OPEN3 + r")",
     re.IGNORECASE,
+)
+
+# Every interpreter whose `-i` flag means "edit this file in place" - the
+# same capability sed's `-i`/`--in-place` already is. ONE TUPLE, so the
+# covered set is what this line lists rather than what happens to have been
+# typed into a pattern once per interpreter: it was perl-only through its
+# first draft, and Ruby has the identical flag, the identical bundling, and
+# is already named beside perl in this file's own refusal text
+# (`_EVAL_SHAPE["-c"]`: "ruby/perl -e ...") - so a reader had every reason to
+# believe Ruby was covered, and it was not. Python's `-i` means something
+# else entirely (interactive mode after the script) and does not belong here.
+_INPLACE_EDIT_INTERPRETERS = ("perl", "ruby")
+
+# The DIRECT TWIN of the stream editor's `-i`/`--in-place` `_SED_INPLACE_CLAUSE`
+# above. Before this existed at all, `perl -i -pe 's/a/b/' file.pl` rewrote
+# `file.pl` in place and drove ALLOW: the clause was correctly classified as
+# an inline eval (its `-pe` matches `_INLINE_EVAL`), but `_WRITE_CALL_EXPR`
+# has no notion of a command-line FLAG, only of a call, and `-i` is not one.
+# Same grammar as `_SED_INPLACE_CLAUSE` for the same reason - the file being
+# rewritten is a trailing bare word, not an argument to anything - and the
+# same extraction, `_PATHY_TOKEN` over the matched span, inheriting the same
+# backslash-in-a-script protection that keeps an escaped dot inside a
+# substitution from being read as a file (see `_shell_write_targets` xs6 for
+# the sed case this shares).
+#
+# THE FLAG IS READ OUT OF A BUNDLE, NOT REQUIRED TO STAND ALONE - and that
+# widening is itself a repair, not a first draft. `-i` unbundled and `-i.bak`
+# were the only spellings this matched at first, and `perl -pi -e` - the
+# spelling the manual page itself gives first, and the one a person actually
+# reaches for - walked straight through: three of its four common spellings
+# denied and the commonest one did not. `-[a-z]*i[a-z]*` reads `i` out of a
+# run of lowercase single-letter switches wherever it sits in the bundle
+# (`-pi`, `-ip`, `-npi`, `-i` alone), with `\S*` still open after it for an
+# attached backup suffix (`-pi.bak`). This is not one more list of legal
+# neighbours that could be short by one: every switch these two languages
+# spell with a single lowercase letter is a DIFFERENT letter than `i` (their
+# capital `-I` is a different flag, already excluded by case below), so a
+# lowercase `i` anywhere in the bundle names this flag and nothing else does.
+#
+# CASE-SENSITIVE ON THE FLAG, WHOLE-PATTERN IGNORECASE ONLY ON THE INTERPRETER
+# NAME. `-I` is the INCLUDE-PATH flag both languages share (`perl -Ilib -e
+# '...'`), a different flag doing a different thing, and matching the flag
+# case-insensitively read the two as one: `perl -Ilib -e "print 1"
+# src/app.ts` - which writes nothing - named `src/app.ts` a target on the
+# strength of a capital letter. `(?i:...)` scopes the case-insensitivity this
+# file uses for every interpreter name to the NAME alone, leaving the flag
+# itself spelled exactly as typed - the over-fire direction this addition
+# owes a case for, same as the read arm below owes one for widening `sed -i`
+# into every source file in a clause.
+_INPLACE_EDIT_CLAUSE = re.compile(
+    r"\b(?i:%s)\b[^|&;\n]*?\s-[a-z]*i[a-z]*\S*\b[^|&;\n]*"
+    % "|".join(_INPLACE_EDIT_INTERPRETERS)
 )
 
 # One hop of binding: `p='x.py'`, `const p = 'x.py'`, `p = 'a/' + 'b.py'`. That is
@@ -504,7 +568,14 @@ def _eval_write_targets(clause):
     binding, plus a join for a concatenation. The narrowing still holds: a path that
     merely shares the clause is still not a target, because only the expression the
     write call actually names is read.
-    """
+
+    THE `-i` FLAG NAMES ITS TARGET AS A TRAILING BARE WORD, not as a call
+    argument, so it cannot be resolved the way every alternative above is -
+    there is no expression here for `_resolve_write_expr` to read. It is
+    extracted the same way `_shell_write_targets` already reads `sed -i`'s
+    target: `_PATHY_TOKEN` over the matched span, inheriting that pattern's
+    same blind spot (an unescaped dot inside the script can be misread as a
+    file) and its same protection (an escaped one cannot)."""
     out = []
     bindings = None
     for m in _WRITE_CALL_EXPR.finditer(clause):
@@ -516,6 +587,8 @@ def _eval_write_targets(clause):
         target = _resolve_write_expr(expr, bindings)
         if target:
             out.append(target)
+    for m in _INPLACE_EDIT_CLAUSE.finditer(clause):
+        out.extend(_PATHY_TOKEN.findall(m.group(0)))
     return out
 # Every shape that READS a path in an interpreter body, with the path in the
 # argument position. The mirror of `_WRITE_CALL_EXPR`, and it exists for the
@@ -1179,7 +1252,128 @@ def _shell_write_targets(cmd):
 _source_exts = _config.source_exts
 
 
-def _ungoverned_write_target(targets, root, cfg):
+# --- the working directory this hook never used to read ------------------------
+_DIR_CHANGE_CLAUSE = re.compile(
+    r"^\s*(cd|pushd|popd)(?:\s+(.*))?$", re.IGNORECASE)
+
+
+def _effective_cwd(cmd, payload_cwd):
+    """Where this command's shell is standing when its writes actually run.
+
+    -> an absolute directory, or None when this cannot be said at all
+
+    A RELATIVE WRITE TARGET IS A WORD ABOUT SOMEWHERE, AND "SOMEWHERE" WAS
+    ALWAYS THE REPOSITORY ROOT HERE - never read from the payload and never
+    read from the command. `sed -i 's/a/b/' notes.py` run from a directory
+    outside the repository, or reached through `cd <elsewhere> &&`, named a
+    repository-relative path that does not exist and was refused for plan
+    coverage under that name, while the identical write spelled from inside
+    the tree was refused correctly - one file, one command shape, two
+    verdicts decided by where the shell happened to be standing. The payload
+    already carries the shell's own starting point: `cwd`, the SESSION's
+    directory and the same field `guard-bash-writes.directory_change_basis`
+    reads for the same reason (a hook may not import a hook, so this is a
+    second reading of the same field rather than a second field). A leading
+    `cd`/`pushd` in the command text is the one thing that moves it before a
+    write runs.
+
+    NO PAYLOAD `cwd` AT ALL IS UNRESOLVABLE - not a silent fallback to this
+    process's own directory or to the repository root. Either guess answers a
+    question about the SHELL with an answer about something else, which is
+    the same invented-target class `_resolve_write_expr` already refuses to
+    commit for a bound name it cannot read.
+
+    A DIRECTORY CHANGE THIS CANNOT READ ENDS THE WALK, for every write that
+    follows it in the command. `cd`/`pushd` with anything but exactly one
+    plain argument - no expansion, substitution, glob or home shorthand, the
+    same marks `resolvable_destination` already will not guess through - and
+    `popd` (which needs a push stack this process never saw a matching
+    `pushd` build) both leave the rest of the command standing somewhere this
+    cannot name. That is not a second mechanism: it is the withdrawal
+    `resolvable_destination` already makes for a mark in the target's OWN
+    text, extended to the one case it was one short of - a plain word with
+    nothing to resolve it against.
+
+    ONE PASS, ACCUMULATING, over every clause in the command in the order it
+    is written - not the directory change nearest a particular write's own
+    clause. That is coarser than a real shell, and coarser on purpose: this
+    file already reasons about the whole command for the shell-write grammars
+    and clause-by-clause only for the eval heuristics, and a write's position
+    relative to a `cd` is evidence read nowhere else in it. What this may not
+    be is finer than it can prove, which is why one unreadable change stops
+    the walk rather than being skipped past.
+
+    NEVER REALPATH HERE. `_placed_target` joins this answer onto a relative
+    write target and hands the join straight to `_config.rel_path`, which
+    compares it against `root` WITHOUT resolving either side - on purpose, so
+    a relative target stays comparable to a relative task-file entry. A
+    working directory quietly resolved through a symlink (`/tmp` ->
+    `/private/tmp` on macOS, which is where a test fixture and a real
+    session scratchpad both commonly live) would then compare a resolved
+    path against an unresolved `root` and manufacture a `../../..` mismatch
+    for a file that never left the tree. `_config.within_root` is the one
+    place symlinks get resolved, on both sides at once, and it is asked
+    separately - this only normalises the arithmetic of `..` and `.`."""
+    if not payload_cwd:
+        return None
+    current = str(payload_cwd)
+    for clause in _clauses(cmd):
+        m = _DIR_CHANGE_CLAUSE.match(clause)
+        if not m:
+            continue
+        verb = m.group(1).lower()
+        if verb == "popd":
+            return None
+        args = [w.strip("'\"") for w in (m.group(2) or "").split()
+                if not w.startswith("-")]
+        if len(args) != 1 or not _config.resolvable_destination(args[0]):
+            return None
+        try:
+            current = os.path.normpath(os.path.join(current, args[0]))
+        except Exception:
+            return None
+    return current
+
+
+def _looks_absolute(t):
+    """Whether `t` is already anchored, in the sense `within_root` itself
+    reads one - a leading `/`, or a drive on the platform where `Path`
+    understands one. An anchored target never needed a working directory:
+    this is the one case this file already had right, on every line that
+    used to hand a target straight to `within_root`/`rel_path`."""
+    try:
+        return Path(str(t).replace("\\", "/")).is_absolute()
+    except Exception:
+        return False
+
+
+def _placed_target(t, cwd):
+    """Where `t` actually lands - or None when `t` is a RELATIVE word and
+    `cwd` cannot say what it is relative TO.
+
+    An absolute `t` answers this without `cwd` at all. A relative one is
+    exactly the question this file used to skip: `within_root`/`rel_path`
+    join anything not absolute onto the REPOSITORY ROOT, which is an answer
+    about the wrong directory whenever the shell was standing somewhere
+    else. Two different directories can each hold a file of the same
+    relative name; only `cwd` says which one this command actually reached.
+
+    A PLAIN JOIN, NEVER A REALPATH - see `_effective_cwd`'s own note. The
+    caller hands the result to `_config.within_root` (which resolves
+    symlinks on both sides itself) and, separately, to `_config.rel_path`
+    (which resolves neither); pre-resolving here would agree with the first
+    caller and quietly disagree with the second."""
+    if _looks_absolute(t):
+        return t
+    if cwd is None:
+        return None
+    try:
+        return os.path.join(str(cwd), t)
+    except Exception:
+        return None
+
+
+def _ungoverned_write_target(targets, root, cfg, cwd):
     """What the plan gate has to say about `targets`.
 
     -> {"hit", "unresolved"}
@@ -1213,6 +1407,13 @@ def _ungoverned_write_target(targets, root, cfg):
         could name, and this is not one. The write is not thereby invisible:
         `guard-bash-writes` reads the tree afterwards and reports by the path
         git prints, which is the residual SECURITY.md already assigns it.
+        A PLAIN RELATIVE WORD IS THE SAME QUESTION ONE LEVEL DOWN: it carries
+        no mark, but it names nothing until it is placed somewhere, and `cwd`
+        (`_effective_cwd`'s answer, from `_decide_core`) is what does the
+        placing. `cwd is None` reports the target unestablished for exactly
+        the reason a marked one already is — this process was asked to name a
+        file it cannot name — rather than guessing that "no working directory"
+        means "outside the repository", which is a different, false claim.
       * SOURCE, by extension, derived from `tddReminder.sourceGlobs`. It
         deliberately excludes `.json`, which is why no consumer's package.json,
         tsconfig.json or fixture is gated here — and why the manifest needs the
@@ -1251,12 +1452,17 @@ def _ungoverned_write_target(targets, root, cfg):
             if t not in graded["unresolved"]:
                 graded["unresolved"].append(t)
             continue
+        placed = _placed_target(t, cwd)
+        if placed is None:
+            if t not in graded["unresolved"]:
+                graded["unresolved"].append(t)
+            continue
         low = t.lower()
         if not any(low.endswith(e) for e in exts):
             continue
-        if not _config.within_root(root, t):
+        if not _config.within_root(root, placed):
             continue
-        rel = _config.rel_path(root, t)
+        rel = _config.rel_path(root, placed)
         if _config.matches_exempt(rel, exempt):
             continue
         if in_prog is None:
@@ -1270,14 +1476,16 @@ def _ungoverned_write_target(targets, root, cfg):
     return graded
 
 
-def _source_write_hit(cmd, root, cfg):
+def _source_write_hit(cmd, root, cfg, cwd):
     """What the plan gate says about the files `cmd` writes via sed -i / tee /
     a >(>) redirect - `_ungoverned_write_target`'s pair. The shell half of the
-    plan gate's write arm."""
-    return _ungoverned_write_target(_shell_write_targets(cmd), root, cfg)
+    plan gate's write arm. `cwd` is `_effective_cwd`'s answer for this same
+    command - the directory a bare relative target is placed against, rather
+    than the repository root every target used to be assumed to sit in."""
+    return _ungoverned_write_target(_shell_write_targets(cmd), root, cfg, cwd)
 
 
-def _eval_write_hit(graded, root, cfg):
+def _eval_write_hit(graded, root, cfg, cwd):
     """(the ungoverned source file an interpreter clause WRITES, how that clause
     was spelled, the destinations none of them could establish).
 
@@ -1288,6 +1496,11 @@ def _eval_write_hit(graded, root, cfg):
     refusal has to name the spelling the operator actually typed and only
     the clause knows whether it arrived as `-c` or as a heredoc body.
 
+    `cwd` is threaded straight through to `_ungoverned_write_target`: an
+    interpreter invoked with a relative write target inherits the SAME shell
+    position a shell-write form would, so the two grammars ask
+    `_effective_cwd` for one answer rather than two.
+
     The unestablished destinations accumulate across ALL clauses rather than
     stopping at the first hit: they are what the caller says instead of a
     verdict, so one lost to an early return is a silence with nothing behind
@@ -1297,7 +1510,7 @@ def _eval_write_hit(graded, root, cfg):
     for cl, is_eval, how in graded:
         if not is_eval:
             continue
-        seen = _ungoverned_write_target(_eval_write_targets(cl), root, cfg)
+        seen = _ungoverned_write_target(_eval_write_targets(cl), root, cfg, cwd)
         for spelling in seen["unresolved"]:
             if spelling not in unresolved:
                 unresolved.append(spelling)
@@ -1405,9 +1618,17 @@ _SHELL_MANIFEST_LOCK = (
 )
 
 
-def _manifest_write_hit(cmd, root, cfg):
+def _manifest_write_hit(cmd, root, cfg, cwd):
     """First manifest path `cmd` writes to via sed -i / tee / a `>`(`>>`) redirect
     - the index, its lockfile, or one of its phase shards - or None.
+
+    `cwd` (`_effective_cwd`'s answer) places a RELATIVE target before it is
+    compared against `manifest_rel`, for the same reason the source arm one
+    function down needs it: a relative word compared to a repo-relative
+    literal without first being placed is a claim about wherever the shell
+    happened to be standing, not about the manifest. A target this cannot
+    place is skipped rather than compared - the same "no claim without
+    proof" this function's docstring already keeps for containment.
 
     THE TARGET SET IS RESOLVED, NEVER SPELLED. `manifestPath` comes from the
     project's config and the shards come from `_config.governing_lock`, which is
@@ -1442,7 +1663,10 @@ def _manifest_write_hit(cmd, root, cfg):
     for t in _shell_write_targets(cmd):
         if not _config.resolvable_destination(t):
             continue
-        rel = _config.rel_path(root, t)
+        placed = _placed_target(t, cwd)
+        if placed is None:
+            continue
+        rel = _config.rel_path(root, placed)
         if (rel == manifest_rel or rel == manifest_rel + ".lock"
                 or _config.governing_lock(manifest_rel, rel)):
             return rel
@@ -1740,13 +1964,24 @@ def _decide_core(data, root, cfg):
         # red if a tier ever reached one of those branches are the `pg` group in
         # plugins/audit/tests/test_guard_secrets_read.py.
         #
+        # THE SHELL'S OWN STARTING POINT, READ HERE FOR THE FIRST TIME. Every
+        # write arm below used to hand a relative target straight to
+        # `within_root`/`rel_path`, which join anything not absolute onto the
+        # REPOSITORY ROOT - so a relative name spelled from a directory
+        # outside the repository, or reached through a `cd`, was graded as if
+        # the shell were still standing in the tree. `cwd` is None when this
+        # cannot be established at all, and every arm below treats that
+        # exactly as it already treats a mark in the target's own text: a
+        # destination this process cannot place, reported as unestablished -
+        # never guessed to be either inside or outside.
+        cwd = _effective_cwd(runnable, data.get("cwd"))
         # Judged on the paths the write calls NAME, not on a write shape
         # and a path that merely share a clause. And graded on the same tier
         # the shell arm below is graded on, which it was not — a `.ts` file
         # an in_progress task declared was refused through `python3 -c` and
         # allowed through `echo >`, by a message that blamed the plan-first gate
         # while consulting no plan at all.
-        ehit, ehow, eunplaced = _eval_write_hit(graded, root, cfg)
+        ehit, ehow, eunplaced = _eval_write_hit(graded, root, cfg, cwd)
         if ehit:
             return _plan_gate_write_verdict(
                 root, cfg, ehit,
@@ -1770,7 +2005,7 @@ def _decide_core(data, root, cfg):
         # the shell spellings deny and the interpreter one allows. The two write
         # arms agree about the PLAN GATE now; they do not yet agree about who
         # owns the plan.
-        mhit = _manifest_write_hit(runnable, root, cfg)
+        mhit = _manifest_write_hit(runnable, root, cfg, cwd)
         if mhit:
             refusal = _manifest_write_verdict(data, root, cfg, mhit)
             if refusal is not None:
@@ -1778,7 +2013,7 @@ def _decide_core(data, root, cfg):
         # Over what runs, not over the raw text - a `>` inside prose being
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.
-        shell_write = _source_write_hit(runnable, root, cfg)
+        shell_write = _source_write_hit(runnable, root, cfg, cwd)
         if shell_write["hit"]:
             # The same grading, through the same function, as the interpreter arm
             # above. Otherwise `Edit src/x.ts` would be merely observed while
