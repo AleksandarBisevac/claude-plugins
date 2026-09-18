@@ -22,6 +22,21 @@ whose answer moves with something incidental to the checkout rather than with th
   so the workflow fetches the history instead. Teaching the check to tell "shallow cannot have it"
   from "a full clone would refuse it" was rejected: local git answers those two identically.
 
+### Fixed — suites that only fail on a platform the preflight cannot reach
+
+- **The case that drives the launcher under every shell the machine has could not reach one of
+  them.** A multi-call shell binary resolved by bare name reads its next argument as an applet
+  rather than as a script, so it refused before the launcher's first line ran and the case reported
+  a shell it had never tried. Driven against a real one, in both directions.
+- **Six suites left a scratch directory behind.** Each builds a real repository and removes it while
+  ignoring errors; git writes its loose objects read-only, and removing a file needs write
+  permission on the directory rather than on the file — so it always succeeds where this was
+  written and fails where the file's own attribute is checked. The repair already existed in the
+  tree and is reused; the two hooks that may not import it carry the same algorithm locally.
+- **Two more fixtures spliced a path into generated shell source unquoted**, where a backslash is an
+  escape rather than a separator. That is the third fixture in this release undone by the same
+  assumption about what a path looks like.
+
 ### Fixed — a guard that read a real path as shell shorthand
 
 - **A tilde anywhere in a path made the write guard withdraw**, so a platform whose temporary paths
