@@ -4,6 +4,79 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [3.0.1] - 2026-09-18
+
+3.0.0's own release preflight was green and its CI was not, on two platforms it cannot reach and in
+a clone shallower than the one it ran in. This release is what that found, plus a field report that
+arrived in the same hours — and most of it is the same defect wearing different clothes: **a check
+whose answer moves with something incidental to the checkout rather than with the tree.**
+
+### Fixed — checks that answered about the machine instead of the tree
+
+- **A rule's exempt list named a generated file**, so the citation scan reported it missing in every
+  checkout where nobody had rendered a report. The row is right — without it the scan's answer moves
+  with whether a report exists — so the *case* widened: a path the repository declares ignored is
+  legitimately absent, and git is asked rather than guessed at. A mistyped path is still a finding.
+- **The ledger check refused in a shallow clone**, because the shipped example gained a commit that
+  resolves and the runner clones shallow. The refusal is correct — a truncated clone cannot answer —
+  so the workflow fetches the history instead. Teaching the check to tell "shallow cannot have it"
+  from "a full clone would refuse it" was rejected: local git answers those two identically.
+
+### Fixed — a guard that read a real path as shell shorthand
+
+- **A tilde anywhere in a path made the write guard withdraw**, so a platform whose temporary paths
+  carry an eight-character short name put one in the third component of an absolute path and the
+  guard let a shard write through. Home shorthand expands only when the tilde **opens** the word;
+  anywhere else it is an ordinary character. The rule asks that structural question now, so a new
+  short-name shape needs no new entry.
+- Four test fixtures were comparing a version-control path, which answers in forward slashes
+  everywhere, against a standard-library path, which answers in the platform's own — one directory,
+  two spellings, compared as text. One spliced an unquoted path into a command it then split with
+  shell rules. One handed a launcher a program name with no separator in it. One hard-coded a signal
+  number that is not the same number on every platform.
+
+### Fixed — a phase that merged but never closed
+
+- **It won the running-plan search for ever.** The close writes the merge stamp and never the
+  status, deliberately: the status is the claim that sign-off passed, and that verb holds no basis
+  for it. So every reader that resolves "the phase in progress" kept returning a phase whose branch
+  had landed hours earlier — and with no genuinely running phase left, the plan gate's tier resolved
+  to its strictest reading rather than the advisory one, permanently. Every reader now excludes a
+  phase carrying a merge stamp, the state names the stale one, the doctor prints it, and the report
+  says the contradiction out loud instead of printing a merge stamp beside an "in progress" chip.
+- The writer was deliberately **not** changed: a case pins that the cleanup gate must verify a done
+  status rather than produce one, and writing it at the close would make that gate satisfy its own
+  first precondition.
+
+### Fixed — a declared file with a line range
+
+- **The schema allows a `files` entry to carry a line range**, and three places built a filesystem
+  path from the raw entry. Two of them reported a file that *exists* as missing, inside the advisory
+  an operator is asked to trust. The third dropped a line-scoped declaration out of the gate's
+  covered set — which this same release made louder, since the coverage line now reports what a run
+  did not touch, so a silent drop had become a printed claim about a file the run touched exactly.
+
+### Fixed — checks that credited what they had not proven
+
+- **A filter term that could not narrow anything** was trusted without being tested: the check took
+  the first word of the first phase's title, and a single common letter matches every row of any
+  report. The candidate is now checked against every row before it is adopted, and the note says
+  which word was rejected.
+- **A breach printed commits multiplied by unpaired rows** under the name of one of them. It counts
+  commits once per commit now and reports the unpaired rows beside them, both named.
+- **The export check computed an index for a column and never read it** — the widest free-text
+  column, and the one the comment above it describes a defect in. It is asserted now, against the
+  text the page itself renders.
+- **A refusal's one empirical sentence is pinned.** An operator reported that this gate stopped
+  executors repeatedly and that none tried to route around it, crediting the sentence saying the
+  three wrong moves have actually happened. Every other fragment had a case; that one did not.
+
+### Added
+
+- **The coverage line reports the declared files a run did not touch**, beside the ones it did — the
+  half that tells you a green gate exercised the work rather than an unrelated subset. An empty
+  complement is its own sentence, distinct from a task that declares no files at all.
+
 ## [3.0.0] - 2026-09-18
 
 The major exists for one refusal that 2.3.0 promised and could not make, and the release around it
