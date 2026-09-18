@@ -709,6 +709,47 @@
         "commit": "d962d7f",
         "at": "2026-09-18T15:07:13Z"
       }
+    },
+    {
+      "id": "P59.14",
+      "title": "The launcher case and one shell on one platform",
+      "status": "pending",
+      "description": "DONE MEANS: the windows job's selftest sweep is green. It is the ONLY red left - ubuntu, lint, manifest validation and plugin validation are all green on the same commit, and the case reports exactly this: [('dash.EXE', False), ('bash.EXE', True)]. So on that runner a dash is present and the launcher fails under it while bash succeeds, and on ubuntu the same dash passes - which means this is dash ON THAT PLATFORM rather than dash. THE OBVIOUS SUSPECT IS THE ONE ALREADY REPAIRED ONCE HERE and may be repaired incompletely: the fixture forward-slashes the program name it hands the shell, because that shell's own case statement looks for a separator in it. A shell shipped with the platform's git distribution resolves and quotes paths differently from the one beside it, and the two disagree about a drive letter in particular. ESTABLISH WHETHER THE FAULT IS IN THE FIXTURE OR IN THE LAUNCHER before changing either - the launcher is POSIX-sh builtins only by rule and is what ships, so a repair there is a product change and a repair in the fixture is not. NEITHER YOU NOR I CAN RUN THAT PLATFORM: drive what you can under a real dash here, reason the rest from that shell's own documented path handling, and name what you could not establish rather than asserting it. This is the last thing between the tree and a tag.",
+      "files": [
+        "plugins/audit/tests/test_py_launch.py",
+        "plugins/audit/hooks/py-launch.sh"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-18T07:57:57Z"

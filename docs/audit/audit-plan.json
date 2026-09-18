@@ -772,7 +772,8 @@
       "P2.1",
       "P41.6",
       "P59.3",
-      "P59.11"
+      "P59.11",
+      "P59.14"
     ],
     "plugins/audit/hooks/remind-tdd.py": [
       "P1.2",
@@ -2046,7 +2047,8 @@
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
       "P59.3",
-      "P59.11"
+      "P59.11",
+      "P59.14"
     ],
     "plugins/audit/tests/test_remind_tdd.py": [
       "P42.4"
