@@ -2112,6 +2112,23 @@ def _cases(check):
           "coverage: 1 declared file" in text
           and "declared but not named by the run: docs/plan.json" in text)
 
+    # P59.6: a `:line-range` suffix must not defeat the match. The schema
+    # allows one on a `files` entry and nothing a runner prints ever carries
+    # it, so comparing the raw entry against `named` used to drop a suffixed
+    # declaration out of `hits` and into the complement - "declared but not
+    # named by the run" about a file the run named exactly.
+    _sfx_hit, _sfx_b = M.coverage(["src/a.ts:12-34", "src/missing.ts"],
+                                  set(["src/a.ts"]))
+    check("cv24 a suffixed entry naming a path the runner DID print is a HIT, "
+          "asked of the file it names rather than of its own spelling: %r"
+          % (_sfx_hit,),
+          _sfx_hit == ["src/a.ts:12-34"])
+    check("cv25 SECOND-DIRECTION CASE: the UNSUFFIXED entry in the SAME call "
+          "that really was not named still lands in the complement - the "
+          "repair reads the suffix away, it does not widen what counts as "
+          "named: %r" % (_sfx_b,),
+          "declared but not named by the run: src/missing.ts" in _sfx_b)
+
     # --- what the manifest says the work owns -----------------------------
     check("cv7 the phase's declaration is the UNION of its tasks' files, "
           "de-duplicated - the phase gate is this script's actual call site, so "

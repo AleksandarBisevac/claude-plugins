@@ -126,6 +126,10 @@ _output.install_path()
 import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
+import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading of a
+#                                  `files` entry's `:line-range` suffix, shared with
+#                                  `commit-task-work.py` and `audit-task.py` rather
+#                                  than re-parsed a fourth time here)
 import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one spelling
 #                           the terminal and the rendered report both print it in)
 
@@ -1654,13 +1658,26 @@ def coverage(task_files, named):
     subjects = set(s for s in (_subject_of(n) for n in named) if s)
 
     def _stem(path):
-        base = str(path).rsplit("/", 1)[-1]
+        base = str(_vocab._strip_line_suffix(path)).rsplit("/", 1)[-1]
         return base.rsplit(".", 1)[0] if "." in base else base
 
-    hits = sorted(f for f in owned
-                  if any(n == f or n.endswith("/" + f) or f.endswith("/" + n)
-                         for n in named)
-                  or _stem(f) in subjects)
+    def _hit(f):
+        """Whether `named` could have printed the FILE `f` declares.
+
+        Asked of the path the entry names, never of the entry's own spelling:
+        a declared `a/b.py:12-34` is asking about `a/b.py`, and nothing a
+        runner prints ever carries the `:line-range` suffix the schema allows
+        on `f` -- comparing the raw entry against `named` would silently drop
+        every suffixed declaration out of `hits` and into the complement,
+        which reads as "declared but not named by the run" about a file the
+        run named exactly.
+        """
+        path = _vocab._strip_line_suffix(f)
+        return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
+                    for n in named)
+                or _stem(f) in subjects)
+
+    hits = sorted(f for f in owned if _hit(f))
     basis = ("the runner named %d path(s); the work under test declares "
              "%d file(s)" % (len(named), len(owned)))
     if subjects:

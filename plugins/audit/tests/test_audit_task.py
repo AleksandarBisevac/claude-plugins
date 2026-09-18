@@ -556,6 +556,30 @@ def _cases(check):
               and "not the root these paths are relative to" in txt
               and proj in txt)
 
+        # ---- (x3/x4) P59.6: a `:line-range` suffix must not defeat the stat -
+        # The schema allows one on a `files` entry, and this verb used to pass
+        # the raw entry to `os.path.exists`. A schema-legal `src/real.ts:5-9`
+        # names a file that EXISTS, so reporting it as nothing on disk would be
+        # wrong inside the one advisory an operator is asked to trust.
+        os.makedirs(os.path.join(proj, "src"), exist_ok=True)
+        with open(os.path.join(proj, "src", "real.ts"), "w") as _fh:
+            _fh.write("x\n")
+        code, txt = run(["add", "Suffixed and real", "--phase", "P2",
+                         "--project-dir", proj, "--json",
+                         "--files", "src/real.ts:5-9,src/still-missing.ts"])
+        _x34 = json.loads(txt)
+        check("x3 a suffixed entry naming a file that EXISTS does not join "
+              "`filesNotOnDisk` under either spelling: %r"
+              % (_x34.get("filesNotOnDisk"),),
+              code == 0 and "src/real.ts:5-9" not in
+              (_x34.get("filesNotOnDisk") or [])
+              and "src/real.ts" not in (_x34.get("filesNotOnDisk") or []))
+        check("x4 SECOND-DIRECTION CASE: an UNSUFFIXED entry in the SAME call "
+              "that really is missing is still caught - the repair strips a "
+              "suffix, it does not widen what counts as `on disk`: %r"
+              % (_x34.get("filesNotOnDisk"),),
+              "src/still-missing.ts" in (_x34.get("filesNotOnDisk") or []))
+
         # ---- (xp) a `--files` entry that cannot be a path -------------------
         # MEASURED: the incremental spelling every neighbouring tool offers went
         # into `files` as part of the filenames, into `fileIndex`, into a journal
@@ -1780,6 +1804,25 @@ def _cases(check):
         check("sc7 an unknown id writes nothing - the manifest is byte identical, "
               "which is the assertion rather than the exit code",
               code == 2 and _sc_after == _sc_before)
+
+        # ---- (sc8/sc9) P59.6: the SAME repair, on `scope`'s own stat --------
+        # `add` and `scope` build `missing` the same way and used to pass the
+        # raw entry to `os.path.exists` the same way; `src/b.ts` is on disk
+        # from the setup above, so a suffixed re-declaration of it must not
+        # start reading as absent.
+        code, txt = run(["scope", "P2.3", "--files",
+                         "src/b.ts:1-2,src/missing.ts",
+                         "--project-dir", sc_proj, "--json"])
+        _sc89 = json.loads(txt)
+        check("sc8 a suffixed entry naming a file that EXISTS does not join "
+              "`filesNotOnDisk`: %r" % (_sc89.get("filesNotOnDisk"),),
+              code == 0 and "src/b.ts:1-2" not in
+              (_sc89.get("filesNotOnDisk") or [])
+              and "src/b.ts" not in (_sc89.get("filesNotOnDisk") or []))
+        check("sc9 SECOND-DIRECTION CASE: the UNSUFFIXED entry in the SAME "
+              "call that really is missing is still caught: %r"
+              % (_sc89.get("filesNotOnDisk"),),
+              "src/missing.ts" in (_sc89.get("filesNotOnDisk") or []))
 
         # ---- (sn) the verb was unusable on the task it exists for ------------
         # `tests` used to be materialized unconditionally, so `scope --files`

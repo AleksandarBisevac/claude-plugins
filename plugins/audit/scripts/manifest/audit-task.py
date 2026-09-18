@@ -236,6 +236,12 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading of a
+#                                            `files` entry's `:line-range` suffix -- a
+#                                            downward edge, L7 -> L1, the same reading
+#                                            `commit-task-work.py` already takes before
+#                                            joining a declared entry onto a filesystem
+#                                            path)
 import _areas                 # noqa: E402  (areas_of: the one area resolution every surface shares)
 import _manifest_rules as _rules  # noqa: E402  (tests_add_path: the ONE answer to
 #                                            "does this `tests.add` entry name a file".
@@ -2175,8 +2181,16 @@ def _locked_add(args, project, config, mpath, title, out):
     task_id = _allocate_id(assembled, phase_id)
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
                                                 assembled)
+    # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
+    # SPELLING. A schema-legal `a/b.py:12-34` is a real, existing `a/b.py`, and
+    # `os.path.exists` asked of the raw string can only ever say no -- reporting
+    # a file that IS on disk as `_not_on_disk_note`'s "nothing on disk answers
+    # for" would make the one advisory an operator is asked to trust wrong about
+    # the declaration it was just given. `missing` still carries the entry AS
+    # DECLARED, so the note names exactly what the caller typed.
     missing = [f for f in task["files"]
-               if not os.path.exists(os.path.join(project, f))]
+               if not os.path.exists(os.path.join(project,
+                                                   _vocab._strip_line_suffix(f)))]
 
     phase.setdefault("tasks", []).append(task)
     fidx = assembled.setdefault("fileIndex", {})
@@ -4028,8 +4042,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
     released = [f for f in was_files if f not in (node.get("files") or [])]
     claimed = [f for f in (node.get("files") or []) if f not in was_files]
 
+    # SAME REPAIR AS `add`'s, AND FOR THE SAME REASON: the entry may carry a
+    # `:line-range` suffix the schema allows, and stating a declaration is
+    # "not on disk" while the file it names sits right there is worse than
+    # saying nothing. Strip before the stat, keep the raw entry in `missing`.
     missing = [f for f in (node.get("files") or [])
-               if not os.path.exists(os.path.join(project, f))]
+               if not os.path.exists(os.path.join(project,
+                                                   _vocab._strip_line_suffix(f)))]
     phase_id = phase.get("id")
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:

@@ -455,6 +455,20 @@ def manifest_moved_files(repo_root=None):
     gone = []
     checked = 0
     for source, path in recorded:
+        # A `:line-range` SUFFIX IS NOT STRIPPED HERE, AND THAT IS STATED
+        # RATHER THAN FIXED. The schema allows one on a `files` entry, and
+        # every other consumer that turns a declared entry into a filesystem
+        # path strips it first (`_manifest_vocab._strip_line_suffix`, taken by
+        # `commit-task-work.py`, `audit-task.py` and `_manifest_crossrefs.py`
+        # rather than re-parsed per caller). This module cannot take the same
+        # import: `_deps.LAYERS` places `_refs` and `_manifest_vocab` in the
+        # SAME layer, so importing it here would be the sideways edge
+        # `layer_violations()` refuses, and writing the one-line split again
+        # would be a fourth spelling of the rule those three already share.
+        # So a suffixed entry fails `.endswith(".py")` and never reaches
+        # `checked` — an UNDER-COUNT, not a false positive: nothing is
+        # reported wrongly about it, a real move or deletion just goes
+        # unexamined.
         if not isinstance(path, str) or not path.endswith(".py") \
                 or not path.startswith(prefix):
             continue
