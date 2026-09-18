@@ -87,6 +87,28 @@ def _shim_dir(root, name, body):
 def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
     """Run the launcher as `hooks.json` does and return {out, err, code}.
 
+    `path_entry` is a directory holding exactly one interpreter (or nothing),
+    and the shell has to be ABLE TO NAME IT as a `PATH` entry before it can
+    search it - which a directory carrying a drive letter is not, on every
+    shell. POSIX defines `PATH` as a colon-separated list, and a Windows
+    absolute path always carries a colon right after the drive letter
+    (`C:\\...`); a shell that applies that split literally to `path_entry`'s
+    own bytes reads `C:\\Python312` as the two components `C` and
+    `\\Python312`, and neither resolves anything. `git`'s own bundled `bash`
+    survives this because its runtime pre-translates a Windows-shaped `PATH`
+    before the shell's own split ever runs - a shell installed BESIDE that
+    distribution, not built against its runtime, gets no such rewrite and
+    hits the split raw. Proven equal for a real `dash` and a real `bash`
+    here, neither MSYS-linked: handed a single `PATH` entry whose own path
+    contains an embedded `:`, BOTH fail to resolve a shim that a colon-free
+    directory resolves for both (`probe/mutations.py`) - so the divergence
+    windows-latest reports is not "dash is worse at this than bash", it is
+    "one of the two never has to parse the colon at all". `PATH` is set to
+    the single-character literal `.` and the CHILD PROCESS'S CWD becomes
+    `path_entry` instead - a directory that is merely the process's working
+    directory is a `CreateProcess`/`fork`+`chdir` argument, native on every
+    platform, and never something a shell parses as a delimited list.
+
     `PATH` is REPLACED rather than extended, which is what makes a shim a shim:
     prepending one leaves the machine's real `python3` reachable under `python`,
     and a case that meant to drive a broken interpreter would quietly drive a
@@ -102,7 +124,12 @@ def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
     hook genuinely not being beside it (pl7's own scenario, for an unrelated
     reason) and sent a healthy run down the same loud fallback. A fixture path
     is this machine's, not the subject's; what the subject actually receives
-    is a bash-spelled `$0`, and that is what gets driven here.
+    is a bash-spelled `$0`, and that is what gets driven here. This one is
+    unaffected by the `cwd` change above: `$0` is an argv string the launcher
+    pattern-matches, never a `PATH` entry a shell splits, and the fixed launcher
+    resolves `$script` from it directly rather than from the working directory
+    - checked directly for both `dash` and `bash` here, not assumed from the
+    `PATH` finding (`probe/mutations.py`).
 
     `sh` is usually the interpreter's own path, but may be a LIST - a binary
     found by bare name is not always a shell by itself. A `busybox` resolved
@@ -115,11 +142,11 @@ def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
     the same one a machine gets for free when `/bin/sh` IS that symlink.
     """
     env = dict(os.environ)
-    env["PATH"] = path_entry
+    env["PATH"] = "."
     argv = sh if isinstance(sh, list) else [sh]
     proc = subprocess.Popen(argv + [launcher.replace("\\", "/"), script, mode],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env=env)
+                            stderr=subprocess.PIPE, env=env, cwd=path_entry)
     out, err = proc.communicate(stdin.encode("utf-8"))
     return {"out": out.decode("utf-8", "replace"),
             "err": err.decode("utf-8", "replace"), "code": proc.returncode}
