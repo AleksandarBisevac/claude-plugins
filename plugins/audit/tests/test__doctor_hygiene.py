@@ -332,7 +332,7 @@ def _cases(check):
               % (_mine, _theirs),
               _mine and _mine == _theirs)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # --- check_worktrees: what was LEFT BEHIND --------------------------------
     # Driven through a REAL git repository, because the whole check is a question

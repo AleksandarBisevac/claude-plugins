@@ -28,7 +28,6 @@ import copy
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -292,7 +291,7 @@ def _cases(check):
                                             "audit-plan.json"))
               == os.path.join(idle_root, ".claude", "usage"))
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

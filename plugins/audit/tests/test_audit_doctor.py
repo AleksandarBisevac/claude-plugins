@@ -1421,9 +1421,9 @@ def _cases(check):
                       "FINDING" not in levels(rep_h, "hygiene"),
                       repr(levels(rep_h, "hygiene")))
             finally:
-                sh.rmtree(hyg, ignore_errors=True)
+                _harness.remove_tree(hyg)
     finally:
-        sh.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # --- the parser is reachable without running the command --------------------
     # audit-status.py and audit-usage.py already build theirs in a module-level

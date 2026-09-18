@@ -859,7 +859,7 @@ def _cases(check):
               "exits 0 over a plugin that is merely out of date",
               rep.counts()["FINDING"] == 0)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # --- check_task_restarts / check_gate_patterns: their own fresh project, --
     # --- so none of the sixty-odd cases above can leave a row behind that   --

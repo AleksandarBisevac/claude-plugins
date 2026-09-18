@@ -29,7 +29,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import copy
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -540,7 +539,7 @@ class Repos(object):
         return self.made[key]
 
     def close(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
+        _harness.remove_tree(self.tmp)
 
 
 def _phase_answer(fx, ledger_dir=None, mutate=None):
@@ -1152,8 +1151,15 @@ def _cases(check):
               ec["verdict"] == M.PARTIAL and ec["breaches"] == []
               and len(ec["gaps"]) == 1 and "not readable" in ec["gaps"][0])
 
+        # REMOVED WHERE IT IS MADE, because this root is a fixture of one case
+        # rather than of the block: it is asked one question and never touched
+        # again, so leaving it for a later sweep is how a directory outlives the
+        # case that explains it.
         nogit = _harness.fixture_root("audit-inv-nogit-")
-        empty, gap_lines = M._committed_run_ids(nogit, "docs/audit/evidence")
+        try:
+            empty, gap_lines = M._committed_run_ids(nogit, "docs/audit/evidence")
+        finally:
+            _harness.remove_tree(nogit)
         check("iv68 where git will not list the committed evidence directory, "
               "the answer is NO ROWS PLUS A GAP - never an empty set on its "
               "own. Silent emptiness would turn every pointer into a breach "

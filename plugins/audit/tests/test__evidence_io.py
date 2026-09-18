@@ -1687,7 +1687,7 @@ def _cases(check):
               and _mine.get("status") is None)
 
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # --- gate_tally / command_tally / gate_names_seen: pure, no fixture root ---
     # These fold ROWS a caller already has (from read_rows) into a count; no

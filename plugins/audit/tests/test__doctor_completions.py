@@ -379,7 +379,7 @@ def _cases(check):
                       _levels(rep, "completions") == ["OK"]
                       and "chained records" in _detail(rep, "completions"))
             finally:
-                shutil.rmtree(deep_tmp, ignore_errors=True)
+                _harness.remove_tree(deep_tmp)
 
             # THE OTHER DIRECTION, on the repo whose commit DOES carry the
             # journal: --deep has to stay silent and the all-clear has to
@@ -397,7 +397,7 @@ def _cases(check):
                   not in _detail(rep, "completions")
                   and "chained records" in _detail(rep, "completions"))
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
     # The spoken basis for an unchecked trail. Inside `_cases` on purpose -
     # written first as its own `_f88_cases(check)` beside the runner, which calls
     # `_cases` and nothing else, so both checks were dead and the tally never

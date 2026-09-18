@@ -164,8 +164,7 @@ def _cases(check):
               and json.load(open(mpath2))["phases"][0]["tasks"][0]["commit"]
               is None)
     finally:
-        import shutil
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

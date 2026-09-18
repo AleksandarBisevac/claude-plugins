@@ -2224,7 +2224,7 @@ def _cases(check):
             else:
                 os.environ[M.ENV_SESSION_VAR] = _sx_held
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

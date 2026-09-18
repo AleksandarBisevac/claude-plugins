@@ -612,8 +612,7 @@ def _cases(check):
               "failure mode this whole file is organised around" % _G,
               v == "allow" and why == "", repr((v, why)))
     finally:
-        import shutil
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

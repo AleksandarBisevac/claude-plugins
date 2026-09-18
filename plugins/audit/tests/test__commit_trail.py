@@ -296,8 +296,7 @@ def _cases(check):
                                        ("P2.1", "commit", "eee5")]
               and M.recorded(_shard) == [])
     finally:
-        import shutil
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

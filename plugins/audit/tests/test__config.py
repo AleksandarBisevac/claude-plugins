@@ -1259,7 +1259,7 @@ def _cases(check):
               "settles on, so it never needs to refuse",
               _ip4 is False)
     finally:
-        shutil.rmtree(str(wroot), ignore_errors=True)
+        _harness.remove_tree(str(wroot))
 
     # (i) ensure_local_dir: plugin-managed local dirs are self-ignoring --------
     # state/, logs/ and the ledger hold live tokens, person identities and
