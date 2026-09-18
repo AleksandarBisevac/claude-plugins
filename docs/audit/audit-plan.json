@@ -339,6 +339,12 @@
       "title": "Release 3.0.0 obligations",
       "status": "in_progress",
       "shard": "phases/P58.json"
+    },
+    {
+      "id": "P59",
+      "title": "3.0.1 - the platforms the release preflight could not see",
+      "status": "pending",
+      "shard": "phases/P59.json"
     }
   ],
   "fileIndex": {
@@ -357,7 +363,8 @@
       "P9.2",
       "P19.2",
       "P32.10",
-      "P51.1"
+      "P51.1",
+      "P59.2"
     ],
     ".gitignore": [
       "P4.4",
@@ -691,7 +698,9 @@
       "P47.1",
       "P55.4",
       "P56.4",
-      "P55.23"
+      "P55.23",
+      "P59.3",
+      "P59.5"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -735,7 +744,8 @@
       "P51.3",
       "P54.1",
       "P55.15",
-      "P55.16"
+      "P55.16",
+      "P59.3"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -759,7 +769,8 @@
     "plugins/audit/hooks/py-launch.sh": [
       "P1.2",
       "P2.1",
-      "P41.6"
+      "P41.6",
+      "P59.3"
     ],
     "plugins/audit/hooks/remind-tdd.py": [
       "P1.2",
@@ -786,7 +797,8 @@
       "P55.4",
       "P55.17",
       "P55.23",
-      "P58.2"
+      "P58.2",
+      "P59.5"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -891,7 +903,8 @@
       "P50.7",
       "P50.5",
       "P50.8",
-      "P50.9"
+      "P50.9",
+      "P59.1"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -966,7 +979,8 @@
       "P25.1",
       "P32.7",
       "P34.7",
-      "P51.9"
+      "P51.9",
+      "P59.5"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -1150,7 +1164,8 @@
       "P22.8",
       "P31.6",
       "P34.5",
-      "P47.3"
+      "P47.3",
+      "P59.5"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1158,7 +1173,8 @@
       "P21.3",
       "P34.5",
       "P36.10",
-      "P50.8"
+      "P50.8",
+      "P59.5"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1417,7 +1433,10 @@
       "P46.5",
       "P52.4",
       "P54.7",
-      "P56.2"
+      "P56.2",
+      "P59.3",
+      "P59.6",
+      "P59.8"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1437,7 +1456,10 @@
       "P46.4",
       "P46.5",
       "P53.3",
-      "P54.7"
+      "P54.7",
+      "P59.3",
+      "P59.6",
+      "P59.8"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1452,7 +1474,8 @@
       "P53.8",
       "P55.4",
       "P55.17",
-      "P55.23"
+      "P55.23",
+      "P59.7"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
@@ -1460,7 +1483,8 @@
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
-      "P29.5"
+      "P29.5",
+      "P59.7"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -1476,7 +1500,8 @@
       "P51.3",
       "P54.1",
       "P55.15",
-      "P55.16"
+      "P55.16",
+      "P59.3"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -1510,7 +1535,10 @@
       "P50.5",
       "P55.19",
       "P55.20",
-      "P55.21"
+      "P55.21",
+      "P59.3",
+      "P59.5",
+      "P59.6"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1538,7 +1566,9 @@
       "P49.4",
       "P55.19",
       "P55.20",
-      "P55.21"
+      "P55.21",
+      "P59.3",
+      "P59.6"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1620,7 +1650,8 @@
       "P50.4",
       "P53.2",
       "P57.1",
-      "P57.3"
+      "P57.3",
+      "P59.6"
     ],
     "plugins/audit/tests/test__refs.py": [
       "P23.1",
@@ -1693,7 +1724,8 @@
     ],
     "plugins/audit/tests/test__invariants.py": [
       "P28.2",
-      "P29.5"
+      "P29.5",
+      "P59.7"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -1812,7 +1844,8 @@
       "P50.5",
       "P50.8",
       "P50.9",
-      "P55.22"
+      "P55.22",
+      "P59.1"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1"
@@ -1844,7 +1877,8 @@
       "P33.2",
       "P34.1",
       "P46.6",
-      "P48.1"
+      "P48.1",
+      "P59.5"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -1880,7 +1914,8 @@
     "tools/check-example-ledgers.py": [
       "P32.10",
       "P50.3",
-      "P51.1"
+      "P51.1",
+      "P59.2"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1989,10 +2024,12 @@
       "P41.7",
       "P42.5",
       "P47.1",
-      "P56.4"
+      "P56.4",
+      "P59.5"
     ],
     "plugins/audit/tests/test_py_launch.py": [
-      "P41.6"
+      "P41.6",
+      "P59.3"
     ],
     "plugins/audit/tests/test_remind_tdd.py": [
       "P42.4"
@@ -2118,10 +2155,12 @@
       "P55.4"
     ],
     "tools/check-report-interactive.mjs": [
-      "P55.7"
+      "P55.7",
+      "P59.4"
     ],
     "plugins/audit/scripts/ui/report": [
-      "P55.7"
+      "P55.7",
+      "P59.4"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3"

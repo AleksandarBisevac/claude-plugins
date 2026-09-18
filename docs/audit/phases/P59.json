@@ -1,0 +1,383 @@
+{
+  "id": "P59",
+  "title": "3.0.1 - the platforms the release preflight could not see",
+  "status": "pending",
+  "description": "Everything CI found on windows and ubuntu that a macOS preflight in a full clone cannot reach, plus the field report that arrived alongside it.",
+  "desiredOutcome": "CI is green on every platform it runs, and the preflight says which platforms it did NOT cover rather than reading as complete.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P59.1",
+      "title": "The exemption row admits a generated path, and the case still catches a typo",
+      "status": "pending",
+      "description": "DONE MEANS: rc18 passes in a fresh checkout. The row I added to CITATION_SCAN_EXEMPT names the generated audit report, which is gitignored and absent until somebody renders it - and rc18 asserts every row names a file really in this tree. On the machine that added it the file existed; in CI it does not, so the release shipped with that case red on both platforms. The row itself is right and its reason is the point: without it the scan's answer moves with whether a report was rendered. The CASE is what has to widen - a path the repository declares as ignored is legitimately absent, and git can be asked that - while still failing a path that is simply a typo. Same question one layer down as the row itself: an answer that depends on something incidental.",
+      "files": [
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/scripts/_deps.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P59.2",
+      "title": "The ledger check answers in a shallow clone rather than refusing the run",
+      "status": "pending",
+      "description": "DONE MEANS: check-example-ledgers.py is green in CI's clone. Until this release every task in the shipped example carried a null commit, so the commit half had nothing to resolve and the question never arose. Giving the example a commit that resolves was the right repair for the assertions that never ran - and it made this check refuse in CI, because the runner clones shallow and the object is not there. The refusal is correct behaviour and must not become a silent pass: a truncated clone cannot answer, and saying so is the design. So the repair is one of - the workflow fetches enough history for the commits the examples name, or the check learns to say COULD-NOT-LOOK for an object a shallow clone lacks while still failing an object a full clone would refuse. Establish which, and say why the other was not chosen.",
+      "files": [
+        "tools/check-example-ledgers.py",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P59.3",
+      "title": "The hooks and their fixtures answer the same on a platform whose separator is not a slash",
+      "status": "pending",
+      "description": "DONE MEANS: the windows job's selftest sweep is green. The failures cluster and most of them are from work that landed in the last two days. s16 shows the shape plainly: following a cd inside a multi-line command produced a path with the drive letter and separators eaten, so a join concatenated where it should have replaced. s14b reports the guard falling open because git could not be asked. sm17 lets a shard named by an absolute path through where it must be refused. The worktree-naming cases report the wrong root or the wrong silence. pl1 and pl2 are the launcher: the payload or the status does not survive the shell the runner uses there. rk5 is the retry seam asked about a signal death that platform does not deliver the same way. Read each failure before grouping them - some of these are one cause wearing several faces and some are genuinely separate, and treating them as one list is how a repair lands on the loudest and leaves the rest. THE ORCHESTRATOR CANNOT DRIVE THIS PLATFORM, so every claim has to be provable from the code path rather than from a run, and what cannot be established that way is to be named as could-not-prove rather than asserted.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/hooks/py-launch.sh",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_py_launch.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P59.4",
+      "title": "A filter that narrows the list on one platform narrows it on the other",
+      "status": "pending",
+      "description": "DONE MEANS: the interactive report check is green on the platform CI runs it on. It reports that filtering by a letter narrowed the list to the same count it started from - the filter ran and nothing was removed - against a report rendered from a one-status fixture, and the same interaction passes on the machine the release was prepared on. So this is either a fixture whose rows all match that filter on that platform, or an interaction that depends on something the two platforms render differently. Establish WHICH before changing anything: a filter that is correct with a fixture that cannot show it, and a filter that does not work, are different defects with different repairs - and the check's own vacuity guard is the thing that should have caught the first.",
+      "files": [
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/scripts/ui/report"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P59.5",
+      "title": "A merged phase stops winning the running-plan search, and the close says what it left open",
+      "status": "pending",
+      "description": "DONE MEANS: a phase that has merged stops being read as the running phase, and the close prints what it left open where the reader is looking. DRIVEN: the close writes the merge stamp and no status, and the reader that resolves the running phase returns the first phase that says it is running without ever asking about the stamp. TWO CORRECTIONS TO THE REPORT, BOTH MATTERING. Coverage does not go through that reader - it unions every running task across every phase - so with the stale phase in place a file in a genuinely running task of a later phase was ALLOWED. The stale phase cost the diagnosis, not the verdict. But there is a verdict consequence nobody named: with no genuinely running phase the tier resolves to its strictest reading rather than the advisory one, for ever, so a merged-but-open phase holds a whole project in the denying tier. IT IS A CLASS - four other readers resolve the running phase the same stale way: the verb that refuses to add a task without a phase, the status gate's fail-on condition, the resume procedure, and the rendered report, which prints a merge stamp beside a phase it calls in progress. AND THE OBVIOUS REPAIR COLLIDES WITH A RECORDED DECISION: the worktree cleanup treats a done status as an INPUT it verifies before removing a worktree or deleting a branch, and the close feeds it, so writing the status there would make the cleanup gate satisfy its own first precondition - a case pins that today. Reading the stamp where the running phase is resolved needs no new plumbing, because the stamp is already in scope there. Whichever is taken, say why the other was not. AND THE CLOSE ALREADY KNEW: it printed that the phase is not done and sign-off has not passed, two lines above the stamp, under a cleanup heading, below a merge that reported success. Put the fact where the reader is looking.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__config.py: a phase carrying a merge stamp is not the running phase, and a project whose only running phase is merged does not sit in the denying tier"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P59.6",
+      "title": "A line-range suffix is stripped everywhere a path is built from a files entry",
+      "status": "pending",
+      "description": "DONE MEANS: every site that turns a files entry into a filesystem path strips the line-range suffix the schema documents. The schema says a files entry may carry an optional line-range suffix, and every other consumer strips it before building a path. THREE DO NOT, found by sweeping every consumer rather than by reading the two that were reported. The two verbs that stat a declared path pass the raw entry, so a schema-legal declaration of a file that EXISTS is reported as nothing on disk - inside the very advisory an operator is being asked to trust, which is worse than not having the advisory. The test gate passes the raw entry into its coverage set, so a line-scoped declaration silently stops counting as exercised and a green gate under-reports what it touched. And one more in the other direction: a moved-file check filters on a file extension, so a suffixed entry is silently excluded from it - an under-count rather than a false positive, and worth its own sentence rather than being folded in. The strip already exists in several places under different names; use one rather than adding a fourth.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a files entry carrying a line-range suffix that names a file on disk draws no not-on-disk note, and one that names nothing still does"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P59.7",
+      "title": "The clause that makes the refusal work is pinned, and the breach count names what it counts",
+      "status": "pending",
+      "description": "DONE MEANS: two sentences that carry weight are held by cases rather than by luck. FIRST, THE PRAISE THAT TURNED INTO A FINDING. An operator reports that this gate blocked executors nine times across three phases, that every block was correct, that six surfaced genuinely under-scoped work, and that not one executor tried to route around it - and attributes that to the refusal naming three wrong moves and saying all three have actually happened. Every fragment of that refusal was swept against the suites: the subagent header, the three moves and the no-re-spawn clause each have a case; the clause saying they happened has none, and neither do three others. A rewording would pass every gate, and there is no second copy anywhere - the message never reaches the events feed, so no committed image holds a duplicate that would redden. Pin what earns its place, and no more than that: a pin per word would make the text unrewordable, which is a different defect. SECOND, A NUMBER THAT IS NEITHER OF THE THINGS ITS NOUN NAMES. The deferred-pairing breach increments inside a loop over findings nested inside a loop over commits, while the crossref emits one finding per task-and-file pair - so the figure printed is commits multiplied by unpaired rows. It reads as a backlog of distinct problems when it is one edit repeated. The only pin asserts the phrase is present and never its value. Print the quantity the noun names, and let a case read it.",
+      "files": [
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: the subagent refusal still says the three wrong moves have actually happened, and test__invariants.py: the deferred-pairing line names the quantity it prints"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P59.8",
+      "title": "The coverage line reports what the run did NOT touch",
+      "status": "pending",
+      "description": "DONE MEANS: the recorded run reports the declared files it did NOT touch, beside the ones it did. An operator says this line is the only place connecting a green gate to the files a phase claimed, and that the complement is the interesting half - a green gate that exercised a subset is the thing you want to see. The complement is computed nowhere today, but both sets are live in the same frame where the intersection is built, so it belongs THERE rather than at the print site, which only receives the result. Their second ask is already answered and should not be built twice: the count is printed. What they actually want is the LIST truncated, and the helper for that is already in use two statements above. An empty complement is its own sentence - every declared file was touched is a different fact from nothing was declared, and a reader must not have to tell those apart from a blank.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: the recorded coverage names the declared files the run never touched, and says so distinctly when there are none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
