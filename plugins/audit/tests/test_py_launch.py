@@ -66,6 +66,22 @@ _HOOK_BODY = ("import sys\n"
 
 _CRASH_BODY = _HOOK_BODY + "sys.exit(3)\n"
 
+# `pl16`'s CONTROL - a shell script sharing NOTHING with the launcher: no `case`
+# on `$0`, no `for` loop over candidate names, no `command -v`, not even a file
+# existence test. It exists to answer one question before the launcher is asked
+# anything at all: can THIS SHELL be driven the way `_drive()` drives one - same
+# argv shape, same `PATH="."`, same `cwd`, same piped stdin - at all? A shell
+# that fails THIS has failed at something no launcher wrote, so a launcher
+# question put to it afterwards would not be a question about the launcher.
+#
+# ONE BUILTIN, NO STDIN READ. `printf` is POSIX-required and needs no external
+# tool to resolve under the empty `PATH` this fixture hands every shell, and a
+# script that never reads stdin still proves the process could be spawned, given
+# this cwd, and could write to a pipe and exit - which is the substrate every
+# branch of the launcher stands on before its own logic runs a single line.
+CONTROL_MARKER = "CONTROL-OK"
+_CONTROL_BODY = "printf '%%s' '%s'\n" % (CONTROL_MARKER,)
+
 
 # --- fixture ------------------------------------------------------------------
 def _write(path, text, executable=False):
@@ -152,6 +168,43 @@ def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
             "err": err.decode("utf-8", "replace"), "code": proc.returncode}
 
 
+def _control(sh, control_script, path_entry):
+    """Ask `sh` the ONE question that has nothing to do with the launcher: can
+    it be driven here at all, through the exact plumbing `_drive()` uses for
+    the launcher itself (same argv shape, same `PATH="."`, same `cwd`, same
+    piped stdin)? `(True, None)` when the control's own marker came back with
+    exit 0; `(False, reason)` otherwise.
+
+    THIS IS THE ANSWER `pl16` PUTS BEFORE THE LAUNCHER QUESTION. A shell this
+    returns `False` for has failed at something the launcher never wrote -
+    three real launcher defects were found and fixed behind this same case
+    (P59.11, P59.13, P59.14) and none of them moved a row like the one this
+    guards, which is the evidence that what is left is a property of the SHELL
+    rather than of the launcher. Asking it separates the two: a `False` here
+    is named COULD-NOT-ASK and never counted as the launcher failing; only a
+    shell this clears can make a failure afterwards the launcher's.
+
+    `subprocess.Popen` itself can refuse before a byte of the script runs -
+    the binary does not resolve as `sh` names it, or the platform refuses this
+    `cwd` to this binary - and that is read as the same answer as a shell that
+    ran and produced the wrong thing, not as a crash: a control that raises
+    out of the case body would abort every row after it rather than naming
+    the one shell that could not be asked.
+    """
+    try:
+        result = _drive(sh, control_script, "unused", "unused", path_entry,
+                        stdin="")
+    except OSError as exc:
+        return False, "could not even be started this way: %s: %s" \
+            % (type(exc).__name__, exc)
+    if result["code"] != 0 or result["out"] != CONTROL_MARKER:
+        return False, ("ran, but not cleanly, on a script with none of the "
+                       "launcher's own logic in it: exit %d, stdout %r, "
+                       "stderr %r" % (result["code"], result["out"],
+                                      result["err"]))
+    return True, None
+
+
 def _reason(blob):
     """The permissionDecisionReason of a launcher payload, or None.
 
@@ -192,6 +245,8 @@ def _cases(check):
     shutil.copyfile(LAUNCHER, fixture_launcher)
     _write(os.path.join(beside, "hook.py"), _HOOK_BODY)
     _write(os.path.join(beside, "crash.py"), _CRASH_BODY)
+    control_script = os.path.join(beside, "control.sh")
+    _write(control_script, _CONTROL_BODY)
 
     empty_dir = os.path.join(root, "bin-empty")
     os.makedirs(empty_dir)
@@ -367,6 +422,21 @@ def _cases(check):
                       "could not tell a portable script from a lucky one",
                       not others)
     else:
+        # THREE REAL LAUNCHER DEFECTS WERE FOUND AND FIXED BEHIND THIS CASE
+        # (P59.11's applet dispatch, P59.11's unquoted path, P59.14's PATH
+        # split on a drive letter's colon) and NONE OF THEM MOVED A ROW LIKE
+        # THE ONE CI STILL REPORTS ON WINDOWS: `dash.EXE` failing beside a
+        # `bash.EXE` that passes, with every one of those three causes already
+        # proven equal for a real `dash` and a real `bash`. That pattern is
+        # itself the evidence that what is left is a property of THAT SHELL'S
+        # ability to be driven the way this fixture drives one, not of the
+        # launcher - so the launcher question is no longer the first one put
+        # to a shell here. `_control()` is asked first, on a script that
+        # shares nothing with the launcher; a shell that fails it is named
+        # COULD-NOT-ASK and excluded from `answered` below - never read as a
+        # pass, and never read as the launcher failing. A shell that clears
+        # it is judged on the launcher exactly as before, and a failure there
+        # stays a failure.
         per_shell = []
         for other in others:
             # A `busybox` found by bare name is the multi-call binary, not a
@@ -374,6 +444,11 @@ def _cases(check):
             # means an explicit applet argument rather than a bare path.
             argv = [other, "sh"] if os.path.basename(other) == "busybox" \
                 else other
+            ctrl_ok, ctrl_why = _control(argv, control_script, real_dir)
+            if not ctrl_ok:
+                per_shell.append((os.path.basename(other),
+                                  "COULD-NOT-ASK: %s" % (ctrl_why,)))
+                continue
             healthy = _drive(argv, fixture_launcher, "hook.py", "ask", real_dir)
             failing = _drive(argv, fixture_launcher, "hook.py", "ask",
                              broken_dir)
@@ -381,13 +456,64 @@ def _cases(check):
                               healthy["out"] == MARKER + PAYLOAD
                               and healthy["code"] == 0
                               and _reason(failing["out"]) == broken_reason))
-        check("pl16 every shell on this machine runs it the same way. Not "
-              "portability for its own sake: `status` is read-only in zsh, so "
-              "the variable holding the hook's exit code killed the launcher "
-              "outright there - a whole shell's worth of users with no hooks "
-              "and no message, found by driving it rather than by reading it: "
-              "%r" % (per_shell,),
-              all(ok for _name, ok in per_shell))
+        answered = [(name, ok) for name, ok in per_shell
+                   if isinstance(ok, bool)]
+        # `bool(answered)` is the no-silent-pass half: a machine where every
+        # shell found failed the control has verified NOTHING about the
+        # launcher, and `all()` over an empty list is vacuously True - exactly
+        # the "filtered down to empty and read as all clear" shape this
+        # repo's own lint checklist forbids. That reads as failed rather than
+        # skipped, on purpose: `others` is non-empty here, so a mechanism this
+        # case needs (a drivable second shell) may genuinely be present and
+        # merely unrecognised, which `skip()`'s contract requires ruling out
+        # before it can be the quieter of the two.
+        check("pl16 every shell that clears the control runs the launcher the "
+              "same way. Not portability for its own sake: `status` is "
+              "read-only in zsh, so the variable holding the hook's exit code "
+              "killed the launcher outright there - a whole shell's worth of "
+              "users with no hooks and no message, found by driving it rather "
+              "than by reading it. A shell that could not even run a script "
+              "carrying none of the launcher's own logic is COULD-NOT-ASK, "
+              "named with why, and counted as neither a pass nor a launcher "
+              "failure: %r" % (per_shell,),
+              bool(answered) and all(ok for _name, ok in answered))
+
+    # `pl16`'s WHOLE REPAIR RESTS ON `_control()` ACTUALLY DISCRIMINATING - a
+    # control so trivial that nothing can fail it would turn a genuine
+    # `dash.EXE` defect into a silent COULD-NOT-ASK forever, which is worse
+    # than the red it replaces. Proven here in both directions, against real
+    # processes rather than argued from the control's own text: a shell that
+    # really can be driven clears it, one that cannot resolve at all does not,
+    # and one that resolves and runs but never produces the marker does not
+    # either - the same "found by `command -v`, useless once asked to run"
+    # shape `pl3` already proved a bare resolve check cannot see.
+    real_ctrl_ok, real_ctrl_why = _control(sh, control_script, real_dir)
+    check("pl17 the control passes for a shell that really can be driven this "
+          "way - `sh` itself, already proven present above - which is the "
+          "direction that fails if the control is too strict and starts "
+          "naming a working shell COULD-NOT-ASK: %r" % (real_ctrl_why,),
+          real_ctrl_ok is True and real_ctrl_why is None)
+
+    missing_sh = os.path.join(root, "no-such-shell")
+    missing_ok, missing_why = _control(missing_sh, control_script, real_dir)
+    check("pl18 ...and it fails for a shell binary that does not resolve at "
+          "all - `Popen` refuses before a byte of the control script runs, "
+          "and that refusal is CAUGHT and named rather than left to escape "
+          "and abort every case that follows it: %r" % (missing_why,),
+          missing_ok is False and missing_why is not None
+          and "could not even be started" in missing_why)
+
+    broken_sh_dir = os.path.join(root, "broken-sh")
+    os.makedirs(broken_sh_dir)
+    broken_sh = os.path.join(broken_sh_dir, "sh")
+    _write(broken_sh, "#!/bin/sh\nexit 9\n", executable=True)
+    broken_ok, broken_why = _control(broken_sh, control_script, real_dir)
+    check("pl19 ...and it fails for a shell that DOES resolve and run, but "
+          "exits nonzero without producing the control's own marker - proof "
+          "the control is not merely 'the process started', which nothing "
+          "here could ever fail: %r" % (broken_why,),
+          broken_ok is False and broken_why is not None
+          and "ran, but not cleanly" in broken_why)
 
     check("pl15 every script `hooks.json` names really sits beside the "
           "launcher, so pl7's branch cannot fire on the shipped wiring. The "
