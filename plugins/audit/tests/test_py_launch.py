@@ -503,12 +503,16 @@ def _cases(check):
           missing_ok is False and missing_why is not None
           and "could not even be started" in missing_why)
 
-    broken_sh_dir = os.path.join(root, "broken-sh")
-    os.makedirs(broken_sh_dir)
-    broken_sh = os.path.join(broken_sh_dir, "sh")
-    _write(broken_sh, "#!/bin/sh\nexit 9\n", executable=True)
-    broken_ok, broken_why = _control(broken_sh, control_script, real_dir)
-    check("pl19 ...and it fails for a shell that DOES resolve and run, but "
+    # THE STAND-IN IS A REAL EXECUTABLE, and that is the whole point of this
+    # row. A shell script with a `#!` line is a real program only where the
+    # kernel reads that line; a platform that does not will refuse to START it,
+    # which is `pl18`'s answer rather than this one's - and the two rows would
+    # then be asking the same question while claiming to ask two. The
+    # interpreter running this suite resolves and runs anywhere the suite does,
+    # and it exits nonzero on a script it cannot find, so it is the one stand-in
+    # that is "runs, but says nothing useful" on every platform.
+    broken_ok, broken_why = _control(sys.executable, control_script, real_dir)
+    check("pl19 ...and it fails for a program that DOES resolve and run, but "
           "exits nonzero without producing the control's own marker - proof "
           "the control is not merely 'the process started', which nothing "
           "here could ever fail: %r" % (broken_why,),
