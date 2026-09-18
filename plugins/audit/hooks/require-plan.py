@@ -108,6 +108,16 @@ import _config  # noqa: E402
 # change with how loudly it is allowed to say it. Only this hook's own events are
 # here - `bypass.armed` is written one file over and published there.
 #
+# A REFUSAL WITH NO ROW IS OUT OF SCOPE BY THE SAME RULE, NOT AN EXCEPTION TO IT.
+# `_CANNOT_PLACE` (jurisdiction - a target this process cannot even ask git about)
+# and `_SUBAGENT_MANIFEST` (authority - a subagent reaching for the plan) each
+# `block` straight out of `decide()` without ever calling `append_gate_event`: the
+# edit is refused before there is a row to paint, so neither reaches the events
+# feed, the panel's gate card, or the screenshot fixture that reads this table.
+# This table publishes what gets painted; a refusal nothing paints belongs to the
+# permission-decision message alone, and adding it here would be a wording this
+# hook can never produce as a row - the over-fire half of the same floor below.
+#
 # `plugins/audit/tests/test_require_plan.py` holds the floor in both directions,
 # as cases rather than as this paragraph: a sentence this hook writes that the
 # table does not carry, and a table entry this hook cannot produce, each turn it

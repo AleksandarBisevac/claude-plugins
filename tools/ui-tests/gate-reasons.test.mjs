@@ -45,33 +45,42 @@ const captureFlat = captureSrc.replace(/\n\s*\*?\s*/g, ' ').replace(/\s+/g, ' ')
 
 /**
  * The rows this fixture seeds from `require-plan.py`, as the capture asks for
- * them. The MAGNITUDES are the fixture's own and are the only thing here that is
- * not read from the product.
+ * them. The MAGNITUDES and the FILE NAME are the fixture's own and are the only
+ * things here that are not read from the product. `warn` and `deny` share a
+ * two-armed reason — one wording grading a magnitude, one naming the file a
+ * session's free slot went to — and which arm a row means is decided by what is
+ * supplied: whole numbers pick the magnitude wording, text picks the other.
+ * Seeding a tier with neither asks for an arm nothing publishes, which is
+ * `gateReason`'s own refusal to guess, not a case this fixture can ask for.
  *
  * The bar they are graded against is not one of them (F171). It is
  * `trivialLineThreshold`'s default, which has one home; typed here it would be a
  * second copy in the suite that exists to stop the first one — the same fault
  * this file was written against, wearing a test.
- * @type {Array<[string, Array<number>]>}
+ * @type {Array<[string, Array<number|string>]>}
  */
 const BAR = trivialLineDefault();
+const FILE = 'src/mobile/mod07_01.ts';
 const SEEDED = [
   ['observe', [96, BAR]],
   ['allow.trivial', [41]],
-  ['warn', []],
+  ['warn', [FILE]],
   ['deny', [214, BAR]],
   ['bypass.consumed', []],
 ];
 
 /**
- * Put the `%d`s back, so a filled sentence can be asked of the writer's source.
+ * Put the conversions back, so a filled sentence can be asked of the writer's
+ * source. Each value is undone as the conversion it was FILLED FROM — a number
+ * back to `%d`, text back to `%s` — because `gateReason` fills either kind and a
+ * template that mixed them up would still contain the wrong bytes.
  *
  * Each value is undone ONCE, leftmost first, which is the order `gateReason` fills
  * them in. The count is returned alongside rather than trusted: a sentence that
  * never carried the value would come back unchanged and every assertion built on
  * it would then be about a string neither side produced.
  * @param {string} filled - what `gateReason` returned
- * @param {Array<number>} values - the numbers it was given, in order
+ * @param {Array<number|string>} values - what it was given, in order
  * @returns {{template: string, undone: number}}
  */
 function unfill(filled, values) {
@@ -80,7 +89,8 @@ function unfill(filled, values) {
     const at = text.indexOf(String(value));
     if (at < 0) return text;
     undone += 1;
-    return text.slice(0, at) + '%d' + text.slice(at + String(value).length);
+    const conv = typeof value === 'number' ? '%d' : '%s';
+    return text.slice(0, at) + conv + text.slice(at + String(value).length);
   }, filled);
   return { template, undone };
 }
@@ -96,7 +106,7 @@ describe('every seeded gate reason is require-plan.py\'s own sentence', () => {
       // with the fixture's numbers baked into it.
       expect(undone, `${filled} does not carry ${JSON.stringify(values)}`)
         .toBe(values.length);
-      expect(template.split('%d').length - 1).toBe(values.length);
+      expect((template.match(/%[sd]/g) || []).length).toBe(values.length);
       // The claim, and the reason nothing here spells a sentence: whatever
       // `gateReason` said, the hook has to own those bytes.
       expect(writerSrc, `require-plan.py does not contain ${JSON.stringify(template)}`)
@@ -134,30 +144,36 @@ describe('gateReason refuses rather than inventing a sentence', () => {
   // is removed — and the last one in this block is the pair to them, failing
   // instead if the throwing became unconditional.
   it('throws on an event the hook writes no reason for', () => {
-    expect(() => gateReason('bypass.armed')).toThrow(/writes no reason/);
+    expect(() => gateReason('bypass.armed')).toThrow(/publishes no reason/);
   });
 
-  it('throws when no arm of the reason takes the numbers given', () => {
-    // `reason` in `decide()` is one of two sentences, and the count of values is
-    // the only thing that says which. Asking for a count neither arm takes is
-    // the shape a rewording would produce, and guessing at it is what would put
-    // a sentence nobody writes into a committed PNG.
-    expect(() => gateReason('warn', 5)).toThrow(/needs exactly one/);
+  it('throws when no arm of the reason takes the values given', () => {
+    // `reason` in `decide()` is one of two sentences, and how many conversions a
+    // caller fills is the only thing that says which — a `%s` counts exactly as
+    // much as a `%d` here, so a NUMERIC count of zero is not a request for the
+    // wording that happens to take no numbers, it is a request neither wording
+    // answers: the file-name arm still takes one value, just not a `%d` one.
+    // Asking for a count neither arm takes is the shape a rewording would
+    // produce, and guessing at it is what would put a sentence nobody writes
+    // into a committed PNG.
+    expect(() => gateReason('warn')).toThrow(/needs exactly one/);
     expect(() => gateReason('allow.trivial')).toThrow(/needs exactly one/);
   });
 
   it('but takes either arm when the hook really writes either', () => {
-    // The boundary, and it is not a refusal. `deny` is reached down both arms of
-    // that choice, so asking for it with no numbers is a legitimate request for
-    // the other sentence — the first draft of the case above expected a throw
-    // here and was wrong about the hook, not about the code. A derivation that
-    // refused this would be narrower than the writer it derives from.
-    expect(gateReason('deny')).toBe(gateReason('warn'));
-    expect(gateReason('deny', 214, 80)).not.toBe(gateReason('deny'));
+    // The boundary, and it is not a refusal. `deny` and `warn` are reached down
+    // BOTH arms of the same choice — `_slot_reason` for a second uncovered file,
+    // `REASON_MAGNITUDE` for the first one over the trivial-change bar — so the
+    // same values fill the same sentence regardless of which of the two events
+    // asks for it, and a single event answers to either arm depending on what is
+    // supplied. A derivation that could only ever fill one arm for a given event
+    // would be narrower than the writer it derives from.
+    expect(gateReason('deny', FILE)).toBe(gateReason('warn', FILE));
+    expect(gateReason('deny', 214, 80)).not.toBe(gateReason('deny', FILE));
   });
 
   it('throws on a value a %d cannot print', () => {
-    expect(() => gateReason('allow.trivial', 4.5)).toThrow(/whole numbers/);
+    expect(() => gateReason('allow.trivial', 4.5)).toThrow(/whole number/);
   });
 
   it('and refuses nothing the capture actually asks of it', () => {
@@ -234,14 +250,14 @@ describe('the seeded gate feed has no reason typed into it', () => {
       .toBeTruthy();
     expect(BAR).toBe(Number(m[1]));
     // ...and the fixture reaches for it rather than spelling it. Searched in the
-    // `nums` ARRAYS alone, which are the only place this fixture writes a number.
+    // `fills` ARRAYS alone, which are the only place this fixture writes a number.
     // Over the whole block it was a false red waiting for a config change: the
     // seeded timestamps carry two-digit fields, so a threshold of 40 matches
     // inside `09:40:31Z` and 12, 21 and 24 match likewise — all of them ordinary
     // values for a line count. A needle that fires on the fixture's clock is not
     // a needle about the fixture's numbers.
     expect(block.indexOf('trivialLineDefault()'), block).toBeGreaterThan(-1);
-    const nums = [...block.matchAll(/nums: \[([^\]]*)\]/g)].map((m) => m[1]);
+    const nums = [...block.matchAll(/fills: \[([^\]]*)\]/g)].map((m) => m[1]);
     expect(nums.length, block).toBe(SEEDED.length);
     const numsText = nums.join(' | ');
     expect(numsText.indexOf('BAR'),
