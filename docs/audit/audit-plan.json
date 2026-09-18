@@ -700,7 +700,8 @@
       "P56.4",
       "P55.23",
       "P59.3",
-      "P59.5"
+      "P59.5",
+      "P59.10"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1032,7 +1033,8 @@
       "P46.6",
       "P48.1",
       "P57.2",
-      "P57.4"
+      "P57.4",
+      "P59.10"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -1060,7 +1062,8 @@
     "plugins/audit/scripts/manifest/migrate-manifest.py": [
       "P10.3",
       "P15.4",
-      "P50.6"
+      "P50.6",
+      "P59.10"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -1702,7 +1705,8 @@
       "P33.2",
       "P46.6",
       "P57.2",
-      "P57.4"
+      "P57.4",
+      "P59.10"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2115,7 +2119,8 @@
       "P57.3"
     ],
     "plugins/audit/tests/test_migrate_manifest.py": [
-      "P50.6"
+      "P50.6",
+      "P59.10"
     ],
     "tools/check-committed-pii.py": [
       "P51.4"
@@ -2193,6 +2198,12 @@
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
+    ],
+    "plugins/audit/scripts/panel/_panel_policy.py": [
+      "P59.10"
+    ],
+    "plugins/audit/tests/test__panel_policy.py": [
+      "P59.10"
     ]
   },
   "bugs": [

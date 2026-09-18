@@ -184,7 +184,7 @@
     {
       "id": "P59.4",
       "title": "A filter that narrows the list on one platform narrows it on the other",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the interactive report check is green on the platform CI runs it on. It reports that filtering by a letter narrowed the list to the same count it started from - the filter ran and nothing was removed - against a report rendered from a one-status fixture, and the same interaction passes on the machine the release was prepared on. So this is either a fixture whose rows all match that filter on that platform, or an interaction that depends on something the two platforms render differently. Establish WHICH before changing anything: a filter that is correct with a fixture that cannot show it, and a filter that does not work, are different defects with different repairs - and the check's own vacuity guard is the thing that should have caught the first.",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -211,21 +211,29 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e4b476f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The interactive check tests each candidate word from the phase title against every row before adopting it as a filter term, and names the word it rejected in the note it prints.",
+        "descriptive": "A filter term that cannot narrow anything is rejected before the check trusts it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T09:07:34Z",
+      "completedAt": "2026-09-18T09:07:35Z",
+      "verifiedBy": [
+        "probe row C",
+        "and the check driven against this plan and the three committed reports"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e4b476f",
+        "at": "2026-09-18T09:07:35Z"
+      }
     },
     {
       "id": "P59.5",
       "title": "A merged phase stops winning the running-plan search, and the close says what it left open",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: a phase that has merged stops being read as the running phase, and the close prints what it left open where the reader is looking. DRIVEN: the close writes the merge stamp and no status, and the reader that resolves the running phase returns the first phase that says it is running without ever asking about the stamp. TWO CORRECTIONS TO THE REPORT, BOTH MATTERING. Coverage does not go through that reader - it unions every running task across every phase - so with the stale phase in place a file in a genuinely running task of a later phase was ALLOWED. The stale phase cost the diagnosis, not the verdict. But there is a verdict consequence nobody named: with no genuinely running phase the tier resolves to its strictest reading rather than the advisory one, for ever, so a merged-but-open phase holds a whole project in the denying tier. IT IS A CLASS - four other readers resolve the running phase the same stale way: the verb that refuses to add a task without a phase, the status gate's fail-on condition, the resume procedure, and the rendered report, which prints a merge stamp beside a phase it calls in progress. AND THE OBVIOUS REPAIR COLLIDES WITH A RECORDED DECISION: the worktree cleanup treats a done status as an INPUT it verifies before removing a worktree or deleting a branch, and the close feeds it, so writing the status there would make the cleanup gate satisfy its own first precondition - a case pins that today. Reading the stamp where the running phase is resolved needs no new plumbing, because the stamp is already in scope there. Whichever is taken, say why the other was not. AND THE CLOSE ALREADY KNEW: it printed that the phase is not done and sign-off has not passed, two lines above the stamp, under a cleanup heading, below a merge that reported success. Put the fact where the reader is looking.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -260,21 +268,29 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5cff0da",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "manifest_state and every named reader exclude a phase carrying mergedAt from the running-phase search and surface it as staleClosedPhase, which the doctor prints; the report names the contradiction instead of printing a stamp beside an in-progress chip.",
+        "descriptive": "A phase that merged stops being read as the one that is running, and the reader is told which phase is stale."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T12:08:11Z",
+      "completedAt": "2026-09-18T12:08:11Z",
+      "verifiedBy": [
+        "the five probe rows",
+        "and the tier driven with and without a real running phase"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5cff0da",
+        "at": "2026-09-18T12:08:11Z"
+      }
     },
     {
       "id": "P59.6",
       "title": "A line-range suffix is stripped everywhere a path is built from a files entry",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: every site that turns a files entry into a filesystem path strips the line-range suffix the schema documents. The schema says a files entry may carry an optional line-range suffix, and every other consumer strips it before building a path. THREE DO NOT, found by sweeping every consumer rather than by reading the two that were reported. The two verbs that stat a declared path pass the raw entry, so a schema-legal declaration of a file that EXISTS is reported as nothing on disk - inside the very advisory an operator is being asked to trust, which is worse than not having the advisory. The test gate passes the raw entry into its coverage set, so a line-scoped declaration silently stops counting as exercised and a green gate under-reports what it touched. And one more in the other direction: a moved-file check filters on a file extension, so a suffixed entry is silently excluded from it - an under-count rather than a false positive, and worth its own sentence rather than being folded in. The strip already exists in several places under different names; use one rather than adding a fourth.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -306,21 +322,29 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "355a839",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The two verbs that stat a declared path and the gate's coverage match all strip the line-range suffix through the one helper named for it; the moved-file filter is left with a comment naming the layer rule that forbids importing it there.",
+        "descriptive": "A declared file carrying a line range becomes the same path everywhere a path is built from it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T12:14:34Z",
+      "completedAt": "2026-09-18T12:14:35Z",
+      "verifiedBy": [
+        "the six probe rows",
+        "and the coverage match driven directly"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "355a839",
+        "at": "2026-09-18T12:14:35Z"
+      }
     },
     {
       "id": "P59.7",
       "title": "The clause that makes the refusal work is pinned, and the breach count names what it counts",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: two sentences that carry weight are held by cases rather than by luck. FIRST, THE PRAISE THAT TURNED INTO A FINDING. An operator reports that this gate blocked executors nine times across three phases, that every block was correct, that six surfaced genuinely under-scoped work, and that not one executor tried to route around it - and attributes that to the refusal naming three wrong moves and saying all three have actually happened. Every fragment of that refusal was swept against the suites: the subagent header, the three moves and the no-re-spawn clause each have a case; the clause saying they happened has none, and neither do three others. A rewording would pass every gate, and there is no second copy anywhere - the message never reaches the events feed, so no committed image holds a duplicate that would redden. Pin what earns its place, and no more than that: a pin per word would make the text unrewordable, which is a different defect. SECOND, A NUMBER THAT IS NEITHER OF THE THINGS ITS NOUN NAMES. The deferred-pairing breach increments inside a loop over findings nested inside a loop over commits, while the crossref emits one finding per task-and-file pair - so the figure printed is commits multiplied by unpaired rows. It reads as a backlog of distinct problems when it is one edit repeated. The only pin asserts the phrase is present and never its value. Print the quantity the noun names, and let a case read it.",
       "files": [
         "plugins/audit/tests/test_require_plan.py",
@@ -350,21 +374,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e4b476f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "manifest_revalidated counts commits once per commit and reports the current unpaired-row count beside it, both named; test_require_plan gained a case pinning the clause that says the three wrong moves have happened.",
+        "descriptive": "The breach counts what its noun names, and the one empirical sentence in the refusal is held by a case."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T09:07:34Z",
+      "completedAt": "2026-09-18T09:07:35Z",
+      "verifiedBy": [
+        "probe rows A and B"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e4b476f",
+        "at": "2026-09-18T09:07:35Z"
+      }
     },
     {
       "id": "P59.8",
       "title": "The coverage line reports what the run did NOT touch",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the recorded run reports the declared files it did NOT touch, beside the ones it did. An operator says this line is the only place connecting a green gate to the files a phase claimed, and that the complement is the interesting half - a green gate that exercised a subset is the thing you want to see. The complement is computed nowhere today, but both sets are live in the same frame where the intersection is built, so it belongs THERE rather than at the print site, which only receives the result. Their second ask is already answered and should not be built twice: the count is printed. What they actually want is the LIST truncated, and the helper for that is already in use two statements above. An empty complement is its own sentence - every declared file was touched is a different fact from nothing was declared, and a reader must not have to tell those apart from a blank.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -393,21 +424,30 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6f15706",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "coverage() builds the declared-minus-named set in the frame that already holds both and folds it into the basis every surface already reads; the empty complement carries its own sentence, distinct from the no-files-declared path, and the list truncates through the helper the neighbouring clause uses.",
+        "descriptive": "The coverage line reports the declared files a run never touched, and says so distinctly when there are none."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T11:29:02Z",
+      "completedAt": "2026-09-18T11:29:02Z",
+      "verifiedBy": [
+        "drop-complement",
+        "blank-empty-complement",
+        "the three states driven"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6f15706",
+        "at": "2026-09-18T11:29:02Z"
+      }
     },
     {
       "id": "P59.9",
       "title": "The export check reads the column it computed an index for",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the exported table's outcome column is asserted, or the index nobody reads is gone and the omission is stated. The check computes an index for three columns and asserts over two: the commit column and the done column each drive a comparison, and the outcome column's index is computed and never read. The comment directly above it says the export used to take the cell text with the copy control included - which is precisely what an outcome-column assertion would catch, and the outcome is the widest free-text column in that table, so it is the one most likely to carry markup a cell picked up. Found by a type diagnostic rather than by any gate, which is the point: a computed-and-unused index is invisible to every check in this tree. Decide whether the column is worth asserting - if it is, assert it the way its two siblings are asserted; if it is not, delete the index and say in the comment why that column is out of scope, because a reader who sees three indexes and two checks will assume the third was forgotten. While there: an await sits on a call that returns no promise, which reads as waiting for something and waits for nothing.",
       "files": [
         "tools/check-report-interactive.mjs"
@@ -431,6 +471,62 @@
       "model": "sonnet",
       "skills": [],
       "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5cff0da",
+      "outcome": {
+        "technical": "The export check asserts the outcome column against the detail text the page renders, the way its two siblings are asserted, and the await on a synchronous call is gone.",
+        "descriptive": "The check reads the column it had computed an index for."
+      },
+      "startedAt": "2026-09-18T12:08:11Z",
+      "completedAt": "2026-09-18T12:08:11Z",
+      "verifiedBy": [
+        "the export mutated to a truncated and to a copy-tainted value",
+        "red both times"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5cff0da",
+        "at": "2026-09-18T12:08:11Z"
+      }
+    },
+    {
+      "id": "P59.10",
+      "title": "Four more readers stop treating a merged phase as the one that is running",
+      "status": "pending",
+      "description": "DONE MEANS: no reader in the tree treats a phase carrying a merge stamp as the phase that is running. The main resolver and four named readers were repaired; sweeping the bare shape found four more, each a genuine instance of the same class and each left alone at the time because a bug found along the way goes to the register rather than into an unrelated change. They are: the usage line, which misattributes token spend to a phase whose work landed hours ago; the layout migration, which refuses to run because a merged phase only LOOKS mid-run; and a matched pair in the hooks and the panel that keeps a merged phase's area policy live for ever - that pair must move together or the two surfaces will disagree, which is its own defect. Two more sites were examined and are NOT instances, and the repair should not touch them: one asks a different question entirely, about consistency between a phase's status and its tasks', and one is a display-completeness heuristic that documents itself. Read both before assuming the grep is the answer.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/panel/_panel_policy.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test_migrate_manifest.py",
+        "plugins/audit/tests/test__panel_policy.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_status.py: spend is not attributed to a phase whose branch has merged, and the area policy of such a phase is no longer live"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
