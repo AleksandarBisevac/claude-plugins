@@ -316,11 +316,18 @@ def _cases(check):
             code, out = run([tw_mp, "P3", "1"])
         finally:
             os.chdir(_tw_cwd)
+        # `standing_elsewhere` names the tree with git's own `rev-parse
+        # --show-toplevel`, which prints POSIX separators on every platform
+        # (`_worktrees.within_tree`'s docstring carries the same fact for the
+        # same reason); `os.path.realpath` answers with native separators on
+        # windows, so the comparison is normalised the same way rather than
+        # failing there over a spelling difference for one identical directory.
         check("tw1 pinning a phase from a linked worktree names the tree it "
               "wrote and the row of the shared table that chose it, in the "
               "table's own words: %r" % (out[:140],),
               code == 0 and "WARNING" in out
-              and os.path.realpath(tw_tree) in out and tw_proj in out
+              and os.path.realpath(tw_tree).replace("\\", "/") in out
+              and tw_proj in out
               and dict(_panel_write.PROJECT_BASES)["manifest argument"] in out,
               "%r %r" % (code, out))
         try:

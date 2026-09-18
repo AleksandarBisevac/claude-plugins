@@ -1357,7 +1357,20 @@ def source_exts(cfg):
 # parameter and command substitution, a glob, a home reference, brace expansion.
 # A word wearing one names a place only the shell knows, so any answer this
 # process gives about WHERE it lands is an answer about the spelling instead.
-UNRESOLVED_MARKS = ("$", "`", "*", "?", "~", "{", "}")
+#
+# `~` IS NOT IN THIS TUPLE, on purpose, even though `resolvable_destination`
+# still refuses to guess through one. Every other mark here expands wherever
+# it sits in the word - `out*.log`, `a${X}b` - so "anywhere" is the right
+# question for them. A tilde does not: POSIX home-shorthand expands only when
+# `~` opens the word, and a tilde anywhere else is an ordinary character with
+# no shell meaning at all. Windows' own 8.3 short names route through exactly
+# that anywhere-else case - `C:\Users\RUNNER~1\...\P1.json` carries one in its
+# THIRD component - and a blanket "any position" check read a real absolute
+# path as shell-shorthand nobody could resolve, so `_manifest_write_hit`
+# withdrew from a shard write that was never ambiguous and let it pass
+# unblocked. `resolvable_destination` still checks the leading case below;
+# this tuple only stopped answering a question a shell never asks either.
+UNRESOLVED_MARKS = ("$", "`", "*", "?", "{", "}")
 
 
 def resolvable_destination(text):
@@ -1378,9 +1391,18 @@ def resolvable_destination(text):
 
     An empty word is unresolvable for the same reason a marked one is: there is
     nothing to place.
+
+    A LEADING `~` IS THE ONLY POSITION THAT MEANS ANYTHING TO A SHELL - home
+    shorthand expands at the front of a word and nowhere else, so only that
+    position is checked here; `UNRESOLVED_MARKS` carries the marks that expand
+    at any position instead. Checked separately rather than added to the tuple
+    with a leading-anchor of its own, because every other caller of that tuple
+    (the destination text ALONE) would have to grow the same anchor to agree.
     """
     word = str(text or "")
-    return bool(word) and not any(mark in word for mark in UNRESOLVED_MARKS)
+    if not word or word.startswith("~"):
+        return False
+    return not any(mark in word for mark in UNRESOLVED_MARKS)
 
 
 def rel_path(root, file_path):

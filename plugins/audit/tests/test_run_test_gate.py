@@ -2990,8 +2990,18 @@ def _cases(check):
     # the step came back killed would reach it, print `GATE GREEN` over a run
     # that was ended by a signal twice, and hang instead of failing if the only
     # reply left were another kill. The correct runner never asks for it.
+    #
+    # THE SECOND KILL IS `-signal.SIGABRT`, NEVER THE LITERAL `-6`. SIGSEGV is
+    # 11 on both POSIX and windows, which is what let every case above get away
+    # with pasting the number - but SIGABRT is 6 on POSIX and 22 in the windows
+    # CRT's own `<signal.h>`, so a hardcoded `-6` asks `_signal_name` a question
+    # windows answers "signal 6", not "SIGABRT" - failing this case for a wrong
+    # fixture rather than a wrong reader. Reading the platform's own constant is
+    # the fix; `-11` above is left as a literal deliberately, because THAT
+    # number is not the bug and does not need the same asking.
     rk_twice_asked, rk_twice_runner = _answers(
-        [(-11, "", {}), (-6, "", {}), (0, "Tests  1 passed (1)\n", {})])
+        [(-11, "", {}), (-signal.SIGABRT, "", {}),
+         (0, "Tests  1 passed (1)\n", {})])
     res_rk_twice = M.run_gate(tmp, [("test", "make -j8 check")],
                               runner=rk_twice_runner)
     rk_twice_lines = []

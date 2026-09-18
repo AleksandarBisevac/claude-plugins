@@ -91,10 +91,22 @@ def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
     prepending one leaves the machine's real `python3` reachable under `python`,
     and a case that meant to drive a broken interpreter would quietly drive a
     working one.
+
+    `launcher` REACHES THE SCRIPT AS `$0`, FORWARD-SLASHED - the way
+    `hooks.json` actually spells it (`"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh"`
+    carries a literal `/` before `hooks/...` no matter what the root itself
+    contains), and the reason `dir=${0%/*}` in the launcher can find. Handing
+    it the raw fixture path instead - `os.path.join()`'s native separator,
+    all-backslash on windows - names a `$0` the launcher's own `case "$0" in
+    */*)` cannot see a slash in at all, which is indistinguishable from the
+    hook genuinely not being beside it (pl7's own scenario, for an unrelated
+    reason) and sent a healthy run down the same loud fallback. A fixture path
+    is this machine's, not the subject's; what the subject actually receives
+    is a bash-spelled `$0`, and that is what gets driven here.
     """
     env = dict(os.environ)
     env["PATH"] = path_entry
-    proc = subprocess.Popen([sh, launcher, script, mode],
+    proc = subprocess.Popen([sh, launcher.replace("\\", "/"), script, mode],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=env)
     out, err = proc.communicate(stdin.encode("utf-8"))

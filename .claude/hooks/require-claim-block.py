@@ -587,8 +587,19 @@ def _selftest():
         subprocess.run(["git", "add", "tools/x.py"], cwd=tmp)
         msg = os.path.join(tmp, "msg.txt")
         io.open(msg, "w").write("subject\n\nbody with no block\n")
+        # EVERY INTERPOLATED PATH IS QUOTED, THE WAY s13's `-C` CASES ALREADY
+        # ARE. `tmp` is this platform's own temp directory, not a literal this
+        # fixture chose, and on windows that is routinely a backslash path
+        # carrying an 8.3 short name (`RUNNER~1`). Read unquoted, that is a word
+        # a real shell would ALSO mangle - `_shell_split` uses `shlex(posix=True)`
+        # so it treats an unquoted backslash as an escape, exactly as bash does -
+        # so the fixture must spell the path the way a careful shell script
+        # would, not the way `os.path.join` happened to hand it back. Quoted, a
+        # backslash is literal to both bash and shlex's posix mode, and the
+        # round trip is exact.
         heredoc = ("cd %s && cat > %s <<'MSG'\nsubject\n\nbody\nMSG\n"
-                   "git commit -F %s 2>&1 | tail -40" % (tmp, msg, msg))
+                   "git commit -F %s 2>&1 | tail -40"
+                   % (shlex.quote(tmp), shlex.quote(msg), shlex.quote(msg)))
         check("s14 a `git commit` that BEGINS ITS OWN LINE after a heredoc is a commit",
               is_commit(heredoc))
         v, r = decide(payload(heredoc), tmp)

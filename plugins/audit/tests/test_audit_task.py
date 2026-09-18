@@ -5288,6 +5288,16 @@ def _cases(check):
         # stopped matching the rule the resolver follows, which is the whole
         # thing this pair exists to prevent.
         _tw_why = dict(_panel_write.PROJECT_BASES)
+
+        def _tw_posix(p):
+            """`p`, resolved and forward-slash - `standing_elsewhere` names the
+            tree with git's own `rev-parse --show-toplevel`, which prints POSIX
+            separators on every platform (`_worktrees.within_tree`'s docstring
+            carries the same fact for the same reason). `os.path.realpath`
+            answers with native separators on windows, so comparing it against
+            the verb's text unconverted failed there for a directory the two
+            sides named identically - a spelling mismatch, not a wrong tree."""
+            return os.path.realpath(p).replace("\\", "/")
         tw_proj, tw_mp, tw_tree = mk_pair("tw")
         _tw_before = open(tw_mp, "rb").read()
         _tw_twin = os.path.join(tw_tree, "docs", "audit", "audit-plan.json")
@@ -5301,7 +5311,7 @@ def _cases(check):
               "this one won -- the silence that let the incident happen: %r"
               % (txt[:160],),
               code == 0 and "WARNING" in txt
-              and os.path.realpath(tw_tree) in txt and tw_proj in txt
+              and _tw_posix(tw_tree) in txt and tw_proj in txt
               and _tw_why["$CLAUDE_PROJECT_DIR"] in txt)
         check("tw2 ...and the warning is about a real divergence: the plan and "
               "the journal moved in the CHECKOUT, the worktree's own copy of "
@@ -5333,7 +5343,7 @@ def _cases(check):
               % (txt_same[:160],),
               code == 0 and "standing in" not in txt_same
               and _tw_why["$CLAUDE_PROJECT_DIR"] not in txt_same
-              and os.path.realpath(tw_proj) not in txt_same.replace(
+              and _tw_posix(tw_proj) not in txt_same.replace(
                   tw_proj, ""))
 
         # EVERY VERB, because the fault is the writing and not the verb: the
@@ -5369,7 +5379,7 @@ def _cases(check):
             finally:
                 _unpin()
             if _codev != 0 or "standing in" not in _txtv \
-                    or os.path.realpath(_tw_tree) not in _txtv:
+                    or _tw_posix(_tw_tree) not in _txtv:
                 _tw_silent.append((_label, _codev, _txtv[:140]))
         check("tw5 every manifest-writing verb says which tree it wrote, and "
               "the verbs are the PARSER's list rather than one typed here: %r"
@@ -5392,7 +5402,7 @@ def _cases(check):
               codej == 0
               and _tw_pb.get("diverged") is True
               and _tw_pb.get("root") == tw_j
-              and _tw_pb.get("standingIn") == os.path.realpath(tw_j_tree)
+              and _tw_pb.get("standingIn") == _tw_posix(tw_j_tree)
               and _tw_pb.get("why") == _tw_why["$CLAUDE_PROJECT_DIR"])
         try:
             _pin(tw_j, tw_j)
@@ -5407,7 +5417,7 @@ def _cases(check):
               "not answer this: %r" % (_tw_pb2,),
               codej2 == 0
               and _tw_pb2.get("diverged") is False
-              and _tw_pb2.get("standingIn") == os.path.realpath(tw_j))
+              and _tw_pb2.get("standingIn") == _tw_posix(tw_j))
 
         # NO GIT, NO GUESS. `tmp` is a scratch directory in no repository, which
         # is what a machine without git looks like to this code: the question
