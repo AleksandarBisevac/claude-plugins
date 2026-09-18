@@ -2048,7 +2048,8 @@
       "P41.6",
       "P59.3",
       "P59.11",
-      "P59.14"
+      "P59.14",
+      "P59.15"
     ],
     "plugins/audit/tests/test_remind_tdd.py": [
       "P42.4"

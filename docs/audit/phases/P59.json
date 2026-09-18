@@ -758,6 +758,46 @@
         "commit": "7e4e3c8",
         "at": "2026-09-18T15:43:56Z"
       }
+    },
+    {
+      "id": "P59.15",
+      "title": "A shell that cannot be driven is could-not-ask, not a failed launcher",
+      "status": "pending",
+      "description": "DONE MEANS: the case tells a launcher that misbehaved apart from a shell it could not drive, and says which. It reports [('dash.EXE', False), ('bash.EXE', True)] on one platform after three separate repairs - the applet-dispatch one, the working-directory one, and the unquoted-path one - each of which was a real defect and none of which moved this. That pattern is itself evidence: the remaining difference is very likely a property of THAT SHELL'S ability to run a script handed to it the way this fixture hands one, rather than anything the launcher does. THE REPAIR IS THE VOCABULARY THIS PROJECT USES EVERYWHERE ELSE. Before asking a shell about the launcher, ask it to run a trivial script that exercises nothing of the launcher at all. If that control fails, the shell cannot be driven here and the row is COULD-NOT-ASK, named with the shell and the reason - never a pass, and never counted as the launcher failing. If the control succeeds, a failure afterwards is the launcher's and stays a failure exactly as now. ESTABLISH THAT THE CONTROL REALLY DISCRIMINATES before shipping it: a control so trivial that nothing can fail it turns this case into a check that cannot fail, which is worse than the red it replaces. Drive it under every shell available here, and say what the control does and does not exercise.",
+      "files": [
+        "plugins/audit/tests/test_py_launch.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-18T07:57:57Z"
