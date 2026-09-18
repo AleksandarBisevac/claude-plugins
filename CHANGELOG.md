@@ -4,6 +4,168 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [3.0.0] - 2026-09-18
+
+The major exists for one refusal that 2.3.0 promised and could not make, and the release around it
+is about a single question asked of everything: **does this check actually check, and does this
+claim carry the thing that makes it true?** Most of what follows is the answer coming back *no* and
+being repaired.
+
+### Breaking — the deprecation 2.3.0 announced arrives
+
+- **A `tests.add` entry that names no file is now a FINDING**, on a task in `tests.mode: "tdd"`
+  that is not `done` or `cancelled`. It was a warning through the whole 2.x line, and that
+  warning's own text named this release as the one where it would refuse. `COMPATIBILITY.md`
+  carried the same promise. The order is announce, then enforce; this is the enforce.
+- **A plan written before the rule has a migration, and it runs on a plan carrying only this
+  finding.** `scripts/manifest/repair-tests-add.py <manifest>` reports every entry the rule reaches
+  and `--apply` rewrites the ones that already spell their path. Delivering the refusal broke that
+  script first — it declines to touch an invalid manifest, so the entries it exists for were
+  exactly the ones that stopped it. A repair that cannot run on the fault it repairs is worse than
+  no repair; this rule's own finding is excluded from its two validator gates.
+- **Upgrading a manifest that carries such an entry:** it becomes invalid, and the verbs that
+  mutate a manifest refuse while any finding stands. The repair script the finding names is the way
+  through. The scope verb older prose points at is not, because it is one of those verbs.
+- **Settled tasks and other test modes are untouched.** A closed task's `tests.add` is a record of
+  work already judged.
+
+### Added — the product can be asked what it cost, and what that cost bought
+
+- **A run's context is split into what it read for the first time and what it re-read**, with the
+  highest context a run reached beside them. One total could not tell an operator whether a task
+  was expensive because it did a lot or because it lived a long time, and those have opposite
+  repairs. Where the recorded history cannot support the split, it says so rather than presenting a
+  total as though it were one.
+- **`/audit:usage --json` carries a `planCost` block** answering whether working through the plan
+  costs less than working without it — as named comparisons, never one ratio. A task's own narrowed
+  gate against its phase's, on the same task; a gate run that reused a verdict against the run it
+  repeated; a task's spend against its siblings in the same phase. Each answers or refuses on its
+  own and names its subjects when it answers. **Over every history this project has, all three
+  refuse**, and the refusals say which run would supply what is missing — a single figure here
+  would be the most quotable number the product could print and the least checkable.
+- **An executor is handed the files its task declares** and the answer to the question it would
+  otherwise search the repository for. An agent that greps a repository pays for the repository.
+- **An agent's life has a configured bound** (`executor.maxHours`), because cost per turn grows
+  with an agent's age rather than with its task's difficulty, and the procedure now says what an
+  agent does when its context has outgrown the work left in it.
+- **`/audit:status --short`** is the condensed view an automated run echoes; a person typing the
+  command still gets the whole thing. **`--section <key>`** projects one key of the same payload —
+  not a recomputation — and a key the payload does not have is an error naming the keys it does,
+  never a `null`.
+- **A task is closed by a verb** (`audit-task.py done`) rather than by two hand edits, and a task's
+  commit is recorded by one. **A phase records when it started.** **A high-risk confirmation can be
+  given in advance and recorded.** **A retry carries what the last attempt learned.**
+- **The tracker connector is a module the core does not depend on**, proved by a lint that reads
+  the real import graph rather than a list somebody maintains. A plan that enables the connector
+  while naming no board is a doctor **finding** that names both missing keys — a tracker that stops
+  being updated while the board still looks maintained is worse than one that errors.
+- **First contact:** one command reaches the smallest honest plan, the README opens with what a
+  coding agent cannot do alone, and the worked example runs a different test runner than this
+  repository's own.
+
+### Changed — the instructions cost what they are worth
+
+- **The orchestrator's reference is split by what a command actually runs.** Executing a task and
+  signing a phase off are two procedures a command either performs or does not; they are
+  `reference/execute-task.md` and `reference/phase-signoff.md` now, and what stays behind is the
+  vocabulary, the preflight and the pointers. Nothing was rewritten in the move.
+- **Two commands carry `disable-model-invocation`**, keeping their description out of every session
+  while leaving them typeable. A fenced invocation of such a command under `reference/` would be an
+  instruction the pipeline is refused, and a check now says so where it is written.
+- **The gate summary prints the verdict rather than an inventory**, and the per-file sweep stops
+  paying for rows that passed.
+- **A phase sign-off creates and starts a task before spawning a fix run.** Sign-off runs only when
+  every task is `done`, and the plan gate opens a file only through a task that is running — so the
+  older sequence could not work, whatever the index said.
+
+### Fixed — guards that read a spelling instead of an operation
+
+- **The shell-write guard decides where a write lands, not how its path was spelled.** A relative
+  name was resolved against the repository root wherever the command ran, so a write into a
+  directory outside the repository was refused with a message naming a repository path that does
+  not exist — while the same write spelled absolutely was allowed. It reads the command's own
+  working directory now, follows the directory changes the command performs, and withdraws with a
+  stated reason when that cannot be established.
+- **Every interpreter the refusal names is watched, in the spelling people write.** The in-place
+  edit flag is read out of a bundled form, with or without a backup suffix, for each of them — the
+  commonest spelling of one was going through while rarer ones were caught.
+- **The plan gate judges an edit inside a worktree of the project.** It resolved the project from
+  the directory the session started in and read "not under it" as "not ours" — a silent allow. An
+  orchestrator hands its agents worktrees, so the gate was inert for exactly the writer it exists
+  to bound. It asks git which repository a path resolves into, and refuses rather than guessing
+  when no directory can be placed.
+- **A refusal names a route its reader can take.** Against a file declared by a finished task the
+  gate told the reader to start that task — a command that refuses — and forbade, in its last
+  clause, the route sign-off actually mandates.
+- **MCP writes reach the plan gate, the journal and the self-edit rule**, bound to the operation
+  rather than to a tool's name. **A heredoc body is data**, not a command the history guard
+  classifies. **A shard rewritten by a stream editor is refused as its edit already was.** **A
+  destructive git command is refused while uncommitted work exists.** **One file gets one verdict**,
+  whichever writer wrote it.
+- **The advisory speaks once per session and then counts**, instead of once per file in a batch.
+
+### Fixed — locks, and what a lock answers
+
+- A contended lock is **waited for**; a lock you already hold is **answered**; a takeover has
+  exactly one winner. A lock that could not be taken is not a lock that is held, and an interrupted
+  take leaves nothing behind. A release checks the **whole** identity it was given rather than half
+  of it. The panel and the usage backfill take the lock every other command takes.
+
+### Fixed — checks that credited what they had not proven
+
+- **The gate a task runs is derived from that task's own tests**, and a started task's gate can be
+  corrected. A red that measured nothing and is not this work's is **could-not-run**, said in those
+  words. A step that collected nothing says so on its row. A red gate names what failed. A signal
+  death is retried once at a lowered bound and says so. A tree already measured is not measured
+  again — unless the gate grades something the identity cannot see, and that hole is now closed;
+  the identity also survives a path that passes through a symbolic link.
+- **Cases that graded other files by a list somebody maintained now read the tree**, with a floor
+  so that a walk which stops matching fails rather than reporting nothing to fix. Turning the first
+  of those into a walk immediately surfaced callers the list had never named.
+- **A red-first proof that could not be made says so and carries why**, and the reviewer is handed
+  the claim and asked whether it holds.
+- **Mutation rows that credited a case they never reached are repaired**, including one whose
+  target file had drifted out of the shape the row needed — the sweep now derives that target and
+  refuses loudly when the tree holds none. The script that mutates a file to prove a check **refuses
+  a file it did not write**, so its own mid-run state can never be read as somebody's work.
+
+### Fixed — the record, and what it can be asked
+
+- The evidence ledger **carries the journal's chain**; every event **names the agent that caused
+  it**; one session writes one journal file and a continued agent's spend follows it; a tracked
+  journal file that has gone **turns verify red**; a verification carries the tree it was taken on.
+- **One JSON encoding**, migrated once and held by a lint. **Plans written before a rule get a
+  migration, not a finding.** A decision, a wrong bug, and documentation output each have a home in
+  the plan. A run from outside is a row rather than a gap.
+- **A verb that writes another phase's shard says which branch that phase is on** — a warning, not
+  a refusal, because naming it is the whole fix. It stays silent when the phase records no branch,
+  and that silence is asserted by a case rather than left untested.
+- **The verb that dirties the manifest index says so and names the tool that lands it.** That tool
+  existed and appeared in no document; its name reached a human only in the refusal that fires
+  after the mistake.
+- **A refusal on a brief marks the span it matched** instead of diagnosing a cause it never tested
+  for, and every prose flag names the route that takes text no shell can rewrite.
+
+### Fixed — the report and the panel
+
+- The commit-sha copy button's fallback reaches its own payload; it had selected by a class
+  belonging to the other caller of the shared helper, so a browser refusing clipboard access left
+  the button reading as though nothing had been asked. The shipped example now carries a task with
+  a commit that resolves, so the assertions that grade it actually run.
+- The offered bar, what a gate caught, the record that the panel was opened, and whether a close
+  matched what was asked.
+
+### Documentation
+
+- **No comment, docstring or document in the published tree cites the private register any more.**
+  The rule that grades this was wrong about its own subject four times over — one id spelling of
+  two, a linter's own codes convicted as citations, three of the places a string reaches a reader,
+  and an exempt-file list borrowed from a different scan. Each was found by searching after the
+  rule reported the tree clean.
+- `before-you-claim` — seven evidence questions at the moment of writing, and a hook that asks a
+  commit for them. `orchestrating-parallel-work` — the questions a mechanism cannot read.
+- A token-efficiency audit of this project's own run is published under `docs/research/`.
+
 ## [2.3.0] - 2026-09-11
 
 ### Fixed — the recovery `orchestrator.md` prescribes for a plan-gate refusal was unreachable
