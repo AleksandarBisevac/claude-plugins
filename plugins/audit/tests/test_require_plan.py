@@ -685,6 +685,21 @@ def _cases(check):
     hok("h4d ...and it says it will not be re-spawned, which is what makes "
         "stopping cheap rather than a lost 60-150k of context",
         "not be re-spawned" in _ms, repr(_ms))
+    # h4c pins the three moves as WARNED AGAINST; this pins the separate claim
+    # sitting right after them, that every one of the three was actually taken.
+    # That claim is a fact about operational history, not a description of the
+    # code (unlike "YOU ARE A SUBAGENT" or the three moves themselves, which are
+    # true by construction of this branch) - it is exactly the kind of sentence
+    # that rots silently: a rewording could drop it, or keep it past the point
+    # it stopped being true, and nothing else in this suite would notice either
+    # way. Only this one clause gets a case; the reasoning around it ("the
+    # manifest belongs to the orchestrator...", "which does not make it yours")
+    # is policy, not a measured claim, so pinning it too would be a pin per
+    # word for no defect it could ever catch.
+    hok("h4e ...and says the three were not merely warned against but "
+        "measured - each one actually happened, which is what makes the "
+        "warning read as evidence rather than boilerplate",
+        "All three have happened" in _ms, repr(_ms))
     hok("h5 ...and states the bypass facts: the HUMAN types it, single-use, "
         "logged, 30-minute expiry",
         "HUMAN" in m and "single-use" in m and "30 minutes" in m

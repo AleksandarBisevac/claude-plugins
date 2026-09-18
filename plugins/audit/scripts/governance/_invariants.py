@@ -956,7 +956,16 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
     instead of a reassuring silence.
     """
     breaches, gaps = [], []
-    pairing_deferred = 0
+    # Two different quantities, kept apart on purpose: the crossref emits one
+    # finding per task-and-file pair still unpaired AT THAT COMMIT, and the same
+    # unresolved pair is reported again by every later commit until the chore
+    # commit settles it. Summing findings across the commit loop below therefore
+    # counts commits multiplied by unpaired rows, not either one - a repeated
+    # edit read as a growing backlog. `pairing_deferred_commits` is incremented
+    # once per commit that carried at least one such finding, which is the
+    # quantity "task commit(s)" below actually names; the row count is read
+    # straight off the CURRENT manifest further down, where it is unambiguous.
+    pairing_deferred_commits = 0
     commits = []
     for task in (phase.get("tasks") or []):
         if isinstance(task, dict) and task.get("commit"):
@@ -1006,6 +1015,16 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                 findings, _warnings = _rules.validate(state_manifest)
             except Exception as exc:                       # defensive
                 findings = ["internal validator error: %s" % exc]
+            # Counted per COMMIT, not per finding: the crossref emits one line
+            # per task-and-file pair still unpaired at this commit, and a task
+            # whose scope grew mid-run leaves the SAME pair unpaired in every
+            # commit after it until the chore commit settles the index. Adding
+            # every line across every commit would multiply commits by unpaired
+            # rows - measured on two separate live runs, 39 breaches across 10
+            # of 12 tasks, and 93 in one phase of another, both of them this
+            # product wearing the name of a backlog. What matters here is only
+            # whether THIS commit carried the deferral at all.
+            commit_deferred_pairing = False
             for line in findings:
                 # THE ONE FINDING A TASK COMMIT CANNOT AVOID. `task.files`
                 # lives in the phase shard and `fileIndex` lives in the index, and
@@ -1013,11 +1032,9 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                 # good reason, since two phases committing it in parallel conflict
                 # on the same lines. So a task whose scope is corrected mid-run
                 # commits a shard the committed index does not yet pair with, and
-                # EVERY later commit in that phase reported it: measured on two
-                # separate live runs, 39 breaches across 10 of 12 tasks, and 93 in
-                # one phase of another. It punished the right instinct - fixing
-                # the plan when reality differed - and there was no commit ordering
-                # that avoided it.
+                # EVERY later commit in that phase reported it. It punished the
+                # right instinct - fixing the plan when reality differed - and
+                # there was no commit ordering that avoided it.
                 #
                 # Recorded as a gap rather than a breach HERE ONLY. `validate()`
                 # keeps the finding for every whole-manifest caller, and the
@@ -1025,10 +1042,12 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                 # exempts a moment rather than the rule: mid-phase it cannot be
                 # true, by sign-off it must be.
                 if _crossrefs.FILEINDEX_PAIRING in line:
-                    pairing_deferred += 1
+                    commit_deferred_pairing = True
                     continue
                 breaches.append("%s: the manifest this commit recorded does NOT "
                                 "validate - %s" % (sha[:12], line))
+            if commit_deferred_pairing:
+                pairing_deferred_commits += 1
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1036,16 +1055,17 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
     # without asking it of anything would be a hole, not a fix: the rule is not
     # "never true", it is "not true YET". The manifest as it stands now is the
     # state sign-off is about to preserve, so that is where it is asked - and a
-    # failure is a real breach, naming how many commits deferred it so a reader
-    # can see this is the accumulated debt rather than one slip.
-    if pairing_deferred:
+    # failure is a real breach, naming how many commits deferred it AND how many
+    # rows are still unpaired, because those are two different numbers and
+    # neither one's name covers the other.
+    if pairing_deferred_commits:
         try:
             live_findings, _lw = _rules.validate(_mio.load_manifest(
                 os.path.join(project, index_rel.replace("/", os.sep))))
         except Exception as exc:
             gaps.append("the pairing of task.files with fileIndex was deferred by "
                         "%d commit(s) and the current manifest could not be loaded "
-                        "to settle it (%s)" % (pairing_deferred, exc))
+                        "to settle it (%s)" % (pairing_deferred_commits, exc))
             live_findings = []
         still = [x for x in live_findings if _crossrefs.FILEINDEX_PAIRING in x]
         if still:
@@ -1053,10 +1073,11 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                 ["the manifest as it stands STILL does not pair task.files with "
                  "fileIndex - %s" % (x,) for x in still])
             breaches.append(
-                "%d task commit(s) deferred this pairing, which step 4c makes "
-                "unavoidable mid-phase; by sign-off it has to be settled - run "
-                "`/audit:task scope <id> --files ...` to re-derive the index"
-                % (pairing_deferred,))
+                "%d task commit(s) deferred this pairing, leaving %d row(s) "
+                "unpaired now, which step 4c makes unavoidable mid-phase; by "
+                "sign-off it has to be settled - run `/audit:task scope <id> "
+                "--files ...` to re-derive the index"
+                % (pairing_deferred_commits, len(still)))
 
     recorded = _recorded_states(project, phase_file_abs)
     unrecoverable = [h for h in recorded if h not in seen_hashes]

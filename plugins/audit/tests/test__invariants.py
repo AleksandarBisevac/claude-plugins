@@ -370,7 +370,7 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         # which is the only thing that separates this check from re-validating
         # the file that is already on disk.
         shard["tasks"][1]["dependsOn"] = ["P9.9"]
-    if invalid_state in ("fileindex", "fileindex-unsettled"):
+    if invalid_state in ("fileindex", "fileindex-unsettled", "fileindex-multi"):
         # A different shape instead: a task whose `files` grew mid-phase. The shard is
         # committed (step 4c stages it) and the index is NOT (step 4c forbids it),
         # so the state this commit recorded pairs a file with no fileIndex entry.
@@ -378,8 +378,18 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         # can reorder avoids it.
         shard["tasks"][1].pop("dependsOn", None)
         shard["tasks"][1]["files"] = list(shard["tasks"][1].get("files") or [])
-        shard["tasks"][1]["files"].append("src/widened.py")
-        _write(os.path.join(root, "src", "widened.py"), "w = 1\n")
+        widened = ["src/widened.py"]
+        if invalid_state == "fileindex-multi":
+            # TWO unpaired files in the ONE commit that carries them: 1 commit,
+            # 2 unpaired rows. A count that sums findings across the commit
+            # loop reads this as "2" and calls it commits - wrong by exactly
+            # the multiplication P59.7 is about, and wrong in a way a
+            # single-widened-file fixture could never show, because 1 commit
+            # times 1 row is 1 either way it is misread.
+            widened.append("src/widened2.py")
+        shard["tasks"][1]["files"].extend(widened)
+        for _w in widened:
+            _write(os.path.join(root, *_w.split("/")), "w = 1\n")
         if invalid_state == "fileindex":
             # ...and the chore commit the operator makes afterwards, which is what
             # settles the pairing. `fileindex-unsettled` is the same repository
@@ -935,6 +945,23 @@ def _cases(check):
               "reading the validator at all",
               len([b for b in _check(_phase_answer(repos.get(invalid_state=True)),
                                      "manifest-revalidated")["breaches"]]) == 1)
+
+        # iv18d pinned only that the PHRASE "deferred this pairing" survives - never
+        # its value, which is exactly the gap that let the printed number BE a
+        # product of commits and rows while its own noun said "commit(s)". This
+        # fixture is the one that can tell the two apart: one commit carries TWO
+        # unpaired files, so a correct count is 1 commit and 2 rows, while summing
+        # findings across the commit loop (the bug) prints 2 and calls it commits.
+        multi = repos.get(invalid_state="fileindex-multi")
+        _mv = _check(_phase_answer(multi), "manifest-revalidated")
+        deferred = [b for b in _mv["breaches"] if "deferred this pairing" in b]
+        check("iv18f the breach names the commit count and the row count "
+              "separately: ONE commit deferred it, and TWO rows are unpaired "
+              "now - not the 2 a sum-of-findings-per-commit would print while "
+              "calling it 'commit(s)': %r" % (_mv["breaches"],),
+              deferred and "1 task commit(s) deferred this pairing, leaving "
+              "2 row(s) unpaired now" in deferred[0],
+              repr(_mv["breaches"]))
 
         rowed = repos.get(journal_rows=3)
         valid = _check(_phase_answer(rowed), "manifest-revalidated")

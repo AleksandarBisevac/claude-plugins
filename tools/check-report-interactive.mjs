@@ -843,29 +843,58 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(250);
 expect('Escape clears the filter', (await state()).phases, load.total);
 
-// A term taken from the document itself, so this works on any report.
-const term = await page.evaluate(() => {
+// A term taken from the document itself, so this works on any report. The
+// naive pick - the title's first word - can be "A", "The", "Do" or another
+// word so common it sits inside almost every row's own rendered text (dates,
+// statuses, the words "task" and "phase" themselves); a term like that cannot
+// narrow this document no matter how correctly the filter runs, which is a
+// fixture problem wearing a filter-is-broken message. So each word is checked
+// against every phase row BEFORE being trusted, and the first one that is not
+// already everywhere is used - the same guard already applied to the status
+// chip below (asserted one way with two-or-more chips, the OTHER way with
+// exactly one), generalised to free text instead of skipped when it cannot
+// fire.
+const termInfo = await page.evaluate(() => {
   const s = document.querySelector('table.phases tbody tr.phase strong');
-  return s ? s.textContent.trim().split(/\s+/)[0] : '';
+  const words = s ? s.textContent.trim().split(/\s+/) : [];
+  const rows = [...document.querySelectorAll('table.phases tbody tr.phase')]
+    .map((r) => r.textContent.toLowerCase());
+  const vacuous = [];
+  for (const raw of words) {
+    const w = raw.toLowerCase();
+    if (!w) continue;
+    if (rows.every((h) => h.includes(w))) { vacuous.push(w); continue; }
+    return { term: w, vacuous: vacuous };
+  }
+  return { term: null, vacuous: vacuous };
 });
-await page.click('#audit-q');
-await page.keyboard.type(term, { delay: 10 });
-await page.waitForTimeout(250);
-const hit = await state();
-if (hit.phases < 1 || hit.phases >= load.total) {
-  failures.push(`FAIL filtering by "${term}" narrows the list: got ${hit.phases} of ${load.total}`);
-} else notes.push(`ok   filtering by "${term}" narrows the list: ${hit.phases} of ${load.total}`);
-if (!/\d+\s*\/\s*\d+/.test(hit.count)) {
-  failures.push(`FAIL the count reports the filtered total: got "${hit.count}"`);
-} else notes.push(`ok   the count reports the filtered total: "${hit.count}"`);
-// A TEXT filter is the one that used to force its matches open — one character
-// typed grew the page by screens and scrolled away what was being read, and
-// clearing it afterwards shut rows that had been opened by hand. Asserted here
-// rather than in a string pin, because `expanded[pid]` reads identically either
-// way: only a browser can say whether the rows are on screen.
-expect('a text filter does not auto-expand the phases it matches', hit.tasks, 0);
-await page.keyboard.press('Escape');
-await page.waitForTimeout(250);
+if (termInfo.term === null) {
+  notes.push('ok   (every word of the first phase title sits inside every phase row - '
+    + 'no free-text term in this report could narrow it; narrowing check skipped)');
+} else {
+  const term = termInfo.term;
+  const guardNote = termInfo.vacuous.length
+    ? ` (rejected ${termInfo.vacuous.map((w) => `"${w}"`).join(', ')} first - already in every phase row)`
+    : '';
+  await page.click('#audit-q');
+  await page.keyboard.type(term, { delay: 10 });
+  await page.waitForTimeout(250);
+  const hit = await state();
+  if (hit.phases < 1 || hit.phases >= load.total) {
+    failures.push(`FAIL filtering by "${term}" narrows the list: got ${hit.phases} of ${load.total}${guardNote}`);
+  } else notes.push(`ok   filtering by "${term}" narrows the list: ${hit.phases} of ${load.total}${guardNote}`);
+  if (!/\d+\s*\/\s*\d+/.test(hit.count)) {
+    failures.push(`FAIL the count reports the filtered total: got "${hit.count}"`);
+  } else notes.push(`ok   the count reports the filtered total: "${hit.count}"`);
+  // A TEXT filter is the one that used to force its matches open — one character
+  // typed grew the page by screens and scrolled away what was being read, and
+  // clearing it afterwards shut rows that had been opened by hand. Asserted here
+  // rather than in a string pin, because `expanded[pid]` reads identically either
+  // way: only a browser can say whether the rows are on screen.
+  expect('a text filter does not auto-expand the phases it matches', hit.tasks, 0);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+}
 
 // ...and the closed row has to say WHY it survived, which is what replaces the
 // expansion: a row reading "1 of 3 match" is a row worth opening. That needs a
