@@ -495,7 +495,7 @@
     {
       "id": "P59.10",
       "title": "Four more readers stop treating a merged phase as the one that is running",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: no reader in the tree treats a phase carrying a merge stamp as the phase that is running. The main resolver and four named readers were repaired; sweeping the bare shape found four more, each a genuine instance of the same class and each left alone at the time because a bug found along the way goes to the register rather than into an unrelated change. They are: the usage line, which misattributes token spend to a phase whose work landed hours ago; the layout migration, which refuses to run because a merged phase only LOOKS mid-run; and a matched pair in the hooks and the panel that keeps a merged phase's area policy live for ever - that pair must move together or the two surfaces will disagree, which is its own defect. Two more sites were examined and are NOT instances, and the repair should not touch them: one asks a different question entirely, about consistency between a phase's status and its tasks', and one is a display-completeness heuristic that documents itself. Read both before assuming the grep is the answer.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -529,16 +529,24 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "68a418a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The usage line, the layout migration and the matched hooks/panel area-tag pair each skip a phase carrying mergedAt before asking whether it is running; the two non-instances were read and left, with their reasons in the report.",
+        "descriptive": "Every reader in the tree now gives the same answer about a phase whose branch has landed."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T12:52:05Z",
+      "completedAt": "2026-09-18T12:52:05Z",
+      "verifiedBy": [
+        "the six probe rows",
+        "including the paired-surface row and the silent over-fire"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "68a418a",
+        "at": "2026-09-18T12:52:05Z"
+      }
     }
   ],
   "startedAt": "2026-09-18T07:57:57Z"
