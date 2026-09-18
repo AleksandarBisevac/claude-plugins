@@ -265,10 +265,17 @@ def _active_area_tags(manifest):
     yields nothing for a task-less phase, so an in_progress phase that has not been
     broken into tasks yet would stop scoping its area rules, which is the one
     direction a capability policy must not fail in.
+
+    A phase carrying `mergedAt` is skipped before "running" is even asked, whatever
+    its `status` still says: `close-phase.py` stamps `mergedAt` and never touches
+    `status`, so a phase merged hours ago can still read `in_progress` and hold its
+    area's policy open in the preview for ever. `_config.active_area_tags` asks the
+    hook's guard the same question the same way — the two must move together, or
+    the preview and the guard would disagree about which areas are live.
     """
     tags = []
     for phase in (manifest or {}).get("phases") or []:
-        if not isinstance(phase, dict):
+        if not isinstance(phase, dict) or phase.get("mergedAt"):
             continue
         running = phase.get("status") == "in_progress" or any(
             isinstance(t, dict) and t.get("status") == "in_progress"

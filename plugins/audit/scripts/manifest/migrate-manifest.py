@@ -113,8 +113,17 @@ def _utc_stamp():
 
 
 def _in_progress_phases(manifest):
+    """Phases a mid-run layout change would corrupt.
+
+    Excludes a phase carrying `mergedAt`, whatever its `status` still reads:
+    `close-phase.py` stamps `mergedAt` the moment the merge lands and never
+    writes `status` itself, so a phase merged hours ago can still say
+    `in_progress`. Its branch and worktree are already gone — there is no run
+    left for a layout change to corrupt — so refusing on it would block an
+    ordinary migration on a fact nothing is still doing."""
     return [p.get("id") for p in manifest.get("phases", [])
-            if isinstance(p, dict) and p.get("status") == "in_progress"]
+            if isinstance(p, dict) and p.get("status") == "in_progress"
+            and not p.get("mergedAt")]
 
 
 def renumber_duplicate_bugs(manifest):

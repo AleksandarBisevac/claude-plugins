@@ -1012,6 +1012,13 @@ def active_area_tags(root, manifest_rel):
     the index stubs carry no status, so a raw read would report nothing running and
     every area rule would be silently inert. Empty list on any error, which resolves
     to the policy without its area rules: fail-open, like everything else here.
+
+    A phase carrying `mergedAt` is skipped before "running" is even asked, whatever
+    its `status` still says: `close-phase.py` stamps `mergedAt` and never touches
+    `status`, so a phase merged hours ago can still read `in_progress` and hold its
+    area's policy open for ever. `_panel_policy._active_area_tags` asks the panel's
+    preview the same question the same way — the two must move together, or the
+    guard and the preview would disagree about which areas are live.
     """
     tags = []
     try:
@@ -1020,7 +1027,7 @@ def active_area_tags(root, manifest_rel):
             return tags
         areas = _areas_lib()
         for phase in manifest.get("phases") or []:
-            if not isinstance(phase, dict):
+            if not isinstance(phase, dict) or phase.get("mergedAt"):
                 continue
             running = phase.get("status") == "in_progress" or any(
                 isinstance(t, dict) and t.get("status") == "in_progress"

@@ -116,6 +116,23 @@ def _cases(check):
               {"id": "P3", "status": "pending", "area": "quiet", "tasks": [
                   {"id": "P3.1", "status": "pending"}]},
           ]}) == ["infra", "web"])
+    # A phase carrying `mergedAt` never scopes its area, whatever `status`
+    # still says - `close-phase.py` stamps `mergedAt` and never touches
+    # `status`, so a phase merged hours ago can still read `in_progress` and
+    # hold its area's policy open in the preview for ever. P2 beside it is
+    # the control: genuinely running, no `mergedAt`, and its area still
+    # activates - so this is the merge exclusion and not every area going
+    # quiet. `_config.active_area_tags` asks the hook's guard the same
+    # question the same way - a fixture of this shape is pinned there too.
+    check("a merged-but-stale phase's area is not active, while a genuinely "
+          "running phase beside it still is",
+          M._active_area_tags({"phases": [
+              {"id": "P1", "status": "in_progress",
+               "mergedAt": "2026-01-01T00:00:00Z", "area": "web",
+               "tasks": [{"id": "P1.1", "status": "done"}]},
+              {"id": "P2", "status": "in_progress", "area": "api",
+               "tasks": [{"id": "P2.1", "status": "pending"}]},
+          ]}) == ["api"])
 
     _pproj = tempfile.mkdtemp(prefix="state-policy-")
     try:

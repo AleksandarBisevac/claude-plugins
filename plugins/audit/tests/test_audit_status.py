@@ -391,6 +391,16 @@ def _cases(_record):
     check("s18c ...at the function under render_status too, not only through "
           "the render",
           M._resumable_lines(_fx_merged, {}) == [])
+    check("s18d the same stale in_progress fools the usage line onto a phase "
+          "that stopped accruing spend the moment it merged, unless the line "
+          "excludes it too - so P2's tokens are not billed as \"this phase\"",
+          "this phase" not in M._usage_line(
+              M.rollup(_fx_merged, [], [], usage=_u), _u))
+    check("s18e control: the SAME usage block still bills a genuinely running "
+          "(unmerged) phase - s18d is the merge exclusion, not every 'this "
+          "phase' clause going quiet",
+          "this phase 500" in M._usage_line(
+              M.rollup(_fx_run, [], [], usage=_u), _u))
 
     # invalid manifest must be stated, not implied
     _txt_bad = M.render_status(_fx, M.rollup(_fx, ["boom"], []))

@@ -927,6 +927,22 @@ def _cases(check):
                      "tasks": [{"id": "P1.1", "status": "pending"}]}])
         check("p10 an untagged running phase activates nothing",
               M.active_area_tags(tmp_p, rel) == [])
+        # p11/p12: a phase carrying `mergedAt` never scopes its area, whatever
+        # `status` still says - `close-phase.py` stamps `mergedAt` and never
+        # touches `status`, so a phase merged hours ago can still read
+        # `in_progress` and hold its area's policy open for ever. P2 beside it
+        # is the control: genuinely running, no `mergedAt`, and its area still
+        # activates - so this is the merge exclusion and not every area going
+        # quiet.
+        write_plan([{"id": "P1", "title": "a", "status": "in_progress",
+                     "mergedAt": "2026-01-01T00:00:00Z", "area": "web",
+                     "tasks": [{"id": "P1.1", "status": "done"}]},
+                    {"id": "P2", "title": "b", "status": "in_progress",
+                     "area": "api", "tasks": [{"id": "P2.1", "status": "pending"}]}])
+        check("p11 a merged-but-stale phase's area is not active",
+              "web" not in M.active_area_tags(tmp_p, rel))
+        check("p12 control: the genuinely running phase beside it still is",
+              M.active_area_tags(tmp_p, rel) == ["api"])
     finally:
         shutil.rmtree(tmp_p, ignore_errors=True)
 

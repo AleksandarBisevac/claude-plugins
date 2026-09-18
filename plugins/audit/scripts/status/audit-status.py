@@ -1054,13 +1054,20 @@ def _usage_line(summary, usage):
 
     The cost clause is dropped when `showCost` is false, because naming dollars
     would leak exactly what that setting exists to hide. The phase clause is
-    dropped when nothing is running, because there is no phase to attribute to."""
+    dropped when nothing is running, because there is no phase to attribute to.
+
+    A phase carrying `mergedAt` is never "this phase", whatever `status` still
+    says: `close-phase.py` stamps `mergedAt` and never touches `status`, so a
+    phase whose branch landed hours ago can still read `in_progress`. Printing
+    its token count as the RUNNING phase's spend would attribute fresh work to
+    a phase that stopped accruing any the moment it merged. `summary["phases"]`
+    carries `mergedAt` for exactly this reading — see `rollup()`."""
     totals = usage.get("totals") or {}
     parts = ["usage: %s tok" % _fmt.fmt_tokens(totals.get("tokens"))]
     if usage.get("showCost"):
         parts.append("~%s equiv" % _fmt.fmt_cost(totals.get("costUSD")))
     running = [p.get("id") for p in summary["phases"]
-               if p.get("status") == "in_progress"]
+               if p.get("status") == "in_progress" and not p.get("mergedAt")]
     if running:
         per = (usage.get("byPhase") or {}).get(running[0]) or {}
         if per:

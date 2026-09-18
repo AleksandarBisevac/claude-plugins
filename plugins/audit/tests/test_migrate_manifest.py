@@ -97,6 +97,25 @@ def _cases(check):
         code3f, _ = M.migrate(p3, force=True)
         check("in_progress + --force -> migrates", code3f == 0)
 
+        # 3b. a MERGED phase is not read as mid-run, whatever `status` still says:
+        # `close-phase.py` stamps `mergedAt` and never touches `status`, so a phase
+        # merged hours ago can still read `in_progress`. Its branch and worktree are
+        # already gone, so there is no run left for a layout change to corrupt -
+        # refusing here would block an ordinary migration on a fact nothing is
+        # still doing. p3 two cases up is the control: same shape, no `mergedAt`,
+        # and it still refuses.
+        p3b = os.path.join(tmp, "c3b", "audit-plan.json")
+        os.makedirs(os.path.dirname(p3b))
+        m3b = _legacy()
+        m3b["phases"][1]["status"] = "in_progress"
+        m3b["phases"][1]["mergedAt"] = "2026-01-01T00:00:00Z"
+        with open(p3b, "w", encoding="utf-8") as fh:
+            json.dump(m3b, fh)
+        code3b, msg3b = M.migrate(p3b)
+        check("a merged-but-stale phase does not block migration, unlike the "
+              "genuinely in_progress one just above (no --force needed)",
+              code3b == 0, msg3b)
+
         # 4. dry-run writes nothing
         p4 = os.path.join(tmp, "c4", "audit-plan.json")
         os.makedirs(os.path.dirname(p4))
