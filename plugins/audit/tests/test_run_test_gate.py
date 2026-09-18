@@ -2055,6 +2055,63 @@ def _cases(check):
           _hit270 == ["src/mine.ts"] and "among them:" in _bhit
           and "src/mine.ts" in _bhit)
 
+    # --- the complement: what a green gate did NOT touch ---------------------
+    # An operator running this on a live engagement singled out the coverage
+    # line unprompted: it is the only place connecting a green gate to the
+    # files a phase claimed, and the complement - what was declared but never
+    # named - is the interesting half of that. `hits` and `owned` are both
+    # live inside `coverage()` where the overlap is built, so that is where
+    # the subtraction has to happen; a print site downstream only ever sees
+    # whichever one it was handed.
+    _some, _sb = M.coverage(["src/a.ts", "src/b.ts", "src/c.ts"],
+                            set(["src/a.ts"]))
+    check("cv19 THE FAULT, FIXED: a partial hit used to report only the file "
+          "it named, saying nothing about the two it declared and never "
+          "touched - the complement was computed nowhere. It now rides the "
+          "same basis the hit count comes from: %r" % (_sb,),
+          _some == ["src/a.ts"]
+          and "declared but not named by the run" in _sb
+          and "src/b.ts" in _sb and "src/c.ts" in _sb)
+    _all, _ab = M.coverage(["src/a.ts", "src/b.ts"],
+                           set(["src/a.ts", "src/b.ts"]))
+    check("cv20 AN EMPTY COMPLEMENT IS ITS OWN SENTENCE, not a basis that "
+          "just stops after the count: 'every declared file was touched' is "
+          "a claim the run earned, and a reader must be told that rather "
+          "than inferring it from a missing clause: %r" % (_ab,),
+          _all == ["src/a.ts", "src/b.ts"]
+          and "every declared file was named by the run" in _ab
+          and "declared but not named by the run" not in _ab)
+    _none, _nb = M.coverage([], set(["src/a.ts"]))
+    check("cv21 ...and it must not be the SAME sentence as 'nothing was "
+          "declared' - the two are different facts and a reader comparing "
+          "two rows cannot be made to tell them apart from a blank: %r / %r"
+          % (_ab, _nb),
+          "declares no files" in _nb
+          and "every declared file was named" not in _nb
+          and _ab != _nb)
+    _wide = ["src/keep%02d.ts" % n for n in range(40)]
+    _whit, _wb = M.coverage(_wide, set(["src/keep00.ts"]))
+    _wshown = len([p for p in _wide[1:] if p in _wb])
+    check("cv22 the untouched list is truncated the way its neighbour two "
+          "statements above already is - `_output.some_of`, not a second "
+          "mechanism invented for this line - so a row this wide still says "
+          "how many it left out rather than growing the ledger unbounded: "
+          "shown=%d of %d" % (_wshown, len(_wide) - 1),
+          _whit == ["src/keep00.ts"]
+          and 0 < _wshown < len(_wide) - 1
+          and "and %d more" % (len(_wide) - 1 - _wshown) in _wb)
+    res = M.run_gate(tmp, [("test", "npx vitest run")], runner=_vitest_green,
+                     owns=["tools/ui-tests/panel.test.js", "docs/plan.json"])
+    lines = []
+    M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("cv23 END TO END: the printed line and the recorded basis agree - "
+          "the run named one of two declared files, and the line a reader "
+          "actually sees says which one it missed, not only which one it "
+          "hit: %r" % (text[-160:],),
+          "coverage: 1 declared file" in text
+          and "declared but not named by the run: docs/plan.json" in text)
+
     # --- what the manifest says the work owns -----------------------------
     check("cv7 the phase's declaration is the UNION of its tasks' files, "
           "de-duplicated - the phase gate is this script's actual call site, so "

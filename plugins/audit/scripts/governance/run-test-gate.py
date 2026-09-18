@@ -1625,6 +1625,12 @@ def declared_coverage_answer(task_files):
 def coverage(task_files, named):
     """`(overlap, basis)` -- which of the task's files the run actually named.
 
+    `basis` also carries the COMPLEMENT: the declared files the run did NOT
+    name, sampled the same way `named` is above it, or the one sentence for
+    "there was no complement" when the run named every one of them. See the
+    comment above the `missing` line for why that lives in `basis` and not a
+    return value of its own.
+
     A RUNNER THAT PRINTS ONLY SUITE PATHS STILL NAMES YOUR WORK. Two field
     reports disagreed about this line and both were right about their own run:
     one saw `NO OVERLAP` on 9 of 12 tasks because jest prints suite paths while
@@ -1687,6 +1693,24 @@ def coverage(task_files, named):
                       "that it did not"
                       % (basis, _output.some_of(_kinds(owned),
                                                 budget=SAMPLE_BUDGET)))
+    # THE COMPLEMENT IS THE INTERESTING HALF, an operator said so unprompted:
+    # a green gate that exercised a subset is the thing you want to see, and
+    # this is the only frame that has both sets to subtract. `owned` is the
+    # declaration and `hits` is what the run actually named; a print site
+    # downstream sees only whichever of the two it is handed and would have
+    # to be handed this too. Folded into `basis` rather than a field of its
+    # own so every surface that already reads `coverageBasis` - the ledger,
+    # the report, the panel - carries it without a plumbing change of its
+    # own.
+    #
+    # AN EMPTY COMPLEMENT IS ITS OWN SENTENCE. "every declared file was
+    # named" and "the work under test declares no files" (above, before a
+    # run was even required) are different facts, and a reader comparing two
+    # rows must not have to tell them apart from a basis that just stops.
+    missing = sorted(set(owned) - set(hits))
+    basis += ("; every declared file was named by the run" if not missing
+              else "; declared but not named by the run: %s"
+              % (_output.some_of(missing, budget=SAMPLE_BUDGET),))
     return hits, basis
 
 
@@ -2834,6 +2858,13 @@ def _render_verdict(res, out):
     else:
         out("  coverage: %d declared file(s) named by the run: %s"
             % (len(res["overlap"]), ", ".join(res["overlap"])))
+        # THE OTHER HALF OF THE SAME LINE. `coverageBasis` now carries the
+        # complement `coverage()` built from the same two sets this line's
+        # own count comes from - printed beside the hit list rather than
+        # only into the ledger, or the one place a green gate connects to
+        # the files a phase claimed would keep the interesting half to
+        # itself.
+        out("  basis: %s" % res["coverageBasis"])
     if code == E_OK:
         # THE TREE CLAUSE IS COMPUTED, because this line was making two claims it
         # had no basis for: `tree unchanged` printed unchanged over a run where
