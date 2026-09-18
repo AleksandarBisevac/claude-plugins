@@ -1330,7 +1330,15 @@ def _resolve_phase(assembled, want, out):
         out("[audit-task] no phase %s in the manifest; phases: %s"
             % (want, ", ".join(_phase_label(p) for p in phases) or "(none)"))
         return E_USAGE
-    inprog = [p for p in phases if p.get("status") == "in_progress"]
+    # A phase whose branch already merged is never the default target, whatever
+    # its `status` still says: `close-phase.py` stamps `mergedAt` without ever
+    # writing `status` (that field is the sign-off commit's, on the branch,
+    # before the merge), so a phase that reaches here with `mergedAt` set and no
+    # terminal `status` is closed in every sense but the one field nobody
+    # flipped. Landing a new task on it would reopen a branch this verb has no
+    # way to run anything on.
+    inprog = [p for p in phases
+             if p.get("status") == "in_progress" and not p.get("mergedAt")]
     if len(inprog) == 1:
         return inprog[0]
     if not inprog:

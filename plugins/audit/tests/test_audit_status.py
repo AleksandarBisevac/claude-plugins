@@ -379,6 +379,19 @@ def _cases(_record):
           "RESUMABLE" in _txt_r and "/audit:resume" in _txt_r)
     check("s18 the phase branch is shown", "audit/p2-next" in _txt_r)
 
+    # a phase that already merged is never RESUMABLE, whatever `status` still
+    # says: `close-phase.py` stamps `mergedAt` and never touches `status`, so a
+    # merged phase can sit at in_progress for ever without there being a
+    # branch left to resume onto.
+    _fx_merged = copy.deepcopy(_fx_run)
+    _fx_merged["phases"][1]["mergedAt"] = "2026-01-01T00:00:00Z"
+    check("s18b a merged-but-stale phase is not flagged RESUMABLE",
+          "RESUMABLE" not in M.render_status(
+              _fx_merged, M.rollup(_fx_merged, [], [], usage=_u)))
+    check("s18c ...at the function under render_status too, not only through "
+          "the render",
+          M._resumable_lines(_fx_merged, {}) == [])
+
     # invalid manifest must be stated, not implied
     _txt_bad = M.render_status(_fx, M.rollup(_fx, ["boom"], []))
     check("s19 an invalid manifest is stated in the render",
@@ -1170,6 +1183,20 @@ def _cases(_record):
     check("g6 in-progress trips only when asked",
           M.evaluate_gate(s, M.DEFAULT_GATE) == []
           and "in-progress" in M.evaluate_gate(s, ("in-progress",)))
+
+    # g6b: a phase that merged but whose `status` never caught up must not
+    # trip "in-progress" -- `close-phase.py` stamps `mergedAt` and never
+    # touches `status`, so a merged phase can sit at in_progress for ever and
+    # this gate must not read that as work still under way.
+    m = copy.deepcopy(_fixture())
+    m["phases"][1]["status"] = "in_progress"
+    m["phases"][1]["mergedAt"] = "2026-01-01T00:00:00Z"
+    s = summarize(m)
+    check("g6b a merged-but-stale phase does not trip in-progress",
+          M.evaluate_gate(s, ("in-progress",)) == [])
+    check("g6c ...and rollup carries `mergedAt` on the phase row so this gate "
+          "can tell the two apart without re-reading the manifest",
+          s["phases"][1]["mergedAt"] == "2026-01-01T00:00:00Z")
 
     # (g7) open-high-bugs catches high-OR-WORSE severities, not only "high"
     for sev in ("critical", "Blocker", "sev1", "P0", "URGENT", "sev-1"):

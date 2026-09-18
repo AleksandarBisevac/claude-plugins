@@ -1259,10 +1259,16 @@ def _proposal_lines(manifest, summary, pt=None):
 
 
 def _resumable_lines(manifest, summary, pt=None):
-    """Flag an interrupted run, which is the one state a reader must not miss."""
+    """Flag an interrupted run, which is the one state a reader must not miss.
+
+    A phase with `mergedAt` set is skipped even when `status` still reads
+    `in_progress`: its branch already landed, so `/audit:resume`'s `git switch`
+    has nothing to switch to. `close-phase.py` stamps `mergedAt` without ever
+    writing `status`, which is what leaves a merged phase looking interrupted
+    forever if this does not ask about the stamp too."""
     pt = pt or _cli_fmt.PLAIN
     for p in ((manifest or {}).get("phases") or []):
-        if not isinstance(p, dict):
+        if not isinstance(p, dict) or p.get("mergedAt"):
             continue
         running_tasks = [t for t in (p.get("tasks") or [])
                          if isinstance(t, dict) and t.get("status") == "in_progress"]

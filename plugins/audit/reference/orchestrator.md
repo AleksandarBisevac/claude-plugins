@@ -469,10 +469,14 @@ that.
 
 ## Resume after interruption
 
-1. Read the manifest. Find the phase with `status == "in_progress"` and a non-null `branch`.
-   **Pre-0.3 manifests fallback:** if no phase is `in_progress`, use the phase with a non-null `branch`
-   whose status != `"done"`, else the phase containing an `in_progress` task. If none of these exist,
-   report "nothing to resume" and suggest `/audit:status`. Otherwise `git switch` to its branch.
+1. Read the manifest. Find the phase with `status == "in_progress"`, a non-null `branch`, and no
+   `mergedAt` — a phase whose branch already landed has nothing left to resume, whatever `status`
+   still says: `close-phase.py` stamps `mergedAt` the moment the merge is verified and never writes
+   `status` itself, so a merged phase can sit at `in_progress` indefinitely without being one.
+   **Pre-0.3 manifests fallback:** if no such phase exists, use the phase with a non-null `branch`,
+   no `mergedAt`, and status != `"done"`, else the phase containing an `in_progress` task. If none of
+   these exist, report "nothing to resume" and suggest `/audit:status`. Otherwise `git switch` to its
+   branch.
 2. Compare committed work: `git log --oneline <phase.baseRef>..HEAD`.
 3. Find the resume point: the **first task whose `commit` field is null/missing**:
    - `status == "done"` but no `commit` → the commit step was interrupted; re-commit its files now (standard message, record SHA).

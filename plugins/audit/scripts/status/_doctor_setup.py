@@ -526,9 +526,16 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
                "/audit:init to enforce, or set \"planGate\": \"deny\" to enforce "
                "without a manifest" % manifest_rel)
     elif mode == "warn":
+        stale = state.get("staleClosedPhase")
+        note = ("" if not stale else
+                " (phase %s merged but its status was never flipped to "
+                "'done' - the sign-off commit that would have flipped it "
+                "either never landed or landed on a branch that did not "
+                "survive the merge; it no longer counts as running)" % stale)
         rep.ok("plan gate",
                "warn - a manifest exists but no phase is in_progress, so out-of-plan "
-               "edits are advisory. Start a phase (/audit:next, /audit:phase) to enforce")
+               "edits are advisory. Start a phase (/audit:next, /audit:phase) to "
+               "enforce%s" % note)
     else:
         rep.ok("plan gate",
                "deny - a phase is in_progress, so edits are held to the running plan")

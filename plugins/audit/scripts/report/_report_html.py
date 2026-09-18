@@ -1440,6 +1440,16 @@ def _phase_meta_div(phase):
         bits.append("branch " + e(phase["branch"]))
     if phase.get("mergedAt"):
         bits.append("merged " + e(phase["mergedAt"]))
+        # The chip beside this line renders `phase["status"]` verbatim, so a
+        # merge that landed while the sign-off commit's status write never
+        # reached this copy leaves the row calling itself "in progress" next
+        # to its own merge timestamp — two facts a reader would otherwise have
+        # to reconcile alone. Name the gap instead: `close-phase.py` stamps
+        # `mergedAt` and never touches `status`, so the two can only stay
+        # apart like this, never catch up on their own.
+        if phase.get("status") not in ("done", "cancelled"):
+            bits.append("sign-off not recorded - status stayed %s"
+                        % e(str(phase.get("status"))))
     if phase.get("summary"):
         bits.append(e(phase["summary"]))
     return ('<div class="pmeta muted">%s</div>' % " · ".join(bits)) if bits else ""

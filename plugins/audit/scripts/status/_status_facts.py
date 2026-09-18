@@ -837,6 +837,12 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
         "id": p.get("id"), "title": p.get("title"),
         "status": p.get("status"), "area": areas_of(p.get("area")),
         "desiredOutcome": p.get("desiredOutcome"),
+        # Passed through verbatim, never derived: `evaluate_gate`'s
+        # "in-progress" condition reads it to tell a phase that merged from
+        # one that is genuinely running, and only the plan field itself can
+        # say which — `status` alone cannot, since `close-phase.py` stamps
+        # this without ever touching `status`.
+        "mergedAt": p.get("mergedAt"),
         # The tier as `_priority` reads it, not the raw field: `priority: "1"`
         # orders nothing, so a badge rendered off the raw value would advertise
         # a pin the run does not honour. `None` means unprioritised.
@@ -1008,7 +1014,7 @@ def evaluate_gate(summary, conditions):
             failed.append(c)
         elif c == "in-progress" and (
                 summary["tasks"]["byStatus"].get("in_progress", 0) > 0
-                or any(p.get("status") == "in_progress"
+                or any(p.get("status") == "in_progress" and not p.get("mergedAt")
                        for p in summary["phases"])):
             failed.append(c)
         elif c in ("over-budget", "budget-80") and budget_breaches(

@@ -329,9 +329,37 @@ def _cases(check):
             json.dump(_manifest(), fh)
         rep = base.Report()
         M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
+        _ds14_detail = _detail(rep, "plan gate")
         check("ds14 a manifest with no phase in_progress is WARN, not deny: %r"
-              % (_detail(rep, "plan gate"),),
-              _detail(rep, "plan gate").startswith("warn"))
+              % (_ds14_detail,),
+              _ds14_detail.startswith("warn"))
+
+        # A phase that merged but whose `status` never caught up to `done`
+        # resolves to WARN (the fix), and the row NAMES the gap instead of
+        # leaving a reader to notice the merge timestamp and the `in_progress`
+        # status disagree on their own -- the same diagnosis `close-phase.py`
+        # already prints, put where this reader is looking.
+        stale = _manifest()
+        stale["phases"][0]["status"] = "in_progress"
+        stale["phases"][0]["mergedAt"] = "2026-01-01T00:00:00Z"
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(stale, fh)
+        rep = base.Report()
+        M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
+        _ds14b_detail = _detail(rep, "plan gate")
+        check("ds14b a merged-but-stale phase is WARN, not the deny a stale "
+              "in_progress status would hold for ever: %r"
+              % (_ds14b_detail,),
+              _ds14b_detail.startswith("warn"))
+        check("ds14c ...and the row names the stale phase and the reason, "
+              "so the operator does not have to re-derive it: %r"
+              % (_ds14b_detail,),
+              "P1" in _ds14b_detail and "merged" in _ds14b_detail)
+        check("ds14d SECOND-DIRECTION CASE: an ordinary warn (ds14, no stale "
+              "phase at all) carries no such note - the case that fails if "
+              "it becomes unconditional and every warn starts naming a "
+              "phase that is not stale: %r" % (_ds14_detail,),
+              "merged but" not in _ds14_detail)
 
         running = _manifest()
         running["phases"][0]["status"] = "in_progress"

@@ -1892,7 +1892,8 @@ def declaring_tasks(root, manifest_rel, rel):
 
 def manifest_state(root, manifest_rel):
     """How much the plan gate actually knows:
-    {"exists": bool, "phaseRunning": bool, "runningPhase": "<id>"|None}.
+    {"exists": bool, "phaseRunning": bool, "runningPhase": "<id>"|None,
+     "staleClosedPhase": "<id>"|None}.
 
     `runningPhase` names the phase behind `phaseRunning` (the phase itself when
     it is in_progress, the OWNER phase when only a task is), so a denial can say
@@ -1916,9 +1917,21 @@ def manifest_state(root, manifest_rel):
     repo executing its plan, and refusing to notice would deny the gate exactly when
     it is most warranted.
 
+    A MERGED phase is never counted as running, whatever `status` still says.
+    `close-phase.py` stamps `mergedAt` the moment `git merge` verifies the branch
+    landed, and it never writes `status` itself — that field is the sign-off
+    commit's, made on the phase's own branch before the merge. A phase that
+    reaches here with `mergedAt` set and a `status` that never caught up signed
+    off on a copy that did not survive, or was merged by hand; either way its
+    branch is gone, so it holds the gate open on nothing. `staleClosedPhase`
+    names the first one found, so a caller can say why the tier looks emptier
+    than the raw `status` column would suggest, rather than leaving a reader to
+    notice the contradiction alone.
+
     Never raises. On any error it reports the LEAST aggressive state, so a crash in
     here can only relax the gate, never invent a denial."""
-    state = {"exists": False, "phaseRunning": False, "runningPhase": None}
+    state = {"exists": False, "phaseRunning": False, "runningPhase": None,
+             "staleClosedPhase": None}
     try:
         path = Path(root) / manifest_rel
         if not path.exists():
@@ -1929,6 +1942,11 @@ def manifest_state(root, manifest_rel):
             return state
         for phase in manifest.get("phases", []) or []:
             if not isinstance(phase, dict):
+                continue
+            if phase.get("mergedAt"):
+                if (state["staleClosedPhase"] is None
+                        and phase.get("status") not in ("done", "cancelled")):
+                    state["staleClosedPhase"] = phase.get("id")
                 continue
             if phase.get("status") == "in_progress":
                 state["phaseRunning"] = True

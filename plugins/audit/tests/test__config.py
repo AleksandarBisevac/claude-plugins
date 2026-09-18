@@ -260,7 +260,7 @@ def _cases(check):
         check("f1 no manifest -> exists False, phaseRunning False, no phase "
               "to name",
               st == {"exists": False, "phaseRunning": False,
-                     "runningPhase": None}, repr(st))
+                     "runningPhase": None, "staleClosedPhase": None}, repr(st))
         check("f2 no manifest -> observe", M.plan_gate_mode({}, st) == "observe")
 
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -270,7 +270,7 @@ def _cases(check):
         check("f3 manifest with nothing running -> exists, not running, no "
               "phase to name",
               st == {"exists": True, "phaseRunning": False,
-                     "runningPhase": None}, repr(st))
+                     "runningPhase": None, "staleClosedPhase": None}, repr(st))
         check("f4 manifest, nothing running -> warn", M.plan_gate_mode({}, st) == "warn")
 
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -303,6 +303,51 @@ def _cases(check):
         check("f9 sharded layout: a running phase is still detected "
               "(assembled read, not the index)",
               M.manifest_state(tmp_f, rel)["phaseRunning"] is True)
+
+        # A phase that merged but whose `status` never caught up (the close
+        # writes `mergedAt`, never `status`) is not running, whatever `status`
+        # says -- and the state names it so a caller can explain the gap.
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress",
+             "mergedAt": "2026-01-01T00:00:00Z", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]}]})
+        st = M.manifest_state(tmp_f, rel)
+        check("f9b a merged phase stuck at in_progress is NOT phaseRunning",
+              st["phaseRunning"] is False and st["runningPhase"] is None,
+              repr(st))
+        check("f9c ...and the state names it as the stale one",
+              st["staleClosedPhase"] == "P1", repr(st))
+        check("f9d ...which resolves the tier to warn (advisory), not the "
+              "deny a stale in_progress status would have held it at for ever",
+              M.plan_gate_mode({}, st) == "warn")
+
+        # CONTROL, in the same manifest: a merged-and-stale phase sits beside a
+        # phase that is genuinely running, and the genuinely running one is
+        # still the one found and named.
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress",
+             "mergedAt": "2026-01-01T00:00:00Z", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]},
+            {"id": "P2", "title": "q", "status": "in_progress", "tasks": [
+                {"id": "P2.1", "title": "t", "status": "pending"}]}]})
+        st = M.manifest_state(tmp_f, rel)
+        check("f9e CONTROL an ordinary running phase beside a stale merged one "
+              "is still found and named",
+              st["phaseRunning"] is True and st["runningPhase"] == "P2",
+              repr(st))
+        check("f9f ...and the stale one is still named too, so a reader gets "
+              "both facts",
+              st["staleClosedPhase"] == "P1", repr(st))
+
+        # SECOND-DIRECTION CASE: a phase that merged and DID get its status
+        # flipped is not reported as stale -- the field naming a real gap must
+        # not fire on the phase that closed correctly.
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "done",
+             "mergedAt": "2026-01-01T00:00:00Z", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]}]})
+        check("f9g a merged phase whose status DID flip to done is not stale",
+              M.manifest_state(tmp_f, rel)["staleClosedPhase"] is None)
 
         # enforce overrides every tier, including the one with no evidence at all.
         shutil.rmtree(tmp_f / "docs")
@@ -340,7 +385,8 @@ def _cases(check):
         check("f14 manifest_state on garbage input still returns the safe shape",
               M.manifest_state(None, None) == {"exists": False,
                                              "phaseRunning": False,
-                                             "runningPhase": None})
+                                             "runningPhase": None,
+                                             "staleClosedPhase": None})
         check("f15 plan_gate_mode on garbage input degrades to observe",
               M.plan_gate_mode(None, None) == "observe")
 

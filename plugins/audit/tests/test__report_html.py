@@ -477,6 +477,26 @@ def _cases(check):
           M._phase_meta_div({"branch": "audit/p1"}) == M._phase_meta_div(
               {"branch": "audit/p1", "priority": None}),
           M._phase_meta_div({"branch": "audit/p1"}))
+    check("a merged phase whose status never caught up to done names the gap "
+          "beside its own merge timestamp, rather than leaving 'in progress' "
+          "(the chip two cells over) and 'merged ...' to contradict each "
+          "other unremarked",
+          "sign-off not recorded" in M._phase_meta_div(
+              {"status": "in_progress", "mergedAt": "2026-01-01T00:00:00Z"}),
+          M._phase_meta_div({"status": "in_progress",
+                             "mergedAt": "2026-01-01T00:00:00Z"}))
+    check("SECOND-DIRECTION CASE: a phase that merged AND whose status DID "
+          "flip to done gets no such note - the case that fails if the gap "
+          "note fires on every merged phase instead of only the stale ones",
+          "sign-off not recorded" not in M._phase_meta_div(
+              {"status": "done", "mergedAt": "2026-01-01T00:00:00Z"}),
+          M._phase_meta_div({"status": "done",
+                             "mergedAt": "2026-01-01T00:00:00Z"}))
+    check("...and a phase with no mergedAt at all gets no note either, "
+          "whatever its status - the note is about a merge that outran its "
+          "own bookkeeping, not about status alone",
+          "sign-off not recorded" not in M._phase_meta_div(
+              {"status": "in_progress"}))
 
     # --- any_phase_pinned() / phase_ranks(): the sort option's basis ------------
     # The rank the page hands its sort control, and the one predicate that

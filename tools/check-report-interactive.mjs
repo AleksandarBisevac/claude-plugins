@@ -1673,6 +1673,7 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
     const iCommit = head.indexOf('commit');
     const iDone = head.indexOf('done');
     const iOut = head.indexOf('outcome');
+    const iTask = head.indexOf('task');
     const body = lines.slice(1);
     // Every data row must carry as many fields as the header names — an
     // appended column with no value pushed into the row is how a CSV silently
@@ -1701,6 +1702,40 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
       expect('every exported completion is the full ISO stamp, not the minute '
         + 'the cell shows',
         stamps.every((x) => /T/.test(x)), true);
+    }
+    if (iOut >= 0) {
+      // The third column this block indexes, asserted like its two
+      // siblings above rather than left computed and unread. The header is
+      // named once — a second "outcome" column would mean a future compact
+      // column collided with the detail one and this index started
+      // pointing at the lossy copy instead — and every exported value is
+      // compared against the SAME detail row the page itself renders it
+      // from, independent of the export code: outcome is the widest
+      // free-text column here, so it is the one most likely to carry a
+      // stray "Copy" control's own label if the export ever again took the
+      // cell instead of the record behind it.
+      expect('the header names "outcome" exactly once',
+        head.filter((h) => h === 'outcome').length, 1);
+      const outByTask = await page.evaluate((sg) => {
+        const map = {};
+        document.querySelectorAll(`tr.task[data-seg="${sg}"]`).forEach((t) => {
+          const id = (t.querySelector('td.tid') || {}).textContent || '';
+          const detail = t.nextElementSibling;
+          const label = detail && [...detail.querySelectorAll('.dt-k')]
+            .find((k) => k.textContent.trim() === 'outcome');
+          const v = label && label.nextElementSibling;
+          map[id.trim()] = v ? v.textContent.trim() : '';
+        });
+        return map;
+      }, segName);
+      expect('every exported outcome is the full text the detail row carries '
+        + 'for that task, and never a stray "Copy" control label',
+        iTask >= 0 && body.every((l) => {
+          const f = csvFields(l);
+          const tid = f[iTask];
+          if (!tid || !(tid in outByTask)) return true; // taskless-phase row
+          return f[iOut] === outByTask[tid] && !/Copy/.test(f[iOut] || '');
+        }), true);
     }
     expect('...and the file carries every column the compact row leaves out',
       head.includes('started') && head.includes('model')
@@ -1765,7 +1800,7 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
       expect('the Markdown twin downloads and its first heading survives the decode',
              typeof heading === 'string' && heading.length > 2, true);
       expect('the Markdown twin is offered under the name the page carries',
-             await dl.suggestedFilename(),
+             dl.suggestedFilename(),
              await page.evaluate(() => window.AUDIT_MD_NAME || 'audit-report.md'));
     } catch (e) {
       failures.push(`FAIL the Markdown twin produced no download (${String(e).split('\n')[0]})`);

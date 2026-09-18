@@ -179,6 +179,30 @@ def _cases(check):
         check("a5 no in_progress phase -> exit 2 naming the open phases",
               code == 2 and "P2" in txt and "P3" in txt)
 
+        # a merged phase is never the default target, whatever its `status`
+        # still says: `close-phase.py` stamps `mergedAt` and never touches
+        # `status`, so a phase left at in_progress by a merge that outran its
+        # own sign-off write must not silently take a new task.
+        merged_stale = base_manifest()
+        merged_stale["phases"][1]["mergedAt"] = "2026-01-01T00:00:00Z"
+        proj4, _m4 = mk("a-merged-stale", merged_stale)
+        code, txt = run(["add", "X", "--project-dir", proj4])
+        check("a5b a merged-but-stale in_progress phase is not the default "
+              "target -- exit 2, same as no in_progress phase at all",
+              code == 2 and "P2" in txt and "P3" in txt)
+
+        # CONTROL: a genuinely running phase beside a merged-but-stale one
+        # resolves uniquely to the running one, not to "two in_progress
+        # phases, --phase required".
+        two_one_stale = base_manifest()
+        two_one_stale["phases"][2]["status"] = "in_progress"
+        two_one_stale["phases"][2]["mergedAt"] = "2026-01-01T00:00:00Z"
+        proj5, m5 = mk("a-two-one-stale", two_one_stale)
+        code, txt = run(["add", "Y", "--project-dir", proj5])
+        check("a5c CONTROL a genuinely running phase beside a merged-and-"
+              "stale one is still found and used as the default target",
+              code == 0 and task_in(m5, "P2.4") is not None)
+
         code, txt = run(["add", "X", "--phase", "P1", "--project-dir", proj])
         check("a6 a done phase refuses -- immutable history",
               code == 2 and "immutable" in txt)
