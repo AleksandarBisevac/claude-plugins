@@ -1,7 +1,7 @@
 {
   "id": "P59",
   "title": "3.0.1 - the platforms the release preflight could not see",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Everything CI found on windows and ubuntu that a macOS preflight in a full clone cannot reach, plus the field report that arrived alongside it.",
   "desiredOutcome": "CI is green on every platform it runs, and the preflight says which platforms it did NOT cover rather than reading as complete.",
   "testGate": [
@@ -29,7 +29,7 @@
     {
       "id": "P59.1",
       "title": "The exemption row admits a generated path, and the case still catches a typo",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: rc18 passes in a fresh checkout. The row I added to CITATION_SCAN_EXEMPT names the generated audit report, which is gitignored and absent until somebody renders it - and rc18 asserts every row names a file really in this tree. On the machine that added it the file existed; in CI it does not, so the release shipped with that case red on both platforms. The row itself is right and its reason is the point: without it the scan's answer moves with whether a report was rendered. The CASE is what has to widen - a path the repository declares as ignored is legitimately absent, and git can be asked that - while still failing a path that is simply a typo. Same question one layer down as the row itself: an answer that depends on something incidental.",
       "files": [
         "plugins/audit/tests/test__deps.py",
@@ -56,21 +56,30 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cf62f3a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "rc18 accepts a row whose path is absent when the repository declares it ignored, asking git for that set through the helper the sibling scan already uses, and still refuses a path that is neither present nor ignored.",
+        "descriptive": "The case stops depending on whether anybody rendered a report, without losing its grip on a typo."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T07:57:57Z",
+      "completedAt": "2026-09-18T07:57:57Z",
+      "verifiedBy": [
+        "p59_1_regression",
+        "p59_1_typo_control",
+        "p59_1_overfire"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cf62f3a",
+        "at": "2026-09-18T07:57:57Z"
+      }
     },
     {
       "id": "P59.2",
       "title": "The ledger check answers in a shallow clone rather than refusing the run",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: check-example-ledgers.py is green in CI's clone. Until this release every task in the shipped example carried a null commit, so the commit half had nothing to resolve and the question never arose. Giving the example a commit that resolves was the right repair for the assertions that never ran - and it made this check refuse in CI, because the runner clones shallow and the object is not there. The refusal is correct behaviour and must not become a silent pass: a truncated clone cannot answer, and saying so is the design. So the repair is one of - the workflow fetches enough history for the commits the examples name, or the check learns to say COULD-NOT-LOOK for an object a shallow clone lacks while still failing an object a full clone would refuse. Establish which, and say why the other was not chosen.",
       "files": [
         "tools/check-example-ledgers.py",
@@ -97,21 +106,29 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cf62f3a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The selftest job's checkout fetches the whole history, so the ledger check can resolve the commit the shipped example now names; the check and its refusal are unchanged.",
+        "descriptive": "The workflow stops asking a truncated clone a question it cannot answer."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T07:57:57Z",
+      "completedAt": "2026-09-18T07:57:57Z",
+      "verifiedBy": [
+        "p59_2_is_shallow_regression",
+        "p59_2_shallow_as_pass"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cf62f3a",
+        "at": "2026-09-18T07:57:57Z"
+      }
     },
     {
       "id": "P59.3",
       "title": "The hooks and their fixtures answer the same on a platform whose separator is not a slash",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: the windows job's selftest sweep is green. The failures cluster and most of them are from work that landed in the last two days. s16 shows the shape plainly: following a cd inside a multi-line command produced a path with the drive letter and separators eaten, so a join concatenated where it should have replaced. s14b reports the guard falling open because git could not be asked. sm17 lets a shard named by an absolute path through where it must be refused. The worktree-naming cases report the wrong root or the wrong silence. pl1 and pl2 are the launcher: the payload or the status does not survive the shell the runner uses there. rk5 is the retry seam asked about a signal death that platform does not deliver the same way. Read each failure before grouping them - some of these are one cause wearing several faces and some are genuinely separate, and treating them as one list is how a repair lands on the loudest and leaves the rest. THE ORCHESTRATOR CANNOT DRIVE THIS PLATFORM, so every claim has to be provable from the code path rather than from a run, and what cannot be established that way is to be named as could-not-prove rather than asserted.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -145,16 +162,24 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b9f8723",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "resolvable_destination checks a tilde only when it opens the word; the claim-block fixture quotes the paths it splices, the worktree fixtures normalise a version-control path before comparing it, the launcher fixture hands over a forward-slash program name, and the retry fixture reads the signal number from the platform rather than pasting it.",
+        "descriptive": "A guard stops reading a real absolute path as shell shorthand, and four fixtures stop comparing one directory in two spellings."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T08:11:24Z",
+      "completedAt": "2026-09-18T08:11:24Z",
+      "verifiedBy": [
+        "the six probe rows",
+        "and the tilde rule driven across six spellings"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b9f8723",
+        "at": "2026-09-18T08:11:24Z"
+      }
     },
     {
       "id": "P59.4",
@@ -378,6 +403,47 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P59.9",
+      "title": "The export check reads the column it computed an index for",
+      "status": "pending",
+      "description": "DONE MEANS: the exported table's outcome column is asserted, or the index nobody reads is gone and the omission is stated. The check computes an index for three columns and asserts over two: the commit column and the done column each drive a comparison, and the outcome column's index is computed and never read. The comment directly above it says the export used to take the cell text with the copy control included - which is precisely what an outcome-column assertion would catch, and the outcome is the widest free-text column in that table, so it is the one most likely to carry markup a cell picked up. Found by a type diagnostic rather than by any gate, which is the point: a computed-and-unused index is invisible to every check in this tree. Decide whether the column is worth asserting - if it is, assert it the way its two siblings are asserted; if it is not, delete the index and say in the comment why that column is out of scope, because a reader who sees three indexes and two checks will assume the third was forgotten. While there: an await sits on a call that returns no promise, which reads as waiting for something and waits for nothing.",
+      "files": [
+        "tools/check-report-interactive.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-18T07:57:57Z"
 }

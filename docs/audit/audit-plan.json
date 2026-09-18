@@ -343,7 +343,7 @@
     {
       "id": "P59",
       "title": "3.0.1 - the platforms the release preflight could not see",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P59.json"
     }
   ],
@@ -2156,7 +2156,8 @@
     ],
     "tools/check-report-interactive.mjs": [
       "P55.7",
-      "P59.4"
+      "P59.4",
+      "P59.9"
     ],
     "plugins/audit/scripts/ui/report": [
       "P55.7",
