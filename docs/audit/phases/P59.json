@@ -653,7 +653,7 @@
     {
       "id": "P59.13",
       "title": "The same removal shape in thirteen more suites",
-      "status": "pending",
+      "status": "done",
       "description": "DONE MEANS: no suite in the tree removes a git fixture with a bare ignore-errors removal. Six were repaired because one platform's own run observed them leaking; a sweep of the same shape names thirteen more files that build a real repository and remove it the same way. They are not repaired on suspicion - that was deliberate, because a fix applied where nothing was observed carries no evidence - but the shape is now known and the helper exists, so the remaining work is mechanical rather than investigative. Use the shared helper wherever the file can import it and the local copy only where the import is forbidden, exactly as the six did. AND WATCH FOR THE ONE THAT HIDES: at least one of the six created its repository inside a small helper rather than at the call site, so a plain search for the obvious command missed it - search for what removes a directory, not for what creates a repository.",
       "files": [
         "plugins/audit/tests/test__commit_trail.py",
@@ -691,16 +691,24 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d962d7f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Every reached removal of a git fixture in those suites goes through the shared helper, and one root that was never removed is now removed where it is made.",
+        "descriptive": "The removal that takes a git fixture is the shared one wherever the shape is reached."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-18T15:07:13Z",
+      "completedAt": "2026-09-18T15:07:13Z",
+      "verifiedBy": [
+        "thirteen of fourteen probe rows",
+        "the fourteenth named inconclusive"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d962d7f",
+        "at": "2026-09-18T15:07:13Z"
+      }
     }
   ],
   "startedAt": "2026-09-18T07:57:57Z"
