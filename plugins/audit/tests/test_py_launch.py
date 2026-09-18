@@ -103,10 +103,21 @@ def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
     reason) and sent a healthy run down the same loud fallback. A fixture path
     is this machine's, not the subject's; what the subject actually receives
     is a bash-spelled `$0`, and that is what gets driven here.
+
+    `sh` is usually the interpreter's own path, but may be a LIST - a binary
+    found by bare name is not always a shell by itself. A `busybox` resolved
+    this way is the multi-call binary, not a `sh`-named symlink to it; run
+    directly its own dispatcher reads the next argument as an APPLET NAME, so
+    the launcher's path is looked up as an applet, not executed as a script,
+    and busybox refuses it ("applet not found") before the launcher's first
+    line runs. `[busybox_path, "sh"]` selects the applet explicitly - the same
+    selection every other name here gets for free from its own binary, and
+    the same one a machine gets for free when `/bin/sh` IS that symlink.
     """
     env = dict(os.environ)
     env["PATH"] = path_entry
-    proc = subprocess.Popen([sh, launcher.replace("\\", "/"), script, mode],
+    argv = sh if isinstance(sh, list) else [sh]
+    proc = subprocess.Popen(argv + [launcher.replace("\\", "/"), script, mode],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=env)
     out, err = proc.communicate(stdin.encode("utf-8"))
@@ -161,13 +172,24 @@ def _cases(check):
     broken_dir = _shim_dir(root, "bin-broken", "#!/bin/sh\nexit 1\n")
 
     mixed_dir = _shim_dir(root, "bin-mixed", "#!/bin/sh\nexit 1\n")
+    # SINGLE-QUOTED: `sys.executable` is `os.path.join()`'s native separator,
+    # all-backslash on windows, and an UNQUOTED backslash in shell source is
+    # an escape character - each `\X` is read as a literal `X`, which strips
+    # every separator and glues the path into one wrong word. Single quotes
+    # are the one POSIX quoting form backslash cannot see through.
     _write(os.path.join(mixed_dir, "python"),
-           "#!/bin/sh\nexec %s \"$@\"\n" % (sys.executable,), executable=True)
+           "#!/bin/sh\nexec '%s' \"$@\"\n" % (sys.executable,), executable=True)
 
     counter = os.path.join(root, "spawns.log")
+    # Both substitutions SINGLE-QUOTED for the same reason as the `python`
+    # shim above: `counter` is this fixture's own `os.path.join()` path, and
+    # on windows an unquoted backslash in it is stripped by the shell before
+    # `printf` ever sees a filename - the write lands next to `root`, merged
+    # into one wrong name, and the read below (a real path, never shell-quoted
+    # because Python never quotes for a shell) then finds nothing there.
     counting_dir = _shim_dir(
         root, "bin-counting",
-        "#!/bin/sh\nprintf 'x\\n' >> %s\nexec %s \"$@\"\n"
+        "#!/bin/sh\nprintf 'x\\n' >> '%s'\nexec '%s' \"$@\"\n"
         % (counter, sys.executable))
 
     real_dir = os.path.dirname(sys.executable)
@@ -320,8 +342,13 @@ def _cases(check):
     else:
         per_shell = []
         for other in others:
-            healthy = _drive(other, fixture_launcher, "hook.py", "ask", real_dir)
-            failing = _drive(other, fixture_launcher, "hook.py", "ask",
+            # A `busybox` found by bare name is the multi-call binary, not a
+            # `sh`-named symlink to it - see `_drive`'s docstring for why that
+            # means an explicit applet argument rather than a bare path.
+            argv = [other, "sh"] if os.path.basename(other) == "busybox" \
+                else other
+            healthy = _drive(argv, fixture_launcher, "hook.py", "ask", real_dir)
+            failing = _drive(argv, fixture_launcher, "hook.py", "ask",
                              broken_dir)
             per_shell.append((os.path.basename(other),
                               healthy["out"] == MARKER + PAYLOAD
