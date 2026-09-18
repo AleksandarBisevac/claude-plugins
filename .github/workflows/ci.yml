@@ -23,6 +23,20 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # THE WHOLE HISTORY, for the same reason the `lint` job's checkout takes
+          # it below: `tools/check-example-ledgers.py --selftest`'s `el17` asks
+          # THIS checkout whether it can answer for a commit's existence
+          # (`_commit_trail.can_answer`), and a truncated checkout answers "no" -
+          # correctly, by that check's own design - which is a refusal rather than
+          # a defect in the check. This job's sweep (`tools/sweep-selftests.py`)
+          # runs that selftest, on both matrix platforms, and this action's
+          # default is a shallow clone. Giving the shipped example a commit that
+          # actually resolves (rather than the null commit every task carried
+          # before) made this checkout's depth load-bearing where it used to be
+          # irrelevant - two assertion sites (`el1`, `el17`) that never ran are
+          # now exercised for real, and they need the object to be reachable.
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

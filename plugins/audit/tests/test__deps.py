@@ -2707,19 +2707,47 @@ def _cases(check):
     finally:
         shutil.rmtree(_disc_tmp, ignore_errors=True)
 
-    # THE TABLE ITSELF: every row names a file really in this tree and a reason
-    # that is not empty, no path repeats, and the three paths this repair turns
-    # on are on the sides `rc17` and the docstring above both depend on - the
-    # premise checked, not just the shape.
+    # THE TABLE ITSELF: every row names a file this tree either KEEPS or
+    # DECLARES ignored, and a reason that is not empty, no path repeats, and
+    # the three paths this repair turns on are on the sides `rc17` and the
+    # docstring above both depend on - the premise checked, not just the
+    # shape.
+    #
+    # `os.path.exists()` ALONE cannot carry that "or DECLARES ignored" half:
+    # the generated-report row is right BECAUSE the file is gitignored and
+    # genuinely absent until somebody renders one, so a bare existence check
+    # fails this case in exactly the checkout the row exists to describe - a
+    # fresh clone with no rendered report, which is what a CI runner and a
+    # `git archive HEAD` export both are. `_output._ignored_files()` is the
+    # question asked of GIT rather than guessed from a missing path: it reads
+    # `.gitignore`'s own FILE entries, the same reader `_refs.py` already
+    # trusts for "is this committed page a scratch render". A row missing for
+    # THAT reason is legitimate; a row missing for no such reason is refused
+    # as a typo, which is the case's whole job and the reason it stays narrow
+    # rather than excusing every absence. `.gitignore` itself unreadable
+    # excuses nothing: a guard that cannot ask fails loud rather than
+    # assuming an unexplained absence is fine.
     _cs_rows = M.CITATION_SCAN_EXEMPT
     _cs_bad = [p for p, w in _cs_rows if not w.strip()]
-    _cs_dead = [p for p, w in _cs_rows
-                if not os.path.exists(os.path.join(_output.REPO_ROOT,
-                                                    p.replace("/", os.sep)))]
-    check("rc18 every row `CITATION_SCAN_EXEMPT` carries names a file really in "
-          "this tree and a reason that is not empty, no path repeats, this "
-          "scan's own fixture file IS exempt, and the number scan's fixture "
-          "file is NOT: %r" % (_cs_bad + _cs_dead,),
+    _cs_missing = [p for p, _w in _cs_rows
+                   if not os.path.exists(os.path.join(_output.REPO_ROOT,
+                                                       p.replace("/", os.sep)))]
+    _cs_declared, _cs_gi_problem = _output._ignored_files(_output.REPO_ROOT)
+    if _cs_gi_problem is not None:
+        _cs_dead = list(_cs_missing)
+        _cs_dead_why = ("git could not be asked whether the missing path(s) "
+                         "are declared ignored, so nothing missing is "
+                         "excused: %s" % _cs_gi_problem)
+    else:
+        _cs_dead = [p for p in _cs_missing if p not in _cs_declared]
+        _cs_dead_why = ("on disk nor named by `.gitignore` as a FILE - a "
+                        "typo, not a generated file the row already accounts "
+                        "for")
+    check("rc18 every row `CITATION_SCAN_EXEMPT` carries a reason that is not "
+          "empty and a path this tree KEEPS or DECLARES ignored; a row "
+          "refused here is neither %s: %r. No path repeats, this scan's own "
+          "fixture file IS exempt, and the number scan's fixture file is NOT"
+          % (_cs_dead_why, _cs_bad + _cs_dead),
           not _cs_bad and not _cs_dead
           and len(_cs_rows) == len(set(p for p, _w in _cs_rows))
           and _output.prose_scan_exemption(
