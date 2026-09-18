@@ -771,7 +771,8 @@
       "P1.2",
       "P2.1",
       "P41.6",
-      "P59.3"
+      "P59.3",
+      "P59.11"
     ],
     "plugins/audit/hooks/remind-tdd.py": [
       "P1.2",
@@ -1410,7 +1411,8 @@
       "P41.4",
       "P48.4",
       "P53.10",
-      "P50.8"
+      "P50.8",
+      "P59.13"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1462,7 +1464,8 @@
       "P54.7",
       "P59.3",
       "P59.6",
-      "P59.8"
+      "P59.8",
+      "P59.13"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1478,7 +1481,8 @@
       "P55.4",
       "P55.17",
       "P55.23",
-      "P59.7"
+      "P59.7",
+      "P59.12"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
@@ -1571,14 +1575,16 @@
       "P55.20",
       "P55.21",
       "P59.3",
-      "P59.6"
+      "P59.6",
+      "P59.12"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
       "P31.6"
     ],
     "plugins/audit/tests/test_set_priority.py": [
-      "P22.11"
+      "P22.11",
+      "P59.12"
     ],
     "plugins/audit/scripts/manifest/_manifest_phases.py": [
       "P22.4",
@@ -1739,7 +1745,8 @@
     "plugins/audit/tests/test_guard_history_rewrite.py": [
       "P29.2",
       "P32.8",
-      "P38.3"
+      "P38.3",
+      "P59.13"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -1874,7 +1881,8 @@
       "P40.3",
       "P54.6",
       "P55.5",
-      "P56.5"
+      "P56.5",
+      "P59.13"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -1966,7 +1974,8 @@
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
       "P52.1",
-      "P55.1"
+      "P55.1",
+      "P59.13"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -1974,7 +1983,8 @@
       "P41.1",
       "P41.4",
       "P41.7",
-      "P53.6"
+      "P53.6",
+      "P59.13"
     ],
     ".claude/skills/writing-css/SKILL.md": [
       "P35.1"
@@ -2001,7 +2011,8 @@
     ".claude/hooks/require-claim-block.py": [
       "P37.2",
       "P38.1",
-      "P38.2"
+      "P38.2",
+      "P59.12"
     ],
     ".claude/settings.json": [
       "P37.2",
@@ -2029,17 +2040,20 @@
       "P42.5",
       "P47.1",
       "P56.4",
-      "P59.5"
+      "P59.5",
+      "P59.13"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
-      "P59.3"
+      "P59.3",
+      "P59.11"
     ],
     "plugins/audit/tests/test_remind_tdd.py": [
       "P42.4"
     ],
     ".claude/hooks/guard-uncommitted.py": [
-      "P43.1"
+      "P43.1",
+      "P59.12"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -2081,7 +2095,8 @@
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
-      "P56.1"
+      "P56.1",
+      "P59.13"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2145,7 +2160,8 @@
       "P54.3"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
-      "P54.3"
+      "P54.3",
+      "P59.12"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2204,6 +2220,21 @@
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10"
+    ],
+    "plugins/audit/tests/test__commit_trail.py": [
+      "P59.13"
+    ],
+    "plugins/audit/tests/test__doctor_completions.py": [
+      "P59.13"
+    ],
+    "plugins/audit/tests/test_repair_commits.py": [
+      "P59.13"
+    ],
+    "plugins/audit/tests/test_repair_tests_add.py": [
+      "P59.13"
+    ],
+    "tools/capture-demo-gif.py": [
+      "P59.13"
     ]
   },
   "bugs": [

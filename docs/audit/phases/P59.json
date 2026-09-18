@@ -547,6 +547,160 @@
         "commit": "68a418a",
         "at": "2026-09-18T12:52:05Z"
       }
+    },
+    {
+      "id": "P59.11",
+      "title": "The launcher runs the same way under every shell the machine has, including busybox",
+      "status": "done",
+      "description": "DONE MEANS: the case that drives the launcher under every shell present on the machine is green on the platforms CI runs. It reports [('dash', True), ('bash', True), ('busybox', False)] - busybox is on the ubuntu runner and not on the machine the release was prepared on, which is exactly why the case exists and drives rather than reads. The case's own sentence says why this is not portability for its own sake: a shell where a variable name is read-only killed the launcher outright there, a whole shell's worth of users with no hooks and no message. Find what busybox's shell does differently with what the launcher writes - it is POSIX-sh builtins only by rule, so the answer is a construct that is not as portable as it looks rather than a missing feature. Install busybox locally and drive it; do not reason about it from the standard. The windows job's copy of this suite also exits non-zero and may be the same cause or another shell entirely - say which.",
+      "files": [
+        "plugins/audit/hooks/py-launch.sh",
+        "plugins/audit/tests/test_py_launch.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8ed810e",
+      "outcome": {
+        "technical": "The shell-driving case passes the sh applet name when the resolved shell is the multi-call binary, and the counting fixture single-quotes both paths it substitutes into generated shell source.",
+        "descriptive": "The case reaches the shell it names, and stops building a script that a backslash rewrites."
+      },
+      "startedAt": "2026-09-18T14:08:05Z",
+      "completedAt": "2026-09-18T14:08:05Z",
+      "verifiedBy": [
+        "driven under a real busybox",
+        "before and after; the two probe rows"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8ed810e",
+        "at": "2026-09-18T14:08:05Z"
+      }
+    },
+    {
+      "id": "P59.12",
+      "title": "Six suites leave a scratch directory behind on one platform",
+      "status": "done",
+      "description": "DONE MEANS: no suite leaves anything in the working directory it was handed, on any platform. Six of them do on windows and none does on the platform the release was prepared on: each builds a scratch directory under the working directory the runner points at it and fails to remove it, which the sweep reports as writing outside its own fixtures. The named leftovers are one directory per suite plus one bare temporary name. THE LIKELY CAUSE IS NOT CARELESSNESS BUT A PLATFORM RULE: a directory cannot be removed there while any handle into it is open, and a file opened and not closed, a subprocess still holding a working directory, or a git worktree still registered will each defeat a removal that succeeds everywhere else. Establish which of those it is for each suite rather than wrapping every cleanup in a swallow - a removal that silently gives up is how this class comes back. One of the six builds a git worktree, which needs deregistering and not merely deleting. THE ORCHESTRATOR CANNOT RUN THAT PLATFORM, so anything not provable from the code path is named could-not-prove rather than asserted.",
+      "files": [
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test_set_priority.py",
+        ".claude/hooks/guard-uncommitted.py",
+        ".claude/hooks/require-claim-block.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1a6aa65",
+      "outcome": {
+        "technical": "The four suites that can import the shared harness use its remove-tree helper; the two hooks carry a local copy of the same remove-then-retry-after-clearing-the-attribute algorithm, because a hook may not import the harness.",
+        "descriptive": "Six suites stop leaving a scratch directory behind on a platform that refuses to delete a read-only file."
+      },
+      "startedAt": "2026-09-18T14:15:46Z",
+      "completedAt": "2026-09-18T14:15:47Z",
+      "verifiedBy": [
+        "the six probe rows",
+        "and the read-only-object fact driven here"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1a6aa65",
+        "at": "2026-09-18T14:15:47Z"
+      }
+    },
+    {
+      "id": "P59.13",
+      "title": "The same removal shape in thirteen more suites",
+      "status": "pending",
+      "description": "DONE MEANS: no suite in the tree removes a git fixture with a bare ignore-errors removal. Six were repaired because one platform's own run observed them leaking; a sweep of the same shape names thirteen more files that build a real repository and remove it the same way. They are not repaired on suspicion - that was deliberate, because a fix applied where nothing was observed carries no evidence - but the shape is now known and the helper exists, so the remaining work is mechanical rather than investigative. Use the shared helper wherever the file can import it and the local copy only where the import is forbidden, exactly as the six did. AND WATCH FOR THE ONE THAT HIDES: at least one of the six created its repository inside a small helper rather than at the call site, so a plain search for the obvious command missed it - search for what removes a directory, not for what creates a repository.",
+      "files": [
+        "plugins/audit/tests/test__commit_trail.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/tests/test_repair_commits.py",
+        "plugins/audit/tests/test_repair_tests_add.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "tools/capture-demo-gif.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-18T07:57:57Z"
