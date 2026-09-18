@@ -821,7 +821,7 @@ def _cases(check):
             finally:
                 shutil.rmtree(nogit, ignore_errors=True)
         finally:
-            shutil.rmtree(pin, ignore_errors=True)
+            _harness.remove_tree(pin)
             shutil.rmtree(elsewhere, ignore_errors=True)
     else:
         _harness.skip(check, "ds37-ds40 plugin_integrity against a real checkout",

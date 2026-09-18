@@ -30,7 +30,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
-import shutil
 import sys
 import tempfile
 
@@ -339,7 +338,7 @@ def _cases(check):
               "the manifest says nothing new: %r" % (out[:140],),
               code == 0 and "standing in" not in out, "%r %r" % (code, out))
     finally:
-        shutil.rmtree(root, ignore_errors=True)
+        _harness.remove_tree(root)
 
 
 def _selftest():

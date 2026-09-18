@@ -1625,7 +1625,7 @@ def _cases(check):
             finally:
                 _config._nearest_existing_dir = _orig_nearest
         finally:
-            shutil.rmtree(str(wtroot), ignore_errors=True)
+            _harness.remove_tree(str(wtroot))
 
     # (m) AN MCP SERVER'S WRITE TOOL IS THE SAME WRITE. It reaches no edit-tool
     # matcher, so a filesystem server's `write_file` used to walk past this gate

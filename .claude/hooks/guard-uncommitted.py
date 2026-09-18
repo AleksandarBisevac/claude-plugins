@@ -620,6 +620,29 @@ def _fixture(root, dirty):
         fh.write("inside an untracked directory\n")
 
 
+def _rmtree_git_safe(path):
+    """`shutil.rmtree` that survives a fixture holding a git repository.
+
+    Git writes its loose objects read-only. POSIX removes them anyway because
+    unlinking needs a writable DIRECTORY rather than a writable file, but windows
+    checks the file's own attribute and `ignore_errors=True` leaves them behind
+    with nothing said. Clearing every mode bit and retrying once is the fallback,
+    run only when the first pass left something standing, so nothing is relaxed
+    on the platform where nothing needed it.
+    """
+    import shutil
+    shutil.rmtree(path, ignore_errors=True)
+    if not os.path.exists(path):
+        return
+    for base, dirs, names in os.walk(path):
+        for name in dirs + names:
+            try:
+                os.chmod(os.path.join(base, name), 0o700)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def _selftest():
     import shutil
     import tempfile
@@ -807,7 +830,7 @@ def _selftest():
               got and "and 5 more" in got
               and got.count(".txt (") == NAMED_CAP)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _rmtree_git_safe(tmp)
 
     print("")
     print("%s: %d/%d cases passed"

@@ -5604,7 +5604,7 @@ def _cases(check):
             code, _txt = run([])
             check("u2 bare invocation is a usage error", code == 2)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

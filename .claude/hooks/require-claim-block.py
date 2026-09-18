@@ -424,6 +424,29 @@ def main():
     return 0
 
 
+def _rmtree_git_safe(path):
+    """`shutil.rmtree` that survives a fixture holding a git repository.
+
+    Git writes its loose objects read-only. POSIX removes them anyway because
+    unlinking needs a writable DIRECTORY rather than a writable file, but windows
+    checks the file's own attribute and `ignore_errors=True` leaves them behind
+    with nothing said. Clearing every mode bit and retrying once is the fallback,
+    run only when the first pass left something standing, so nothing is relaxed
+    on the platform where nothing needed it.
+    """
+    import shutil
+    shutil.rmtree(path, ignore_errors=True)
+    if not os.path.exists(path):
+        return
+    for base, dirs, names in os.walk(path):
+        for name in dirs + names:
+            try:
+                os.chmod(os.path.join(base, name), 0o700)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
 # --- selftest -------------------------------------------------------------------
 def _selftest():
     """Both directions, driven against a REAL git repository built in a temp dir, because
@@ -572,7 +595,7 @@ def _selftest():
             check("s13d ...and a non-commit git command through -C is still not a commit",
                   v == "allow" and r == "not a commit", (v, r))
         finally:
-            shutil.rmtree(tmp2, ignore_errors=True)
+            _rmtree_git_safe(tmp2)
 
         # 14. THE SHAPE THAT WALKED PAST TWO EARLIER PATTERNS. A heredoc builds the
         # message, then `git commit` begins its own LINE. Baseline runs in an eval of this
@@ -698,7 +721,7 @@ def _selftest():
               bool(_cut(writes_a_script)[1]) and not is_commit(writes_a_script),
               _cut(writes_a_script)[1])
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _rmtree_git_safe(tmp)
     n = len(results); ok = sum(1 for x in results if x)
     print("\n%s: %d/%d cases passed" % ("ALL PASS" if ok == n else "SELFTEST FAILED", ok, n))
     return 0 if ok == n else 1
