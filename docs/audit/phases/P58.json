@@ -78,6 +78,58 @@
         "commit": "b454dff",
         "at": "2026-09-17T23:57:20Z"
       }
+    },
+    {
+      "id": "P58.2",
+      "title": "The browser fixture and the reason table it derives from disagree",
+      "status": "done",
+      "description": "DONE MEANS: npx vitest run is green, and whichever side was wrong is the side that moved. RELEASE BLOCKER, found by the first full verify.sh --release. tools/ui-tests/gate-reasons.test.mjs seeds the out-of-policy tiers with NO values and expects the reason table to publish exactly one template taking none; the table publishes two, one carrying a file name and one carrying two numbers, so the fixture throws. The two landed in the same commit and have never agreed, which means this has been red since it was written and nothing ran it: the JavaScript tests run in CI and in the full verify only, never in the selftest sweep, so three days of work passed over them. ESTABLISH WHICH SIDE IS WRONG BEFORE CHANGING EITHER. The fixture's own comment argues that one tier is reached down both arms so asking with no numbers is a legitimate request for the other sentence - which reads as a model where values means NUMBERS and the file-name arm takes none. The helper that counts conversions counts both spellings, which contradicts that model. Decide whether the counter should distinguish a numeric conversion from a string one, or whether the fixture should seed the file name, and say which reading the hook's own writer supports - it is the writer that decides, not the fixture. ALSO WORTH SAYING IN THE REPAIR: the new refusal the plan gate gained for a tree it cannot place is not in the published table at all, and that table's own comment says a published set that quietly stops covering its subject is the defect it exists to prevent.",
+      "files": [
+        "tools/capture-screenshots.mjs",
+        "tools/ui-tests/gate-reasons.test.mjs",
+        "plugins/audit/hooks/require-plan.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "60aaa75",
+      "outcome": {
+        "technical": "The fixture seeds the file-name arm with a value, reconstructs both conversion spellings when it unfills, and matches the derivation's current wording; require-plan.py gained a comment naming why the cannot-place refusal is outside the published table, with the existing floor case as the enforcement.",
+        "descriptive": "The browser fixture reads the arity model the writer actually uses, so the suite that grades a committed image is green for the right reason."
+      },
+      "startedAt": "2026-09-18T00:36:24Z",
+      "completedAt": "2026-09-18T00:36:24Z",
+      "verifiedBy": [
+        "r1-red",
+        "r1-control",
+        "r2-red",
+        "r2-control"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "60aaa75",
+        "at": "2026-09-18T00:36:24Z"
+      }
     }
   ],
   "startedAt": "2026-09-17T23:57:20Z"

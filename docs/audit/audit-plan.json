@@ -785,7 +785,8 @@
       "P53.8",
       "P55.4",
       "P55.17",
-      "P55.23"
+      "P55.23",
+      "P58.2"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1125,7 +1126,8 @@
       "P20.4",
       "P36.12",
       "P53.8",
-      "P53.9"
+      "P53.9",
+      "P58.2"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -2148,6 +2150,9 @@
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21"
+    ],
+    "tools/ui-tests/gate-reasons.test.mjs": [
+      "P58.2"
     ]
   },
   "bugs": [
