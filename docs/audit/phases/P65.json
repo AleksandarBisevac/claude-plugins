@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "01daf63c6e2d1d7aa6861a7db98681d8d05c3b95",
   "branch": "audit/p65-close-phase-judges-a-landing-b",
-  "mergedAt": null,
+  "mergedAt": "2026-09-24T22:37:06Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
