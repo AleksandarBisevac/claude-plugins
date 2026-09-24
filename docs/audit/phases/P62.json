@@ -29,7 +29,7 @@
     {
       "id": "P62.1",
       "title": "Replay the repository's merges without the driver and count the ones that conflicted in the plan",
-      "status": "in_progress",
+      "status": "done",
       "description": "Of the recent merges where both sides changed the plan, how many conflicted in it with git's own line merge (merge-tree --write-tree, the driver swapped for git merge-file). The doctor's merge-driver line reports it and warns, with the install command, when it is not zero and the driver is absent.",
       "files": [
         "plugins/audit/scripts/manifest/_merge_install.py",
@@ -65,14 +65,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3342266",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_merge_install.replay_merges via merge-tree with git merge-file as the driver; reported on every merge-driver row; WARNING when paid for and not installed.",
+        "descriptive": "The doctor tells a team, from its own merge history, how many merges conflicted in the plan and that the driver would have merged them."
       },
       "startedAt": "2026-09-24T09:37:10Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T09:43:29Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__merge_install.py",
+        "plugins/audit/tests/test__doctor_setup.py"
+      ]
     }
   ],
   "startedAt": "2026-09-24T09:37:10Z"
