@@ -195,32 +195,38 @@
     {
       "id": "P32",
       "title": "Fourth field report: what a command accepts, what a scope holds, and what nothing checks",
-      "shard": "phases/P32.json"
+      "shard": "phases/P32.json",
+      "status": "pending"
     },
     {
       "id": "P33",
       "title": "Fourth field report, the run side: a remedy that shipped broken and a run that stops itself",
-      "shard": "phases/P33.json"
+      "shard": "phases/P33.json",
+      "status": "pending"
     },
     {
       "id": "P34",
       "title": "Fifth field report: the ledger is 27% false failures, and most of it is the machine",
-      "shard": "phases/P34.json"
+      "shard": "phases/P34.json",
+      "status": "pending"
     },
     {
       "id": "P35",
       "title": "The prose-number rule is enforced in the two spellings an author wrote by accident",
-      "shard": "phases/P35.json"
+      "shard": "phases/P35.json",
+      "status": "pending"
     },
     {
       "id": "P36",
       "title": "F319/F320 fallout: a check whose reason is false, and the wiring's fail modes",
-      "shard": "phases/P36.json"
+      "shard": "phases/P36.json",
+      "status": "pending"
     },
     {
       "id": "P37",
       "title": "before-you-claim: the authorship gate for the classes the register keeps recording",
-      "shard": "phases/P37.json"
+      "shard": "phases/P37.json",
+      "status": "pending"
     },
     {
       "id": "P38",
@@ -235,7 +241,8 @@
     {
       "id": "P40",
       "title": "A gate that measured nothing does not record a failure",
-      "shard": "phases/P40.json"
+      "shard": "phases/P40.json",
+      "status": "in_progress"
     },
     {
       "id": "P41",
@@ -263,7 +270,8 @@
     {
       "id": "P45",
       "title": "The task gate stops being the phase gate in disguise",
-      "shard": "phases/P45.json"
+      "shard": "phases/P45.json",
+      "status": "pending"
     },
     {
       "id": "P46",
@@ -274,7 +282,8 @@
     {
       "id": "P47",
       "title": "The agents' loop, the parts still in a handoff note",
-      "shard": "phases/P47.json"
+      "shard": "phases/P47.json",
+      "status": "pending"
     },
     {
       "id": "P48",
@@ -297,12 +306,14 @@
     {
       "id": "P51",
       "title": "The small open ones",
-      "shard": "phases/P51.json"
+      "shard": "phases/P51.json",
+      "status": "pending"
     },
     {
       "id": "P52",
       "title": "The gate lock is safe to take, safe to lose, and proven",
-      "shard": "phases/P52.json"
+      "shard": "phases/P52.json",
+      "status": "pending"
     },
     {
       "id": "P53",
