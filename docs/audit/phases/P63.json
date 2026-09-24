@@ -463,6 +463,64 @@
         "commit": "a6646b9",
         "at": "2026-09-24T13:26:01Z"
       }
+    },
+    {
+      "id": "P63.9",
+      "title": "The panel's Composition rows read the derived phase status and the server's sign-off state",
+      "status": "done",
+      "description": "Composition shipped the stored phase status, so a signed-off phase read in progress with live controls, and the row derived 'awaiting sign-off' itself from every task done - counting a cancelled task as open and telling a signed-off phase awaiting its merge to go and get signed off. The server ships the derived status, signoffDue and signoffVerdict; phaseSignoffNote renders from them.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/scripts/ui/panel/composition.js",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "tools/capture-screenshots.mjs",
+        "docs/screenshots/captured-at.json"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_composition.py: pc-sd1..pc-sd4",
+          "tools/ui-tests/phase-signoff-note.test.mjs: the note's words"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5efefa9",
+      "outcome": {
+        "technical": "met - server ships derived status, signoffDue, signoffVerdict, branch; phaseSignoffNote renders them; vitest, Python and browser-gate legs each seen red",
+        "descriptive": "The panel's plan table shows a signed-off phase as done and frozen, and tells a phase awaiting sign-off the two steps that close it - never asking a phase already signed off to be signed off again."
+      },
+      "startedAt": "2026-09-24T13:27:52Z",
+      "completedAt": "2026-09-24T13:52:42Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "npx vitest run",
+        "node tools/capture-screenshots.mjs --check"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5efefa9",
+        "at": "2026-09-24T13:52:42Z"
+      }
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"
