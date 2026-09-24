@@ -3647,6 +3647,15 @@ def _park_phase(args, project, config, mpath, raw_index, assembled, phase, side,
     single file, or the sharded INDEX - and nothing else is touched."""
     now = _proposals.iso_now()
     prop_id = _id_shape.next_prop_id(assembled, side["suffix"])
+    # ON A SIDE BRANCH THE RESERVED PHASE ID IS A PLACEHOLDER. Two phase branches
+    # parking one each would otherwise both reserve the next plain `P<n>`, and the
+    # merged plan would carry a reservation clash neither side had - which the
+    # merge driver reports as a conflict, on the one merge this flow exists for.
+    # `materialize` on the development branch mints the real id. A caller's own
+    # `--id` is theirs and is kept.
+    if side["suffix"] and args.phase_id is None:
+        taken = _proposals.live_ids(assembled) | _proposals.parked_ids(assembled)
+        phase = dict(phase, id=_id_shape.next_phase_id(taken, side["suffix"]))
     proposal = {"id": prop_id, "name": phase.get("title"), "status": "proposed",
                 "origin": "audit-task add-phase --park", "createdISO": now,
                 "branch": side["branch"], "benefit": phase.get("desiredOutcome"),

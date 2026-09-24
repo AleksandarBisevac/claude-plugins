@@ -1674,6 +1674,10 @@
           "type": "string",
           "description": "PROP-<n>, allocated repo-wide like BUG-<n>, and like it suffixed off the development branch (PROP-<n>-<abc>). Legacy free-form ids are tolerated (validator warns, never fails)."
         },
+        "branch": {
+          "type": ["string", "null"],
+          "description": "The branch the proposal was parked on. Sign-off lists the proposals parked on a branch once that branch merges, so they can be materialized on the development branch."
+        },
         "name": {
           "type": "string"
         },

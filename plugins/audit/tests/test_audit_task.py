@@ -5680,9 +5680,11 @@ def _cases(check):
               and parked[0]["status"] == "proposed" and parked[0].get("branch") == "feature/y"
               and parked[0]["payload"]["phase"]["title"] == "Parked idea")
         check("pk2 ...the parked payload is the SAME phase add-phase would have written "
-              "(its template, its reserved id), and the plan still validates",
+              "(its template), reserving a SUFFIXED placeholder rather than the next "
+              "plain P<n> - two branches parking one each would otherwise both reserve "
+              "it - and the plan still validates",
               parked and parked[0]["payload"]["phase"].get("desiredOutcome") == "later"
-              and parked[0]["payload"]["phase"]["id"] == "P5"
+              and parked[0]["payload"]["phase"]["id"] == "P5-%s" % sfy
               and not _rules.validate(man)[0])
         check("pk3 ...and it says how the phase gets out: materialize after the phase "
               "branch merges, on the development branch: %s" % (txt,),

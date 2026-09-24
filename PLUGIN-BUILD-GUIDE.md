@@ -345,7 +345,7 @@ L4:
   _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
   _panel_usage -> _areas, _evidence_io, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
-  _proposals -> _fmt, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
+  _proposals -> _fmt, _id_refs, _id_shape, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
   _usage_detail -> _output, _ui_theme, _usage_viz
   _usage_load -> _loader, _output, _report_html
   _usage_markdown -> _output, _ui_theme, _usage_viz
@@ -3509,7 +3509,10 @@ passes at the site — sharing them would have made `seed` appear, to the suite'
 
 
 `add-phase --park` writes the same phase `add-phase` builds as a parked proposal instead
-(`PROP-<n>[-suffix]`, the phase id reserved), because phases are minted on the development
+(`PROP-<n>[-suffix]`; on a side branch the reserved phase id is the placeholder `P<n>-<suffix>`,
+which `_proposals.plan_for` re-mints by the append rule and `apply_materialize` renames across
+the whole plan through `_id_refs` - two branches parking one each both reserved the next plain
+`P<n>` before, and the merged plan carried a clash the driver reported as a conflict), because phases are minted on the development
 branch: a phase id is the one id that carries no branch suffix. A live `add-phase` on a side
 branch is never refused; the first one on a branch prints a WARNING naming `--park`, read
 back from the `phase.add` rows, which now record the branch (`_journal_io.DETAILS_KEYS`

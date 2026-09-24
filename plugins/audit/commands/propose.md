@@ -17,8 +17,13 @@ Proposal lifecycle: `proposed → materialized | dropped`.
 `/audit:phase add ... --park` parks a new phase found while a phase branch is checked
 out - phases are minted on the development branch, so that work waits here until the
 branch merges. A proposal parked on a side branch carries the branch suffix
-(`PROP-<n>-<suffix>`) and records the branch it was parked on (`branch`), so two phase
-branches parking one each cannot mint the same id. Materialize it on the development
+(`PROP-<n>-<suffix>`), records the branch it was parked on (`branch`), and reserves a
+PLACEHOLDER phase id (`P<n>-<suffix>`) rather than the next plain `P<n>` - two phase
+branches parking one each would otherwise reserve the same id, and the merged plan would
+carry a clash neither side had. `materialize` mints the real `P<n>` for a placeholder (the
+next appended id, as `/audit:phase add` would) and renames it and every reference to it
+across the plan; a plain reserved id that collided keeps the narrow in-payload rewrite,
+because a bare `P4` elsewhere may mean the live P4. Materialize it on the development
 branch after the merge, commit that branch, then start the phase.
 
 **`$ARGUMENTS`**: first token is the subcommand. Unknown/empty → print usage and stop.

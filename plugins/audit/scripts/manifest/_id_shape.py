@@ -182,6 +182,13 @@ def next_task_id(manifest, phase_id, suffix, extra_ids=()):
     return _mint(prefix, taken, suffix)
 
 
+def is_placeholder_phase(phase_id):
+    """True for `P<n>-<suffix>`: a phase id a SIDE branch reserved for a parked
+    proposal. Phases are minted on the development branch, so this id is never a
+    live phase's - `materialize` mints the real `P<n>` in its place."""
+    return bool(re.match(r"\AP\d+-[0-9a-z]{%d}\Z" % (SUFFIX_LEN,), "%s" % (phase_id,)))
+
+
 def next_phase_id(taken, suffix):
     """`P<max+1>[-suffix]` over every taken id reading as `P<n>[-suffix]`."""
     return _mint("P", taken, suffix)

@@ -74,6 +74,8 @@ _output.install_path()
 import _fmt  # noqa: E402  (plural(): `1 task` / `2 tasks`, one implementation)
 import _locks  # noqa: E402  (the index lock, already the one implementation)
 import _manifest_io as _mio  # noqa: E402  (layout-aware read and write)
+import _id_refs  # noqa: E402  (rename: a placeholder renamed everywhere the plan points at it)
+import _id_shape  # noqa: E402  (is_placeholder_phase: a side branch's reserved phase id)
 import _manifest_vocab as _vocab  # noqa: E402  (PROPOSAL_STATUS: the words a
 #                                                proposal status may be, so a
 #                                                surface reporting the ones that
@@ -555,15 +557,24 @@ def plan_for(manifest, pids, policy=None):
             continue
         phase = prop["payload"]["phase"]
         want = phase.get("id")
+        # A SIDE BRANCH'S PLACEHOLDER IS ALWAYS RE-MINTED, and by the APPEND rule:
+        # it is a phase being minted NOW, on the development branch, exactly what
+        # `add-phase` does - where a plain reserved id that merely collided is
+        # re-placed by the lowest free one, as before.
+        placeholder = _id_shape.is_placeholder_phase(want)
         collides = want in live_ids(manifest)
-        new_pid = next_phase_id(taken) if collides else want
+        if placeholder:
+            new_pid = next_appended_phase_id(taken - {want})
+        else:
+            new_pid = next_phase_id(taken) if collides else want
         taken = taken | {new_pid}
         moved, mapping = remap_payload(phase, new_pid)
         deps = unresolved_refs(phase, manifest, skip=(pid,))
         steps.append({
             "id": pid,
             "phaseId": new_pid,
-            "renamedFrom": want if collides else None,
+            "renamedFrom": want if (collides or placeholder) else None,
+            "placeholder": placeholder,
             "taskCount": len([t for t in (moved.get("tasks") or [])
                               if isinstance(t, dict)]),
             "remapped": mapping,
@@ -583,8 +594,15 @@ def plan_for(manifest, pids, policy=None):
 
 # --- applying it ----------------------------------------------------------------
 def apply_materialize(manifest, plan, now):
-    """Write the planned phases into the manifest. Returns (manifest, report)."""
+    """Write the planned phases into the manifest. Returns (manifest, report).
+
+    A PLACEHOLDER'S RENAME REACHES THE WHOLE PLAN. `P5-abc` can only ever mean the
+    one parked record a side branch reserved, so every reference to it - another
+    parked proposal's `blockedBy`, a live task waiting on it - follows it to the
+    real id through `_id_refs`. A plain reserved id that collided keeps the narrow,
+    in-payload rewrite: a bare `P4` elsewhere may mean the live P4."""
     report = []
+    everywhere = {}
     for step in plan["steps"]:
         prop = find_proposal(manifest, step["id"])
         phase, _map = remap_payload(prop["payload"]["phase"], step["phaseId"])
@@ -615,10 +633,15 @@ def apply_materialize(manifest, plan, now):
         prop["status"] = "materialized"
         prop["materializedAs"] = step["phaseId"]
         prop["materializedAt"] = now
+        if step.get("placeholder"):
+            everywhere.update(_id_refs.phase_mapping(prop["payload"]["phase"],
+                                                     step["phaseId"]))
         report.append("%s -> %s (%d task(s))%s"
                       % (step["id"], step["phaseId"], step["taskCount"],
                          "" if not step["renamedFrom"]
                          else " [renamed from %s]" % (step["renamedFrom"],)))
+    if everywhere:
+        manifest, _count = _id_refs.rename(manifest, everywhere)
     return manifest, report
 
 

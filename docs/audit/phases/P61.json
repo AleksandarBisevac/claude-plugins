@@ -323,7 +323,7 @@
     {
       "id": "P61.7",
       "title": "One reference renamer: an id renamed everywhere the plan points at it",
-      "status": "in_progress",
+      "status": "done",
       "description": "rename(manifest, mapping) rewrites the id and every field that holds it - blockedBy, dependsOn, bugId, taskId, fileIndex, proposal payloads, materializedAs - and never movedFrom, which is history. renumber_duplicate_bugs uses it instead of its two-field rewrite.",
       "files": [
         "plugins/audit/scripts/manifest/_id_refs.py",
@@ -359,12 +359,106 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "53a964f",
+      "outcome": {
+        "technical": "_id_refs.rename/phase_mapping/collisions over the schema's id-holding fields; movedFrom untouched.",
+        "descriptive": "Renaming an id rewrites every reference to it in one place, so no reference can be left pointing at an id that no longer exists."
+      },
+      "startedAt": "2026-09-24T08:34:01Z",
+      "completedAt": "2026-09-24T08:36:25Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__id_refs.py"
+      ]
+    },
+    {
+      "id": "P61.8",
+      "title": "A proposal parked on a side branch reserves a placeholder the development branch mints for real",
+      "status": "in_progress",
+      "description": "Found by probe: two branches each parking a proposal both reserve P<max+1>, and the merged plan carries a finding neither side had, so the driver leaves the merge conflicted. A side-branch park reserves P<n>-<suffix>; materialize re-mints it as the next P<n> and renames it and every reference through _id_refs; branch is a known proposal key.",
+      "files": [
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_id_shape.py",
+        "plugins/audit/tests/test__id_shape.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/propose.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__proposals.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-24T08:34:01Z",
+      "startedAt": "2026-09-24T08:36:59Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P61.9",
+      "title": "The demo fixture carries proposal.branch, and its rendered artifacts follow",
+      "status": "in_progress",
+      "description": "The schema gained proposal.branch; the demo fixture must carry every schema field, and every artifact rendered from it is re-derived.",
+      "files": [
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "docs/demo-large.html"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:41:36Z",
       "completedAt": null,
       "verifiedBy": []
     }

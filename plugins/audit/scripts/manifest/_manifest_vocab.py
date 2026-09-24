@@ -435,6 +435,9 @@ KNOWN_DECISION = {"id", "title", "status", "question", "answer", "decidedBy",
 KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
                   "technicalNote", "openQuestions", "createdISO", "payload",
                   "materializedAs", "materializedAt",
+                  # The branch a proposal was parked on: sign-off lists what a
+                  # branch parked once that branch lands.
+                  "branch",
                   # The drop pair, mirroring the materialize pair. `notes` was
                   # tolerated OFF-SCHEMA for as long as `/audit:propose drop` was
                   # its only writer; it is declared in the schema now that the

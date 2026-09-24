@@ -92,6 +92,12 @@ def _cases(check):
           and _manifest_vocab.PROP_ID_RE.match("PROP-3-k7m")
           and not _manifest_vocab.PROP_ID_RE.match("PROP-3-K7M"))
 
+    check("is14d a placeholder phase id is exactly P<n>-<suffix>: not a plain phase, "
+          "not a task under one, not another prefix",
+          M.is_placeholder_phase("P5-abc") and not any(M.is_placeholder_phase(x) for x in
+                                                        ("P5", "P5-abc.1", "BF5-abc",
+                                                         "P5-ABC", "P5-abcd")))
+
     if not shutil.which("git"):
         _harness.skip(check, "is15-is16 current_branch against real git", "git",
                       "git is not on PATH")

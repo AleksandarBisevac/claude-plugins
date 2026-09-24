@@ -535,8 +535,76 @@ def _cases(check):
 
 
 
+def _placeholder_cases(check):
+    """A proposal parked on a side branch reserves a suffixed placeholder, and the
+    development branch mints the real id - the collision the probe found, closed."""
+    import copy
+    import _manifest_merge
+    import _manifest_rules
+    base = {"meta": {"version": 2},
+            "phases": [{"id": "P1", "title": "a", "status": "pending", "tasks": []},
+                       {"id": "P4", "title": "d", "status": "pending", "tasks": []}],
+            "fileIndex": {}, "bugs": [], "proposals": []}
+
+    def parked(prop_id, pid, title, **extra):
+        phase = {"id": pid, "title": title, "status": "pending",
+                 "tasks": [{"id": pid + ".1", "title": "t", "status": "pending",
+                            "files": ["src/%s.ts" % title]}]}
+        phase.update(extra)
+        return {"id": prop_id, "name": title, "status": "proposed", "branch": "b",
+                "materializedAs": None, "materializedAt": None,
+                "payload": {"phase": phase}}
+
+    ours = copy.deepcopy(base)
+    ours["proposals"].append(parked("PROP-1-abc", "P5-abc", "ours"))
+    theirs = copy.deepcopy(base)
+    theirs["proposals"].append(parked("PROP-1-xyz", "P5-xyz", "theirs"))
+    merged = _manifest_merge.merge3(base, ours, theirs)
+    findings, warnings = _manifest_rules.validate(merged["doc"])
+    check("ph1 two branches that each park a proposal, reserving suffixed placeholders, "
+          "merge with no conflict AND no finding - the probe's failure, closed",
+          merged["conflicts"] == [] and findings == [], (merged["conflicts"], findings))
+    check("ph2 ...and `branch` on a proposal is a known key, not a typo warning",
+          not any("unknown key 'branch'" in w for w in warnings), warnings)
+
+    doc = merged["doc"]
+    doc["proposals"].append(parked("PROP-2", "P9", "later", blockedBy=["P5-abc"]))
+    doc["phases"][0]["blockedBy"] = ["P5-abc.1"]
+    plan = M.plan_for(doc, ["PROP-1-abc"])
+    step = plan["steps"][0]
+    check("ph3 materializing a placeholder mints the next APPENDED P<n> - a phase minted "
+          "now, on the development branch - and says it was renamed: %r" % (step,),
+          step["phaseId"] == "P10" and step["renamedFrom"] == "P5-abc")
+    out, _report = M.apply_materialize(copy.deepcopy(doc), plan, NOW)
+    live = [p for p in out["phases"] if p["id"] == "P10"]
+    other = [p for p in out["proposals"] if p["id"] == "PROP-2"][0]
+    check("ph4 ...its tasks move with it, and so does its fileIndex row",
+          live and live[0]["tasks"][0]["id"] == "P10.1"
+          and out["fileIndex"].get("src/ours.ts") == ["P10.1"], (live, out["fileIndex"]))
+    check("ph5 ...and every reference ANYWHERE in the plan follows the placeholder - "
+          "another parked proposal's blockedBy, a live phase's blockedBy - because a "
+          "suffixed placeholder can only ever mean this one record",
+          other["payload"]["phase"]["blockedBy"] == ["P10"]
+          and out["phases"][0]["blockedBy"] == ["P10.1"], (other, out["phases"][0]))
+    check("ph6 ...and the plan still validates",
+          not _manifest_rules.validate(out)[0], _manifest_rules.validate(out)[0])
+
+    # SECOND DIRECTION: a PLAIN reserved id that collides with a live one keeps the
+    # old, narrow rewrite - a bare `P4` elsewhere may mean the live P4.
+    doc2 = copy.deepcopy(base)
+    doc2["proposals"].append(parked("PROP-3", "P4", "clash"))
+    doc2["phases"][0]["blockedBy"] = ["P4"]
+    out2, _r = M.apply_materialize(copy.deepcopy(doc2), M.plan_for(doc2, ["PROP-3"]), NOW)
+    check("ph7 SECOND DIRECTION: a plain reserved id colliding with a live phase is "
+          "re-placed WITHOUT repointing the live plan's references to it",
+          out2["phases"][0]["blockedBy"] == ["P4"], out2["phases"][0])
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _placeholder_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":
