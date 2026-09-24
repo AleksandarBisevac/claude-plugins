@@ -392,6 +392,12 @@
       "title": "close-phase judges a landing by the phase the merge brings in",
       "status": "in_progress",
       "shard": "phases/P65.json"
+    },
+    {
+      "id": "P66",
+      "title": "A merge's write derives no completion the merged branch already recorded",
+      "status": "pending",
+      "shard": "phases/P66.json"
     }
   ],
   "fileIndex": {
@@ -859,7 +865,8 @@
       "P41.5",
       "P41.7",
       "P63.8",
-      "P63.12"
+      "P63.12",
+      "P66.1"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -1343,7 +1350,8 @@
       "P41.4",
       "P61.6",
       "P65.1",
-      "P65.2-iy2"
+      "P65.2-iy2",
+      "P66.1"
     ],
     "docs/handbook.html": [
       "P18.8",
@@ -1829,7 +1837,8 @@
       "P41.5",
       "P41.7",
       "P63.8",
-      "P63.12"
+      "P63.12",
+      "P66.1"
     ],
     "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass": [
       "P22.12"
@@ -2745,7 +2754,7 @@
     {
       "id": "BUG-9",
       "title": "journal-writes derives completion rows from a git merge's write, recording a second task.complete for work the merged branch already records",
-      "status": "open",
+      "status": "in_progress",
       "severity": "med",
       "reportedAt": "2026-09-24T22:37:27Z",
       "reportedBy": null,
@@ -2760,7 +2769,7 @@
       "files": [
         "plugins/audit/hooks/journal-writes.py"
       ],
-      "taskId": null,
+      "taskId": "P66.1",
       "fixedIn": null,
       "notes": "found landing P65, 2026-09-24"
     }
