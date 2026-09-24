@@ -531,6 +531,83 @@ def effective_bug_status(bug, task_by_id):
     return stored
 
 
+# --- derived phase status --------------------------------------------------------
+# A PHASE'S STATUS IS DERIVED, the way a bug's already is, because the writer it
+# relied on did not exist for every phase. `status: done` was written by hand at
+# sign-off, on the phase branch, before `close-phase` merged it - so a phase worked
+# on its parent branch had nothing to hand `close-phase`, and phases that finished
+# stayed `in_progress` for ever, holding this repository's own plan gate in its
+# denying tier across releases while every reader was correct by its own rule.
+#
+# The rule: a stored `done`/`cancelled` wins (a person or a sign-off wrote it).
+# Otherwise a phase is `done` when every task is terminal, sign-off is RECORDED
+# (`review.status` passed/skipped - the field `phase-signoff.md` writes), and, for a
+# phase with a branch, the branch merged (`mergedAt`). Every task terminal without a
+# recorded sign-off is SIGN-OFF DUE: finishing the work is not reviewing it.
+SIGNOFF_VERDICTS = ("passed", "skipped")
+
+
+def _phase_tasks(phase):
+    """The phase's tasks, or None when any entry is not a task - an unreadable
+    entry is a fault in the plan, and a fault is never a finished phase."""
+    tasks = (phase or {}).get("tasks") or []
+    if not isinstance(tasks, list) or not all(isinstance(t, dict) for t in tasks):
+        return None
+    return tasks
+
+
+def _all_terminal(phase):
+    tasks = _phase_tasks(phase)
+    return bool(tasks) and all(t.get("status") in TERMINAL for t in tasks)
+
+
+def signoff_recorded(phase):
+    """True when the phase's review carries a sign-off verdict."""
+    review = (phase or {}).get("review")
+    return isinstance(review, dict) and review.get("status") in SIGNOFF_VERDICTS
+
+
+def effective_phase_status(phase):
+    """A phase's status, DERIVING `done` from its tasks, its recorded sign-off and,
+    when it has a branch, its merge. Lives here, beside `effective_bug_status`, for
+    that function's reason: the hooks, the status surfaces, the panel and the report
+    all ask, and one answer underneath them is the only way they cannot disagree."""
+    phase = phase or {}
+    stored = phase.get("status")
+    if stored in TERMINAL:
+        return stored
+    if (_all_terminal(phase) and signoff_recorded(phase)
+            and (not phase.get("branch") or phase.get("mergedAt"))):
+        return "done"
+    return stored
+
+
+def signoff_due(phase):
+    """Every task terminal, no sign-off recorded, and the phase not closed - the
+    state a finished phase waits in, and the one the plan gate must not read as a
+    phase still running."""
+    return (effective_phase_status(phase) not in TERMINAL and _all_terminal(phase)
+            and not signoff_recorded(phase))
+
+
+def phase_running(phase):
+    """Whether this phase is work in flight - what the plan gate's denying tier is
+    earned by. An in_progress task always is; a phase marked in_progress is while it
+    has an open task or has no task yet. Merged, terminal, and only-sign-off-due
+    phases are not: none of them has an edit left to make."""
+    phase = phase or {}
+    if phase.get("mergedAt") or effective_phase_status(phase) in TERMINAL:
+        return False
+    tasks = _phase_tasks(phase)
+    if tasks is None:
+        return phase.get("status") == "in_progress"
+    if any(t.get("status") == "in_progress" for t in tasks):
+        return True
+    if phase.get("status") != "in_progress":
+        return False
+    return not tasks or any(t.get("status") not in TERMINAL for t in tasks)
+
+
 # --- writer (split a manifest into index + per-phase shards) ---------------------
 # The index keeps the shared, rarely-churned data; each phase's full body becomes a
 # shard. The phase STUB is minimal on purpose, and `status` is on it for the reason

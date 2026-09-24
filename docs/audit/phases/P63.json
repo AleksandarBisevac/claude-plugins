@@ -1,0 +1,74 @@
+{
+  "id": "P63",
+  "title": "A phase's status is derived, so a finished phase stops holding the gate",
+  "status": "in_progress",
+  "description": "F466, operator decision 2026-09-24: derived status with recorded sign-off; sign-off due does not hold the gate.",
+  "desiredOutcome": "a phase whose tasks are all terminal and whose sign-off is recorded (and, with a branch, merged) reads done everywhere; one only awaiting sign-off reads 'sign-off due' and no longer holds the plan gate in deny; sign-off is recorded by a verb",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P63.1",
+      "title": "The derived phase status, named once beside effective_bug_status",
+      "status": "in_progress",
+      "description": "effective_phase_status, signoff_recorded, signoff_due and phase_running: the one answer every reader of a phase's status will ask.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_io.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T12:32:17Z",
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "startedAt": "2026-09-24T12:32:17Z"
+}

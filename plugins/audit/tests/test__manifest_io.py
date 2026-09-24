@@ -911,10 +911,68 @@ def _root_key_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _phase_status_cases(check):
+    """The derived phase status: done is tasks terminal + sign-off recorded (+ merged
+    when the phase has a branch); sign-off due is the finished-but-unsigned state; a
+    phase only sign-off due is not RUNNING, so it cannot hold the plan gate."""
+    def ph(status="in_progress", tasks=("done", "done"), review=None, branch=None,
+           merged=None):
+        p = {"id": "P1", "title": "t", "status": status,
+             "tasks": [{"id": "P1.%d" % i, "status": s} for i, s in enumerate(tasks, 1)]}
+        if review is not None:
+            p["review"] = {"status": review}
+        if branch:
+            p["branch"] = branch
+        if merged:
+            p["mergedAt"] = merged
+        return p
+
+    E, D, R = M.effective_phase_status, M.signoff_due, M.phase_running
+    check("ps1 a stored done or cancelled wins, whatever the tasks say - a status a "
+          "person or sign-off wrote is never overwritten",
+          E(ph("done", tasks=("pending",))) == "done"
+          and E(ph("cancelled", tasks=("pending",))) == "cancelled"
+          and E(ph("cancelled", review="passed")) == "cancelled")
+    check("ps2 every task terminal and sign-off recorded, no branch: done",
+          E(ph(review="passed")) == "done" and E(ph(review="skipped",
+                                                   tasks=("done", "cancelled"))) == "done")
+    check("ps3 ...with a branch, done only once it merged - sign-off before the merge "
+          "is not a landed phase",
+          E(ph(review="passed", branch="feature/p1")) == "in_progress"
+          and E(ph(review="passed", branch="feature/p1", merged="t")) == "done")
+    check("ps4 tasks terminal WITHOUT a recorded sign-off stays what it was - finishing "
+          "the work is not reviewing it",
+          E(ph(review="pending")) == "in_progress" and E(ph()) == "in_progress")
+    check("ps5 an open task keeps the phase open whatever the review says",
+          E(ph(review="passed", tasks=("done", "in_progress"))) == "in_progress")
+    check("ps6 a phase with no task is never derived done - there is nothing finished",
+          E(ph(review="passed", tasks=())) == "in_progress")
+    check("ps7 sign-off due: every task terminal and no sign-off recorded - not once it "
+          "is recorded (a signed phase with a branch is waiting for its MERGE, not its "
+          "sign-off), not for a cancelled phase, not for one with no task",
+          D(ph()) and D(ph(review="pending"))
+          and not D(ph(review="passed")) and not D(ph(review="passed", branch="b"))
+          and not D(ph(tasks=("done", "pending")))
+          and not D(ph("cancelled")) and not D(ph(tasks=())))
+    check("ps8 RUNNING is an open task, or a started phase with no task yet - a phase "
+          "only sign-off due is not running, so it cannot hold the plan gate",
+          R(ph(tasks=("done", "pending"))) and R(ph(tasks=()))
+          and not R(ph()) and not R(ph(review="passed")))
+    check("ps9 ...a merged phase is not running, whatever its status still says (the "
+          "merged-but-never-closed state), and neither is a pending one",
+          not R(ph(tasks=("pending",), merged="t"))
+          and not R(ph("pending", tasks=("pending",))))
+    check("ps10 an unreadable task entry keeps the phase from reading finished - a "
+          "fault in the plan is not a finished phase",
+          E(dict(ph(review="passed"), tasks=[{"id": "P1.1", "status": "done"}, "junk"]))
+          == "in_progress")
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _root_key_cases(check)
+        _phase_status_cases(check)
     return _harness.run(body)
 
 
