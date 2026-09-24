@@ -386,6 +386,12 @@
       "title": "A phase's branch is cut by the verb that starts its work",
       "status": "in_progress",
       "shard": "phases/P64.json"
+    },
+    {
+      "id": "P65",
+      "title": "close-phase judges a landing by the phase the merge brings in",
+      "status": "pending",
+      "shard": "phases/P65.json"
     }
   ],
   "fileIndex": {
@@ -1039,7 +1045,8 @@
       "P61.12",
       "P63.1",
       "P63.3",
-      "P63.5"
+      "P63.5",
+      "P65.1"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1294,7 +1301,8 @@
       "P47.3",
       "P59.5",
       "P61.5",
-      "P63.7"
+      "P63.7",
+      "P65.1"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1305,7 +1313,8 @@
       "P50.8",
       "P59.5",
       "P61.5",
-      "P63.7"
+      "P63.7",
+      "P65.1"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1328,7 +1337,8 @@
       "P21.3",
       "P29.5",
       "P41.4",
-      "P61.6"
+      "P61.6",
+      "P65.1"
     ],
     "docs/handbook.html": [
       "P18.8",
@@ -1828,7 +1838,8 @@
       "P61.12",
       "P63.1",
       "P63.3",
-      "P63.5"
+      "P63.5",
+      "P65.1"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
       "P22.8",
@@ -2483,7 +2494,8 @@
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
       "P60.5",
-      "P61.11"
+      "P61.11",
+      "P65.1"
     ],
     "plugins/audit/tests/test_merge_manifest.py": [
       "P60.2",
@@ -2707,7 +2719,7 @@
     {
       "id": "BUG-8",
       "title": "close-phase judges cleanup by the phase as it stood BEFORE its own merge, so a phase signed off on its branch is refused cleanup as 'pending'",
-      "status": "open",
+      "status": "in_progress",
       "severity": "med",
       "reportedAt": "2026-09-24T21:44:07Z",
       "reportedBy": null,
@@ -2721,7 +2733,7 @@
       "files": [
         "plugins/audit/scripts/git/close-phase.py"
       ],
-      "taskId": null,
+      "taskId": "P65.1",
       "fixedIn": null,
       "notes": "found landing P64, 2026-09-24. The second run it forces, 'already-contained', also re-stamps mergedAt with its own time (21:43:52 became 21:44:12), so the record stops naming the moment of the merge."
     }
