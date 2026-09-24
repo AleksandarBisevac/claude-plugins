@@ -905,7 +905,18 @@ def _composition_view(manifest, boundary=None):
             continue
         review = ph.get("review") if isinstance(ph.get("review"), dict) else {}
         phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
-                           "status": ph.get("status"), "reviewModel": review.get("model"),
+                           # DERIVED, with where sign-off stands beside it: the
+                           # signoff verb never writes `status`, so the stored one
+                           # read a signed-off phase as in progress with every
+                           # control live, and the row derived "awaiting sign-off"
+                           # for itself from `every task done` - wrong about a
+                           # cancelled task and about a phase already signed off.
+                           "status": _mio.effective_phase_status(ph),
+                           "signoffDue": _mio.signoff_due(ph),
+                           "signoffVerdict": (review.get("status")
+                                              if _mio.signoff_recorded(ph) else None),
+                           "branch": ph.get("branch"),
+                           "reviewModel": review.get("model"),
                            "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill"),
                            # Through `_priority.tier_of`, never off the raw field:
                            # a value that is not a positive integer orders nothing,

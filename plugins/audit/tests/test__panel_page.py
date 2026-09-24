@@ -4930,6 +4930,16 @@ def _cases(check):
           "sides - the page is assembled below all three, which is the whole "
           "reason a layer-4 home exists for it: %r" % (_forbidden,),
           not _forbidden)
+    # A PROPERTY OF THE SOURCE, and labelled as one: what the note SAYS is driven in
+    # tools/ui-tests/phase-signoff-note.test.mjs. This holds that the row asks that
+    # function and derives no sign-off state of its own - the inline `every task
+    # done` it replaces counted a cancelled task as open and told a phase already
+    # signed off to go and get signed off.
+    check("pp-sd1 the Composition phase row takes its sign-off note from "
+          "phaseSignoffNote and derives none of its own from the task statuses",
+          "phaseSignoffNote(ph)?el('span',{class:'count whynote'}" in M.UI_HTML
+          and "tasks.every(t=>t.status==='done')" not in M.UI_HTML
+          and "awaiting sign-off (/audit:review)" not in M.UI_HTML)
 
 def _selftest():
     return _harness.run(_cases)

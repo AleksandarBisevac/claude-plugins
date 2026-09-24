@@ -3877,13 +3877,19 @@ async function assertModelCombo(page, project) {
   await page.waitForTimeout(400);
 }
 
-/* ---- (wn) the why-note beside a phase whose rows all read done --------------
+/* ---- (wn) the why-note beside a phase whose rows all read finished ----------
  *
- * A real state that reads like a contradiction: every task done, badge still
+ * A real state that reads like a contradiction: every task finished, badge still
  * "In progress", because sign-off is part of the phase — and on a live repo it
- * DID read as one. The note names the reason where the eye trips on it. Driven
- * through renderComp() with an injected composition, both legs: the note must
- * be earned by ALL tasks being done, and must leave when one is not.
+ * DID read as one. The note names the reason where the eye trips on it.
+ *
+ * Where sign-off stands is the SERVER's answer (`_panel_composition` ships the
+ * derived status, `signoffDue` and `signoffVerdict`), so that is what is
+ * injected, three legs through renderComp(): due names both steps, signed off
+ * and awaiting a merge names the branch instead, and neither carries no note.
+ * The row once derived the state itself and told this fixture's first phase -
+ * signed off, its branch not yet merged - to go and get signed off. Each earned
+ * note must also be PAINTED, not only present in the row.
  */
 async function assertPhaseWhyNote(page) {
   await tabTo(page, 'comp');
@@ -3899,37 +3905,46 @@ async function assertPhaseWhyNote(page) {
     const saved = JSON.stringify(STATE.composition);
     const comp = STATE.composition;
     const ph = comp.phases[0];
-    ph.status = 'in_progress';
-    const mine = comp.tasks.filter((t) => t.phaseId === ph.id);
-    mine.forEach((t) => { t.status = 'done'; });
-    renderComp();
-    const noteOf = () => {
+    const noteAs = (over) => {
+      Object.assign(ph, { status: 'in_progress', signoffDue: false,
+        signoffVerdict: null, branch: null }, over);
+      renderComp();
       const row = [...document.querySelectorAll('#comp tr.phase')]
         .find((r) => (r.textContent || '').includes(ph.id));
       const n = row && row.querySelector('.whynote');
-      return n ? n.textContent : null;
+      if (!n) return null;
+      const box = n.getBoundingClientRect();
+      const painted = box.width > 0 && box.height > 0
+        && getComputedStyle(n).visibility !== 'hidden'
+        && (typeof n.checkVisibility !== 'function' || n.checkVisibility());
+      return { text: n.textContent, painted };
     };
-    const earned = noteOf();
-    if (mine[0]) mine[0].status = 'in_progress';
-    renderComp();
-    const unearned = noteOf();
+    const due = noteAs({ signoffDue: true });
+    const merge = noteAs({ signoffVerdict: 'passed', branch: 'audit/wn-probe' });
+    const none = noteAs({});
     STATE.composition = JSON.parse(saved);
     renderComp();
-    return { earned, unearned, tasks: mine.length };
+    return { id: ph.id, due, merge, none };
   });
-  if (!got.tasks) {
-    fail('composition: the fixture\'s first phase has no tasks to drive the '
-       + 'why-note legs on');
-  } else if (!got.earned || !/awaiting sign-off/.test(got.earned)) {
-    fail(`composition: a phase with every task done and status in_progress `
-       + `carries no why-note (${JSON.stringify(got.earned)}) — the badge reads `
+  const dueOk = got.due && got.due.painted && /sign-off due/.test(got.due.text)
+    && got.due.text.includes('/audit:phase signoff ' + got.id);
+  const mergeOk = got.merge && got.merge.painted
+    && /signed off \(passed\)/.test(got.merge.text)
+    && got.merge.text.includes('audit/wn-probe') && !/sign-off due/.test(got.merge.text);
+  if (!dueOk) {
+    fail(`composition: a phase the server reports sign-off due carries no painted `
+       + `note naming both steps (${JSON.stringify(got.due)}) — the badge reads `
        + `like a contradiction with nothing naming the sign-off`);
-  } else if (got.unearned) {
-    fail('composition: the why-note stays up while a task is still running — '
-       + 'it must be earned by ALL tasks being done, not decorate the badge');
+  } else if (!mergeOk) {
+    fail(`composition: a phase signed off and awaiting its merge does not say so `
+       + `(${JSON.stringify(got.merge)}) — it must name the branch, never ask for `
+       + `a sign-off already recorded`);
+  } else if (got.none) {
+    fail('composition: the why-note stays up on a phase with neither state — '
+       + `it must be earned, not decorate the badge (${JSON.stringify(got.none)})`);
   } else {
-    note('composition: the awaiting-sign-off note appears exactly when every '
-       + 'task is done and the phase is not');
+    note('composition: the sign-off note is painted for sign-off due and for a '
+       + 'signed-off phase awaiting its merge, and absent otherwise');
   }
   await page.unroute(RUNSTATUS_URL);
   await page.evaluate(() => pollRunStatus());

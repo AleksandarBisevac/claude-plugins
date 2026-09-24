@@ -1090,8 +1090,47 @@ def _cases(check):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _signoff_cases(check):
+    """A phase row carries the DERIVED status and says where sign-off stands, so the
+    client derives nothing of its own."""
+    def row(**extra):
+        ph = {"id": "P1", "title": "a", "status": "in_progress",
+              "tasks": [{"id": "P1.1", "title": "t", "status": "done"},
+                        {"id": "P1.2", "title": "u", "status": "cancelled"}]}
+        ph.update(extra)
+        return M._composition_view({"meta": {}, "phases": [ph]})["phases"][0]
+
+    due = row()
+    check("pc-sd1 every task terminal, no verdict: the row keeps in_progress and says "
+          "sign-off is due - a cancelled task is terminal, as the derivation reads it: %r"
+          % ({k: due.get(k) for k in ("status", "signoffDue", "signoffVerdict")},),
+          due["status"] == "in_progress" and due["signoffDue"] is True
+          and due["signoffVerdict"] is None)
+    signed = row(review={"status": "passed"})
+    check("pc-sd2 signed off with no branch, the row reads DONE, so the view files it "
+          "with the closed phases and freezes its controls: %r" % (signed["status"],),
+          signed["status"] == "done" and signed["signoffDue"] is False
+          and signed["signoffVerdict"] == "passed")
+    waiting = row(review={"status": "skipped"}, branch="audit/p1")
+    check("pc-sd3 signed off on a branch that has not merged, it is not done yet, is NOT "
+          "sign-off due, and carries the verdict and the branch the note names: %r"
+          % ({k: waiting.get(k) for k in ("status", "signoffDue", "signoffVerdict",
+                                           "branch")},),
+          waiting["status"] == "in_progress" and waiting["signoffDue"] is False
+          and waiting["signoffVerdict"] == "skipped" and waiting["branch"] == "audit/p1")
+    running = row(tasks=[{"id": "P1.1", "title": "t", "status": "pending"}],
+                  review={"status": "pending"})
+    check("pc-sd4 SECOND DIRECTION: a phase with open work is neither, and a review "
+          "still `pending` is no verdict - the field carries a SIGN-OFF, not whatever "
+          "review.status holds: %r" % (running.get("signoffVerdict"),),
+          running["signoffDue"] is False and running["signoffVerdict"] is None)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _signoff_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

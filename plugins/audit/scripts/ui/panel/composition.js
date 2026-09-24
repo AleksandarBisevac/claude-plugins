@@ -878,6 +878,25 @@ function freezeControls(root,why){
  cs.forEach(c=>{c.disabled=true;c.title=why;});
  return cs.length;}
 
+/**
+ * The note a phase row carries about its sign-off, or null.
+ *
+ * Read off the server's answer and never re-derived here: `signoffDue` and the
+ * derived `status` come from `_manifest_io`, the one home of what a finished
+ * phase is, so this row cannot disagree with the plan gate, the status command
+ * or the report about it.
+ *
+ * @param {object} ph - a Composition phase row
+ * @returns {string|null} the note, or null when there is nothing to explain
+ */
+function phaseSignoffNote(ph){
+ if(ph.signoffDue)return 'every task finished — sign-off due (/audit:review, then '
+   +'/audit:phase signoff '+ph.id+')';
+ if(ph.signoffVerdict&&ph.status!=='done'&&ph.status!=='cancelled')
+  return 'signed off ('+ph.signoffVerdict+') — done once '
+   +(ph.branch||'its branch')+' merges';
+ return null;}
+
 function renderComp(){closeCombo();
  // Rebuilt from FOUR places, which is one more than any other view: its own Save,
  // its Discard, the ADO card's Save and Discard, and the 5s disk poll. MEASURED:
@@ -1216,13 +1235,10 @@ function renderComp(){closeCombo();
         el('strong',{},ph.title||'')),
       (ph.area||[]).map(a=>el('span',{class:'badge area'},a)),
       el('span',{class:'count'},tasks.length+(tasks.length===1?' task':' tasks')),
-      // Every row below reads done while the badge says in progress — a real
+      // Every row below reads finished while the badge says in progress — a real
       // state (sign-off is part of the phase) that reads like a contradiction,
       // and on a live repo it did. Name the reason where the eye trips on it.
-      (ph.status==='in_progress'&&tasks.length>0&&tasks.every(t=>t.status==='done'))
-        ?el('span',{class:'count whynote'},
-            'all tasks done — awaiting sign-off (/audit:review)')
-        :null)),
+      phaseSignoffNote(ph)?el('span',{class:'count whynote'},phaseSignoffNote(ph)):null)),
     el('td',{},el('span',{class:'st','data-status':ph.status||''},label(ph.status))),
     // The words and the ⓘ that used to sit beside each of these are in the
     // legend above the table — one reference per lever instead of one per phase,
