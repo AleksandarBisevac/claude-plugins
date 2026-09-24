@@ -29,7 +29,7 @@
     {
       "id": "P61.1",
       "title": "The id shape, named once: branch suffix, numeric part, the widened patterns",
-      "status": "in_progress",
+      "status": "done",
       "description": "E1a: _id_shape (suffix from branch, trunk set from _branch.parent_branch, numeric part) and the BUG/DEC/PROP patterns widened additively in vocab and schema.",
       "files": [
         "plugins/audit/scripts/manifest/_id_shape.py",
@@ -66,19 +66,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2afa12d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_id_shape: trunk set via _branch.parent_branch plus origin/HEAD, no suffix without a trunk, base36 of sha1(branch); BUG/PROP patterns widened from _manifest_vocab.ID_SUFFIX.",
+        "descriptive": "Ids minted off the development branch carry a branch suffix, so two branches cannot mint the same bug, task or proposal id; the development branch keeps today's ids."
       },
       "startedAt": "2026-09-24T07:55:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:17:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__id_shape.py"
+      ]
     },
     {
       "id": "P61.2",
       "title": "Allocators and id readers speak the branch-suffix shape",
-      "status": "in_progress",
+      "status": "done",
       "description": "E1b+E2: task and phase allocation through _id_shape with the current branch's suffix; a next-id bug verb; the prefix warning, the usage task-id regex, the bug finding text and the bug renumberer read suffixed ids.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -119,14 +121,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f9c3921",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task add via _id_shape; next-id bug|prop (--json); prefix warning, findings, renumberer and usage attribution read suffixed ids.",
+        "descriptive": "Task ids, and the bug and proposal ids the model writes by hand, come from one allocator that knows the branch; every reader of the old shape reads the new one."
       },
       "startedAt": "2026-09-24T07:58:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:17:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test_migrate_manifest.py"
+      ]
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"
