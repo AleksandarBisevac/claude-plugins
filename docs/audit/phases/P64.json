@@ -88,7 +88,7 @@
     {
       "id": "P64.2",
       "title": "doctor names a running phase with no branch",
-      "status": "pending",
+      "status": "done",
       "description": "A phase running with no branch is outside the protocol; doctor says so and names what that leaves unchecked (branch history, baseRef).",
       "files": [
         "plugins/audit/scripts/status/_doctor_policy.py",
@@ -117,16 +117,23 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ac69242",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - check_branch_naming warns on phase_running phases with no branch; dp45-dp47 both directions, red first",
+        "descriptive": "Doctor now tells you when a phase is being worked without its own branch, and what that costs at sign-off."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-24T21:23:11Z",
+      "completedAt": "2026-09-24T21:24:39Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ac69242",
+        "at": "2026-09-24T21:24:39Z"
+      }
     },
     {
       "id": "P64.3",
