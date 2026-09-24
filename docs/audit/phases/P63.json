@@ -169,7 +169,7 @@
     {
       "id": "P63.4",
       "title": "audit-task signoff: sign-off recorded by a verb, the status derived from it",
-      "status": "in_progress",
+      "status": "done",
       "description": "signoff <phaseId> --verdict passed|skipped --summary TEXT [--review-outcome TEXT]: refuses open tasks, a closed phase and a second sign-off; writes review.status, review.outcome and summary, clears the claim, journals phase.signoff, and never writes status - it is derived.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -203,12 +203,63 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "5e87701",
+      "outcome": {
+        "technical": "audit-task signoff writes review.status/outcome and summary, clears the claim, journals phase.signoff; status stays derived.",
+        "descriptive": "A phase is signed off by one command, and reads done from that record - on its parent branch too."
+      },
+      "startedAt": "2026-09-24T12:43:37Z",
+      "completedAt": "2026-09-24T12:51:10Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ]
+    },
+    {
+      "id": "P63.5",
+      "title": "The status surfaces read the derived phase status",
+      "status": "in_progress",
+      "description": "status_index (what a blockedBy on a phase resolves through) and the rollup's phase status are effective_phase_status; the rollup carries signoffDue; audit-status and the doctor's plan-gate line say which phases await sign-off. The CI in-progress condition is unchanged on purpose: a phase awaiting sign-off still reads in_progress.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__status_facts.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-24T12:43:37Z",
+      "startedAt": "2026-09-24T12:51:48Z",
       "completedAt": null,
       "verifiedBy": []
     }

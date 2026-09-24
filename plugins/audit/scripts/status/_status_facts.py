@@ -835,7 +835,14 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
     porder = _priority.ranks(phases)
     phase_entries = [{
         "id": p.get("id"), "title": p.get("title"),
-        "status": p.get("status"), "area": areas_of(p.get("area")),
+        # The DERIVED status (`_manifest_io.effective_phase_status`): every surface
+        # renders this key, so a phase signed off on its parent branch reads done
+        # everywhere, and none can show a phase done that is not.
+        "status": _mio.effective_phase_status(p), "area": areas_of(p.get("area")),
+        # Every task terminal, no sign-off recorded: finished work nobody has
+        # reviewed yet. Flagged rather than folded into `status`, so a surface can
+        # say it instead of presenting the phase as either running or done.
+        "signoffDue": _mio.signoff_due(p),
         "desiredOutcome": p.get("desiredOutcome"),
         # Passed through verbatim, never derived: `evaluate_gate`'s
         # "in-progress" condition reads it to tell a phase that merged from

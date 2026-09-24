@@ -376,8 +376,11 @@ def status_index(manifest):
     for ph in (manifest.get("phases") or []):
         if not isinstance(ph, dict):
             continue
+        # The DERIVED status: a phase signed off with every task terminal is done
+        # as a blocker too, and a phase only awaiting sign-off is not - unsigned
+        # work does not release what waits on it.
         if ph.get("id"):
-            status[ph["id"]] = ph.get("status")
+            status[ph["id"]] = effective_phase_status(ph)
         for t in (ph.get("tasks") or []):
             if isinstance(t, dict) and t.get("id"):
                 status[t["id"]] = t.get("status")

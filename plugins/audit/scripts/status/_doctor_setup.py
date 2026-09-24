@@ -528,18 +528,29 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
                "without a manifest" % manifest_rel)
     elif mode == "warn":
         stale = state.get("staleClosedPhase")
+        due = state.get("signoffDuePhase")
         note = ("" if not stale else
                 " (phase %s merged but its status was never flipped to "
                 "'done' - the sign-off commit that would have flipped it "
                 "either never landed or landed on a branch that did not "
                 "survive the merge; it no longer counts as running)" % stale)
+        # A phase only awaiting sign-off is in_progress on the page and not running
+        # by the gate's rule, so the line has to say which of the two it read -
+        # "no phase is in_progress" would be false of the plan beside it.
+        if due:
+            head = ("warn - no phase has work in flight: phase %s is in_progress but "
+                    "only awaits sign-off (every task terminal, no verdict recorded), "
+                    "which does not hold the gate - `/audit:phase signoff %s` records "
+                    "it" % (due, due))
+        else:
+            head = "warn - a manifest exists but no phase is in_progress"
         rep.ok("plan gate",
-               "warn - a manifest exists but no phase is in_progress, so out-of-plan "
-               "edits are advisory. Start a phase (/audit:next, /audit:phase) to "
-               "enforce%s" % note)
+               "%s, so out-of-plan edits are advisory. Start a phase (/audit:next, "
+               "/audit:phase) to enforce%s" % (head, note))
     else:
         rep.ok("plan gate",
-               "deny - a phase is in_progress, so edits are held to the running plan")
+               "deny - phase %s has work in progress, so edits are held to the "
+               "running plan" % (state.get("runningPhase") or "?",))
 
 
 def check_manifest(rep, project, cfg):

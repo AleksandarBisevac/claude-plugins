@@ -911,6 +911,11 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
         # same thing. `(0 cancelled)` on every phase is noise.
         if pe.get("cancelled"):
             head += "  (%d cancelled)" % pe["cancelled"]
+        # Every task terminal and no sign-off recorded: the work is finished and
+        # nobody has reviewed it. Said on the line, because the status column still
+        # reads in_progress and a reader would otherwise take it for work in flight.
+        if pe.get("signoffDue"):
+            head += "  sign-off due"
         # The badge, off the rollup's already-resolved tier rather than the raw
         # field: an invalid `priority` orders nothing, and a badge rendered from
         # the raw value would advertise a pin the run does not honour. The table

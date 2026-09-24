@@ -361,6 +361,22 @@ def _cases(check):
               "phase that is not stale: %r" % (_ds14_detail,),
               "merged but" not in _ds14_detail)
 
+        due = _manifest()
+        due["phases"][0]["status"] = "in_progress"
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(due, fh)
+        rep = base.Report()
+        M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
+        check("ds15s a phase in_progress whose every task is done and whose sign-off is "
+              "not recorded is WARN, and the line says why - it names the phase as "
+              "awaiting sign-off and the verb that records it, rather than claiming no "
+              "phase is in_progress: %r" % (_detail(rep, "plan gate"),),
+              _detail(rep, "plan gate").startswith("warn")
+              and "P1" in _detail(rep, "plan gate")
+              and "sign-off" in _detail(rep, "plan gate")
+              and "signoff" in _detail(rep, "plan gate")
+              and "no phase is in_progress" not in _detail(rep, "plan gate"))
+
         running = _manifest()
         running["phases"][0]["status"] = "in_progress"
         # An OPEN task: a phase whose tasks are all done only awaits sign-off, and
@@ -371,9 +387,10 @@ def _cases(check):
             json.dump(running, fh)
         rep = base.Report()
         M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
-        check("ds15 ...and a running phase is DENY: %r"
+        check("ds15 ...and a running phase is DENY, naming the phase that holds it: %r"
               % (_detail(rep, "plan gate"),),
-              _detail(rep, "plan gate").startswith("deny"))
+              _detail(rep, "plan gate").startswith("deny")
+              and "P1" in _detail(rep, "plan gate"))
 
         with open(cfg_path, "w", encoding="utf-8") as fh:
             json.dump({"planGate": "observe"}, fh)

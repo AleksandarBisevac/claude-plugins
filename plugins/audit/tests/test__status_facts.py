@@ -1354,8 +1354,49 @@ def _cases(check):
           repr(_rhtml.phase_ranks(_plain)))
 
 
+def _derived_status_cases(check):
+    """The status surfaces read the DERIVED phase status: a signed-off phase with no
+    branch is done everywhere - including as a blocker - and one only awaiting
+    sign-off is flagged as such, not reported as finished."""
+    def plan(review):
+        p1 = {"id": "P1", "title": "a", "status": "in_progress",
+              "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}
+        if review:
+            p1["review"] = {"status": review}
+        return {"meta": {"version": 2}, "phases": [
+            p1,
+            {"id": "P2", "title": "b", "status": "pending", "blockedBy": ["P1"],
+             "tasks": [{"id": "P2.1", "title": "u", "status": "pending"}]}],
+            "bugs": [], "fileIndex": {}}
+
+    signed = M.rollup(plan("passed"), [], [])
+    unsigned = M.rollup(plan(None), [], [])
+    ph = lambda r, pid: [p for p in r["phases"] if p["id"] == pid][0]  # noqa: E731
+    check("dv1 a phase whose tasks are done and whose sign-off is recorded reads done "
+          "in the rollup every surface renders, though its stored status never moved",
+          ph(signed, "P1")["status"] == "done" and not ph(signed, "P1")["signoffDue"],
+          ph(signed, "P1"))
+    check("dv2 ...one only awaiting sign-off keeps its status and is FLAGGED sign-off "
+          "due, so no surface can present unreviewed work as finished",
+          ph(unsigned, "P1")["status"] == "in_progress"
+          and ph(unsigned, "P1")["signoffDue"] is True, ph(unsigned, "P1"))
+    check("dv3 a phase blocked by a phase that is derived done is READY - the "
+          "dependency clears on the same answer the rollup shows",
+          M.ready_tasks(plan("passed")) == ["P2.1"], M.ready_tasks(plan("passed")))
+    check("dv4 SECOND DIRECTION: blocked by a phase only awaiting sign-off, it is NOT "
+          "ready - unsigned work does not release what waits on it",
+          M.ready_tasks(plan(None)) == [], M.ready_tasks(plan(None)))
+    check("dv5 the CI in-progress condition still fails on a phase awaiting sign-off - "
+          "a release freeze does not let unreviewed work through",
+          "in-progress" in M.evaluate_gate(unsigned, ["in-progress"])
+          and "in-progress" not in M.evaluate_gate(signed, ["in-progress"]))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _derived_status_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

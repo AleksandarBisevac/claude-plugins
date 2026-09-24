@@ -204,6 +204,24 @@ def _cases(_record):
     _ca_phase["tasks"].append({
         "id": "%s.90" % _ca_phase["id"], "title": "dropped", "files": [],
         "status": "cancelled", "blockedBy": [], "dependsOn": []})
+    _sd = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "finished", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]},
+        {"id": "P2", "title": "signed", "status": "in_progress",
+         "review": {"status": "passed"},
+         "tasks": [{"id": "P2.1", "title": "t", "status": "done"}]}],
+        "bugs": [], "fileIndex": {}}
+    _sd_txt = M.render_status(_sd, M.rollup(_sd, [], []))
+    _sd_lines = dict((ln.split()[0], ln) for ln in _sd_txt.splitlines()
+                     if ln.strip().startswith(("P1 ", "P2 ")))
+    check("sd1 a phase whose tasks are all done and whose sign-off is not recorded "
+          "says so on its line - its status column still reads in_progress: %r"
+          % (_sd_lines,),
+          "sign-off due" in _sd_lines.get("P1", "")
+          and "sign-off due" not in _sd_lines.get("P2", ""))
+    check("sd2 ...and a phase signed off on its parent branch counts as signed off in "
+          "the header, off the derived status",
+          "1/2 phases signed off" in _sd_txt, _sd_txt[:300])
     _txt_ca = M.render_status(m_ca, M.rollup(m_ca, [], []))
     _ca_row = [ln for ln in _txt_ca.splitlines()
                if ln.strip().startswith(_ca_phase["id"] + " ")]
