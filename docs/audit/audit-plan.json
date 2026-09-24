@@ -446,7 +446,8 @@
       "P60.5",
       "P61.1",
       "P61.3",
-      "P61.5"
+      "P61.5",
+      "P61.7"
     ],
     "README.md": [
       "P2.3",
@@ -935,7 +936,8 @@
       "P60.1",
       "P60.2",
       "P60.5",
-      "P61.1"
+      "P61.1",
+      "P61.7"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1095,7 +1097,8 @@
       "P15.4",
       "P50.6",
       "P59.10",
-      "P61.2"
+      "P61.2",
+      "P61.7"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -1874,7 +1877,8 @@
       "P55.14",
       "P50.9",
       "P60.5",
-      "P61.1"
+      "P61.1",
+      "P61.7"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -2194,7 +2198,8 @@
     "plugins/audit/tests/test_migrate_manifest.py": [
       "P50.6",
       "P59.10",
-      "P61.2"
+      "P61.2",
+      "P61.7"
     ],
     "tools/check-committed-pii.py": [
       "P51.4"
@@ -2329,6 +2334,12 @@
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5"
+    ],
+    "plugins/audit/scripts/manifest/_id_refs.py": [
+      "P61.7"
+    ],
+    "plugins/audit/tests/test__id_refs.py": [
+      "P61.7"
     ]
   },
   "bugs": [
