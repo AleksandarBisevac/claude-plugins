@@ -3508,6 +3508,13 @@ passes at the site — sharing them would have made `seed` appear, to the suite'
 `vf6`, to accept every flag `add`/`add-phase` do.
 
 
+`signoff <phaseId> --verdict passed|skipped --summary TEXT` records the sign-off a phase's
+derived `done` reads (`_manifest_io.effective_phase_status`): `review.status`, `review.outcome`,
+`summary`, the claim cleared, a `phase.signoff` row - and never `status`, which used to be a hand
+edit made on the phase branch before `close-phase` merged it, so a phase worked on its parent
+branch had nothing to hand `close-phase` and stayed in_progress for ever. It refuses open work, a
+task-less phase, a second sign-off and a closed phase.
+
 `add-phase --park` writes the same phase `add-phase` builds as a parked proposal instead
 (`PROP-<n>[-suffix]`; on a side branch the reserved phase id is the placeholder `P<n>-<suffix>`,
 which `_proposals.plan_for` re-mints by the append rule and `apply_materialize` renames across

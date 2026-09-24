@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT]'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -14,7 +14,8 @@ every ready task and, once all of them are `done`, signs the phase off.
 
 ## 0. Which verb — read off `$ARGUMENTS`, before the manifest is
 
-The FIRST token decides, and the reserved words are `add`, `retarget`, `priority` and `cancel`.
+The FIRST token decides, and the reserved words are `add`, `retarget`, `priority`, `cancel` and
+`signoff`.
 **Any other first token is a phase id**, and the command is the run form below — the
 shape this command has always had, unchanged.
 
@@ -398,6 +399,30 @@ phase row and decides which READY task comes first.
 **`/audit:task priority <phaseId> <tier|--clear>` is the legacy spelling** and still does exactly
 this. It is documented in `${CLAUDE_PLUGIN_ROOT}/commands/task.md`; new work says
 `/audit:phase priority`, because the field is `phase.priority` and no task has one.
+
+## Subcommand: `signoff <phaseId> --verdict passed|skipped --summary TEXT`
+
+**A phase's status is derived**: it reads `done` once every task is terminal, sign-off is
+recorded, and - for a phase with a branch - that branch has merged. This verb records the
+sign-off; it never writes `status`. Run it at the step of `reference/phase-signoff.md` that used
+to say "set `phase.status = done`", once the review and the gates it lists have passed:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId> \
+        --verdict passed|skipped --summary "<what the phase did, and how it met its outcome>" \
+        [--review-outcome "<the review's one-line result>"]
+```
+
+It writes `review.status` (the verdict), `review.outcome`, `summary`, clears `claim`, and appends a
+`phase.signoff` journal row, under the index lock with revalidate-or-roll-back. It refuses a phase
+with open work (naming the open tasks), a phase with no task, one already signed off, and one
+already `done` or `cancelled`. Its output says what the phase now reads: `done` for a phase with no
+branch, and "done once `<branch>` lands" for one with a branch - `close-phase.py` then merges it
+and stamps `mergedAt`, which completes the derivation. `--summary` and `--review-outcome` are the
+operator's and the reviewer's words: pass them verbatim, or `-` to read them off stdin.
+
+`--verdict` is the reviewer's call and has no default. `skipped` is honest where no review ran -
+say so in `--summary` - and is never a way to sign off work nobody looked at as if it had passed.
 
 ## Subcommand: `cancel <phaseId> --reason "<why>"`
 

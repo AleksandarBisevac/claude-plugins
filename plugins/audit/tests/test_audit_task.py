@@ -3727,7 +3727,7 @@ def _cases(check):
               "executor: %r" % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
               == ["description", "descriptive", "outcome", "reason", "rename",
-                  "technical"]
+                  "review_outcome", "summary", "technical"]
               and "gate" not in M.PROSE_FLAGS
               and "commit" not in M.PROSE_FLAGS
               and "verified_by" not in M.PROSE_FLAGS
@@ -3812,6 +3812,9 @@ def _cases(check):
         _vf_switch = set(a.dest for a in _vf_parser._actions
                          if a.option_strings and a.nargs == 0)
         _vf_pos = {"add": ["add", "T", "--phase", "P2"],
+                   # `signoff` refuses P2's open task, so every stray flag must
+                   # bounce BEFORE that refusal - which is what the grid asks.
+                   "signoff": ["signoff", "P2", "--verdict", "passed", "--summary", "s"],
                    # `next-id` writes nothing and reads no flag of its own, so like
                    # `start` its row is the bare call and every flag must bounce.
                    "next-id": ["next-id", "bug"],
@@ -3892,6 +3895,14 @@ def _cases(check):
                  "cancel/--json"),
                 (["next-id", "bug", "--json"], "next-id/--json")):
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
+        # `signoff` against a project whose P2 is finished, because on `vf_proj`
+        # P2 still has open work and the verb rightly refuses it.
+        _vf_sign = base_manifest()
+        _vf_sign["phases"][1]["tasks"][1]["status"] = "done"
+        _vf_sign_proj, _vf_sign_mp = mk("vf-sign", _vf_sign)
+        _vf_ok["signoff/--verdict"] = run(
+            ["signoff", "P2", "--verdict", "passed", "--summary", "s",
+             "--review-outcome", "r", "--json", "--project-dir", _vf_sign_proj])[0]
         # `seed` alone, against its own empty project rather than `vf_proj`
         # every row above shares -- see `_vf_seed_proj`'s comment.
         _vf_ok["seed/--gate"] = run(
@@ -5442,8 +5453,15 @@ def _cases(check):
             # `next-id` writes nothing, and it still names the tree it READ: the
             # id it prints is only true of that tree's plan and branch.
             ("next-id", ["next-id", "bug"]),
+            ("signoff", ["signoff", "P2", "--verdict", "passed", "--summary", "s"]),
         )
-        _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj)}
+        # `signoff` gets its own pair too: by its row every other row has left P2
+        # with open work, which it rightly refuses.
+        _tw_sign = base_manifest()
+        _tw_sign["phases"][1]["tasks"][1]["status"] = "done"
+        tw_sign_proj, _tw_sign_mp, tw_sign_tree = mk_pair("tw-sign", _tw_sign)
+        _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj),
+                     "signoff": (tw_sign_tree, tw_sign_proj)}
         _tw_silent = []
         for _label, _argv in _tw_argv:
             _tw_tree, _tw_proj = _tw_pairs.get(_label, (tw_all_tree, tw_all))
@@ -5610,6 +5628,65 @@ def _cases(check):
             check("u1 an unknown subcommand is a usage error", code == 2)
             code, _txt = run([])
             check("u2 bare invocation is a usage error", code == 2)
+        # ---- (so) sign-off recorded by a verb; the status derived from it ------
+        import _journal_io
+        signable = base_manifest()
+        signable["phases"][1]["tasks"][1]["status"] = "done"   # P2: every task done
+        signable["phases"][1]["claim"] = {"sessionId": "s", "at": "t"}
+        projs, mpaths = mk("so-sign", signable, git=True)
+        code, txt = run(["signoff", "P3", "--verdict", "passed", "--summary", "x",
+                         "--project-dir", projs])
+        check("so1 a phase with no finished task cannot be signed off: %s" % (txt,),
+              code == 2 and "P3" in txt)
+        unsigned = base_manifest()
+        projo, _mo = mk("so-open", unsigned)
+        code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "x",
+                         "--project-dir", projo])
+        check("so2 ...nor one with an open task, and the refusal names it: %s" % (txt,),
+              code == 2 and "P2.3" in txt)
+        code, txt = run(["signoff", "P2", "--verdict", "passed",
+                         "--summary", "Search sanitised end to end.",
+                         "--review-outcome", "no findings", "--project-dir", projs])
+        ph2 = [p for p in _mio.load_manifest(mpaths)["phases"] if p["id"] == "P2"][0]
+        check("so3 every task terminal: sign-off records the verdict, the outcome and the "
+              "summary, clears the claim - and writes NO status, which is derived: %s"
+              % (txt,),
+              code == 0 and ph2["review"]["status"] == "passed"
+              and ph2["review"]["outcome"] == "no findings"
+              and ph2["summary"] == "Search sanitised end to end."
+              and "claim" not in ph2 and ph2["status"] == "in_progress")
+        check("so4 ...and the phase now reads done, which the output says",
+              _mio.effective_phase_status(ph2) == "done" and "done" in txt, txt)
+        rows = [r for r in _journal_io.read_all(projs) if r.get("action") == "phase.signoff"]
+        check("so5 ...with a phase.signoff journal row naming the phase and the verdict",
+              len(rows) == 1 and (rows[0].get("details") or {}).get("phaseId") == "P2"
+              and "passed" in (rows[0].get("summary") or ""), rows)
+        code, txt = run(["signoff", "P2", "--verdict", "skipped", "--summary", "y",
+                         "--project-dir", projs])
+        check("so6 a second sign-off is refused - the verdict on record is not "
+              "re-decided by this verb: %s" % (txt,), code == 2 and "already" in txt)
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "y",
+                         "--project-dir", projs])
+        check("so7 a phase already done is refused", code == 2, txt)
+        code, txt = run(["signoff", "P2", "--summary", "y", "--project-dir", projs])
+        check("so8 --verdict is required: which verdict is the reviewer's call",
+              code == 2 and "--verdict" in txt, txt)
+        branched = base_manifest()
+        branched["phases"][1]["tasks"][1]["status"] = "done"
+        branched["phases"][1]["branch"] = "feature/p2"
+        projb2, mpathb2 = mk("so-branch", branched)
+        code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "z",
+                         "--project-dir", projb2, "--json"])
+        try:
+            payload = json.loads(txt)
+        except ValueError:
+            payload = {}
+        check("so9 a phase WITH a branch is signed off and not yet done - done once "
+              "close-phase lands it - and --json says both: %r" % (payload,),
+              code == 0 and payload.get("effectiveStatus") == "in_progress"
+              and payload.get("awaiting") == "merge"
+              and "feature/p2" in json.dumps(payload))
+
         # ---- (bs) the branch suffix: ids two branches cannot both mint --------
         def git(proj, *a):
             env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",

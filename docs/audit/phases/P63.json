@@ -165,6 +165,52 @@
       "verifiedBy": [
         "plugins/audit/tests/test__manifest_io.py"
       ]
+    },
+    {
+      "id": "P63.4",
+      "title": "audit-task signoff: sign-off recorded by a verb, the status derived from it",
+      "status": "in_progress",
+      "description": "signoff <phaseId> --verdict passed|skipped --summary TEXT [--review-outcome TEXT]: refuses open tasks, a closed phase and a second sign-off; writes review.status, review.outcome and summary, clears the claim, journals phase.signoff, and never writes status - it is derived.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T12:43:37Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"

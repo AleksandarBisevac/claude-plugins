@@ -25,6 +25,9 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py next-id bug|prop [manifest] | next-id task --phase <id> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py signoff <phaseId> --verdict passed|skipped --summary TEXT|-
+                [--review-outcome TEXT|-] [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py start <taskId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py done <taskId> --commit <sha> [manifest]
@@ -645,7 +648,7 @@ def _marked_excerpt(excerpt, rel_start, rel_end):
 # to the next executor -- a clause a shell ate out of either is a sentence that
 # reads whole and is not.
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
-               "technical")
+               "technical", "summary", "review_outcome")
 
 # THE ONE PLACE `--help` SAYS ANYTHING ABOUT THE STDIN ESCAPE. Before this, none
 # of the flags in PROSE_FLAGS carried a `help=` at all -- `--help` printed the
@@ -4680,6 +4683,126 @@ def cmd_add(args, out):
                            args, project, config, mpath, title, out))
 
 
+# --- signoff: the record a phase's `done` is derived from --------------------------
+# A PHASE'S STATUS IS DERIVED (`_manifest_io.effective_phase_status`), so what
+# sign-off writes is not `status` but the record the derivation reads: the review's
+# verdict, its outcome, and the summary sign-off owes the reader. It was a hand
+# edit of `status: done`, made on the phase branch before `close-phase` merged it -
+# so a phase worked on its parent branch had nothing to hand `close-phase` and
+# stayed in_progress for ever. With a branch the phase reads done once it merges;
+# without one, now. The verb refuses what sign-off must not do: sign an open phase,
+# re-sign a signed one, or sign one already closed.
+def cmd_signoff(args, out):
+    project = _resolve_project(args)
+    pid = (args.title or "").strip()
+    if not pid:
+        out("[audit-task] signoff needs a phase id")
+        return E_USAGE
+    if not args.verdict:
+        out("[audit-task] signoff needs --verdict %s: which verdict the review reached "
+            "is the reviewer's call" % ("|".join(_mio.SIGNOFF_VERDICTS),))
+        return E_USAGE
+    summary = (args.summary or "").strip()
+    if not summary:
+        out("[audit-task] signoff needs --summary \"<what the phase did, and how it met "
+            "its outcome>\" -- sign-off owes the reader that paragraph")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_signoff(
+                           args, project, config, mpath, pid, summary, out))
+
+
+def _signoff_refusal(phase, pid):
+    """Why `phase` cannot be signed off now, or None."""
+    if phase.get("status") in _mio.TERMINAL:
+        return ("phase %s is already %s -- a closed phase is not signed off again"
+                % (pid, phase.get("status")))
+    if _mio.signoff_recorded(phase):
+        return ("phase %s is already signed off (review.status %s) -- the verdict on "
+                "record is not re-decided by this verb" % (pid, phase["review"]["status"]))
+    tasks = [t for t in (phase.get("tasks") or []) if isinstance(t, dict)]
+    if not tasks:
+        return "phase %s has no task, so there is no finished work to sign off" % (pid,)
+    still = [t.get("id") for t in tasks if t.get("status") not in _mio.TERMINAL]
+    if still:
+        return ("phase %s still has open work: %s -- sign-off runs once every task is "
+                "done or cancelled" % (pid, ", ".join("%s" % (s,) for s in still)))
+    return None
+
+
+def _locked_signoff(args, project, config, mpath, pid, summary, out):
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    kind, phase, _owner = _find_target(assembled, pid)
+    if kind != "phase":
+        out("[audit-task] no phase %r in %s" % (pid, mpath))
+        return E_USAGE
+    refusal = _signoff_refusal(phase, pid)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
+    review = dict(review, status=args.verdict)
+    if args.review_outcome:
+        review["outcome"] = args.review_outcome.strip()
+    phase["review"] = review
+    phase["summary"] = summary
+    phase.pop("claim", None)
+    snap = _snapshot(_write_paths(project, mpath, raw_index, pid))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, pid, False)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        written_manifest, findings, warnings = {}, ["cannot re-read the written "
+                                                    "manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the sign-off would leave the manifest invalid -- "
+            "every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    jres = _journal_row(project, config, mpath, "phase.signoff",
+                        "%s signed off (%s): %s" % (pid, args.verdict, summary),
+                        {"phaseId": pid})
+    effective = _mio.effective_phase_status(phase)
+    branch = phase.get("branch")
+    awaiting = "merge" if effective not in _mio.TERMINAL and branch else None
+    if args.as_json:
+        result = {"ok": True, "id": pid, "verdict": args.verdict, "summary": summary,
+                  "effectiveStatus": effective, "awaiting": awaiting, "branch": branch,
+                  "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
+        result.update(jres)
+        result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if awaiting:
+        out("[audit-task] phase %s signed off (%s) -- done once %s lands: "
+            "close-phase.py merges it and stamps mergedAt" % (pid, args.verdict, branch))
+    else:
+        out("[audit-task] phase %s signed off (%s) -- now %s" % (pid, args.verdict,
+                                                                effective))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the phase.signoff row")
+    out("  written: %s" % ", ".join(written))
+    return 0
+
+
 # --- next-id: the id a hand-written record takes ---------------------------------
 # A bug, a parked proposal, a bug's fix task and a moved task are the records the
 # model still writes by hand (`commands/bug.md`, `init.md`, `task.md` -> move), so
@@ -5017,6 +5140,9 @@ VERB_FLAGS = {
     # `next-id` prints an id and writes nothing; `--phase` is the phase a task id
     # belongs to, and the only flag it reads.
     "next-id": ("phase",),
+    # `signoff` writes the one record a phase's `done` is derived from - the
+    # review's verdict - and the paragraph sign-off owes the reader.
+    "signoff": ("verdict", "summary", "review_outcome"),
 }
 
 
@@ -5035,7 +5161,8 @@ def build_parser():
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
-                            "retarget", "start", "done", "seed", "next-id"])
+                            "retarget", "start", "done", "seed", "next-id",
+                            "signoff"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -5076,6 +5203,11 @@ def build_parser():
                    action="store_true")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None, help=_PROSE_HELP)
+    p.add_argument("--verdict", default=None, choices=list(_mio.SIGNOFF_VERDICTS),
+                   help="signoff: the sign-off verdict the phase's review reached")
+    p.add_argument("--summary", default=None, metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--review-outcome", dest="review_outcome", default=None,
+                   metavar="TEXT", help=_PROSE_HELP)
     # add-phase only. `--id` rather than a positional: the title is the
     # positional every verb here already spends, and an OPTIONAL id read off
     # position two would be indistinguishable from the optional `manifest`.
@@ -5268,7 +5400,8 @@ def main(argv, out=print):
     doors = {"add": cmd_add, "add-phase": cmd_phase_add,
              "cancel": cmd_cancel, "scope": cmd_scope,
              "retarget": cmd_retarget, "start": cmd_start,
-             "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id}
+             "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
+             "signoff": cmd_signoff}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing
