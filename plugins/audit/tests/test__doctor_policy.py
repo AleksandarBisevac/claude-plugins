@@ -593,6 +593,30 @@ def _cases(check):
                   and "NOT yet merged" not in _detail(rep, _BN),
                   _detail(rep, _BN)[-90:])
 
+            def _running(**extra):
+                ph = {"id": "P9", "status": "in_progress",
+                      "tasks": [{"id": "P9.1", "status": "in_progress"}]}
+                ph.update(extra)
+                return {"meta": {"developmentBranch": "main"}, "phases": [ph]}
+            rep = base.Report()
+            M.check_branch_naming(rep, repo, _running(), repo)
+            check("dp45 a phase with work in flight and NO branch is warned about by "
+                  "name, with what that leaves unchecked and the verb that cuts one: %r"
+                  % (_detail(rep, _BN)[-160:],),
+                  "WARNING" in _levels(rep, _BN) and "P9" in _detail(rep, _BN)
+                  and "no branch" in _detail(rep, _BN)
+                  and "baseRef" in _detail(rep, _BN))
+            rep = base.Report()
+            M.check_branch_naming(rep, repo, _running(branch="audit/p9-x"), repo)
+            check("dp46 SECOND DIRECTION: the same phase recording its branch draws no "
+                  "such line", "no branch" not in _detail(rep, _BN), _detail(rep, _BN))
+            rep = base.Report()
+            M.check_branch_naming(rep, repo, _running(tasks=[
+                {"id": "P9.1", "status": "done"}]), repo)
+            check("dp47 ...and neither does a phase only awaiting sign-off - it has no "
+                  "work left to land anywhere", "no branch" not in _detail(rep, _BN),
+                  _detail(rep, _BN))
+
             git("checkout", "-q", "-b", "story/landed")
             git("checkout", "-q", "main")
             git("merge", "-q", "--ff-only", "story/landed")

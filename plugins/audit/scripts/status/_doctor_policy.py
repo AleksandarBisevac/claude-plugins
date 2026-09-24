@@ -315,6 +315,26 @@ def check_branch_naming(rep, project, manifest, git_root):
     rep.ok("branch naming",
            "%s -> %s" % (cfg["basis"], cfg["template"]))
 
+    # A RUNNING PHASE WITH NO BRANCH IS OUTSIDE THE PROTOCOL, and this is the one
+    # surface that says so. `audit-task start` cuts the branch on a phase's first
+    # task now, but a phase already running when that arrived - or one worked by
+    # hand - keeps landing its work on whatever HEAD is, and sign-off can then check
+    # neither its branch history nor its baseRef.
+    unbranched = [str(p.get("id")) for p in (manifest.get("phases") or [])
+                  if isinstance(p, dict) and not p.get("branch")
+                  and _mio.phase_running(p)]
+    if unbranched and git_root and shutil.which("git"):
+        rep.warn("branch naming",
+                 "phase%s %s run%s with no branch - %s edits and commits land on "
+                 "whatever HEAD is, so sign-off cannot check branch history or "
+                 "baseRef" % ("s" if len(unbranched) > 1 else "",
+                              ", ".join(unbranched),
+                              "" if len(unbranched) > 1 else "s",
+                              "their" if len(unbranched) > 1 else "its"),
+                 "the next `/audit:task start` in such a phase, from its parent "
+                 "branch, cuts the branch (reference/orchestrator.md, Phase entry); "
+                 "what already landed stays where it is")
+
     parents = {}
     for phase in (manifest.get("phases") or []):
         if not isinstance(phase, dict):
