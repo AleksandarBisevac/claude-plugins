@@ -447,7 +447,8 @@
       "P61.1",
       "P61.3",
       "P61.5",
-      "P61.7"
+      "P61.7",
+      "P61.8"
     ],
     "README.md": [
       "P2.3",
@@ -483,7 +484,8 @@
     "docs/demo-large.html": [
       "P18.10",
       "P23.3",
-      "P27.1"
+      "P27.1",
+      "P61.9"
     ],
     "docs/index.html": [
       "P13.3",
@@ -897,7 +899,8 @@
       "P54.5",
       "P49.4",
       "P57.5",
-      "P61.1"
+      "P61.1",
+      "P61.8"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1086,7 +1089,8 @@
       "P32.2",
       "P34.6",
       "P41.1",
-      "P42.1"
+      "P42.1",
+      "P61.9"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1271,7 +1275,8 @@
       "P42.1",
       "P50.6",
       "P54.4",
-      "P61.1"
+      "P61.1",
+      "P61.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -1590,7 +1595,8 @@
       "P59.5",
       "P59.6",
       "P61.2",
-      "P61.3"
+      "P61.3",
+      "P61.8"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1623,7 +1629,8 @@
       "P59.6",
       "P59.12",
       "P61.2",
-      "P61.3"
+      "P61.3",
+      "P61.8"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1891,7 +1898,8 @@
     "plugins/audit/commands/propose.md": [
       "P31.2",
       "P57.3",
-      "P61.3"
+      "P61.3",
+      "P61.8"
     ],
     "plugins/audit/scripts/manifest/repair-commits.py": [
       "P31.6",
@@ -1916,12 +1924,14 @@
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1",
       "P61.2",
-      "P61.5"
+      "P61.5",
+      "P61.8"
     ],
     "plugins/audit/tests/test__proposals.py": [
       "P32.1",
       "P61.2",
-      "P61.5"
+      "P61.5",
+      "P61.8"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -2327,10 +2337,12 @@
       "P60.5"
     ],
     "plugins/audit/scripts/manifest/_id_shape.py": [
-      "P61.1"
+      "P61.1",
+      "P61.8"
     ],
     "plugins/audit/tests/test__id_shape.py": [
-      "P61.1"
+      "P61.1",
+      "P61.8"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5"
