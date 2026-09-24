@@ -1,7 +1,7 @@
 {
   "id": "P66",
   "title": "A merge's write derives no completion the merged branch already recorded",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "a git merge, cherry-pick or rebase that brings a finished task in from another branch writes the change it made and no second task.complete, task.commit or phase.signoff, while completions done in the same call still are",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6cb94a4f878d9160ca7c8cc5278339d8f0b819c8",
+  "branch": "audit/p66-a-merge-s-write-derives-no-com",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,12 +29,15 @@
     {
       "id": "P66.1",
       "title": "Fix BUG-9: journal-writes derives completion rows from a git merge's write",
-      "status": "pending",
+      "status": "done",
       "description": "Repro: finish a task on a phase branch, then from the parent tree run git merge <branch> in a Bash call; audit-journal.py show carries a second task.complete for that task. Expected: a write that brings in another branch's recorded history derives no completion rows, since those completions happened and were recorded where the work ran. Actual: task.complete and task.commit for P65.1 appended again by the hook after the P65 merge.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
         "plugins/audit/tests/test_journal_writes.py",
-        "tools/check-git-pipeline.py"
+        "tools/check-git-pipeline.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -60,17 +63,26 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1475e3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - derived rows filtered against the incoming commits (MERGE_HEAD etc., reflog to the baseline HEAD); g8b/g8c/g8d and hm1-hm3, each red first",
+        "descriptive": "Merging a branch no longer records its finished tasks as completed a second time in the audit trail, while work finished in the same step is still recorded."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "bugId": "BUG-9"
+      "startedAt": "2026-09-24T23:11:28Z",
+      "completedAt": "2026-09-24T23:19:14Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "python3 tools/check-git-pipeline.py"
+      ],
+      "bugId": "BUG-9",
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c1475e3",
+        "at": "2026-09-24T23:19:14Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-24T23:11:28Z"
 }
