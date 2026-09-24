@@ -183,6 +183,37 @@ def _merge_phase(stub, body):
     return merged
 
 
+def load_manifest_at(git_root, commit, rel):
+    """The assembled plan as `commit` holds it, or None when it holds none.
+
+    `rel` is the manifest's path relative to `git_root`. The directory beside it is
+    exported whole, so a sharded plan arrives with its shards. The imports are
+    local on purpose: this module sits on the hook path, and only the callers that
+    ask a commit - a merge's resolve, a landing's settlement - pay for an archive.
+    """
+    import io
+    import shutil
+    import subprocess
+    import tarfile
+    rel_dir = os.path.dirname(rel) or "."
+    try:
+        r = subprocess.run(["git", "-C", git_root, "archive", "--format=tar", commit,
+                            "--", rel_dir], stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+    except OSError:
+        return None
+    if r.returncode != 0:
+        return None
+    tmp = tempfile.mkdtemp(prefix="audit-plan-at-")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
+            tar.extractall(tmp)
+        path = os.path.join(tmp, rel)
+        return load_manifest(path) if os.path.isfile(path) else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def load_manifest(path):
     """Return the fully-assembled manifest dict for either storage format.
 

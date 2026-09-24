@@ -49,13 +49,10 @@ This script carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_merge_manifest.py`.
 """
 import argparse
-import io
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -348,21 +345,9 @@ def status(manifest):
 # index CLEANLY and conflicts only in the shard file both sides created, so git
 # keeps no stages for the index at all. HEAD, MERGE_HEAD and their merge base hold
 # every file of each plan, and the one loader assembles each.
-def _plan_at(top, commit, rel):
-    """The assembled plan as `commit` holds it, or None when it holds none."""
-    rel_dir = os.path.dirname(rel) or "."
-    r = subprocess.run(["git", "-C", top, "archive", "--format=tar", commit, "--", rel_dir],
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if r.returncode != 0:
-        return None
-    tmp = tempfile.mkdtemp(prefix="audit-resolve-")
-    try:
-        with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
-            tar.extractall(tmp)
-        path = os.path.join(tmp, rel)
-        return _mio.load_manifest(path) if os.path.isfile(path) else None
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+# An ALIAS: `close-phase.py` asks a commit for the plan too, so the reader lives in
+# `_manifest_io` beside the loader it wraps.
+_plan_at = _mio.load_manifest_at
 
 
 def _namespace(doc):

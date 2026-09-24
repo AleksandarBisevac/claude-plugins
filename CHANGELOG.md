@@ -98,6 +98,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook's `task.complete`.
 
 ### Fixed
+- **`close-phase` judged a landing by the phase as it stood before its own merge.** Run from the
+  parent's tree - the only tree a linked worktree can be removed from - it read the parent's copy
+  of the plan, where the sign-off committed on the phase branch is not yet present, and refused the
+  cleanup of a signed-off phase as "sign-off has not passed". The second run that forced moved
+  `mergedAt` to its own moment, and a run after a full cleanup told the operator to merge a branch
+  that had merged. The cleanup is now judged by the phase as the branch holds it, a recorded
+  `mergedAt` is kept, and a landed phase whose branch is gone is reported as such, exit 0. A
+  phase whose parent's copy never recorded its branch is found by the name that cut it
+  (git user.name's initials and a bug phase's type included).
 - **Readers of the stored phase status disagreed with the derivation.** `RESUMABLE` and the usage
   line's "this phase" named the first finished phase awaiting sign-off (and billed its tokens);
   the priority note and pin warning stopped at a signed-off tier-1 pin and hid the blocked pin
