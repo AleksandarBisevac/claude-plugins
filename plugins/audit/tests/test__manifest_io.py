@@ -879,8 +879,43 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+def _root_key_cases(check):
+    """A split keeps every root key - decisions, and any key a later release adds."""
+    import tempfile
+    import shutil
+    # `bugs` BEFORE `fileIndex` here, and the extras between them: a split that
+    # copied keys in the manifest's own order would write bugs first, and io-rk2
+    # could not tell that from the fixed order an existing index was written in.
+    src = {"meta": {"version": 2}, "phases": [{"id": "P1", "title": "a", "tasks": []}],
+           "bugs": [], "decisions": [{"id": "DEC-1", "title": "d", "status": "done"}],
+           "futureKey": {"kept": True}, "fileIndex": {}}
+    index, _shards = M.split_manifest(src)
+    check("io-rk1 a split keeps `decisions` and an unknown root key in the index - "
+          "COMPATIBILITY promises unknown root keys are tolerated, and a layout change "
+          "that deleted them would be the opposite",
+          index.get("decisions") == src["decisions"]
+          and index.get("futureKey") == {"kept": True}, sorted(index))
+    check("io-rk2 ...while the keys that were always carried keep their place, so an "
+          "existing sharded index re-saves byte for byte",
+          [k for k in index if k in ("meta", "phases", "fileIndex", "bugs")]
+          == ["meta", "phases", "fileIndex", "bugs"], list(index))
+    tmp = tempfile.mkdtemp(prefix="io-rootkeys-")
+    try:
+        path = os.path.join(tmp, "audit-plan.json")
+        M.save_sharded(path, src)
+        back = M.load_manifest(path)
+        check("io-rk3 save_sharded then load_manifest returns both keys unchanged",
+              back.get("decisions") == src["decisions"]
+              and back.get("futureKey") == {"kept": True}, sorted(back))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _root_key_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

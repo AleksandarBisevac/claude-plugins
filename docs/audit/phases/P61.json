@@ -468,7 +468,7 @@
     {
       "id": "P61.10",
       "title": "With several phases running, a task added without --phase goes to the phase whose branch is checked out",
-      "status": "in_progress",
+      "status": "done",
       "description": "Three developers leave several in_progress phases in the index; 'the current phase' is the one whose recorded branch is checked out, not whichever one is in_progress. No match keeps the --phase requirement.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -500,12 +500,104 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "f43e075",
+      "outcome": {
+        "technical": "_resolve_phase matches phase.branch to the checked-out branch; basis returned, printed or carried as phaseBasis.",
+        "descriptive": "With several phases running, a task added without --phase lands in the phase whose branch is checked out."
+      },
+      "startedAt": "2026-09-24T08:43:16Z",
+      "completedAt": "2026-09-24T08:47:37Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ]
+    },
+    {
+      "id": "P61.11",
+      "title": "merge-manifest resolve: renumber the side the operator names, every reference with it",
+      "status": "in_progress",
+      "description": "For the collision the suffix cannot prevent - two clones minting on the development branch - resolve reads the conflicted file's three stages, renames each id both sides added on the side the operator names to the next free id (with every reference, via _id_refs), re-merges and validates; in the sharded layout a colliding phase's shard is written under its new name. The driver's conflict message names the verb.",
+      "files": [
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "plugins/audit/tests/test_merge_manifest.py",
+        "plugins/audit/commands/layout.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_merge_manifest.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-24T08:43:16Z",
+      "startedAt": "2026-09-24T08:48:05Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P61.12",
+      "title": "split_manifest keeps every root key, so a sharded save cannot drop decisions (F469)",
+      "status": "in_progress",
+      "description": "split_manifest copied four named root keys, so decisions and every unknown root key vanished on /audit:layout sharded and every save_sharded caller - breaking COMPATIBILITY's tolerated-unknown-keys promise. resolve is about to save through it too.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/tests/test_migrate_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_io.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:50:36Z",
       "completedAt": null,
       "verifiedBy": []
     }

@@ -685,8 +685,16 @@ def split_manifest(manifest, shard_rel_dir="phases"):
     # the position the key had (or at the end, when the source carried none), which
     # is where the unconditional stamp above it used to land.
     meta["version"] = LAYOUT_VERSION[layout_of(index)]
+    # EVERY ROOT KEY SURVIVES THE SPLIT. This copied four named keys, so `decisions`
+    # - in the schema - and any key a later release adds vanished on every sharded
+    # save, while COMPATIBILITY promises unknown root keys are tolerated. The four
+    # keep their place, so an existing index re-saves byte for byte; the rest
+    # follow in the order the manifest holds them.
     for k in ("fileIndex", "bugs", "deferred", "proposals"):
         if k in manifest:
+            index[k] = manifest[k]
+    for k in manifest:
+        if k not in index and k not in ("$schema", "meta", "phases"):
             index[k] = manifest[k]
     return index, shards
 
