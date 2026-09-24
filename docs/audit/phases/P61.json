@@ -139,7 +139,7 @@
     {
       "id": "P61.3",
       "title": "A phase on a side branch is warned once and can be parked as a proposal instead",
-      "status": "in_progress",
+      "status": "done",
       "description": "Operator decision: phases are minted on the development branch. add-phase on a side branch still writes (never blocked) but warns the first time on that branch, read from the phase.add rows that now carry the branch; add-phase --park writes the same phase as a proposal (PROP-<n>-<suffix>) to materialize after the phase branch merges.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -175,19 +175,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9725c2a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "add-phase --park via _park_phase; side-branch warning read from phase.add rows carrying branch (DETAILS_KEYS); _journal_cfg shared by write and read.",
+        "descriptive": "A phase added on a phase branch is never blocked; the first one on a branch is warned, and --park defers it as a proposal to materialize after the merge."
       },
       "startedAt": "2026-09-24T08:19:02Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:28:09Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ]
     },
     {
       "id": "P61.4",
       "title": "README and CHANGELOG say where phases are minted and what --park and next-id do",
-      "status": "in_progress",
+      "status": "done",
       "description": "The README command-table row the cf1 lint reads, and the Unreleased section, for P61.1-P61.3.",
       "files": [
         "plugins/audit/README.md",
@@ -216,13 +218,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "027d811",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README /audit:phase row and Unreleased entries.",
+        "descriptive": "The README and CHANGELOG state where phases are minted and what --park and next-id do."
       },
       "startedAt": "2026-09-24T08:27:32Z",
-      "completedAt": null,
+      "completedAt": "2026-09-24T08:28:09Z",
       "verifiedBy": []
     }
   ],
