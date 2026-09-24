@@ -351,6 +351,12 @@
       "title": "Manifest merge by record",
       "status": "in_progress",
       "shard": "phases/P60.json"
+    },
+    {
+      "id": "P61",
+      "title": "Ids that two branches cannot both mint",
+      "status": "in_progress",
+      "shard": "phases/P61.json"
     }
   ],
   "fileIndex": {
@@ -436,7 +442,8 @@
       "P55.3",
       "P57.1",
       "P60.2",
-      "P60.5"
+      "P60.5",
+      "P61.1"
     ],
     "README.md": [
       "P2.3",
@@ -883,7 +890,8 @@
       "P54.4",
       "P54.5",
       "P49.4",
-      "P57.5"
+      "P57.5",
+      "P61.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -921,7 +929,8 @@
       "P59.1",
       "P60.1",
       "P60.2",
-      "P60.5"
+      "P60.5",
+      "P61.1"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1080,7 +1089,8 @@
       "P10.3",
       "P15.4",
       "P50.6",
-      "P59.10"
+      "P59.10",
+      "P61.2"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -1128,7 +1138,8 @@
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
       "P47.6",
-      "P56.1"
+      "P56.1",
+      "P61.2"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -1248,7 +1259,8 @@
       "P32.7",
       "P42.1",
       "P50.6",
-      "P54.4"
+      "P54.4",
+      "P61.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -1412,7 +1424,8 @@
       "P20.6",
       "P25.1",
       "P32.7",
-      "P42.1"
+      "P42.1",
+      "P61.1"
     ],
     "plugins/audit/tests/test__areas.py": [
       "P20.6",
@@ -1503,7 +1516,8 @@
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
-      "P54.4"
+      "P54.4",
+      "P61.2"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1512,7 +1526,8 @@
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
-      "P54.4"
+      "P54.4",
+      "P61.2"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -1562,7 +1577,8 @@
       "P55.21",
       "P59.3",
       "P59.5",
-      "P59.6"
+      "P59.6",
+      "P61.2"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1593,7 +1609,8 @@
       "P55.21",
       "P59.3",
       "P59.6",
-      "P59.12"
+      "P59.12",
+      "P61.2"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1611,7 +1628,8 @@
       "P47.4",
       "P51.6",
       "P51.8",
-      "P58.1"
+      "P58.1",
+      "P61.2"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1620,7 +1638,8 @@
       "P47.4",
       "P51.6",
       "P51.8",
-      "P58.1"
+      "P58.1",
+      "P61.2"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1842,7 +1861,8 @@
       "P50.5",
       "P55.14",
       "P50.9",
-      "P60.5"
+      "P60.5",
+      "P61.1"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -1877,10 +1897,12 @@
       "P59.1"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
-      "P32.1"
+      "P32.1",
+      "P61.2"
     ],
     "plugins/audit/tests/test__proposals.py": [
-      "P32.1"
+      "P32.1",
+      "P61.2"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -2116,7 +2138,8 @@
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
       "P56.1",
-      "P59.13"
+      "P59.13",
+      "P61.2"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2155,7 +2178,8 @@
     ],
     "plugins/audit/tests/test_migrate_manifest.py": [
       "P50.6",
-      "P59.10"
+      "P59.10",
+      "P61.2"
     ],
     "tools/check-committed-pii.py": [
       "P51.4"
@@ -2281,6 +2305,12 @@
     ],
     "plugins/audit/tests/test__merge_install.py": [
       "P60.5"
+    ],
+    "plugins/audit/scripts/manifest/_id_shape.py": [
+      "P61.1"
+    ],
+    "plugins/audit/tests/test__id_shape.py": [
+      "P61.1"
     ]
   },
   "bugs": [
