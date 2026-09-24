@@ -467,7 +467,8 @@
       "P61.11",
       "P61.13",
       "P62.1",
-      "P63.4"
+      "P63.4",
+      "P63.8"
     ],
     "README.md": [
       "P2.3",
@@ -584,7 +585,8 @@
       "P56.6",
       "P60.3",
       "P61.4",
-      "P63.4"
+      "P63.4",
+      "P63.8"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -678,7 +680,8 @@
       "P44.4",
       "P57.1",
       "P61.3",
-      "P63.4"
+      "P63.4",
+      "P63.8"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -756,7 +759,8 @@
       "P59.3",
       "P59.5",
       "P59.10",
-      "P63.2"
+      "P63.2",
+      "P63.8"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -816,7 +820,8 @@
       "P15.4",
       "P22.12",
       "P41.5",
-      "P41.7"
+      "P41.7",
+      "P63.8"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -864,7 +869,8 @@
       "P7.2",
       "P32.2",
       "P45.1",
-      "P61.14"
+      "P61.14",
+      "P63.8"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1110,7 +1116,8 @@
       "P57.2",
       "P57.4",
       "P59.10",
-      "P63.5"
+      "P63.5",
+      "P63.8"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -1142,7 +1149,8 @@
       "P50.6",
       "P59.10",
       "P61.2",
-      "P61.7"
+      "P61.7",
+      "P63.8"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -1357,14 +1365,16 @@
       "P54.2"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
-      "P18.6"
+      "P18.6",
+      "P63.8"
     ],
     "plugins/audit/tests/test__doctor_hygiene.py": [
       "P18.6",
       "P18.9"
     ],
     "plugins/audit/tests/test__doctor_policy.py": [
-      "P18.6"
+      "P18.6",
+      "P63.8"
     ],
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
@@ -1498,7 +1508,8 @@
       "P36.10",
       "P55.3",
       "P55.9",
-      "P50.8"
+      "P50.8",
+      "P63.8"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -1582,7 +1593,8 @@
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
       "P54.4",
-      "P61.2"
+      "P61.2",
+      "P63.8"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1592,7 +1604,8 @@
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
       "P54.4",
-      "P61.2"
+      "P61.2",
+      "P63.8"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -1649,7 +1662,8 @@
       "P61.8",
       "P61.10",
       "P61.13",
-      "P63.4"
+      "P63.4",
+      "P63.8"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1686,7 +1700,8 @@
       "P61.8",
       "P61.10",
       "P61.13",
-      "P63.4"
+      "P63.4",
+      "P63.8"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1746,7 +1761,8 @@
     "plugins/audit/tests/test_journal_writes.py": [
       "P22.12",
       "P41.5",
-      "P41.7"
+      "P41.7",
+      "P63.8"
     ],
     "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass": [
       "P22.12"
@@ -1830,7 +1846,8 @@
       "P57.2",
       "P57.4",
       "P59.10",
-      "P63.5"
+      "P63.5",
+      "P63.8"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2023,7 +2040,8 @@
       "P46.6",
       "P48.1",
       "P59.5",
-      "P63.5"
+      "P63.5",
+      "P63.8"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2031,7 +2049,8 @@
       "P34.1",
       "P46.6",
       "P48.1",
-      "P63.5"
+      "P63.5",
+      "P63.8"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7"
@@ -2176,7 +2195,8 @@
       "P56.4",
       "P59.5",
       "P59.13",
-      "P63.2"
+      "P63.2",
+      "P63.8"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2247,7 +2267,8 @@
     "plugins/audit/scripts/usage/_usage_economics.py": [
       "P49.2",
       "P56.1",
-      "P56.6"
+      "P56.6",
+      "P63.8"
     ],
     "plugins/audit/scripts/panel/_panel_usage.py": [
       "P49.2",
@@ -2255,7 +2276,8 @@
     ],
     "plugins/audit/tests/test__usage_economics.py": [
       "P49.2",
-      "P56.6"
+      "P56.6",
+      "P63.8"
     ],
     "plugins/audit/scripts/panel/_panel_runstate.py": [
       "P49.3"
@@ -2276,7 +2298,8 @@
       "P59.10",
       "P61.2",
       "P61.7",
-      "P61.12"
+      "P61.12",
+      "P63.8"
     ],
     "tools/check-committed-pii.py": [
       "P51.4"
@@ -2303,7 +2326,8 @@
       "P60.4",
       "P60.5",
       "P62.1",
-      "P63.5"
+      "P63.5",
+      "P63.8"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
@@ -2311,7 +2335,8 @@
       "P60.4",
       "P62.1",
       "P63.3",
-      "P63.5"
+      "P63.5",
+      "P63.8"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2441,6 +2466,18 @@
     ],
     "plugins/audit/tests/test__report_md.py": [
       "P63.6"
+    ],
+    "plugins/audit/scripts/manifest/_priority.py": [
+      "P63.8"
+    ],
+    "plugins/audit/scripts/manifest/read-ado-links.py": [
+      "P63.8"
+    ],
+    "plugins/audit/tests/test__priority.py": [
+      "P63.8"
+    ],
+    "plugins/audit/tests/test_read_ado_links.py": [
+      "P63.8"
     ]
   },
   "bugs": [
