@@ -575,6 +575,61 @@
         "commit": "864ba13",
         "at": "2026-09-24T13:56:38Z"
       }
+    },
+    {
+      "id": "P63.11",
+      "title": "The prose says a phase's status is derived and sign-off is a verb",
+      "status": "done",
+      "description": "phase-signoff step 5a still said to hand-write phase.status = done; task.md, the README, init, layout, orchestrator and the handbook described the gate, readiness and the last-task close off the stored status; CHANGELOG and COMPATIBILITY carry the derived status and its precedence.",
+      "files": [
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/layout.md",
+        "plugins/audit/reference/orchestrator.md",
+        "docs/handbook.html",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f97feac",
+      "outcome": {
+        "technical": "met - phase-signoff 5a runs the verb; stored-status prose replaced in task, README, init, layout, orchestrator, handbook; CHANGELOG and COMPATIBILITY updated",
+        "descriptive": "The sign-off procedure, the gate's description and the changelog all say that a phase is closed by recording a verdict, not by hand-editing its status."
+      },
+      "startedAt": "2026-09-24T13:58:42Z",
+      "completedAt": "2026-09-24T13:59:39Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f97feac",
+        "at": "2026-09-24T13:59:39Z"
+      }
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"
