@@ -6009,6 +6009,24 @@ def _cases(check):
               "output says so rather than implying one: %s" % (txt,),
               code == 0 and p2_of(mpn).get("branch") is None
               and "no git repository" in txt)
+        projh, mph = mk("pe-sharded", base_manifest(), sharded=True, git=True)
+        git(projh, "checkout", "-q", "-b", "main")
+        git(projh, "add", "-A")
+        git(projh, "commit", "-q", "-m", "base")
+        h_sha = sha_of(projh, "HEAD")
+        code, txt = run(["start", "P2.3", "--project-dir", projh])
+        with open(mph, encoding="utf-8") as fh:
+            h_stub = [p for p in json.load(fh)["phases"] if p["id"] == "P2"][0]
+        h_shard_path = os.path.join(os.path.dirname(mph), h_stub.get("shard") or "")
+        with open(h_shard_path, encoding="utf-8") as fh:
+            h_shard = json.load(fh)
+        check("pe11 on the SHARDED layout the cut lands branch and baseRef in the phase's "
+              "shard - the file a phase run owns - and not in the index stub, which two "
+              "phase branches would otherwise both rewrite: %r"
+              % ({k: h_stub.get(k) for k in ("branch", "baseRef")},),
+              code == 0 and head_of(projh) == want and h_shard.get("branch") == want
+              and h_shard.get("baseRef") == h_sha
+              and "branch" not in h_stub and "baseRef" not in h_stub)
     finally:
         _harness.remove_tree(tmp)
 
