@@ -749,7 +749,8 @@
       "P55.23",
       "P59.3",
       "P59.5",
-      "P59.10"
+      "P59.10",
+      "P63.2"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -992,7 +993,8 @@
       "P22.8",
       "P47.3",
       "P61.12",
-      "P63.1"
+      "P63.1",
+      "P63.3"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1558,7 +1560,8 @@
       "P55.17",
       "P55.23",
       "P59.7",
-      "P59.12"
+      "P59.12",
+      "P63.3"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
@@ -1737,7 +1740,8 @@
       "P22.8",
       "P47.3",
       "P61.12",
-      "P63.1"
+      "P63.1",
+      "P63.3"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
       "P22.8"
@@ -2148,7 +2152,8 @@
       "P47.1",
       "P56.4",
       "P59.5",
-      "P59.13"
+      "P59.13",
+      "P63.2"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2279,7 +2284,8 @@
       "P54.3",
       "P59.12",
       "P60.4",
-      "P62.1"
+      "P62.1",
+      "P63.3"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2336,10 +2342,12 @@
       "P58.2"
     ],
     "plugins/audit/scripts/panel/_panel_policy.py": [
-      "P59.10"
+      "P59.10",
+      "P63.2"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
-      "P59.10"
+      "P59.10",
+      "P63.2"
     ],
     "plugins/audit/tests/test__commit_trail.py": [
       "P59.13"
