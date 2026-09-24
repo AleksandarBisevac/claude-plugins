@@ -504,7 +504,8 @@
       "P18.10",
       "P23.3",
       "P27.1",
-      "P61.9"
+      "P61.9",
+      "P63.6"
     ],
     "docs/index.html": [
       "P13.3",
@@ -522,14 +523,16 @@
       "P27.1",
       "P32.10",
       "P51.9",
-      "P55.7"
+      "P55.7",
+      "P63.6"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
       "P17.1",
       "P23.3",
       "P27.1",
-      "P32.10"
+      "P32.10",
+      "P63.6"
     ],
     "plugins/audit/.claude-plugin/plugin.json": [
       "P1.8",
@@ -1050,7 +1053,8 @@
       "P32.7",
       "P34.7",
       "P51.9",
-      "P59.5"
+      "P59.5",
+      "P63.6"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -1801,7 +1805,8 @@
       "P25.1",
       "P32.7",
       "P34.7",
-      "P51.9"
+      "P51.9",
+      "P63.6"
     ],
     "plugins/audit/tests/test_render_report.py": [
       "P25.1",
@@ -2277,7 +2282,8 @@
       "P51.5"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
-      "P51.9"
+      "P51.9",
+      "P63.6"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5"
@@ -2419,6 +2425,15 @@
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7"
+    ],
+    "plugins/audit/scripts/report/_report_page.py": [
+      "P63.6"
+    ],
+    "plugins/audit/tests/test__report_page.py": [
+      "P63.6"
+    ],
+    "plugins/audit/tests/test__report_md.py": [
+      "P63.6"
     ]
   },
   "bugs": [
