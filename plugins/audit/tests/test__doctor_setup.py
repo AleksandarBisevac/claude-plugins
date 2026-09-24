@@ -828,8 +828,104 @@ def _cases(check):
                       "git", "git is not on PATH")
 
 
+def _merge_driver_cases(check):
+    """`_check_merge_driver` against REAL git: the install is `merge-manifest.py`'s
+    own, so the doctor is graded against what the verb writes rather than against
+    a hand-built imitation of it."""
+    import tempfile
+    import _loader
+
+    if not shutil.which("git"):
+        _harness.skip(check, "dsm1-dsm6 the merge-driver check against real git",
+                      "git", "git is not on PATH")
+        return
+    mm = _loader.load_script("merge-manifest.py", modname="merge_manifest_doctor")
+    tmp = tempfile.mkdtemp(prefix="doctor-merge-driver-")
+    held = os.environ.copy()
+    os.environ.update({"HOME": tmp, "GIT_CONFIG_NOSYSTEM": "1",
+                       "GIT_CONFIG_GLOBAL": os.devnull})
+    try:
+        repo = os.path.join(tmp, "repo")
+        mpath = os.path.join(repo, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        subprocess.run(["git", "init", "-q", repo], check=True)
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(_manifest(), fh)
+
+        def run():
+            r = base.Report()
+            M._check_merge_driver(r, mpath)
+            return r
+
+        rep = run()
+        check("dsm1 no driver anywhere is an OK line stating the fact, naming no "
+              "command - installing it is a choice, like the layout: %r"
+              % (_detail(rep, "merge driver"),),
+              _levels(rep, "merge driver") == ["OK"]
+              and "not installed" in _detail(rep, "merge driver")
+              and "/audit:" not in _detail(rep, "merge driver"))
+
+        with open(os.path.join(repo, ".gitattributes"), "w", encoding="utf-8") as fh:
+            fh.write("docs/audit/audit-plan.json merge=audit-manifest\n"
+                     "docs/audit/phases/*.json merge=audit-manifest\n")
+        rep = run()
+        check("dsm2 .gitattributes routes the manifest to the driver and THIS clone "
+              "does not configure it - a WARNING naming the install, because the team "
+              "chose it and this clone silently line-merges: %r"
+              % (_detail(rep, "merge driver"),),
+              _levels(rep, "merge driver") == ["WARNING"]
+              and "does not configure" in _detail(rep, "merge driver")
+              and any("merge-driver install" in (r["fix"] or "") for r in rep.rows
+                      if r["check"] == "merge driver"))
+
+        held_out = sys.stdout
+        sys.stdout = open(os.devnull, "w")
+        try:
+            mm.install(mpath, mm._output.PLUGIN_ROOT)
+        finally:
+            sys.stdout.close()
+            sys.stdout = held_out
+        rep = run()
+        check("dsm3 a full install is an OK line: %r" % (_detail(rep, "merge driver"),),
+              _levels(rep, "merge driver") == ["OK"]
+              and "installed" in _detail(rep, "merge driver")
+              and "not installed" not in _detail(rep, "merge driver"))
+
+        mm.install(mpath, os.path.join(tmp, "moved-plugin"))
+        rep = run()
+        check("dsm4 a shim whose plugin root is gone is a WARNING that says merges "
+              "fall back to line merges: %r" % (_detail(rep, "merge driver"),),
+              _levels(rep, "merge driver") == ["WARNING"]
+              and "moved-plugin" in _detail(rep, "merge driver"))
+
+        mm.install(mpath, mm._output.PLUGIN_ROOT)
+        os.remove(os.path.join(repo, ".gitattributes"))
+        rep = run()
+        check("dsm5 a configured clone whose .gitattributes no longer names the driver "
+              "is a WARNING - the driver is configured and never runs: %r"
+              % (_detail(rep, "merge driver"),),
+              _levels(rep, "merge driver") == ["WARNING"]
+              and ".gitattributes" in _detail(rep, "merge driver"))
+
+        loose = os.path.join(tmp, "nogit", "plan.json")
+        os.makedirs(os.path.dirname(loose))
+        with open(loose, "w", encoding="utf-8") as fh:
+            json.dump(_manifest(), fh)
+        r = base.Report()
+        M._check_merge_driver(r, loose)
+        check("dsm6 outside a git work tree the check adds NO row - check_git already "
+              "reports the missing repository", _levels(r, "merge driver") == [])
+    finally:
+        os.environ.clear()
+        os.environ.update(held)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _merge_driver_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

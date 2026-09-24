@@ -59,6 +59,7 @@ import _status_facts  # noqa: E402  (rollup/readiness/gate facts, at layer 2)
 import _manifest_vocab  # noqa: E402  (PROPOSAL_STATUS: the manifest's own words, layer 1)
 import _config_rules  # noqa: E402  (the audit.config.json rules, at layer 2)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
+import _merge_install  # noqa: E402  (what a merge-driver install is, read back; layer 1)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -625,7 +626,53 @@ def check_manifest(rep, project, cfg):
         rep.warn("manifest", w)
 
     _check_shards(rep, path, manifest, mio)
+    _check_merge_driver(rep, path)
     return manifest_rel, manifest
+
+
+def _check_merge_driver(rep, index_path):
+    """Whether THIS clone merges the manifest by record.
+
+    Two of the three pieces `/audit:layout merge-driver install` writes are per
+    clone: git config is never committed, and the shim lives in the git dir. So a
+    team that committed the `.gitattributes` lines still has clones that merge the
+    manifest line by line, and nothing but this says so. The facts come from
+    `merge-manifest.status_facts` - the verb's own reading - so the doctor cannot
+    disagree with `status` about what is installed.
+
+    Not installed at all is an OK line naming no command, for the reason the
+    single-file layout line names none: using the driver is a choice.
+    """
+    facts = _merge_install.status_facts(index_path)
+    if "error" in facts:
+        return
+    fix = "/audit:layout merge-driver install"
+    if not facts["attributes"] and not facts["configured"]:
+        rep.ok("merge driver", "not installed - the manifest merges line by line, so "
+                               "two branches that each add a record conflict on it")
+        return
+    if facts["attributes"] and not facts["configured"]:
+        rep.warn("merge driver",
+                 ".gitattributes routes %s to the audit-manifest driver and this clone "
+                 "does not configure it (merge.audit-manifest.driver is %s), so merges "
+                 "here fall back to a line merge" % (facts["manifest_rel"],
+                                                     facts["driver_value"] or "unset"),
+                 fix)
+        return
+    if not facts["attributes"]:
+        rep.warn("merge driver",
+                 "this clone configures the audit-manifest driver but .gitattributes does "
+                 "not route %s to it, so the driver never runs" % (facts["manifest_rel"],),
+                 fix)
+        return
+    if not (facts["shim"] and facts["shim_root_exists"]):
+        rep.warn("merge driver",
+                 "the shim git runs records plugin root %s, which no longer holds the "
+                 "driver - merges fall back to a line merge until it is re-installed"
+                 % (facts["shim_root"] or "(none)",), fix)
+        return
+    rep.ok("merge driver", "installed - %s merges by record in this clone (shim runs %s)"
+           % (facts["manifest_rel"], facts["shim_root"]))
 
 
 def _check_shards(rep, index_path, manifest, mio=None):
