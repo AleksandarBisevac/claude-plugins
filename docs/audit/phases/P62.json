@@ -125,7 +125,7 @@
     {
       "id": "P62.3",
       "title": "CHANGELOG for the guard fix",
-      "status": "in_progress",
+      "status": "done",
       "description": "The Unreleased entry for P62.2.",
       "files": [
         "CHANGELOG.md"
@@ -153,13 +153,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dc36068",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Unreleased / Fixed.",
+        "descriptive": "The CHANGELOG records the guard fix."
       },
       "startedAt": "2026-09-24T09:56:22Z",
-      "completedAt": null,
+      "completedAt": "2026-09-24T09:56:23Z",
       "verifiedBy": []
     }
   ],
