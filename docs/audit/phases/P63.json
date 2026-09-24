@@ -74,7 +74,7 @@
     {
       "id": "P63.2",
       "title": "The plan gate reads phase_running, and area rules stay live through sign-off",
-      "status": "in_progress",
+      "status": "done",
       "description": "manifest_state's phaseRunning comes from _manifest_io.phase_running, so a phase only awaiting sign-off no longer holds the denying tier (operator decision); it is named as signoffDuePhase. Area-scoped policy stays live while a phase is running OR sign-off due, because sign-off's fix runs work in that area; the hook and the panel preview ask one function.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -107,19 +107,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9854db2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "manifest_state via phase_running with signoffDuePhase; active_area_tags and the panel twin via area_active.",
+        "descriptive": "A phase only awaiting sign-off no longer holds the plan gate in deny; area rules stay live through sign-off."
       },
       "startedAt": "2026-09-24T12:35:09Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T12:42:02Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__panel_policy.py"
+      ]
     },
     {
       "id": "P63.3",
       "title": "area_active, and the fixtures that described a running phase with no work left",
-      "status": "in_progress",
+      "status": "done",
       "description": "The shared area rule P63.2's hook and panel call, and the fixtures that change meaning under it - committed apart from P63.2 because P63.2 did not declare them, and landed right after it because P63.2's commit calls area_active.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -152,14 +155,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e9a8c41",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_io.area_active; ds15/s10d fixtures carry an open task.",
+        "descriptive": "The area rule and the fixtures that change meaning under it are committed."
       },
       "startedAt": "2026-09-24T12:42:02Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T12:42:02Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__manifest_io.py"
+      ]
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"
