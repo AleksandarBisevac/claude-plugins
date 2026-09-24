@@ -261,7 +261,8 @@ def _cases(check):
               "to name",
               st == {"exists": False, "phaseRunning": False,
                      "runningPhase": None, "staleClosedPhase": None,
-                     "signoffDuePhase": None}, repr(st))
+                     "signoffDuePhase": None,
+                     "signoffDueStatus": None}, repr(st))
         check("f2 no manifest -> observe", M.plan_gate_mode({}, st) == "observe")
 
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -272,7 +273,8 @@ def _cases(check):
               "phase to name",
               st == {"exists": True, "phaseRunning": False,
                      "runningPhase": None, "staleClosedPhase": None,
-                     "signoffDuePhase": None}, repr(st))
+                     "signoffDuePhase": None,
+                     "signoffDueStatus": None}, repr(st))
         check("f4 manifest, nothing running -> warn", M.plan_gate_mode({}, st) == "warn")
 
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -342,6 +344,29 @@ def _cases(check):
         check("sg3 SECOND DIRECTION: a phase just started, with no task yet, IS running "
               "- it has everything left to do",
               M.manifest_state(tmp_f, rel)["phaseRunning"] is True)
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]},
+            {"id": "P2", "title": "q", "status": "in_progress", "tasks": [
+                {"id": "P2.1", "title": "t", "status": "pending"}]}]})
+        st = M.manifest_state(tmp_f, rel)
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "pending", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]},
+            {"id": "P2", "title": "q", "status": "in_progress", "tasks": [
+                {"id": "P2.1", "title": "t", "status": "done"}]}]})
+        st = M.manifest_state(tmp_f, rel)
+        check("sg5 of two phases awaiting sign-off the one stored in_progress is named "
+              "first, with the status it is stored at - that is the phase a reader "
+              "sees in progress and needs explained: %r" % (st,),
+              st["signoffDuePhase"] == "P2" and st["signoffDueStatus"] == "in_progress")
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "pending", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]}]})
+        st = M.manifest_state(tmp_f, rel)
+        check("sg6 ...and with only a pending one it is still named, carrying `pending` "
+              "- the caller must not assume in_progress: %r" % (st,),
+              st["signoffDuePhase"] == "P1" and st["signoffDueStatus"] == "pending")
         write_manifest({"meta": {"version": 2}, "phases": [
             {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
                 {"id": "P1.1", "title": "t", "status": "done"}]},
@@ -430,7 +455,8 @@ def _cases(check):
                                              "phaseRunning": False,
                                              "runningPhase": None,
                                              "staleClosedPhase": None,
-                                             "signoffDuePhase": None})
+                                             "signoffDuePhase": None,
+                     "signoffDueStatus": None})
         check("f15 plan_gate_mode on garbage input degrades to observe",
               M.plan_gate_mode(None, None) == "observe")
 

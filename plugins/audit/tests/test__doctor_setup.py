@@ -382,6 +382,17 @@ def _cases(check):
               and "sign-off" in _detail(rep, "plan gate")
               and "signoff" in _detail(rep, "plan gate")
               and "no phase is in_progress" not in _detail(rep, "plan gate"))
+        due["phases"][0]["status"] = "pending"
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(due, fh)
+        rep = base.Report()
+        M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
+        check("ds15t a phase awaiting sign-off whose stored status is PENDING is named "
+              "with that status - the line says only what is true of it, never that it "
+              "is in_progress: %r" % (_detail(rep, "plan gate"),),
+              _detail(rep, "plan gate").startswith("warn")
+              and "P1 (pending)" in _detail(rep, "plan gate")
+              and "in_progress" not in _detail(rep, "plan gate").split("Start a")[0])
 
         running = _manifest()
         running["phases"][0]["status"] = "in_progress"

@@ -1944,7 +1944,8 @@ def manifest_state(root, manifest_rel):
     Never raises. On any error it reports the LEAST aggressive state, so a crash in
     here can only relax the gate, never invent a denial."""
     state = {"exists": False, "phaseRunning": False, "runningPhase": None,
-             "staleClosedPhase": None, "signoffDuePhase": None}
+             "staleClosedPhase": None, "signoffDuePhase": None,
+             "signoffDueStatus": None}
     try:
         path = Path(root) / manifest_rel
         if not path.exists():
@@ -1966,8 +1967,16 @@ def manifest_state(root, manifest_rel):
                 state["phaseRunning"] = True
                 state["runningPhase"] = phase.get("id")
                 return state
-            if state["signoffDuePhase"] is None and mio.signoff_due(phase):
+            # The one a reader sees IN PROGRESS is the one that needs explaining,
+            # so a stored in_progress phase is named over an earlier pending one,
+            # and the stored status travels with the id: a caller that assumed
+            # in_progress once called a pending phase in progress.
+            if mio.signoff_due(phase) and (
+                    state["signoffDuePhase"] is None
+                    or (state["signoffDueStatus"] != "in_progress"
+                        and phase.get("status") == "in_progress")):
                 state["signoffDuePhase"] = phase.get("id")
+                state["signoffDueStatus"] = phase.get("status")
     except Exception:
         pass
     return state

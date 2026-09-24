@@ -537,10 +537,10 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
         # by the gate's rule, so the line has to say which of the two it read -
         # "no phase is in_progress" would be false of the plan beside it.
         if due:
-            head = ("warn - no phase has work in flight: phase %s is in_progress but "
-                    "only awaits sign-off (every task terminal, no verdict recorded), "
-                    "which does not hold the gate - `/audit:phase signoff %s` records "
-                    "it" % (due, due))
+            head = ("warn - no phase has work in flight: phase %s (%s) only awaits "
+                    "sign-off (every task terminal, no verdict recorded), which does "
+                    "not hold the gate - `/audit:phase signoff %s` records it"
+                    % (due, state.get("signoffDueStatus"), due))
         else:
             head = "warn - a manifest exists but no phase is in_progress"
         rep.ok("plan gate",
