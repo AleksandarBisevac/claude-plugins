@@ -1304,7 +1304,8 @@
       "P59.5",
       "P61.5",
       "P63.7",
-      "P65.1"
+      "P65.1",
+      "P65.2-iy2"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1316,7 +1317,8 @@
       "P59.5",
       "P61.5",
       "P63.7",
-      "P65.1"
+      "P65.1",
+      "P65.2-iy2"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1340,7 +1342,8 @@
       "P29.5",
       "P41.4",
       "P61.6",
-      "P65.1"
+      "P65.1",
+      "P65.2-iy2"
     ],
     "docs/handbook.html": [
       "P18.8",
