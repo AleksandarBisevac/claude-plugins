@@ -1,7 +1,7 @@
 {
   "id": "P65",
   "title": "close-phase judges a landing by the phase the merge brings in",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "a phase signed off on its branch lands and is cleaned up in one close-phase run from the parent, its preview says the same, and a re-run never moves mergedAt",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "01daf63c6e2d1d7aa6861a7db98681d8d05c3b95",
+  "branch": "audit/p65-close-phase-judges-a-landing-b",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P65.1",
       "title": "Fix BUG-8: close-phase judges cleanup by the phase as it stood before its own merge",
-      "status": "pending",
+      "status": "done",
       "description": "Repro: sign off a phase in its linked worktree, then run close-phase.py <plan> <phase> --project <parent worktree> from the parent. Expected: the merge lands and the cleanup is judged against the phase as the merge left it (signed off and merged), so the worktree and branch are removed in one run. Actual: 'not done: phase P64 is pending, not done - sign-off has not passed'; a second run is needed, and it re-stamps mergedAt with its own time.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -37,7 +37,9 @@
         "plugins/audit/scripts/manifest/merge-manifest.py",
         "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/tests/test__manifest_io.py",
-        "tools/check-git-pipeline.py"
+        "tools/check-git-pipeline.py",
+        "plugins/audit/commands/review.md",
+        "CHANGELOG.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -63,17 +65,26 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3fe767e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - settlement from the branch tip, kept mergedAt, landed-and-gone exit 0, one composed name; g16c/s4/r3b red first",
+        "descriptive": "A phase signed off in its own worktree now lands and is cleaned up in one close-phase run from the main tree, and running it again never changes when the merge is recorded as having happened."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "bugId": "BUG-8"
+      "startedAt": "2026-09-24T22:08:49Z",
+      "completedAt": "2026-09-24T22:14:57Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "python3 tools/check-git-pipeline.py"
+      ],
+      "bugId": "BUG-8",
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3fe767e",
+        "at": "2026-09-24T22:14:57Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-24T22:08:49Z"
 }
