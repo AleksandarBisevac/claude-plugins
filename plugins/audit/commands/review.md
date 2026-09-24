@@ -46,7 +46,10 @@ the **normal** outcome of a re-run, not a sign that something went wrong.
 
 **Re-running the landing step is safe and says so.** `close-phase.py` asks the ancestry before it
 writes anything, so a phase whose branch is already contained in its parent reports
-`already-contained`, makes no git write at all, and exits 0. What a re-run WILL still do is the
+`already-contained`, makes no git write at all, and exits 0 - keeping the `mergedAt` it recorded
+rather than moving it. A phase that landed and whose branch is already gone reports that and exits
+0 too. The sign-off it judges the cleanup by is the phase as the BRANCH holds it, so a phase
+signed off in its worktree lands and is cleaned up in one run from the parent's tree. What a re-run WILL still do is the
 cleanup the first run could not — a worktree that was dirty then and is clean now, or one the
 first run was standing inside. Its `--dry-run` shows exactly that before you commit to it.
 

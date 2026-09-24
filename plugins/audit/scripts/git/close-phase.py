@@ -136,8 +136,13 @@ def resolve(manifest, phase, parent_arg=None, branch_arg=None, initials=None):
         if recorded:
             branch, bbasis = str(recorded), "phase.branch"
         else:
-            composed = _branch.compose(meta, phase, initials=initials)
-            branch, bbasis = composed["name"], "composed (%s)" % composed["basis"]
+            # `_branch.phase_answer`, the name `start`, `resolve-branch.py` and
+            # `/audit:worktree add` compose - a phase landed from a parent whose
+            # copy of the plan never recorded the branch is found by the SAME name
+            # that cut it, git user.name and a bug phase's type included.
+            composed = _branch.phase_answer(meta, phase, initials)
+            branch = composed["branch"]
+            bbasis = "composed (%s)" % composed["branchBasis"]
     if parent_arg:
         parent, pbasis = str(parent_arg), "argument (--parent)"
     else:
@@ -537,6 +542,36 @@ def _phase_file(manifest_path, phase_id):
     return None
 
 
+def recorded_merge(manifest_path, phase_id):
+    """The `mergedAt` the plan at `manifest_path` already records for the phase, or
+    "" - read before a stamp so a re-run neither moves it nor journals it twice."""
+    try:
+        plan_now = _mio.load_manifest(manifest_path)
+    except Exception:
+        return ""
+    for ph in ((plan_now or {}).get("phases") or []):
+        if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
+            return ph.get(MERGED_FIELD) or ""
+    return ""
+
+
+def phase_as_landed(git_root, manifest_path, branch, phase_id):
+    """(phase, basis) - the phase as the merge brings it in: the branch tip's copy.
+
+    Sign-off is committed ON the phase branch, so the copy of the plan a parent's
+    tree holds before its merge still says the phase has not signed off. A
+    landing judged by that copy refused the cleanup of a phase that had signed off,
+    and the second run it forced moved `mergedAt`. Once the branch is gone - the
+    re-run after a cleanup - the tree's own copy is the landed one, and says so.
+    """
+    rel = os.path.relpath(os.path.abspath(manifest_path), git_root)
+    landed = _mio.load_manifest_at(git_root, "refs/heads/" + branch, rel.replace(os.sep, "/"))
+    for ph in ((landed or {}).get("phases") or []):
+        if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
+            return ph, "the phase as %s holds it" % (branch,)
+    return None, "the plan on disk (%s is not there to read)" % (branch,)
+
+
 def stamp_merged(manifest_path, phase_id, when=None):
     """Write `phase.mergedAt`. Returns the path written, or "" with a reason.
 
@@ -558,6 +593,15 @@ def stamp_merged(manifest_path, phase_id, when=None):
     # `datetime.UTC` (3.11+) would not.
     stamp = when or (datetime.datetime.now(datetime.timezone.utc)
                      .strftime("%Y-%m-%dT%H:%M:%SZ"))
+    # A RECORDED MERGE IS KEPT: the field names the moment the parent came to hold
+    # the branch, and a re-run finding it already there records nothing new.
+    if isinstance(body, dict) and str(body.get("id")) == str(phase_id) \
+            and body.get(MERGED_FIELD):
+        return path, body[MERGED_FIELD]
+    for ph in ((body or {}).get("phases") or []) if isinstance(body, dict) else []:
+        if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id) \
+                and ph.get(MERGED_FIELD):
+            return path, ph[MERGED_FIELD]
     if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
         body[MERGED_FIELD] = stamp                      # a shard IS the phase
     else:
@@ -707,8 +751,10 @@ def render(answer, out=print):
         out("  not done: %s" % (row["why"],))
         out("            %s" % (row["remedy"],))
     if answer.get("stamped"):
-        out("  %s = %s written to %s"
-            % (MERGED_FIELD, answer["stampedAt"], answer["stamped"]))
+        out("  %s = %s %s %s"
+            % (MERGED_FIELD, answer["stampedAt"],
+               "already recorded in" if answer.get("stampKept") else "written to",
+               answer["stamped"]))
         if answer.get("stampedElsewhere"):
             out("    (that is the copy in the worktree the merge landed in - the "
                 "one in this tree is about to be removed)")
@@ -785,7 +831,17 @@ def main(argv, out=print):
             "branch can be established. Nothing was written.")
         return E_NO_BASIS
 
-    names = resolve(manifest, phase, args.parent, args.branch)
+    names = resolve(manifest, phase, args.parent, args.branch,
+                    initials=_wt.git_user_name(git_root))
+    # ALREADY LANDED AND CLEANED UP: the plan records the merge and the branch is
+    # gone. Containment cannot be asked of a branch that no longer exists, and the
+    # planner then said "merge it into the parent first" about a phase that had
+    # merged - so the idempotent re-run this command promises is answered here.
+    if (phase or {}).get(MERGED_FIELD) and _wt.ref_exists(
+            git_root, names["branch"])["exists"] is False:
+        out("[close-phase] phase %s landed at %s and %s is gone - nothing left "
+            "to do" % (args.phase, phase[MERGED_FIELD], names["branch"]))
+        return E_OK
     observation = observe(git_root, names["branch"], names["parent"])
     if observation["why"]:
         out("[close-phase] %s" % (observation["why"],))
@@ -794,6 +850,8 @@ def main(argv, out=print):
     # The observation carries the phase as it stands on disk; the settlement the
     # CLEANUP is judged by is the same question with `mergedAt` supplied by this run.
     observation["settled"] = settlement(phase, merged=False)
+    landed, landed_basis = phase_as_landed(git_root, args.manifest, names["branch"],
+                                           args.phase)
     the_plan = plan(observation, names["branch"], names["parent"],
                     names["policy"], want_worktree=args.remove_worktree,
                     want_branch=args.delete_branch, no_ff=args.no_ff)
@@ -809,6 +867,13 @@ def main(argv, out=print):
             phase_id=args.phase)
         if not target:
             return {"stamped": "", "stampWhy": why}
+        earlier = recorded_merge(target, args.phase)
+        if earlier:
+            # A re-run records the merge that happened; it does not move it.
+            return {"stamped": target, "stampedAt": earlier, "stampKept": True,
+                    "stampedElsewhere": (os.path.abspath(target)
+                                         != os.path.abspath(args.manifest)),
+                    "parkedOnBranch": _parked_after_merge(target, names["branch"])}
         path, stamp_at = stamp_merged(target, args.phase)
         if not path:
             return {"stamped": "", "stampWhy": stamp_at}
@@ -820,8 +885,9 @@ def main(argv, out=print):
 
     code, answer = close(git_root, the_plan, names["branch"], names["parent"],
                          dry_run=args.dry_run,
-                         settled_now=settlement(phase, merged=True),
+                         settled_now=settlement(landed or phase, merged=True),
                          stamp=_stamp)
+    answer["settledBasis"] = landed_basis
     answer["branchBasis"] = names["branchBasis"]
     answer["parentBasis"] = names["parentBasis"]
 

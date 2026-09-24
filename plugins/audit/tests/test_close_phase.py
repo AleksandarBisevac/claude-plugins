@@ -120,6 +120,18 @@ def _cases(check):
           "manifest's name",
           ro["parent"] == "release/1.2" and "argument" in ro["parentBasis"],
           ro["parentBasis"])
+    import _branch
+    _ini_meta = {"developmentBranch": "dev",
+                 "branch": {"template": "{type}/{initials}-{phase}-{slug}"}}
+    _unrec = {"id": "BUG-3", "title": "Crash"}
+    rc = M.resolve({"meta": _ini_meta}, _unrec, initials="Ann Bee")
+    _want_c = _branch.phase_answer(_ini_meta, _unrec, "Ann Bee")["branch"]
+    check("r3b a phase whose copy of the plan never recorded its branch is found by "
+          "the name that CUT it - git user.name's initials and a bug phase's type "
+          "included, through the one answer start and worktree add compose: %r vs %r"
+          % (rc["branch"], _want_c),
+          rc["branch"] == _want_c and "/ab-" in _want_c
+          and _want_c.startswith("bugfix/"))
     check("r4 the policy travels with the names, so one read of meta decides both "
           "where this goes and what happens after",
           r["policy"]["auto"] is True, repr(r["policy"]["auto"]))
@@ -642,6 +654,16 @@ def _cases(check):
         check("s3 ...and a file holding a DIFFERENT phase is refused by name "
               "rather than stamped anyway",
               path3 == "" and "P2" in why3, repr(why3))
+        with open(shard, "w") as fh:
+            json.dump({"id": "P2", "mergedAt": "2026-01-02T03:04:05Z"}, fh)
+        path4, stamp4 = M.stamp_merged(shard, "P2", when="2026-09-09T09:09:09Z")
+        with open(shard) as fh:
+            body4 = json.load(fh)
+        check("s4 a phase that already records its merge KEEPS that moment - an "
+              "idempotent re-run records a merge, it does not move one: %r"
+              % (body4.get("mergedAt"),),
+              path4 == shard and stamp4 == "2026-01-02T03:04:05Z"
+              and body4["mergedAt"] == "2026-01-02T03:04:05Z")
     finally:
         _harness.remove_tree(root)
 
