@@ -572,7 +572,8 @@ def _check_bugs(manifest, index):
         _require_fields(bug, bwhere, f)
         _unknown_keys(bug, KNOWN_BUG, bwhere, w)
         if bid and not BUG_ID_RE.match(str(bid)):
-            f.append("%s: id must match BUG-<number>" % bwhere)
+            f.append("%s: id must match BUG-<number> or, minted off the development "
+                     "branch, BUG-<number>-<suffix>" % bwhere)
         if bug.get("status") not in BUG_STATUS:
             f.append("%s: status %r not in %s" % (bwhere, bug.get("status"), list(BUG_STATUS)))
         _check_ado(bug, bwhere, f)
@@ -694,7 +695,8 @@ def _check_proposals(manifest, index):
         if not isinstance(payload, dict):
             continue  # legacy free-form entry — tolerated as-is
         if not PROP_ID_RE.match(str(prid or "")):
-            f.append("%s: id must match PROP-<number>" % xwhere)
+            f.append("%s: id must match PROP-<number> or, minted off the development "
+                     "branch, PROP-<number>-<suffix>" % xwhere)
         status = prop.get("status")
         if status not in PROPOSAL_STATUS:
             f.append("%s: status %r not in %s"

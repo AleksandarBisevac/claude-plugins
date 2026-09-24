@@ -127,6 +127,15 @@ def _cases(check):
           "WARNING, never a finding: legacy free-form ids stay legal",
           f == [] and any("phase's prefix" in x for x in w), (f, w))
 
+    _, f, w = M._walk_phases([_phase(tasks=[_task("P0.4-k7m")])])
+    check("mp17b a task id carrying a branch suffix (`P0.4-k7m`, minted off the "
+          "development branch) FOLLOWS its phase's prefix - the hand-move warning "
+          "must not fire on every task a side branch adds",
+          not any("phase's prefix" in x for x in w), w)
+    _, f, w = M._walk_phases([_phase(tasks=[_task("P0.4-K7M")])])
+    check("mp17c ...while a tail outside the suffix alphabet still warns",
+          any("phase's prefix" in x for x in w), w)
+
     # --- _check_areas, the registry half ---
     f, w = M._check_areas({"meta": {"areas": {"app": {"root": "src"}}},
                            "phases": [_phase(area="app")]})

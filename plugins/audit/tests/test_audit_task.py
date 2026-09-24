@@ -3812,6 +3812,9 @@ def _cases(check):
         _vf_switch = set(a.dest for a in _vf_parser._actions
                          if a.option_strings and a.nargs == 0)
         _vf_pos = {"add": ["add", "T", "--phase", "P2"],
+                   # `next-id` writes nothing and reads no flag of its own, so like
+                   # `start` its row is the bare call and every flag must bounce.
+                   "next-id": ["next-id", "bug"],
                    "add-phase": ["add-phase", "T", "--outcome", "o"],
                    "cancel": ["cancel", "P2.3", "--reason", "r"],
                    "scope": ["scope", "P2.3", "--files", "src/a.ts"],
@@ -3886,7 +3889,8 @@ def _cases(check):
                   "--descriptive", "impact", "--technical", "what was done",
                   "--verified-by", "t_one,t_two", "--json"], "done/--commit"),
                 (["cancel", "P3", "--reason", "dropped", "--json"],
-                 "cancel/--json")):
+                 "cancel/--json"),
+                (["next-id", "bug", "--json"], "next-id/--json")):
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
         # `seed` alone, against its own empty project rather than `vf_proj`
         # every row above shares -- see `_vf_seed_proj`'s comment.
@@ -5435,6 +5439,9 @@ def _cases(check):
             ("retarget", ["retarget", "P3", "--outcome", "changed its mind"]),
             ("cancel", ["cancel", "P3", "--reason", "dropped"]),
             ("seed", ["seed", "Fresh plan"]),
+            # `next-id` writes nothing, and it still names the tree it READ: the
+            # id it prints is only true of that tree's plan and branch.
+            ("next-id", ["next-id", "bug"]),
         )
         _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj)}
         _tw_silent = []
@@ -5603,6 +5610,60 @@ def _cases(check):
             check("u1 an unknown subcommand is a usage error", code == 2)
             code, _txt = run([])
             check("u2 bare invocation is a usage error", code == 2)
+        # ---- (bs) the branch suffix: ids two branches cannot both mint --------
+        def git(proj, *a):
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+            subprocess.run(["git", "-C", proj] + list(a), check=True, env=env,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        import _id_shape
+        projb, mpathb = mk("bs-branch", base_manifest(), git=True)
+        git(projb, "checkout", "-q", "-b", "main")
+        git(projb, "commit", "-q", "--allow-empty", "-m", "base")
+        git(projb, "checkout", "-q", "-b", "feature/x")
+        sfx = _id_shape.branch_suffix("feature/x", base_manifest())
+        code, txt = run(["add", "On a side branch", "--phase", "P2",
+                         "--project-dir", projb])
+        check("bs1 a task added on a side branch carries that branch's suffix, so a "
+              "second branch adding to P2 cannot mint the same id: %s" % (txt,),
+              code == 0 and task_in(mpathb, "P2.4-%s" % sfx) is not None)
+        code, txt = run(["add-phase", "Side work", "--outcome", "done",
+                         "--project-dir", projb])
+        check("bs2 a phase is NEVER suffixed, even added on a side branch - phases are "
+              "minted on the development branch (a side branch is warned and offered "
+              "a proposal instead), and a phase id is a branch, lock and shard name: %s"
+              % (txt,),
+              code == 0 and any(p.get("id") == "P4" for p in
+                                _mio.load_manifest(mpathb)["phases"]))
+        code, txt = run(["add", "In the side phase", "--phase", "P4",
+                         "--project-dir", projb])
+        check("bs3 ...while a task added to it on that branch still carries the suffix: %s"
+              % (txt,),
+              code == 0 and task_in(mpathb, "P4.1-%s" % sfx) is not None)
+        code, txt = run(["next-id", "bug", "--project-dir", projb])
+        check("bs4 next-id bug on a side branch prints BUG-<max+1>-<suffix>: %r" % (txt,),
+              code == 0 and txt.strip().splitlines()[-1] == "BUG-1-%s" % sfx)
+        git(projb, "checkout", "-q", "main")
+        code, txt = run(["add", "On main", "--phase", "P2", "--project-dir", projb])
+        check("bs5 SECOND DIRECTION: on the development branch the id is exactly what "
+              "it was before - P2.5, no suffix, the number continuing past the "
+              "suffixed sibling: %s" % (txt,),
+              code == 0 and task_in(mpathb, "P2.5") is not None)
+        code, txt = run(["next-id", "bug", "--project-dir", projb])
+        check("bs6 ...and next-id bug there prints plain BUG-1: %r" % (txt,),
+              code == 0 and txt.strip().splitlines()[-1] == "BUG-1")
+        code, txt = run(["next-id", "prop", "--project-dir", projb])
+        check("bs6b next-id prop on the development branch prints PROP-1: %r" % (txt,),
+              code == 0 and txt.strip().splitlines()[-1] == "PROP-1")
+        git(projb, "checkout", "-q", "feature/x")
+        code, txt = run(["next-id", "prop", "--project-dir", projb])
+        check("bs6c ...and on a side branch PROP-1-<suffix>, because a proposal parked "
+              "on a phase branch is exactly the record two branches both write: %r"
+              % (txt,), code == 0 and txt.strip().splitlines()[-1] == "PROP-1-%s" % sfx)
+        code, txt = run(["next-id", "phase", "--project-dir", projb])
+        check("bs7 next-id takes only `bug`: a phase or a task id is minted by the verb "
+              "that writes it, under the lock", code == 2, txt)
     finally:
         _harness.remove_tree(tmp)
 

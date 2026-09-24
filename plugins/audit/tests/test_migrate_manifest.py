@@ -137,6 +137,18 @@ def _cases(check):
         check("renumber: reciprocal task.bugId updated",
               m5["phases"][0]["tasks"][0]["bugId"] == changed[0][1])
 
+        # 5b. the renumber reads a suffixed id's number: a plan holding BUG-7-k7m
+        #     and a duplicate BUG-1 must not mint BUG-2, which the suffix already
+        #     outnumbers - the next free number is past EVERY numeric part.
+        m5b = _legacy()
+        m5b["bugs"].append({"id": "BUG-7-k7m", "title": "side", "status": "open",
+                            "severity": "low"})
+        m5b["bugs"].append({"id": "BUG-1", "title": "dup", "status": "open",
+                            "severity": "low"})
+        changed = M.renumber_duplicate_bugs(m5b)
+        check("renumber: the next free number counts suffixed ids too (BUG-8, not BUG-2)",
+              changed == [("BUG-1", "BUG-8")], changed)
+
         # --- the flag surface: it must FAIL CLOSED --------------------------
         # `parse_args` needs no manifest on disk, which is why it is a function; the
         # `cli*` cases below then drive the same refusals through `main()` against a

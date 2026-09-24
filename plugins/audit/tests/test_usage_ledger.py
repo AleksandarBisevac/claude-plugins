@@ -96,6 +96,20 @@ def _cases(check):
     check("attr: a task id from another phase still resolves",
           att.attribute({"description": "P4.1 panel tab"}, None)
           == ("P4", "P4.1", "task"))
+    sided = {"meta": {"version": 2}, "phases": [
+        {"id": "P4", "title": "Panel", "tasks": [{"id": "P4.1", "status": "pending"},
+                                                 {"id": "P4.2-k7m", "status": "pending"}]}]}
+    att_s = M.Attributor(sided, "sess-1")
+    check("attr: a task id carrying a branch suffix is read whole - `P4.2-k7m: ...` "
+          "attributes to P4.2-k7m, not to nothing",
+          att_s.attribute({"description": "P4.2-k7m wire the tab"}, None)
+          == ("P4", "P4.2-k7m", "task"),
+          att_s.attribute({"description": "P4.2-k7m wire the tab"}, None))
+    check("attr: ...and a hyphenated WORD after an unsuffixed id is not swallowed "
+          "into it - `P4.1-fix the tab` is P4.1, because P4.1-fix is no task",
+          att_s.attribute({"description": "P4.1-fix the tab"}, None)
+          == ("P4", "P4.1", "task"),
+          att_s.attribute({"description": "P4.1-fix the tab"}, None))
     check("attr: description naming no known task is ignored",
           att.attribute({"description": "Z9.9 nonsense"},
                         M.parse_ts("2026-08-06T06:00:00Z"))[2] == "phase")

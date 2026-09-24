@@ -62,7 +62,6 @@ see `plugins/audit/tests/_harness.py`.
 """
 import datetime
 import os
-import re
 import shutil
 import sys
 
@@ -88,6 +87,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _id_shape  # noqa: E402  (number(): the numeric part of an id, suffix or not)
 import _manifest_io as _mio  # noqa: E402
 import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
 
@@ -133,11 +133,11 @@ def renumber_duplicate_bugs(manifest):
     manual repair — auto-renumbering them would have to rewrite dependsOn/blockedBy/
     fileIndex and is too risky to automate blindly."""
     bugs = manifest.get("bugs") or []
-    mx = 0
-    for b in bugs:
-        m = re.match(r"^BUG-(\d+)$", str(b.get("id", "")))
-        if m:
-            mx = max(mx, int(m.group(1)))
+    # Every numeric part, suffixed or not: a side branch's `BUG-7-k7m` already
+    # holds 7, and re-minting a number below it would collide once the branch
+    # that holds it is merged.
+    nums = [_id_shape.number(b.get("id", ""), "BUG-") for b in bugs]
+    mx = max([n for n in nums if n is not None] or [0])
     # The shared index, and the values are the LIVE task dicts (pinned in
     # `_manifest_io`), which is what lets the reciprocal `task.bugId` below be
     # rewritten through it.

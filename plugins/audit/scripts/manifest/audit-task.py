@@ -257,6 +257,8 @@ import _commit_trail          # noqa: E402  (is a SHA still in this clone? A dow
 #                                            handed before writing it, and a third
 #                                            walk putting that question to git would
 #                                            be a third answer to disagree with)
+import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
+                              # branch suffix that keeps two branches from minting it twice)
 import _proposals             # noqa: E402  (the TAKEN SET `/audit:propose materialize`
 #                                            allocates against - live AND parked ids - plus
 #                                            the two rules over it. A second taken set here
@@ -1358,35 +1360,35 @@ def _resolve_phase(assembled, want, out):
     return E_USAGE
 
 
-def _allocate_id(assembled, phase_id):
-    """`<phaseId>.<n>`, n = highest existing numeric suffix + 1, over the
+def _allocate_id(assembled, phase_id, suffix=None):
+    """`<phaseId>.<n>[-suffix]`, n = highest existing number + 1, over the
     WHOLE assembled manifest (a misfiled task still counts) plus every
     still-parked proposal payload (reserved ids stay reserved). Gaps are
-    history: P2.1 + P2.3 allocate P2.4, never P2.2 again."""
-    prefix = str(phase_id) + "."
-    top = 0
+    history: P2.1 + P2.3 allocate P2.4, never P2.2 again.
 
-    def _count(tasks):
-        nonlocal top
-        for t in tasks:
-            if not isinstance(t, dict):
-                continue
-            tid = str(t.get("id") or "")
-            if tid.startswith(prefix) and tid[len(prefix):].isdigit():
-                top = max(top, int(tid[len(prefix):]))
-
-    # The manifest's own tasks come from `_mio.iter_tasks`; the proposal payloads
-    # below cannot, because a parked payload's phase is NOT in `manifest["phases"]`
-    # yet — reserving its ids is the whole point of reading it separately.
-    _count(t for _ph, t in _mio.iter_tasks(assembled))
+    `suffix` is the branch's (`_id_shape.suffix_here`): off the development
+    branch two branches adding a task to one phase would otherwise both mint
+    the next number. A suffixed sibling's number counts like any other, so the
+    development branch continues past it after a merge."""
+    reserved = []
+    # The manifest's own tasks are walked by `_id_shape`; the proposal payloads
+    # below cannot be, because a parked payload's phase is NOT in
+    # `manifest["phases"]` yet — reserving its ids is the whole point of reading
+    # it separately.
     for prop in (assembled.get("proposals") or []):
         if not isinstance(prop, dict) or prop.get("status") != "proposed":
             continue
         payload = prop.get("payload")
         pphase = payload.get("phase") if isinstance(payload, dict) else None
         if isinstance(pphase, dict):
-            _count(pphase.get("tasks") or [])
-    return "%s%d" % (prefix, top + 1)
+            reserved.extend(t.get("id") for t in (pphase.get("tasks") or [])
+                            if isinstance(t, dict))
+    return _id_shape.next_task_id(assembled, phase_id, suffix, extra_ids=reserved)
+
+
+def _mint_suffix(mpath, assembled):
+    """The branch suffix an id minted beside `mpath` carries now, or None."""
+    return _id_shape.suffix_here(os.path.dirname(os.path.abspath(mpath)), assembled)
 
 
 # --- write-back + rollback -----------------------------------------------------
@@ -2178,7 +2180,7 @@ def _locked_add(args, project, config, mpath, title, out):
         out(refusal)
         return E_USAGE
 
-    task_id = _allocate_id(assembled, phase_id)
+    task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
                                                 assembled)
     # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
@@ -4509,6 +4511,43 @@ def cmd_add(args, out):
                            args, project, config, mpath, title, out))
 
 
+# --- next-id: the id a hand-written record takes ---------------------------------
+# A bug and a parked proposal are the records the model still writes by hand
+# (`commands/bug.md`, `commands/init.md`), so they were also the ids the model
+# computed by hand - `BUG-<max+1>`, `PROP-<max+1>` - and two branches computing
+# one from the same base wrote the same id. This prints the id the
+# allocator would take, suffix included, so the hand-written record carries the
+# same answer every scripted one does. Only these two: a task or a phase is minted
+# by the verb that writes it, under the same lock, and a printed id for those
+# would be an id nothing reserves between the print and the write.
+NEXT_ID_KINDS = ("bug", "prop")
+_NEXT_ID_MINT = {"bug": _id_shape.next_bug_id, "prop": _id_shape.next_prop_id}
+
+
+def cmd_next_id(args, out):
+    project = _resolve_project(args)
+    kind = (args.title or "").strip()
+    if kind not in NEXT_ID_KINDS:
+        out("[audit-task] next-id takes %s, not %r - a task or phase id is minted by "
+            "the verb that writes it" % (" | ".join(NEXT_ID_KINDS), kind))
+        return E_USAGE
+
+    def body(config, mpath):
+        assembled = _mio.load_manifest(mpath)
+        suffix = _mint_suffix(mpath, assembled)
+        ident = _NEXT_ID_MINT[kind](assembled, suffix)
+        if args.as_json:
+            # `suffix` is carried so a reader can tell "this branch mints plain ids"
+            # (null) from an id that merely happens to end in three letters.
+            result = {"kind": kind, "id": ident, "suffix": suffix}
+            result.update(project_basis_key(args))
+            out(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        out(ident)
+        return 0
+    return _under_lock(args, project, out, body)
+
+
 # --- seed: the smallest honest plan, written where none exists yet -------------
 # `/audit:init` is multi-agent and interviews a human before it writes
 # anything, which is the right shape for a real audit and the wrong one for a
@@ -4795,6 +4834,8 @@ VERB_FLAGS = {
     # tag or rename -- only the one pair every gate-bearing verb offers, for a
     # caller who already knows the real command.
     "seed": ("gate", "gate_clear"),
+    # `next-id` prints an id and writes nothing, so it reads no flag of its own.
+    "next-id": (),
 }
 
 
@@ -4813,7 +4854,7 @@ def build_parser():
     p = argparse.ArgumentParser(prog="audit-task.py", add_help=True)
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
-                            "retarget", "start", "done", "seed"])
+                            "retarget", "start", "done", "seed", "next-id"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -5043,7 +5084,7 @@ def main(argv, out=print):
     doors = {"add": cmd_add, "add-phase": cmd_phase_add,
              "cancel": cmd_cancel, "scope": cmd_scope,
              "retarget": cmd_retarget, "start": cmd_start,
-             "done": cmd_done, "seed": cmd_seed}
+             "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

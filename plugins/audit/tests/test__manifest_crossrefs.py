@@ -162,6 +162,18 @@ def _cases(check):
     check("mc19 a bug id that is not BUG-<number> is a finding: the id is "
           "allocated by /audit:bug and read back by pattern",
           any("must match BUG-<number>" in x for x in f), f)
+    side = {"id": "BUG-12-k7m", "title": "b", "status": "open"}
+    f, w = M._check_bugs({"bugs": [side]},
+                         _index(bug_list=[side], bug_ids=["BUG-12-k7m"],
+                                bug_by_id={"BUG-12-k7m": side}))
+    check("mc19b a bug id minted off the development branch (BUG-<n>-<suffix>) is "
+          "legal - the widening is additive, so today's ids and these both validate",
+          not any("must match" in x for x in f), f)
+    check("mc19c ...and the finding for a malformed id names the suffixed shape too, "
+          "so a reader is not told the one legal form is the only one",
+          "BUG-<number>-<suffix>" in " ".join(
+              M._check_bugs({"bugs": [bad]}, _index(bug_list=[bad], bug_ids=["BUG-x"],
+                                                   bug_by_id={"BUG-x": bad}))[0]))
 
     # --- proposals ---
     prop = {"id": "PROP-1", "status": "proposed",
@@ -176,6 +188,15 @@ def _cases(check):
     check("mc21 ...while a legacy free-form entry with no payload is "
           "tolerated - unknown-key warnings at most, so no pre-0.33 manifest "
           "goes red", f == [], (f, w))
+    side_prop = {"id": "PROP-4-k7m", "status": "proposed",
+                 "payload": {"phase": {"id": "P9", "title": "T", "tasks": []}}}
+    f, w = M._check_proposals({"proposals": [side_prop]}, _index())
+    check("mc21b a proposal parked on a side branch (PROP-<n>-<suffix>) is legal",
+          not any("must match" in x for x in f), f)
+    bad_prop = dict(side_prop, id="PROP-x")
+    f, w = M._check_proposals({"proposals": [bad_prop]}, _index())
+    check("mc21c ...and a malformed one is a finding naming both legal shapes",
+          any("PROP-<number>-<suffix>" in x for x in f), f)
     prop = {"id": "PROP-1", "status": "proposed",
             "payload": {"phase": {"id": "PX", "title": "T", "tasks": [],
                                   "blockedBy": ["P9"]}}}

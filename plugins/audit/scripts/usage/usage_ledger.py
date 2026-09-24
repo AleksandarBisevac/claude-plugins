@@ -202,7 +202,14 @@ def agent_id_of(jsonl_path):
 
 
 # --- attribution ----------------------------------------------------------------
-_TASK_ID_RE = re.compile(r"([A-Za-z]{1,4}\d+\.\d+)")
+# The id, then an optional hyphenated tail captured SEPARATELY: `P4.2-k7m` is a
+# task minted off the development branch (`_id_shape`'s suffix), while
+# `P4.1-fix the tab` is P4.1 followed by a word. Only the manifest can tell the
+# two apart, so both readings are offered and MEMBERSHIP decides - which is also
+# why the tail is any hyphenated word rather than the suffix's own pattern: that
+# spelling lives in `_manifest_vocab`, which nothing on this per-tool-call hook
+# path may load, and membership needs no second copy of it.
+_TASK_ID_RE = re.compile(r"([A-Za-z]{1,4}\d+(?:-[0-9a-z]+)?\.\d+)(-[0-9a-z]+)?")
 
 # A MESSAGE HANDED TO AN AGENT THAT IS ALREADY RUNNING, which is what an
 # orchestrator sends instead of spawning a replacement. `origin.kind` is the only
@@ -336,9 +343,10 @@ class Attributor(object):
         prefix the description with the task id precisely so this works."""
         if not isinstance(description, str):
             return None
-        for candidate in _TASK_ID_RE.findall(description[:64]):
-            if candidate in self.phase_of_task:
-                return candidate
+        for base, suffix in _TASK_ID_RE.findall(description[:64]):
+            for candidate in ((base + suffix, base) if suffix else (base,)):
+                if candidate in self.phase_of_task:
+                    return candidate
         return None
 
     def task_from_handoff(self, entry):

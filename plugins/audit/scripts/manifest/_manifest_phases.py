@@ -787,8 +787,10 @@ def _walk_phases(phases):
             # that does not match `<phaseId>.<int>` means the object was dragged
             # by hand. A WARNING only: legacy manifests with free-form ids must
             # never go red over bookkeeping.
+            # A branch suffix (`P2.4-k7m`, `_id_shape`) is part of the shape an
+            # allocator mints, so it must not read as a hand move.
             if tid and pid and not re.match(
-                    r"^%s\.\d+$" % re.escape(str(pid)), str(tid)):
+                    r"^%s\.\d+%s$" % (re.escape(str(pid)), _vocab.ID_SUFFIX), str(tid)):
                 w.append("%s: id does not follow its phase's prefix (%s.<n>) "
                          "-- moved by hand? /audit:task move renumbers, "
                          "rewrites references and records a task.move row. "
