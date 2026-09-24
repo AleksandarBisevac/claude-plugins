@@ -380,6 +380,12 @@
       "title": "A phase's status is derived, so a finished phase stops holding the gate",
       "status": "in_progress",
       "shard": "phases/P63.json"
+    },
+    {
+      "id": "P64",
+      "title": "A phase's branch is cut by the verb that starts its work",
+      "status": "pending",
+      "shard": "phases/P64.json"
     }
   ],
   "fileIndex": {
@@ -426,7 +432,8 @@
       "P61.14",
       "P62.1",
       "P62.3",
-      "P63.11"
+      "P63.11",
+      "P64.3"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -600,7 +607,8 @@
       "P63.4",
       "P63.8",
       "P63.11",
-      "P63.12"
+      "P63.12",
+      "P64.3"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -754,7 +762,8 @@
       "P55.21",
       "P61.10",
       "P61.14",
-      "P63.11"
+      "P63.11",
+      "P64.3"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -938,7 +947,8 @@
       "P57.1",
       "P55.20",
       "P60.3",
-      "P63.11"
+      "P63.11",
+      "P64.3"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -1345,7 +1355,8 @@
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
-      "P18.5"
+      "P18.5",
+      "P64.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -1363,7 +1374,8 @@
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
-      "P20.6"
+      "P20.6",
+      "P64.1"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -1391,7 +1403,8 @@
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6",
-      "P63.8"
+      "P63.8",
+      "P64.2"
     ],
     "plugins/audit/tests/test__doctor_hygiene.py": [
       "P18.6",
@@ -1399,7 +1412,8 @@
     ],
     "plugins/audit/tests/test__doctor_policy.py": [
       "P18.6",
-      "P63.8"
+      "P63.8",
+      "P64.2"
     ],
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
@@ -1693,7 +1707,8 @@
       "P61.13",
       "P63.4",
       "P63.8",
-      "P63.12"
+      "P63.12",
+      "P64.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1731,7 +1746,8 @@
       "P61.10",
       "P61.13",
       "P63.4",
-      "P63.8"
+      "P63.8",
+      "P64.1"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1810,7 +1826,8 @@
       "P63.5"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
-      "P22.8"
+      "P22.8",
+      "P64.1"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -2422,7 +2439,8 @@
       "P55.13"
     ],
     "plugins/audit/reference/execute-task.md": [
-      "P55.21"
+      "P55.21",
+      "P64.3"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2527,6 +2545,9 @@
     "docs/screenshots/captured-at.json": [
       "P63.9",
       "P63.12"
+    ],
+    "plugins/audit/tests/test_resolve_branch.py": [
+      "P64.1"
     ]
   },
   "bugs": [
