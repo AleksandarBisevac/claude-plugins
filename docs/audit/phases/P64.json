@@ -1,7 +1,7 @@
 {
   "id": "P64",
   "title": "A phase's branch is cut by the verb that starts its work",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "starting a phase's first task cuts its branch from the resolved parent (or refuses and says why), a started task on another branch is refused, and doctor names a running phase with no branch - so no phase runs outside the protocol in silence",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "7aecd4607a71f3f962e46ac7e928b9c5fd0a8c3f",
+  "branch": "audit/p64-a-phase-s-branch-is-cut-by-the",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P64.1",
       "title": "start performs phase entry: the first task cuts the phase branch from the resolved parent, and a task on another branch is refused",
-      "status": "pending",
+      "status": "done",
       "description": "Phase entry (orchestrator.md) was prose the orchestrator ran before start, so every phase driven through the verbs ran with no branch. start now performs it: resolve the name and parent through the same code resolve-branch.py uses (moved into _branch), refuse when HEAD is not the parent, is detached, has no commit, or the name is taken or illegal, write branch and baseRef, revalidate, then git switch -c - rolling the write back if git refuses. A phase that records a branch refuses a start from any other branch. Outside a git repository the phase runs with no branch and the output says so.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -37,12 +37,17 @@
         "plugins/audit/scripts/manifest/resolve-branch.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test__branch.py",
-        "plugins/audit/tests/test_resolve_branch.py"
+        "plugins/audit/tests/test_resolve_branch.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_audit_task.py: start cuts the branch, records branch and baseRef, and refuses off the parent, detached, unborn, a taken name and another branch"
+          "plugins/audit/tests/test_audit_task.py: start cuts the branch, records branch and baseRef, and refuses off the parent, detached, unborn, a taken name and another branch",
+          "plugins/audit/tests/test_manage_worktrees.py: a4 worktree add composes the name start expects"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -62,16 +67,23 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f5c3e46",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - start performs phase entry (cut, adopt, refuse, no-git); one branch answer for resolve-branch, worktree add and start; each arm red first",
+        "descriptive": "Starting the first task of a phase now puts its work on its own branch - cut from the right parent, or refused with the reason - so no phase runs outside the protocol unnoticed."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-24T21:14:03Z",
+      "completedAt": "2026-09-24T21:23:01Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f5c3e46",
+        "at": "2026-09-24T21:23:01Z"
+      }
     },
     {
       "id": "P64.2",
@@ -160,5 +172,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-24T21:14:03Z"
 }
