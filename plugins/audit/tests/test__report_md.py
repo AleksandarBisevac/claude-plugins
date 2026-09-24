@@ -186,8 +186,28 @@ def _cases(check):
                if ln.startswith("| P2.1 ")][0].endswith("| — | — |"))
 
 
+def _signoff_cases(check):
+    """The Markdown twin names sign-off due, off the rollup's flag."""
+    import _status_facts
+    m = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "finished", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]},
+        {"id": "P2", "title": "open", "status": "in_progress",
+         "tasks": [{"id": "P2.1", "title": "t", "status": "pending"}]}],
+        "bugs": [], "fileIndex": {}}
+    text = M.render_md(m, _status_facts.rollup(m, [], []))
+    heads = [ln for ln in text.splitlines() if ln.startswith("## P")]
+    check("rm-sd1 the heading of a phase awaiting sign-off says so, and a phase with "
+          "open work does not: %r" % (heads,),
+          any(h.startswith("## P1") and "sign-off due" in h for h in heads)
+          and not any(h.startswith("## P2") and "sign-off due" in h for h in heads))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _signoff_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

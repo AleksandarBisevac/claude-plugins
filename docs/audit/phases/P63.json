@@ -217,7 +217,7 @@
     {
       "id": "P63.5",
       "title": "The status surfaces read the derived phase status",
-      "status": "in_progress",
+      "status": "done",
       "description": "status_index (what a blockedBy on a phase resolves through) and the rollup's phase status are effective_phase_status; the rollup carries signoffDue; audit-status and the doctor's plan-gate line say which phases await sign-off. The CI in-progress condition is unchanged on purpose: a phase awaiting sign-off still reads in_progress.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -254,12 +254,66 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "6a9e1d6",
+      "outcome": {
+        "technical": "status_index and rollup via effective_phase_status; signoffDue in the rollup and on the status line; doctor gate line names its reason.",
+        "descriptive": "Status, readiness and the doctor read a signed-off phase as done and say which phases await sign-off."
+      },
+      "startedAt": "2026-09-24T12:51:48Z",
+      "completedAt": "2026-09-24T12:55:15Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test__doctor_setup.py"
+      ]
+    },
+    {
+      "id": "P63.6",
+      "title": "The report reads the derived status, releases 'held by' on any terminal blocker, and says sign-off due",
+      "status": "in_progress",
+      "description": "The phase meta line's merge note reads the derived status (a phase signed off and merged is done, not 'sign-off not recorded'), a phase awaiting sign-off says so, 'held by' clears on a cancelled blocker as it does everywhere else, and the Markdown twin names sign-off due.",
+      "files": [
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/tests/test__report_page.py",
+        "plugins/audit/scripts/report/_report_md.py",
+        "plugins/audit/tests/test__report_md.py",
+        "docs/demo-large.html",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__report_html.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-24T12:51:48Z",
+      "startedAt": "2026-09-24T12:56:26Z",
       "completedAt": null,
       "verifiedBy": []
     }

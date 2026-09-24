@@ -112,9 +112,10 @@ def render_md(manifest, summary, usage=None, evidence=None):
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
-        out.append("## %s — %s (%s, %d/%d)"
+        out.append("## %s — %s (%s, %d/%d)%s"
                    % (cell(psum["id"]), cell(psum["title"]),
-                      cell(psum["status"]), psum["done"], psum["total"]))
+                      cell(psum["status"]), psum["done"], psum["total"],
+                      " · sign-off due" if psum.get("signoffDue") else ""))
         if ph.get("desiredOutcome"):
             out.append("_%s_" % cell(ph["desiredOutcome"]))
         out += ["", "| id | title | status | model | risk | commit | done |%s ADO |"

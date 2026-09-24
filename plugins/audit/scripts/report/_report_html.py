@@ -1447,9 +1447,16 @@ def _phase_meta_div(phase):
         # to reconcile alone. Name the gap instead: `close-phase.py` stamps
         # `mergedAt` and never touches `status`, so the two can only stay
         # apart like this, never catch up on their own.
-        if phase.get("status") not in ("done", "cancelled"):
+        # Off the DERIVED status: a phase signed off and merged is done even though
+        # its stored status never moved, and naming a missing sign-off there
+        # would accuse the one phase that has it.
+        if _manifest_io.effective_phase_status(phase) not in _manifest_io.TERMINAL:
             bits.append("sign-off not recorded - status stayed %s"
                         % e(str(phase.get("status"))))
+    # Every task terminal, no verdict recorded: finished work nobody has reviewed.
+    # The chip still reads in progress, so the line says which of the two it is.
+    if _manifest_io.signoff_due(phase):
+        bits.append("sign-off due - every task is terminal and no sign-off is recorded")
     if phase.get("summary"):
         bits.append(e(phase["summary"]))
     return ('<div class="pmeta muted">%s</div>' % " · ".join(bits)) if bits else ""

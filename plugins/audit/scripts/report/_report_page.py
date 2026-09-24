@@ -218,6 +218,14 @@ def _present_columns(manifest, evidence=None):
     return out
 
 
+def _settled_ids(summary):
+    """The phases a `blockedBy` no longer waits on: every TERMINAL one, off the
+    rollup's derived status. `done` alone kept a cancelled blocker "holding" the
+    phase behind it for ever, while readiness and the status command released it."""
+    return {p["id"] for p in summary["phases"]
+            if p.get("status") in _manifest_io.TERMINAL}
+
+
 def _held_by(ph, done_ids):
     """Which of this phase's `blockedBy` targets are not done yet.
 
@@ -698,7 +706,7 @@ def _phases_block(manifest, summary, owners, workers=None, evidence=None,
                  % (defview,
                     "".join('<th data-col="%s">%s</th>' % (e(c), colhead.get(c, e(c)))
                             for c in cols)))
-    done_ids = {p["id"] for p in summary["phases"] if p["status"] == "done"}
+    done_ids = _settled_ids(summary)
     parts += _segment_rows(manifest, summary, ncol, cols, done_ids, owners,
                            workers, evidence, portability)
     # Its own <tbody>, so `tbody tr:last-child` keeps meaning the last DATA row —

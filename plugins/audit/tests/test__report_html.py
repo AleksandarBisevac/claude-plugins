@@ -497,6 +497,23 @@ def _cases(check):
           "own bookkeeping, not about status alone",
           "sign-off not recorded" not in M._phase_meta_div(
               {"status": "in_progress"}))
+    _signed_merged = {"status": "in_progress", "mergedAt": "2026-01-01T00:00:00Z",
+                      "branch": "audit/p1", "review": {"status": "passed"},
+                      "tasks": [{"id": "P1.1", "status": "done"}]}
+    check("rh-ds1 a phase signed off AND merged is done by derivation, so it carries "
+          "no 'sign-off not recorded' note even though its stored status never "
+          "moved - the note is about a missing sign-off, and this one has it",
+          "sign-off not recorded" not in M._phase_meta_div(_signed_merged),
+          M._phase_meta_div(_signed_merged))
+    _due = {"status": "in_progress", "tasks": [{"id": "P1.1", "status": "done"},
+                                               {"id": "P1.2", "status": "cancelled"}]}
+    check("rh-ds2 a phase whose every task is terminal and whose sign-off is not "
+          "recorded says 'sign-off due' on its meta line - the chip still reads "
+          "in progress and would otherwise be taken for work in flight",
+          "sign-off due" in M._phase_meta_div(_due), M._phase_meta_div(_due))
+    check("rh-ds3 SECOND DIRECTION: a phase with open work says no such thing",
+          "sign-off due" not in M._phase_meta_div(
+              {"status": "in_progress", "tasks": [{"id": "P1.1", "status": "pending"}]}))
 
     # --- any_phase_pinned() / phase_ranks(): the sort option's basis ------------
     # The rank the page hands its sort control, and the one predicate that

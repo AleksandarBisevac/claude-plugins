@@ -412,8 +412,24 @@ def _cases(check):
           and M._parked_suffix(_pm, _s) == "")
 
 
+def _settled_cases(check):
+    """`held by` releases on every TERMINAL blocker, off the derived status."""
+    summary = {"phases": [{"id": "P1", "status": "done"},
+                          {"id": "P2", "status": "cancelled"},
+                          {"id": "P3", "status": "in_progress"}]}
+    ids = M._settled_ids(summary)
+    check("rp-st1 a cancelled blocker releases what it held, as it does in readiness "
+          "and in the status command - 'held by' named it for ever before",
+          ids == {"P1", "P2"}, ids)
+    check("rp-st2 ...and an in_progress one still holds",
+          M._held_by({"blockedBy": ["P2", "P3"]}, ids) == ["P3"])
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _settled_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":
