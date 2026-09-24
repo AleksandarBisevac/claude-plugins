@@ -123,6 +123,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_typos.py              # did-you-mean: a model id / skill name one slip from another
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
           _id_shape.py                    # what an id looks like and which to mint next: max+1 plus a branch suffix
+          _id_refs.py                     # an id renamed everywhere the plan points at it, from one list of fields
           _warning_groups.py              # the SHAPE those warnings print in: many that differ only in the item they name, as one line
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task + /audit:phase doer: add/scope/start/done/cancel and add-phase/retarget, under the index lock
@@ -280,6 +281,7 @@ L1:
   _demo_cast -> _output
   _deps -> _output
   _fmt -> _output
+  _id_refs -> _output
   _journal_io -> _output
   _loader -> _output
   _locks -> _output
@@ -3609,6 +3611,18 @@ name and a lower-cased branch component all take unchanged. `_manifest_vocab.ID_
 suffix's one spelling, read by `BUG_ID_RE` and by the allocators. What it cannot prevent - two
 clones minting on the development branch itself - reaches the merge, which names it. Cases:
 `tests/test__id_shape.py`.
+
+### `plugins/audit/scripts/manifest/_id_refs.py`
+**One id renamed everywhere the plan points at it.** `materialize` rewrote the references inside
+its own payload and no other, and the merge driver's resolve verb needs every field - a rename that
+misses one leaves a `blockedBy` that can never clear or a `fileIndex` row granting an edit to no
+task. So the fields that hold another record's id are listed once (`SCALAR_REFS`, `LIST_REFS`, the
+ids themselves, `fileIndex` values, every proposal payload), `phase_mapping` carries a phase's
+tasks with it by prefix, and `collisions` refuses a rename onto an id the plan already holds before
+anything is written. `movedFrom` is never rewritten: it is history, and rewriting it would make the
+record say the move never happened. `renumber_duplicate_bugs` keeps its own logic on purpose - two
+duplicates share one id, so no old->new mapping can tell them apart; only the bug's `taskId` can.
+Cases: `tests/test__id_refs.py`.
 
 ### `plugins/audit/scripts/manifest/migrate-json-encoding.py`
 **One JSON escaping, and the pass that gets the tree to it.** `_manifest_io.atomic_write_json`

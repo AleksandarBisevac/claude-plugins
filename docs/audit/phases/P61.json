@@ -319,6 +319,54 @@
       "verifiedBy": [
         "tools/check-git-pipeline.py"
       ]
+    },
+    {
+      "id": "P61.7",
+      "title": "One reference renamer: an id renamed everywhere the plan points at it",
+      "status": "in_progress",
+      "description": "rename(manifest, mapping) rewrites the id and every field that holds it - blockedBy, dependsOn, bugId, taskId, fileIndex, proposal payloads, materializedAs - and never movedFrom, which is history. renumber_duplicate_bugs uses it instead of its two-field rewrite.",
+      "files": [
+        "plugins/audit/scripts/manifest/_id_refs.py",
+        "plugins/audit/tests/test__id_refs.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/tests/test_migrate_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__id_refs.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:34:01Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"

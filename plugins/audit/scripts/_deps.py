@@ -258,7 +258,12 @@ LAYERS = (
      # records. At the floor for `_commit_trail`'s reason - `merge-manifest` (L7)
      # prints it as `status` and `_doctor_setup` (L4) reports it, and a layer-4
      # module may not reach an entry point. It reaches nothing but `_output` and git.
-     "_merge_install"),
+     "_merge_install",
+     # `_id_refs` is an id renamed everywhere the plan points at it - the fields
+     # that hold another record's id, listed once. It takes a manifest and returns
+     # one, reaching nothing but `_output`, so `_proposals` (materialize) and the
+     # merge driver's resolve verb both reach the same list from above.
+     "_id_refs"),
     ("_panel_ui", "_report_html", "_report_ui",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` at L1, and none reads
