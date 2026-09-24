@@ -80,7 +80,7 @@
     {
       "id": "P62.2",
       "title": "In-place edit targets are the file operands, not tokens inside the script (F472)",
-      "status": "in_progress",
+      "status": "done",
       "description": "The in-place write targets were harvested by a path-shaped regex over the whole clause, script included, so a covered stream-editor call whose substitution mentions a file name was refused as a write to that name - a guard firing on text it only mentions, the route-around class. Driven three times on 2026-09-24, the third being this very task's own add command, whose description quoted such a call. Parse the operands with each tool's own grammar, and read a clause without crossing into a quoted argument.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -111,12 +111,54 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "2e25df6",
+      "outcome": {
+        "technical": "sed and perl/ruby -i operand grammars, quote-aware clause detection and end, a tokenizer on the shared quote walk, wider harvest kept as the fallback.",
+        "descriptive": "The shell-write guard no longer refuses a write to a file a command only mentions."
+      },
+      "startedAt": "2026-09-24T09:51:42Z",
+      "completedAt": "2026-09-24T09:56:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ]
+    },
+    {
+      "id": "P62.3",
+      "title": "CHANGELOG for the guard fix",
+      "status": "in_progress",
+      "description": "The Unreleased entry for P62.2.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-24T09:51:42Z",
+      "startedAt": "2026-09-24T09:56:22Z",
       "completedAt": null,
       "verifiedBy": []
     }

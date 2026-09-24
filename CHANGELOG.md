@@ -61,6 +61,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **`audit-task next-id bug|prop|task --phase <id>`** gives the records the model writes by hand
   (a bug, a parked proposal, a fix task, a moved task) the allocator's id, suffix included.
 ### Fixed
+- **The shell-write guard refused writes to files a command only MENTIONED.** In-place editor
+  targets were taken from every path-shaped word in the clause, the script included, and a clause
+  was cut at any pipe - so a covered stream-editor call whose substitution named a file was refused
+  as a write to that name, a call quoted inside another command's argument read as a command, and a
+  `'s|a|b|'` script cut its own clause short. The file operands are now read with each tool's own
+  grammar (`sed`; `perl`/`ruby -i`), a call inside a quoted word is text, and the clause ends at the
+  first separator the shell itself sees. A clause that cannot be tokenised keeps the wider harvest.
 - **A sharded save dropped `decisions` and every unknown root key.** `split_manifest` copied four
   named keys, so `/audit:layout sharded` and every other sharded save lost them, against
   COMPATIBILITY's promise that unknown root keys are tolerated.
