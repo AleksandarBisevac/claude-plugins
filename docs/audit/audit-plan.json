@@ -345,6 +345,12 @@
       "title": "3.0.1 - the platforms the release preflight could not see",
       "status": "in_progress",
       "shard": "phases/P59.json"
+    },
+    {
+      "id": "P60",
+      "title": "Manifest merge by record",
+      "status": "in_progress",
+      "shard": "phases/P60.json"
     }
   ],
   "fileIndex": {
@@ -385,7 +391,8 @@
       "P25.7",
       "P26.2",
       "P27.1",
-      "P33.1"
+      "P33.1",
+      "P60.3"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -427,7 +434,9 @@
       "P44.1",
       "P53.4",
       "P55.3",
-      "P57.1"
+      "P57.1",
+      "P60.2",
+      "P60.5"
     ],
     "README.md": [
       "P2.3",
@@ -537,7 +546,8 @@
       "P53.4",
       "P53.5",
       "P54.7",
-      "P56.6"
+      "P56.6",
+      "P60.3"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -853,7 +863,8 @@
       "P56.3",
       "P56.4",
       "P57.1",
-      "P55.20"
+      "P55.20",
+      "P60.3"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -907,7 +918,10 @@
       "P50.5",
       "P50.8",
       "P50.9",
-      "P59.1"
+      "P59.1",
+      "P60.1",
+      "P60.2",
+      "P60.5"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1005,7 +1019,8 @@
       "P47.2",
       "P48.4",
       "P54.3",
-      "P53.10"
+      "P53.10",
+      "P60.4"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -1220,7 +1235,8 @@
       "P50.2",
       "P50.6",
       "P57.5",
-      "P58.1"
+      "P58.1",
+      "P60.3"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -1825,7 +1841,8 @@
       "P55.12",
       "P50.5",
       "P55.14",
-      "P50.9"
+      "P50.9",
+      "P60.5"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -2160,11 +2177,14 @@
       "P53.5"
     ],
     "plugins/audit/scripts/status/_doctor_setup.py": [
-      "P54.3"
+      "P54.3",
+      "P60.4",
+      "P60.5"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
-      "P59.12"
+      "P59.12",
+      "P60.4"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2195,7 +2215,8 @@
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
-      "P57.3"
+      "P57.3",
+      "P60.3"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3"
@@ -2238,6 +2259,28 @@
     ],
     "tools/capture-demo-gif.py": [
       "P59.13"
+    ],
+    "plugins/audit/scripts/manifest/_manifest_merge.py": [
+      "P60.1"
+    ],
+    "plugins/audit/tests/test__manifest_merge.py": [
+      "P60.1"
+    ],
+    "plugins/audit/scripts/manifest/merge-manifest.py": [
+      "P60.2",
+      "P60.5"
+    ],
+    "plugins/audit/tests/test_merge_manifest.py": [
+      "P60.2"
+    ],
+    "docs/design/audit-concurrency-report.md": [
+      "P60.3"
+    ],
+    "plugins/audit/scripts/manifest/_merge_install.py": [
+      "P60.5"
+    ],
+    "plugins/audit/tests/test__merge_install.py": [
+      "P60.5"
     ]
   },
   "bugs": [
