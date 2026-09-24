@@ -24,6 +24,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   that fails without writing leaves the file as your side with no markers at all. `status` and
   `uninstall` read and undo each piece.
 
+- **Ids two branches cannot both mint.** Every allocator is max+1, so two branches from one base
+  minted the same next bug, task or proposal id, and the record merge can only report that - which
+  side keeps it depends on which was published first. Off the development branch those ids now carry
+  a three-character branch suffix (`BUG-12-k7m`, `P60.6-k7m`, `PROP-3-k7m`); on the development
+  branch, on any branch a phase names as its parent, and on the branch `origin/HEAD` names, ids are
+  exactly what they were, and a repository with no trunk branch at all mints none. The number
+  ignores the suffix, so ids keep their order. `audit-task next-id bug|prop` prints the id for the
+  two records written by hand, so the model no longer computes max+1 itself. The bug and proposal
+  patterns are widened, so every existing manifest still validates; **an older plugin does not
+  accept a suffixed id**, so a team should upgrade together.
+- **Phases are minted on the development branch, and `/audit:phase add --park` is how a phase
+  branch defers one.** A phase id is a branch, lock and shard name, so it is the one id with no
+  suffix; new work found on a phase branch is parked as a proposal (`PROP-<n>-<suffix>`, its phase
+  id reserved) and materialized after the branch merges. A live `add` on a phase branch is never
+  refused - the first one on a branch warns and names `--park`, once, read from the `phase.add`
+  journal rows, which now record the branch.
 ### Fixed
 - **The README said ids "never collide" because they are allocated under the index lock.** The lock
   is per clone; two branches can mint the same `max+1` id, and the sentence now says so. The same
