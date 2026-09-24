@@ -466,7 +466,8 @@
       "P61.8",
       "P61.11",
       "P61.13",
-      "P62.1"
+      "P62.1",
+      "P63.4"
     ],
     "README.md": [
       "P2.3",
@@ -579,7 +580,8 @@
       "P54.7",
       "P56.6",
       "P60.3",
-      "P61.4"
+      "P61.4",
+      "P63.4"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -672,7 +674,8 @@
       "P42.6",
       "P44.4",
       "P57.1",
-      "P61.3"
+      "P61.3",
+      "P63.4"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -1632,7 +1635,8 @@
       "P61.3",
       "P61.8",
       "P61.10",
-      "P61.13"
+      "P61.13",
+      "P63.4"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1668,7 +1672,8 @@
       "P61.3",
       "P61.8",
       "P61.10",
-      "P61.13"
+      "P61.13",
+      "P63.4"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
