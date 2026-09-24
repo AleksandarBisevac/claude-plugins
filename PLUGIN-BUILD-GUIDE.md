@@ -122,6 +122,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_ado.py                # meta.ado: the connector config, one front door with the panel
           _manifest_typos.py              # did-you-mean: a model id / skill name one slip from another
           _manifest_crossrefs.py          # ids, refs, cycles, fileIndex, bug links, parked proposals
+          _id_shape.py                    # what an id looks like and which to mint next: max+1 plus a branch suffix
           _warning_groups.py              # the SHAPE those warnings print in: many that differ only in the item they name, as one line
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task + /audit:phase doer: add/scope/start/done/cancel and add-phase/retarget, under the index lock
@@ -301,6 +302,7 @@ L2:
   _evidence_io -> _journal_io, _locks, _manifest_io, _output
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
+  _id_shape -> _branch, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
@@ -365,7 +367,7 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _commit_trail, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _commit_trail, _id_shape, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _output, _worktrees
@@ -380,7 +382,7 @@ L7:
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
-  migrate-manifest -> _manifest_io, _manifest_rules, _output
+  migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
   propose-gates -> _evidence_io, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
@@ -3399,7 +3401,8 @@ The non-interactive `/audit:task add` doer. The command used to dictate the conv
 a misspelled enum, a fileIndex nobody extended) this script deletes: the command gathers
 answers, the script writes them the same way every time. `add "<title>"` allocates the id
 under the INDEX lock (`<phaseId>.<n>` over the whole assembled manifest plus parked-proposal
-reservations; gaps are never re-minted), initializes every template field exactly once,
+reservations; gaps are never re-minted; off the development branch the id carries the branch
+suffix `_id_shape` names, `P2.4-k7m`, so two branches adding to one phase cannot mint the same one), initializes every template field exactly once,
 extends `fileIndex` for `--files`, heals a pending phase holding an in_progress task
 (v0.37 A4, reused from `_panel_write`), writes through `_manifest_io` with
 `_panel_write._write_back`'s footprint (touched shard + index only when fileIndex changed),
@@ -3502,6 +3505,12 @@ reads are attributed to a verb through its call graph regardless of what variabl
 passes at the site — sharing them would have made `seed` appear, to the suite's own AST-derived
 `vf6`, to accept every flag `add`/`add-phase` do.
 
+
+`next-id bug` prints the id a hand-written bug takes - the one record the model still writes by
+hand (`commands/bug.md`), and so the one id it used to compute by hand. It reads the same
+`_id_shape` answer every scripted allocator does, suffix included, and writes nothing; only
+`bug`, because a task or phase id printed ahead of the write would be an id nothing reserves in
+between.
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model
@@ -3579,6 +3588,19 @@ back, because `merge-manifest status` and the doctor's `merge driver` line must 
 a layer-4 module may not reach an entry point. Cases: `tests/test__manifest_merge.py` (the merge) and
 `tests/test__merge_install.py` (locating, and a quoted root read back), `tests/test_merge_manifest.py` (real git: the field report reproduced as a control, both
 directions byte-identical, sharded, a stale shim, a driver that dies before writing).
+
+### `plugins/audit/scripts/manifest/_id_shape.py`
+**Ids two branches cannot both mint.** Every allocator is max+1 and max+1 is taken on one branch,
+so two branches from one base both mint the next id and the record merge can only report the
+collision - which side keeps the id depends on which was published first. Off the development
+branch (`_branch.parent_branch`'s answer, plus every phase's own parent) an id carries a
+three-character `[0-9a-z]` suffix drawn from the branch name: `BUG-12-k7m`, `P61-k7m`,
+`P60.6-k7m`. The number ignores the suffix, so ids keep their order; a task in a phase already
+carrying this branch's suffix does not repeat it. The alphabet is what a lock name, a shard file
+name and a lower-cased branch component all take unchanged. `_manifest_vocab.ID_SUFFIX` is the
+suffix's one spelling, read by `BUG_ID_RE` and by the allocators. What it cannot prevent - two
+clones minting on the development branch itself - reaches the merge, which names it. Cases:
+`tests/test__id_shape.py`.
 
 ### `plugins/audit/scripts/manifest/migrate-json-encoding.py`
 **One JSON escaping, and the pass that gets the tree to it.** `_manifest_io.atomic_write_json`

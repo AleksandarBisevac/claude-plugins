@@ -89,7 +89,11 @@ RISK = ("low", "med", "high", None)
 # Both are HUMAN verdicts — `_manifest_io.HUMAN_BUG_VERDICT` is the tuple that says
 # so, and it lives there because that is where the derivation they beat lives.
 BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix", "not_a_bug")
-BUG_ID_RE = re.compile(r"^BUG-\d+$")
+# An id minted off the development branch carries a three-character branch suffix
+# (`_id_shape`), so two branches cannot both mint `BUG-12`. Its one spelling is
+# here because the pattern below and every allocator must agree on it.
+ID_SUFFIX = r"(?:-[0-9a-z]{3})?"
+BUG_ID_RE = re.compile(r"^BUG-\d+%s$" % (ID_SUFFIX,))
 # A decision is the FOURTH kind of thing the plan holds and it wears no status
 # vocabulary of its own: `STATUS` above is what it carries, so `_manifest_io`'s one
 # resolver answers a `blockedBy` naming a decision exactly as it answers one naming
@@ -100,7 +104,7 @@ DEC_ID_RE = re.compile(r"^DEC-\d+$")
 # is enforced only on payload-bearing proposals — legacy free-form entries
 # (pre-0.33 wrote whatever it liked here) stay warnings-at-most.
 PROPOSAL_STATUS = ("proposed", "materialized", "dropped")
-PROP_ID_RE = re.compile(r"^PROP-\d+$")
+PROP_ID_RE = re.compile(r"^PROP-\d+%s$" % (ID_SUFFIX,))
 # v0.44 `ado.origin`: where a linked work item came from. TWO values, because only
 # two code paths write one — a push CREATE and a pull import — and a value nothing
 # writes is a value nothing tests. ABSENT is the third state and is deliberately

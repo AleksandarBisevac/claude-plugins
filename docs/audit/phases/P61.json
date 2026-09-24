@@ -1,0 +1,133 @@
+{
+  "id": "P61",
+  "title": "Ids that two branches cannot both mint",
+  "status": "in_progress",
+  "description": "F471, operator decision option (c): branch-suffix ids for bugs, phases and tasks, plus a resolve verb for the collisions that remain.",
+  "desiredOutcome": "Two branches that each add a bug, a phase and a task allocate different ids and merge with the driver with no conflict; a collision that still happens (both on the development branch) is resolved by one verb that renumbers the named side and every reference to it.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P61.1",
+      "title": "The id shape, named once: branch suffix, numeric part, the widened patterns",
+      "status": "in_progress",
+      "description": "E1a: _id_shape (suffix from branch, trunk set from _branch.parent_branch, numeric part) and the BUG/DEC/PROP patterns widened additively in vocab and schema.",
+      "files": [
+        "plugins/audit/scripts/manifest/_id_shape.py",
+        "plugins/audit/tests/test__id_shape.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__id_shape.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T07:55:05Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P61.2",
+      "title": "Allocators and id readers speak the branch-suffix shape",
+      "status": "in_progress",
+      "description": "E1b+E2: task and phase allocation through _id_shape with the current branch's suffix; a next-id bug verb; the prefix warning, the usage task-id regex, the bug finding text and the bug renumberer read suffixed ids.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/tests/test_migrate_manifest.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T07:58:40Z",
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "startedAt": "2026-09-24T07:55:05Z"
+}

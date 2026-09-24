@@ -1241,8 +1241,8 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^BUG-\\d+$",
-          "description": "BUG-<n>, allocated repo-wide."
+          "pattern": "^BUG-\\d+(-[0-9a-z]{3})?$",
+          "description": "BUG-<n>, allocated repo-wide as max+1; off the development branch it carries a three-character branch suffix (BUG-<n>-<abc>) so two branches cannot mint the same id."
         },
         "title": {
           "type": "string"
@@ -1672,7 +1672,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "PROP-<n>, allocated repo-wide like BUG-<n>. Legacy free-form ids are tolerated (validator warns, never fails)."
+          "description": "PROP-<n>, allocated repo-wide like BUG-<n>, and like it suffixed off the development branch (PROP-<n>-<abc>). Legacy free-form ids are tolerated (validator warns, never fails)."
         },
         "name": {
           "type": "string"

@@ -323,6 +323,11 @@ LAYERS = (
      # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
      # readiness, the submodule preflight and the gate. Same reasoning and the same
      # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
+     # `_id_shape` is what an id looks like and which one to mint next - the branch
+     # suffix, the numeric part, the max+1. L2 because it reads `_branch` (L1) for
+     # which branch is the trunk and `_manifest_vocab` (L1) for the suffix's one
+     # spelling; every consumer is an allocator at L4 or above.
+     "_id_shape",
      "_status_facts",
      # `_help` sat at L3 for its whole life and its edges never asked for it: it
      # reaches `_areas`, `_policy`, `_loader` and `_journal_io`, all L1, and
