@@ -606,6 +606,39 @@ def _cases(check):
           "below could be a predicate that refuses everything",
           M.phase_settled(done_phase, TERM)["settled"] is True,
           M.phase_settled(done_phase, TERM)["why"][:60])
+    import _manifest_io as _mio_q
+    signed = {"id": "P2", "status": "in_progress", "branch": "audit/p2",
+              "review": {"status": "passed"}, "mergedAt": "2026-01-01T00:00:00Z",
+              "tasks": [{"id": "P2.1", "status": "done"}]}
+    check("q1s a phase signed off by the verb - stored status untouched, review "
+          "passed, merged - is SETTLED when the caller hands in the derived status, "
+          "so the cleanup a signed-off merge owes is not refused",
+          M.phase_settled(signed, TERM, status_of=_mio_q.effective_phase_status)
+          ["settled"] is True,
+          M.phase_settled(signed, TERM, status_of=_mio_q.effective_phase_status)["why"])
+    check("q1u SECOND DIRECTION: the same phase with no verdict recorded is not "
+          "settled, derived status or not - finished work nobody signed off",
+          M.phase_settled(dict(signed, review={"status": "pending"}), TERM,
+                          status_of=_mio_q.effective_phase_status)["settled"] is False)
+    import ast as _ast_q
+    import _output as _out_q
+    _callers = []
+    for _rel, _path in _out_q.py_files(_out_q.SCRIPTS_DIR):
+        if os.path.basename(_path) == "_worktrees.py":
+            continue
+        with open(_path, encoding="utf-8") as _fh:
+            _tree = _ast_q.parse(_fh.read())
+        for _node in _ast_q.walk(_tree):
+            if (isinstance(_node, _ast_q.Call)
+                    and isinstance(_node.func, _ast_q.Attribute)
+                    and _node.func.attr in ("phase_settled", "observe_for_sweep")):
+                _callers.append((os.path.basename(_path), _node.func.attr,
+                                 any(k.arg == "status_of" for k in _node.keywords)))
+    check("q1c EVERY caller of phase_settled / observe_for_sweep in the tree hands in "
+          "the derived status - one that reads the stored field refuses the cleanup "
+          "a signed-off merge owes, and it is found here by name rather than by the "
+          "operator whose worktree was not removed: %r" % (_callers,),
+          len(_callers) >= 4 and all(c[2] for c in _callers))
     check("q2 a CANCELLED task counts as finished - it is a terminal status, and "
           "reading it as open would strand every phase that dropped one task",
           M.phase_settled(done_phase, TERM)["settled"] is True,

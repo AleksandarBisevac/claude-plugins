@@ -216,7 +216,8 @@ def settlement(phase, merged=False):
     stamped = dict(phase or {})
     if merged and not stamped.get("mergedAt"):
         stamped["mergedAt"] = "verified by this run"
-    verdict = _wt.phase_settled(stamped, _mio.TERMINAL)
+    verdict = _wt.phase_settled(stamped, _mio.TERMINAL,
+                                status_of=_mio.effective_phase_status)
     return {"ok": verdict["settled"], "why": verdict["why"]}
 
 

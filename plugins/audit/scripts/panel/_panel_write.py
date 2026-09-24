@@ -765,7 +765,8 @@ def sweep_worktrees(project, body):
     # widened scope over a guessed parent is what that flag was.
     obs = _worktrees.observe_for_sweep(git_root, trees, wanted, parents,
                                        phase_by_branch=phases,
-                                       terminal=_mio.TERMINAL)
+                                       terminal=_mio.TERMINAL,
+                                       status_of=_mio.effective_phase_status)
     plan = _worktrees.sweep_plan(
         trees, wanted, parents, obs["contained"], obs["dirty"],
         # WHERE THE SERVER IS STANDING, measured rather than skipped. This

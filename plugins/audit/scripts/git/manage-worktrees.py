@@ -409,7 +409,8 @@ def do_sweep(git_root, manifest, verbs, apply_it=False, run=None):
                    .get("developmentBranch") or _branch.DEFAULT_PARENT)
     obs = _wt.observe_for_sweep(git_root, trees, wanted, parents,
                                 phase_by_branch=phases_by_branch(manifest),
-                                terminal=_mio.TERMINAL, run=run)
+                                terminal=_mio.TERMINAL, run=run,
+                                status_of=_mio.effective_phase_status)
     the_plan = _wt.sweep_plan(trees, wanted, parents, obs["contained"],
                              obs["dirty"],
                              # `standing_in` answering None means "outside every

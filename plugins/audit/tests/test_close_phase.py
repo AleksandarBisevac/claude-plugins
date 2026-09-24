@@ -539,6 +539,17 @@ def _cases(check):
           and M.settlement(phase, merged=False)["ok"] is False,
           "merged=%r unmerged=%r" % (M.settlement(phase, merged=True)["ok"],
                                      M.settlement(phase, merged=False)["ok"]))
+    signed = {"id": "P2", "status": "in_progress", "branch": "audit/p2",
+              "review": {"status": "passed"}, "mergedAt": None,
+              "tasks": [{"id": "P2.1", "status": "done"}]}
+    check("k4s a phase signed off by the signoff verb (stored status untouched) is "
+          "settled once THIS run verified its merge - close-phase cleans up after "
+          "the sign-off it no longer finds as a hand-written `done`",
+          M.settlement(signed, merged=True)["ok"] is True,
+          M.settlement(signed, merged=True)["why"])
+    check("k4u ...and without a recorded verdict it is not, merged or not",
+          M.settlement(dict(signed, review={"status": "pending"}), merged=True)["ok"]
+          is False)
     check("k5 ...and `merged=True` is NOT a shortcut past the other two marks: a "
           "phase that has not signed off stays unsettled however verified its "
           "merge is",

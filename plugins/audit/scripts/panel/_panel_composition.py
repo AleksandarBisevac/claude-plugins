@@ -1050,7 +1050,8 @@ def worktree_rows(git_root, manifest):
                 else _worktrees.dirtiness(rec.get("path")))
         prov = _worktrees.read_provenance(rec.get("path"))
         phase = phases.get(branch)
-        settled = (_worktrees.phase_settled(phase, _mio.TERMINAL)
+        settled = (_worktrees.phase_settled(phase, _mio.TERMINAL,
+                                            status_of=_mio.effective_phase_status)
                    if phase is not None
                    else {"settled": False,
                          "why": "no phase in this plan carries this branch"})

@@ -179,7 +179,7 @@ def read_provenance(tree_path, run=None, expect_branch=None):
     return {"ours": True, "record": rec, "basis": path}
 
 
-def phase_settled(phase, terminal):
+def phase_settled(phase, terminal, status_of=None):
     """{"settled", "why"} -- has the plugin FINISHED with this phase?
 
     A branch being contained in its parent says the COMMITS are safe. It says nothing
@@ -191,9 +191,14 @@ def phase_settled(phase, terminal):
     `terminal` is the set of statuses that end a task, passed in rather than imported:
     `_manifest_io.TERMINAL` is a layer-mate's, and a second copy of it here would be a
     second opinion about whether a phase is over.
+
+    `status_of` is the same move for the phase's own status: every caller hands in
+    `_manifest_io.effective_phase_status`, because sign-off now RECORDS a verdict and
+    no longer writes `status` - reading the stored field alone would refuse the
+    cleanup every signed-off merge owes. Omitted, the stored field is read.
     """
     phase = phase or {}
-    status = phase.get("status")
+    status = status_of(phase) if status_of else phase.get("status")
     if status != "done":
         return {"settled": False,
                 "why": "phase %s is %r, not 'done' - sign-off has not passed"
@@ -1043,7 +1048,7 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
 
 def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
                       phase_by_branch=None, terminal=(), run=None,
-                      resolve=None):
+                      resolve=None, status_of=None):
     """{"contained", "dirty", "owned", "settled"} -- the four questions a sweep needs.
 
     FOUR AND NOT TWO, and the two that were added are the ones that decide whether a
@@ -1089,7 +1094,7 @@ def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
                                       "nothing says the work on it is finished"
                                       % (branch,)}
         else:
-            verdict = phase_settled(phase, terminal or ())
+            verdict = phase_settled(phase, terminal or (), status_of=status_of)
             settled[branch] = {"ok": verdict["settled"], "why": verdict["why"]}
     return {"contained": contained, "dirty": dirty, "owned": owned,
             "settled": settled, "shas": shas}
