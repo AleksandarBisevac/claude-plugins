@@ -138,7 +138,7 @@
     {
       "id": "P64.3",
       "title": "The prose says phase entry is the start verb's",
-      "status": "pending",
+      "status": "done",
       "description": "execute-task step 1 and orchestrator's Phase entry describe cutting the branch by hand before start; task.md and the README describe start as a pure promotion.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -168,16 +168,23 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8daca27",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - Phase entry and execute-task 1b-1c name the verb; task.md, README, CHANGELOG follow",
+        "descriptive": "The run instructions say the start command puts a phase on its branch, and to stop and ask when it refuses."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-24T21:24:45Z",
+      "completedAt": "2026-09-24T21:26:02Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8daca27",
+        "at": "2026-09-24T21:26:02Z"
+      }
     }
   ],
   "startedAt": "2026-09-24T21:14:03Z"
