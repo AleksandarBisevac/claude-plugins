@@ -1336,6 +1336,9 @@ def _proposals(n_phases):
         "benefit": "Every failing request can be traced to the call that made it.",
         "technicalNote": "Needs the tracing SDK pinned before the first task runs.",
         "openQuestions": ["Which sampling rate does the platform team run?"],
+        # The branch it was parked on: sign-off lists what a branch parked once that
+        # branch lands. `/audit:init` runs on the development branch.
+        "branch": "main",
         "materializedAs": None,
         "materializedAt": None,
         "payload": {"phase": {
