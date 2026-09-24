@@ -357,6 +357,12 @@
       "title": "Ids that two branches cannot both mint",
       "status": "in_progress",
       "shard": "phases/P61.json"
+    },
+    {
+      "id": "P62",
+      "title": "The doctor measures what the layout costs instead of guessing",
+      "status": "in_progress",
+      "shard": "phases/P62.json"
     }
   ],
   "fileIndex": {
@@ -400,7 +406,8 @@
       "P33.1",
       "P60.3",
       "P61.4",
-      "P61.14"
+      "P61.14",
+      "P62.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -451,7 +458,8 @@
       "P61.7",
       "P61.8",
       "P61.11",
-      "P61.13"
+      "P61.13",
+      "P62.1"
     ],
     "README.md": [
       "P2.3",
@@ -1907,7 +1915,8 @@
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
-      "P48.4"
+      "P48.4",
+      "P62.1"
     ],
     "plugins/audit/commands/logs.md": [
       "P31.2",
@@ -2252,12 +2261,14 @@
     "plugins/audit/scripts/status/_doctor_setup.py": [
       "P54.3",
       "P60.4",
-      "P60.5"
+      "P60.5",
+      "P62.1"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
       "P59.12",
-      "P60.4"
+      "P60.4",
+      "P62.1"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2353,10 +2364,12 @@
       "P60.3"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
-      "P60.5"
+      "P60.5",
+      "P62.1"
     ],
     "plugins/audit/tests/test__merge_install.py": [
-      "P60.5"
+      "P60.5",
+      "P62.1"
     ],
     "plugins/audit/scripts/manifest/_id_shape.py": [
       "P61.1",
