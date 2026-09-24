@@ -399,7 +399,8 @@
       "P27.1",
       "P33.1",
       "P60.3",
-      "P61.4"
+      "P61.4",
+      "P61.14"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -610,7 +611,8 @@
       "P7.2",
       "P32.2",
       "P42.1",
-      "P57.3"
+      "P57.3",
+      "P61.14"
     ],
     "plugins/audit/commands/init.md": [
       "P1.6",
@@ -630,7 +632,8 @@
       "P48.3",
       "P49.1",
       "P50.1",
-      "P57.2"
+      "P57.2",
+      "P61.14"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -688,7 +691,8 @@
     "plugins/audit/commands/sync.md": [
       "P3.1",
       "P57.3",
-      "P57.5"
+      "P57.5",
+      "P61.14"
     ],
     "plugins/audit/commands/task.md": [
       "P1.7",
@@ -708,7 +712,8 @@
       "P57.2",
       "P55.19",
       "P55.21",
-      "P61.10"
+      "P61.10",
+      "P61.14"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -835,7 +840,8 @@
       "P1.6",
       "P7.2",
       "P32.2",
-      "P45.1"
+      "P45.1",
+      "P61.14"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1267,7 +1273,8 @@
       "P50.6",
       "P57.5",
       "P58.1",
-      "P60.3"
+      "P60.3",
+      "P61.14"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -1305,7 +1312,8 @@
       "P18.5",
       "P18.9",
       "P57.1",
-      "P57.3"
+      "P57.3",
+      "P61.14"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
