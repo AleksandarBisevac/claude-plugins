@@ -760,7 +760,8 @@
       "P59.5",
       "P59.10",
       "P63.2",
-      "P63.8"
+      "P63.8",
+      "P63.10"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2200,7 +2201,8 @@
       "P59.5",
       "P59.13",
       "P63.2",
-      "P63.8"
+      "P63.8",
+      "P63.10"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2331,7 +2333,8 @@
       "P60.5",
       "P62.1",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P63.10"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
@@ -2340,7 +2343,8 @@
       "P62.1",
       "P63.3",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P63.10"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2619,6 +2623,28 @@
       "taskId": null,
       "fixedIn": null,
       "notes": "NOT REPRODUCIBLE on this build, 2026-09-06. Four hypotheses tested by driving a real browser, all refuted: (1) Overview, one task open - the detail row is at taskRow+1; (2) the Composition tab cannot be the surface, it renders zero [data-evtog]; (3) two tasks open at once - each detail row under its own task row; (4) mobile/tablet/wide viewports - the row PAINTS directly below its own, 0px gap, no console errors anywhere. Closed as not-reproducible rather than fixed: nothing was changed, so a fresh sighting with the conditions reopens it and this note says what has already been ruled out."
+    },
+    {
+      "id": "BUG-7",
+      "title": "doctor's warn line calls a phase in_progress that only awaits sign-off even when its stored status is pending",
+      "status": "fixed",
+      "severity": "low",
+      "reportedAt": "2026-09-24T13:53:47Z",
+      "reportedBy": null,
+      "description": "manifest_state names the FIRST phase whose every task is terminal with no verdict recorded, whatever its stored status, and _doctor_setup's warn line then says that phase 'is in_progress but only awaits sign-off'. On this repo it named P32, stored pending.",
+      "repro": [
+        "python3 plugins/audit/scripts/status/audit-doctor.py on this repo",
+        "read the plan gate line"
+      ],
+      "expected": "the line says only what is true of the phase it names, and names an in_progress one when there is one",
+      "actual": "warn - no phase has work in flight: phase P32 is in_progress but only awaits sign-off ... (P32 is pending)",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/status/_doctor_setup.py"
+      ],
+      "taskId": "P63.10",
+      "fixedIn": "864ba13",
+      "notes": null
     }
   ],
   "deferred": {
