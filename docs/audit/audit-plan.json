@@ -414,7 +414,8 @@
       "P61.4",
       "P61.14",
       "P62.1",
-      "P62.3"
+      "P62.3",
+      "P63.11"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -586,7 +587,8 @@
       "P60.3",
       "P61.4",
       "P63.4",
-      "P63.8"
+      "P63.8",
+      "P63.11"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -655,7 +657,8 @@
       "P49.1",
       "P50.1",
       "P57.2",
-      "P61.14"
+      "P61.14",
+      "P63.11"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -737,7 +740,8 @@
       "P55.19",
       "P55.21",
       "P61.10",
-      "P61.14"
+      "P61.14",
+      "P63.11"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -918,7 +922,8 @@
       "P56.4",
       "P57.1",
       "P55.20",
-      "P60.3"
+      "P60.3",
+      "P63.11"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -1303,7 +1308,8 @@
       "P23.3",
       "P25.6",
       "P26.2",
-      "P31.7"
+      "P31.7",
+      "P63.11"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1318,7 +1324,8 @@
       "P57.5",
       "P58.1",
       "P60.3",
-      "P61.14"
+      "P61.14",
+      "P63.11"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -2377,7 +2384,8 @@
       "P57.1",
       "P57.3",
       "P60.3",
-      "P61.11"
+      "P61.11",
+      "P63.11"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3"
@@ -2458,7 +2466,8 @@
       "P61.8"
     ],
     "plugins/audit/reference/phase-signoff.md": [
-      "P61.5"
+      "P61.5",
+      "P63.11"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
