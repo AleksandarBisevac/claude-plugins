@@ -2721,7 +2721,7 @@
     {
       "id": "BUG-8",
       "title": "close-phase judges cleanup by the phase as it stood BEFORE its own merge, so a phase signed off on its branch is refused cleanup as 'pending'",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-09-24T21:44:07Z",
       "reportedBy": null,
@@ -2736,7 +2736,7 @@
         "plugins/audit/scripts/git/close-phase.py"
       ],
       "taskId": "P65.1",
-      "fixedIn": null,
+      "fixedIn": "3fe767e",
       "notes": "found landing P64, 2026-09-24. The second run it forces, 'already-contained', also re-stamps mergedAt with its own time (21:43:52 became 21:44:12), so the record stops naming the moment of the merge."
     }
   ],
