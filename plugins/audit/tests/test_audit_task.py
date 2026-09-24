@@ -5714,6 +5714,37 @@ def _cases(check):
         check("pk8 --park on the development branch parks an unsuffixed PROP: %s" % (txt,),
               code == 0 and any(p.get("name") == "Trunk idea" and p["id"] == "PROP-2"
                                 for p in _mio.load_manifest(mpathb).get("proposals")))
+        # ---- (cb) several phases running: the checked-out branch decides -----
+        # Three developers leave several in_progress phases in the shared index;
+        # "the current phase" is the one whose branch is checked out here.
+        two = base_manifest()
+        two["phases"][2]["status"] = "in_progress"
+        two["phases"][1]["branch"] = "feature/p2-live"
+        two["phases"][2]["branch"] = "feature/p3-parked"
+        projc, mpathc = mk("cb-branch", two, git=True)
+        git(projc, "checkout", "-q", "-b", "main")
+        git(projc, "commit", "-q", "--allow-empty", "-m", "base")
+        git(projc, "checkout", "-q", "-b", "feature/p3-parked")
+        code, txt = run(["add", "Found while on P3", "--project-dir", projc])
+        sfc = _id_shape.branch_suffix("feature/p3-parked", two)
+        check("cb1 with two phases in_progress, a task added without --phase goes to the "
+              "one whose recorded branch is checked out, and says why: %s" % (txt,),
+              code == 0 and task_in(mpathc, "P3.1-%s" % sfc) is not None
+              and "feature/p3-parked" in txt)
+        code, txt = run(["add", "Found again", "--project-dir", projc, "--json"])
+        try:
+            payload = json.loads(txt)
+        except ValueError as exc:
+            payload = {"unparseable": str(exc)}
+        check("cb1b ...and under --json the output stays ONE parseable object, carrying "
+              "why that phase was chosen: %r" % (txt[:200],),
+              code == 0 and "feature/p3-parked" in json.dumps(payload.get("phaseBasis")))
+        git(projc, "checkout", "-q", "-b", "feature/unrelated")
+        code, txt = run(["add", "From nowhere", "--project-dir", projc])
+        check("cb2 SECOND DIRECTION: on a branch no running phase records, --phase is "
+              "still required - a guess would write another developer's phase: %s"
+              % (txt,), code == 2 and "--phase required" in txt)
+
         git(projb, "checkout", "-q", "feature/x")
         code, txt = run(["next-id", "phase", "--project-dir", projb])
         check("bs7 next-id takes only `bug`: a phase or a task id is minted by the verb "

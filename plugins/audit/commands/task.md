@@ -73,8 +73,14 @@ per add is the class of error the script exists to delete.
      `/audit:propose materialize`) — relay those refusals, then offer the
      alternatives below.
    - Otherwise call without `--phase`: the script defaults to the single
-     `in_progress` phase, or exits 2 NAMING the choices. On that exit 2, ask
-     (AskUserQuestion): one of the named phases, or **new phase**. A new phase is
+     `in_progress` phase; with SEVERAL running (several developers, each on a phase
+     branch of their own) it takes the one whose recorded `branch` is checked out
+     here, and says so on a `phase:` line (`phaseBasis` under `--json`); otherwise
+     it exits 2 NAMING the choices. On that exit 2, ask
+     (AskUserQuestion): one of the named phases, or **new phase**. On a phase branch,
+     a new phase is usually the wrong answer: phases are minted on the development
+     branch, so offer `/audit:phase add ... --park` (a proposal materialized after the
+     branch merges) - see `commands/phase.md`. A new phase is
      `/audit:phase add "<title>" --outcome "<what success looks like>"` — follow
      `${CLAUDE_PLUGIN_ROOT}/commands/phase.md` → *Subcommand: `add`*, which takes
      the index lock itself, then re-run this add with `--phase <newId>`. **Do not

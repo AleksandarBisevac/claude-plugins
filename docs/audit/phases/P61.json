@@ -464,6 +464,50 @@
       "startedAt": "2026-09-24T08:41:36Z",
       "completedAt": "2026-09-24T08:42:52Z",
       "verifiedBy": []
+    },
+    {
+      "id": "P61.10",
+      "title": "With several phases running, a task added without --phase goes to the phase whose branch is checked out",
+      "status": "in_progress",
+      "description": "Three developers leave several in_progress phases in the index; 'the current phase' is the one whose recorded branch is checked out, not whichever one is in_progress. No match keeps the --phase requirement.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:43:16Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"

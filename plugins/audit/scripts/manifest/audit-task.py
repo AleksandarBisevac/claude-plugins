@@ -1324,8 +1324,15 @@ def _reserved_refusal(pid, prop_id):
             "by hand would collide)." % (pid, prop_id, prop_id))
 
 
-def _resolve_phase(assembled, want, out):
-    """The target phase dict, or an int exit code after printing why not."""
+def _resolve_phase(assembled, want, out, branch=None, basis=None):
+    """The target phase dict, or an int exit code after printing why not.
+
+    `branch` is the one checked out beside the manifest. With several phases
+    running - several developers, each on a phase branch of their own - the
+    current phase is the one whose recorded `branch` is checked out, which is the
+    only reading that cannot land a task in someone else's phase. WHY that phase
+    was chosen is appended to `basis` rather than printed here, so a `--json`
+    caller keeps one parseable object and a human caller prints it."""
     phases = [p for p in (assembled.get("phases") or []) if isinstance(p, dict)]
     if want:
         for ph in phases:
@@ -1360,6 +1367,13 @@ def _resolve_phase(assembled, want, out):
             "Open phases: %s"
             % (", ".join(_phase_label(p) for p in openp) or "(none)"))
         return E_USAGE
+    mine = [p for p in inprog if branch and p.get("branch") == branch]
+    if len(mine) == 1:
+        if basis is not None:
+            basis.append({"phase": mine[0].get("id"), "branch": branch,
+                          "inProgress": [p.get("id") for p in inprog],
+                          "why": "the in_progress phase whose branch is checked out"})
+        return mine[0]
     out("[audit-task] --phase required -- %d phases are in_progress: %s"
         % (len(inprog), ", ".join(p.get("id") or "?" for p in inprog)))
     return E_USAGE
@@ -2170,7 +2184,10 @@ def _locked_add(args, project, config, mpath, title, out):
             out("FINDING: " + line)
         return E_INVALID
 
-    phase = _resolve_phase(assembled, args.phase, out)
+    phase_basis = []
+    phase = _resolve_phase(assembled, args.phase, out,
+                           _id_shape.current_branch(os.path.dirname(os.path.abspath(mpath))),
+                           phase_basis)
     if isinstance(phase, int):
         return phase
     phase_id = phase.get("id")
@@ -2251,6 +2268,7 @@ def _locked_add(args, project, config, mpath, title, out):
     branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     if args.as_json:
         result = {"ok": True, "id": task_id, "phase": phase_id,
+                  "phaseBasis": phase_basis[0] if phase_basis else None,
                   "title": title, "task": task, "written": written,
                   "healed": healed,
                   # GROUPED HERE TOO. One line per rule with its count and every
@@ -2280,6 +2298,9 @@ def _locked_add(args, project, config, mpath, title, out):
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s added to %s -- %s" % (task_id, phase_id, title))
+    for pb in phase_basis:
+        out("  phase: %s -- of the running %s, the one whose branch %s is checked out"
+            % (pb["phase"], ", ".join(pb["inProgress"]), pb["branch"]))
     out("  tests.mode %s  model %s  risk %s  skills %s"
         % (task["tests"]["mode"], task["model"], task["risk"],
            json.dumps(task["skills"])))
