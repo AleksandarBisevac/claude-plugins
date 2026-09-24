@@ -699,10 +699,62 @@ def _parked_cases(check):
           "proposals", not any("materialize" in ln for ln in lines), lines)
 
 
+def _landed_cases(check):
+    """The "landed and its branch is gone" answer trusts a RECORDED branch only.
+
+    Against a real repository: a composed name is a prediction, and with another
+    identity at the keyboard it names a branch that never existed - while the one
+    that did may still hold work."""
+    import subprocess
+    import _branch
+    root = _harness.fixture_root("closephase-landed")
+    try:
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+        def git(*a):
+            return subprocess.run(["git", "-C", root] + list(a), env=env,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "Zed Quill")
+        meta = {"developmentBranch": "main",
+                "branch": {"template": "{type}/{initials}-{phase}-{slug}"}}
+        phase = {"id": "P9", "title": "Nine", "status": "done",
+                 "review": {"status": "passed"}, "mergedAt": "2026-01-01T00:00:00Z",
+                 "tasks": [{"id": "P9.1", "title": "t", "status": "done"}]}
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        with open(mpath, "w") as fh:
+            json.dump({"meta": meta, "phases": [phase]}, fh)
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        real = _branch.phase_answer(meta, phase, "Ann Bee")["branch"]
+        git("branch", real)
+        lines = []
+        code = M.main([mpath, "P9", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("lg1 a phase recording a merge but NO branch is not declared landed and "
+              "gone on a COMPOSED name - another identity composes a name that never "
+              "existed while the real branch (%s) is still there; it says the name was "
+              "composed and asks for --branch: exit %r, %r" % (real, code, text[:200]),
+              code == M.E_NO_BASIS and "nothing left to do" not in text
+              and "composed" in text and "--branch" in text)
+        lines = []
+        code = M.main([mpath, "P9", "--project", root, "--branch", "gone/branch"],
+                      out=lines.append)
+        check("lg2 SECOND DIRECTION: with the branch NAMED (an argument, as a recorded "
+              "phase.branch would be) and absent, it is landed and gone, exit 0: %r"
+              % ("\n".join(lines)[:160],),
+              code == M.E_OK and "nothing left to do" in "\n".join(lines))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _parked_cases(check)
+        _landed_cases(check)
     return _harness.run(body)
 
 

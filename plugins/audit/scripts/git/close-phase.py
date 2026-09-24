@@ -837,8 +837,21 @@ def main(argv, out=print):
     # gone. Containment cannot be asked of a branch that no longer exists, and the
     # planner then said "merge it into the parent first" about a phase that had
     # merged - so the idempotent re-run this command promises is answered here.
+    #
+    # ONLY FOR A NAME SOMEBODY RECORDED OR PASSED. A composed name is a prediction:
+    # with another identity at the keyboard it names a branch that never existed,
+    # while the one that did may still hold unmerged work - so its absence proves
+    # nothing, and the answer is that it cannot be said.
     if (phase or {}).get(MERGED_FIELD) and _wt.ref_exists(
             git_root, names["branch"])["exists"] is False:
+        if names["branchBasis"].startswith("composed"):
+            out("[close-phase] phase %s records a merge at %s, but no branch is "
+                "recorded for it here, and %s - %s - is not a branch. Whether the "
+                "branch that carried the phase is gone cannot be said from a "
+                "composed name: pass --branch <name> to ask about the real one"
+                % (args.phase, phase[MERGED_FIELD], names["branch"],
+                   names["branchBasis"]))
+            return E_NO_BASIS
         out("[close-phase] phase %s landed at %s and %s is gone - nothing left "
             "to do" % (args.phase, phase[MERGED_FIELD], names["branch"]))
         return E_OK

@@ -948,21 +948,36 @@ def check_close_phase_names_parked_proposals(fx):
         write_manifest(fx, manifest_body())
 
 
-def check_close_phase_lands_worktree_signoff_from_parent(fx):
+def _land_worktree_signoff(fx, sharded):
     """A phase signed off ON ITS BRANCH lands and is cleaned up in ONE run from the
-    parent's tree - the only tree a linked worktree can be removed from.
+    parent's tree - the only tree a linked worktree can be removed from - and the
+    dry-run before it previews that same cleanup.
 
     The parent's copy of the plan predates the sign-off: the verdict was committed
     on the phase branch, and the merge is what brings it in. Judged against that
     pre-merge copy, the cleanup was refused as "sign-off has not passed" for a
     phase that had signed off, and the second run it forced moved `mergedAt` to its
-    own moment. Asserted end to end, because only a real merge lands the verdict.
+    own moment. Asserted end to end, because only a real merge lands the verdict;
+    `sharded` puts the phase in its own shard, where the verdict actually lives.
     """
-    branch = "feature/wt/p9-signed"
+    import _manifest_io as _mio
+
+    def put(root, body):
+        path = os.path.join(root, MANIFEST_REL.replace("/", os.sep))
+        if sharded:
+            _mio.save_sharded(path, body)
+        else:
+            with io.open(path, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(body, indent=1, sort_keys=True))
+
+    def p9_at(root):
+        plan = _mio.load_manifest(os.path.join(root, MANIFEST_REL.replace("/", os.sep)))
+        return [p for p in plan["phases"] if p["id"] == "P9"][0]
+
+    branch = "feature/wt/p9-signed" + ("-sh" if sharded else "")
     wt = os.path.join(os.path.dirname(fx["root"]),
-                      os.path.basename(fx["root"]) + "-signed")
-    before_signoff = _wt_manifest(branch=branch)
-    write_manifest(fx, before_signoff)
+                      os.path.basename(fx["root"]) + "-signed" + ("-sh" if sharded else ""))
+    put(fx["root"], _wt_manifest(branch=branch))
     git(fx, "add", "-A")
     git(fx, "commit", "-q", "-m", "fixture: the parent's plan, before the sign-off")
     # Through `/audit:worktree add`, as the run it models does: the provenance marker
@@ -976,42 +991,52 @@ def check_close_phase_lands_worktree_signoff_from_parent(fx):
         signed["phases"][-1].update(
             review={"status": "passed"},
             tasks=[{"id": "P9.1", "title": "t", "status": "done"}])
-        wt_manifest = os.path.join(wt, MANIFEST_REL.replace("/", os.sep))
-        with io.open(wt_manifest, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(signed, indent=1, sort_keys=True))
+        put(wt, signed)
         run([fx["git"], "add", "-A"], wt, fx["env"])
         run([fx["git"], "commit", "-q", "-m", "sign-off on the branch"], wt, fx["env"])
+        codep, outp = script(fx, "close-phase.py", MANIFEST_REL, "P9", "--project", ".",
+                             "--dry-run")
+        previewed = (codep == 0 and "sign-off has not passed" not in (outp or "")
+                     and "worktree remove" in (outp or ""))
         code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9", "--project", ".")
         _, listing = git(fx, "worktree", "list")
         gone = wt not in (listing or "")
         deleted, _ = git(fx, "rev-parse", "--verify", "-q", "refs/heads/" + branch)
-        with io.open(os.path.join(fx["root"], MANIFEST_REL.replace("/", os.sep)),
-                     encoding="utf-8") as fh:
-            first = [p for p in json.load(fh)["phases"] if p["id"] == "P9"][0]
+        first = p9_at(fx["root"])
         # A SECOND APART: `mergedAt` has one-second resolution, so a re-run inside
         # the same second would keep the value by coincidence and prove nothing.
         time.sleep(1.1)
         code2, out2 = script(fx, "close-phase.py", MANIFEST_REL, "P9", "--project", ".")
-        with io.open(os.path.join(fx["root"], MANIFEST_REL.replace("/", os.sep)),
-                     encoding="utf-8") as fh:
-            second = [p for p in json.load(fh)["phases"] if p["id"] == "P9"][0]
-        return (code == 0 and gone and deleted != 0 and bool(first.get("mergedAt"))
+        second = p9_at(fx["root"])
+        return (previewed and code == 0 and gone and deleted != 0
+                and bool(first.get("mergedAt"))
                 and "sign-off has not passed" not in (out or "")
                 and code2 == 0 and "nothing left to do" in (out2 or "")
                 and second.get("mergedAt") == first.get("mergedAt")), (
-            "first run exit %r, worktree gone=%r, branch deleted=%r, mergedAt=%r; "
-            "re-run exit %r kept mergedAt=%r; output: %s"
-            % (code, gone, deleted != 0, first.get("mergedAt"), code2,
+            "preview ok=%r; first run exit %r, worktree gone=%r, branch deleted=%r, "
+            "mergedAt=%r; re-run exit %r kept mergedAt=%r; output: %s"
+            % (previewed, code, gone, deleted != 0, first.get("mergedAt"), code2,
                second.get("mergedAt") == first.get("mergedAt"),
-               ((out or "") + " || RE-RUN: " + (out2 or "")).strip()
-               .replace("\n", " | ")[-400:]))
+               ((outp or "") + " || RUN: " + (out or "") + " || RE-RUN: "
+                + (out2 or "")).strip().replace("\n", " | ")[-500:]))
     finally:
         if os.path.isdir(wt):
             git(fx, "worktree", "remove", "--force", wt)
         git(fx, "branch", "-D", branch)
         git(fx, "worktree", "prune")
         git(fx, "reset", "--hard", "-q", fx["head"])
+        git(fx, "clean", "-fdq")
         write_manifest(fx, manifest_body())
+
+
+def check_close_phase_lands_worktree_signoff_from_parent(fx):
+    """The landing on a single-file plan; `_land_worktree_signoff` says why."""
+    return _land_worktree_signoff(fx, sharded=False)
+
+
+def check_close_phase_lands_worktree_signoff_sharded(fx):
+    """...and on a sharded one, where the verdict lives in the phase's shard."""
+    return _land_worktree_signoff(fx, sharded=True)
 
 
 def check_close_phase_already_contained(fx):
@@ -1380,8 +1405,10 @@ CHECKS = (
      "proposals to materialize and on which branch",
      check_close_phase_names_parked_proposals),
     ("g16c a phase signed off ON its branch lands and is cleaned up in ONE run from "
-     "the parent's tree, and a re-run says it landed and keeps its mergedAt",
-     check_close_phase_lands_worktree_signoff_from_parent),
+     "the parent's tree, its dry-run previews that, and a re-run says it landed "
+     "and keeps its mergedAt", check_close_phase_lands_worktree_signoff_from_parent),
+    ("g16d ...and the same on the SHARDED layout, where the verdict lives in the "
+     "phase's shard", check_close_phase_lands_worktree_signoff_sharded),
     ("g17 an already-landed phase makes no git write, and is not reported as a "
      "conflict", check_close_phase_already_contained),
     ("g17b ...and it is STAMPED, so a phase merged by hand is not left unsettled "
