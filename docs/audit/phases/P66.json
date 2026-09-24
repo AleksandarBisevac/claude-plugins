@@ -1,0 +1,76 @@
+{
+  "id": "P66",
+  "title": "A merge's write derives no completion the merged branch already recorded",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "a git merge, cherry-pick or rebase that brings a finished task in from another branch writes the change it made and no second task.complete, task.commit or phase.signoff, while completions done in the same call still are",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P66.1",
+      "title": "Fix BUG-9: journal-writes derives completion rows from a git merge's write",
+      "status": "pending",
+      "description": "Repro: finish a task on a phase branch, then from the parent tree run git merge <branch> in a Bash call; audit-journal.py show carries a second task.complete for that task. Expected: a write that brings in another branch's recorded history derives no completion rows, since those completions happened and were recorded where the work ran. Actual: task.complete and task.commit for P65.1 appended again by the hook after the P65 merge.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: repro that FAILS on current code - a completion brought in by a merge is derived again",
+          "tools/check-git-pipeline.py: a real merge of a finished task writes no second task.complete"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-9"
+    }
+  ]
+}
