@@ -448,7 +448,8 @@
       "P61.3",
       "P61.5",
       "P61.7",
-      "P61.8"
+      "P61.8",
+      "P61.11"
     ],
     "README.md": [
       "P2.3",
@@ -941,7 +942,8 @@
       "P60.2",
       "P60.5",
       "P61.1",
-      "P61.7"
+      "P61.7",
+      "P61.11"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -965,7 +967,8 @@
       "P10.4",
       "P15.4",
       "P22.8",
-      "P47.3"
+      "P47.3",
+      "P61.12"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1703,7 +1706,8 @@
     ],
     "plugins/audit/tests/test__manifest_io.py": [
       "P22.8",
-      "P47.3"
+      "P47.3",
+      "P61.12"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
       "P22.8"
@@ -2212,7 +2216,8 @@
       "P50.6",
       "P59.10",
       "P61.2",
-      "P61.7"
+      "P61.7",
+      "P61.12"
     ],
     "tools/check-committed-pii.py": [
       "P51.4"
@@ -2273,7 +2278,8 @@
     "plugins/audit/commands/layout.md": [
       "P57.1",
       "P57.3",
-      "P60.3"
+      "P60.3",
+      "P61.11"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3"
@@ -2325,10 +2331,12 @@
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
-      "P60.5"
+      "P60.5",
+      "P61.11"
     ],
     "plugins/audit/tests/test_merge_manifest.py": [
-      "P60.2"
+      "P60.2",
+      "P61.11"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
