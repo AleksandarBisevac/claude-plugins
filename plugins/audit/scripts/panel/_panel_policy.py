@@ -275,12 +275,7 @@ def _active_area_tags(manifest):
     """
     tags = []
     for phase in (manifest or {}).get("phases") or []:
-        if not isinstance(phase, dict) or phase.get("mergedAt"):
-            continue
-        running = phase.get("status") == "in_progress" or any(
-            isinstance(t, dict) and t.get("status") == "in_progress"
-            for t in (phase.get("tasks") or []))
-        if not running:
+        if not isinstance(phase, dict) or not _mio.area_active(phase):
             continue
         for tag in _areas.areas_of(phase.get("area")):
             if tag not in tags:

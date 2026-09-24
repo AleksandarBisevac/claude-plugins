@@ -1026,12 +1026,11 @@ def active_area_tags(root, manifest_rel):
         if not isinstance(manifest, dict):
             return tags
         areas = _areas_lib()
+        mio = _load_scripts_module("_manifest_io", "_manifest_io.py")
         for phase in manifest.get("phases") or []:
-            if not isinstance(phase, dict) or phase.get("mergedAt"):
+            if not isinstance(phase, dict) or mio is None:
                 continue
-            running = phase.get("status") == "in_progress" or any(
-                isinstance(t, dict) and t.get("status") == "in_progress"
-                for t in (phase.get("tasks") or []))
+            running = mio.area_active(phase)
             if not running:
                 continue
             of = areas.areas_of if areas is not None else _areas_of_fallback
@@ -1924,6 +1923,12 @@ def manifest_state(root, manifest_rel):
     repo executing its plan, and refusing to notice would deny the gate exactly when
     it is most warranted.
 
+    A PHASE ONLY AWAITING SIGN-OFF IS NOT RUNNING either: `phaseRunning` is
+    `_manifest_io.phase_running`, the one answer, and a phase whose every task is
+    terminal has nothing left to edit - it held this repository's own gate in its
+    denying tier across releases while every task was done. It is named in
+    `signoffDuePhase`, so a caller can say why the tier is not deny.
+
     A MERGED phase is never counted as running, whatever `status` still says.
     `close-phase.py` stamps `mergedAt` the moment `git merge` verifies the branch
     landed, and it never writes `status` itself — that field is the sign-off
@@ -1938,14 +1943,15 @@ def manifest_state(root, manifest_rel):
     Never raises. On any error it reports the LEAST aggressive state, so a crash in
     here can only relax the gate, never invent a denial."""
     state = {"exists": False, "phaseRunning": False, "runningPhase": None,
-             "staleClosedPhase": None}
+             "staleClosedPhase": None, "signoffDuePhase": None}
     try:
         path = Path(root) / manifest_rel
         if not path.exists():
             return state
         state["exists"] = True
         manifest = _load_manifest_assembled(path)
-        if not isinstance(manifest, dict):
+        mio = _load_scripts_module("_manifest_io", "_manifest_io.py")
+        if not isinstance(manifest, dict) or mio is None:
             return state
         for phase in manifest.get("phases", []) or []:
             if not isinstance(phase, dict):
@@ -1955,15 +1961,12 @@ def manifest_state(root, manifest_rel):
                         and phase.get("status") not in ("done", "cancelled")):
                     state["staleClosedPhase"] = phase.get("id")
                 continue
-            if phase.get("status") == "in_progress":
+            if mio.phase_running(phase):
                 state["phaseRunning"] = True
                 state["runningPhase"] = phase.get("id")
                 return state
-            for task in phase.get("tasks", []) or []:
-                if isinstance(task, dict) and task.get("status") == "in_progress":
-                    state["phaseRunning"] = True
-                    state["runningPhase"] = phase.get("id")
-                    return state
+            if state["signoffDuePhase"] is None and mio.signoff_due(phase):
+                state["signoffDuePhase"] = phase.get("id")
     except Exception:
         pass
     return state

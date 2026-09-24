@@ -29,7 +29,7 @@
     {
       "id": "P63.1",
       "title": "The derived phase status, named once beside effective_bug_status",
-      "status": "in_progress",
+      "status": "done",
       "description": "effective_phase_status, signoff_recorded, signoff_due and phase_running: the one answer every reader of a phase's status will ask.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -60,12 +60,59 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "793bb70",
+      "outcome": {
+        "technical": "effective_phase_status, signoff_recorded, signoff_due, phase_running in _manifest_io.",
+        "descriptive": "There is one answer to whether a phase is finished, running, or waiting for sign-off."
+      },
+      "startedAt": "2026-09-24T12:32:17Z",
+      "completedAt": "2026-09-24T12:34:33Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__manifest_io.py"
+      ]
+    },
+    {
+      "id": "P63.2",
+      "title": "The plan gate reads phase_running, and area rules stay live through sign-off",
+      "status": "in_progress",
+      "description": "manifest_state's phaseRunning comes from _manifest_io.phase_running, so a phase only awaiting sign-off no longer holds the denying tier (operator decision); it is named as signoffDuePhase. Area-scoped policy stays live while a phase is running OR sign-off due, because sign-off's fix runs work in that area; the hook and the panel preview ask one function.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/scripts/panel/_panel_policy.py",
+        "plugins/audit/tests/test__panel_policy.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__config.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-24T12:32:17Z",
+      "startedAt": "2026-09-24T12:35:09Z",
       "completedAt": null,
       "verifiedBy": []
     }

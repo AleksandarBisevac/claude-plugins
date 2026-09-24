@@ -260,7 +260,8 @@ def _cases(check):
         check("f1 no manifest -> exists False, phaseRunning False, no phase "
               "to name",
               st == {"exists": False, "phaseRunning": False,
-                     "runningPhase": None, "staleClosedPhase": None}, repr(st))
+                     "runningPhase": None, "staleClosedPhase": None,
+                     "signoffDuePhase": None}, repr(st))
         check("f2 no manifest -> observe", M.plan_gate_mode({}, st) == "observe")
 
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -270,7 +271,8 @@ def _cases(check):
         check("f3 manifest with nothing running -> exists, not running, no "
               "phase to name",
               st == {"exists": True, "phaseRunning": False,
-                     "runningPhase": None, "staleClosedPhase": None}, repr(st))
+                     "runningPhase": None, "staleClosedPhase": None,
+                     "signoffDuePhase": None}, repr(st))
         check("f4 manifest, nothing running -> warn", M.plan_gate_mode({}, st) == "warn")
 
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -320,6 +322,35 @@ def _cases(check):
         check("f9d ...which resolves the tier to warn (advisory), not the "
               "deny a stale in_progress status would have held it at for ever",
               M.plan_gate_mode({}, st) == "warn")
+
+        # A PHASE ONLY AWAITING SIGN-OFF IS NOT RUNNING (an operator decision):
+        # every task terminal and no review verdict held this repository's own gate
+        # in deny across releases, with nothing left to edit.
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"},
+                {"id": "P1.2", "title": "u", "status": "cancelled"}]}]})
+        st = M.manifest_state(tmp_f, rel)
+        check("sg1 an in_progress phase whose every task is terminal and whose sign-off "
+              "is not recorded is NOT phaseRunning, and is named as sign-off due: %r"
+              % (st,),
+              st["phaseRunning"] is False and st.get("signoffDuePhase") == "P1")
+        check("sg2 ...so the tier is warn, not the deny it held for ever",
+              M.plan_gate_mode({}, st) == "warn")
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": []}]})
+        check("sg3 SECOND DIRECTION: a phase just started, with no task yet, IS running "
+              "- it has everything left to do",
+              M.manifest_state(tmp_f, rel)["phaseRunning"] is True)
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]},
+            {"id": "P2", "title": "q", "status": "in_progress", "tasks": [
+                {"id": "P2.1", "title": "t", "status": "pending"}]}]})
+        st = M.manifest_state(tmp_f, rel)
+        check("sg4 ...and a sign-off-due phase beside a running one does not hide it: "
+              "the running one is found and named: %r" % (st,),
+              st["phaseRunning"] is True and st["runningPhase"] == "P2")
 
         # CONTROL, in the same manifest: a merged-and-stale phase sits beside a
         # phase that is genuinely running, and the genuinely running one is
@@ -386,7 +417,8 @@ def _cases(check):
               M.manifest_state(None, None) == {"exists": False,
                                              "phaseRunning": False,
                                              "runningPhase": None,
-                                             "staleClosedPhase": None})
+                                             "staleClosedPhase": None,
+                                             "signoffDuePhase": None})
         check("f15 plan_gate_mode on garbage input degrades to observe",
               M.plan_gate_mode(None, None) == "observe")
 
@@ -923,6 +955,17 @@ def _cases(check):
         check("p9 sharded layout: the areas are read from the ASSEMBLED manifest, "
               "or the index stubs' missing status would make every area rule "
               "silently inert", M.active_area_tags(tmp_p, rel) == ["api"])
+        write_plan([{"id": "P1", "title": "a", "status": "in_progress", "area": "api",
+                     "tasks": [{"id": "P1.1", "status": "done"}]}])
+        check("p9b a phase awaiting sign-off keeps its area rules live - sign-off's "
+              "review and fix runs still work in that area, and a policy that went "
+              "quiet there would let them past it",
+              M.active_area_tags(tmp_p, rel) == ["api"])
+        write_plan([{"id": "P1", "title": "a", "status": "in_progress", "area": "api",
+                     "review": {"status": "passed"},
+                     "tasks": [{"id": "P1.1", "status": "done"}]}])
+        check("p9c ...and once sign-off is recorded the phase is done and its area "
+              "goes quiet", M.active_area_tags(tmp_p, rel) == [])
         write_plan([{"id": "P1", "title": "a", "status": "in_progress",
                      "tasks": [{"id": "P1.1", "status": "pending"}]}])
         check("p10 an untagged running phase activates nothing",

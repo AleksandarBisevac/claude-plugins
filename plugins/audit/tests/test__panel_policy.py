@@ -133,6 +133,15 @@ def _cases(check):
               {"id": "P2", "status": "in_progress", "area": "api",
                "tasks": [{"id": "P2.1", "status": "pending"}]},
           ]}) == ["api"])
+    check("a phase awaiting sign-off keeps its area live in the preview, as it does in "
+          "the hook - sign-off's fix runs work there - and a signed-off one goes quiet",
+          M._active_area_tags({"phases": [
+              {"id": "P1", "status": "in_progress", "area": "web",
+               "tasks": [{"id": "P1.1", "status": "done"}]},
+              {"id": "P2", "status": "in_progress", "area": "api",
+               "review": {"status": "passed"},
+               "tasks": [{"id": "P2.1", "status": "done"}]},
+          ]}) == ["web"])
 
     _pproj = tempfile.mkdtemp(prefix="state-policy-")
     try:
