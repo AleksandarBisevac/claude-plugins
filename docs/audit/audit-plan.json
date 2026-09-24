@@ -363,6 +363,12 @@
       "title": "The doctor measures what the layout costs instead of guessing",
       "status": "in_progress",
       "shard": "phases/P62.json"
+    },
+    {
+      "id": "P63",
+      "title": "A phase's status is derived, so a finished phase stops holding the gate",
+      "status": "in_progress",
+      "shard": "phases/P63.json"
     }
   ],
   "fileIndex": {
@@ -985,7 +991,8 @@
       "P15.4",
       "P22.8",
       "P47.3",
-      "P61.12"
+      "P61.12",
+      "P63.1"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1729,7 +1736,8 @@
     "plugins/audit/tests/test__manifest_io.py": [
       "P22.8",
       "P47.3",
-      "P61.12"
+      "P61.12",
+      "P63.1"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
       "P22.8"
