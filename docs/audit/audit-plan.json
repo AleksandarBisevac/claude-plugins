@@ -390,7 +390,7 @@
     {
       "id": "P65",
       "title": "close-phase judges a landing by the phase the merge brings in",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P65.json"
     }
   ],
@@ -439,7 +439,8 @@
       "P62.1",
       "P62.3",
       "P63.11",
-      "P64.3"
+      "P64.3",
+      "P65.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -724,7 +725,8 @@
     "plugins/audit/commands/review.md": [
       "P7.1",
       "P18.5",
-      "P47.4"
+      "P47.4",
+      "P65.1"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
