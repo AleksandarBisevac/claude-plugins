@@ -1,0 +1,257 @@
+{
+  "id": "P60",
+  "title": "Manifest merge by record",
+  "status": "in_progress",
+  "description": "Field report 14 (dbEmbed portal): every writer appends at a list tail, so branches that add different records conflict on the same lines. Ship a record-level git merge driver with an install verb, a shim under the git common dir that falls back to markers when the plugin root moved, and a doctor check.",
+  "desiredOutcome": "Two branches that each add a phase, task, bug or fileIndex row merge the manifest with no conflict once the driver is installed, in both layouts and both merge directions with identical bytes; a real conflict is shown as only the records that disagree.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P60.1",
+      "title": "Record-level three-way merge of a manifest document",
+      "status": "in_progress",
+      "description": "Pure merge3(base, ours, theirs): records matched by id, fileIndex rows as sets, same-id-added-twice and same-field conflicts reported, symmetric deterministic order, conflict-marker rendering of only the disagreeing records.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_merge.py",
+        "plugins/audit/tests/test__manifest_merge.py",
+        "plugins/audit/scripts/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_merge.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T06:57:27Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P60.2",
+      "title": "merge-manifest.py: the git merge driver, its install verb and the stale-root shim",
+      "status": "in_progress",
+      "description": "Driver for %O %A %B %P: revalidate a merged single-file plan (only NEW findings fail), fall back to git merge-file markers on unreadable input or internal error, exit only 0/1. install|uninstall|status writes .gitattributes, local git config and a POSIX-sh shim under the git common dir.",
+      "files": [
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "plugins/audit/tests/test_merge_manifest.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_merge_manifest.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T06:57:27Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P60.3",
+      "title": "Document the merge driver and scope the no-conflict promises",
+      "status": "in_progress",
+      "description": "layout.md merge-driver subcommand, README team section, COMPATIBILITY promise for the driver name, CHANGELOG, dated status note in the concurrency report.",
+      "files": [
+        "plugins/audit/commands/layout.md",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "plugins/audit/reference/orchestrator.md",
+        "docs/design/audit-concurrency-report.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T07:07:48Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P60.4",
+      "title": "Doctor: driver installed per clone, and the shim still points at a real plugin root",
+      "status": "in_progress",
+      "description": "WARNING when .gitattributes names the driver and this clone has none configured, or when the shim's recorded root no longer exists.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/scripts/status/audit-doctor.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_setup.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T07:10:23Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P60.5",
+      "title": "_merge_install.py: the install's pieces named once, for the verb and the doctor",
+      "status": "in_progress",
+      "description": "The doctor (layer 4) may not load an entry point, so what an install consists of and how to read it back moves to an L1 module both import - one reading, not two.",
+      "files": [
+        "plugins/audit/scripts/manifest/_merge_install.py",
+        "plugins/audit/tests/test__merge_install.py",
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__merge_install.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T07:13:10Z",
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "startedAt": "2026-09-24T06:57:27Z"
+}

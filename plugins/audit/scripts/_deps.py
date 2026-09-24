@@ -246,7 +246,19 @@ LAYERS = (
      # ARGUMENTS. That is not tidiness: it is the only shape in which the
      # STOPPING rungs are reachable from a test, since every one of them
      # describes a machine that has no `az`, no credential or no board.
-     "_ado_connect"),
+     "_ado_connect",
+     # `_manifest_merge` is the record-level three-way merge behind the git merge
+     # driver. It reaches nothing but `_output`: the three documents arrive
+     # PARSED and the serialiser arrives as an ARGUMENT, so the one JSON spelling
+     # stays `_manifest_io`'s (a layer-mate it may not import) without a second
+     # copy of it here.
+     "_manifest_merge",
+     # `_merge_install` is what an install of that driver consists of, read back:
+     # the `.gitattributes` lines, the config value, the shim and the root it
+     # records. At the floor for `_commit_trail`'s reason - `merge-manifest` (L7)
+     # prints it as `status` and `_doctor_setup` (L4) reports it, and a layer-4
+     # module may not reach an entry point. It reaches nothing but `_output` and git.
+     "_merge_install"),
     ("_panel_ui", "_report_html", "_report_ui",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` at L1, and none reads
@@ -734,6 +746,11 @@ LAYERS = (
      # `_panel_write` (L6) for the index lock, the project walk and the
      # snapshot/rollback pair every other manifest writer already uses.
      "migrate-json-encoding",
+     # `merge-manifest` is the git merge driver and the verb that installs it. It
+     # reaches `_manifest_merge` (L1) for the record merge, `_manifest_io` (L1) for
+     # the one JSON spelling and the layout reading, and `_manifest_rules` (L3) to
+     # revalidate what it merged - the same three edges every manifest writer has.
+     "merge-manifest",
      "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 
