@@ -67,15 +67,33 @@ overwriting.
 Allocate ids **while holding the index lock** (see `orchestrator.md` → Concurrency
 lock): read the current maximum from the assembled manifest, add one, write, release —
 so two sessions on one machine can never mint the same id (the lock serializes the
-read‑modify‑write). Across machines (no shared lock) a rare duplicate can still arise on
-divergent branches; `validate-manifest.py`'s repo‑wide unique‑id check catches it after
-merge, and `/audit:layout <sharded|single-file> --renumber` repairs it (either direction —
-bugs live in the index in both layouts).
+read‑modify‑write). **Never compute an id by hand**: the verbs that write a record
+allocate its id (`/audit:task add`, `/audit:phase add`), and a record a command writes by
+hand takes it from `audit-task.py next-id bug|prop|task --phase <id> <manifestPath>`.
 
-- **Task**: `<phaseId>.<n>` where `n` = highest existing numeric suffix in that phase + 1 (`P2.4` → next is `P2.5`).
-- **Bug**: `BUG-<n>` where `n` = highest existing bug number + 1, repo-wide (`BUG-3` → next is `BUG-4`).
+**Off the development branch an id carries a branch suffix**, so two branches cannot mint
+the same one: `BUG-12-k7m`, `P60.6-k7m`, `PROP-3-k7m` - three `[0-9a-z]` characters drawn
+from the branch name. On the development branch (`meta.developmentBranch`, default `main`),
+on any branch a phase names as its parent, and on the branch `origin/HEAD` names, ids are
+exactly what they were. The number ignores the suffix, so ids keep their order.
+
+**Phase ids carry no suffix, because phases are minted on the development branch.** A phase
+id is a branch name, a lock name and a shard name. New work found on a phase branch is parked
+as a proposal (`/audit:phase add ... --park`), which reserves the placeholder `P<n>-<suffix>`;
+`/audit:propose materialize` on the development branch mints the real `P<n>` and renames the
+placeholder and every reference to it.
+
+**What the suffix cannot prevent** - two clones minting on the development branch itself -
+reaches the merge, which names the id; `merge-manifest.py resolve <manifestPath> --renumber
+ours|theirs` (`/audit:layout merge-driver`) renumbers the side the user names, with every
+reference. Without the merge driver, `validate-manifest.py`'s repo‑wide unique‑id check
+catches a duplicate after merge, and `/audit:layout <sharded|single-file> --renumber`
+repairs duplicate bugs.
+
+- **Task**: `<phaseId>.<n>[-suffix]` where `n` = highest existing number in that phase + 1 (`P2.4` → next is `P2.5`; `P2.5-k7m` on a side branch).
+- **Bug**: `BUG-<n>[-suffix]` where `n` = highest existing bug number + 1, repo-wide (`BUG-3` → next is `BUG-4`).
 - **Bugfix phase**: `BF<n>` where `n` = highest existing `BF` number + 1 (`BF1`, `BF2`, …).
-- **Proposal**: `PROP-<n>` where `n` = highest existing proposal number + 1, repo-wide.
+- **Proposal**: `PROP-<n>[-suffix]` where `n` = highest existing proposal number + 1, repo-wide.
 - **Decision**: `DEC-<n>` where `n` = highest existing decision number + 1, repo-wide.
 
 Phases, tasks, bugs and decisions share **one** id namespace — `blockedBy` resolves

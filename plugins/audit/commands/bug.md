@@ -34,7 +34,12 @@ Concurrency lock) around their writes; `list` is read-only and never locks.
 2. Gather (ask only for what's missing): `severity` (low/med/high), `description`,
    `repro` (steps, string or array), `expected`, `actual`, suspected `files`
    (verify with Glob/Grep; empty is allowed).
-3. Allocate `BUG-<max existing bug number + 1>` and append:
+3. Take the id from the allocator - never compute it by hand:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id bug <manifestPath>
+   ```
+   It prints `BUG-<max+1>`, and off the development branch `BUG-<max+1>-<suffix>`: two
+   branches filing a bug each from one base would otherwise both mint the same id. Append:
    `{id, title, status: "open", severity, reportedAt: <ISO now>, reportedBy: null,
    description, repro, expected, actual, files, taskId: null, fixedIn: null, notes: null}`.
 4. Revalidate. Report the bug id and the handoff: `/audit:bug fix <id>` when ready.
@@ -50,12 +55,19 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
 1. **Refuse when**: the bug doesn't exist; its status is `fixed`/`wontfix`/`not_a_bug`; or its
    `taskId` is already set and that task is not `done` → point to `/audit:run <taskId>`
    instead (one bug = one live task; no second execution engine).
-2. **Target phase**: `--phase <id>` if given (must not be `done`); else the latest
-   `BF<n>` phase whose status != `done`; else CREATE `BF<max+1>`
-   (title `Bugfix batch <n>`, the conventions doc's new-phase template,
-   `testGate` from `meta.buildCommands` — at minimum the `test` key).
+2. **Target phase**: `--phase <id>` if given (must not be `done`); else, on a phase
+   branch, **the phase whose branch is checked out** - a bug found while working a phase is
+   fixed in that phase (`/audit:task add` picks the same one, see `commands/task.md`); else
+   the latest `BF<n>` phase whose status != `done`; else CREATE `BF<max+1>` with
+   `/audit:phase add "Bugfix batch <n>" --id BF<max+1> --outcome "..."` (the script writes
+   the new-phase template and `testGate` from `meta.buildCommands`). **Never create a `BF`
+   phase on a phase branch**: phases are minted on the development branch (a phase id is a
+   branch, lock and shard name, and two branches would both mint `BF<max+1>`). On a phase
+   branch with no phase of its own, ask the user: fix it in a running phase, or park the
+   bugfix phase (`/audit:phase add ... --park`) to materialize after the branch merges.
 3. **Materialize the task** (new-task template + these specifics):
-   - id `<phaseId>.<next>`; title `Fix <bugId>: <bug title>`.
+   - id from the allocator, never by hand: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id task --phase <phaseId> <manifestPath>`
+     (it counts reserved ids and carries the branch suffix); title `Fix <bugId>: <bug title>`.
    - `description` embedding the bug's repro / expected / actual verbatim.
    - `files` = bug's `files`; `bugId: "<bugId>"`.
    - `tests: {mode: "tdd", add: ["<testFile>: repro that FAILS on current code — <expected> vs <actual>"], expectRedFirst: true, gate: [<phase testGate>]}`.

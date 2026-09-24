@@ -644,7 +644,8 @@ re-pull imports nothing. Never modify ADO during `pull`.
 3. For each remaining item, show `id | title | state | assignee` and ask
    (AskUserQuestion, multi-select) which to import.
 4. Import each selected item as a manifest bug following `/audit:bug add`'s shape and the
-   conventions doc: next `BUG-<n>`, `status: "open"`, title/description from the work
+   conventions doc: the id from `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id bug <manifestPath>` (never computed
+   by hand), `status: "open"`, title/description from the work
    item, `repro` from its repro steps,
    `ado: {id, url, lastSyncedAt, origin: "imported"}` — the card was made by
    somebody else and a later push has to be able to say so.
@@ -690,8 +691,11 @@ the live plan without `/audit:propose materialize`.
 4. Show candidates grouped by PBI (`id | title | state | children`) and ask
    (AskUserQuestion, multi-select) which PBIs to import.
 5. Import each selected PBI as ONE parked proposal (conventions doc → Proposals):
-   next `PROP-<n>`, `origin: "ado:sprint <iterationPath>"`, `payload.phase` = a
-   synthesized phase with the next reserved `P<n>` id, title from the PBI,
+   the id from `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id prop <manifestPath>`, `origin: "ado:sprint <iterationPath>"`,
+   `payload.phase` = a synthesized phase with the next reserved `P<n>` id, title from the PBI.
+   **Run this import on the development branch**: if `next-id prop` prints a suffixed id you
+   are on a phase branch, where two branches would reserve the same `P<n>` - stop and ask the
+   user to switch, rather than parking sprint work into a phase branch.
    `ado: {id, url, lastSyncedAt, iterationPath, origin: "imported"}` on the phase
    (the proposal's own `origin` above says which SPRINT it came from; `ado.origin`
    says who made the CARD, and both are needed once a push starts writing to it),

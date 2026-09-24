@@ -168,6 +168,11 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   automated reads the manifest, never the table.
 - **The file names inside a sharded manifest's phase directory.** They are an
   implementation of the layout, reached through `_manifest_io`, not an interface.
+- **That an older plugin reads an id a newer one mints.** From the release that
+  introduced branch-suffixed ids (`BUG-12-k7m`), those ids validate, and every id an
+  earlier release minted still does - the widening is additive. An EARLIER plugin's
+  validator refuses a suffixed id, so a team upgrades together rather than one clone
+  at a time.
 - **Nothing about undoing a layout change beyond what `/audit:layout` does.** It moves
   in either direction (`/audit:migrate` is its old name). A layout is a *choice*, not
   an upgrade: a single-file manifest never goes out of date.

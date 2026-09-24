@@ -12,7 +12,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
 
 A **git worktree** lets a phase run in its own Claude session, in parallel with other phases (best
 on a **sharded** manifest — `/audit:layout sharded` — where phase runs write only their own shard
-and merge back without conflict). This command never edits the manifest.
+and merge back without conflict; anything that ADDS a record still lands in the index, which
+`/audit:layout merge-driver install` merges by record). This command never edits the manifest.
 
 **Every verb is one script call.** Do not compose `git worktree` commands yourself: this command
 was prose until v2.1, and the prose composed a worktree path and then recorded it nowhere, so

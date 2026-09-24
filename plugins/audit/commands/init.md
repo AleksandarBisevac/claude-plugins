@@ -40,8 +40,11 @@ parked. Then ask (AskUserQuestion):
   (the backup includes any proposals).
 - **Append phases** — keep existing phases; new phases continue the id sequence,
   counting BOTH live phases and any `proposals[].payload` reserved phase ids
-  (see manifest-conventions.md → ID allocation). New proposal ids continue the
-  `PROP-<n>` sequence the same way.
+  (see manifest-conventions.md → ID allocation). New proposal ids come from
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id prop <manifestPath>`, never by hand. **Phases are minted on the
+  development branch**: if that command prints a suffixed id, this checkout is on a phase
+  branch - say so and ask before appending, and offer to park the synthesized phases as
+  proposals instead (`/audit:phase add ... --park`, materialized after the branch merges).
 
 On **Regenerate** or **Append**, take the **concurrency lock** (see
 `manifest-conventions.md` → Concurrency lock) BEFORE touching the file: refuse

@@ -39,8 +39,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   suffix; new work found on a phase branch is parked as a proposal (`PROP-<n>-<suffix>`, its phase
   id reserved) and materialized after the branch merges. A live `add` on a phase branch is never
   refused - the first one on a branch warns and names `--park`, once, read from the `phase.add`
-  journal rows, which now record the branch.
+  journal rows, which now record the branch. On a phase branch the parked proposal reserves a
+  placeholder (`P<n>-<suffix>`), so two branches parking one each no longer reserve the same
+  `P<n>` - found by probe, where the merged plan carried a clash the driver reported as a
+  conflict. `/audit:propose materialize` mints the real id and renames the placeholder and every
+  reference to it across the plan. Sign-off lists the proposals a phase branch parked once it
+  lands, with the `materialize` command for the parent branch.
+- **`merge-manifest.py resolve <plan> --renumber ours|theirs`** (`/audit:layout merge-driver
+  resolve`) for the collision a suffix cannot prevent - two clones minting on the development
+  branch. It renumbers each id both sides minted on the side the user names, with every
+  reference, and merges again; in the sharded layout it reads the three plans from the merge's
+  commits, because a phase minted on both sides may conflict only in its shard.
+- **With several phases running, `/audit:task add` without `--phase` takes the phase whose
+  branch is checked out**, instead of refusing - three developers on three phase branches.
+- **`audit-task next-id bug|prop|task --phase <id>`** gives the records the model writes by hand
+  (a bug, a parked proposal, a fix task, a moved task) the allocator's id, suffix included.
 ### Fixed
+- **A sharded save dropped `decisions` and every unknown root key.** `split_manifest` copied four
+  named keys, so `/audit:layout sharded` and every other sharded save lost them, against
+  COMPATIBILITY's promise that unknown root keys are tolerated.
 - **The README said ids "never collide" because they are allocated under the index lock.** The lock
   is per clone; two branches can mint the same `max+1` id, and the sentence now says so. The same
   documents' "no manifest conflict" promise is scoped to a phase RUN, which is the case it held for.

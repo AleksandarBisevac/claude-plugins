@@ -608,7 +608,7 @@
     {
       "id": "P61.13",
       "title": "next-id task --phase: the id a hand-written fix or moved task takes",
-      "status": "in_progress",
+      "status": "done",
       "description": "/audit:bug fix and /audit:task move write a task by hand and computed <phaseId>.<next> themselves - max+1, on whatever branch, with no suffix. next-id task --phase <id> prints the allocator's answer, reservations and suffix included.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -640,12 +640,61 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "7d74c8a",
+      "outcome": {
+        "technical": "next-id task --phase via _allocate_id with the branch suffix.",
+        "descriptive": "A fix task or a moved task written by hand takes its id from the same allocator as every other task."
+      },
+      "startedAt": "2026-09-24T08:59:54Z",
+      "completedAt": "2026-09-24T09:03:41Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ]
+    },
+    {
+      "id": "P61.14",
+      "title": "The commands stop computing max+1 by hand and say where phases are minted",
+      "status": "in_progress",
+      "description": "Every prose step that allocated BUG-, PROP- or <phaseId>.<n> by hand calls next-id; bug fix prefers the current phase and never mints a BF phase on a phase branch; init and sync pull stop on a phase branch; manifest-conventions states the suffix, the placeholder and resolve; worktree.md's promise is scoped (F470); COMPATIBILITY names the forward-compat cost.",
+      "files": [
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/commands/sync.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/commands/worktree.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-24T08:59:54Z",
+      "startedAt": "2026-09-24T09:03:51Z",
       "completedAt": null,
       "verifiedBy": []
     }

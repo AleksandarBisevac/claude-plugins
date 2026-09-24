@@ -643,16 +643,19 @@ lists travel unchanged (only references *to its old id* elsewhere are rewritten,
 **Steps** (index lock held throughout; in the sharded layout the task body moves between
 the two phase SHARDS while `fileIndex`/`bugs[]` edits go to the index):
 
-1. **Allocate the new id** `<targetPhaseId>.<n>` — `n` = highest existing numeric suffix in
-   the target phase + 1, computed over the **whole assembled manifest AND every reserved
-   `proposals[].payload` id** (conventions → ID allocation / Reserved ids).
+1. **Allocate the new id** from the allocator - `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id task --phase <targetPhaseId>
+   <manifestPath>` - never by hand: it counts the whole assembled manifest AND every reserved
+   `proposals[].payload` id, and off the development branch it carries the branch suffix
+   (conventions → ID allocation / Reserved ids).
 2. **Move the task object** into the target phase's `tasks[]` with its new id, adding
    `movedFrom: {"id": "<oldId>", "phase": "<oldPhaseId>", "at": "<ISO now>"}`. Remove it
    from the source phase. All other fields travel byte-for-byte.
 3. **Rewrite every reference** to the old id, across the index AND all shards:
    - every `blockedBy` / `dependsOn` entry equal to `<oldId>` → `<newId>` (phases and tasks);
    - every `fileIndex` value array: `<oldId>` → `<newId>`;
-   - every `bugs[].taskId` equal to `<oldId>` → `<newId>` (the task's own `bugId` travels with it).
+   - every `bugs[].taskId` equal to `<oldId>` → `<newId>` (the task's own `bugId` travels with it);
+   - every `blockedBy` / `dependsOn` inside a parked proposal's `payload.phase` and its tasks -
+     a parked phase waiting on the moved task is a reference too, and the one most often missed.
 4. **Record the move** — the explicit mapping row, appended by YOU via the CLI (this is the
    one journal action a command writes; the completion events stay hook-only):
    ```bash
