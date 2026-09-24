@@ -654,7 +654,7 @@
     {
       "id": "P61.14",
       "title": "The commands stop computing max+1 by hand and say where phases are minted",
-      "status": "in_progress",
+      "status": "done",
       "description": "Every prose step that allocated BUG-, PROP- or <phaseId>.<n> by hand calls next-id; bug fix prefers the current phase and never mints a BF phase on a phase branch; init and sync pull stop on a phase branch; manifest-conventions states the suffix, the placeholder and resolve; worktree.md's promise is scoped (F470); COMPATIBILITY names the forward-compat cost.",
       "files": [
         "plugins/audit/commands/bug.md",
@@ -689,13 +689,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e0c89d7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "bug/sync/init/task(move) prose via next-id; conventions, worktree, COMPATIBILITY, CHANGELOG.",
+        "descriptive": "The commands take ids from the allocator and keep phases on the development branch."
       },
       "startedAt": "2026-09-24T09:03:51Z",
-      "completedAt": null,
+      "completedAt": "2026-09-24T09:06:02Z",
       "verifiedBy": []
     }
   ],
