@@ -1751,7 +1751,8 @@
       "P61.13",
       "P63.4",
       "P63.8",
-      "P64.1"
+      "P64.1",
+      "P64.4-uym"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
