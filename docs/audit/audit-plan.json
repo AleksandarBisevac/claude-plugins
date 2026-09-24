@@ -778,7 +778,8 @@
       "P59.10",
       "P63.2",
       "P63.8",
-      "P63.10"
+      "P63.10",
+      "P63.13"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2428,7 +2429,8 @@
     ],
     "plugins/audit/scripts/panel/_panel_policy.py": [
       "P59.10",
-      "P63.2"
+      "P63.2",
+      "P63.13"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
