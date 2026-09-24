@@ -2703,6 +2703,27 @@
       "taskId": "P63.10",
       "fixedIn": "864ba13",
       "notes": null
+    },
+    {
+      "id": "BUG-8",
+      "title": "close-phase judges cleanup by the phase as it stood BEFORE its own merge, so a phase signed off on its branch is refused cleanup as 'pending'",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-09-24T21:44:07Z",
+      "reportedBy": null,
+      "description": "Run from the parent worktree (the only place a worktree phase can land from), close-phase loads the parent's manifest, where the sign-off - committed on the phase branch - is not yet present. It merges, stamps mergedAt into the merged copy, and then judges the worktree and branch cleanup with settlement(phase, merged=True) on the PRE-merge phase dict, which reads 'pending'. The refusal says sign-off has not passed, which is false, and a second run is needed.",
+      "repro": [
+        "sign off a phase in its linked worktree",
+        "from the parent worktree: close-phase.py <plan> <phase> --project ."
+      ],
+      "expected": "the merge lands and the cleanup is judged against the phase as the merge left it: signed off and merged, so the worktree and branch are removed",
+      "actual": "not done: phase P64 is 'pending', not 'done' - sign-off has not passed (P64 was signed off; the merge had just brought that in)",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "found landing P64, 2026-09-24. The second run it forces, 'already-contained', also re-stamps mergedAt with its own time (21:43:52 became 21:44:12), so the record stops naming the moment of the merge."
     }
   ],
   "deferred": {
