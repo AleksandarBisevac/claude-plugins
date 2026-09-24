@@ -1232,7 +1232,8 @@
       "P36.12",
       "P53.8",
       "P53.9",
-      "P58.2"
+      "P58.2",
+      "P63.9"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -1408,7 +1409,8 @@
       "P18.7",
       "P18.9",
       "P32.7",
-      "P63.7"
+      "P63.7",
+      "P63.9"
     ],
     "plugins/audit/scripts/ui/panel/branch-convention.js": [
       "P18.7",
@@ -1421,14 +1423,16 @@
     "plugins/audit/tests/test__panel_page.py": [
       "P18.7",
       "P18.9",
-      "P32.7"
+      "P32.7",
+      "P63.9"
     ],
     "plugins/audit/tests/test_panel_server.py": [
       "P18.7"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
-      "P32.7"
+      "P32.7",
+      "P63.9"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -2478,6 +2482,15 @@
     ],
     "plugins/audit/tests/test_read_ado_links.py": [
       "P63.8"
+    ],
+    "plugins/audit/scripts/ui/panel/composition.js": [
+      "P63.9"
+    ],
+    "tools/ui-tests/phase-signoff-note.test.mjs": [
+      "P63.9"
+    ],
+    "docs/screenshots/captured-at.json": [
+      "P63.9"
     ]
   },
   "bugs": [
