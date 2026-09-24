@@ -749,17 +749,18 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
 # completed, and the completion count stopped being a count. The completions came
 # with the history; they were journalled where the work ran.
 #
-# READ OFF GIT'S RECORD, NOT THE COMMAND, and only commits that EXISTED BEFORE the
-# call count: the other side of an open merge or pick, the branch a merge brought
-# in (its tip on a fast-forward, its other parents otherwise), the upstream a rebase
-# replays onto, the commit a checkout or reset moved to. A commit the call MADE -
-# a plain commit, a rebase's replayed picks, a finished cherry-pick, `am`, a revert
-# - carries the call's own work, and reading one of those as history suppressed a
-# completion made in the same call and said it had arrived.
+# A COMMIT COUNTS AS HISTORY BY WHEN IT WAS MADE, never by how a reflog line spells
+# the operation. Two readings of the reflog's text were each wrong on a shape nobody
+# had tried: a rebase's replayed picks and a reset back onto the call's own commit
+# read as history and silenced a completion made in the call, and `pull --rebase -q`
+# spelled its flags into the line and slipped past a literal table. So the
+# candidates are every commit HEAD landed on since the baseline, their parents, and
+# every line of an open MERGE_HEAD / CHERRY_PICK_HEAD - and one counts only if git
+# dates it BEFORE the baseline. A commit the call made - a plain commit, a replayed
+# pick, a finished cherry-pick, a merge commit, the one a reset returns to - is dated
+# after it. Undatable means not counted: a repeated row, never a lost completion.
 _HISTORY_HEADS = ("MERGE_HEAD", "CHERRY_PICK_HEAD")
-_LANDS_ON_EXISTING = ("checkout:", "reset:", "rebase (start)", "rebase -i (start)",
-                      "pull --rebase (start)")
-_MERGES = ("merge ", "pull", "commit (merge)")
+_BROUGHT_MAX = 20                 # commits read per call: a bound on cost, not a rule
 
 
 def _head_sha(root):
@@ -829,52 +830,68 @@ def _git_out(root, *argv):
     return r.returncode, r.stdout.decode("utf-8", "replace")
 
 
-def brought_in(root, rel, since_head):
-    """`rel` as each commit this call's history-bringing git operations produced,
-    parsed - the documents a derived row is checked against.
+def _epoch(stamp):
+    """An ISO `...Z` stamp as epoch seconds, or None."""
+    import calendar
+    import time
+    try:
+        return calendar.timegm(time.strptime(str(stamp)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        return None
 
-    `since_head` is where HEAD stood when the baseline was taken; the reflog is
-    read back to it and no further, so an operation from before the baseline is
-    never this call's. [] when git cannot say, which leaves every derived row
-    standing: a missed filter costs a repeated row, a wrong one would cost a
-    completion."""
+
+def brought_in(root, rel, since_head, since_ts):
+    """`rel` as each commit this call brought in holds it, parsed - the documents a
+    derived row is checked against.
+
+    `since_head` is where HEAD stood at the baseline and `since_ts` when it was
+    taken: the reflog is read back to the first and no further, and a candidate
+    counts only if git dates it before the second. [] when git cannot say, which
+    leaves every derived row standing."""
     code, gitdir = _git_out(root, "rev-parse", "--git-dir")
     if code != 0:
         return []
     gitdir = gitdir.strip()
     if not os.path.isabs(gitdir):
         gitdir = os.path.join(str(root), gitdir)
-    shas = []
-    for name in _HISTORY_HEADS:          # the other side of an open operation
+    candidates = []
+    for name in _HISTORY_HEADS:          # every other side of an open operation
         try:
             with open(os.path.join(gitdir, name), encoding="utf-8") as fh:
-                head = fh.readline().strip()
+                candidates.extend(ln.strip() for ln in fh if ln.strip())
         except OSError:
             continue
-        if head:
-            shas.append(head)
     if since_head:
-        code, log = _git_out(root, "log", "-g", "--format=%H%x09%gs", "-n", "50",
-                             "HEAD")
-        for line in (log.splitlines() if code == 0 else []):
-            parts = line.split("\t", 1)
-            if len(parts) != 2:
-                continue
-            if parts[0] == since_head:
+        code, log = _git_out(root, "log", "-g", "--format=%H", "-n", "50", "HEAD")
+        for sha in (log.split() if code == 0 else []):
+            if sha == since_head:
                 break              # the baseline's own position: nothing older
-            subject = parts[1]
-            if subject.startswith(_LANDS_ON_EXISTING):
-                shas.append(parts[0])
-            elif subject.startswith(_MERGES) and "rebase" not in subject:
-                pcode, parents = _git_out(root, "rev-list", "--parents", "-n", "1",
-                                          parts[0])
-                ids = parents.split() if pcode == 0 else []
-                # A fast-forward lands ON the merged branch's tip, which existed; a
-                # real merge makes a new commit, and the branch it brought in is
-                # its other parents.
-                shas.extend(ids[2:] if len(ids) > 2 else ids[:1])
+            candidates.append(sha)
+    floor = _epoch(since_ts)
+    if not candidates or floor is None:
+        return []
+    candidates = sorted(set(candidates), key=candidates.index)[:_BROUGHT_MAX]
+    code, dated = _git_out(root, "log", "--no-walk=unsorted", "--format=%H %ct %P",
+                           *candidates)
+    if code != 0:
+        return []
+    when, parents = {}, []
+    for line in dated.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].isdigit():
+            when[parts[0]] = int(parts[1])
+            parents.extend(parts[2:])
+    parents = [p for p in sorted(set(parents), key=parents.index) if p not in when]
+    if parents:
+        code, dated = _git_out(root, "log", "--no-walk=unsorted", "--format=%H %ct",
+                               *parents[:_BROUGHT_MAX])
+        for line in (dated.splitlines() if code == 0 else []):
+            parts = line.split()
+            if len(parts) == 2 and parts[1].isdigit():
+                when[parts[0]] = int(parts[1])
+    existed = [sha for sha, at in when.items() if at < floor]
     docs = []
-    for sha in sorted(set(shas), key=shas.index):
+    for sha in existed[:_BROUGHT_MAX]:
         code, text = _git_out(root, "show", "%s:./%s" % (sha, rel))
         if code != 0:
             continue
@@ -1050,7 +1067,7 @@ def swept_entries(data, *, cfg=None, root=None):
                        rel, tool, {}, data, root, cfg)
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
-        brought = (brought_in(root, rel, pre.get("head"))
+        brought = (brought_in(root, rel, pre.get("head"), pre.get("ts"))
                    if not is_cfg and old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
                             else _manifest_rows(entry, rel, old_obj, new_obj,

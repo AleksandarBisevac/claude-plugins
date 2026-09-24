@@ -188,6 +188,15 @@ def git(fx, *args):
     return run([fx["git"]] + list(args), fx["root"], fx["env"])
 
 
+def git_old(fx, *args):
+    """`git` with the commit dated in the past - a commit that EXISTED before the call
+    a check brackets, as the history a merge or rebase brings in really does. The
+    journal hook tells such a commit from one the call made by that date."""
+    env = dict(fx["env"], GIT_COMMITTER_DATE="2020-01-01T00:00:00+0000",
+               GIT_AUTHOR_DATE="2020-01-01T00:00:00+0000")
+    return run([fx["git"]] + list(args), fx["root"], env)
+
+
 def script(fx, name, *args):
     """Run one of the plugin's commands, resolved by basename under `scripts/`."""
     path = _resolve_script(name)
@@ -519,12 +528,12 @@ def check_journal_merge_derives_no_second_completion(fx):
     try:
         write_manifest(fx, manifest_body(task_status="in_progress"))
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
         base = git(fx, "rev-parse", "HEAD")[1].strip()
         git(fx, "checkout", "-q", "-b", branch)
         write_manifest(fx, manifest_body(commit=base, task_status="done"))
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "the task finished on its branch")
+        git_old(fx, "commit", "-q", "-m", "the task finished on its branch")
         git(fx, "checkout", "-q", FIXTURE_BRANCH)
         reset_journal(fx)
         rows, why = _bash_round(fx, "git merge --ff-only " + branch,
@@ -551,19 +560,19 @@ def check_journal_conflicted_merge_derives_no_second_completion(fx):
         with io.open(side, "w", encoding="utf-8") as fh:
             fh.write("base\n")
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
         base = git(fx, "rev-parse", "HEAD")[1].strip()
         git(fx, "checkout", "-q", "-b", branch)
         write_manifest(fx, manifest_body(commit=base, task_status="done"))
         with io.open(side, "w", encoding="utf-8") as fh:
             fh.write("branch\n")
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "the task finished on its branch")
+        git_old(fx, "commit", "-q", "-m", "the task finished on its branch")
         git(fx, "checkout", "-q", FIXTURE_BRANCH)
         with io.open(side, "w", encoding="utf-8") as fh:
             fh.write("parent\n")
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "the parent moved the same file")
+        git_old(fx, "commit", "-q", "-m", "the parent moved the same file")
         reset_journal(fx)
         rows, why = _bash_round(fx, "git merge " + branch,
                                 lambda: git(fx, "merge", "-q", "--no-edit", branch))
@@ -586,19 +595,19 @@ def _finished_upstream(fx, feature, extra_on_parent):
     found = git(fx, "rev-parse", "HEAD")[1].strip()
     write_manifest(fx, manifest_body(task_status="in_progress"))
     git(fx, "add", "-A")
-    git(fx, "commit", "-q", "-m", "fixture: the task open")
+    git_old(fx, "commit", "-q", "-m", "fixture: the task open")
     base = git(fx, "rev-parse", "HEAD")[1].strip()
     git(fx, "checkout", "-q", "-b", feature)
     write_manifest(fx, manifest_body(commit=base, task_status="done"))
     git(fx, "add", "-A")
-    git(fx, "commit", "-q", "-m", "the task finished on its branch")
+    git_old(fx, "commit", "-q", "-m", "the task finished on its branch")
     git(fx, "checkout", "-q", FIXTURE_BRANCH)
     if extra_on_parent:
         with io.open(os.path.join(fx["root"], "parent.txt"), "w",
                      encoding="utf-8") as fh:
             fh.write("parent moved\n")
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "the parent moves on")
+        git_old(fx, "commit", "-q", "-m", "the parent moves on")
     return found
 
 
@@ -637,7 +646,7 @@ def check_journal_rebase_onto_finished_upstream_derives_none(fx):
         with io.open(os.path.join(fx["root"], "mine.txt"), "w", encoding="utf-8") as fh:
             fh.write("my own work\n")
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "work of my own")
+        git_old(fx, "commit", "-q", "-m", "work of my own")
         reset_journal(fx)
         rows, why = _bash_round(fx, "git rebase " + upstream,
                                 lambda: git(fx, "rebase", "-q", upstream))
@@ -666,12 +675,12 @@ def check_journal_commit_then_true_merge_still_derives(fx):
     try:
         write_manifest(fx, manifest_body(task_status="in_progress"))
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
         git(fx, "checkout", "-q", "-b", other)
         with io.open(extra, "w", encoding="utf-8") as fh:
             fh.write("unrelated\n")
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "unrelated work")
+        git_old(fx, "commit", "-q", "-m", "unrelated work")
         git(fx, "checkout", "-q", FIXTURE_BRANCH)
         reset_journal(fx)
 
@@ -708,13 +717,13 @@ def check_journal_commit_then_rebase_still_derives(fx):
     try:
         write_manifest(fx, manifest_body(task_status="in_progress"))
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
         git(fx, "checkout", "-q", "-b", feature)
         git(fx, "checkout", "-q", FIXTURE_BRANCH)
         with io.open(side, "w", encoding="utf-8") as fh:
             fh.write("upstream moved\n")
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "upstream moves on")
+        git_old(fx, "commit", "-q", "-m", "upstream moves on")
         git(fx, "checkout", "-q", feature)
         reset_journal(fx)
 
@@ -748,7 +757,7 @@ def check_journal_commit_then_cherry_pick_still_derives(fx):
     try:
         write_manifest(fx, manifest_body(task_status="in_progress"))
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
         reset_journal(fx)
 
         def finish_on_side_then_pick():
@@ -774,6 +783,104 @@ def check_journal_commit_then_cherry_pick_still_derives(fx):
         reset_journal(fx)
 
 
+def check_journal_reset_back_to_own_commit_still_derives(fx):
+    """A completion committed, then kept by resetting back onto that same commit after
+    a later one, is still derived: the reset lands on a commit the CALL made."""
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    try:
+        write_manifest(fx, manifest_body(task_status="in_progress"))
+        git(fx, "add", "-A")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
+        reset_journal(fx)
+
+        def finish_then_reset_back():
+            write_manifest(fx, manifest_body(commit=fx["head"], task_status="done"))
+            git(fx, "add", "-A")
+            git(fx, "commit", "-q", "-m", "finish the task")
+            own = git(fx, "rev-parse", "HEAD")[1].strip()
+            git(fx, "commit", "-q", "--allow-empty", "-m", "a follow-up, discarded")
+            git(fx, "reset", "-q", "--hard", own)
+        rows, why = _bash_round(fx, "git commit && git reset --hard", finish_then_reset_back)
+        if rows is None:
+            return False, why
+        actions = [r.get("action") for r in rows]
+        return (actions == ["manifest.edit", "task.complete", "task.commit"]), (
+            "actions=%r" % (actions,))
+    finally:
+        git(fx, "reset", "--hard", "-q", found)
+        reset_journal(fx)
+
+
+def check_journal_pull_rebase_with_a_flag_derives_none(fx):
+    """`git pull --rebase -q` onto an upstream that finished the task brings that
+    completion in, whatever flags the reflog line spells between the words."""
+    upstream = "feature/finished-for-pull"
+    mine = "feature/mine-to-pull"
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    try:
+        found = _finished_upstream(fx, upstream, extra_on_parent=False)
+        git(fx, "checkout", "-q", "-b", mine)
+        with io.open(os.path.join(fx["root"], "mine.txt"), "w", encoding="utf-8") as fh:
+            fh.write("my own work\n")
+        git(fx, "add", "-A")
+        git_old(fx, "commit", "-q", "-m", "work of my own")
+        reset_journal(fx)
+        rows, why = _bash_round(fx, "git pull --rebase -q . " + upstream,
+                                lambda: git(fx, "pull", "--rebase", "-q", ".", upstream))
+        if rows is None:
+            return False, why
+        actions = [r.get("action") for r in rows]
+        return (actions == ["manifest.edit"]), "actions=%r" % (actions,)
+    finally:
+        git(fx, "rebase", "--abort")
+        git(fx, "checkout", "-q", "-f", FIXTURE_BRANCH)
+        git(fx, "reset", "--hard", "-q", found)
+        git(fx, "branch", "-D", upstream)
+        git(fx, "branch", "-D", mine)
+        if os.path.exists(os.path.join(fx["root"], "mine.txt")):
+            os.remove(os.path.join(fx["root"], "mine.txt"))
+        reset_journal(fx)
+
+
+def check_journal_octopus_merge_head_derives_none(fx):
+    """A merge of TWO branches stopped before its commit leaves both in MERGE_HEAD,
+    and a completion only the second one carries is not derived again."""
+    first, second = "feature/octo-a", "feature/octo-b"
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    try:
+        write_manifest(fx, manifest_body(task_status="in_progress"))
+        git(fx, "add", "-A")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
+        base = git(fx, "rev-parse", "HEAD")[1].strip()
+        git(fx, "checkout", "-q", "-b", first)
+        with io.open(os.path.join(fx["root"], "octo-a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("a\n")
+        git(fx, "add", "-A")
+        git_old(fx, "commit", "-q", "-m", "unrelated work")
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        git(fx, "checkout", "-q", "-b", second)
+        write_manifest(fx, manifest_body(commit=base, task_status="done"))
+        git(fx, "add", "-A")
+        git_old(fx, "commit", "-q", "-m", "the task finished on its branch")
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        reset_journal(fx)
+        rows, why = _bash_round(fx, "git merge --no-commit a b",
+                                lambda: git(fx, "merge", "-q", "--no-commit", "--no-ff",
+                                            first, second))
+        if rows is None:
+            return False, why
+        actions = [r.get("action") for r in rows]
+        return (actions == ["manifest.edit"]), "actions=%r" % (actions,)
+    finally:
+        git(fx, "merge", "--abort")
+        git(fx, "reset", "--hard", "-q", found)
+        git(fx, "branch", "-D", first)
+        git(fx, "branch", "-D", second)
+        if os.path.exists(os.path.join(fx["root"], "octo-a.txt")):
+            os.remove(os.path.join(fx["root"], "octo-a.txt"))
+        reset_journal(fx)
+
+
 def check_journal_local_commit_still_derives(fx):
     """...and a completion MADE in the call is still derived, though the same call
     moves HEAD by committing it - a commit brings in no history."""
@@ -781,7 +888,7 @@ def check_journal_local_commit_still_derives(fx):
     try:
         write_manifest(fx, manifest_body(task_status="in_progress"))
         git(fx, "add", "-A")
-        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        git_old(fx, "commit", "-q", "-m", "fixture: the task open")
         reset_journal(fx)
 
         def finish_and_commit():
@@ -1716,6 +1823,12 @@ CHECKS = (
      check_journal_local_commit_still_derives),
     ("g8i ...and when the same call then makes a MERGE COMMIT over it - what the "
      "merge brought in is its other parent", check_journal_commit_then_true_merge_still_derives),
+    ("g8j ...and when the same call resets back onto its own finishing commit",
+     check_journal_reset_back_to_own_commit_still_derives),
+    ("g8k a `git pull --rebase -q` onto a finished upstream derives none - the "
+     "flags the reflog spells are not the rule", check_journal_pull_rebase_with_a_flag_derives_none),
+    ("g8l ...nor a two-branch merge stopped before its commit, MERGE_HEAD holding both",
+     check_journal_octopus_merge_head_derives_none),
     ("g8e ...and still is when the same call then REBASES it - the replayed "
      "commits are the call's own", check_journal_commit_then_rebase_still_derives),
     ("g8f ...and when the same call commits it on a side branch and cherry-picks "
