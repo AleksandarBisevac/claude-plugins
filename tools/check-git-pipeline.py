@@ -901,6 +901,52 @@ def check_close_phase_from_worktree(fx):
         write_manifest(fx, manifest_body())
 
 
+def check_close_phase_names_parked_proposals(fx):
+    """A phase branch that PARKED new work is told, when it lands, what to
+    materialize and where.
+
+    Phases are minted on the development branch, so a phase branch defers new
+    work as a proposal; the moment that branch merges is the moment the proposal
+    becomes materializable, and sign-off is the only step that knows the moment.
+    Asserted end to end because the list is read from the copy the merge LANDED
+    in, which only a real merge produces.
+    """
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-p9-parked")
+    git(fx, "add", "-A")
+    git(fx, "commit", "-q", "-m", "fixture: settle the tree before the merge")
+    code, out = _wt_add(fx, wt, WT_BRANCH)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    try:
+        body = _wt_manifest()
+        body["proposals"] = [{
+            "id": "PROP-1-abc", "name": "Found on the branch", "status": "proposed",
+            "branch": WT_BRANCH, "materializedAs": None, "materializedAt": None,
+            "payload": {"phase": {"id": "P10", "title": "Found on the branch",
+                                  "status": "pending", "tasks": []}}}]
+        wt_manifest = os.path.join(wt, MANIFEST_REL.replace("/", os.sep))
+        with io.open(wt_manifest, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(body, indent=1, sort_keys=True))
+        run([fx["git"], "add", "-A"], wt, fx["env"])
+        run([fx["git"], "commit", "-q", "-m", "park a proposal"], wt, fx["env"])
+        path = _resolve_script("close-phase.py")
+        if path is None:
+            return False, "no close-phase.py under scripts/"
+        code, out = run([sys.executable, path, MANIFEST_REL, "P9",
+                         "--project", ".", "--keep-worktree", "--keep-branch"],
+                        wt, fx["env"])
+        text = out or ""
+        return (code == 0 and "/audit:propose materialize PROP-1-abc" in text
+                and ("on %s" % FIXTURE_BRANCH) in text), (
+            "close-phase exited %r; output: %s"
+            % (code, text.strip().replace("\n", " | ")[:300]))
+    finally:
+        _wt_drop(fx, wt, WT_BRANCH)
+        git(fx, "reset", "--hard", "-q", fx["head"])
+        write_manifest(fx, manifest_body())
+
+
 def check_close_phase_already_contained(fx):
     """A phase that already landed makes NO git write and exits 0.
 
@@ -1263,6 +1309,9 @@ CHECKS = (
      check_invariants_have_a_basis),
     ("g16 sign-off lands the phase from INSIDE a worktree, where `git switch "
      "<parent>` cannot run at all", check_close_phase_from_worktree),
+    ("g16b ...and a branch that parked new work is told, once it lands, which "
+     "proposals to materialize and on which branch",
+     check_close_phase_names_parked_proposals),
     ("g17 an already-landed phase makes no git write, and is not reported as a "
      "conflict", check_close_phase_already_contained),
     ("g17b ...and it is STAMPED, so a phase merged by hand is not left unsettled "
