@@ -60,7 +60,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   history holds it.
 - **`audit-task next-id bug|prop|task --phase <id>`** gives the records the model writes by hand
   (a bug, a parked proposal, a fix task, a moved task) the allocator's id, suffix included.
+- **`/audit:phase signoff <phaseId> --verdict passed|skipped --summary TEXT`** records a phase's
+  sign-off - the verdict, the review outcome, the summary, the claim released, a `phase.verdict`
+  journal row - under the index lock with revalidate-or-roll-back. It refuses open work, a
+  task-less phase, a second sign-off and a closed phase. `reference/phase-signoff.md` runs it where
+  it used to say "set `phase.status = done`".
+
+### Changed
+- **A phase's status is derived.** A stored `done` or `cancelled` still wins; otherwise a phase
+  reads `done` once every task is terminal, its sign-off verdict is recorded and - for a phase
+  with a branch - `close-phase.py` has stamped `mergedAt`. The status used to be a hand edit on the
+  phase branch before the merge, so a phase worked on its parent branch had nothing to hand
+  `close-phase` and stayed `in_progress` for ever. **A plan that already carries
+  `review.status: passed|skipped` on a phase whose tasks are all finished, and is merged or has no
+  branch, reads `done` after upgrading** where it read `in_progress` before - the plan gate, the
+  status command, the report, the panel and readiness all follow.
+- **Every task finished with no verdict recorded is "sign-off due"**, said on the status command's
+  phase line, the report's meta line and Markdown heading, the panel's plan table and doctor's gate
+  line - and it is **not** a running phase: the plan gate's denying tier is held only by a phase
+  with work in flight. This repository's own gate had sat in deny across releases on finished,
+  unsigned phases.
+- **`phase.signoff` is derived from the derived status.** The journal-writes hook emits it when a
+  phase REACHES done - from the signoff write on a branchless phase, from the merge stamp on a
+  branched one - and now tracks `review.status`, which it used to ignore, so recording a verdict
+  was no change at all. The verb's own row is `phase.verdict`, the way `task.done` sits beside the
+  hook's `task.complete`.
+
 ### Fixed
+- **Readers of the stored phase status disagreed with the derivation.** `RESUMABLE` and the usage
+  line's "this phase" named the first finished phase awaiting sign-off (and billed its tokens);
+  the priority note and pin warning stopped at a signed-off tier-1 pin and hid the blocked pin
+  under it; `/audit:task add` without `--phase` refused over phases that only await sign-off;
+  migration refused a branchless one as mid-run; cleanup after a merge refused a phase signed off
+  by the verb; doctor called a merged, signed-off phase stale, and a `pending` phase awaiting
+  sign-off "in_progress". Each asks the derived status, or the plan gate's own `phase_running`, now.
+  A phase whose sign-off is recorded refuses new tasks and retargeting, as a done one does.
 - **The shell-write guard refused writes to files a command only MENTIONED.** In-place editor
   targets were taken from every path-shaped word in the clause, the script included, and a clause
   was cut at any pipe - so a covered stream-editor call whose substitution named a file was refused

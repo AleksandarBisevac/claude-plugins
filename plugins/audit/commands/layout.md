@@ -62,8 +62,10 @@ Everything below runs for **both** directions unless a step says otherwise.
    asks for the refusal immediately.
    If the output says the lock is **already yours**, it was not taken here — proceed, and skip
    the release in step 3: giving it back would drop it out from under whatever still holds it.
-4. **Refuse a mid-run or dirty-tree change.** If any phase is `in_progress`, stop and ask the user
-   to finish or pause it first (the script enforces this too; `--force` overrides). Prefer a
+4. **Refuse a mid-run or dirty-tree change.** If any phase is `in_progress` with work left, or
+   awaits sign-off on a branch that has not merged, stop and ask the user to finish or pause it
+   first (the script enforces this too; `--force` overrides). A branchless phase that only
+   awaits sign-off has no run and nothing to merge back, so it does not stop a layout change. Prefer a
    **clean working tree**, so the layout change lands in its own commit and is reviewable as one.
 
 ### 1a. Extra preflight for `single-file` only — the index lock is not enough here

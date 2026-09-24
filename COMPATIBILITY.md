@@ -138,6 +138,14 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   The **contents of the evidence file itself are not promised**, for the reason the
   usage ledger's NDJSON fields are not: it is a record this plugin writes and
   re-derives, and the manifest block is the interface.
+- **A stored terminal phase status keeps winning, and `done` is also DERIVED.** A phase
+  carrying `status: done` or `status: cancelled` reads exactly that. Otherwise it reads
+  `done` once every task is terminal, `review.status` holds a sign-off verdict (`passed` or
+  `skipped`) and, for a phase with a `branch`, `mergedAt` is set - which is what
+  `/audit:phase signoff` and `close-phase.py` write between them, and why neither writes
+  `status`. Reversing that precedence, or ceasing to read a verdict as sign-off, is a major.
+  What is not promised is the wording surfaces use for the state in between ("sign-off due"),
+  under the standing exclusion for a command's wording below.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is

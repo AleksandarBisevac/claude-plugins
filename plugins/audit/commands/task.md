@@ -428,11 +428,12 @@ with no git on PATH, or in a **shallow** clone where the object is past the cut,
 honest closes on CI's default checkout and then invite destroying an intact trail.
 
 **Closing the last open task does not close the phase, and nothing here ever will.**
-`phase.status = "done"` is written only by the last step of sign-off, beside
-`phase.review.status`, `phase.review.outcome` and `mergedAt` — the status **is** the claim
-that review, the test gate, the invariant check and the merge all happened, and this verb
-saw none of them. So the last close reports that sign-off is due (`/audit:review
-<phaseId>`) and leaves the field alone. **Nothing refuses a close that leaves a phase
+A phase reads `done` only once its sign-off verdict is recorded (`/audit:phase signoff`,
+after the review, the test gate and the invariant check) and, for a phase with a branch,
+`close-phase.py` has stamped `mergedAt` — the derived status **is** the claim that all of
+that happened, and this verb saw none of it. So the last close reports that sign-off is
+due (`/audit:review <phaseId>`, then `/audit:phase signoff <phaseId>`) and writes nothing
+on the phase. **Nothing refuses a close that leaves a phase
 complete-but-unsigned**; the line is the whole of it, and the `pd` group in
 `plugins/audit/tests/test_audit_task.py` is what keeps the field untouched in both
 directions.

@@ -383,7 +383,7 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      belongs in `files`. A file that merely reads the same store through a shape the fix does
      not touch is context, not work: name it in the task `description` as something to check
      and leave it out. On a live phase, two of the three sign-off findings were the same shape
-     — a sibling on a data path no task's `files` covered — and once a phase is `in_progress`
+     — a sibling on a data path no task's `files` covered — and once a phase has work in flight
      the plan gate refuses that edit even to an executor that spots the sibling for itself: a
      subagent is told to stop and report, never to widen its own scope.
 

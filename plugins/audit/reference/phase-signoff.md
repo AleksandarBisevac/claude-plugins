@@ -249,10 +249,21 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `meta.runtimeBoot`; if the runtime is unreachable, STOP and hand the human an explicit boot-check action item —
    the phase may NOT be signed off until the human confirms. If `meta.runtimeBoot` is null, skip this step.
 5. Only if all applicable gates pass:
-   a. Set `phase.status = "done"`, `phase.review.status = "passed"` (or `"skipped"`), write `phase.review.outcome`
-      and `phase.summary` (short paragraph: what was done + impact; when `phase.desiredOutcome` is set,
-      the summary must state how the phase met — or didn't meet — it). **Clear `phase.claim`** if set —
-      the run is finishing, release the claim. (All these are shard writes in the sharded layout.)
+   a. **Record the sign-off through the verb, never by hand:**
+      ```
+      python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId> \
+          --verdict passed|skipped --summary "<what was done + impact>" \
+          [--review-outcome "<the review's one-line result>"]
+      ```
+      The summary is a short paragraph: what was done and its impact, and when
+      `phase.desiredOutcome` is set, how the phase met — or didn't meet — it. The verb writes
+      `phase.review.status` (the verdict), `phase.review.outcome` and `phase.summary`, **clears
+      `phase.claim`** (the run is finishing), and journals `phase.verdict`, under the index lock
+      with revalidate-or-roll-back. It **never writes `phase.status`**: a phase's status is
+      derived (`_manifest_io.effective_phase_status`) and reads `done` once every task is
+      terminal, the verdict is recorded and — for a phase with a branch — step c has stamped
+      `mergedAt`. A hand-written `done` is what used to be lost when a phase was worked on its
+      parent branch and never merged. (All shard writes in the sharded layout.)
    b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor;
       the subject and body rule is `reference/execute-task.md`'s step 4c, and a phase TITLE pasted in whole is what overruns it here).
       Stage the journal directory **and the evidence directory** here too, for the same reason as

@@ -507,10 +507,10 @@
       <p>The guard hooks activate in <strong>all</strong> your projects, not just the one you
         installed from. What the plan gate <em>does</em> there is graded on evidence: with no
         manifest it only <strong>observes</strong>, with a manifest and nothing running it
-        <strong>warns</strong>, and it <strong>denies</strong> an out-of-plan edit only once a phase
-        is <code>in_progress</code>. So installing does not start refusing edits in repositories that
+        <strong>warns</strong>, and it <strong>denies</strong> an out-of-plan edit only while a phase
+        has work in flight &mdash; a phase that only awaits sign-off does not hold it. So installing does not start refusing edits in repositories that
         never opted in. <code>/audit:doctor</code> prints the tier and its basis:</p>
-<pre><code>[OK     ] plan gate      deny - a phase is in_progress, so edits are held to the running plan</code></pre>
+<pre><code>[OK     ] plan gate      deny - phase P2 has work in progress, so edits are held to the running plan</code></pre>
       <p><strong>The refusal says different things to you and to a subagent.</strong> You get the two
         ways forward: widen the task's scope, or the single-use human bypass. A subagent gets
         neither &mdash; it is told to stop and report the path to the orchestrator, because it may

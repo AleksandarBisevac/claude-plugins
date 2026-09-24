@@ -210,9 +210,12 @@ A task is **ready** when ALL of:
 3. its **own** `dependsOn` is fully satisfied — every listed task-id must be `status == "done"`;
 4. its **phase's** `blockedBy` is fully satisfied.
 
-"Satisfied": a **task id** → that task's `status == "done"`; a **phase id** → that phase's `status == "done"`.
+"Satisfied": a **task id** → that task's `status == "done"`; a **phase id** → that phase reads
+`done` by its **derived** status (`_manifest_io.effective_phase_status`): a stored `done`, or every
+task terminal with a sign-off verdict recorded and, for a phase with a branch, `mergedAt` stamped.
 
-A phase becomes `done` only after `reference/phase-signoff.md`'s **Phase sign-off**. Phase order
+A phase becomes `done` only after `reference/phase-signoff.md`'s **Phase sign-off**, whose verb
+records the verdict and never writes `status`. Phase order
 follows the manifest; within a phase, order by task id.
 
 **`phase.priority` re-sorts that order, and nothing else.** An optional positive integer on a
