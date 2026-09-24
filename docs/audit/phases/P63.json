@@ -521,6 +521,60 @@
         "commit": "5efefa9",
         "at": "2026-09-24T13:52:42Z"
       }
+    },
+    {
+      "id": "P63.10",
+      "title": "Fix BUG-7: doctor's warn line calls a phase in_progress that only awaits sign-off even when its stored status is pending",
+      "status": "done",
+      "description": "Repro: python3 plugins/audit/scripts/status/audit-doctor.py on this repo, read the plan gate line. Expected: the line says only what is true of the phase it names, and names an in_progress one when there is one. Actual: 'phase P32 is in_progress but only awaits sign-off' while P32 is stored pending.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__doctor_setup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_setup.py: repro that FAILS on current code - the line names a pending phase as in_progress",
+          "plugins/audit/tests/test__config.py: an in_progress sign-off-due phase is named before a pending one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "864ba13",
+      "outcome": {
+        "technical": "met - manifest_state carries signoffDueStatus and prefers a stored in_progress phase; the warn line prints it; sg5/sg6/ds15t red first",
+        "descriptive": "Doctor's plan-gate line names a phase awaiting sign-off with the status it actually has, and names an in-progress one first."
+      },
+      "startedAt": "2026-09-24T13:54:06Z",
+      "completedAt": "2026-09-24T13:56:38Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "bugId": "BUG-7",
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "864ba13",
+        "at": "2026-09-24T13:56:38Z"
+      }
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"
