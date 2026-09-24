@@ -21,10 +21,10 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "skipped",
     "findings": []
   },
-  "summary": null,
+  "summary": "Every task of this phase finished before a phase's status was derived. It was closed afterwards, when phase sign-off became a recorded verdict (P63), and no sign-off review ran at that close - so the verdict is skipped, and what this phase did is recorded by its tasks' commits and outcomes, not attested here.",
   "tasks": [
     {
       "id": "P37.1",
