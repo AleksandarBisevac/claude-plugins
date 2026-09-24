@@ -630,6 +630,67 @@
         "commit": "f97feac",
         "at": "2026-09-24T13:59:39Z"
       }
+    },
+    {
+      "id": "P63.12",
+      "title": "Phase review findings: a signed-off phase is frozen in the panel, the journal derives phase.signoff from phase bodies only, the docs name the signoff verb",
+      "status": "done",
+      "description": "Sign-off review: the panel left a phase signed off and awaiting its merge editable while the CLI refuses retargeting it; a write moving an index stub to done beside its shard would derive phase.signoff twice; phase.md, the retarget docstring and the handbook describe the retarget refusal narrower than the code; the README invariants table ends sign-off with status = done; the handbook has no signoff entry.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/composition.js",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/README.md",
+        "docs/handbook.html",
+        "docs/screenshots/captured-at.json"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/phase-signoff-note.test.mjs: phaseFrozenWhy freezes a signed-off phase",
+          "plugins/audit/tests/test_journal_writes.py: h6g a stub moving beside its shard is one phase.signoff"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9a5c47c",
+      "outcome": {
+        "technical": "met - phaseFrozenWhy covers a recorded verdict; phase.signoff only from phase bodies; retarget/README/handbook prose corrected; each fix seen red",
+        "descriptive": "A phase that has been signed off can no longer be edited from the panel while it waits to merge, the audit trail records one sign-off per phase, and the docs describe the signoff command everywhere its siblings are described."
+      },
+      "startedAt": "2026-09-24T14:11:54Z",
+      "completedAt": "2026-09-24T14:38:15Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "npx vitest run",
+        "node tools/capture-screenshots.mjs --check"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9a5c47c",
+        "at": "2026-09-24T14:38:15Z"
+      }
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"
