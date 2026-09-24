@@ -620,8 +620,12 @@ def semantic_diff(old_obj, new_obj):
                 changes.append({"id": pid, "field": "review.status",
                                 "from": _render(orv), "to": _render(nrv)})
                 frags.append("review.status %s->%s" % (orv, nrv))
+            # From a phase BODY only - one that carries its tasks. An index stub
+            # is a mirror: it derives nothing, and a stored `done` flipped on it
+            # beside its shard is the same sign-off the shard's diff records.
             oe, ne = status_of(old_phase), status_of(new_phase)
-            if ne == "done" and oe != "done":
+            if (ne == "done" and oe != "done"
+                    and isinstance(new_phase.get("tasks"), list)):
                 events.append({"action": "phase.signoff",
                                "summary": "%s signed off" % pid,
                                "details": {"phaseId": pid, "from": oe, "to": ne,

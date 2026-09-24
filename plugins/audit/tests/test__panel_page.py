@@ -1989,7 +1989,11 @@ def _cases(check):
           "the phase's, because a task in a cancelled phase will never run, and "
           "the task's own, because a done task has already run - so its model and "
           "skills say what ran rather than what to run",
-          "const frozen=segOf(ph.status)==='archived';" in M.UI_HTML
+          # Which phases are closed is `phaseFrozenWhy`'s answer, and what it
+          # answers is driven in tools/ui-tests/phase-signoff-note.test.mjs;
+          # this holds that the row asks it.
+          "const frozenWhy=phaseFrozenWhy(ph);" in M.UI_HTML
+          and "const frozen=frozenWhy!==null;" in M.UI_HTML
           and "const tFrozen=frozen||segOf(t.status)==='archived';" in M.UI_HTML
           # WIRED, both halves. Defining freezeControls and calling it on only one
           # of the two rows would leave a whole class of controls live.

@@ -1048,12 +1048,31 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
       <div class="cmd-body">
         <p>Changes what a phase is measured by &mdash; gate, area tags, desired outcome. This is the
           repair when a gate turns out to rewrite the tree. Refused on a phase already
-          <code>done</code> or <code>cancelled</code>, whose sign-off was given against the gate it
-          had.</p>
+          <code>done</code> or <code>cancelled</code>, or signed off and awaiting its merge, whose
+          sign-off was given against the gate it had.</p>
         <p><code>--rename</code> changes the phase title, and it is the one option here with a
           deadline: the title is what the branch name is slugified from, so it may be corrected
           while the phase is still waiting and is refused once the branch has been cut. After that
           the title is the record of what the branch was cut for.</p>
+      </div>
+    </div>
+
+    <div class="cmd">
+      <div class="cmd-line">
+        <span class="c">/audit:phase signoff &lt;phaseId&gt; --verdict passed|skipped --summary &hellip; [--review-outcome &hellip;]</span>
+        <span class="badge b-write">writes manifest</span>
+        <span class="badge b-lock">takes lock</span>
+      </div>
+      <div class="cmd-body">
+        <p>Records a phase&rsquo;s sign-off once its review and the gates sign-off runs have passed:
+          the verdict, the review&rsquo;s outcome, the summary, the run&rsquo;s claim released, and a
+          journal row. <strong>It never writes the phase&rsquo;s status</strong> &mdash; that is
+          derived, and reads <code>done</code> once every task is finished, the verdict is recorded
+          and, for a phase with a branch, the merge has landed. Until then a phase whose work is
+          finished says <em>sign-off due</em> wherever it is shown, and it does not hold the plan
+          gate in its denying tier. Refused with open work, on a phase with no task, a second time,
+          and on a closed phase. <code>skipped</code> is honest where no review ran; the summary
+          says so.</p>
       </div>
     </div>
 

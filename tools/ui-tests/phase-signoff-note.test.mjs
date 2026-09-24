@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadPanel, reach } from './sandbox.mjs';
 
-const P = reach(loadPanel().ctx, ['phaseSignoffNote']);
+const P = reach(loadPanel().ctx, ['phaseSignoffNote', 'phaseFrozenWhy']);
 
 const phase = (over) => Object.assign(
   { id: 'P4', status: 'in_progress', signoffDue: false, signoffVerdict: null,
@@ -38,5 +38,24 @@ describe('the sign-off note on a phase row', () => {
       .toBeNull();
     expect(P.phaseSignoffNote(phase({ status: 'cancelled' }))).toBeNull();
     expect(P.phaseSignoffNote(phase())).toBeNull();
+  });
+});
+
+describe('which phase rows are records, not forms', () => {
+  it('a done or cancelled phase is frozen, and the reason names its status', () => {
+    expect(P.phaseFrozenWhy(phase({ status: 'done' }))).toMatch(/done/i);
+    expect(P.phaseFrozenWhy(phase({ status: 'cancelled' }))).toMatch(/cancelled/i);
+  });
+
+  it('a phase SIGNED OFF and awaiting its merge is frozen too - the CLI refuses to '
+     + 'retarget it, because its verdict reviewed it as it stands', () => {
+    const why = P.phaseFrozenWhy(phase({ signoffVerdict: 'passed', branch: 'audit/p4-x' }));
+    expect(why).toContain('signed off (passed)');
+    expect(why).toContain('audit/p4-x');
+  });
+
+  it('a running phase, or one only awaiting sign-off, stays editable', () => {
+    expect(P.phaseFrozenWhy(phase())).toBeNull();
+    expect(P.phaseFrozenWhy(phase({ signoffDue: true }))).toBeNull();
   });
 });

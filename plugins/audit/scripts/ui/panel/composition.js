@@ -897,6 +897,27 @@ function phaseSignoffNote(ph){
    +(ph.branch||'its branch')+' merges';
  return null;}
 
+/**
+ * Why a phase row is a record rather than a form, or null when it is editable.
+ *
+ * A done or cancelled phase is closed. So is one whose sign-off is RECORDED and
+ * whose branch has yet to merge: its derived status still reads in progress, but
+ * the verdict reviewed it as it stands, and `/audit:phase retarget` refuses it
+ * for that reason - a surface that let the same fields move would be the one
+ * place the refusal did not hold. A phase only awaiting sign-off stays editable:
+ * its review has not happened yet.
+ *
+ * @param {object} ph - a Composition phase row
+ * @returns {string|null} the reason each control carries, or null
+ */
+function phaseFrozenWhy(ph){
+ if(segOf(ph.status)==='archived')return 'this phase is '+label(ph.status)
+   +' — its plan is closed, so what it ran with is no longer editable';
+ if(ph.signoffVerdict)return 'this phase is signed off ('+ph.signoffVerdict
+   +') — the verdict reviewed it as it stands, so what it ran with is no longer '
+   +'editable; it reads done once '+(ph.branch||'its branch')+' merges';
+ return null;}
+
 function renderComp(){closeCombo();
  // Rebuilt from FOUR places, which is one more than any other view: its own Save,
  // its Discard, the ADO card's Save and Discard, and the 5s disk poll. MEASURED:
@@ -1062,9 +1083,8 @@ function renderComp(){closeCombo();
  ordered.forEach(ph=>{
   const tasks=byPhase[ph.id]||[];
   // A closed phase is a record: everything below is rendered, then frozen.
-  const frozen=segOf(ph.status)==='archived';
-  const frozenWhy='this phase is '+label(ph.status)
-    +' — its plan is closed, so what it ran with is no longer editable';
+  const frozenWhy=phaseFrozenWhy(ph);
+  const frozen=frozenWhy!==null;
   // The visible word beside this box is "review", and it is the same word beside
   // all fifty of them — a <label> here would name fifty controls identically,
   // which conforms and helps nobody. The name folds in the phase id and still

@@ -333,9 +333,11 @@ NEW phase. An imported one could not, which is what turned a guessed gate into a
 The report says so when the gate ends up empty, rather than leaving silence to be read
 as breakage.
 
-**Not a done or cancelled phase.** Its sign-off was given against the gate it had, and
-moving that afterwards rewrites what the sign-off attested. A phase that is `pending` or
-`in_progress` is exactly the case this verb is for.
+**Not a done or cancelled phase, and not one whose sign-off is recorded.** Its sign-off
+was given against the gate it had, and moving that afterwards rewrites what the sign-off
+attested - which holds as much for a phase signed off and still awaiting its merge as for
+one that reads done. A `pending` or `in_progress` phase with no verdict recorded - one only
+awaiting sign-off included - is exactly the case this verb is for.
 
 **Retargeting changes what the next run measures and rewrites nothing that already
 happened.** A recorded run is graded by the gate it ran under, and its ledger row keeps the

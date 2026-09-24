@@ -503,6 +503,29 @@ def _cases(check):
               not [e for e in (_twice or {}).get("events", [])
                    if e.get("action") == "phase.signoff"])
 
+        # A sharded write that moves a phase's index STUB to done beside its shard
+        # is one sign-off. The stub is a mirror with no tasks, so it derives
+        # nothing - but a stored `done` on it reads done, and deriving the record
+        # from both files would write it twice.
+        _stub_old = {"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress"}]}
+        _stub_new = {"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "p", "status": "done"}]}
+        _sd = M.semantic_diff(_stub_old, _stub_new)
+        check("h6g an index stub flipped to done records the change and derives NO "
+              "phase.signoff - the shard written beside it carries the phase's body and "
+              "is the one record of it: %r" % (_sd,),
+              _sd is not None
+              and any(c["field"] == "status" for c in _sd["changes"])
+              and not [e for e in _sd.get("events", [])
+                       if e.get("action") == "phase.signoff"])
+        _body = M.semantic_diff(manifest_doc(status="done"),
+                                manifest_doc(status="done", phase_status="done"))
+        check("h6h SECOND DIRECTION: the same flip on a phase BODY (it carries its "
+              "tasks) still derives one",
+              len([e for e in (_body or {}).get("events", [])
+                   if e.get("action") == "phase.signoff"]) == 1, repr(_body))
+
         # --- i: connector v2 events (task.blocked + ado.link) ------------------
         # Derived from the same diff as everything else, tested on the core
         # directly. D-1 rule: `ado` is NOT in TASK_FIELDS - only the id is

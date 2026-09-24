@@ -4436,10 +4436,11 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     than a default: `--gate` appends, so without an explicit clear there is no
     spelling for "there is nothing here that can prove this".
 
-    NOT PAST `in_progress`. A done or cancelled phase has a sign-off that was
-    given against the gate it had; moving the gate afterwards would rewrite what
-    that sign-off attested. A running phase may still be corrected - that is the
-    case this verb exists for.
+    NOT PAST SIGN-OFF. A done or cancelled phase - and one whose verdict is
+    recorded while its branch has yet to merge - has a sign-off that was given
+    against the gate it had; moving the gate afterwards would rewrite what that
+    sign-off attested. A phase with no verdict recorded may still be corrected -
+    that is the case this verb exists for.
     """
     try:
         raw_index = _mio.read_json(mpath)
