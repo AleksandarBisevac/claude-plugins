@@ -1041,7 +1041,8 @@
       "P22.11",
       "P51.6",
       "P47.3",
-      "P53.7"
+      "P53.7",
+      "P63.7"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -1230,14 +1231,16 @@
       "P18.7",
       "P18.9",
       "P21.1",
-      "P23.3"
+      "P23.3",
+      "P63.7"
     ],
     "plugins/audit/tests/test__worktrees.py": [
       "P18.1",
       "P18.7",
       "P18.9",
       "P21.1",
-      "P23.3"
+      "P23.3",
+      "P63.7"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -1248,7 +1251,8 @@
       "P34.5",
       "P47.3",
       "P59.5",
-      "P61.5"
+      "P61.5",
+      "P63.7"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1258,13 +1262,15 @@
       "P36.10",
       "P50.8",
       "P59.5",
-      "P61.5"
+      "P61.5",
+      "P63.7"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
       "P18.7",
       "P18.9",
-      "P21.1"
+      "P21.1",
+      "P63.7"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
@@ -1391,7 +1397,8 @@
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
       "P18.9",
-      "P32.7"
+      "P32.7",
+      "P63.7"
     ],
     "plugins/audit/scripts/ui/panel/branch-convention.js": [
       "P18.7",
