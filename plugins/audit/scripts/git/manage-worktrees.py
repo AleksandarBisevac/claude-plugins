@@ -236,8 +236,13 @@ def do_add(git_root, manifest, phase_id, path=None, run=None):
     if phase is None:
         return E_USAGE, {"error": "no phase %r in this plan" % (phase_id,)}
     recorded = phase.get("branch")
-    branch = str(recorded) if recorded else _branch.compose(meta, phase)["name"]
-    parent = _branch.parent_branch(meta, phase)["branch"]
+    # THE NAME `start` WILL EXPECT, through the one answer it is composed by. This
+    # composed without initials while `resolve-branch.py` read git user.name, so a
+    # template carrying `{initials}` checked out one name here and resolved another
+    # there - and a phase started in this worktree would not recognise its branch.
+    answer = _branch.phase_answer(meta, phase, _wt.git_user_name(git_root, run=run))
+    branch = str(recorded) if recorded else answer["branch"]
+    parent = answer["parent"]
     target = path or default_path(git_root, phase_id)
 
     listing = _wt.list_worktrees(git_root, run=run)

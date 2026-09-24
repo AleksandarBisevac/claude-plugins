@@ -374,6 +374,18 @@ def _run_cases(check, root):
     check("a3 ...and an EXISTING branch drops -b, which is what the prose told a "
           "human to do by hand",
           code == M.E_OK and "-b" not in ans["argv"], repr(ans["argv"]))
+    import _branch
+    _ini = {"meta": {"developmentBranch": "dev",
+                     "branch": {"template": "{type}/{initials}-{phase}-{slug}"}},
+            "phases": [{"id": "P5", "title": "Five", "tasks": []}]}
+    run, calls = _f({"rev-parse --verify": (1, "", ""),
+                     "config user.name": (0, "Ann Bee\n", "")})
+    code, ans = M.do_add("/repo", _ini, "P5", path="/tmp/does-not-exist-p5", run=run)
+    _want = _branch.phase_answer(_ini["meta"], _ini["phases"][0], "Ann Bee")["branch"]
+    check("a4 a template carrying {initials} checks out the SAME name resolve-branch "
+          "and `start` compose - git user.name included - so a phase started in this "
+          "worktree recognises its branch: %r vs %r" % (ans.get("branch"), _want),
+          code == M.E_OK and ans["branch"] == _want and "/ab-" in _want)
 
     # --- the CLI grammar ------------------------------------------------------
     class _P(object):

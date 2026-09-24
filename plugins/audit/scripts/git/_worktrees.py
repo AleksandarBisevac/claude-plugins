@@ -600,6 +600,20 @@ def merged_into(git_root, branch, parent, run=None):
             "basis": "%s could not be asked" % (asked,)}
 
 
+def git_user_name(git_root, run=None):
+    """`git config user.name`, or "" when git cannot say.
+
+    What a branch's `{initials}` come from when `meta.branch.initials` is unset.
+    One reader for every door that names a phase branch - `resolve-branch.py`,
+    `/audit:worktree add` and `audit-task start` - because two readers composed
+    two different names for one phase the day a template carried `{initials}`.
+    Fail-open: a machine with no git identity gets a branch with no initials
+    rather than no branch.
+    """
+    code, out, _err = _runner(run)(git_root or ".", ["config", "user.name"])
+    return (out or "").strip() if code == 0 else ""
+
+
 def ref_exists(git_root, ref, run=None):
     """{"exists", "sha", "basis"} -- `exists` is True, False, or None for unknown.
 

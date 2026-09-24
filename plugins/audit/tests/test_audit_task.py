@@ -5901,6 +5901,114 @@ def _cases(check):
         code, txt = run(["next-id", "phase", "--project-dir", projb])
         check("bs7 next-id takes no `phase`: a phase id is minted only by add-phase, "
               "which writes it under the lock", code == 2, txt)
+
+        # ---- (pe) phase entry: the first start cuts the phase branch ---------
+        # `orchestrator.md`'s Phase entry was prose run BEFORE `start`, so a phase
+        # driven through the verbs never got a branch at all. `start` performs it.
+        import _branch
+
+        def head_of(proj):
+            return subprocess.check_output(
+                ["git", "-C", proj, "symbolic-ref", "--short", "-q", "HEAD"]
+            ).decode().strip()
+
+        def sha_of(proj, ref):
+            return subprocess.check_output(
+                ["git", "-C", proj, "rev-parse", ref]).decode().strip()
+
+        def entry_repo(name, manifest=None):
+            proj, mp = mk(name, manifest or base_manifest(), git=True)
+            git(proj, "checkout", "-q", "-b", "main")
+            git(proj, "commit", "-q", "--allow-empty", "-m", "base")
+            return proj, mp
+
+        def p2_of(mp):
+            return [p for p in _mio.load_manifest(mp)["phases"] if p["id"] == "P2"][0]
+
+        want = _branch.phase_answer(base_manifest()["meta"], base_manifest()["phases"][1],
+                                    "")["branch"]
+        proje, mpe = entry_repo("pe-cut")
+        base_sha = sha_of(proje, "HEAD")
+        code, txt = run(["start", "P2.3", "--project-dir", proje])
+        ph = p2_of(mpe)
+        check("pe1 the first start of a phase with no branch, on its parent, CUTS the "
+              "branch: checked out, recorded on the phase with the commit it forked "
+              "from, and said: %s" % (txt,),
+              code == 0 and head_of(proje) == want and ph.get("branch") == want
+              and ph.get("baseRef") == base_sha and want in txt)
+        rows = [r for r in _journal_io.read_all(proje) if r.get("action") == "task.start"]
+        check("pe1b ...and the start row records the branch it cut",
+              bool(rows) and want in (rows[-1].get("summary") or "")
+              and (rows[-1].get("details") or {}).get("branch") == want, rows[-1:])
+        mfix = base_manifest()
+        mfix["phases"][1]["tasks"].append({"id": "P2.4", "title": "c",
+                                           "status": "pending"})
+        projf, mpf = entry_repo("pe-onbranch", mfix)
+        run(["start", "P2.3", "--project-dir", projf])
+        code, txt = run(["start", "P2.4", "--project-dir", projf])
+        check("pe2 a later start on the phase's own branch cuts nothing and changes "
+              "nothing about the branch: %s" % (txt,),
+              code == 0 and head_of(projf) == want and p2_of(mpf).get("branch") == want)
+        git(projf, "checkout", "-q", "main")
+        before = open(mpf, "rb").read()
+        code, txt = run(["start", "P2.4", "--project-dir", projf])
+        check("pe3 a phase that records a branch REFUSES a start from any other one, "
+              "names both and the switch, and writes nothing: %s" % (txt,),
+              code == 2 and want in txt and "main" in txt and "git switch" in txt
+              and open(mpf, "rb").read() == before)
+        projs, mps = entry_repo("pe-side")
+        git(projs, "checkout", "-q", "-b", "feature/other")
+        before = open(mps, "rb").read()
+        code, txt = run(["start", "P2.3", "--project-dir", projs])
+        check("pe4 the first start OFF the resolved parent refuses, naming the parent "
+              "and where it came from, and neither writes nor branches: %s" % (txt,),
+              code == 2 and "main" in txt and "feature/other" in txt
+              and open(mps, "rb").read() == before and head_of(projs) == "feature/other"
+              and subprocess.run(["git", "-C", projs, "rev-parse", "--verify", "-q",
+                                  "refs/heads/" + want],
+                                 stdout=subprocess.DEVNULL).returncode != 0)
+        projd, mpd = entry_repo("pe-detached")
+        git(projd, "checkout", "-q", "--detach")
+        code, txt = run(["start", "P2.3", "--project-dir", projd])
+        check("pe5 a detached HEAD refuses - there is no branch to fork from: %s" % (txt,),
+              code == 2 and "detached" in txt.lower())
+        proju, mpu = mk("pe-unborn", base_manifest(), git=True)
+        code, txt = run(["start", "P2.3", "--project-dir", proju])
+        check("pe6 a repository with no commit yet refuses and says to commit first - "
+              "there is no base for the phase to fork from: %s" % (txt,),
+              code == 2 and "commit" in txt.lower() and task_in(mpu, "P2.3")["status"]
+              == "pending")
+        projt, mpt = entry_repo("pe-taken")
+        git(projt, "branch", want)
+        code, txt = run(["start", "P2.3", "--project-dir", projt])
+        check("pe7 a branch name already taken that the phase does not record refuses "
+              "rather than adopting a branch nothing says is this phase's: %s" % (txt,),
+              code == 2 and want in txt and "already exists" in txt
+              and p2_of(mpt).get("branch") is None)
+        projw, mpw = entry_repo("pe-adopt")
+        fork_sha = sha_of(projw, "HEAD")
+        git(projw, "checkout", "-q", "-b", want)
+        git(projw, "commit", "-q", "--allow-empty", "-m", "on the branch already")
+        code, txt = run(["start", "P2.3", "--project-dir", projw])
+        check("pe8 standing on EXACTLY the branch the plan composes for this phase - "
+              "what /audit:worktree add checks out - records it, with the fork point "
+              "as baseRef, instead of refusing it for not being the parent: %s" % (txt,),
+              code == 0 and p2_of(mpw).get("branch") == want
+              and p2_of(mpw).get("baseRef") == fork_sha)
+        projr, mpr = entry_repo("pe-rollback")
+        git(projr, "branch", "audit")
+        before = open(mpr, "rb").read()
+        code, txt = run(["start", "P2.3", "--project-dir", projr])
+        check("pe9 when git refuses the cut after the write (here a branch `audit` "
+              "blocks `audit/...`), the write is rolled back and the refusal carries "
+              "git's reason: %s" % (txt,),
+              code != 0 and open(mpr, "rb").read() == before and head_of(projr) == "main")
+        projn, mpn = mk("pe-nogit", base_manifest())
+        code, txt = run(["start", "P2.3", "--project-dir", projn])
+        check("pe10 outside a git repository the phase runs with no branch, and the "
+              "output says so rather than implying one: %s" % (txt,),
+              code == 0 and p2_of(mpn).get("branch") is None
+              and "no git repository" in txt)
     finally:
         _harness.remove_tree(tmp)
 

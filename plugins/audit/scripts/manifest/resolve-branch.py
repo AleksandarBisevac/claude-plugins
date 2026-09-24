@@ -37,7 +37,6 @@ Exit codes: 0 resolved - 1 the name is not a legal git ref - 2 usage error.
 """
 import json
 import os
-import subprocess
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -63,24 +62,13 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _branch  # noqa: E402  (the rule this door opens onto)
+import _worktrees  # noqa: E402  (git user.name, read once for every door that names a branch)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single-file OR shards)
 
 
-def git_user_name(git_root):
-    """`git config user.name`, or "" when git cannot say.
-
-    Fail-open: this is an advisory path, and a machine with no git identity
-    should get a branch with no initials rather than no branch.
-    """
-    try:
-        out = subprocess.run(["git", "-C", git_root or ".", "config", "user.name"],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             timeout=10)
-        if out.returncode == 0:
-            return out.stdout.decode("utf-8", "replace").strip()
-    except Exception:
-        pass
-    return ""
+# An ALIAS: the reader lives in `_worktrees`, beside the git runner every door that
+# names a branch shares.
+git_user_name = _worktrees.git_user_name
 
 
 def find_phase(manifest, phase_id):
@@ -100,30 +88,12 @@ def find_phase(manifest, phase_id):
 
 
 def resolve(manifest, phase_id, user_name):
-    """The two answers plus their bases — the shape both output modes render."""
-    meta = manifest.get("meta") or {}
+    """The two answers plus their bases — the shape both output modes render.
+    `_branch.phase_answer`'s, so this door and the ones that act on it agree."""
     phase = find_phase(manifest, phase_id)
     if phase is None:
         return None
-    from_bug = bool(phase.get("branchType") is None
-                    and str(phase.get("id", "")).startswith("BUG"))
-    parent = _branch.parent_branch(meta, phase)
-    made = _branch.compose(meta, phase, initials=user_name, from_bug=from_bug)
-    return {
-        "phase": str(phase.get("id")),
-        "parent": parent["branch"],
-        "parentBasis": parent["basis"],
-        "parentIsDevelopment": parent["is_development"],
-        "branch": made["name"],
-        "branchBasis": made["basis"],
-        "type": made["type"],
-        "typeBasis": made["typeBasis"],
-        "violations": made["violations"],
-        "unknownType": made["unknownType"],
-        "initialsSource": ("meta.branch.initials"
-                           if _branch.config(meta)["initials"] is not None
-                           else ("git user.name" if user_name else "none available")),
-    }
+    return _branch.phase_answer(manifest.get("meta") or {}, phase, user_name)
 
 
 def render(ans):

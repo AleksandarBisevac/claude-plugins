@@ -288,6 +288,33 @@ def compose(meta, phase, initials=None, from_bug=False):
     }
 
 
+def phase_answer(meta, phase, user_name):
+    """Which branch `phase` forks from and what it is called, with the bases -
+    the one answer `resolve-branch.py` prints, `/audit:worktree add` checks out
+    and `audit-task start` cuts, so the three cannot name one phase two ways.
+    `user_name` is `_worktrees.git_user_name`'s answer; this stays pure."""
+    phase = phase or {}
+    from_bug = bool(phase.get("branchType") is None
+                    and str(phase.get("id", "")).startswith("BUG"))
+    parent = parent_branch(meta, phase)
+    made = compose(meta, phase, initials=user_name, from_bug=from_bug)
+    return {
+        "phase": str(phase.get("id")),
+        "parent": parent["branch"],
+        "parentBasis": parent["basis"],
+        "parentIsDevelopment": parent["is_development"],
+        "branch": made["name"],
+        "branchBasis": made["basis"],
+        "type": made["type"],
+        "typeBasis": made["typeBasis"],
+        "violations": made["violations"],
+        "unknownType": made["unknownType"],
+        "initialsSource": ("meta.branch.initials"
+                           if config(meta)["initials"] is not None
+                           else ("git user.name" if user_name else "none available")),
+    }
+
+
 # --- git ref legality ---------------------------------------------------------
 
 _BAD_CHARS = " ~^:?*[\\"

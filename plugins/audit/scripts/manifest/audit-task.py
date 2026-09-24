@@ -2710,7 +2710,7 @@ def _start_details(task_id, phase_id, was, task):
 
 
 def _journal_start(project, config, mpath, task_id, phase_id, was, task,
-                   healed=None):
+                   healed=None, entry=None):
     """The `task.start` row: what the promotion moved, and which attempt it is.
 
     `changes` AND `attempt`, both already on `_journal_io.DETAILS_KEYS` --
@@ -2740,8 +2740,113 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
                    % (task_id, phase_id, attempt, was["status"]))
     if healed:
         summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
-    return _journal_row(project, config, mpath, "task.start", summary,
-                        _start_details(task_id, phase_id, was, task))
+    details = _start_details(task_id, phase_id, was, task)
+    if (entry or {}).get("state") in ("cut", "adopt"):
+        summary += "; branch %s %s" % (entry["branch"], "cut from %s" % entry["parent"]
+                                       if entry["state"] == "cut" else "recorded")
+        details["branch"] = entry["branch"]
+    return _journal_row(project, config, mpath, "task.start", summary, details)
+
+
+# --- phase entry: the branch the first start cuts ---------------------------------
+# `reference/orchestrator.md`'s Phase entry - resolve the name and the parent,
+# verify HEAD is the parent, `git switch -c`, record the branch - was prose the
+# orchestrator ran BEFORE this verb. Every phase driven through the verbs rather
+# than `/audit:run` therefore ran on its parent branch with no branch at all, which
+# measured most of this project's own phases, and nothing said so. The protocol
+# binds this verb now, so a phase cannot start its work outside it in silence.
+def _git_answer(git_root, *argv):
+    """(returncode, stdout) of one git call, or (None, "") when git cannot run."""
+    try:
+        r = subprocess.run(["git", "-C", git_root] + list(argv),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError:
+        return None, ""
+    return r.returncode, r.stdout.decode("utf-8", "replace").strip()
+
+
+def _phase_entry(git_root, meta, phase):
+    """What starting work in `phase` does to its branch, decided before any write.
+
+    {"state": "none"|"on-branch"|"cut"|"adopt", "refusal": str|None,
+     "branch", "parent", "baseRef"}. "none" is a directory git does not hold: the
+    phase runs with no branch and the caller says so. "adopt" is standing on
+    EXACTLY the name the plan composes for this phase, which is what
+    `/audit:worktree add` checks out: its fork point is recorded rather than the
+    worktree refused for not standing on the parent, where it cannot stand.
+    """
+    pid = phase.get("id")
+    code, _top = _git_answer(git_root, "rev-parse", "--show-toplevel")
+    if code != 0:
+        return {"state": "none", "refusal": None}
+    here = _id_shape.current_branch(git_root)
+    recorded = phase.get("branch")
+    if recorded:
+        if here == recorded:
+            return {"state": "on-branch", "refusal": None, "branch": recorded}
+        return {"state": "refused", "refusal": (
+            "[audit-task] phase %s runs on branch %s, and HEAD here is %s -- a "
+            "phase's edits and commits happen on its own branch (reference/"
+            "orchestrator.md, Phase entry). `git switch %s` (or start it from the "
+            "worktree that has it checked out), then start again."
+            % (pid, recorded, here or "detached", recorded))}
+    answer = _branch.phase_answer(meta, phase, _worktrees.git_user_name(git_root))
+    name, parent = answer["branch"], answer["parent"]
+    if answer["violations"]:
+        return {"state": "refused", "refusal": (
+            "[audit-task] phase %s's branch would be %r, which git refuses as a ref "
+            "(%s) -- fix the naming convention (%s) first"
+            % (pid, name, "; ".join(answer["violations"]), answer["branchBasis"]))}
+    if here is None:
+        return {"state": "refused", "refusal": (
+            "[audit-task] HEAD is detached, so there is no branch for phase %s to "
+            "fork from -- `git switch %s`, then start again" % (pid, parent))}
+    code, head = _git_answer(git_root, "rev-parse", "--verify", "-q", "HEAD")
+    if code != 0 or not head:
+        return {"state": "refused", "refusal": (
+            "[audit-task] %s has no commit yet, so phase %s has no base to fork "
+            "from -- commit first, then start again" % (here, pid))}
+    if here == name:
+        code, fork = _git_answer(git_root, "merge-base", parent, "HEAD")
+        if code != 0 or not fork:
+            return {"state": "refused", "refusal": (
+                "[audit-task] HEAD is on %s, the branch the plan names for phase %s, "
+                "but git cannot find where it forked from %s (%s) -- the fork point "
+                "is what baseRef records, so it is not guessed"
+                % (name, pid, parent, answer["parentBasis"]))}
+        return {"state": "adopt", "refusal": None, "branch": name,
+                "parent": parent, "baseRef": fork}
+    if here != parent:
+        return {"state": "refused", "refusal": (
+            "[audit-task] phase %s forks from %s (%s), and HEAD is on %s -- a phase "
+            "branch is cut from its parent. `git switch %s`, or set the phase's "
+            "parentBranch, then start again" % (pid, parent, answer["parentBasis"],
+                                                here, parent))}
+    code, _sha = _git_answer(git_root, "rev-parse", "--verify", "-q",
+                             "refs/heads/" + name)
+    if code == 0:
+        return {"state": "refused", "refusal": (
+            "[audit-task] branch %s already exists, and phase %s does not record it "
+            "-- nothing says that branch is this phase's. Delete or rename it, or "
+            "check it out and start from there, then start again" % (name, pid))}
+    return {"state": "cut", "refusal": None, "branch": name, "parent": parent,
+            "baseRef": head}
+
+
+def _entry_line(entry, phase_id):
+    """The line `start` prints about the branch, or None when nothing moved."""
+    state = entry.get("state")
+    if state == "cut":
+        return ("  branch %s cut from %s at %s -- phase %s's edits and commits "
+                "happen there" % (entry["branch"], entry["parent"],
+                                  entry["baseRef"][:12], phase_id))
+    if state == "adopt":
+        return ("  branch %s recorded for phase %s, forked from %s at %s"
+                % (entry["branch"], phase_id, entry["parent"], entry["baseRef"][:12]))
+    if state == "none":
+        return ("  no git repository here, so phase %s runs with no branch"
+                % (phase_id,))
+    return None
 
 
 def _locked_start(args, project, config, mpath, tid, out):
@@ -2819,8 +2924,19 @@ def _locked_start(args, project, config, mpath, tid, out):
             "an ADO echo." % (tid, attempts, ceiling))
         return E_USAGE
 
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    entry = _phase_entry(git_root, assembled.get("meta") or {}, phase)
+    if entry.get("refusal"):
+        out(entry["refusal"])
+        return E_USAGE
+
     now = _utc_now()
     was = _start_task(node, now)
+    if entry["state"] in ("cut", "adopt"):
+        phase["branch"] = entry["branch"]
+        if not phase.get("baseRef"):
+            phase["baseRef"] = entry["baseRef"]
     # THE PHASE IS PROMOTED BY THE SAME WRITE, from the same instant. Until this
     # line the control surface's save was the only site in the tree that moved a
     # phase out of `pending`, so an orchestrator driving a plan from the command
@@ -2856,13 +2972,29 @@ def _locked_start(args, project, config, mpath, tid, out):
         for line in findings:
             out("FINDING: " + line)
         return E_INVALID
+    if entry["state"] == "cut":
+        # AFTER the write validated, so a refused write never leaves a branch behind;
+        # and the write is rolled back when git refuses, so no phase records a branch
+        # git does not hold. The working tree rides along to the new branch.
+        try:
+            cut = subprocess.run(["git", "-C", git_root, "switch", "-c",
+                                  entry["branch"]],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            cut_err = cut.stderr.decode("utf-8", "replace").strip()
+            cut_ok = cut.returncode == 0
+        except OSError as exc:
+            cut_ok, cut_err = False, str(exc)
+        if not cut_ok:
+            _restore(snap)
+            out("[audit-task] REFUSED: git would not cut %s for phase %s -- the "
+                "start is rolled back, nothing kept: %s"
+                % (entry["branch"], phase_id, cut_err))
+            return E_INVALID
 
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
-                          healed)
+                          healed, entry)
     index_note = _index_dirty_note(written, mpath, project, phase_id)
-    git_root = os.path.abspath(os.path.join(project,
-                                            (config or {}).get("gitRoot") or "."))
-    branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
+    entry_line = _entry_line(entry, phase_id)
     # REPORTED, NEVER REFUSED. The plan gate is what this verb serves, and the
     # case it serves is a task whose edits are being denied -- so a blocker list
     # is something the operator has to see and `/audit:run` is where readiness
@@ -2889,7 +3021,8 @@ def _locked_start(args, project, config, mpath, tid, out):
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
-        result.update(_phase_branch_key(branch_note))
+        result["phaseEntry"] = {k: entry.get(k) for k in ("state", "branch", "parent",
+                                                          "baseRef")}
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if was["status"] == "in_progress":
@@ -2918,10 +3051,10 @@ def _locked_start(args, project, config, mpath, tid, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the task.start row")
     out("  written: %s" % ", ".join(written))
+    if entry_line:
+        out(entry_line)
     if index_note:
         out(index_note)
-    if branch_note:
-        out(branch_note)
     return 0
 
 

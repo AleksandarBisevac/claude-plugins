@@ -395,7 +395,7 @@ L7:
   repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
-  resolve-branch -> _branch, _manifest_io, _output
+  resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _manifest_io, _output, _tree_stamp
