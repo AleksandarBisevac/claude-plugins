@@ -588,7 +588,8 @@
       "P61.4",
       "P63.4",
       "P63.8",
-      "P63.11"
+      "P63.11",
+      "P63.12"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -684,7 +685,8 @@
       "P57.1",
       "P61.3",
       "P63.4",
-      "P63.8"
+      "P63.8",
+      "P63.12"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -826,7 +828,8 @@
       "P22.12",
       "P41.5",
       "P41.7",
-      "P63.8"
+      "P63.8",
+      "P63.12"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -1309,7 +1312,8 @@
       "P25.6",
       "P26.2",
       "P31.7",
-      "P63.11"
+      "P63.11",
+      "P63.12"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1432,7 +1436,8 @@
       "P18.7",
       "P18.9",
       "P32.7",
-      "P63.9"
+      "P63.9",
+      "P63.12"
     ],
     "plugins/audit/tests/test_panel_server.py": [
       "P18.7"
@@ -1675,7 +1680,8 @@
       "P61.10",
       "P61.13",
       "P63.4",
-      "P63.8"
+      "P63.8",
+      "P63.12"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1774,7 +1780,8 @@
       "P22.12",
       "P41.5",
       "P41.7",
-      "P63.8"
+      "P63.8",
+      "P63.12"
     ],
     "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass": [
       "P22.12"
@@ -2497,13 +2504,16 @@
       "P63.8"
     ],
     "plugins/audit/scripts/ui/panel/composition.js": [
-      "P63.9"
+      "P63.9",
+      "P63.12"
     ],
     "tools/ui-tests/phase-signoff-note.test.mjs": [
-      "P63.9"
+      "P63.9",
+      "P63.12"
     ],
     "docs/screenshots/captured-at.json": [
-      "P63.9"
+      "P63.9",
+      "P63.12"
     ]
   },
   "bugs": [
