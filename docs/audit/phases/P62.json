@@ -1,0 +1,79 @@
+{
+  "id": "P62",
+  "title": "The doctor measures what the layout costs instead of guessing",
+  "status": "in_progress",
+  "description": "F468 (field report 14): a phase-count threshold is a proxy; the cost is conflicted merges, replayed with git merge-tree without the driver.",
+  "desiredOutcome": "doctor reports, from the repository's own merges, how many conflicted in the manifest without the driver, and warns with the install command when that number is not zero and the driver is absent",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P62.1",
+      "title": "Replay the repository's merges without the driver and count the ones that conflicted in the plan",
+      "status": "in_progress",
+      "description": "Of the recent merges where both sides changed the plan, how many conflicted in it with git's own line merge (merge-tree --write-tree, the driver swapped for git merge-file). The doctor's merge-driver line reports it and warns, with the install command, when it is not zero and the driver is absent.",
+      "files": [
+        "plugins/audit/scripts/manifest/_merge_install.py",
+        "plugins/audit/tests/test__merge_install.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/commands/doctor.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__merge_install.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T09:37:10Z",
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "startedAt": "2026-09-24T09:37:10Z"
+}

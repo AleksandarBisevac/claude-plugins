@@ -3603,7 +3603,12 @@ index has no stages to read - renumbers each id both sides minted on the side na
 `_id_refs`, merges again, and writes the plan through `split_manifest`, each file rendered against
 the one conflict list. `.gitattributes` gets the manifest and its
 shard glob; a clone that has not installed falls back to git's own line merge, which is why that
-file is safe to commit. `_merge_install` (L1) names the install's pieces once and reads them
+file is safe to commit. `_merge_install.replay_merges` is the doctor's measurement of what the
+layout has cost: the recent merges whose two sides both changed the plan, replayed with
+`git merge-tree --write-tree` and the driver swapped for `git merge-file`, which is what a
+clone without it runs - a phase-count threshold would be a proxy for this number, and the
+history can simply count it. It refuses `git log -- <plan>` on purpose: that history
+simplification drops a merge resolved by taking one side. `_merge_install` (L1) names the install's pieces once and reads them
 back, because `merge-manifest status` and the doctor's `merge driver` line must give one answer and
 a layer-4 module may not reach an entry point. Cases: `tests/test__manifest_merge.py` (the merge) and
 `tests/test__merge_install.py` (locating, and a quoted root read back), `tests/test_merge_manifest.py` (real git: the field report reproduced as a control, both

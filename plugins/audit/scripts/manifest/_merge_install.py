@@ -13,6 +13,7 @@ text lives here too, beside the one function that parses it back.
 Everything here reads git or the disk and returns values; nothing here writes.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -194,4 +195,87 @@ def status_facts(manifest):
             "shim_root": root,
             "shim_root_exists": bool(root) and os.path.isfile(
                 os.path.join(root, "scripts", "manifest", "merge-manifest.py")),
-            "manifest_rel": loc["manifest_rel"]}
+            "manifest_rel": loc["manifest_rel"],
+            "toplevel": loc["toplevel"]}
+
+
+# --- what the layout has cost: merges replayed without the driver -----------------
+# A phase count is a proxy for the one cost that matters here, and a proxy is how a
+# threshold ends up reversed with its trigger still green. The cost is merges that
+# stopped on the plan, and the repository's own history can say how many did: each
+# recent merge whose two sides BOTH changed the plan - the only merges where a
+# conflict was possible - is replayed with `git merge-tree --write-tree`, with this
+# driver swapped for git's own line merge, which is exactly what a clone without the
+# driver gets. Measured with git 2.50.1 on 2026-09-24: the swap conflicts where
+# two sides appended at one tail and merges cleanly where they edited far apart, as a
+# plain `git merge` does.
+MERGE_SCAN = 20
+LINE_MERGE = "git merge-file -L ours -L base -L theirs %A %O %B"
+
+
+def _plan_path(path, manifest_rel):
+    """True for the plan's own files: the manifest, and its phase shards."""
+    shard_dir = (os.path.dirname(manifest_rel) + "/" if os.path.dirname(manifest_rel)
+                 else "") + "phases/"
+    return path == manifest_rel or (path.startswith(shard_dir) and path.endswith(".json"))
+
+
+def git_version_ok(text):
+    """True when `git --version` output names 2.38 or later - the release that gave
+    `merge-tree` the `--write-tree` mode a replay needs."""
+    m = re.search(r"(\d+)\.(\d+)", text or "")
+    return bool(m) and (int(m.group(1)), int(m.group(2))) >= (2, 38)
+
+
+def replay_merges(top, manifest_rel, scan=MERGE_SCAN):
+    """{scanned, bothSides, conflicted: [merge sha], window, basis}.
+
+    `scanned` is the two-parent merges examined (the newest `scan` of them),
+    `bothSides` those where both parents changed the plan since their base, and
+    `conflicted` the ones git's line merge stops on in a plan file. `basis` is a
+    sentence when nothing could be measured, and then no count is a claim."""
+    out = {"scanned": 0, "bothSides": 0, "conflicted": [], "window": scan, "basis": None}
+    _code, version = git(top, "--version")
+    if not git_version_ok(version):
+        out["basis"] = ("this git (%s) cannot replay a merge without writing it - "
+                        "`merge-tree --write-tree` needs git 2.38+" % (version or "unknown",))
+        return out
+    code, _head = git(top, "rev-parse", "-q", "--verify", "HEAD")
+    if code != 0:
+        return out          # no commit yet: an empty history, which is nothing to measure
+    code, log = git(top, "log", "--merges", "--format=%H %P", "-n", "%d" % (scan,))
+    if code != 0:
+        out["basis"] = "git log could not list this repository's merges"
+        return out
+    rel_dir = os.path.dirname(manifest_rel)
+    plan_paths = [manifest_rel, (rel_dir + "/" if rel_dir else "") + "phases"]
+    for line in log.splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        sha, p1, p2 = parts
+        out["scanned"] += 1
+        code, base = git(top, "merge-base", p1, p2)
+        if code != 0 or not base:
+            continue
+        sides = []
+        for parent in (p1, p2):
+            # Limited to the plan's own paths: the answer is only about them. Not a
+            # speed-up - measured, the cost of this loop is the git processes it
+            # starts, not the size of each diff. `git log -- <plan>` would start
+            # fewer, and is refused on purpose: its history simplification drops a
+            # merge resolved by taking one side, which is a conflict this counts.
+            _c, names = git(top, "diff", "--name-only", base, parent, "--", *plan_paths)
+            sides.append(any(_plan_path(n, manifest_rel) for n in names.splitlines()))
+        if not all(sides):
+            continue
+        out["bothSides"] += 1
+        code, text = git(top, "-c", "merge.%s.driver=%s" % (DRIVER_NAME, LINE_MERGE),
+                         "merge-tree", "--write-tree", "--name-only", p1, p2)
+        if code != 1:
+            continue
+        lines = text.splitlines()[1:]
+        names = lines[:lines.index("")] if "" in lines else lines
+        if any(_plan_path(n, manifest_rel) for n in names):
+            out["conflicted"].append(sha)
+    return out

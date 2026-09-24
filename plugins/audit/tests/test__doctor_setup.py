@@ -907,6 +907,65 @@ def _merge_driver_cases(check):
               _levels(rep, "merge driver") == ["WARNING"]
               and ".gitattributes" in _detail(rep, "merge driver"))
 
+        # ---- the measured cost: a history holding one merge that stopped on the plan
+        hist = os.path.join(tmp, "hist")
+        hplan = os.path.join(hist, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(hplan))
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+        def hg(*a):
+            return subprocess.run(["git", "-C", hist] + list(a), env=env,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        def put(lines):
+            with open(hplan, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+        subprocess.run(["git", "init", "-q", "-b", "main", hist], check=True)
+        put(["{", '  "a": 1', "}"])
+        hg("add", "-A")
+        hg("commit", "-qm", "base")
+        hg("checkout", "-qb", "side")
+        put(["{", '  "a": 1,', '  "side": 1', "}"])
+        hg("commit", "-qam", "side")
+        hg("checkout", "-q", "main")
+        put(["{", '  "a": 1,', '  "main": 1', "}"])
+        hg("commit", "-qam", "main")
+        hg("merge", "-q", "side", "-m", "m")
+        put(["{", '  "a": 1,', '  "main": 1,', '  "side": 1', "}"])
+        hg("add", "-A")
+        hg("commit", "-qm", "merged by hand")
+        r = base.Report()
+        M._check_merge_driver(r, hplan)
+        check("dsm7 no driver, and the repository's own history holds a merge that "
+              "stopped on the plan: a WARNING carrying the measured count and its basis, "
+              "and the install as the fix: %r" % (_detail(r, "merge driver"),),
+              _levels(r, "merge driver") == ["WARNING"]
+              and "1 of the 1" in _detail(r, "merge driver")
+              and "merge-tree" in _detail(r, "merge driver")
+              and any("merge-driver install" in (row["fix"] or "") for row in r.rows
+                      if row["check"] == "merge driver"))
+        with open(os.devnull, "w") as _null:
+            held_o = sys.stdout
+            sys.stdout = _null
+            try:
+                mm.install(hplan, mm._output.PLUGIN_ROOT)
+            finally:
+                sys.stdout = held_o
+        r = base.Report()
+        M._check_merge_driver(r, hplan)
+        check("dsm8 ...installed, the same history is an OK line that says what the "
+              "driver is saving: %r" % (_detail(r, "merge driver"),),
+              _levels(r, "merge driver") == ["OK"]
+              and "1 of the 1" in _detail(r, "merge driver"))
+        r = base.Report()
+        M._check_merge_driver(r, mpath)
+        check("dsm9 SECOND DIRECTION: a repository with no merge that changed the plan on "
+              "both sides says there is nothing to measure - never 'no conflicts': %r"
+              % (_detail(r, "merge driver"),),
+              "nothing to measure" in _detail(r, "merge driver")
+              and "none conflicted" not in _detail(r, "merge driver"))
+
         loose = os.path.join(tmp, "nogit", "plan.json")
         os.makedirs(os.path.dirname(loose))
         with open(loose, "w", encoding="utf-8") as fh:

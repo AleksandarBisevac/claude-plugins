@@ -52,6 +52,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   commits, because a phase minted on both sides may conflict only in its shard.
 - **With several phases running, `/audit:task add` without `--phase` takes the phase whose
   branch is checked out**, instead of refusing - three developers on three phase branches.
+- **`/audit:doctor` measures what the layout has cost, instead of a phase-count threshold.** The
+  `merge driver` line replays the repository's recent merges whose two sides both changed the
+  plan with `git merge-tree` and git's own line merge, says how many conflicted in it, and warns
+  with the install command when that number is not zero and the driver is absent. A field report
+  asked for a hint at "say, 50 phases"; the number that decides it is the conflicts, and the
+  history holds it.
 - **`audit-task next-id bug|prop|task --phase <id>`** gives the records the model writes by hand
   (a bug, a parked proposal, a fix task, a moved task) the allocator's id, suffix included.
 ### Fixed

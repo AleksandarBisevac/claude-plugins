@@ -114,6 +114,19 @@ direction, not how they fix it — so an OK line naming it is a statement of fac
 relayed as a to-do. The line deliberately names no command for that reason; if the user reads
 the cost and wants the other shape, that is when `/audit:layout` comes up.
 
+The **merge driver** line says whether this clone merges the manifest by record, and **what
+not doing so has cost this repository** - measured, not inferred from a phase count. The
+recent merges whose two sides BOTH changed the plan are replayed with `git merge-tree` and
+git's own line merge (what a clone without the driver runs), and the line says how many
+conflicted in the plan. Not installed with none conflicted is an OK line naming no command,
+for the layout line's reason: using the driver is a choice. Not installed with conflicted
+merges is a WARNING with `/audit:layout merge-driver install` as its fix - relay the count
+and its basis with it, because the count is the argument. "Nothing to measure" means no
+recent merge changed the plan on both sides; it is not evidence that the driver is unneeded.
+Two per-clone states warn too: `.gitattributes` routes the plan to the driver and this
+clone does not configure it (a teammate who has not installed), and a shim whose plugin root
+is gone after an upgrade.
+
 The layout is read from the phase stubs (`_manifest_io.is_sharded()`), which is the one reading
 the whole plugin shares. A `meta.version` of 3 with no stub carrying a `shard` is therefore a
 FINDING about the two disagreeing, not a layout — relay it as a broken index, because that is

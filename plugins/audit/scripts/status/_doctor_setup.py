@@ -630,49 +630,83 @@ def check_manifest(rep, project, cfg):
     return manifest_rel, manifest
 
 
+def _merge_cost(facts):
+    """(sentence, conflicted count) - what the layout has cost this repository, read
+    off its own merges (`_merge_install.replay_merges`). A zero denominator is said
+    as nothing to measure, never as no conflicts: a repository whose merges never
+    changed the plan on both sides has not shown that the driver is unneeded."""
+    got = _merge_install.replay_merges(facts["toplevel"], facts["manifest_rel"])
+    rel = facts["manifest_rel"]
+    if got["basis"]:
+        return "merge history not measured: %s" % (got["basis"],), 0
+    if not got["bothSides"]:
+        return ("of the last %d merge(s) scanned, none changed %s on both sides - "
+                "nothing to measure" % (got["scanned"], rel)), 0
+    n = len(got["conflicted"])
+    replay = ("replayed with git merge-tree and git's own line merge, which is what a "
+              "clone without the driver runs")
+    if not n:
+        return ("of the %d recent merge(s) that changed %s on both sides, none "
+                "conflicted in it (%s)" % (got["bothSides"], rel, replay)), 0
+    return ("%d of the %d recent merge(s) that changed %s on both sides conflicted in "
+            "it (%s)" % (n, got["bothSides"], rel, replay)), n
+
+
 def _check_merge_driver(rep, index_path):
-    """Whether THIS clone merges the manifest by record.
+    """Whether THIS clone merges the manifest by record, and what not doing so has
+    cost this repository.
 
     Two of the three pieces `/audit:layout merge-driver install` writes are per
     clone: git config is never committed, and the shim lives in the git dir. So a
     team that committed the `.gitattributes` lines still has clones that merge the
     manifest line by line, and nothing but this says so. The facts come from
-    `merge-manifest.status_facts` - the verb's own reading - so the doctor cannot
+    `_merge_install.status_facts` - the verb's own reading - so the doctor cannot
     disagree with `status` about what is installed.
 
-    Not installed at all is an OK line naming no command, for the reason the
-    single-file layout line names none: using the driver is a choice.
+    THE COST IS MEASURED, NOT INFERRED FROM A PHASE COUNT. A threshold ("warn at 50
+    phases") is a proxy, and the cost it stands for is merges that stopped on the
+    plan - which the history can count. Not installed with no conflicted merge is an
+    OK line naming no command, for the reason the single-file layout line names none:
+    using the driver is a choice. Not installed with conflicted merges is a WARNING,
+    because then the choice is already being paid for.
     """
     facts = _merge_install.status_facts(index_path)
     if "error" in facts:
         return
     fix = "/audit:layout merge-driver install"
+    cost, conflicted = _merge_cost(facts)
     if not facts["attributes"] and not facts["configured"]:
+        if conflicted:
+            rep.warn("merge driver", "not installed, and it is being paid for: %s" % (cost,),
+                     fix)
+            return
         rep.ok("merge driver", "not installed - the manifest merges line by line, so "
-                               "two branches that each add a record conflict on it")
+                               "two branches that each add a record conflict on it; %s"
+               % (cost,))
         return
     if facts["attributes"] and not facts["configured"]:
         rep.warn("merge driver",
                  ".gitattributes routes %s to the audit-manifest driver and this clone "
                  "does not configure it (merge.audit-manifest.driver is %s), so merges "
-                 "here fall back to a line merge" % (facts["manifest_rel"],
-                                                     facts["driver_value"] or "unset"),
+                 "here fall back to a line merge; %s" % (facts["manifest_rel"],
+                                                        facts["driver_value"] or "unset",
+                                                        cost),
                  fix)
         return
     if not facts["attributes"]:
         rep.warn("merge driver",
                  "this clone configures the audit-manifest driver but .gitattributes does "
-                 "not route %s to it, so the driver never runs" % (facts["manifest_rel"],),
-                 fix)
+                 "not route %s to it, so the driver never runs; %s"
+                 % (facts["manifest_rel"], cost), fix)
         return
     if not (facts["shim"] and facts["shim_root_exists"]):
         rep.warn("merge driver",
                  "the shim git runs records plugin root %s, which no longer holds the "
-                 "driver - merges fall back to a line merge until it is re-installed"
-                 % (facts["shim_root"] or "(none)",), fix)
+                 "driver - merges fall back to a line merge until it is re-installed; %s"
+                 % (facts["shim_root"] or "(none)", cost), fix)
         return
-    rep.ok("merge driver", "installed - %s merges by record in this clone (shim runs %s)"
-           % (facts["manifest_rel"], facts["shim_root"]))
+    rep.ok("merge driver", "installed - %s merges by record in this clone (shim runs %s); "
+                           "without it, %s" % (facts["manifest_rel"], facts["shim_root"], cost))
 
 
 def _check_shards(rep, index_path, manifest, mio=None):

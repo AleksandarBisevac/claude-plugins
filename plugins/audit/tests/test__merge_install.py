@@ -83,10 +83,111 @@ def _cases(check):
         facts = M.status_facts(plan)
         check("mi9 a root the shell had to quote reads back as the root that was written",
               facts["shim_root"] == root and facts["shim_root_exists"] is True, facts)
+        _replay_cases(check, tmp)
     finally:
         os.environ.clear()
         os.environ.update(held)
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _history(root):
+    """A repository whose history holds the three merges the measurement must tell
+    apart: one where both sides appended to the plan (a line merge conflicts), one
+    where both sides changed the plan in far-apart places (it does not), and one
+    where only one side touched the plan (no conflict was possible)."""
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(*a):
+        return subprocess.run(["git", "-C", root] + list(a), check=True, env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                              ).stdout.decode().strip()
+
+    def write(path, lines):
+        full = os.path.join(root, path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+
+    plan = "docs/audit/plan.json"
+    body = ["{", '  "a": 1,'] + ['  "k%d": %d,' % (i, i) for i in range(12)] + ['  "z": 0', "}"]
+    subprocess.run(["git", "init", "-q", "-b", "main", root], check=True)
+    write(plan, body)
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    shas = {}
+    # 1. both append at the tail -> a line merge conflicts
+    git("checkout", "-qb", "b1")
+    write(plan, body[:-2] + ['  "z": 0,', '  "b1": 1', "}"])
+    git("commit", "-qam", "b1")
+    git("checkout", "-q", "main")
+    write(plan, body[:-2] + ['  "z": 0,', '  "m1": 1', "}"])
+    git("commit", "-qam", "m1")
+    subprocess.run(["git", "-C", root, "merge", "-q", "b1", "-m", "merge b1"], env=env,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    write(plan, body[:-2] + ['  "z": 0,', '  "m1": 1,', '  "b1": 1', "}"])
+    git("add", "-A")
+    git("commit", "-qm", "merge b1 (resolved by hand)")
+    shas["conflicted"] = git("rev-parse", "HEAD")
+    cur = open(os.path.join(root, plan)).read().split("\n")[:-1]
+    # 2. both change the plan, far apart -> clean IN THE PLAN; and both change another
+    #    file on one line, so the merge itself conflicts - but not in the plan, and a
+    #    measurement of the plan's cost must not count it.
+    git("checkout", "-qb", "b2")
+    write(plan, [cur[0], '  "a": 2,'] + cur[2:])
+    write("src/y.txt", ["from b2"])
+    git("add", "-A")
+    git("commit", "-qm", "b2")
+    git("checkout", "-q", "main")
+    write(plan, cur[:-2] + ['  "b1": 2', "}"])
+    write("src/y.txt", ["from main"])
+    git("add", "-A")
+    git("commit", "-qm", "m2")
+    subprocess.run(["git", "-C", root, "merge", "-q", "b2", "-m", "merge b2"], env=env,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    write("src/y.txt", ["from both"])
+    git("add", "-A")
+    git("commit", "-qm", "merge b2 (src/y.txt resolved by hand)")
+    shas["clean"] = git("rev-parse", "HEAD")
+    # 3. only one side touches the plan
+    git("checkout", "-qb", "b3")
+    write("src/x.txt", ["x"])
+    git("add", "-A")
+    git("commit", "-qm", "b3")
+    git("checkout", "-q", "main")
+    write(plan, open(os.path.join(root, plan)).read().replace('"k3": 3', '"k3": 33').split("\n")[:-1])
+    git("commit", "-qam", "m3")
+    git("merge", "-q", "b3", "-m", "merge b3")
+    return plan, shas
+
+
+def _replay_cases(check, tmp):
+    root = os.path.join(tmp, "history")
+    plan, shas = _history(root)
+    got = M.replay_merges(root, plan)
+    check("mi10 the measurement scans the repository's merges and counts, as its "
+          "denominator, only those where BOTH sides changed the plan - the only ones "
+          "where a conflict was possible: %r" % (got,),
+          got.get("basis") is None and got["scanned"] == 3 and got["bothSides"] == 2, got)
+    check("mi11 ...and of those it names exactly the one git's line merge conflicts on "
+          "(both appended at the tail), not the far-apart edit",
+          got.get("conflicted") == [shas["conflicted"]], got)
+    fresh = os.path.join(tmp, "fresh")
+    subprocess.run(["git", "init", "-q", fresh], check=True)
+    got_fresh = M.replay_merges(fresh, "docs/audit/plan.json")
+    check("mi13 a repository with no commit yet has nothing to measure - and is not "
+          "reported as a git too old to measure with: %r" % (got_fresh,),
+          got_fresh.get("basis") is None and got_fresh.get("scanned") == 0, got_fresh)
+    check("mi14 git's version is read from `git --version`, and 2.38 is the floor "
+          "`merge-tree --write-tree` needs",
+          M.git_version_ok("git version 2.50.1 (Apple Git-155)")
+          and M.git_version_ok("git version 2.38.0")
+          and not M.git_version_ok("git version 2.37.9")
+          and not M.git_version_ok("garbage"))
+    got_none = M.replay_merges(root, "docs/audit/other.json")
+    check("mi12 a plan no merge changed on both sides has a zero denominator, which the "
+          "caller must read as 'nothing to measure', not as 'no conflicts'",
+          got_none.get("bothSides") == 0 and got_none.get("conflicted") == [], got_none)
 
 
 def _selftest():
