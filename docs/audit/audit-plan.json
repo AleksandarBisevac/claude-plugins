@@ -445,7 +445,8 @@
       "P60.2",
       "P60.5",
       "P61.1",
-      "P61.3"
+      "P61.3",
+      "P61.5"
     ],
     "README.md": [
       "P2.3",
@@ -1200,7 +1201,8 @@
       "P31.6",
       "P34.5",
       "P47.3",
-      "P59.5"
+      "P59.5",
+      "P61.5"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1209,7 +1211,8 @@
       "P34.5",
       "P36.10",
       "P50.8",
-      "P59.5"
+      "P59.5",
+      "P61.5"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1228,7 +1231,8 @@
       "P18.9",
       "P21.3",
       "P29.5",
-      "P41.4"
+      "P41.4",
+      "P61.6"
     ],
     "docs/handbook.html": [
       "P18.8",
@@ -1907,11 +1911,13 @@
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1",
-      "P61.2"
+      "P61.2",
+      "P61.5"
     ],
     "plugins/audit/tests/test__proposals.py": [
       "P32.1",
-      "P61.2"
+      "P61.2",
+      "P61.5"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -2320,6 +2326,9 @@
     ],
     "plugins/audit/tests/test__id_shape.py": [
       "P61.1"
+    ],
+    "plugins/audit/reference/phase-signoff.md": [
+      "P61.5"
     ]
   },
   "bugs": [
