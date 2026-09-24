@@ -98,6 +98,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook's `task.complete`.
 
 ### Fixed
+- **A merge's write derived completions the merged branch had already recorded.** The
+  journal-writes hook diffs the plan whenever a Bash call moves it, and a `git merge` moves it by
+  the whole of another branch's history - so every task that branch finished got a second
+  `task.complete` and `task.commit`, and the completion count stopped being a count. A derived row
+  is now checked against the commits the call's history-bringing operations produced (an open
+  `MERGE_HEAD`, or the reflog back to where HEAD stood at the baseline), and one the incoming
+  commit already carries is not repeated; the change is still recorded. A completion made and
+  committed in the same call is still derived.
 - **`close-phase` judged a landing by the phase as it stood before its own merge.** Run from the
   parent's tree - the only tree a linked worktree can be removed from - it read the parent's copy
   of the plan, where the sign-off committed on the phase branch is not yet present, and refused the

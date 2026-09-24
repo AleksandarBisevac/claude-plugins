@@ -526,6 +526,43 @@ def _cases(check):
               len([e for e in (_body or {}).get("events", [])
                    if e.get("action") == "phase.signoff"]) == 1, repr(_body))
 
+        # A write that BRINGS IN another commit's history - a merge, a cherry-pick -
+        # derives no completion that commit already records: the completion
+        # happened, and was journalled, where the work ran.
+        _entry = {"action": "manifest.edit", "target": "m.json", "summary": "x",
+                  "actor": {"author": "a"}}
+        _old = manifest_doc(status="in_progress")
+        _new = manifest_doc(status="done", completed="X", commit="a" * 40)
+        _, _plain = M._manifest_rows(dict(_entry), "m.json", _old, _new)
+        _row, _merged = M._manifest_rows(dict(_entry), "m.json", _old, _new,
+                                         brought=[_new])
+        check("hm1 a completion that ARRIVED with the history a call brought in is not "
+              "derived again - the primary row still records the change: %r %r"
+              % ([e["action"] for e in _merged], _row["summary"]),
+              [e["action"] for e in _plain] == ["task.complete", "task.commit"]
+              and _merged == [] and "not repeated" in _row["summary"])
+        _, _local = M._manifest_rows(dict(_entry), "m.json", _old, _new,
+                                     brought=[_old])
+        check("hm2 SECOND DIRECTION: history that did NOT carry the completion - the "
+              "call brought in a commit where the task was still open - leaves it "
+              "derived: %r" % ([e["action"] for e in _local],),
+              [e["action"] for e in _local] == ["task.complete", "task.commit"])
+        _two_old = manifest_doc(status="in_progress")
+        _two_old["phases"][0]["tasks"].append({"id": "P1.2", "title": "u",
+                                               "status": "in_progress"})
+        _two_new = json.loads(json.dumps(_two_old))
+        _two_new["phases"][0]["tasks"][0].update(status="done", completedAt="X")
+        _two_new["phases"][0]["tasks"][1].update(status="done", completedAt="Y")
+        _incoming = json.loads(json.dumps(_two_old))
+        _incoming["phases"][0]["tasks"][0].update(status="done", completedAt="X")
+        _, _mixed = M._manifest_rows(dict(_entry), "m.json", _two_old, _two_new,
+                                     brought=[_incoming])
+        check("hm3 a call that merges AND finishes work of its own keeps its own "
+              "completion and drops only the one that arrived: %r"
+              % ([(e["action"], e["details"].get("taskId")) for e in _mixed],),
+              [(e["action"], e["details"].get("taskId")) for e in _mixed]
+              == [("task.complete", "P1.2")])
+
         # --- i: connector v2 events (task.blocked + ado.link) ------------------
         # Derived from the same diff as everything else, tested on the core
         # directly. D-1 rule: `ado` is NOT in TASK_FIELDS - only the id is

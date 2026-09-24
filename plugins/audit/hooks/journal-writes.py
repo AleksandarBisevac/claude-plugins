@@ -332,9 +332,15 @@ def _write_slot(root, cfg, data, rel):
         slot = _slot_path(root, cfg, data, rel)
         sha, text = _snapshot(os.path.join(str(root), rel))
         _config.ensure_local_dir(os.path.dirname(slot))
+        head_code, head = _git_out(root, "rev-parse", "-q", "--verify", "HEAD")
         with open(slot, "w", encoding="utf-8") as fh:
             json.dump({"path": rel,
                        "ts": _config.utc_stamp(),
+                       # WHERE HEAD STOOD when this baseline was taken - the
+                       # anchor `brought_in` walks the reflog back to. A time
+                       # has one-second resolution, and a reset made earlier in
+                       # the same second read as this call's.
+                       "head": head.strip() if head_code == 0 else None,
                        "sha256": sha, "content": text}, fh)
         return slot
     except Exception:
@@ -736,7 +742,100 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
 
 
 # --- the rows a write owes ---------------------------------------------------
-def _manifest_rows(entry, rel, old_obj, new_obj):
+# --- history brought in: what a merge's write did NOT complete ------------------
+# The sweep lane diffs a recorded path whenever a Bash call moved it, and a `git
+# merge` moves the plan by the whole of another branch's history - so every task
+# that branch finished was derived as completed a second time, where nothing was
+# completed, and the completion count stopped being a count. The completions came
+# with the history; they were journalled where the work ran.
+#
+# READ OFF GIT'S RECORD, NOT THE COMMAND: an in-progress operation leaves its head
+# file, and a finished one leaves a reflog entry naming what it was. A `commit` is
+# not in this list - it brings in nothing, so a completion made and committed in
+# one call is still derived.
+_HISTORY_HEADS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REBASE_HEAD", "REVERT_HEAD")
+_BRINGS_HISTORY = ("merge", "pull", "rebase", "cherry-pick", "reset", "checkout",
+                   "commit (merge)", "am", "revert")
+
+
+def _git_out(root, *argv):
+    """(returncode, stdout) of one git call, or (None, "") when git cannot run.
+    Imported here: only a Post pass that saw a recorded path move asks git."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(root)] + list(argv),
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           timeout=10)
+    except Exception:
+        return None, ""
+    return r.returncode, r.stdout.decode("utf-8", "replace")
+
+
+def brought_in(root, rel, since_head):
+    """`rel` as each commit this call's history-bringing git operations produced,
+    parsed - the documents a derived row is checked against.
+
+    `since_head` is where HEAD stood when the baseline was taken; the reflog is
+    read back to it and no further, so an operation from before the baseline is
+    never this call's. [] when git cannot say, which leaves every derived row
+    standing: a missed filter costs a repeated row, a wrong one would cost a
+    completion."""
+    code, gitdir = _git_out(root, "rev-parse", "--git-dir")
+    if code != 0:
+        return []
+    gitdir = gitdir.strip()
+    if not os.path.isabs(gitdir):
+        gitdir = os.path.join(str(root), gitdir)
+    shas = []
+    for name in _HISTORY_HEADS:
+        try:
+            with open(os.path.join(gitdir, name), encoding="utf-8") as fh:
+                head = fh.readline().strip()
+        except OSError:
+            continue
+        if head:
+            shas.append(head)
+    if since_head:
+        code, log = _git_out(root, "log", "-g", "--format=%H%x09%gs", "-n", "50",
+                             "HEAD")
+        for line in (log.splitlines() if code == 0 else []):
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+            if parts[0] == since_head:
+                break              # the baseline's own position: nothing older
+            if parts[1].startswith(_BRINGS_HISTORY):
+                shas.append(parts[0])
+    docs = []
+    for sha in sorted(set(shas), key=shas.index):
+        code, text = _git_out(root, "show", "%s:./%s" % (sha, rel))
+        if code != 0:
+            continue
+        try:
+            docs.append(json.loads(text))
+        except ValueError:
+            continue
+    return docs
+
+
+def _event_key(ev):
+    det = ev.get("details") or {}
+    return (ev.get("action"), det.get("taskId"), det.get("phaseId"))
+
+
+def _not_arrived(events, new_obj, brought):
+    """The derived events that are news against EVERY document the call brought
+    in - one it did not carry. A completion present in an incoming commit's copy is
+    that commit's, and it is not derived again."""
+    if not brought:
+        return list(events)
+    fresh = [set(_event_key(e) for e in ((semantic_diff(doc, new_obj) or {})
+                                         .get("events") or []))
+             for doc in brought]
+    return [ev for ev in events if all(_event_key(ev) in f for f in fresh)]
+
+
+def _manifest_rows(entry, rel, old_obj, new_obj, brought=None):
     """(primary, chained) for a write to the manifest: the diff folded into the
     primary row, plus the completion rows derived from the SAME comparison.
 
@@ -758,10 +857,19 @@ def _manifest_rows(entry, rel, old_obj, new_obj):
         return row, []             # nothing this hook tracks moved: not a gap
     row["summary"] = diff["summary"]
     row["details"] = {"changes": diff["changes"]}
+    events = _not_arrived(diff["events"], new_obj, brought)
+    held = len(diff["events"]) - len(events)
+    if held:
+        # SAID ON THE ROW, so the write is still accounted for: the change is
+        # recorded, and why its completions are not is readable beside it.
+        note = ("%d derived row(s) not repeated: they arrived with the history "
+                "this call brought in, and were recorded where the work ran" % held)
+        row["summary"] = "%s; %s" % (row["summary"], note)
+        row["details"]["reason"] = note
     return row, [{"action": ev["action"], "target": rel,
                   "summary": ev["summary"], "details": ev["details"],
                   "actor": dict(row["actor"])}
-                 for ev in diff["events"]]
+                 for ev in events]
 
 
 def _config_rows(entry, old_obj, new_obj):
@@ -875,8 +983,11 @@ def swept_entries(data, *, cfg=None, root=None):
                        rel, tool, {}, data, root, cfg)
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
+        brought = (brought_in(root, rel, pre.get("head"))
+                   if not is_cfg and old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
-                            else _manifest_rows(entry, rel, old_obj, new_obj))
+                            else _manifest_rows(entry, rel, old_obj, new_obj,
+                                                brought=brought))
         rows.append(primary)
         rows.extend(chained)
         if enabled:

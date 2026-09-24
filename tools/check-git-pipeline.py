@@ -484,6 +484,127 @@ def check_journal_wiring(fx):
     return ok, "actions=%r task.commit summary=%r" % (actions, recorded)
 
 
+def _bash_round(fx, command, act):
+    """One Bash call bracketed by the hook's two passes, as the harness runs it:
+    Pre seeds the baseline, `act` is the call, Post derives the rows."""
+    # A SESSION OF ITS OWN: the sweep lane seeds a baseline only when the session
+    # has no slot yet, and the other checks share "git-fixture" - so a shared id
+    # would diff against whatever state an earlier check left, not against this
+    # call's starting point.
+    pre = dict(bash_payload(fx, command),
+               session_id="round-%d" % (len(command),))
+    code, out = hook(fx, "journal-writes.py", "open", pre)
+    if code != 0:
+        return None, "the Pre pass exited %r: %s" % (code, out.strip()[:200])
+    act()
+    post = dict(pre, hook_event_name="PostToolUse")
+    code, out = hook(fx, "journal-writes.py", "open", post)
+    if code != 0:
+        return None, "the Post pass exited %r: %s" % (code, out.strip()[:200])
+    return journal_rows(fx), ""
+
+
+def check_journal_merge_derives_no_second_completion(fx):
+    """A `git merge` that brings a finished task in derives no second completion.
+
+    The sweep lane sees the manifest move under a Bash call and diffs it, and a
+    merge moves it by the whole of another branch's history - so every task that
+    branch finished was recorded as completed a SECOND time, here, where nothing
+    was completed. Driven through the launcher against a real merge.
+    """
+    branch = "feature/finished-elsewhere"
+    # PUT BACK WHAT WAS FOUND, not the fixture's first commit: the checks after
+    # this one read commits the checks before it made.
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    try:
+        write_manifest(fx, manifest_body(task_status="in_progress"))
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        base = git(fx, "rev-parse", "HEAD")[1].strip()
+        git(fx, "checkout", "-q", "-b", branch)
+        write_manifest(fx, manifest_body(commit=base, task_status="done"))
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "the task finished on its branch")
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        reset_journal(fx)
+        rows, why = _bash_round(fx, "git merge --ff-only " + branch,
+                                lambda: git(fx, "merge", "-q", "--ff-only", branch))
+        if rows is None:
+            return False, why
+        actions = [r.get("action") for r in rows]
+        return (actions == ["manifest.edit"]), "actions=%r" % (actions,)
+    finally:
+        git(fx, "reset", "--hard", "-q", found)
+        git(fx, "branch", "-D", branch)
+        reset_journal(fx)
+
+
+def check_journal_conflicted_merge_derives_no_second_completion(fx):
+    """...and the same for a merge that STOPS on a conflict elsewhere - the shape
+    that was measured: the plan merged cleanly into the working tree, another file
+    conflicted, and MERGE_HEAD is the only record of where the plan came from."""
+    branch = "feature/finished-and-conflicting"
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    side = os.path.join(fx["root"], "side.txt")
+    try:
+        write_manifest(fx, manifest_body(task_status="in_progress"))
+        with io.open(side, "w", encoding="utf-8") as fh:
+            fh.write("base\n")
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        base = git(fx, "rev-parse", "HEAD")[1].strip()
+        git(fx, "checkout", "-q", "-b", branch)
+        write_manifest(fx, manifest_body(commit=base, task_status="done"))
+        with io.open(side, "w", encoding="utf-8") as fh:
+            fh.write("branch\n")
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "the task finished on its branch")
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        with io.open(side, "w", encoding="utf-8") as fh:
+            fh.write("parent\n")
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "the parent moved the same file")
+        reset_journal(fx)
+        rows, why = _bash_round(fx, "git merge " + branch,
+                                lambda: git(fx, "merge", "-q", "--no-edit", branch))
+        if rows is None:
+            return False, why
+        actions = [r.get("action") for r in rows]
+        return (actions == ["manifest.edit"]), "actions=%r" % (actions,)
+    finally:
+        git(fx, "merge", "--abort")
+        git(fx, "reset", "--hard", "-q", found)
+        git(fx, "branch", "-D", branch)
+        if os.path.exists(side):
+            os.remove(side)
+        reset_journal(fx)
+
+
+def check_journal_local_commit_still_derives(fx):
+    """...and a completion MADE in the call is still derived, though the same call
+    moves HEAD by committing it - a commit brings in no history."""
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    try:
+        write_manifest(fx, manifest_body(task_status="in_progress"))
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "fixture: the task open")
+        reset_journal(fx)
+
+        def finish_and_commit():
+            write_manifest(fx, manifest_body(commit=fx["head"], task_status="done"))
+            git(fx, "add", "-A")
+            git(fx, "commit", "-q", "-m", "finish the task here")
+        rows, why = _bash_round(fx, "audit-task done && git commit", finish_and_commit)
+        if rows is None:
+            return False, why
+        actions = [r.get("action") for r in rows]
+        return (actions == ["manifest.edit", "task.complete", "task.commit"]), (
+            "actions=%r" % (actions,))
+    finally:
+        git(fx, "reset", "--hard", "-q", found)
+        reset_journal(fx)
+
+
 def check_journal_anchor_holds(fx):
     """Committing the journal does not itself produce a finding.
 
@@ -1389,6 +1510,12 @@ CHECKS = (
      "anchor compared against", check_journal_anchor_pointer),
     ("g10b deleting a committed journal file is a finding that names it - the "
      "act the chain and the anchor both walk past", check_journal_file_deleted),
+    ("g8b a merge that brings in a finished task derives no second task.complete",
+     check_journal_merge_derives_no_second_completion),
+    ("g8d ...and a merge that stops on a conflict elsewhere, MERGE_HEAD open, "
+     "derives none either", check_journal_conflicted_merge_derives_no_second_completion),
+    ("g8c ...while a completion made AND committed in one call still is",
+     check_journal_local_commit_still_derives),
     ("g11 meter-usage is WIRED: a ledger row, authored by git's identity",
      check_meter_wiring),
     ("g12 ...and a second pass over one transcript adds nothing",
