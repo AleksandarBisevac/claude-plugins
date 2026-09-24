@@ -514,7 +514,7 @@
     {
       "id": "P61.11",
       "title": "merge-manifest resolve: renumber the side the operator names, every reference with it",
-      "status": "in_progress",
+      "status": "done",
       "description": "For the collision the suffix cannot prevent - two clones minting on the development branch - resolve reads the conflicted file's three stages, renames each id both sides added on the side the operator names to the next free id (with every reference, via _id_refs), re-merges and validates; in the sharded layout a colliding phase's shard is written under its new name. The driver's conflict message names the verb.",
       "files": [
         "plugins/audit/scripts/manifest/merge-manifest.py",
@@ -548,14 +548,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ee83c8a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "merge-manifest resolve: three plans from HEAD/MERGE_HEAD/base via git archive + load_manifest, _id_refs rename on the named side, re-merge, sharded write via split_manifest; build_parser for the non-driver verbs.",
+        "descriptive": "A bug, task, proposal or phase id minted on both sides of a merge on the development branch is resolved by one command that renumbers the side the user names, with every reference."
       },
       "startedAt": "2026-09-24T08:48:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:59:12Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_merge_manifest.py"
+      ]
     },
     {
       "id": "P61.12",
