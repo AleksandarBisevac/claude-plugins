@@ -29,7 +29,7 @@
     {
       "id": "P60.1",
       "title": "Record-level three-way merge of a manifest document",
-      "status": "in_progress",
+      "status": "done",
       "description": "Pure merge3(base, ours, theirs): records matched by id, fileIndex rows as sets, same-id-added-twice and same-field conflicts reported, symmetric deterministic order, conflict-marker rendering of only the disagreeing records.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_merge.py",
@@ -61,19 +61,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a516f64",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_merge.merge3 matches keyed lists by id, fileIndex rows as sets, symmetric order; render diffs the two whole resolutions.",
+        "descriptive": "Two branches that each add a different record merge by id instead of conflicting on shared lines; only real disagreements remain, as marker blocks."
       },
       "startedAt": "2026-09-24T06:57:27Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T07:50:06Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__manifest_merge.py"
+      ]
     },
     {
       "id": "P60.2",
       "title": "merge-manifest.py: the git merge driver, its install verb and the stale-root shim",
-      "status": "in_progress",
+      "status": "done",
       "description": "Driver for %O %A %B %P: revalidate a merged single-file plan (only NEW findings fail), fall back to git merge-file markers on unreadable input or internal error, exit only 0/1. install|uninstall|status writes .gitattributes, local git config and a POSIX-sh shim under the git common dir.",
       "files": [
         "plugins/audit/scripts/manifest/merge-manifest.py",
@@ -106,19 +108,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "50dca34",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "merge-manifest.py driver/install/uninstall/status; revalidates single-file merges on new findings only; empty %O handled; shim under the git common dir.",
+        "descriptive": "git merges the manifest through the driver; every failure path leaves markers, never ours alone."
       },
       "startedAt": "2026-09-24T06:57:27Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T07:50:07Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_merge_manifest.py"
+      ]
     },
     {
       "id": "P60.3",
       "title": "Document the merge driver and scope the no-conflict promises",
-      "status": "in_progress",
+      "status": "done",
       "description": "layout.md merge-driver subcommand, README team section, COMPATIBILITY promise for the driver name, CHANGELOG, dated status note in the concurrency report.",
       "files": [
         "plugins/audit/commands/layout.md",
@@ -151,19 +155,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e559f6d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "layout.md merge-driver section, README, COMPATIBILITY, CHANGELOG, orchestrator.md, dated note in the concurrency report.",
+        "descriptive": "The driver is documented and the no-conflict promise is scoped to a phase run."
       },
       "startedAt": "2026-09-24T07:07:48Z",
-      "completedAt": null,
+      "completedAt": "2026-09-24T07:50:07Z",
       "verifiedBy": []
     },
     {
       "id": "P60.4",
       "title": "Doctor: driver installed per clone, and the shim still points at a real plugin root",
-      "status": "in_progress",
+      "status": "done",
       "description": "WARNING when .gitattributes names the driver and this clone has none configured, or when the shim's recorded root no longer exists.",
       "files": [
         "plugins/audit/scripts/status/_doctor_setup.py",
@@ -195,19 +199,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d6d73fe",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_doctor_setup._check_merge_driver over _merge_install.status_facts; dsm1-dsm6.",
+        "descriptive": "The doctor says whether this clone merges the manifest by record, and warns when the team's attributes and this clone disagree."
       },
       "startedAt": "2026-09-24T07:10:23Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T07:50:07Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__doctor_setup.py"
+      ]
     },
     {
       "id": "P60.5",
       "title": "_merge_install.py: the install's pieces named once, for the verb and the doctor",
-      "status": "in_progress",
+      "status": "done",
       "description": "The doctor (layer 4) may not load an entry point, so what an install consists of and how to read it back moves to an L1 module both import - one reading, not two.",
       "files": [
         "plugins/audit/scripts/manifest/_merge_install.py",
@@ -243,14 +249,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "07ceaf0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_merge_install at L1; sh_quote/sh_unquote pair fixes a quoted plugin root.",
+        "descriptive": "The install's pieces are named once and read back identically by status and the doctor."
       },
       "startedAt": "2026-09-24T07:13:10Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T07:50:07Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__merge_install.py"
+      ]
     }
   ],
   "startedAt": "2026-09-24T06:57:27Z"
