@@ -253,7 +253,8 @@ def policy_state(project):
 
 
 def _active_area_tags(manifest):
-    """The area tags of phases with work in progress — what scopes an area rule.
+    """The area tags of phases whose area is live (`_mio.area_active`: running, or
+    only awaiting sign-off) — what scopes an area rule.
 
     The same question `_config.active_area_tags` answers for the hook, asked of a
     manifest already in hand rather than re-read from disk. Both walk the ASSEMBLED

@@ -1000,13 +1000,15 @@ def _areas_lib():
 
 
 def active_area_tags(root, manifest_rel):
-    """The `meta.areas` tags of phases with work in progress, in manifest order.
+    """The `meta.areas` tags of phases whose area is live, in manifest order.
 
     This is what scopes a per-area policy rule. A hook is handed a tool name and
     nothing else — no directory, no file — so "this rule applies to the API area"
-    can only mean "while the API area is being worked on". The evidence is the same
-    one the plan gate grades itself on: a phase (or one of its tasks) is
-    `in_progress`.
+    can only mean "while the API area is being worked on". That is
+    `_manifest_io.area_active`, and it is WIDER than the plan gate's evidence on
+    purpose: a phase with work in flight, and also one only awaiting sign-off,
+    whose review and fix runs still work in that area. The plan gate's denying
+    tier is not held by the second kind; the area's rules are.
 
     Reads the ASSEMBLED manifest, which is load-bearing under the sharded layout —
     the index stubs carry no status, so a raw read would report nothing running and
@@ -1899,7 +1901,8 @@ def declaring_tasks(root, manifest_rel, rel):
 def manifest_state(root, manifest_rel):
     """How much the plan gate actually knows:
     {"exists": bool, "phaseRunning": bool, "runningPhase": "<id>"|None,
-     "staleClosedPhase": "<id>"|None}.
+     "staleClosedPhase": "<id>"|None, "signoffDuePhase": "<id>"|None,
+     "signoffDueStatus": "<stored status>"|None}.
 
     `runningPhase` names the phase behind `phaseRunning` (the phase itself when
     it is in_progress, the OWNER phase when only a task is), so a denial can say
