@@ -67,6 +67,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   it used to say "set `phase.status = done`".
 
 ### Changed
+- **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
+  phase branch was prose the orchestrator ran before the verb, so every phase driven through the
+  verbs rather than `/audit:run` ran on its parent with no branch - most of this repository's own -
+  and sign-off could check neither its branch history nor its `baseRef`. `start` now resolves the
+  parent and name, cuts the branch from the parent (or records the one `/audit:worktree add`
+  checked out) and writes `branch` and `baseRef`; it **refuses** a start off the parent, on a
+  detached HEAD, before the first commit, or on a name another branch holds, and a phase that
+  records a branch starts only from it. **A plan whose phases were worked on `main` will see the
+  next `start` in a running phase cut a branch** - from the parent, as the protocol always said.
+  `/audit:doctor` names a running phase with no branch. `/audit:worktree add` now composes the
+  name the same way (it ignored git user.name for a template's `{initials}`).
 - **A phase's status is derived.** A stored `done` or `cancelled` still wins; otherwise a phase
   reads `done` once every task is terminal, its sign-off verdict is recorded and - for a phase
   with a branch - `close-phase.py` has stamped `mergedAt`. The status used to be a hand edit on the

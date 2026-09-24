@@ -311,8 +311,16 @@ spawns, and the hand edit this file forbids everywhere else.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start P3.2 [--json]
 ```
 
-What it writes — exactly the fields `reference/execute-task.md` → *Execute the task*,
-step 2 prescribes as an orchestrator `Edit`, and nothing besides:
+**It performs phase entry first** (`reference/orchestrator.md` → *Phase entry*). On a phase's
+first task it cuts the phase branch from the resolved parent — or records the one
+`/audit:worktree add` checked out — and writes `phase.branch` and `phase.baseRef`; a phase that
+records a branch is started only from that branch. It refuses, naming why and writing nothing,
+when HEAD is off the parent, detached, on a repository with no commit, or when the name is
+illegal or taken by a branch the phase does not record. Outside a git repository the phase
+runs with no branch and the output says so.
+
+What it writes besides — exactly the fields `reference/execute-task.md` → *Execute the task*,
+step 2 prescribes as an orchestrator `Edit`:
 
 - `status: "in_progress"`, `startedAt` stamped at the moment of the call, and
   `attempts` incremented.

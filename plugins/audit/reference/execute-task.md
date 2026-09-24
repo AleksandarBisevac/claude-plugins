@@ -11,10 +11,11 @@ not need to.
 1. **Phase entry** (first started task of the phase, or after an interruption):
    a. Set `phase.status = "in_progress"` if it isn't already (Edit the phase's manifest file — the
       shard when sharded) — resume depends on this write.
-   b. If `phase.baseRef` is null → `git rev-parse HEAD` (Bash), write it back.
-   c. Create or switch to the phase branch per `reference/orchestrator.md`'s
-      **Branch-per-phase** (including the development-branch verification — it applies on
-      the `run` and `next` paths too).
+   b.–c. **The branch and `phase.baseRef` are the verb's in step 2.** `audit-task start` cuts
+      the phase branch from its resolved parent on the phase's first task (or records the one
+      `/audit:worktree add` checked out), writes `baseRef`, and refuses — naming why — when HEAD
+      is anywhere else; see `reference/orchestrator.md`'s **Phase entry**. Do not cut or switch
+      the branch by hand first: on a refusal, stop and ask the human.
    d. **Claim the phase** (sharded layout only): write `phase.claim = {sessionId, host, branch, at}`
       into the shard — optimistic cross-machine coordination, so a same-phase double-claim on another
       branch surfaces as a shard merge conflict. The FS phase-lock is the same-machine guard; the

@@ -350,13 +350,21 @@ absent `{initials}` has to collapse **together with the separator behind it**, o
 `feature//p2-…` and git refuses it. Exit 1 means the composed name is not a legal ref — stop and
 report, because `git switch -c` is about to fail anyway.
 
-**Phase entry** happens on EVERY execution path (`phase`, `next`, `run`) via
-`reference/execute-task.md`'s **Execute the task** step 1:
-- **If `phase.branch` is already set** (resume/continue): `git switch <phase.branch>` if not already on it.
-- **If `phase.branch` is null** (first task of the phase):
-  1. Run `resolve-branch.py … --phase <phaseId>` for the parent branch and the name.
-  2. **Verify the current branch is that RESOLVED PARENT; if it isn't, STOP and ask the human before branching.**
-  3. `git switch -c <branch>`, then write the branch name into `phase.branch` (Edit).
+**Phase entry is `audit-task start`'s**, on every path that starts work — `phase`, `next`,
+`run`, and a task started by hand. It was prose the orchestrator ran before the verb, so a phase
+driven through the verbs never got a branch; the verb performs it now, before it writes anything:
+- **`phase.branch` is null** (first task of the phase): it resolves the parent and the name through
+  the same answer `resolve-branch.py` prints, and — **HEAD on that resolved parent** — writes
+  `phase.branch` and `phase.baseRef`, revalidates, then `git switch -c <branch>` (the write is
+  rolled back if git refuses). **HEAD on exactly the branch the plan composes for the phase** — what
+  `/audit:worktree add` checks out — is recorded with its fork point as `baseRef`.
+- **`phase.branch` is set**: HEAD must be on it. Anything else is refused with the `git switch` to
+  make (or the worktree to start it from).
+- **Refused, with the reason and nothing written:** HEAD off the parent, detached, a repository
+  with no commit yet, a name git would reject, or a name already taken by a branch the phase does
+  not record. On a refusal, **STOP and ask the human** — do not branch by hand to get past it.
+- Outside a git repository the phase runs with no branch, and the verb says so. `/audit:doctor`
+  names any running phase that has no branch.
 
 **During task execution:** all edits and commits happen on the phase branch. **Push remains FORBIDDEN** — local only.
 
