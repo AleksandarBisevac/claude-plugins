@@ -19,12 +19,28 @@
   "branch": "audit/p65-close-phase-judges-a-landing-b",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P65-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py",
+        "issue": "the landed-and-gone early return fired on a composed branch name, so another identity could be told 'nothing left to do' while the real branch held unmerged work",
+        "resolution": "fixed in P65.2-iy2 (5511a12): only a recorded or passed branch; a composed one exits 4 asking for --branch"
+      },
+      {
+        "id": "P65-R2",
+        "severity": "low",
+        "file": "tools/check-git-pipeline.py",
+        "issue": "the worktree-signoff landing was proven single-file only and never in --dry-run",
+        "resolution": "fixed in P65.2-iy2 (5511a12): g16c previews first, g16d is the sharded variant"
+      }
+    ],
+    "outcome": "matches the desired outcome; two findings (one med, one low) fixed in P65.2-iy2"
   },
-  "summary": null,
+  "summary": "close-phase now judges a landing by the phase the merge brings in: the cleanup's settlement is read from the branch tip, where the sign-off was committed, so a phase signed off in its worktree lands and is cleaned up in one run from the parent's tree, and its dry-run previews the same. A recorded mergedAt is kept, a landed phase whose recorded branch is gone is reported as landed, and a composed name is never taken as proof a branch is gone. The commit reader moved into _manifest_io beside its loader; the composed name goes through _branch.phase_answer with git user.name. Desired outcome met, proven end to end on both layouts (g16c, g16d). Fixes BUG-8, found landing P64. Reviewed in phase mode (two findings, fixed); the phase gate ran green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P65.1",
@@ -84,7 +100,65 @@
         "commit": "3fe767e",
         "at": "2026-09-24T22:14:57Z"
       }
+    },
+    {
+      "id": "P65.2-iy2",
+      "title": "Sign-off review findings: the landed-and-gone answer trusts only a recorded branch, and the landing is proven sharded and in preview",
+      "status": "done",
+      "description": "P65 sign-off review: (1) the 'landed and gone' early return fires on a COMPOSED name, so with a different git identity it answers 'nothing left to do' about a branch that was never called that, while the real one may hold unmerged work; (2) phase_as_landed is proven only single-file and never in --dry-run.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: a composed branch name that does not exist is not taken as the landed branch being gone",
+          "tools/check-git-pipeline.py: the worktree-signoff landing on the sharded layout, and its dry-run preview"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5511a12",
+      "outcome": {
+        "technical": "met - landed-and-gone only on a recorded/passed branch, exit 4 on a composed one; g16c preview + g16d sharded; red first",
+        "descriptive": "close-phase no longer says a phase is finished on the strength of a guessed branch name, and the one-run landing is proven for both plan layouts and in preview."
+      },
+      "startedAt": "2026-09-24T22:26:20Z",
+      "completedAt": "2026-09-24T22:28:40Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "python3 tools/check-git-pipeline.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5511a12",
+        "at": "2026-09-24T22:28:40Z"
+      }
     }
   ],
-  "startedAt": "2026-09-24T22:08:49Z"
+  "startedAt": "2026-09-24T22:08:49Z",
+  "testEvidence": {
+    "runId": "2026-09-24T22:34:15Z.ba8c6d",
+    "status": "passed",
+    "at": "2026-09-24T22:34:15Z"
+  }
 }
