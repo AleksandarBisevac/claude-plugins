@@ -2741,6 +2741,28 @@
       "taskId": "P65.1",
       "fixedIn": "3fe767e",
       "notes": "found landing P64, 2026-09-24. The second run it forces, 'already-contained', also re-stamps mergedAt with its own time (21:43:52 became 21:44:12), so the record stops naming the moment of the merge."
+    },
+    {
+      "id": "BUG-9",
+      "title": "journal-writes derives completion rows from a git merge's write, recording a second task.complete for work the merged branch already records",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-09-24T22:37:27Z",
+      "reportedBy": null,
+      "description": "The hook's sweep lane compares each recorded path's digest before and after a Bash call. A `git merge` of a phase branch moves the manifest and the phase shard, so the pass diffs them and emits manifest.edit plus task.complete / task.commit rows for every task the branch finished - rows the branch's own journal already carries. Landing P65 wrote task.complete and task.commit for P65.1 a second time, into the conflicted journal file; the completion count the doctor reads is no longer a count of completions.",
+      "repro": [
+        "finish a task on a phase branch",
+        "from the parent tree: git merge <branch> in a Bash call",
+        "audit-journal.py show: a second task.complete for that task"
+      ],
+      "expected": "a write that brings in another branch's recorded history derives no completion rows - those completions happened, and were recorded, where the work ran",
+      "actual": "task.complete P65.1 and task.commit P65.1 appended again by the hook after the merge",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "found landing P65, 2026-09-24"
     }
   ],
   "deferred": {
