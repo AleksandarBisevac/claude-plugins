@@ -384,7 +384,7 @@
     {
       "id": "P64",
       "title": "A phase's branch is cut by the verb that starts its work",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P64.json"
     }
   ],
@@ -487,7 +487,8 @@
       "P61.13",
       "P62.1",
       "P63.4",
-      "P63.8"
+      "P63.8",
+      "P64.1"
     ],
     "README.md": [
       "P2.3",
@@ -1272,7 +1273,8 @@
       "P18.9",
       "P21.1",
       "P23.3",
-      "P63.7"
+      "P63.7",
+      "P64.1"
     ],
     "plugins/audit/tests/test__worktrees.py": [
       "P18.1",
@@ -1310,13 +1312,15 @@
       "P18.7",
       "P18.9",
       "P21.1",
-      "P63.7"
+      "P63.7",
+      "P64.1"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
       "P18.7",
       "P18.9",
-      "P21.1"
+      "P21.1",
+      "P64.1"
     ],
     "tools/check-git-pipeline.py": [
       "P18.8",
