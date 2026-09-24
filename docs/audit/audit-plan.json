@@ -705,7 +705,8 @@
       "P54.5",
       "P57.2",
       "P55.19",
-      "P55.21"
+      "P55.21",
+      "P61.10"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -1596,7 +1597,8 @@
       "P59.6",
       "P61.2",
       "P61.3",
-      "P61.8"
+      "P61.8",
+      "P61.10"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1630,7 +1632,8 @@
       "P59.12",
       "P61.2",
       "P61.3",
-      "P61.8"
+      "P61.8",
+      "P61.10"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
