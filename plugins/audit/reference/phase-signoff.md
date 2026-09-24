@@ -304,6 +304,12 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       parent's tree, and the worktree is removed moments later. The output names the file it wrote.
       Then **ADO echo** the phase: its PBI (when `phase.ado` is linked) moves to the done-state
       (`reference/orchestrator.md` → **ADO echo**).
+      **When the output lists proposals parked on this branch**, they are the new work this phase
+      branch deferred instead of minting phases on it (phases are minted on the development branch).
+      They are materializable now that it has landed: relay the list to the user, and with their
+      go-ahead run each printed `/audit:propose materialize <PROP-id>` ON THE PARENT BRANCH, commit
+      that branch, and only then start the new phases. The list is read from the copy the merge
+      landed in, so it is the parent's truth, not this branch's.
    e. Cleanup is `meta.merge`'s to decide and the script's to do — `removeWorktree` and
       `deleteBranch`, both on by default. **It cleans up only what the plugin started and has
       finished with**, and the refusals below are the rule working rather than something to route

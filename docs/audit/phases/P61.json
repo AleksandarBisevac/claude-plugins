@@ -226,6 +226,95 @@
       "startedAt": "2026-09-24T08:27:32Z",
       "completedAt": "2026-09-24T08:28:09Z",
       "verifiedBy": []
+    },
+    {
+      "id": "P61.5",
+      "title": "close-phase offers materialize for proposals parked on the merged branch",
+      "status": "in_progress",
+      "description": "Once a phase branch merges, the proposals parked on it are listed with the materialize command for the parent branch; the proposal step is not left to memory.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/tests/test__proposals.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/phase-signoff.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:28:40Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P61.6",
+      "title": "Real-git proof that sign-off names the proposals a merged branch parked",
+      "status": "in_progress",
+      "description": "g16b: a phase branch in a worktree parks a proposal, close-phase lands it, and the output names the proposal and the materialize command for the parent.",
+      "files": [
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-git-pipeline.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:31:02Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"

@@ -99,6 +99,7 @@ _output.install_path()
 import _branch                                                       # noqa: E402
 import _journal_io                                                   # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
+import _proposals  # noqa: E402  (parked_on_branch: the work this branch deferred)
 import _worktrees as _wt                                             # noqa: E402
 
 E_OK, E_FAIL, E_USAGE, E_NOT_FF, E_NO_BASIS = 0, 1, 2, 3, 4
@@ -644,6 +645,17 @@ def _phase_present(manifest_path, phase_id):
                for p in ((body or {}).get("phases") or []))
 
 
+def _parked_after_merge(manifest_path, branch):
+    """The proposals parked on `branch`, read from the copy the merge landed in -
+    the parent's, where `/audit:propose materialize` is to run. An unreadable copy
+    is an empty answer: the merge and its stamp stand whether or not this can be
+    listed, and the stamp line already says where the file is."""
+    try:
+        return _proposals.parked_on_branch(_mio.load_manifest(manifest_path), branch)
+    except Exception:
+        return []
+
+
 def record_row(project, phase_id, branch, parent, config=None):
     """Anchor the merge in the trail. FAIL-SOFT, `_journal_io.append`'s contract: a
     merge that HAPPENED must not be reported as not having happened because the trail
@@ -704,6 +716,14 @@ def render(answer, out=print):
     if answer.get("finishFrom"):
         out("  cleanup is not finished. From %s, run:" % (answer["finishFrom"],))
         out("    %s" % (answer["finishCommand"],))
+    parked = answer.get("parkedOnBranch") or []
+    if parked:
+        out("  parked on %s, materializable now that it has landed - on %s, run:"
+            % (answer["branch"], answer["parent"]))
+        for row in parked:
+            out("    /audit:propose materialize %s   (reserves %s: %s)"
+                % (row["id"], row["reserves"], row["name"]))
+        out("  then commit %s before starting them." % (answer["parent"],))
 
 
 # --- cli -------------------------------------------------------------------------
@@ -794,7 +814,8 @@ def main(argv, out=print):
         record_row(project_for_row, args.phase, names["branch"], names["parent"])
         return {"stamped": path, "stampedAt": stamp_at,
                 "stampedElsewhere": (os.path.abspath(target)
-                                     != os.path.abspath(args.manifest))}
+                                     != os.path.abspath(args.manifest)),
+                "parkedOnBranch": _parked_after_merge(target, names["branch"])}
 
     code, answer = close(git_root, the_plan, names["branch"], names["parent"],
                          dry_run=args.dry_run,

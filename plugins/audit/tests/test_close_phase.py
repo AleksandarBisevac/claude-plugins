@@ -32,6 +32,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _proposals                                  # noqa: E402  (the rule sign-off reports)
 import _worktrees as W                             # noqa: E402
 
 M = _loader.load_script("close-phase.py")
@@ -634,8 +635,42 @@ def _cases(check):
         _harness.remove_tree(root)
 
 
+def _parked_cases(check):
+    """What sign-off says about the work a phase branch parked for later."""
+    manifest = {"meta": {}, "phases": [], "proposals": [
+        {"id": "PROP-1-k7m", "status": "proposed", "branch": "feature/p2",
+         "name": "Idea", "payload": {"phase": {"id": "P5", "title": "Idea"}}},
+        {"id": "PROP-2", "status": "proposed", "branch": "feature/other",
+         "payload": {"phase": {"id": "P6", "title": "Elsewhere"}}},
+        {"id": "PROP-3-k7m", "status": "materialized", "branch": "feature/p2",
+         "payload": {"phase": {"id": "P7", "title": "Done already"}}}]}
+    rows = _proposals.parked_on_branch(manifest, "feature/p2")
+    check("pp1 the proposals parked on the merged branch are the still-proposed ones "
+          "whose branch it is - not another branch's, not one already materialized",
+          [r["id"] for r in rows] == ["PROP-1-k7m"] and rows[0]["reserves"] == "P5", rows)
+    lines = []
+    M.render({"branch": "feature/p2", "parent": "dev", "mode": "fast-forward",
+              "steps": [], "stamped": "x.json", "stampedAt": "t",
+              "parkedOnBranch": rows}, out=lines.append)
+    text = "\n".join(lines)
+    check("pp2 once the branch has landed, sign-off names each parked proposal and the "
+          "materialize command to run on the parent branch - the step is printed, "
+          "not left to memory: %s" % (text,),
+          "PROP-1-k7m" in text and "on dev" in text
+          and "/audit:propose materialize PROP-1-k7m" in text)
+    lines = []
+    M.render({"branch": "feature/p2", "parent": "dev", "mode": "fast-forward",
+              "steps": [], "stamped": "x.json", "stampedAt": "t",
+              "parkedOnBranch": []}, out=lines.append)
+    check("pp3 SECOND DIRECTION: with nothing parked there, sign-off says nothing about "
+          "proposals", not any("materialize" in ln for ln in lines), lines)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _parked_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

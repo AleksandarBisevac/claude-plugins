@@ -298,6 +298,27 @@ def phase_id_doc_drift(root=None):
     return out
 
 
+def parked_on_branch(manifest, branch):
+    """[{id, reserves, name}] for every still-proposed proposal parked on `branch`.
+
+    A phase branch parks new work instead of minting a phase (phases are minted on
+    the development branch), so the moment that branch merges is the moment its
+    parked work becomes materializable - and sign-off is the one step that knows the
+    moment. It asks this, rather than a reader remembering to."""
+    if not branch:
+        return []
+    out = []
+    for prop in (manifest or {}).get("proposals") or []:
+        if not isinstance(prop, dict) or prop.get("status") != "proposed":
+            continue
+        if prop.get("branch") != branch:
+            continue
+        phase = (prop.get("payload") or {}).get("phase") or {}
+        out.append({"id": prop.get("id"), "reserves": phase.get("id"),
+                    "name": prop.get("name") or phase.get("title")})
+    return out
+
+
 def remap_payload(phase, new_pid):
     """The payload phase under a new id, with task ids and intra-payload refs moved.
 
