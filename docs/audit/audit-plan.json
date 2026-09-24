@@ -396,7 +396,7 @@
     {
       "id": "P66",
       "title": "A merge's write derives no completion the merged branch already recorded",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P66.json"
     }
   ],
@@ -446,7 +446,8 @@
       "P62.3",
       "P63.11",
       "P64.3",
-      "P65.1"
+      "P65.1",
+      "P66.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -622,7 +623,8 @@
       "P63.8",
       "P63.11",
       "P63.12",
-      "P64.3"
+      "P64.3",
+      "P66.1"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -915,7 +917,8 @@
       "P32.2",
       "P45.1",
       "P61.14",
-      "P63.8"
+      "P63.8",
+      "P66.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
