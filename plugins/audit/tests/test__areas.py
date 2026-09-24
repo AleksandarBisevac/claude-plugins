@@ -716,7 +716,7 @@ def _cases(check):
         M.LIST_ANCHORS = tuple(
             row if row[0] != "scope-refusal-statuses"
             else (row[0], row[1], row[2],
-                  r'node\.get\("status"\) in \(([^)]*)\):\s*\n'
+                  r'if status in \(([^)]*)\):\s*\n'
                   r'\s*# Terminal is terminal',
                   row[4])
             for row in _saved_lists)
@@ -748,11 +748,24 @@ def _cases(check):
     # smallest edit that takes the shape out of the function and leaves
     # everything below it standing. A hand-written verb here would be a fixture
     # that agrees with whichever pattern wrote it.
+    #
+    # THE WITNESS BELOW THE FUNCTION IS THE VERB'S OWN GUARD, MOVED. The shape
+    # the unbounded scan slid onto used to be `retarget`'s refusal further down
+    # the file; that one now reads the DERIVED phase status and no longer
+    # carries the shape, so no guard below `_locked_scope` did - and the two
+    # cases below went green under either pattern, which is the day the comment
+    # beside `oa27` said would come. The scope guard's own statement is appended
+    # after the last function instead: real bytes, in the position an unbounded
+    # scan reaches and a bounded one cannot.
     with open(os.path.join(_harness.SCRIPTS_DIR, "manifest", "audit-task.py"),
               "r", encoding="utf-8") as fh:
         _verb_src = fh.read()
     _guard_test = '    if node.get("status") == "cancelled":\n'
-    _blinded = _verb_src.replace(_guard_test, "    if False:\n")
+    _g_at = _verb_src.find(_guard_test)
+    _g_end = _verb_src.find("% (tid,))\n", _g_at) + len("% (tid,))\n")
+    _witness = ("\n\ndef _moved_scope_guard(node, tid, out):\n"
+                + _verb_src[_g_at:_g_end] + "        return 2\n")
+    _blinded = _verb_src.replace(_guard_test, "    if False:\n") + _witness
     _scratch = _pso_scratch(pso_body, verb_src=_blinded)
     try:
         _gone = [p for c, p in M.claim_drift(plugin_root=_scratch)
@@ -763,7 +776,8 @@ def _cases(check):
               "about a member. An unbounded scan used to read the NEXT verb's "
               "guard instead and blame the document for not naming a status "
               "`scope` had stopped refusing",
-              _verb_src.count(_guard_test) == 1 and _blinded != _verb_src
+              _verb_src.count(_guard_test) == 1 and _g_at > 0
+              and _g_end > _g_at and _blinded != _verb_src
               and any("no longer carries the vocabulary" in p for p in _gone)
               and not any("does not name it" in p or "no such member" in p
                           for p in _gone),

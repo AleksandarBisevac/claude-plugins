@@ -116,6 +116,32 @@ def _cases(check):
               "genuinely in_progress one just above (no --force needed)",
               code3b == 0, msg3b)
 
+        # 3c. A phase only awaiting sign-off, worked on its parent branch, has no
+        # run and no branch left for a layout change to corrupt.
+        p3c = os.path.join(tmp, "c3c", "audit-plan.json")
+        os.makedirs(os.path.dirname(p3c))
+        m3c = _legacy()
+        m3c["phases"][1]["status"] = "in_progress"
+        for _t in m3c["phases"][1]["tasks"]:
+            _t["status"] = "done"
+        with open(p3c, "w", encoding="utf-8") as fh:
+            json.dump(m3c, fh)
+        code3c, msg3c = M.migrate(p3c)
+        check("a branchless phase only awaiting sign-off does not block migration - "
+              "nothing is running in it and no branch of it is left to merge",
+              code3c == 0, msg3c)
+        # 3d. ...but the same phase on a branch that has not merged still does: the
+        # branch carries the old layout and has yet to come back.
+        p3d = os.path.join(tmp, "c3d", "audit-plan.json")
+        os.makedirs(os.path.dirname(p3d))
+        m3d = json.loads(json.dumps(m3c))
+        m3d["phases"][1]["branch"] = "audit/p2-work"
+        with open(p3d, "w", encoding="utf-8") as fh:
+            json.dump(m3d, fh)
+        code3d, msg3d = M.migrate(p3d)
+        check("SECOND DIRECTION: the same phase with an unmerged branch still blocks "
+              "(exit 1) - its branch has yet to merge back", code3d == 1, msg3d)
+
         # 4. dry-run writes nothing
         p4 = os.path.join(tmp, "c4", "audit-plan.json")
         os.makedirs(os.path.dirname(p4))

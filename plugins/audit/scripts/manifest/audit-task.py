@@ -1293,7 +1293,27 @@ _release_lock = _panel_write.release_index_lock
 
 # --- phase resolution + id allocation ------------------------------------------
 def _phase_label(ph):
-    return "%s (%s)" % (ph.get("id"), ph.get("status"))
+    """`P2 (in_progress)`, off the DERIVED status, naming sign-off due: a phase whose
+    work is finished reads in_progress too, and a list of open phases that did not
+    say which of them only await a verdict would send a task into one."""
+    status = _mio.effective_phase_status(ph)
+    if _mio.signoff_due(ph):
+        return "%s (%s, sign-off due)" % (ph.get("id"), status)
+    return "%s (%s)" % (ph.get("id"), status)
+
+
+def _signed_off_refusal(ph, what):
+    """The refusal for a phase whose sign-off is on record, or None.
+
+    Awaiting its merge, the phase still reads in_progress, but the verdict on
+    record reviewed it as it stands and `what` would change it after the fact."""
+    pid = ph.get("id")
+    if _mio.signoff_recorded(ph):
+        return ("[audit-task] phase %s is signed off (%s) -- %s would change what "
+                "that verdict reviewed. It reads done once %s lands; pick an open "
+                "phase, or create a new one with /audit:phase add."
+                % (pid, ph["review"]["status"], what, ph.get("branch") or "its merge"))
+    return None
 
 
 def _reserving_proposal(assembled, pid):
@@ -1340,10 +1360,14 @@ def _resolve_phase(assembled, want, out, branch=None, basis=None):
     if want:
         for ph in phases:
             if ph.get("id") == want:
-                if ph.get("status") == "done":
+                if _mio.effective_phase_status(ph) == "done":
                     out("[audit-task] phase %s is done -- done phases are "
                         "immutable history. Pick an open phase, or create a "
                         "new one with /audit:phase add." % want)
+                    return E_USAGE
+                refusal = _signed_off_refusal(ph, "a task added now")
+                if refusal:
+                    out(refusal)
                     return E_USAGE
                 return ph
         reserving = _reserving_proposal(assembled, want)
@@ -1353,20 +1377,20 @@ def _resolve_phase(assembled, want, out, branch=None, basis=None):
         out("[audit-task] no phase %s in the manifest; phases: %s"
             % (want, ", ".join(_phase_label(p) for p in phases) or "(none)"))
         return E_USAGE
-    # A phase whose branch already merged is never the default target, whatever
-    # its `status` still says: `close-phase.py` stamps `mergedAt` without ever
-    # writing `status` (that field is the sign-off commit's, on the branch,
-    # before the merge), so a phase that reaches here with `mergedAt` set and no
-    # terminal `status` is closed in every sense but the one field nobody
-    # flipped. Landing a new task on it would reopen a branch this verb has no
-    # way to run anything on.
-    inprog = [p for p in phases
-             if p.get("status") == "in_progress" and not p.get("mergedAt")]
+    # The default is a RUNNING phase, by the plan gate's own rule
+    # (`_mio.phase_running`). A merged phase never is, whatever its `status` still
+    # says - landing a task on it would reopen a branch this verb cannot run
+    # anything on - and neither is one only awaiting sign-off: it reads in_progress
+    # on the page with nothing left to do, and a plan with finished phases waiting
+    # on a verdict would otherwise demand --phase on every add. `inProgress` in the
+    # basis keeps its name for the `--json` reader; it lists the running phases.
+    inprog = [p for p in phases if _mio.phase_running(p)]
     if len(inprog) == 1:
         return inprog[0]
     if not inprog:
-        openp = [p for p in phases if p.get("status") != "done"]
-        out("[audit-task] no in_progress phase to default to -- pass --phase. "
+        openp = [p for p in phases
+                 if _mio.effective_phase_status(p) not in _mio.TERMINAL]
+        out("[audit-task] no running phase to default to -- pass --phase. "
             "Open phases: %s"
             % (", ".join(_phase_label(p) for p in openp) or "(none)"))
         return E_USAGE
@@ -1375,9 +1399,9 @@ def _resolve_phase(assembled, want, out, branch=None, basis=None):
         if basis is not None:
             basis.append({"phase": mine[0].get("id"), "branch": branch,
                           "inProgress": [p.get("id") for p in inprog],
-                          "why": "the in_progress phase whose branch is checked out"})
+                          "why": "the running phase whose branch is checked out"})
         return mine[0]
-    out("[audit-task] --phase required -- %d phases are in_progress: %s"
+    out("[audit-task] --phase required -- %d phases are running: %s"
         % (len(inprog), ", ".join(p.get("id") or "?" for p in inprog)))
     return E_USAGE
 
@@ -2432,12 +2456,15 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     if kind is None:
         out("[audit-task] no task or phase with id %r in %s" % (tid, mpath))
         return E_USAGE
-    if node.get("status") in ("done", "cancelled"):
+    status = (_mio.effective_phase_status(node) if kind == "phase"
+              else node.get("status"))
+    if status in ("done", "cancelled"):
         # Terminal is terminal. Re-writing a finished item's status here would
-        # rewrite history with no record of what it said before.
+        # rewrite history with no record of what it said before - and a phase's
+        # done is derived, so its stored status is not the one to ask.
         out("[audit-task] %s is already %s -- terminal work is not re-decided "
             "by this verb (edit the manifest deliberately if it is wrong)"
-            % (tid, node.get("status")))
+            % (tid, status))
         return E_USAGE
 
     now = _utc_now()
@@ -3276,7 +3303,7 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "changes": _done_changes(tid, was, node),
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
-                  "phaseStatus": phase.get("status"),
+                  "phaseStatus": _mio.effective_phase_status(phase),
                   "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
@@ -3321,11 +3348,10 @@ def _locked_done(args, project, config, mpath, tid, out):
     if open_left:
         out("  %s still has open work: %s" % (phase_id, ", ".join(open_left)))
     else:
-        out("  %s has no open task left -- SIGN-OFF is what closes a phase "
-            "(/audit:review %s) and this verb does not: `phase.status` is still "
-            "%r, because a done phase also asserts a review verdict and a merge "
-            "that only sign-off can write"
-            % (phase_id, phase_id, phase.get("status")))
+        out("  %s has no open task left -- SIGN-OFF is what closes a phase and "
+            "this verb does not: it reads %r, sign-off due, until the review "
+            "(/audit:review %s) is recorded with /audit:phase signoff %s"
+            % (phase_id, _mio.effective_phase_status(phase), phase_id, phase_id))
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -3383,13 +3409,14 @@ def _phase_id_refusal(assembled, raw_index, pid):
             # The alternative offered depends on the phase's state, because
             # `add --phase` refuses a done one: naming a path the next command
             # would refuse is worse than naming none.
-            if ph.get("status") in ("done", "cancelled"):
+            status = _mio.effective_phase_status(ph)
+            if status in _mio.TERMINAL or _mio.signoff_recorded(ph):
                 nxt = "pick another --id (that phase is finished history)"
             else:
                 nxt = ("pick another --id, or add a task to it with "
                        "/audit:task add --phase %s" % (pid,))
             return ("[audit-task] phase %s already exists (%s) -- %s"
-                    % (pid, ph.get("status"), nxt))
+                    % (pid, status, nxt))
     for _ph, tsk in _mio.iter_tasks(assembled):
         if tsk.get("id") == pid:
             return ("[audit-task] %s is already a TASK id -- a phase sharing it "
@@ -4434,10 +4461,11 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         out("[audit-task] retarget takes a PHASE id; %r is %s"
             % (pid, "not in this manifest" if kind is None else "a " + kind))
         return E_USAGE
-    if node.get("status") in ("done", "cancelled"):
+    status = _mio.effective_phase_status(node)
+    if status in _mio.TERMINAL or _mio.signoff_recorded(node):
         out("[audit-task] %s is %s -- its sign-off was given against the gate it "
             "had, and moving that afterwards would rewrite what the sign-off "
-            "attested" % (pid, node.get("status")))
+            "attested" % (pid, status if status in _mio.TERMINAL else "signed off"))
         return E_USAGE
 
     # A TITLE IS NOT A LABEL HERE, and that is why the rename has a guard
@@ -4773,7 +4801,11 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         for line in findings:
             out("FINDING: " + line)
         return E_INVALID
-    jres = _journal_row(project, config, mpath, "phase.signoff",
+    # `phase.verdict`, not `phase.signoff`: the journal-writes hook DERIVES
+    # `phase.signoff` from the write (the phase reaching done), and two writers of
+    # one action is two rows for one sign-off - `task.done` beside the hook's
+    # `task.complete` is the same split.
+    jres = _journal_row(project, config, mpath, "phase.verdict",
                         "%s signed off (%s): %s" % (pid, args.verdict, summary),
                         {"phaseId": pid})
     effective = _mio.effective_phase_status(phase)
@@ -4798,7 +4830,7 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the phase.signoff row")
+        out("  journal: the audit trail did NOT take the phase.verdict row")
     out("  written: %s" % ", ".join(written))
     return 0
 

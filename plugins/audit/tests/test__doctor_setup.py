@@ -355,6 +355,12 @@ def _cases(check):
               "so the operator does not have to re-derive it: %r"
               % (_ds14b_detail,),
               "P1" in _ds14b_detail and "merged" in _ds14b_detail)
+        check("ds14e ...and the repair it names is the verb that records the "
+              "verdict, not a hand edit of `status` the derivation no longer "
+              "needs: %r" % (_ds14b_detail,),
+              "no sign-off" in _ds14b_detail
+              and "/audit:phase signoff P1" in _ds14b_detail
+              and "flipped" not in _ds14b_detail)
         check("ds14d SECOND-DIRECTION CASE: an ordinary warn (ds14, no stale "
               "phase at all) carries no such note - the case that fails if "
               "it becomes unconditional and every warn starts naming a "

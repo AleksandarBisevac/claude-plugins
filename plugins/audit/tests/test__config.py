@@ -379,6 +379,18 @@ def _cases(check):
                 {"id": "P1.1", "title": "t", "status": "done"}]}]})
         check("f9g a merged phase whose status DID flip to done is not stale",
               M.manifest_state(tmp_f, rel)["staleClosedPhase"] is None)
+        # The signoff verb never writes `status`, so a phase signed off and then
+        # merged is done by derivation with `in_progress` still stored - the
+        # correct close, which must not be reported as the gap.
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress",
+             "branch": "audit/p1", "review": {"status": "passed"},
+             "mergedAt": "2026-01-01T00:00:00Z", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "done"}]}]})
+        check("f9h a merged phase SIGNED OFF by the verb (stored status untouched) "
+              "is not stale - it is done by derivation",
+              M.manifest_state(tmp_f, rel)["staleClosedPhase"] is None,
+              repr(M.manifest_state(tmp_f, rel)))
 
         # enforce overrides every tier, including the one with no evidence at all.
         shutil.rmtree(tmp_f / "docs")

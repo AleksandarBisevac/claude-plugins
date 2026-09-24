@@ -61,6 +61,7 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _branch  # noqa: E402  (the naming convention, one expansion path)
+import _manifest_io as _mio  # noqa: E402  (the derived phase status)
 import _worktrees  # noqa: E402  (contained / not-contained / unknown, one answer)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
@@ -319,7 +320,7 @@ def check_branch_naming(rep, project, manifest, git_root):
         if not isinstance(phase, dict):
             continue
         own = phase.get("parentBranch")
-        if own and phase.get("status") != "done":
+        if own and _mio.effective_phase_status(phase) != "done":
             parents.setdefault(str(own), []).append(str(phase.get("id")))
     if not parents:
         return

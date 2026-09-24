@@ -249,7 +249,7 @@ def over_max(phases, max_tier):
 
 
 # --- the pin that cannot be honoured --------------------------------------------
-def pinned_but_blocked(phases, unmet_by_id, finished=()):
+def pinned_but_blocked(phases, unmet_by_id, finished=(), status_of=None):
     """The top-priority unfinished phase whose own waits are unsatisfied, or None.
 
     THE ONE PLACE THE SKIP IS TURNED INTO FACTS, so that the CLI, both reports
@@ -268,13 +268,19 @@ def pinned_but_blocked(phases, unmet_by_id, finished=()):
     `finished` is the statuses that mean the phase will not run again — also
     `_manifest_io`'s (`TERMINAL`), handed over for the same reason. A done phase
     holding tier 1 is a pin that was honoured, not one that was skipped.
+
+    `status_of` is `_manifest_io.effective_phase_status`, handed over the same way:
+    a phase whose sign-off is recorded is done by derivation while its stored
+    status still reads in_progress, and a walk reading the stored one stopped at it
+    - "the top pin can run" - and hid the blocked pin beneath it.
     """
     settled = tuple(finished or ())
     for phase in order(phases):
         tier = tier_of(phase)
         if tier is None:
             return None          # order() puts every prioritised phase first
-        if phase.get("status") in settled:
+        status = status_of(phase) if status_of else phase.get("status")
+        if status in settled:
             continue
         waiting = list((unmet_by_id or {}).get(phase.get("id")) or [])
         if waiting:

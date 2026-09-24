@@ -277,6 +277,22 @@ def _cases(check):
           "phase that was skipped in favour of another, not about every wait",
           M.pinned_but_blocked(layered, {"P1": ["P9"]},
                                finished=_mio.TERMINAL) is None)
+    signed = dict(_ph("P5", 1, status="in_progress"),
+                  tasks=[{"id": "P5.1", "status": "done"}],
+                  review={"status": "passed"})
+    shadowed = [signed, _ph("P6", 2, blocked=["P2"]), _ph("P1")]
+    pin = M.pinned_but_blocked(shadowed, {"P6": ["P2"]}, finished=_mio.TERMINAL,
+                               status_of=_mio.effective_phase_status)
+    check("p9s a SIGNED-OFF tier-1 pin - stored status never moved, the derived one "
+          "is done - is passed over like a done one, so the blocked tier-2 pin "
+          "under it is reported instead of hidden behind a phase that will not run",
+          pin == {"phaseId": "P6", "tier": 2, "waitingOn": ["P2"]}, repr(pin))
+    check("p9u SECOND DIRECTION: the same tier-1 phase with its verdict not "
+          "recorded still decides - it can run, so there is nothing to report",
+          M.pinned_but_blocked([dict(signed, review={"status": "pending"})]
+                               + shadowed[1:], {"P6": ["P2"]},
+                               finished=_mio.TERMINAL,
+                               status_of=_mio.effective_phase_status) is None)
     check("p8 an empty unmet map is treated as 'nothing waiting', and a missing "
           "one does not raise",
           M.pinned_but_blocked(pinned, None, finished=_mio.TERMINAL) is None)

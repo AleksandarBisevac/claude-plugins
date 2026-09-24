@@ -120,10 +120,17 @@ def _in_progress_phases(manifest):
     writes `status` itself, so a phase merged hours ago can still say
     `in_progress`. Its branch and worktree are already gone — there is no run
     left for a layout change to corrupt — so refusing on it would block an
-    ordinary migration on a fact nothing is still doing."""
+    ordinary migration on a fact nothing is still doing.
+
+    Excludes, for the same reason, a phase only awaiting sign-off that has no
+    branch: it has no run (`_mio.phase_running`) and nothing left to merge back.
+    With a branch it still counts - that branch carries the old layout and has yet
+    to come home - and a phase whose sign-off is recorded reads done once it has."""
     return [p.get("id") for p in manifest.get("phases", [])
             if isinstance(p, dict) and p.get("status") == "in_progress"
-            and not p.get("mergedAt")]
+            and not p.get("mergedAt")
+            and _mio.effective_phase_status(p) not in _mio.TERMINAL
+            and (_mio.phase_running(p) or p.get("branch"))]
 
 
 def renumber_duplicate_bugs(manifest):

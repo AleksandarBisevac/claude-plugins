@@ -208,6 +208,65 @@ def _cases(check):
               code == 2 and "immutable" in txt)
         check("a6b ...and nothing landed in it",
               len((_mio.load_manifest(mpath)["phases"][0].get("tasks"))) == 1)
+        # A phase's done is DERIVED: every task finished plus a recorded verdict
+        # (and a merge, for a phase with a branch). The signoff verb never writes
+        # `status`, so a reader of the stored field alone sees in_progress.
+        def _p3(mp):
+            return _mio.load_manifest(mp)["phases"][2]
+
+        def signed_p3(**extra):
+            m = base_manifest()
+            m["phases"][2].update(status="in_progress", review={"status": "passed"},
+                                  tasks=[{"id": "P3.1", "title": "s",
+                                          "status": "done"}], **extra)
+            return m
+        proj_ds, m_ds = mk("a-derived-done", signed_p3())
+        code, txt = run(["add", "X", "--phase", "P3", "--project-dir", proj_ds])
+        check("a6s a phase DONE BY DERIVATION refuses a new task like a stored done "
+              "one - a task added now would reopen finished history: %r" % (txt,),
+              code == 2 and "immutable" in txt
+              and len(_p3(m_ds)["tasks"]) == 1)
+        proj_sm, m_sm = mk("a-signed-unmerged", signed_p3(branch="audit/p3"))
+        code, txt = run(["add", "X", "--phase", "P3", "--project-dir", proj_sm])
+        check("a6t ...and so does one SIGNED OFF and awaiting its merge: the verdict "
+              "on record reviewed a task set this would change: %r" % (txt,),
+              code == 2 and "signed off" in txt
+              and len(_p3(m_sm)["tasks"]) == 1)
+        due = base_manifest()
+        due["phases"][2].update(status="in_progress",
+                                tasks=[{"id": "P3.1", "title": "s", "status": "done"}])
+        proj_du, m_du = mk("a-due-beside-running", due)
+        code, txt = run(["add", "Y", "--project-dir", proj_du])
+        check("a5s the default target is the RUNNING phase: a phase only awaiting "
+              "sign-off beside it is in_progress on the page and has no work left, "
+              "so it does not make the default ambiguous: %r" % (txt[-120:],),
+              code == 0 and task_in(m_du, "P2.4") is not None)
+        due["phases"][1]["tasks"][1]["status"] = "done"
+        proj_dn, _m_dn = mk("a-due-only", due)
+        code, txt = run(["add", "Y", "--project-dir", proj_dn])
+        check("a5t with nothing running there is no default, and the open phases it "
+              "lists say which only await sign-off: %r" % (txt,),
+              code == 2 and "no running phase" in txt
+              and "P2 (in_progress, sign-off due)" in txt
+              and "P3 (in_progress, sign-off due)" in txt)
+        proj_rt, _m_rt = mk("a-retarget-signed", signed_p3(branch="audit/p3"))
+        code, txt = run(["retarget", "P3", "--gate", "test", "--project-dir", proj_rt])
+        check("a6u retarget refuses a SIGNED-OFF phase: its sign-off was given against "
+              "the gate it had: %r" % (txt,),
+              code == 2 and "sign-off" in txt)
+        proj_ap, _m_ap = mk("a-addphase-signed", signed_p3())
+        code, txt = run(["add-phase", "Dup", "--id", "P3", "--outcome", "o",
+                         "--project-dir", proj_ap])
+        check("a6v add-phase --id over a phase done by derivation offers no "
+              "`add --phase` the next command would refuse: %r" % (txt,),
+              code == 2 and "already exists (done)" in txt
+              and "/audit:task add --phase P3" not in txt)
+        proj_cx, m_cx = mk("a-cancel-signed", signed_p3())
+        code, txt = run(["cancel", "P3", "--reason", "x", "--project-dir", proj_cx])
+        check("a6w cancel refuses a phase done by derivation - terminal is terminal, "
+              "and cancelling it would rewrite a sign-off: %r" % (txt,),
+              code == 2 and "already done" in txt
+              and _p3(m_cx)["status"] == "in_progress")
         code, txt = run(["add", "X", "--phase", "P9", "--project-dir", proj])
         check("a7 unknown phase -> exit 2 listing what exists",
               code == 2 and "P2" in txt)
@@ -4854,17 +4913,18 @@ def _cases(check):
         codelh, txtlh = run(["done", "P2.3", "--project-dir", projpd,
                              "--commit", _PD_SHA])
         check("pd10 closing the LAST open task does NOT flip the phase, and the "
-              "report says whose move that is. `phase.status = done` is written "
-              "only by sign-off's last step, beside `review.status`, "
-              "`review.outcome` and `mergedAt` - so a verb flipping it here "
-              "would be asserting a review and a merge it never saw: %r"
+              "report says whose move that is. A phase reads done only once a "
+              "verdict is recorded (`/audit:phase signoff`) and any branch has "
+              "merged - so a verb flipping it here would be asserting a review "
+              "and a merge it never saw: %r"
               % ((codels, _pd_last.get("phaseComplete"),
                   _pd_last.get("phaseStatus")),),
               codels == 0 and _pd_last.get("phaseComplete") is True
               and _pd_last.get("phaseOpenTasks") == []
               and _pd_last.get("phaseStatus") == "in_progress"
               and _pd_phase != [] and _pd_phase[0].get("status") == "in_progress"
-              and "sign-off" in txtlh.lower())
+              and "sign-off" in txtlh.lower()
+              and "/audit:phase signoff P2" in txtlh)
         check("pd11 SECOND DIRECTION: a close that leaves work open reports the "
               "ids rather than the sign-off line, so the sentence above is a "
               "statement about this phase and not one the verb prints either "
@@ -5657,10 +5717,15 @@ def _cases(check):
               and "claim" not in ph2 and ph2["status"] == "in_progress")
         check("so4 ...and the phase now reads done, which the output says",
               _mio.effective_phase_status(ph2) == "done" and "done" in txt, txt)
-        rows = [r for r in _journal_io.read_all(projs) if r.get("action") == "phase.signoff"]
-        check("so5 ...with a phase.signoff journal row naming the phase and the verdict",
+        rows = [r for r in _journal_io.read_all(projs) if r.get("action") == "phase.verdict"]
+        check("so5 ...with a phase.verdict journal row naming the phase and the verdict",
               len(rows) == 1 and (rows[0].get("details") or {}).get("phaseId") == "P2"
               and "passed" in (rows[0].get("summary") or ""), rows)
+        check("so5b ...and NOT a phase.signoff row: that one is DERIVED by the "
+              "journal-writes hook from the write itself, and a verb writing it too "
+              "would leave two rows for one sign-off",
+              not [r for r in _journal_io.read_all(projs)
+                   if r.get("action") == "phase.signoff"])
         code, txt = run(["signoff", "P2", "--verdict", "skipped", "--summary", "y",
                          "--project-dir", projs])
         check("so6 a second sign-off is refused - the verdict on record is not "

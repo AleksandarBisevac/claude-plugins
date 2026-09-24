@@ -62,7 +62,9 @@ REFRESHES the slot:
 
     task.complete   a task's status moved to done
     task.commit     a task's commit moved null -> SHA
-    phase.signoff   a phase's status moved to done
+    phase.signoff   a phase reached done - its DERIVED status, so a verdict
+                    recorded by the signoff verb or a merge stamped after one
+                    counts, and a hand-written `done` over it is not a second
 
 This HOOK is the only writer of those actions -- a prose instruction to append
 them would be a second writer, and two writers means duplicate rows. Tokens are
@@ -491,13 +493,33 @@ def _render(val):
         return type(val).__name__
 
 
+def _review_status(phase):
+    review = phase.get("review")
+    return review.get("status") if isinstance(review, dict) else None
+
+
+def _phase_status_reader():
+    """`_manifest_io.effective_phase_status`, or the stored status when that module
+    cannot be loaded. Loaded here, on a manifest write, and never at import: this
+    hook runs on every tool call and only this pass needs the derivation. The
+    fallback still records a stored `done` - the one move it can see."""
+    mio = _config._load_scripts_module("_manifest_io", "_manifest_io.py")
+    reader = getattr(mio, "effective_phase_status", None)
+    return reader if callable(reader) else (lambda phase: phase.get("status"))
+
+
 def semantic_diff(old_obj, new_obj):
     """State diff of two manifest documents, by id.
 
     Returns {"changes", "summary", "events"} or None when nothing this hook
     tracks moved. The events are the completion records: derived from the SAME
-    comparison that produced the changes, so they cannot disagree with it."""
+    comparison that produced the changes, so they cannot disagree with it.
+
+    `review.status` is tracked beside the phase fields because it is state: the
+    signoff verb writes the verdict and never `status`, and a phase's done is
+    derived from that verdict - a diff blind to it saw a sign-off as no change."""
     try:
+        status_of = _phase_status_reader()
         old_phases, old_tasks, _old_owner = _collect(old_obj)
         new_phases, new_tasks, new_owner = _collect(new_obj)
         changes, phrases, events = [], [], []
@@ -593,13 +615,17 @@ def semantic_diff(old_obj, new_obj):
                     frags.append("%s set" % field)
                 else:
                     frags.append("%s changed" % field)
-                if field == "status" and nv == "done" and ov != "done":
-                    events.append({"action": "phase.signoff",
-                                   "summary": "%s signed off" % pid,
-                                   "details": {"phaseId": pid,
-                                               "from": ov, "to": nv,
-                                               "mergedAt":
-                                               new_phase.get("mergedAt")}})
+            orv, nrv = _review_status(old_phase), _review_status(new_phase)
+            if orv != nrv:
+                changes.append({"id": pid, "field": "review.status",
+                                "from": _render(orv), "to": _render(nrv)})
+                frags.append("review.status %s->%s" % (orv, nrv))
+            oe, ne = status_of(old_phase), status_of(new_phase)
+            if ne == "done" and oe != "done":
+                events.append({"action": "phase.signoff",
+                               "summary": "%s signed off" % pid,
+                               "details": {"phaseId": pid, "from": oe, "to": ne,
+                                           "mergedAt": new_phase.get("mergedAt")}})
             # phase PBI link (meta.ado.phaseWorkItems) - same id-only rule as
             # the task loop above.
             oa, na = old_phase.get("ado"), new_phase.get("ado")

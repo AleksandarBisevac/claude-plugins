@@ -449,6 +449,60 @@ def _cases(check):
                   "phaseId": "P1", "from": "in_progress", "to": "done",
                   "mergedAt": "2026-08-11T01:00:00Z"}, repr(sign))
 
+        # The signoff verb records a verdict and never writes `status`, so the
+        # phase reaches done by DERIVATION - and the completion record has to be
+        # derived from that, or a signed-off phase leaves no phase.signoff at all.
+        def _verdict(doc, verdict, branch=None, merged=None):
+            doc = json.loads(json.dumps(doc))
+            doc["phases"][0]["review"] = {"status": verdict}
+            if branch:
+                doc["phases"][0]["branch"] = branch
+            if merged:
+                doc["phases"][0]["mergedAt"] = merged
+            return doc
+
+        _fin = manifest_doc(status="done", completed="X", commit="a" * 40)
+        _d = M.semantic_diff(_verdict(_fin, "pending"), _verdict(_fin, "passed"))
+        _ev = [e for e in (_d or {}).get("events", [])
+               if e.get("action") == "phase.signoff"]
+        check("h6b a verdict recorded on a branchless phase whose tasks are finished "
+              "yields ONE phase.signoff, though `status` never moved - from the "
+              "derived in_progress to the derived done: %r" % (_d,),
+              len(_ev) == 1 and _ev[0]["details"] == {
+                  "phaseId": "P1", "from": "in_progress", "to": "done",
+                  "mergedAt": None}
+              and any(c["field"] == "review.status" and c["to"] == "passed"
+                      for c in _d["changes"]))
+        _br = M.semantic_diff(_verdict(_fin, "pending", branch="audit/p1"),
+                              _verdict(_fin, "passed", branch="audit/p1"))
+        check("h6c ...on a phase with a branch the verdict alone is not done yet - "
+              "no phase.signoff until the merge lands: %r" % (_br,),
+              _br is not None and not [e for e in _br.get("events", [])
+                                       if e.get("action") == "phase.signoff"])
+        _mg = M.semantic_diff(_verdict(_fin, "passed", branch="audit/p1"),
+                              _verdict(_fin, "passed", branch="audit/p1",
+                                       merged="2026-08-11T01:00:00Z"))
+        _mev = [e for e in (_mg or {}).get("events", [])
+                if e.get("action") == "phase.signoff"]
+        check("h6d ...and close-phase's mergedAt stamp is what completes it: one "
+              "phase.signoff, carrying the merge: %r" % (_mev,),
+              len(_mev) == 1 and _mev[0]["details"]["mergedAt"]
+              == "2026-08-11T01:00:00Z")
+        _open = manifest_doc(status="in_progress")
+        _od = M.semantic_diff(_verdict(_open, "pending"), _verdict(_open, "passed"))
+        check("h6e SECOND DIRECTION: a verdict on a phase with open work is recorded "
+              "as a change and is NOT a sign-off - the phase is not done: %r" % (_od,),
+              _od is not None and not [e for e in _od.get("events", [])
+                                       if e.get("action") == "phase.signoff"])
+        _twice = M.semantic_diff(_verdict(_fin, "passed"),
+                                 dict(_verdict(_fin, "passed"),
+                                      phases=[dict(_verdict(_fin, "passed")
+                                                   ["phases"][0], status="done")]))
+        check("h6f a hand-written `done` over a phase ALREADY done by derivation is "
+              "not a second sign-off - the state did not move: %r" % (_twice,),
+              not [e for e in (_twice or {}).get("events", [])
+                   if e.get("action") == "phase.signoff"])
+
         # --- i: connector v2 events (task.blocked + ado.link) ------------------
         # Derived from the same diff as everything else, tested on the core
         # directly. D-1 rule: `ado` is NOT in TASK_FIELDS - only the id is

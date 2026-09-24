@@ -328,7 +328,7 @@ def _check_priority(manifest, phases):
     for phase in real:
         if _priority.tier_of(phase) is None:
             continue
-        if phase.get("status") in _mio.TERMINAL:
+        if _mio.effective_phase_status(phase) in _mio.TERMINAL:
             continue
         waiting = _mio.unsatisfied(phase.get("blockedBy"), status)
         if waiting:

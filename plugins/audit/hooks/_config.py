@@ -1933,9 +1933,10 @@ def manifest_state(root, manifest_rel):
     `close-phase.py` stamps `mergedAt` the moment `git merge` verifies the branch
     landed, and it never writes `status` itself — that field is the sign-off
     commit's, made on the phase's own branch before the merge. A phase that
-    reaches here with `mergedAt` set and a `status` that never caught up signed
-    off on a copy that did not survive, or was merged by hand; either way its
-    branch is gone, so it holds the gate open on nothing. `staleClosedPhase`
+    reaches here with `mergedAt` set and no sign-off recorded (its DERIVED status,
+    which reads a recorded verdict as done once the merge lands, is not terminal)
+    was merged by hand or signed off on a copy that did not survive; either way
+    its branch is gone, so it holds the gate open on nothing. `staleClosedPhase`
     names the first one found, so a caller can say why the tier looks emptier
     than the raw `status` column would suggest, rather than leaving a reader to
     notice the contradiction alone.
@@ -1958,7 +1959,7 @@ def manifest_state(root, manifest_rel):
                 continue
             if phase.get("mergedAt"):
                 if (state["staleClosedPhase"] is None
-                        and phase.get("status") not in ("done", "cancelled")):
+                        and mio.effective_phase_status(phase) not in mio.TERMINAL):
                     state["staleClosedPhase"] = phase.get("id")
                 continue
             if mio.phase_running(phase):

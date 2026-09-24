@@ -205,6 +205,23 @@ def _row(payload, kind, item_id):
     return None
 
 
+def _derived_phase_cases(check):
+    """A phase's pushable status is the DERIVED one, as a bug's is."""
+    phase = {"id": "P1", "title": "a", "status": "in_progress",
+             "review": {"status": "passed"},
+             "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}
+    got = M.status_by_key({"phases": [phase]})[("phase", "P1")]
+    check("rl-dp1 a phase signed off with every task finished pushes `done`, and "
+          "the basis says the derivation moved it off the stored `in_progress`: %r"
+          % (got,),
+          got[0] == "done" and got[1].startswith("derived:")
+          and "in_progress" in got[1])
+    got = M.status_by_key({"phases": [dict(phase, review={"status": "pending"})]})
+    check("rl-dp2 SECOND DIRECTION: unsigned, it pushes its stored status on the "
+          "stored basis: %r" % (got[("phase", "P1")],),
+          got[("phase", "P1")] == ("in_progress", "phase.status"))
+
+
 def _cases(check):
     tmp = tempfile.mkdtemp(prefix="rl-")
     try:
@@ -802,7 +819,10 @@ def _cases(check):
 
 
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _derived_phase_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

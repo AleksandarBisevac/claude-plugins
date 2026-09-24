@@ -377,7 +377,12 @@ The journal's **completion-record actions**:
 - `task.complete` — a task's status moved to done (details: taskId, phaseId, from, to, completedAt)
 - `task.blocked` — a task's status moved to blocked (details: taskId, phaseId, from, attempts)
 - `task.commit` — a task's commit moved null → SHA (details: taskId, phaseId, commit)
-- `phase.signoff` — a phase's status moved to done (details: phaseId, from, to, mergedAt)
+- `phase.signoff` — a phase reached done by its DERIVED status (details: phaseId, from, to,
+  mergedAt): a stored `done`, or every task finished with a verdict recorded and, for a phase
+  with a branch, the merge stamped — so the row comes from the `/audit:phase signoff` write on a
+  branchless phase and from `close-phase.py`'s `mergedAt` on a branched one, and a hand-written
+  `done` over a phase already done by derivation is not a second one. The verb's own row is
+  `phase.verdict` (details: phaseId), the way `task.done` sits beside `task.complete`
 - `ado.link` — an item's `ado.id` moved null → id, i.e. /audit:sync linked it to a
   work item (details: taskId?, phaseId, adoId). `lastSyncedAt` bumps deliberately
   draw NO row — the plan did not move (see tracker-sync.md → Journal)

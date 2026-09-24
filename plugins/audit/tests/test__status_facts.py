@@ -1386,6 +1386,31 @@ def _derived_status_cases(check):
     check("dv4 SECOND DIRECTION: blocked by a phase only awaiting sign-off, it is NOT "
           "ready - unsigned work does not release what waits on it",
           M.ready_tasks(plan(None)) == [], M.ready_tasks(plan(None)))
+    pinned = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "a", "status": "in_progress", "priority": 1,
+         "review": {"status": "passed"},
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]},
+        {"id": "P3", "title": "c", "status": "pending",
+         "tasks": [{"id": "P3.1", "title": "w", "status": "pending"}]},
+        {"id": "P2", "title": "b", "status": "pending", "priority": 2,
+         "blockedBy": ["P3"],
+         "tasks": [{"id": "P2.1", "title": "u", "status": "pending"}]}],
+        "bugs": [], "fileIndex": {}}
+    note = M.priority_note(pinned)
+    check("dv6 the priority note passes over a SIGNED-OFF tier-1 pin and names the "
+          "blocked tier-2 one - a phase done by derivation holds no schedule",
+          bool(note) and "P2" in note, repr(note))
+    ph_run = lambda r: [p["id"] for p in r["phases"] if p.get("running")]  # noqa: E731
+    check("dv7 the rollup says which phase is RUNNING, off the plan gate's own rule: "
+          "a phase awaiting sign-off is in_progress on the page and not running",
+          ph_run(unsigned) == [] and ph_run(M.rollup(pinned, [], [])) == [],
+          (ph_run(unsigned), ph_run(M.rollup(pinned, [], []))))
+    open_plan = plan(None)
+    open_plan["phases"][0]["tasks"].append({"id": "P1.2", "title": "o",
+                                            "status": "pending"})
+    check("dv8 SECOND DIRECTION: the same phase with an open task IS running",
+          ph_run(M.rollup(open_plan, [], [])) == ["P1"],
+          ph_run(M.rollup(open_plan, [], [])))
     check("dv5 the CI in-progress condition still fails on a phase awaiting sign-off - "
           "a release freeze does not let unreviewed work through",
           "in-progress" in M.evaluate_gate(unsigned, ["in-progress"])

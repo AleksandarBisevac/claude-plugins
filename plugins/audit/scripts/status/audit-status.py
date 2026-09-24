@@ -494,12 +494,10 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
         # THIS TEST MUST KEEP AGREEING WITH `_usage_line`'s, and the two ask
         # different objects. That one reads the ROLLUP (`summary["phases"]`); this
         # one reads the MANIFEST, because `usage_summary` runs before a rollup
-        # exists. They agree today because `_status_facts` passes a phase's status
-        # straight through rather than deriving it - checked, not assumed - so if a
-        # rollup ever computes that field from its tasks, this is the line that
-        # silently stops the "this phase" clause from printing. Anything that makes
-        # the rollup derive a phase status owes this test a second look.
-        want_phase = full or any(p.get("status") == "in_progress" for p in dicts)
+        # exists. They agree because both ask `_mio.phase_running` - the rollup's
+        # `running` flag is that function's answer - so neither can read a phase
+        # only awaiting sign-off as running while the other does not.
+        want_phase = full or any(_mio.phase_running(p) for p in dicts)
         # `budgets` renders nothing unless a phase declares one. The truth test is
         # `phase_budgets`' own, restated as a QUESTION rather than reimplemented as
         # an answer: whether to pay for the pass, not what the pass would return.
@@ -940,7 +938,7 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
         scope = _scope_line(manifest, ph, pe)
         if scope:
             out.append(scope)
-        if pe.get("id") in unmet and ph.get("status") != "done":
+        if pe.get("id") in unmet and pe.get("status") != "done":
             out.append("       blocked by: %s"
                        % _clip(", ".join(unmet[pe["id"]]), 70))
         for r in all_rows.get(pe.get("id")) or []:
@@ -1066,13 +1064,13 @@ def _usage_line(summary, usage):
     phase whose branch landed hours ago can still read `in_progress`. Printing
     its token count as the RUNNING phase's spend would attribute fresh work to
     a phase that stopped accruing any the moment it merged. `summary["phases"]`
-    carries `mergedAt` for exactly this reading — see `rollup()`."""
+    carries `running` for exactly this reading - `_mio.phase_running`, which also
+    passes over a phase only awaiting sign-off - see `rollup()`."""
     totals = usage.get("totals") or {}
     parts = ["usage: %s tok" % _fmt.fmt_tokens(totals.get("tokens"))]
     if usage.get("showCost"):
         parts.append("~%s equiv" % _fmt.fmt_cost(totals.get("costUSD")))
-    running = [p.get("id") for p in summary["phases"]
-               if p.get("status") == "in_progress" and not p.get("mergedAt")]
+    running = [p.get("id") for p in summary["phases"] if p.get("running")]
     if running:
         per = (usage.get("byPhase") or {}).get(running[0]) or {}
         if per:
@@ -1277,14 +1275,16 @@ def _resumable_lines(manifest, summary, pt=None):
     `in_progress`: its branch already landed, so `/audit:resume`'s `git switch`
     has nothing to switch to. `close-phase.py` stamps `mergedAt` without ever
     writing `status`, which is what leaves a merged phase looking interrupted
-    forever if this does not ask about the stamp too."""
+    forever if this does not ask about the stamp too.
+
+    `_mio.phase_running` is that question and the rest of it, asked where the plan
+    gate asks it: a phase whose every task is finished and whose sign-off is not
+    recorded still reads in_progress, and has no run in it to resume."""
     pt = pt or _cli_fmt.PLAIN
     for p in ((manifest or {}).get("phases") or []):
-        if not isinstance(p, dict) or p.get("mergedAt"):
+        if not isinstance(p, dict):
             continue
-        running_tasks = [t for t in (p.get("tasks") or [])
-                         if isinstance(t, dict) and t.get("status") == "in_progress"]
-        if p.get("status") == "in_progress" or running_tasks:
+        if _mio.phase_running(p):
             where = " on %s" % p["branch"] if p.get("branch") else ""
             return ["", pt.paint(
                 "  RESUMABLE  phase %s is %s%s - interrupted? "

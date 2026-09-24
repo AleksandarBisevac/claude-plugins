@@ -258,7 +258,8 @@ def priority_note(manifest, ready=None):
     order_list = ready if ready is not None else ready_tasks(manifest)
     pin = _priority.pinned_but_blocked(
         [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
-        unmet_refs(manifest), finished=TERMINAL)
+        unmet_refs(manifest), finished=TERMINAL,
+        status_of=_mio.effective_phase_status)
     return _priority.note(pin, order_list[0] if order_list else None)
 
 
@@ -843,6 +844,10 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
         # reviewed yet. Flagged rather than folded into `status`, so a surface can
         # say it instead of presenting the phase as either running or done.
         "signoffDue": _mio.signoff_due(p),
+        # The plan gate's own rule, so a surface naming "the running phase" names
+        # the one the gate is held by - not the first of every phase whose stored
+        # status still reads in_progress while it only awaits sign-off.
+        "running": _mio.phase_running(p),
         "desiredOutcome": p.get("desiredOutcome"),
         # Passed through verbatim, never derived: `evaluate_gate`'s
         # "in-progress" condition reads it to tell a phase that merged from

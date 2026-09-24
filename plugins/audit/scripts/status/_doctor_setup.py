@@ -530,10 +530,9 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
         stale = state.get("staleClosedPhase")
         due = state.get("signoffDuePhase")
         note = ("" if not stale else
-                " (phase %s merged but its status was never flipped to "
-                "'done' - the sign-off commit that would have flipped it "
-                "either never landed or landed on a branch that did not "
-                "survive the merge; it no longer counts as running)" % stale)
+                " (phase %s merged with no sign-off recorded - it no longer "
+                "counts as running; `/audit:phase signoff %s` records the "
+                "verdict that reads it done)" % (stale, stale))
         # A phase only awaiting sign-off is in_progress on the page and not running
         # by the gate's rule, so the line has to say which of the two it read -
         # "no phase is in_progress" would be false of the plan beside it.

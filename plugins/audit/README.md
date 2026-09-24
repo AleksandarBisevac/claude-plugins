@@ -1298,7 +1298,8 @@ committed* warning is for. It is a smoke detector wired to three alarms, not a v
 
 The **completion records** are journal rows the `journal-writes` hook derives from the
 manifest diff — `task.complete` (a task's status moved to done), `task.commit` (its commit
-moved null → SHA), `phase.signoff` (a phase moved to done) — plus `task.move`, written by
+moved null → SHA), `phase.signoff` (a phase reached done — its derived status, so a verdict
+recorded by `/audit:phase signoff` or the merge stamped after one counts) — plus `task.move`, written by
 `/audit:task move` when a task is renumbered into another phase. The hook derives them from
 a pre-image it refreshes after every row it writes, so **which tool wrote the manifest is
 not part of the answer**: a shell command inside a `Bash` call is recorded like an edit. Two

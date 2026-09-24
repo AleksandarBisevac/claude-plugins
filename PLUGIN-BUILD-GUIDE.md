@@ -315,7 +315,7 @@ L2:
   _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
-  _usage_economics -> _output, _usage_core
+  _usage_economics -> _manifest_io, _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
   _usage_spend -> _output, _usage_core
   _warning_groups -> _fmt, _manifest_io, _output
@@ -335,7 +335,7 @@ L3:
 
 L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
-  _doctor_policy -> _branch, _doctor_report, _output, _worktrees
+  _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger

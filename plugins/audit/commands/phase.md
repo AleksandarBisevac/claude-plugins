@@ -414,7 +414,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId>
 ```
 
 It writes `review.status` (the verdict), `review.outcome`, `summary`, clears `claim`, and appends a
-`phase.signoff` journal row, under the index lock with revalidate-or-roll-back. It refuses a phase
+`phase.verdict` journal row, under the index lock with revalidate-or-roll-back (`phase.signoff` is
+the row the journal-writes hook derives once the phase reaches done). It refuses a phase
 with open work (naming the open tasks), a phase with no task, one already signed off, and one
 already `done` or `cancelled`. Its output says what the phase now reads: `done` for a phase with no
 branch, and "done once `<branch>` lands" for one with a branch - `close-phase.py` then merges it

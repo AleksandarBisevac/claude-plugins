@@ -58,6 +58,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _manifest_io as _mio  # noqa: E402  (the derived phase status a budget row carries)
 import _usage_core as _core  # noqa: E402  (the arithmetic under every pass here)
 from _usage_core import task_index  # noqa: E402  (the plan index these all start from)
 
@@ -225,7 +226,8 @@ def phase_budgets(manifest, rows):
             total_budget += budget
             total_spent += used
         out.append({
-            "id": pid, "title": ph.get("title") or "", "status": ph.get("status"),
+            "id": pid, "title": ph.get("title") or "",
+            "status": _mio.effective_phase_status(ph),
             "budget": budget, "spent": used,
             "pct": round(100.0 * used / budget, 1) if budget else None,
             "over": bool(budget and used > budget),

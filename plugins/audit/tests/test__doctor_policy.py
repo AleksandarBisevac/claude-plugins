@@ -566,6 +566,18 @@ def _cases(check):
                   and "NOT yet merged" in _detail(rep, _BN),
                   _detail(rep, _BN)[-70:])
 
+            signed = {"meta": {"developmentBranch": "main"},
+                      "phases": [{"id": "P2", "status": "in_progress",
+                                  "parentBranch": "story/open",
+                                  "review": {"status": "passed"},
+                                  "tasks": [{"id": "P2.1", "status": "done"}]}]}
+            rep = base.Report()
+            M.check_branch_naming(rep, repo, signed, repo)
+            check("dp42b a phase DONE BY DERIVATION - signed off, stored status "
+                  "untouched - owes its parent nothing more, so the unmerged story "
+                  "branch is not warned about on its account",
+                  "NOT yet merged" not in _detail(rep, _BN), _detail(rep, _BN)[-70:])
+
             ghost = {"meta": {"developmentBranch": "main"},
                      "phases": [{"id": "P2", "status": "pending",
                                  "parentBranch": "no/such/branch"}]}

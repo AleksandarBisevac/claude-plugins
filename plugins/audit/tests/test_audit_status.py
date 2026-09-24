@@ -420,6 +420,48 @@ def _cases(_record):
           "this phase 500" in M._usage_line(
               M.rollup(_fx_run, [], [], usage=_u), _u))
 
+    # A phase whose every task is finished and whose sign-off is not recorded
+    # still reads in_progress, and is not a run: nothing in it has an edit left.
+    # P1 comes FIRST and P2 is genuinely running, so a reader that took the first
+    # stored in_progress would name P1 on both lines.
+    _fx_due = copy.deepcopy(_fx_run)
+    _fx_due["phases"][0]["status"] = "in_progress"
+    _fx_due["phases"][0]["branch"] = "audit/p1-first"
+    _u_due = dict(_u, byPhase={"P1": {"tokens": 700, "costUSD": 1.0},
+                               "P2": {"tokens": 500, "costUSD": 1.0}})
+    _sum_due = M.rollup(_fx_due, [], [], usage=_u_due)
+    check("s18f a phase only awaiting sign-off is not flagged RESUMABLE - there is "
+          "no interrupted run in it - and the running phase after it is",
+          "phase P1" not in "".join(M._resumable_lines(_fx_due, _sum_due))
+          and "phase P2" in "".join(M._resumable_lines(_fx_due, _sum_due)),
+          M._resumable_lines(_fx_due, _sum_due))
+    check("s18g ...and its tokens are not billed as 'this phase': the clause names "
+          "the phase the plan gate reads as running",
+          "this phase 500" in M._usage_line(_sum_due, _u_due)
+          and "this phase 700" not in M._usage_line(_sum_due, _u_due),
+          M._usage_line(_sum_due, _u_due))
+    _fx_due["phases"][1]["tasks"] = [dict(t, status="done")
+                                     for t in _fx_due["phases"][1]["tasks"]]
+    _sum_none = M.rollup(_fx_due, [], [], usage=_u_due)
+    check("s18h SECOND DIRECTION: with both phases only awaiting sign-off there is "
+          "no RESUMABLE line and no 'this phase' clause at all",
+          M._resumable_lines(_fx_due, _sum_none) == []
+          and "this phase" not in M._usage_line(_sum_none, _u_due),
+          (M._resumable_lines(_fx_due, _sum_none), M._usage_line(_sum_none, _u_due)))
+
+    _fx_sig = copy.deepcopy(_fx)
+    _fx_sig["phases"][0].update(status="in_progress", blockedBy=["P2"],
+                                review={"status": "passed"})
+    _txt_sig = M.render_status(_fx_sig, M.rollup(_fx_sig, [], []), view="all")
+    _p1_block = _txt_sig.split("P1")[1].split("P2 ")[0] if "P1" in _txt_sig else ""
+    check("s18i a phase DONE BY DERIVATION prints no 'blocked by' line under it - "
+          "what it waited on no longer holds anything back: %r" % (_p1_block,),
+          "blocked by" not in _p1_block and _p1_block != "")
+    _fx_sig["phases"][0]["review"] = {"status": "pending"}
+    _txt_uns = M.render_status(_fx_sig, M.rollup(_fx_sig, [], []), view="all")
+    check("s18j SECOND DIRECTION: unsigned, it is not done, and the wait is said",
+          "blocked by: P2" in _txt_uns.split("P1")[1].split("P2 ")[0])
+
     # invalid manifest must be stated, not implied
     _txt_bad = M.render_status(_fx, M.rollup(_fx, ["boom"], []))
     check("s19 an invalid manifest is stated in the render",
@@ -1098,6 +1140,14 @@ def _cases(_record):
               "'this phase' clause. A narrowing that dropped it unconditionally "
               "would pass ug3 and silently delete a number a reader acts on",
               "byPhase" in _ug_run and "P1" in _ug_run["byPhase"])
+        _ug_due = M.usage_summary(
+            {"phases": [{"id": "P1", "status": "in_progress",
+                         "tasks": [{"id": "P1.1", "status": "done"}]}]},
+            _ug_path, project_dir=_empty, full=False)
+        check("ug4b ...and a phase only awaiting sign-off is NOT running, so the "
+              "sweep the 'this phase' clause needs is not paid for a clause that "
+              "will not print",
+              "byPhase" not in _ug_due, sorted(_ug_due))
         # THE SAVING MUST BE INVISIBLE. Asserted on the BYTES of the line, not on
         # the payload: the whole claim of this change is that a reader cannot
         # tell, and a payload comparison would not have said that.

@@ -422,6 +422,18 @@ def _cases(check):
     _finished = [{"id": "P2", "title": "b", "status": "pending", "tasks": []},
                  {"id": "P5", "title": "e", "status": "cancelled",
                   "priority": 1, "blockedBy": ["P2"], "tasks": []}]
+    _signed = [{"id": "P2", "title": "b", "status": "pending", "tasks": []},
+               {"id": "P5", "title": "e", "status": "in_progress", "priority": 1,
+                "blockedBy": ["P2"], "review": {"status": "passed"},
+                "tasks": [{"id": "P5.1", "title": "t", "status": "done"}]}]
+    check("pc5s a pinned phase that is DONE BY DERIVATION - every task finished and "
+          "its sign-off recorded, stored status untouched - is history, not a wait",
+          _pw(_signed) == ([], []), repr(_pw(_signed)))
+    _signed[1]["review"] = {"status": "pending"}
+    check("pc5u SECOND DIRECTION: with no verdict recorded it is not done, and the "
+          "pin that waits on P2 is reported",
+          len(_pw(_signed)[1]) == 1 and "waits on P2" in _pw(_signed)[1][0],
+          repr(_pw(_signed)))
     check("pc5 ...and a phase that is itself finished is not reported either - "
           "a cancelled or done phase will not run again, so its pin is history "
           "rather than a wait",

@@ -169,6 +169,16 @@ def _cases(check):
               {"id": "P1", "tasks": []}, budgetUSD=bad)]},
               ar)["phases"][0]["budget"] is None
               for bad in (0, -5, True, False, "40", None)))
+    _signed = {"id": "P1", "status": "in_progress", "budgetUSD": 40,
+               "review": {"status": "passed"},
+               "tasks": [{"id": "P1.1", "status": "done"}]}
+    _bs = M.phase_budgets({"phases": [_signed]}, _brows)["phases"][0]["status"]
+    _bu = M.phase_budgets({"phases": [dict(_signed, review={"status": "pending"})]},
+                          _brows)["phases"][0]["status"]
+    check("budget: a row carries the phase's DERIVED status - a signed-off phase "
+          "reads done beside its spend, as it does in the rollup; unsigned it "
+          "still reads in_progress: %r" % ((_bs, _bu),),
+          _bs == "done" and _bu == "in_progress")
     check("budget: no budgets anywhere -> totals are None, not 0",
           M.phase_budgets({"phases": [{"id": "P1", "tasks": []}]},
                         ar)["totalBudget"] is None)

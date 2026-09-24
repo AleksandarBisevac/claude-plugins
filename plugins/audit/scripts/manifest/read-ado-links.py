@@ -209,6 +209,10 @@ def mapped_state(kind, status, configured):
 def status_by_key(manifest):
     """`{(kind, id): (status, basis)}` for every phase, task and bug.
 
+    The PHASE rows go through `_manifest_io.effective_phase_status` for the same
+    reason: the signoff verb never writes `status`, so a signed-off phase's card
+    would otherwise be held at Active for ever.
+
     The BUG rows go through `_manifest_io.effective_bug_status`, and the basis says
     when that derivation moved the answer: a bug whose fix task is done reads
     `fixed` here while `bug.status` still says `open`, and pushing the stored value
@@ -223,9 +227,14 @@ def status_by_key(manifest):
         return out
     task_by_id = _mio.tasks_by_id(manifest)
     for phase in (manifest.get("phases") or []):
-        if isinstance(phase, dict):
-            out[("phase", phase.get("id"))] = (phase.get("status"),
-                                               "phase.status")
+        if not isinstance(phase, dict):
+            continue
+        effective = _mio.effective_phase_status(phase)
+        basis = "phase.status"
+        if effective != phase.get("status"):
+            basis = ("derived: phase.status is %r, every task is finished and its "
+                     "sign-off is recorded" % (phase.get("status"),))
+        out[("phase", phase.get("id"))] = (effective, basis)
     for _phase, task in _mio.iter_tasks(manifest):
         out[("task", task.get("id"))] = (task.get("status"), "task.status")
     for bug in (manifest.get("bugs") or []):
