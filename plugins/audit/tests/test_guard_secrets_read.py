@@ -1615,7 +1615,7 @@ def _cases(check):
               M._eval_write_targets(
                   "python3 -c \"open('$(pwd)/app.ts','w')\"")),),
           M._shell_write_targets("sed -i 's/a/b/' $(pwd)/app.ts")
-          == ["/app.ts"]
+          == ["$(pwd)/app.ts"]
           and M._eval_write_targets(
               "python3 -c \"open('$(pwd)/app.ts','w')\"") == []
           and M.decide(bash("sed -i 's/a/b/' $(pwd)/app.ts"),
@@ -2074,6 +2074,51 @@ def _cases(check):
               "backslash added to the character class would have made it",
               M._shell_write_targets(
                   "sed -i 's/foo\\.ts/bar/' README.md") == ["README.md"])
+        # THE SCRIPT IS NOT A FILE, whether or not it looks like one. Targets were
+        # harvested by a path-shaped regex over the whole clause, script included,
+        # so a substitution that MENTIONS a file name was a write to it - driven
+        # live three times, the third a task-add whose DESCRIPTION quoted such a
+        # call. The operands are read with each tool's own grammar now, and a call
+        # sitting inside a quoted argument is not a command at all.
+        check("xs7 a sed script that mentions file names is not a write target - "
+              "only the file operand is: %r"
+              % (M._shell_write_targets("sed -i '' 's/foo.py/bar.py/' src/app.ts"),),
+              M._shell_write_targets("sed -i '' 's/foo.py/bar.py/' src/app.ts")
+              == ["src/app.ts"])
+        check("xs8 ...with -e scripts (any delimiter), several files, and GNU's bare -i",
+              M._shell_write_targets(
+                  "sed -i -e 's|lib/a.py|lib/b.py|' -e 's/c/d/' f1.py f2.py")
+              == ["f1.py", "f2.py"]
+              and M._shell_write_targets("sed -i 's/a.py/b.py/' f.py") == ["f.py"])
+        check("xs9 ...and every suffix spelling, a script file, and a bundled -n",
+              M._shell_write_targets("sed -i.bak 's/a.py/b.py/' f.py") == ["f.py"]
+              and M._shell_write_targets(
+                  "sed --in-place=.bak -f edits.sed f.py") == ["f.py"]
+              and M._shell_write_targets("sed -n -i '' 's/a.py/b/p' f.py") == ["f.py"]
+              and M._shell_write_targets("sed -ne 's/x.py/y/' -i f.py") == ["f.py"])
+        check("xs10 perl's and ruby's in-place twin reads its operands the same way: the "
+              "-e code is not a target, the files after it are",
+              M._eval_write_targets("perl -pi -e 's/a.pl/b.pl/' x.pl") == ["x.pl"]
+              and M._eval_write_targets("perl -i.bak -pe 's/a.pl/b/' x.pl y.pl")
+              == ["x.pl", "y.pl"]
+              and M._eval_write_targets(
+                  "ruby -pi -e 'gsub(/a.rb/, \"b.rb\")' x.rb") == ["x.rb"])
+        check("xs11 an in-place call QUOTED inside another command's argument is text, "
+              "not a command - its words and the rest of the line are not targets",
+              M._shell_write_targets(
+                  'audit-task.py add "t" --description "sed -i s/a.py/b.py/ f.py" '
+                  '--files src/x.py') == []
+              and M._eval_write_targets(
+                  "python3 -c \"print('perl -pi -e s/a/b/ x.pl')\"") == [])
+        check("xs12 SECOND DIRECTION: an in-place call that really runs is still read, "
+              "after a separator and after an unrelated quoted argument alike",
+              M._shell_write_targets("echo 'a;b' && sed -i '' s/x/y/ src/a.ts")
+              == ["src/a.ts"]
+              and M._shell_write_targets('git commit -m "x" ; sed -i s/x/y/ b.ts')
+              == ["b.ts"])
+        check("xs13 a clause the tokenizer cannot read (an unbalanced quote) falls back "
+              "to the old, wider harvest - a deny is the safe side of not knowing",
+              "f.py" in M._shell_write_targets("sed -i 's/a/b f.py"))
     finally:
         _sh_x.rmtree(tmp_x, ignore_errors=True)
 

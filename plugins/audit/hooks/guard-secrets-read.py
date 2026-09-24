@@ -587,8 +587,7 @@ def _eval_write_targets(clause):
         target = _resolve_write_expr(expr, bindings)
         if target:
             out.append(target)
-    for m in _INPLACE_EDIT_CLAUSE.finditer(clause):
-        out.extend(_PATHY_TOKEN.findall(m.group(0)))
+    out.extend(_inplace_targets(clause, _INPLACE_EDIT_CLAUSE, _interp_file_operands))
     return out
 # Every shape that READS a path in an interpreter body, with the path in the
 # argument position. The mirror of `_WRITE_CALL_EXPR`, and it exists for the
@@ -1231,6 +1230,171 @@ def _clauses(cmd):
     return parts or [cmd]
 
 
+# --- the in-place editors' operands: the files, never the script ---------------------
+# THE SCRIPT IS NOT A FILE, whether or not it looks like one. The in-place targets
+# were harvested by `_PATHY_TOKEN` over the whole clause, script included, so a
+# substitution that MENTIONS a file name was refused as a write to it - driven
+# live three times on one day, the third a task-add whose own DESCRIPTION quoted
+# such a call and had the `--files` paths after it read as targets. A refusal
+# naming a file the command only mentions is the route-around class: the operator
+# learns the guard is wrong and stops reading it. So the clause is tokenised and
+# each tool's own operand grammar decides which words are files.
+#
+# A CALL INSIDE A QUOTED ARGUMENT IS TEXT, NOT A COMMAND. The clause patterns match
+# anywhere, including inside `--description "sed -i ..."`; `_in_quote` asks the
+# shell's own quoting rules whether the match starts inside a quoted word.
+#
+# WHAT CANNOT BE TOKENISED FALLS BACK TO THE WIDER HARVEST. An unbalanced quote is
+# a clause this cannot read, and the old harvest over-reports, which on a write
+# guard is the safe side of not knowing.
+def _quote_walk(text, start, stop):
+    """(position, open quote) after walking `text` from `start` by the shell's quoting
+    rules - nothing escapes inside single quotes, a backslash escapes the next
+    character elsewhere - up to `stop`, or to the first UNQUOTED character in `stop`
+    when it is a string of separators."""
+    quote = None
+    i = start
+    limit = stop if isinstance(stop, int) else len(text)
+    while i < limit:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+        elif ch == "\\":
+            i += 1
+        elif quote == '"':
+            if ch == '"':
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif not isinstance(stop, int) and ch in stop:
+            break
+        i += 1
+    return min(i, len(text)), quote
+
+
+def _in_quote(text, pos):
+    """True when `pos` in `text` sits inside a single- or double-quoted word."""
+    return _quote_walk(text, 0, pos)[1] is not None
+
+
+def _clause_end(text, start):
+    """Where the clause starting at `start` ends: the first separator the SHELL sees.
+    The clause patterns stop at any `|`, and a sed script is routinely delimited by
+    one (`'s|a|b|'`), which cut the clause inside its own script."""
+    return _quote_walk(text, start, "|&;\n")[0]
+
+
+def _clause_words(span):
+    """The clause as the shell would split it, quotes removed, or None when a quote
+    never closes. The backslash is kept literal: a Windows path (`C:\\out\\a.ts`)
+    must survive whole, and inside the quoted scripts where one matters it is.
+
+    WRITTEN OUT RATHER THAN `shlex`, because this hook starts on every tool call and
+    `tools/bench-hooks.py --gate` holds it to the modules it already loads - and the
+    quoting rule it needs is the one `_quote_walk` already states."""
+    words, cur, quote, has_word = [], [], None, False
+    for ch in span:
+        if quote:
+            if ch == quote:
+                quote = None
+            else:
+                cur.append(ch)
+        elif ch in ("'", '"'):
+            quote, has_word = ch, True
+        elif ch.isspace():
+            if has_word:
+                words.append("".join(cur))
+            cur, has_word = [], False
+        else:
+            cur.append(ch)
+            has_word = True
+    if quote:
+        return None
+    if has_word:
+        words.append("".join(cur))
+    return words
+
+
+def _sed_file_operands(words):
+    """The files an in-place `sed` call rewrites. Options are skipped with the
+    arguments they take (`-e SCRIPT`, `-f FILE`, `-l N`, BSD's separate `-i ''` or
+    `-i .bak` suffix); with no `-e`/`-f` the first operand is the script."""
+    operands, scripted = [], False
+    i = 1
+    while i < len(words):
+        w = words[i]
+        if w == "--":
+            operands.extend(words[i + 1:])
+            break
+        if w in ("-e", "--expression", "-f", "--file"):
+            scripted = True
+            i += 2
+            continue
+        if w.startswith(("--expression=", "--file=")):
+            scripted = True
+        elif w in ("-i", "--in-place"):
+            nxt = words[i + 1] if i + 1 < len(words) else None
+            if nxt is not None and (nxt == "" or nxt.startswith(".")):
+                i += 1
+        elif w == "-l":
+            i += 1
+        elif w.startswith("-") and len(w) > 1 and not w.startswith("--"):
+            for pos, ch in enumerate(w[1:]):
+                if ch in "ef":
+                    scripted = True
+                    if pos == len(w) - 2:
+                        i += 1
+                    break
+                if ch in "il":
+                    break
+        elif not w.startswith("--"):
+            operands.append(w)
+        i += 1
+    return operands if scripted else operands[1:]
+
+
+def _interp_file_operands(words):
+    """The files `perl -i`/`ruby -i` rewrite. `-e`/`-E` code (separate or bundled)
+    is skipped; a switch that takes an attached argument ends its bundle; with no
+    code given the first operand is the script file, which is read, not written."""
+    operands, coded = [], False
+    i = 1
+    while i < len(words):
+        w = words[i]
+        if w == "--":
+            operands.extend(words[i + 1:])
+            break
+        if w.startswith("-") and len(w) > 1:
+            for pos, ch in enumerate(w[1:]):
+                if ch in "eE":
+                    coded = True
+                    if pos == len(w) - 2:
+                        i += 1
+                    break
+                if ch in "iIMmdxlC0F":
+                    break
+        else:
+            operands.append(w)
+        i += 1
+    return operands if coded else operands[1:]
+
+
+def _inplace_targets(text, clause_re, operands):
+    """Every file an in-place clause of `clause_re` in `text` rewrites."""
+    out = []
+    for m in clause_re.finditer(text):
+        if _in_quote(text, m.start()):
+            continue
+        span = text[m.start():_clause_end(text, m.start())]
+        words = _clause_words(span)
+        if words is None:
+            out.extend(_PATHY_TOKEN.findall(span))
+        else:
+            out.extend(operands(words))
+    return out
+
+
 def _shell_write_targets(cmd):
     """Best-effort extraction of file paths a shell command WRITES to."""
     targets = []
@@ -1243,8 +1407,7 @@ def _shell_write_targets(cmd):
             tok = tok.strip("'\"")
             if tok and not tok.startswith("-"):
                 targets.append(tok)
-    for m in _SED_INPLACE_CLAUSE.finditer(cmd):
-        targets.extend(_PATHY_TOKEN.findall(m.group(0)))
+    targets.extend(_inplace_targets(cmd, _SED_INPLACE_CLAUSE, _sed_file_operands))
     return targets
 
 
