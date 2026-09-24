@@ -270,7 +270,7 @@
     {
       "id": "P63.6",
       "title": "The report reads the derived status, releases 'held by' on any terminal blocker, and says sign-off due",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase meta line's merge note reads the derived status (a phase signed off and merged is done, not 'sign-off not recorded'), a phase awaiting sign-off says so, 'held by' clears on a cancelled blocker as it does everywhere else, and the Markdown twin names sign-off due.",
       "files": [
         "plugins/audit/scripts/report/_report_html.py",
@@ -308,14 +308,73 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ab66d6a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "meta line via effective_phase_status and signoff_due; _settled_ids over TERMINAL; md heading flag.",
+        "descriptive": "The shareable report shows a signed-off phase as done, names a phase awaiting sign-off, and stops showing a cancelled blocker as holding work."
       },
       "startedAt": "2026-09-24T12:56:26Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T12:58:03Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/tests/test__report_page.py",
+        "plugins/audit/tests/test__report_md.py"
+      ]
+    },
+    {
+      "id": "P63.7",
+      "title": "Cleanup after a merge reads the derived status, so a phase signed off by the verb is settled",
+      "status": "done",
+      "description": "phase_settled demanded a stored status done, which the signoff verb never writes - so close-phase would merge a signed-off phase and then refuse to remove its worktree and branch. The status comes in as status_of, the way terminal already does, and every caller passes effective_phase_status.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/_panel_composition.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__worktrees.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5c4e454",
+      "outcome": {
+        "technical": "met - phase_settled takes status_of; close-phase, manage-worktrees and both panel paths pass effective_phase_status; q1s/q1u/k4s/k4u/q1c, each seen red under its mutation",
+        "descriptive": "Removing a merged phase's worktree and branch, and the cleanup the panel offers, now work for a phase signed off with the signoff command, instead of refusing it as unfinished."
+      },
+      "startedAt": "2026-09-24T12:58:43Z",
+      "completedAt": "2026-09-24T13:03:20Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5c4e454",
+        "at": "2026-09-24T13:03:20Z"
+      }
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"
