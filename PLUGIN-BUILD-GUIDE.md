@@ -126,6 +126,9 @@ claude-plugins/                           # this repo (personal, public)
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
           audit-task.py                   # /audit:task + /audit:phase doer: add/scope/start/done/cancel and add-phase/retarget, under the index lock
           migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
+          _manifest_merge.py              # three-way merge of one manifest document by RECORD: ids, not lines
+          merge-manifest.py               # the git merge driver over it, plus install/uninstall/status and the shim
+          _merge_install.py               # what that install consists of, read back - for its status AND the doctor
           migrate-json-encoding.py        # one manifest's files rewritten in the one JSON escaping, all-or-nothing under the index lock
         git/                              # the git domain: the worktree/branch half of the pipeline, as code rather than prose
           _worktrees.py                   # which worktrees exist, whose phase each is, and what may be reaped
@@ -280,7 +283,9 @@ L1:
   _loader -> _output
   _locks -> _output
   _manifest_io -> _output
+  _manifest_merge -> _output
   _manifest_vocab -> _output
+  _merge_install -> _output
   _policy -> _output
   _priority -> _output
   _refs -> _output
@@ -327,7 +332,7 @@ L3:
 L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _output, _worktrees
-  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _output, _status_facts, _warning_groups
+  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
@@ -373,6 +378,7 @@ L7:
   gen-demo-usage -> _demo_cast, _loader, _output
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
+  merge-manifest -> _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
@@ -3538,6 +3544,41 @@ restoring the index does not undo. No lock is taken in the script: the index loc
 command driving it. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
+
+### `plugins/audit/scripts/manifest/_manifest_merge.py` + `merge-manifest.py` + `_merge_install.py`
+**The manifest merged by record, so appends stop conflicting.** Every structural writer appends at
+a list tail - a phase, a task, a bug, a `fileIndex` row - so two branches that each add a different
+record write the same lines and git's line merge stops, in either layout: sharding moves a phase
+RUN into its own shard, but every record that is ADDED still lands in the index. `_manifest_merge`
+(L1, pure) merges three parsed documents: records matched by `id`, a `fileIndex` row as a set of
+task ids, fields three-way. What stays a conflict is what a human must decide - one field changed
+two ways, delete against change, and the same id added twice with different content, which is never
+renumbered. The order is symmetric - base order, a side's additions after the record they followed,
+tail runs at the tail, ties by a natural sort of the run's first id - because phase order is
+execution order and merging in either direction must produce the same bytes. `render` does not
+patch markers into one document: it renders each side WHOLE, every conflict resolved that side's
+way, and the marker blocks are the line diff between the two. A block around one value cannot own
+the comma on the sibling before it - a deleted last record, or two adjacent conflicts, left it
+dangling - while two complete documents are valid JSON by construction, so keeping one side
+throughout reproduces that side's document exactly. A value that is new on both sides merges as if
+the base held an empty one of its shape (a `fileIndex` row two branches both create is a union);
+a RECORD new on both sides is an id collision, and so is a shard `git` reports as added on both.
+
+`merge-manifest.py` is the driver git calls with `%O %A %B %P`, and `install|uninstall|status`.
+What git does with a driver was measured rather than read (git 2.50.1, recorded in the module
+docstring): a driver that fails without writing leaves `%A` as ours with NO markers, and an exit
+above 128 aborts the whole merge - so every failure path writes git's own line merge before exiting
+1. A merged single-file plan is revalidated and only findings NEITHER side had fail it; an index or
+shard cannot be validated alone and the driver says so. git config names a POSIX-sh shim under the
+git common dir, never the plugin cache (which moves on every upgrade): the shim records the plugin
+root, and when that root is gone - or the driver exits non-zero with `%A` unchanged, the
+ImportError shape - it runs `git merge-file` itself. `.gitattributes` gets the manifest and its
+shard glob; a clone that has not installed falls back to git's own line merge, which is why that
+file is safe to commit. `_merge_install` (L1) names the install's pieces once and reads them
+back, because `merge-manifest status` and the doctor's `merge driver` line must give one answer and
+a layer-4 module may not reach an entry point. Cases: `tests/test__manifest_merge.py` (the merge) and
+`tests/test__merge_install.py` (locating, and a quoted root read back), `tests/test_merge_manifest.py` (real git: the field report reproduced as a control, both
+directions byte-identical, sharded, a stale shim, a driver that dies before writing).
 
 ### `plugins/audit/scripts/manifest/migrate-json-encoding.py`
 **One JSON escaping, and the pass that gets the tree to it.** `_manifest_io.atomic_write_json`
