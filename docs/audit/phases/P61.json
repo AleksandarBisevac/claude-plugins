@@ -230,7 +230,7 @@
     {
       "id": "P61.5",
       "title": "close-phase offers materialize for proposals parked on the merged branch",
-      "status": "in_progress",
+      "status": "done",
       "description": "Once a phase branch merges, the proposals parked on it are listed with the materialize command for the parent branch; the proposal step is not left to memory.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -265,19 +265,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2dd0ccc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_proposals.parked_on_branch read from the landed copy inside close-phase's stamp step; rendered with the materialize commands.",
+        "descriptive": "When a phase branch lands, sign-off lists the proposals it parked and the command to materialize each on the parent."
       },
       "startedAt": "2026-09-24T08:28:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:33:36Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py"
+      ]
     },
     {
       "id": "P61.6",
       "title": "Real-git proof that sign-off names the proposals a merged branch parked",
-      "status": "in_progress",
+      "status": "done",
       "description": "g16b: a phase branch in a worktree parks a proposal, close-phase lands it, and the output names the proposal and the materialize command for the parent.",
       "files": [
         "tools/check-git-pipeline.py"
@@ -307,14 +309,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1d05544",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "g16b in check-git-pipeline.",
+        "descriptive": "A real merge proves the parked proposals are named after landing."
       },
       "startedAt": "2026-09-24T08:31:02Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:33:36Z",
+      "verifiedBy": [
+        "tools/check-git-pipeline.py"
+      ]
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"
