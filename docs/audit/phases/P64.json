@@ -1,0 +1,164 @@
+{
+  "id": "P64",
+  "title": "A phase's branch is cut by the verb that starts its work",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "starting a phase's first task cuts its branch from the resolved parent (or refuses and says why), a started task on another branch is refused, and doctor names a running phase with no branch - so no phase runs outside the protocol in silence",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P64.1",
+      "title": "start performs phase entry: the first task cuts the phase branch from the resolved parent, and a task on another branch is refused",
+      "status": "pending",
+      "description": "Phase entry (orchestrator.md) was prose the orchestrator ran before start, so every phase driven through the verbs ran with no branch. start now performs it: resolve the name and parent through the same code resolve-branch.py uses (moved into _branch), refuse when HEAD is not the parent, is detached, has no commit, or the name is taken or illegal, write branch and baseRef, revalidate, then git switch -c - rolling the write back if git refuses. A phase that records a branch refuses a start from any other branch. Outside a git repository the phase runs with no branch and the output says so.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_branch.py",
+        "plugins/audit/scripts/manifest/resolve-branch.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__branch.py",
+        "plugins/audit/tests/test_resolve_branch.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: start cuts the branch, records branch and baseRef, and refuses off the parent, detached, unborn, a taken name and another branch"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P64.2",
+      "title": "doctor names a running phase with no branch",
+      "status": "pending",
+      "description": "A phase running with no branch is outside the protocol; doctor says so and names what that leaves unchecked (branch history, baseRef).",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/tests/test__doctor_policy.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_policy.py: a running phase with no branch is warned about with what cannot be checked"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P64.3",
+      "title": "The prose says phase entry is the start verb's",
+      "status": "pending",
+      "description": "execute-task step 1 and orchestrator's Phase entry describe cutting the branch by hand before start; task.md and the README describe start as a pure promotion.",
+      "files": [
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
