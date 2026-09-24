@@ -373,7 +373,7 @@
     {
       "id": "P61.8",
       "title": "A proposal parked on a side branch reserves a placeholder the development branch mints for real",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found by probe: two branches each parking a proposal both reserve P<max+1>, and the merged plan carries a finding neither side had, so the driver leaves the merge conflicted. A side-branch park reserves P<n>-<suffix>; materialize re-mints it as the next P<n> and renames it and every reference through _id_refs; branch is a known proposal key.",
       "files": [
         "plugins/audit/scripts/manifest/_proposals.py",
@@ -412,19 +412,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fde33d1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "placeholder P<n>-<suffix> at park; plan_for re-mints by the append rule; apply_materialize renames across the plan via _id_refs; branch known in vocab and schema.",
+        "descriptive": "Two phase branches that each park new work now merge cleanly; the development branch gives each parked phase its real id when it is materialized, and every reference follows."
       },
       "startedAt": "2026-09-24T08:36:59Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:42:52Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ]
     },
     {
       "id": "P61.9",
       "title": "The demo fixture carries proposal.branch, and its rendered artifacts follow",
-      "status": "in_progress",
+      "status": "done",
       "description": "The schema gained proposal.branch; the demo fixture must carry every schema field, and every artifact rendered from it is re-derived.",
       "files": [
         "plugins/audit/scripts/demo/gen-demo-manifest.py",
@@ -453,13 +456,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7144cb8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "gen-demo-manifest PROP-1 branch; check-rendered-artifacts byte-identical.",
+        "descriptive": "The demo carries the new field; no rendered page changes."
       },
       "startedAt": "2026-09-24T08:41:36Z",
-      "completedAt": null,
+      "completedAt": "2026-09-24T08:42:52Z",
       "verifiedBy": []
     }
   ],
