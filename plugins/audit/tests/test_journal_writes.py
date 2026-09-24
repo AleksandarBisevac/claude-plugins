@@ -563,6 +563,55 @@ def _cases(check):
               [(e["action"], e["details"].get("taskId")) for e in _mixed]
               == [("task.complete", "P1.2")])
 
+        # The baseline's HEAD is read out of the repository's own files: an
+        # ordinary Edit of the manifest forks no git process, on either pass.
+        _calls = []
+        _real_git_out = M._git_out
+        M._git_out = lambda *a, **k: (_calls.append(a), _real_git_out(*a, **k))[1]
+        try:
+            write_manifest(manifest_doc(status="in_progress"))
+            M.pre_cache(payload("Edit", man_rel, sid="fork-count"), cfg=cfg, root=pproj)
+            write_manifest(manifest_doc(status="done", completed="Z"))
+            M.post_entries(payload("Edit", man_rel, sid="fork-count"), cfg=cfg,
+                           root=pproj)
+        finally:
+            M._git_out = _real_git_out
+        check("hm4 an ordinary Edit of the manifest runs no git process on either "
+              "pass - the baseline HEAD is read from the repository's files: %r"
+              % (_calls,), _calls == [])
+        _hroot = _harness.fixture_root("jw-head")
+        try:
+            import subprocess as _sp
+            _genv = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+            def _g(cwd, *a):
+                return _sp.run(["git", "-C", cwd] + list(a), env=_genv,
+                               stdout=_sp.PIPE, stderr=_sp.PIPE)
+            _main = os.path.join(_hroot, "main")
+            os.makedirs(_main)
+            _g(_main, "init", "-q", "-b", "main")
+            _g(_main, "commit", "-q", "--allow-empty", "-m", "base")
+            _g(_main, "pack-refs", "--all")
+            _g(_main, "commit", "-q", "--allow-empty", "-m", "loose after packing")
+            _linked = os.path.join(_hroot, "linked")
+            _g(_main, "worktree", "add", "-q", "-b", "side", _linked)
+            _g(_linked, "commit", "-q", "--allow-empty", "-m", "on the side")
+            _want_main = _g(_main, "rev-parse", "HEAD").stdout.decode().strip()
+            _want_linked = _g(_linked, "rev-parse", "HEAD").stdout.decode().strip()
+            _g(_main, "pack-refs", "--all")
+            check("hm5 HEAD read from the files matches git's own answer - in the main "
+                  "tree with packed refs, and in a linked worktree whose refs live in "
+                  "the common directory: %r"
+                  % ((M._head_sha(_main), _want_main, M._head_sha(_linked),
+                      _want_linked),),
+                  M._head_sha(_main) == _want_main
+                  and M._head_sha(_linked) == _want_linked and len(_want_main) == 40)
+            check("hm6 ...and outside any repository it is None, never a guess",
+                  M._head_sha(_hroot) is None)
+        finally:
+            _harness.remove_tree(_hroot)
+
         # --- i: connector v2 events (task.blocked + ado.link) ------------------
         # Derived from the same diff as everything else, tested on the core
         # directly. D-1 rule: `ado` is NOT in TASK_FIELDS - only the id is

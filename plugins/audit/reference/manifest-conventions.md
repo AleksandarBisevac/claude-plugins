@@ -408,12 +408,17 @@ The journal's **completion-record actions**:
 because two writers means duplicate rows and a doctor that can no longer trust the count.
 The `journal-writes` hook emits `manifest.edit`, `config.edit` and the four derived completion
 records (`task.complete`, `task.blocked`, `task.commit`, `phase.signoff`) plus `ado.link`.
-A write that BRINGS IN another commit's history - a merge, a cherry-pick, a rebase, a reset or a
-checkout, read off git's own record (an open `MERGE_HEAD`, or the reflog since the baseline) -
-derives none of those that the incoming commit already carries: the completion happened, and was
-recorded, where the work ran. The change itself is still recorded, and its row says how many
-derived rows it did not repeat. A plain `commit` brings in nothing, so a completion made and
-committed in one call is still derived.
+A write that BRINGS IN another commit's history derives none of those that the incoming commit
+already carries: the completion happened, and was recorded, where the work ran. Only commits that
+existed before the call count, read off git's own record - the other side of an open
+`MERGE_HEAD` / `CHERRY_PICK_HEAD`, the branch a merge brought in (its tip on a fast-forward, its
+other parents otherwise), the upstream a rebase replays onto, the commit a checkout or reset moved
+to, walked back through the reflog to where HEAD stood at the baseline. A commit the call MADE - a
+plain commit, a rebase's replayed picks, a finished cherry-pick - carries the call's own work, so
+a completion made in the same call is still derived. The change itself is always recorded, and its
+row says how many derived rows it did not repeat. **Not recognised:** a cherry-pick that finished
+without stopping - git keeps no record of which commit it copied - so its completions are derived
+again.
 `task.move` is written by `/audit:task move` via the journal CLI. The evidence actions are
 written **in process** by `_evidence_io` and `commit-audit-state.py`, because the hook sees edit
 *tools* and those writers use `os.replace` and `git commit` — the same blindness `audit-task.py`

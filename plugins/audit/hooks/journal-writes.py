@@ -332,7 +332,7 @@ def _write_slot(root, cfg, data, rel):
         slot = _slot_path(root, cfg, data, rel)
         sha, text = _snapshot(os.path.join(str(root), rel))
         _config.ensure_local_dir(os.path.dirname(slot))
-        head_code, head = _git_out(root, "rev-parse", "-q", "--verify", "HEAD")
+        head = _head_sha(root)
         with open(slot, "w", encoding="utf-8") as fh:
             json.dump({"path": rel,
                        "ts": _config.utc_stamp(),
@@ -340,7 +340,7 @@ def _write_slot(root, cfg, data, rel):
                        # anchor `brought_in` walks the reflog back to. A time
                        # has one-second resolution, and a reset made earlier in
                        # the same second read as this call's.
-                       "head": head.strip() if head_code == 0 else None,
+                       "head": head,
                        "sha256": sha, "content": text}, fh)
         return slot
     except Exception:
@@ -749,18 +749,76 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
 # completed, and the completion count stopped being a count. The completions came
 # with the history; they were journalled where the work ran.
 #
-# READ OFF GIT'S RECORD, NOT THE COMMAND: an in-progress operation leaves its head
-# file, and a finished one leaves a reflog entry naming what it was. A `commit` is
-# not in this list - it brings in nothing, so a completion made and committed in
-# one call is still derived.
-_HISTORY_HEADS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REBASE_HEAD", "REVERT_HEAD")
-_BRINGS_HISTORY = ("merge", "pull", "rebase", "cherry-pick", "reset", "checkout",
-                   "commit (merge)", "am", "revert")
+# READ OFF GIT'S RECORD, NOT THE COMMAND, and only commits that EXISTED BEFORE the
+# call count: the other side of an open merge or pick, the branch a merge brought
+# in (its tip on a fast-forward, its other parents otherwise), the upstream a rebase
+# replays onto, the commit a checkout or reset moved to. A commit the call MADE -
+# a plain commit, a rebase's replayed picks, a finished cherry-pick, `am`, a revert
+# - carries the call's own work, and reading one of those as history suppressed a
+# completion made in the same call and said it had arrived.
+_HISTORY_HEADS = ("MERGE_HEAD", "CHERRY_PICK_HEAD")
+_LANDS_ON_EXISTING = ("checkout:", "reset:", "rebase (start)", "rebase -i (start)",
+                      "pull --rebase (start)")
+_MERGES = ("merge ", "pull", "commit (merge)")
+
+
+def _head_sha(root):
+    """HEAD's commit, read out of the repository's own files, or None.
+
+    No fork: the slot records it on every baseline, and a baseline is taken on
+    every Edit of the plan. A linked worktree's `.git` is a file naming its git
+    directory, whose `commondir` holds the shared refs; a ref may be loose or in
+    `packed-refs`. Anything unreadable is None - the reflog walk then has no
+    anchor and reads nothing, which costs a repeated row, never a completion."""
+    here = os.path.abspath(str(root))
+    while True:
+        dot = os.path.join(here, ".git")
+        if os.path.exists(dot):
+            break
+        up = os.path.dirname(here)
+        if up == here:
+            return None
+        here = up
+    try:
+        if os.path.isfile(dot):
+            with open(dot, encoding="utf-8") as fh:
+                line = fh.readline().strip()
+            if not line.startswith("gitdir:"):
+                return None
+            gitdir = os.path.join(here, line.split(":", 1)[1].strip())
+        else:
+            gitdir = dot
+        common = gitdir
+        if os.path.isfile(os.path.join(gitdir, "commondir")):
+            with open(os.path.join(gitdir, "commondir"), encoding="utf-8") as fh:
+                common = os.path.join(gitdir, fh.readline().strip())
+        with open(os.path.join(gitdir, "HEAD"), encoding="utf-8") as fh:
+            head = fh.readline().strip()
+        if not head.startswith("ref:"):
+            return head if re.match(r"^[0-9a-f]{40,64}$", head) else None
+        ref = head.split(":", 1)[1].strip()
+        for base in (gitdir, common):
+            loose = os.path.join(base, *ref.split("/"))
+            if os.path.isfile(loose):
+                with open(loose, encoding="utf-8") as fh:
+                    sha = fh.readline().strip()
+                return sha if re.match(r"^[0-9a-f]{40,64}$", sha) else None
+        packed = os.path.join(common, "packed-refs")
+        if os.path.isfile(packed):
+            with open(packed, encoding="utf-8") as fh:
+                for pline in fh:
+                    parts = pline.strip().split(" ", 1)
+                    if len(parts) == 2 and parts[1] == ref:
+                        return parts[0]
+    except OSError:
+        return None
+    return None
 
 
 def _git_out(root, *argv):
     """(returncode, stdout) of one git call, or (None, "") when git cannot run.
-    Imported here: only a Post pass that saw a recorded path move asks git."""
+    Called only from `brought_in`, which only a sweep-lane Post pass that saw a
+    recorded path move reaches - so the import and the fork are paid there."""
     import subprocess
     try:
         r = subprocess.run(["git", "-C", str(root)] + list(argv),
@@ -787,7 +845,7 @@ def brought_in(root, rel, since_head):
     if not os.path.isabs(gitdir):
         gitdir = os.path.join(str(root), gitdir)
     shas = []
-    for name in _HISTORY_HEADS:
+    for name in _HISTORY_HEADS:          # the other side of an open operation
         try:
             with open(os.path.join(gitdir, name), encoding="utf-8") as fh:
                 head = fh.readline().strip()
@@ -804,8 +862,17 @@ def brought_in(root, rel, since_head):
                 continue
             if parts[0] == since_head:
                 break              # the baseline's own position: nothing older
-            if parts[1].startswith(_BRINGS_HISTORY):
+            subject = parts[1]
+            if subject.startswith(_LANDS_ON_EXISTING):
                 shas.append(parts[0])
+            elif subject.startswith(_MERGES) and "rebase" not in subject:
+                pcode, parents = _git_out(root, "rev-list", "--parents", "-n", "1",
+                                          parts[0])
+                ids = parents.split() if pcode == 0 else []
+                # A fast-forward lands ON the merged branch's tip, which existed; a
+                # real merge makes a new commit, and the branch it brought in is
+                # its other parents.
+                shas.extend(ids[2:] if len(ids) > 2 else ids[:1])
     docs = []
     for sha in sorted(set(shas), key=shas.index):
         code, text = _git_out(root, "show", "%s:./%s" % (sha, rel))
