@@ -23,7 +23,7 @@ Usage:
                 [--gate CMD ... | --gate-clear]
                 [--blocked-by id,id] [--review-skill NAME]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py next-id bug|prop [manifest]
+  audit-task.py next-id bug|prop [manifest] | next-id task --phase <id> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py start <taskId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -4681,30 +4681,41 @@ def cmd_add(args, out):
 
 
 # --- next-id: the id a hand-written record takes ---------------------------------
-# A bug and a parked proposal are the records the model still writes by hand
-# (`commands/bug.md`, `commands/init.md`), so they were also the ids the model
-# computed by hand - `BUG-<max+1>`, `PROP-<max+1>` - and two branches computing
-# one from the same base wrote the same id. This prints the id the
-# allocator would take, suffix included, so the hand-written record carries the
-# same answer every scripted one does. Only these two: a task or a phase is minted
-# by the verb that writes it, under the same lock, and a printed id for those
-# would be an id nothing reserves between the print and the write.
-NEXT_ID_KINDS = ("bug", "prop")
-_NEXT_ID_MINT = {"bug": _id_shape.next_bug_id, "prop": _id_shape.next_prop_id}
+# A bug, a parked proposal, a bug's fix task and a moved task are the records the
+# model still writes by hand (`commands/bug.md`, `init.md`, `task.md` -> move), so
+# they were also the ids the model computed by hand - `BUG-<max+1>`,
+# `PROP-<max+1>`, `<phaseId>.<next>` - and two branches computing one from the same
+# base wrote the same id. This prints the id the allocator would take, suffix and
+# reservations included, so the hand-written record carries the same answer every
+# scripted one does. NOT `phase`: a phase is minted only by `add-phase`, which
+# writes it under the lock, and a phase id printed ahead of its write would be one
+# nothing reserves in between - where for a task the phase it belongs to is fixed.
+NEXT_ID_KINDS = ("bug", "prop", "task")
 
 
 def cmd_next_id(args, out):
     project = _resolve_project(args)
     kind = (args.title or "").strip()
     if kind not in NEXT_ID_KINDS:
-        out("[audit-task] next-id takes %s, not %r - a task or phase id is minted by "
-            "the verb that writes it" % (" | ".join(NEXT_ID_KINDS), kind))
+        out("[audit-task] next-id takes %s, not %r - a phase id is minted only by "
+            "add-phase, which writes it" % (" | ".join(NEXT_ID_KINDS), kind))
+        return E_USAGE
+    if kind == "task" and not args.phase:
+        out("[audit-task] next-id task needs --phase <id>: a task id belongs to a phase")
+        return E_USAGE
+    if kind != "task" and args.phase:
+        out("[audit-task] next-id %s does not read --phase" % (kind,))
         return E_USAGE
 
     def body(config, mpath):
         assembled = _mio.load_manifest(mpath)
         suffix = _mint_suffix(mpath, assembled)
-        ident = _NEXT_ID_MINT[kind](assembled, suffix)
+        if kind == "task":
+            ident = _allocate_id(assembled, args.phase, suffix)
+        elif kind == "prop":
+            ident = _id_shape.next_prop_id(assembled, suffix)
+        else:
+            ident = _id_shape.next_bug_id(assembled, suffix)
         if args.as_json:
             # `suffix` is carried so a reader can tell "this branch mints plain ids"
             # (null) from an id that merely happens to end in three letters.
@@ -5003,8 +5014,9 @@ VERB_FLAGS = {
     # tag or rename -- only the one pair every gate-bearing verb offers, for a
     # caller who already knows the real command.
     "seed": ("gate", "gate_clear"),
-    # `next-id` prints an id and writes nothing, so it reads no flag of its own.
-    "next-id": (),
+    # `next-id` prints an id and writes nothing; `--phase` is the phase a task id
+    # belongs to, and the only flag it reads.
+    "next-id": ("phase",),
 }
 
 

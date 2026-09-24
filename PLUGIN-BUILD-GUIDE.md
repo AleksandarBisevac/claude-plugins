@@ -3519,11 +3519,12 @@ back from the `phase.add` rows, which now record the branch (`_journal_io.DETAIL
 carries `branch`). `_journal_cfg` is the one answer to which journal config a CLI row is
 written and read with.
 
-`next-id bug` prints the id a hand-written bug takes - the one record the model still writes by
-hand (`commands/bug.md`), and so the one id it used to compute by hand. It reads the same
-`_id_shape` answer every scripted allocator does, suffix included, and writes nothing; only
-`bug`, because a task or phase id printed ahead of the write would be an id nothing reserves in
-between.
+`next-id bug|prop|task --phase <id>` prints the id a hand-written record takes - a bug
+(`commands/bug.md`), a parked proposal (`init.md`, `sync.md`), a bug's fix task or a moved task
+(`bug.md`, `task.md` -> move) are the records the model still writes by hand, and so the ids it used
+to compute by hand as max+1. It reads the same allocator every scripted writer does, suffix and
+reservations included, and writes nothing. Not `phase`: a phase is minted only by `add-phase`, which
+writes it under the lock, where a task's phase is fixed before its id is asked for.
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model

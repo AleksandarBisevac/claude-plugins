@@ -604,6 +604,50 @@
       "verifiedBy": [
         "plugins/audit/tests/test__manifest_io.py"
       ]
+    },
+    {
+      "id": "P61.13",
+      "title": "next-id task --phase: the id a hand-written fix or moved task takes",
+      "status": "in_progress",
+      "description": "/audit:bug fix and /audit:task move write a task by hand and computed <phaseId>.<next> themselves - max+1, on whatever branch, with no suffix. next-id task --phase <id> prints the allocator's answer, reservations and suffix included.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:59:54Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"

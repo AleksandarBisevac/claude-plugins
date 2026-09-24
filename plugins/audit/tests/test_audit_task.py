@@ -5746,9 +5746,19 @@ def _cases(check):
               % (txt,), code == 2 and "--phase required" in txt)
 
         git(projb, "checkout", "-q", "feature/x")
+        code, txt = run(["next-id", "task", "--phase", "P2", "--project-dir", projb])
+        before_ids = sorted(_mio.tasks_by_id(_mio.load_manifest(mpathb)))
+        check("bs8 next-id task --phase prints the id a hand-written task takes, from the "
+              "SAME allocator `add` uses - its suffix, and past every sibling: %r" % (txt,),
+              code == 0 and txt.strip().splitlines()[-1] == "P2.6-%s" % sfx)
+        check("bs9 ...and writes nothing", sorted(_mio.tasks_by_id(
+            _mio.load_manifest(mpathb))) == before_ids)
+        code, txt = run(["next-id", "task", "--project-dir", projb])
+        check("bs10 next-id task without --phase refuses: a task id belongs to a phase",
+              code == 2 and "--phase" in txt, txt)
         code, txt = run(["next-id", "phase", "--project-dir", projb])
-        check("bs7 next-id takes only `bug`: a phase or a task id is minted by the verb "
-              "that writes it, under the lock", code == 2, txt)
+        check("bs7 next-id takes no `phase`: a phase id is minted only by add-phase, "
+              "which writes it under the lock", code == 2, txt)
     finally:
         _harness.remove_tree(tmp)
 
