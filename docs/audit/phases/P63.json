@@ -19,12 +19,28 @@
   "branch": null,
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P63-R1",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "active_area_tags said its evidence was the plan gate's while it asks area_active, which is wider on purpose; the panel's _active_area_tags carried the same line",
+        "resolution": "fixed in P63.13 (88b7eca)"
+      },
+      {
+        "id": "P63-R2",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "manifest_state's return-shape literal omitted signoffDuePhase and signoffDueStatus",
+        "resolution": "fixed in P63.13 (88b7eca)"
+      }
+    ],
+    "outcome": "matches the desired outcome; two low docstring findings fixed in P63.13"
   },
-  "summary": null,
+  "summary": "A phase's status is now derived in one place (_manifest_io.effective_phase_status): a stored done or cancelled wins, otherwise a phase reads done once every task is terminal, its sign-off verdict is recorded and - with a branch - it has merged. /audit:phase signoff records that verdict and never writes status. Every reader moved to the derivation: the plan gate (a phase only awaiting sign-off no longer holds it in deny), the status command, report, panel, doctor, readiness, priority notes, migration, ADO links, worktree cleanup, the journal's phase.signoff and the task verbs. Desired outcome met: done reads the same everywhere, 'sign-off due' is shown wherever a finished unsigned phase appears, and on this repository the gate left deny. Reviewed by two ad-hoc reviews (four findings fixed in P63.12) and the phase review (two fixed in P63.13); the phase gate ran green and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P63.1",
@@ -691,7 +707,60 @@
         "commit": "9a5c47c",
         "at": "2026-09-24T14:38:15Z"
       }
+    },
+    {
+      "id": "P63.13",
+      "title": "Sign-off review findings: active_area_tags and manifest_state docstrings describe the rule before P63",
+      "status": "done",
+      "description": "Phase sign-off review of P63: active_area_tags (and _panel_policy._active_area_tags) says its evidence is the plan gate's, while it asks _manifest_io.area_active, which is wider on purpose (a phase awaiting sign-off keeps its area live); manifest_state's return-shape literal lists four keys and omits signoffDuePhase and signoffDueStatus.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/panel/_panel_policy.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "88b7eca",
+      "outcome": {
+        "technical": "met - active_area_tags names area_active and why it is wider; manifest_state's shape lists all six keys",
+        "descriptive": "The two hook docstrings the sign-off review flagged now describe the rule the code applies."
+      },
+      "startedAt": "2026-09-24T15:07:49Z",
+      "completedAt": "2026-09-24T15:08:38Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "88b7eca",
+        "at": "2026-09-24T15:08:38Z"
+      }
     }
   ],
-  "startedAt": "2026-09-24T12:32:17Z"
+  "startedAt": "2026-09-24T12:32:17Z",
+  "testEvidence": {
+    "runId": "2026-09-24T15:14:16Z.a47659",
+    "status": "passed",
+    "at": "2026-09-24T15:14:16Z"
+  }
 }
