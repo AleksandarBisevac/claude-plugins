@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "7aecd4607a71f3f962e46ac7e928b9c5fd0a8c3f",
   "branch": "audit/p64-a-phase-s-branch-is-cut-by-the",
-  "mergedAt": null,
+  "mergedAt": "2026-09-24T21:44:12Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
