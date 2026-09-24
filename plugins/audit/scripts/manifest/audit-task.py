@@ -19,9 +19,11 @@ Usage:
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
-                [--id P7] [--description TEXT|-] [--area a,b]
+                [--park] [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
                 [--blocked-by id,id] [--review-skill NAME]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py next-id bug|prop [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py start <taskId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -257,6 +259,9 @@ import _commit_trail          # noqa: E402  (is a SHA still in this clone? A dow
 #                                            handed before writing it, and a third
 #                                            walk putting that question to git would
 #                                            be a third answer to disagree with)
+import _branch                # noqa: E402  (parent_branch: which branch is the development one)
+import _journal_io            # noqa: E402  (read_all: the phase.add rows a side-branch
+                              # warning is read back from)
 import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
                               # branch suffix that keeps two branches from minting it twice)
 import _proposals             # noqa: E402  (the TAKEN SET `/audit:propose materialize`
@@ -1654,6 +1659,14 @@ def _phase_branch_key(note):
 
 
 # --- the journal ---------------------------------------------------------------
+def _journal_cfg(config, mpath, project):
+    """The journal config a CLI row is written AND read with - one answer, so a
+    reader looking for the rows this file wrote looks where they were written.
+    A project with a config keeps its own; one without gets `manifestPath` pinned
+    to where the named manifest is, so the journal lands beside it."""
+    return None if config else {"manifestPath": _output.posix_rel(mpath, project)}
+
+
 def _journal_row(project, config, mpath, action, summary, details):
     """One journal row, appended in-process via audit-journal's `append`.
 
@@ -1694,8 +1707,7 @@ def _journal_row(project, config, mpath, action, summary, details):
     # layout, or conjuring docs/audit into a bare tree -- so the handed-over
     # config pins manifestPath to where the named manifest actually IS, and
     # the journal lands beside it (<manifest dir>/journal).
-    cfg = None if config else \
-        {"manifestPath": _output.posix_rel(mpath, project)}
+    cfg = _journal_cfg(config, mpath, project)
     try:
         ok = bool(mod.append_from_cli(project, {
             "action": action,
@@ -1825,7 +1837,8 @@ def _journal_retarget(project, config, mpath, phase_id, changes):
                         {"phaseId": phase_id, "changes": changes})
 
 
-def _journal_phase_add(project, config, mpath, phase_id, title, outcome):
+def _journal_phase_add(project, config, mpath, phase_id, title, outcome,
+                       branch=None):
     """The `phase.add` row.
 
     The DESIRED OUTCOME rides the SUMMARY, not `details`. It belongs in the row
@@ -1838,8 +1851,10 @@ def _journal_phase_add(project, config, mpath, phase_id, title, outcome):
     summary = "%s added: %s" % (phase_id, title)
     if outcome:
         summary += " -- %s" % outcome
-    return _journal_row(project, config, mpath, "phase.add", summary,
-                        {"phaseId": phase_id})
+    details = {"phaseId": phase_id}
+    if branch:
+        details["branch"] = branch
+    return _journal_row(project, config, mpath, "phase.add", summary, details)
 
 
 # --- readiness (report only) ---------------------------------------------------
@@ -3494,6 +3509,12 @@ def _locked_phase_add(args, project, config, mpath, title, out):
 
     gate, gate_basis = _phase_gate(args, assembled)
     phase = _build_phase(pid, title, args, gate)
+    side = _side_branch(mpath, assembled)
+    if args.park:
+        return _park_phase(args, project, config, mpath, raw_index, assembled,
+                           phase, side, vm, out)
+    warn_side = side["suffix"] is not None and not _side_branch_warned(
+        project, config, mpath, side["branch"])
     assembled.setdefault("phases", []).append(phase)
 
     snap = _snapshot(_write_paths(project, mpath, raw_index, pid,
@@ -3520,7 +3541,8 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         return E_INVALID
 
     jres = _journal_phase_add(project, config, mpath, pid, title,
-                              phase["desiredOutcome"])
+                              phase["desiredOutcome"],
+                              side["branch"] if side["suffix"] else None)
     index_note = _index_dirty_note(written, mpath, project, pid)
     # ALWAYS None HERE, and not asked for: `_build_phase` seeds `branch: None`
     # (manifest-conventions -> New phase template), so a phase this write just
@@ -3535,6 +3557,10 @@ def _locked_phase_add(args, project, config, mpath, title, out):
                   "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "testGateBasis": gate_basis,
                   "ready": not waiting, "waitingOn": waiting}
+        if side["suffix"] is not None:
+            result["sideBranch"] = {"branch": side["branch"],
+                                    "developmentBranch": side["development"],
+                                    "warned": warn_side}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -3564,7 +3590,120 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         out(branch_note)
     if waiting:
         out("  waiting on: %s" % ", ".join(waiting))
+    if warn_side:
+        for line in _side_branch_warning(pid, side):
+            out(line)
     out("  next: /audit:task add \"<the first task>\" --phase %s" % pid)
+    return 0
+
+
+# --- a phase minted on a side branch ---------------------------------------------
+# PHASES ARE MINTED ON THE DEVELOPMENT BRANCH. A phase id is a branch name, a lock
+# name and a shard name, so it is the one id `_id_shape` does not suffix - and the
+# price is that two phase branches each adding a phase would both mint `P<max+1>`.
+# The operator's rule answers it at the source: new work found on a phase branch
+# is parked as a proposal and materialized on the development branch once that
+# branch has merged. It is a WARNING and never a refusal, and it is said once per
+# branch: a guard that refused would be routed around the first time the work was
+# urgent, and one that repeated itself would stop being read.
+def _side_branch(mpath, assembled):
+    """{branch, suffix, development}: the branch standing beside `mpath`, the suffix
+    it mints (None on a trunk branch), and the development branch it is not."""
+    cwd = os.path.dirname(os.path.abspath(mpath))
+    meta = assembled.get("meta") or {}
+    return {"branch": _id_shape.current_branch(cwd),
+            "suffix": _id_shape.suffix_here(cwd, assembled),
+            "development": _branch.parent_branch(meta, None)["branch"]}
+
+
+def _side_branch_warned(project, config, mpath, branch):
+    """True when a phase was already minted on `branch` - read from the phase.add
+    rows, which carry the branch, so "warned once" is a fact of the trail rather
+    than a flag of its own. A journal that cannot be read reads as not warned:
+    the warning then repeats, which is the failure that costs the least."""
+    try:
+        rows = _journal_io.read_all(project, _journal_cfg(config, mpath, project))
+    except Exception:
+        return False
+    return any(r.get("action") == "phase.add"
+               and (r.get("details") or {}).get("branch") == branch for r in rows)
+
+
+def _side_branch_warning(pid, side):
+    return ["WARNING: phase %s was minted on %s, not on the development branch %s. "
+            "Phases belong on %s: merge this phase branch first, then materialize new "
+            "phases there and commit that branch before starting them. Nothing was "
+            "blocked; to park the next one instead, pass --park (it becomes a proposal "
+            "to materialize after the merge). Said once for this branch."
+            % (pid, side["branch"], side["development"], side["development"])]
+
+
+def _park_phase(args, project, config, mpath, raw_index, assembled, phase, side, vm, out):
+    """The same phase `add-phase` built, written as a parked proposal instead.
+
+    The payload is the phase exactly as the live verb would have written it, and
+    its id stays RESERVED (every allocator counts parked ids), so materializing it
+    is a move rather than a rebuild. The proposal lives where proposals live - the
+    single file, or the sharded INDEX - and nothing else is touched."""
+    now = _proposals.iso_now()
+    prop_id = _id_shape.next_prop_id(assembled, side["suffix"])
+    proposal = {"id": prop_id, "name": phase.get("title"), "status": "proposed",
+                "origin": "audit-task add-phase --park", "createdISO": now,
+                "branch": side["branch"], "benefit": phase.get("desiredOutcome"),
+                "openQuestions": [], "materializedAs": None, "materializedAt": None,
+                "payload": {"phase": phase}}
+    assembled.setdefault("proposals", []).append(proposal)
+    if _mio.is_sharded(raw_index):
+        target = dict(raw_index)
+        target["proposals"] = assembled["proposals"]
+    else:
+        target = assembled
+    snap = _snapshot([mpath])
+    try:
+        _panel_write._atomic_write_json(mpath, target)
+        findings, warnings = vm.validate(_mio.load_manifest(mpath))
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the proposal would leave the manifest invalid "
+            "-- rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    details = {"phaseId": phase.get("id")}
+    if side["branch"]:
+        details["branch"] = side["branch"]
+    jres = _journal_row(project, config, mpath, "proposal.add",
+                        "%s parked (reserves %s): %s" % (prop_id, phase.get("id"),
+                                                         phase.get("title")), details)
+    written = [_output.posix_rel(mpath, project)]
+    target_branch = side["development"]
+    if args.as_json:
+        result = {"ok": True, "id": prop_id, "reserves": phase.get("id"),
+                  "proposal": proposal, "written": written,
+                  "materializeOn": target_branch}
+        result.update(jres)
+        result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] parked %s (reserves %s) -- %s" % (prop_id, phase.get("id"),
+                                                        phase.get("title")))
+    out("  outcome: %s" % phase.get("desiredOutcome"))
+    for line in _wg.collapse(warnings, _mio.load_manifest(mpath)):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the proposal.add row")
+    out("  written: %s" % ", ".join(written))
+    if side["suffix"] is not None:
+        out("  next: merge %s into %s, then on %s: /audit:propose materialize %s"
+            % (side["branch"], target_branch, target_branch, prop_id))
+    else:
+        out("  next: /audit:propose materialize %s when it is time to start it on %s"
+            % (prop_id, target_branch))
     return 0
 
 
@@ -4811,7 +4950,7 @@ VERB_FLAGS = {
             "blocked_by", "depends_on", "description", "tests_mode",
             "tests_add", "gate", "gate_clear"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
-                  "blocked_by", "gate", "gate_clear"),
+                  "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
     # EMPTY ON PURPOSE, and it is a row rather than an omission: `start` takes
     # an id and writes the three fields `reference/orchestrator.md` prescribes,
@@ -4858,6 +4997,9 @@ def build_parser():
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
+    p.add_argument("--park", action="store_true", default=False,
+                   help="add-phase: write the phase as a parked proposal instead, to "
+                        "materialize on the development branch after this branch merges")
     p.add_argument("--skills", default=None)
     p.add_argument("--model", default=None)
     p.add_argument("--files", default=None)

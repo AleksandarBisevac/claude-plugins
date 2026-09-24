@@ -367,7 +367,7 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _commit_trail, _id_shape, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _output, _worktrees
@@ -3505,6 +3505,14 @@ reads are attributed to a verb through its call graph regardless of what variabl
 passes at the site — sharing them would have made `seed` appear, to the suite's own AST-derived
 `vf6`, to accept every flag `add`/`add-phase` do.
 
+
+`add-phase --park` writes the same phase `add-phase` builds as a parked proposal instead
+(`PROP-<n>[-suffix]`, the phase id reserved), because phases are minted on the development
+branch: a phase id is the one id that carries no branch suffix. A live `add-phase` on a side
+branch is never refused; the first one on a branch prints a WARNING naming `--park`, read
+back from the `phase.add` rows, which now record the branch (`_journal_io.DETAILS_KEYS`
+carries `branch`). `_journal_cfg` is the one answer to which journal config a CLI row is
+written and read with.
 
 `next-id bug` prints the id a hand-written bug takes - the one record the model still writes by
 hand (`commands/bug.md`), and so the one id it used to compute by hand. It reads the same

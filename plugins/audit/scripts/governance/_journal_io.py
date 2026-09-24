@@ -251,10 +251,14 @@ DETAILS_VERSION = 2
 # The spelling is `_evidence_io`'s
 # singular `attempt` rather than the manifest's plural `attempts`, so the two
 # records join on one field name instead of on two that differ by a letter.
+# `branch` is the branch a phase was minted on (`phase.add`) or a proposal parked
+# on (`proposal.add`). A phase belongs on the development branch, and the one-time
+# warning a side branch gets is read back from these rows - so the fact the
+# warning is about is the record itself, not a second flag beside it.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
                 "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
-                "program", "cwd", "runId", "attempt")
+                "program", "cwd", "runId", "attempt", "branch")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload

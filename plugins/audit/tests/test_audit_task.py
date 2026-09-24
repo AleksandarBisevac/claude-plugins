@@ -5661,6 +5661,58 @@ def _cases(check):
         check("bs6c ...and on a side branch PROP-1-<suffix>, because a proposal parked "
               "on a phase branch is exactly the record two branches both write: %r"
               % (txt,), code == 0 and txt.strip().splitlines()[-1] == "PROP-1-%s" % sfx)
+        # ---- (pk) a phase on a side branch: warned once, or parked ------------
+        # A branch of its own, so "the first time on this branch" is not already
+        # spent by bs2's add-phase on feature/x.
+        import _journal_io
+        git(projb, "checkout", "-q", "-b", "feature/y")
+        sfy = _id_shape.branch_suffix("feature/y", base_manifest())
+        phases_before = [p["id"] for p in _mio.load_manifest(mpathb)["phases"]]
+        code, txt = run(["add-phase", "Parked idea", "--outcome", "later",
+                         "--park", "--project-dir", projb])
+        man = _mio.load_manifest(mpathb)
+        parked = [p for p in man.get("proposals") or [] if p.get("name") == "Parked idea"]
+        check("pk1 add-phase --park on a side branch writes NO live phase and parks the "
+              "same phase as a proposal carrying the branch suffix and the branch: %s"
+              % (txt,),
+              code == 0 and [p["id"] for p in man["phases"]] == phases_before
+              and len(parked) == 1 and parked[0]["id"] == "PROP-1-%s" % sfy
+              and parked[0]["status"] == "proposed" and parked[0].get("branch") == "feature/y"
+              and parked[0]["payload"]["phase"]["title"] == "Parked idea")
+        check("pk2 ...the parked payload is the SAME phase add-phase would have written "
+              "(its template, its reserved id), and the plan still validates",
+              parked and parked[0]["payload"]["phase"].get("desiredOutcome") == "later"
+              and parked[0]["payload"]["phase"]["id"] == "P5"
+              and not _rules.validate(man)[0])
+        check("pk3 ...and it says how the phase gets out: materialize after the phase "
+              "branch merges, on the development branch: %s" % (txt,),
+              "materialize" in txt and "PROP-1-%s" % sfy in txt and "main" in txt)
+        code, txt = run(["add-phase", "Side phase", "--outcome", "o",
+                         "--project-dir", projb])
+        check("pk4 a live add-phase on a side branch is NOT blocked, and the first one on "
+              "that branch warns, naming the development branch and --park: %s" % (txt,),
+              code == 0 and "was minted on feature/y, not on the development branch "
+              "main" in txt and "--park" in txt)
+        rows = [r for r in _journal_io.read_all(projb)
+                if r.get("action") == "phase.add"
+                and (r.get("details") or {}).get("branch") == "feature/y"]
+        check("pk5 ...and the phase.add row records the branch it was minted on, which "
+              "is what 'the first time' is read from: %r" % (rows,), len(rows) == 1)
+        code, txt = run(["add-phase", "Another side phase", "--outcome", "o",
+                         "--project-dir", projb])
+        check("pk6 the SECOND add-phase on that branch is silent - warned once, never "
+              "nagged: %s" % (txt,), code == 0 and "was minted on" not in txt)
+        git(projb, "checkout", "-q", "main")
+        code, txt = run(["add-phase", "Trunk phase", "--outcome", "o",
+                         "--project-dir", projb])
+        check("pk7 SECOND DIRECTION: add-phase on the development branch never warns: %s"
+              % (txt,), code == 0 and "was minted on" not in txt)
+        code, txt = run(["add-phase", "Trunk idea", "--outcome", "o", "--park",
+                         "--project-dir", projb])
+        check("pk8 --park on the development branch parks an unsuffixed PROP: %s" % (txt,),
+              code == 0 and any(p.get("name") == "Trunk idea" and p["id"] == "PROP-2"
+                                for p in _mio.load_manifest(mpathb).get("proposals")))
+        git(projb, "checkout", "-q", "feature/x")
         code, txt = run(["next-id", "phase", "--project-dir", projb])
         check("bs7 next-id takes only `bug`: a phase or a task id is minted by the verb "
               "that writes it, under the lock", code == 2, txt)

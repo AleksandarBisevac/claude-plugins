@@ -135,6 +135,95 @@
         "plugins/audit/tests/test__manifest_phases.py",
         "plugins/audit/tests/test_migrate_manifest.py"
       ]
+    },
+    {
+      "id": "P61.3",
+      "title": "A phase on a side branch is warned once and can be parked as a proposal instead",
+      "status": "in_progress",
+      "description": "Operator decision: phases are minted on the development branch. add-phase on a side branch still writes (never blocked) but warns the first time on that branch, read from the phase.add rows that now carry the branch; add-phase --park writes the same phase as a proposal (PROP-<n>-<suffix>) to materialize after the phase branch merges.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/propose.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:19:02Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P61.4",
+      "title": "README and CHANGELOG say where phases are minted and what --park and next-id do",
+      "status": "in_progress",
+      "description": "The README command-table row the cf1 lint reads, and the Unreleased section, for P61.1-P61.3.",
+      "files": [
+        "plugins/audit/README.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T08:27:32Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"

@@ -1,5 +1,5 @@
 ---
-description: 'Manage parked phase proposals in the audit manifest — list them, materialize one (or all) into live phases, or drop one. Proposals are parked by /audit:init when the user declines (some of) the synthesized plan; materialization is a move, not a re-synthesis.'
+description: 'Manage parked phase proposals in the audit manifest — list them, materialize one (or all) into live phases, or drop one. Proposals are parked by /audit:init when the user declines (some of) the synthesized plan, and by /audit:phase add --park for a phase found on a phase branch; materialization is a move, not a re-synthesis.'
 argument-hint: 'list | materialize <PROP-id>|--all | drop <PROP-id> | revive <PROP-id>'
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
@@ -12,6 +12,14 @@ Each payload-bearing proposal carries the FULL synthesized phase (`payload.phase
 tasks initialized per the new-task template), so `materialize` moves it into
 `phases[]` without re-planning anything.
 Proposal lifecycle: `proposed → materialized | dropped`.
+
+**Where proposals come from.** `/audit:init` parks the phases the user declines, and
+`/audit:phase add ... --park` parks a new phase found while a phase branch is checked
+out - phases are minted on the development branch, so that work waits here until the
+branch merges. A proposal parked on a side branch carries the branch suffix
+(`PROP-<n>-<suffix>`) and records the branch it was parked on (`branch`), so two phase
+branches parking one each cannot mint the same id. Materialize it on the development
+branch after the merge, commit that branch, then start the phase.
 
 **`$ARGUMENTS`**: first token is the subcommand. Unknown/empty → print usage and stop.
 

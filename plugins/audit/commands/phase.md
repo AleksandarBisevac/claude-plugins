@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -222,6 +222,25 @@ the outcome, the gate and where it came from, and the files it wrote.
 - **`--area`** — the area tag(s) whose `root` the phase's work falls under. One tag is
   written as a string, several as a list, in the order you want them to resolve.
 - **`--description`**, **`--blocked-by`**, **`--review-skill`** — optional.
+
+**Which branch are you on? Phases are minted on the development branch.** A phase id
+is a branch name, a lock name and a shard name, so it is the one id that carries no
+branch suffix - and two phase branches that each add a phase would both mint the next
+`P<n>`. So new work found while a phase branch is checked out goes one of two ways:
+
+- **it is needed by the phase in hand** → it is a task in that phase
+  (`/audit:task add --phase <the phase whose branch this is>`), not a new phase;
+- **it is new work** → `add ... --park` writes the same phase as a parked proposal
+  (`PROP-<n>-<suffix>`, reserving its phase id), and after this phase branch merges it
+  is materialized on the development branch with `/audit:propose materialize`, that
+  branch is committed, and only then is the new phase started.
+
+Ask the user which of the two it is BEFORE calling the script when you are on a side
+branch. The script never refuses a live `add` there: the first phase minted on a side
+branch prints a WARNING saying the above and naming `--park`, and later ones on the
+same branch are silent. "The first" is read from the `phase.add` journal rows, which
+record the branch a phase was minted on. Relay that WARNING to the user verbatim - it
+is addressed to them, not to you.
 
 **Before creating one, check the alternatives** and say which you ruled out:
 
