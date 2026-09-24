@@ -460,7 +460,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:report` | `[--out-dir <dir>] [--share]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). `--share` publishes it as a Claude Code Artifact — a link a reviewer can open without installing anything — and asks before anything leaves the machine. Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
 | `/audit:usage` | `[--by phase\|task\|model\|author\|agent\|attr\|branch\|session\|hour\|day\|month] [--phase <id>] [--author <who>] [--area <tag>] [--since 7d] [--json] [--format <fmt>] [--backfill]` | **Token spend, attributed** — per phase, task, model, author, area and time window (down to the calendar month), with cache economics, cost-per-task, a monthly overview and a usage trend. The script renders its own ASCII output (Claude prints it verbatim), so asking what you spent costs almost nothing. Read-only. |
-| `/audit:layout` | `<sharded\|single-file> [--dry-run] [--renumber] [--force]` | Choose how the manifest is stored, **in either direction**: `sharded` splits it into an index plus one file per phase (fewer tokens per phase run, parallel-safe across worktrees), `single-file` assembles the shards back into one file. A layout **choice**, not a version upgrade — both shapes are current, and staying on single-file never makes a manifest out of date. Either direction holds the index lock, backs up to `<manifestPath>.bak-<UTC>`, and re-validates the result or restores the backup. See [Sharded layout](#sharded-layout--parallel-phases). |
+| `/audit:layout` | `<sharded\|single-file> [--dry-run] [--renumber] [--force]` | Choose how the manifest is stored, **in either direction**: `sharded` splits it into an index plus one file per phase (fewer tokens per phase run, parallel-safe across worktrees), `single-file` assembles the shards back into one file. **`merge-driver install|uninstall|status`** sets up the git merge driver that merges the manifest by record, so branches that each add a phase, task or bug stop conflicting. A layout **choice**, not a version upgrade — both shapes are current, and staying on single-file never makes a manifest out of date. Either direction holds the index lock, backs up to `<manifestPath>.bak-<UTC>`, and re-validates the result or restores the backup. See [Sharded layout](#sharded-layout--parallel-phases). |
 | `/audit:migrate` | `[--dry-run] [--renumber] [--force]` | **Legacy spelling of `/audit:layout sharded`** — it still works and does exactly that, kept so existing transcripts and runbooks resolve. **It will be removed in a future release**: switch anything written down to `/audit:layout sharded` while both spellings work. |
 | `/audit:doctor` | `[--deep] [--json] [--color auto\|always\|never]` | Diagnose the setup **before** it bites: which interpreter the hooks will resolve, whether `gitRoot` is a repo, config + manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, **whether the skills the plan names would resolve from a clone or only here**, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only; exits 1 on findings so CI can use it. |
 | `/audit:logs` | `prune [--older-than DAYS] [--dry-run] [--json]` | Prune the local feeds this plugin writes under `logsDir` — today `<logsDir>/plan-gate-events.jsonl`, the file the plan gate appends to and the panel's **Plan gate** card renders. `prune` drops the rows that no longer belong: a `file` that resolves **outside this repository** (the plugin manages and references only the consuming repo), and a line that is not a JSON object (the panel's reader already discards those, so they occupy the file while showing up nowhere). `--older-than DAYS` adds an age pass and is **off unless given** — the feed already self-trims by size, and an old verdict is still a true record of this repo, so a default would be a number with no basis. Both counts print, including at zero, and removed rows are counted by class and never echoed. `--dry-run` reports the identical counts and writes nothing. **This one writes**: the verb is mandatory, and the blast radius is the one file — the journal is deliberately out of reach. |
@@ -1703,8 +1703,11 @@ clone while every command guarded the git dir, which is two runs each holding so
 phase command loads **only its own phase** (fewer tokens at scale), and because two phase branches
 edit different shard files — the work inside a phase never touches the shared index, and bug status
 is **derived** from the linked task — **two phases run in parallel from separate git worktrees and
-merge back with no manifest conflict.** Ids are allocated under the index lock, so they never
-collide. What the index does carry per phase is a **mirror** of that phase's own `status`, so
+merge back with no manifest conflict** — as long as each branch only RUNS its phase. Anything that
+ADDS a record (a phase, a task, a bug, a `fileIndex` row) appends to the index, so two branches that
+each add one conflict there, in either layout; `/audit:layout merge-driver install` is the repair
+(below). Ids are allocated under the index lock, which is per clone: two branches or two clones can
+still mint the same `max+1` id, and git — or the driver — reports that as a conflict. What the index does carry per phase is a **mirror** of that phase's own `status`, so
 execution order is readable without opening every shard; the shard body stays the source of truth
 and the mirror is refreshed only when the phase itself moves, so each branch touches one stub of
 its own.
@@ -1715,6 +1718,17 @@ Neither shape is legacy: a single-file manifest never goes out of date, and inst
 plugin never makes a layout change due. What decides it is how you work — parallel phases across
 worktrees, or a plan big enough that loading every phase to run one costs real context, versus one
 session and a handful of phases.
+
+**Merging the manifest by record.** Every writer appends at a list tail, so on a team two
+branches that each add a different phase or bug conflict on the same lines — nothing disagrees, but
+in a plan of hundreds of phases a human cannot tell that hunk from a real one.
+`/audit:layout merge-driver install` sets up a git merge driver that merges the manifest by record
+instead: records matched by `id`, `fileIndex` rows as sets, and the result the same whichever way
+you merge. What is left is what a person must decide — one field changed two ways, a delete against
+a change, one id minted on both sides — shown as a marker block around that record alone. It writes
+two lines to `.gitattributes` (commit them), one git config key for this clone (every teammate runs
+the install once), and a small shim in the git dir that survives plugin upgrades. A clone without
+it gets git's ordinary line merge, so nothing breaks for a teammate who has not installed.
 
 Two things the reverse direction costs, said before you run it rather than after. The shard files
 are **still on disk** once they are assembled, no longer read by anything and still looking

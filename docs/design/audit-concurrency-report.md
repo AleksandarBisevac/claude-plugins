@@ -65,6 +65,18 @@ two allocations of the same kind, which requires the same array, which is the sa
 - **O1 discipline** remains the answer for the merge-conflict modes, which are now the only
   modes.
 
+### Added 2026-09-24 — O1 was not enough, and the merge conflicts now have a mechanism
+
+The project this report is anchored in came back with the cost of O1 measured on its own history:
+on a single-file plan, every branch that ran a task conflicted in the manifest when `develop` was
+merged in, each conflict two appended records that disagreed about nothing. "Keep both blocks" is
+not a procedure a human can follow safely in a file that size, so the team had written its own
+three-way merge by record. That merge now ships as a git merge driver,
+`/audit:layout merge-driver install` (`scripts/manifest/merge-manifest.py`): records matched by id,
+`fileIndex` rows as sets, symmetric in merge direction, and in both layouts. B2 keeps the answer
+above — an id minted on both sides is still a conflict, and the driver names it rather than
+renumbering it — so O2 stays not recommended.
+
 ### C1 — closed 2026-08-07 (v0.26.0), and it was worse than this report said
 
 **C1 was answered by removing the threshold from the decision, not by tuning it.** The

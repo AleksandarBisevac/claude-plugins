@@ -168,8 +168,9 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   automated reads the manifest, never the table.
 - **The file names inside a sharded manifest's phase directory.** They are an
   implementation of the layout, reached through `_manifest_io`, not an interface.
-- **That `/audit:migrate` can be undone.** It is documented as one-directional. It is
-  also a *choice*, not an upgrade: a single-file manifest never goes out of date.
+- **Nothing about undoing a layout change beyond what `/audit:layout` does.** It moves
+  in either direction (`/audit:migrate` is its old name). A layout is a *choice*, not
+  an upgrade: a single-file manifest never goes out of date.
 - **That an enum gains no members.** A new task status, a new gate name or a new
   branch type is additive, and code that switches exhaustively over one of them
   should have a default arm.
@@ -257,6 +258,12 @@ None of the following is under the version contract, and depending on one is
 depending on an implementation:
 
 - the panel's HTTP endpoints and its page,
+- **the merge driver's name, its shim and how the record merge resolves a case** —
+  what `/audit:layout merge-driver install` writes into `.gitattributes`, git config
+  and the git dir. The driver is a convenience over files the promise already covers,
+  and it is built to fail towards git's own behaviour: a clone whose configuration no
+  longer names what `.gitattributes` names gets git's line merge with markers, never
+  a silent result. Re-run `install` after an upgrade that renames anything,
 - the rendered report's HTML, its DOM and its Markdown twin,
 - the audit trail's row shape, the usage ledger's NDJSON fields, and the evidence
   record's — all three are files this plugin writes and re-derives; the manifest's

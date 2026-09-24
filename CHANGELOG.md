@@ -4,6 +4,31 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Added
+- **The manifest merges by record: `/audit:layout merge-driver install`.** Every writer appends at a
+  list tail, so two branches that each add a different phase, task, bug or `fileIndex` row conflicted
+  on the same lines — in both layouts, because sharding keeps a phase RUN in its own file while every
+  added record still lands in the index. A field report measured the conflict on every branch that
+  ran a task, in a single-file plan of a few hundred phases where a human cannot tell that hunk from a
+  real one. The new git merge driver (`scripts/manifest/merge-manifest.py`, over
+  `_manifest_merge.py`) matches records by `id`, merges `fileIndex` rows as sets, and produces the
+  same bytes whichever way the merge runs, because phase order is execution order. What stays a
+  conflict is what a person must decide — one field changed two ways, a delete against a change, the
+  same id minted on both sides (never renumbered) — and it is shown as a marker block around that
+  record alone. A merged single-file plan is revalidated, and only a finding neither side had fails
+  it. `install` writes two `.gitattributes` lines, one git config key per clone and a shim under the
+  git dir that survives upgrades; every failure path — a moved plugin, a driver that dies before
+  writing, unreadable JSON — leaves git's own line merge with markers, because a git merge driver
+  that fails without writing leaves the file as your side with no markers at all. `status` and
+  `uninstall` read and undo each piece.
+
+### Fixed
+- **The README said ids "never collide" because they are allocated under the index lock.** The lock
+  is per clone; two branches can mint the same `max+1` id, and the sentence now says so. The same
+  documents' "no manifest conflict" promise is scoped to a phase RUN, which is the case it held for.
+
 ## [3.0.1] - 2026-09-18
 
 3.0.0's own release preflight was green and its CI was not, on two platforms it cannot reach and in

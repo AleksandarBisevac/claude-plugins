@@ -1,7 +1,7 @@
 ---
-description: 'Audit pipeline: choose how the manifest is stored — `sharded` (an index plus one file per phase: fewer tokens per phase run, parallel-safe across worktrees) or `single-file` (one file, one diff, no index). A layout CHOICE, not a version upgrade: both shapes are current, neither goes out of date, and this command moves in either direction under one lock, one backup and a re-validate-or-restore.'
+description: 'Audit pipeline: choose how the manifest is stored — `sharded` (an index plus one file per phase: fewer tokens per phase run, parallel-safe across worktrees) or `single-file` (one file, one diff, no index). A layout CHOICE, not a version upgrade: both shapes are current, neither goes out of date, and this command moves in either direction under one lock, one backup and a re-validate-or-restore. `merge-driver install|uninstall|status` sets up the git merge driver that merges the manifest by record, in either layout.'
 disable-model-invocation: true
-argument-hint: '<sharded|single-file> [--dry-run] [--renumber] [--force]'
+argument-hint: '<sharded|single-file> [--dry-run] [--renumber] [--force] | merge-driver <install|uninstall|status> [--dry-run]'
 allowed-tools: Read, Bash, AskUserQuestion
 ---
 
@@ -32,7 +32,9 @@ direction and read as an age.
 
 ## 0. Which direction
 
-`$ARGUMENTS` begins with `sharded` or `single-file`. Read the manifest first (conventions →
+`$ARGUMENTS` begins with `sharded` or `single-file` — or with `merge-driver`, which is
+[its own section below](#merge-driver--merge-the-manifest-by-record) and takes none of the steps
+here. Read the manifest first (conventions →
 Locating the manifest) and say which layout is in use **before** anything else, because that is
 what makes the request meaningful:
 
@@ -138,10 +140,54 @@ delete once the user is happy.
 
 **To `sharded`:** the index and every `phases/*.json` are **new files** — tell the user to
 `git add` them. From here `/audit:phase P2` loads only `phases/P2.json`, and two phases run in
-parallel from separate worktrees without a manifest merge conflict.
+parallel from separate worktrees without a manifest merge conflict **as long as each only runs
+its own phase**. Anything that ADDS a record — a phase, a task, a bug, a `fileIndex` row — still
+appends to the index, and two branches that each add one conflict there unless the merge driver
+below is installed.
 
 **To `single-file`:** the assembled file is the only one anything reads now, and **the shard files
 are still on disk** — no longer read by anything, still committed, still looking authoritative to
 the next person who opens one. Name every path that is now dead, and say the repair is one commit:
 `git rm` the `phases/` shards and `git add` the assembled manifest together. A tree carrying both
 is a tree where a hand-edit can land in the file that is ignored.
+
+## merge-driver — merge the manifest by record
+
+**Why.** Every writer appends at a list tail, so two branches that each add a different record — a
+phase, a task, a bug, a `fileIndex` row — write the same lines, and git's line merge stops on a
+conflict nothing disagrees about. That is true in **both** layouts: sharding keeps a phase run in its
+own file, but every added record still lands in the index. The driver merges the three versions by
+record instead — matched by `id`, `fileIndex` rows as sets — and leaves a conflict only where a
+human has to decide: one field changed two ways, a record deleted on one side and changed on the
+other, or the same id added on both sides with different content (never renumbered). A real conflict
+is a marker block around **that record alone**, with every other record already merged.
+
+**It writes outside the manifest, so ask first.** Before `install`, say what it writes and get an
+explicit yes (AskUserQuestion) — run it with `--dry-run` first and show that output:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/merge-manifest.py" install <manifestPath> --dry-run
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/merge-manifest.py" install <manifestPath>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/merge-manifest.py" status <manifestPath>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/merge-manifest.py" uninstall <manifestPath>
+```
+
+Print the script's output verbatim. `install` writes three things, and they reach different people:
+
+- **`.gitattributes`** — two lines naming the driver for the manifest and its `phases/*.json`. Tell
+  the user to **commit it**: it is what tells every clone which driver the file takes. A clone that
+  has NOT installed falls back to git's own line merge, so committing it never breaks a teammate.
+- **git config, this clone only** — `merge.audit-manifest.driver`. git config is not committed, so
+  **every teammate installs once**, and `status` / `/audit:doctor` say whether this clone has.
+- **a shim under the git common dir** — outside the tree, shared by every worktree of the clone.
+  git config names the shim, never the plugin cache, because the cache moves on every upgrade. The
+  shim records which plugin copy it runs; when that copy is gone it falls back to git's line merge
+  with markers and says to re-run `install`. Re-running `install` is idempotent.
+
+It needs no lock: it never writes the manifest. `status` exits **1** when any piece is missing or
+the shim's plugin root no longer exists — say which, and that `install` is the repair.
+
+**After a merge the driver ran.** A single-file plan is revalidated by the driver itself, and only a
+finding neither side had fails the merge. An index or shard cannot be validated alone, so after a
+sharded merge run `validate-manifest.py <manifestPath>` once the merge has finished.
+

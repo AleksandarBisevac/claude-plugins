@@ -42,6 +42,10 @@ either layout (the scripts and hooks assemble transparently), but WRITES must ta
   **shard**. Edit the SHARD, never the index. **Structural** writes (adding a phase/task/bug,
   `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock. A phase run therefore touches
   **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
+  A structural write is the opposite case: it appends to the index, so two branches that each add a
+  record conflict there unless the merge driver is installed (`/audit:layout merge-driver`), which
+  merges by record and leaves only a genuine collision — one field changed two ways, or one id
+  minted on both sides — for a human.
   **That promise belongs to `run`, not to this verb, for every verb `scripts/manifest/audit-task.py`
   exposes** (`add`, `scope`, `retarget`, `cancel`, `start`, `done`) — each takes a task or phase id from
   wherever the caller happens to be standing, so a call against phase X's id while standing on phase
