@@ -363,6 +363,10 @@ def _cases(check):
 
         running = _manifest()
         running["phases"][0]["status"] = "in_progress"
+        # An OPEN task: a phase whose tasks are all done only awaits sign-off, and
+        # that no longer holds the denying tier - "running" means work left to do.
+        running["phases"][0]["tasks"].append({"id": "P1.2", "title": "open",
+                                              "status": "pending"})
         with open(mpath, "w", encoding="utf-8") as fh:
             json.dump(running, fh)
         rep = base.Report()

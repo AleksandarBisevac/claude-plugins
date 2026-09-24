@@ -1040,7 +1040,12 @@ def _cases(check):
                                 "status": "in_progress",
                                 "tasks": [{"id": "P2.6", "title": "dropped",
                                            "status": "cancelled",
-                                           "files": [SAN]}]}]})
+                                           "files": [SAN]},
+                                          # open work, so the phase is still
+                                          # RUNNING - one whose tasks are all
+                                          # terminal only awaits sign-off
+                                          {"id": "P2.7", "title": "open",
+                                           "status": "pending"}]}]})
     v_c, m_c = refuse("selftest-s8c")
     check("s10d CANCELLED is the same fault one status further, not a "
           "second one to fix separately - `/audit:task start` refuses it "

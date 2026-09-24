@@ -115,6 +115,51 @@
       "startedAt": "2026-09-24T12:35:09Z",
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P63.3",
+      "title": "area_active, and the fixtures that described a running phase with no work left",
+      "status": "in_progress",
+      "description": "The shared area rule P63.2's hook and panel call, and the fixtures that change meaning under it - committed apart from P63.2 because P63.2 did not declare them, and landed right after it because P63.2's commit calls area_active.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_io.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-24T12:42:02Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-24T12:32:17Z"

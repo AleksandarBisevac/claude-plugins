@@ -962,6 +962,11 @@ def _phase_status_cases(check):
           "merged-but-never-closed state), and neither is a pending one",
           not R(ph(tasks=("pending",), merged="t"))
           and not R(ph("pending", tasks=("pending",))))
+    A = M.area_active
+    check("ps11 an area stays active while its phase runs OR awaits sign-off (the "
+          "review and fix runs of sign-off work there), and not once merged or done",
+          A(ph(tasks=("pending",))) and A(ph()) and not A(ph(review="passed"))
+          and not A(ph(merged="t")) and not A(ph("pending", tasks=("pending",))))
     check("ps10 an unreadable task entry keeps the phase from reading finished - a "
           "fault in the plan is not a finished phase",
           E(dict(ph(review="passed"), tasks=[{"id": "P1.1", "status": "done"}, "junk"]))

@@ -608,6 +608,17 @@ def phase_running(phase):
     return not tasks or any(t.get("status") not in TERMINAL for t in tasks)
 
 
+def area_active(phase):
+    """Whether a phase's AREA rules apply: while it runs, and while it awaits sign-off
+    too. Wider than `phase_running` on purpose - sign-off's review and fix runs work
+    in that area, and a capability policy that went quiet there would let them past
+    it - while the plan gate's denying tier is not held by a phase with nothing left
+    to edit. The hook and the panel's preview both ask this, so they cannot disagree."""
+    if (phase or {}).get("mergedAt"):
+        return False
+    return phase_running(phase) or signoff_due(phase)
+
+
 # --- writer (split a manifest into index + per-phase shards) ---------------------
 # The index keeps the shared, rarely-churned data; each phase's full body becomes a
 # shard. The phase STUB is minimal on purpose, and `status` is on it for the reason
