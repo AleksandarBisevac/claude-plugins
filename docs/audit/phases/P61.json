@@ -560,7 +560,7 @@
     {
       "id": "P61.12",
       "title": "split_manifest keeps every root key, so a sharded save cannot drop decisions (F469)",
-      "status": "in_progress",
+      "status": "done",
       "description": "split_manifest copied four named root keys, so decisions and every unknown root key vanished on /audit:layout sharded and every save_sharded caller - breaking COMPATIBILITY's tolerated-unknown-keys promise. resolve is about to save through it too.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -592,14 +592,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bba80f2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "split_manifest copies every root key; the four known ones first, in their old order.",
+        "descriptive": "A sharded save no longer drops decisions or any root key a later release adds."
       },
       "startedAt": "2026-09-24T08:50:36Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-24T08:52:35Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__manifest_io.py"
+      ]
     }
   ],
   "startedAt": "2026-09-24T07:55:05Z"

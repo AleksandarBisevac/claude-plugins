@@ -333,11 +333,11 @@ def _git_cases(check, tmp):
         _git(repo, env, "commit", "-qm", "attrs")
         _branches(repo, env, plan, ours, theirs)
         code, out, text = _merge(repo, env, plan)
-        doc = json.loads(text)
+        doc = _load_or_empty(plan)
         check("mm16 with the driver installed the same merge is clean, and both phases "
               "and both bugs are in the plan",
-              code == 0 and [p["id"] for p in doc["phases"]][-2:] == ["BF11", "BF12"]
-              and [b["id"] for b in doc["bugs"]] == ["BUG-2", "BUG-3"], out)
+              code == 0 and [p["id"] for p in doc.get("phases") or []][-2:] == ["BF11", "BF12"]
+              and [b["id"] for b in doc.get("bugs") or []] == ["BUG-2", "BUG-3"], out)
         forward = text
 
         repo2, plan2 = _repo(tmp, "g2", env, base)
@@ -402,9 +402,152 @@ def _git_cases(check, tmp):
               "writes the line merge's markers itself",
               code != 0 and "<<<<<<< ours" in text and "without writing" in out,
               "%s\n%s" % (out, text))
+        _resolve_cases(check, tmp, env)
     finally:
         os.environ.clear()
         os.environ.update(held)
+
+
+def _resolve(argv):
+    held = sys.stdout, sys.stderr
+    buf = io.StringIO()
+    sys.stdout = sys.stderr = buf
+    try:
+        code = M.main(argv)
+    finally:
+        sys.stdout, sys.stderr = held
+    return code, buf.getvalue()
+
+
+def _resolve_cases(check, tmp, env):
+    """The collision the branch suffix cannot prevent: two clones minting the same
+    id on the development branch itself. `resolve` renumbers the side named."""
+    base = _plan()
+    ours = _add_bug(base, "BUG-1")
+    ours["phases"][0]["tasks"][0]["bugId"] = "BUG-1"
+    ours["bugs"][0]["taskId"] = "P1.1"
+    ours["bugs"][0]["title"] = "ours bug"
+    theirs = _add_bug(base, "BUG-1")
+    theirs["phases"][1]["tasks"][0]["bugId"] = "BUG-1"
+    theirs["bugs"][0]["taskId"] = "BF10.1"
+    theirs["bugs"][0]["title"] = "theirs bug"
+
+    repo, plan = _repo(tmp, "r1", env, base)
+    _install(plan)
+    _git(repo, env, "add", ".gitattributes")
+    _git(repo, env, "commit", "-qm", "attrs")
+    code, out = _resolve(["resolve", plan, "--renumber", "theirs"])
+    check("rs1 resolve with no merge in progress refuses and says there is nothing to "
+          "resolve - it never invents a side", code == 1 and "no conflict" in out, out)
+    _branches(repo, env, plan, ours, theirs)
+    code, out, text = _merge(repo, env, plan)
+    check("rs2 CONTROL: the same BUG-1 minted on both sides is a conflict the driver "
+          "names - and it names the verb that resolves it, so the operator is not left "
+          "to hand-edit a collision", code != 0 and "bugs[BUG-1]" in out
+          and "resolve" in out and "--renumber ours|theirs" in out, out)
+    code, out = _resolve(["resolve", plan])
+    check("rs3 resolve without --renumber refuses: which side keeps the id is the "
+          "operator's call, never the tool's", code == 2 and "--renumber" in out, out)
+    code, out = _resolve(["resolve", plan, "--renumber", "theirs"])
+    doc = _load_or_empty(plan)
+    bugs = dict((b["id"], b) for b in doc.get("bugs") or [])
+    tasks = dict((t["id"], t) for ph in doc.get("phases") or [] for t in ph["tasks"])
+    check("rs4 --renumber theirs keeps ours' BUG-1 and gives theirs the next free id, "
+          "and says so: %s" % (out,),
+          code == 0 and bugs.get("BUG-1", {}).get("title") == "ours bug"
+          and bugs.get("BUG-2", {}).get("title") == "theirs bug"
+          and "BUG-1 -> BUG-2" in out)
+    check("rs5 ...and every reference on theirs follows: the task that linked it now "
+          "names BUG-2, the one that linked ours still names BUG-1",
+          tasks.get("BF10.1", {}).get("bugId") == "BUG-2"
+          and tasks.get("P1.1", {}).get("bugId") == "BUG-1",
+          tasks)
+    check("rs6 ...the file is valid, has no markers, and the plan validates",
+          "<<<<<<<" not in open(plan, encoding="utf-8").read()
+          and not _rules_findings(doc), _rules_findings(doc))
+
+    repo2, plan2 = _repo(tmp, "r2", env, base)
+    _install(plan2)
+    _git(repo2, env, "add", ".gitattributes")
+    _git(repo2, env, "commit", "-qm", "attrs")
+    _branches(repo2, env, plan2, ours, theirs)
+    _merge(repo2, env, plan2)
+    code, out = _resolve(["resolve", plan2, "--renumber", "ours"])
+    doc2 = _load_or_empty(plan2)
+    bugs2 = dict((b["id"], b) for b in doc2.get("bugs") or [])
+    check("rs7 --renumber ours is the mirror: theirs keeps BUG-1, ours becomes BUG-2",
+          code == 0 and bugs2.get("BUG-1", {}).get("title") == "theirs bug"
+          and bugs2.get("BUG-2", {}).get("title") == "ours bug", out)
+
+    # The new id is free over BOTH sides: ours also added BUG-2, so theirs' BUG-1
+    # must not become a second BUG-2.
+    ours4 = _add_bug(_add_bug(base, "BUG-1"), "BUG-2")
+    ours4["bugs"][0]["title"] = "ours one"
+    theirs4 = _add_bug(base, "BUG-1")
+    theirs4["bugs"][0]["title"] = "theirs one"
+    repo4, plan4 = _repo(tmp, "r4", env, base)
+    _install(plan4)
+    _git(repo4, env, "add", ".gitattributes")
+    _git(repo4, env, "commit", "-qm", "attrs")
+    _branches(repo4, env, plan4, ours4, theirs4)
+    _merge(repo4, env, plan4)
+    code, out = _resolve(["resolve", plan4, "--renumber", "theirs"])
+    doc4 = _load_or_empty(plan4)
+    check("rs10 the renumbered id is free over BOTH sides - theirs' BUG-1 becomes BUG-3 "
+          "when ours already added BUG-2: %s" % (out,),
+          code == 0 and sorted(b["id"] for b in doc4.get("bugs") or [])
+          == ["BUG-1", "BUG-2", "BUG-3"]
+          and [b["title"] for b in doc4["bugs"] if b["id"] == "BUG-3"] == ["theirs one"])
+
+    # Sharded: both sides mint phase P11, each in its own new shard file of one name.
+    repo3, idx = _repo(tmp, "r3", env, base)
+    _mio.save_sharded(idx, base)
+    _git(repo3, env, "add", "-A")
+    _git(repo3, env, "commit", "-qm", "shard")
+    _install(idx)
+    _git(repo3, env, "add", ".gitattributes")
+    _git(repo3, env, "commit", "-qm", "attrs")
+    _git(repo3, env, "checkout", "-qb", "side")
+    _mio.save_sharded(idx, _add_phase(_mio.load_manifest(idx), "P11", "src/theirs.ts"))
+    _git(repo3, env, "add", "-A")
+    _git(repo3, env, "commit", "-qm", "theirs P11")
+    _git(repo3, env, "checkout", "-q", "main")
+    _mio.save_sharded(idx, _add_phase(_mio.load_manifest(idx), "P11", "src/ours.ts"))
+    _git(repo3, env, "add", "-A")
+    _git(repo3, env, "commit", "-qm", "ours P11")
+    code, out, _t = _merge(repo3, env, idx)
+    code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
+    try:
+        merged = _mio.load_manifest(idx)
+    except Exception:
+        merged = {"phases": [], "fileIndex": {}}
+    by = dict((p["id"], p) for p in merged["phases"])
+    check("rs8 SHARDED: a phase minted on both sides is resolved across the index AND "
+          "the shard file both sides created - theirs lands as P12 in its own shard, "
+          "ours keeps P11: %s" % (out,),
+          code == 0 and "P11" in by and "P12" in by
+          and by["P11"]["tasks"][0]["files"] == ["src/ours.ts"]
+          and by["P12"]["tasks"][0]["id"] == "P12.1"
+          and by["P12"]["tasks"][0]["files"] == ["src/theirs.ts"]
+          and merged["fileIndex"].get("src/theirs.ts") == ["P12.1"])
+    check("rs9 ...with no conflict markers left in the index or either shard",
+          not any("<<<<<<<" in open(os.path.join(dp, f), encoding="utf-8").read()
+                  for dp, _d, fs in os.walk(os.path.dirname(idx)) for f in fs
+                  if f.endswith(".json")))
+
+
+def _load_or_empty(path):
+    """The file as JSON, or {} when it does not parse - so a case that finds markers
+    fails as ITSELF rather than taking every later case down with it."""
+    try:
+        return json.loads(open(path, encoding="utf-8").read())
+    except ValueError:
+        return {}
+
+
+def _rules_findings(doc):
+    import _manifest_rules
+    return _manifest_rules.validate(doc)[0]
 
 
 def _selftest():

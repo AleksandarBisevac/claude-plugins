@@ -382,7 +382,7 @@ L7:
   gen-demo-usage -> _demo_cast, _loader, _output
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
-  merge-manifest -> _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
+  merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
@@ -3594,7 +3594,13 @@ above 128 aborts the whole merge - so every failure path writes git's own line m
 shard cannot be validated alone and the driver says so. git config names a POSIX-sh shim under the
 git common dir, never the plugin cache (which moves on every upgrade): the shim records the plugin
 root, and when that root is gone - or the driver exits non-zero with `%A` unchanged, the
-ImportError shape - it runs `git merge-file` itself. `.gitattributes` gets the manifest and its
+ImportError shape - it runs `git merge-file` itself. `resolve <plan> --renumber ours|theirs` answers the one collision the
+branch suffix cannot prevent (two clones minting on the development branch): it reads the three
+plans from the merge's COMMITS rather than from git's stages - in the sharded layout a phase minted
+on both sides with one title merges its index cleanly and conflicts only in the shard file, so the
+index has no stages to read - renumbers each id both sides minted on the side named through
+`_id_refs`, merges again, and writes the plan through `split_manifest`, each file rendered against
+the one conflict list. `.gitattributes` gets the manifest and its
 shard glob; a clone that has not installed falls back to git's own line merge, which is why that
 file is safe to commit. `_merge_install` (L1) names the install's pieces once and reads them
 back, because `merge-manifest status` and the doctor's `merge driver` line must give one answer and

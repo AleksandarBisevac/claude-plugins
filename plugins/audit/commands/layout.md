@@ -1,7 +1,7 @@
 ---
 description: 'Audit pipeline: choose how the manifest is stored — `sharded` (an index plus one file per phase: fewer tokens per phase run, parallel-safe across worktrees) or `single-file` (one file, one diff, no index). A layout CHOICE, not a version upgrade: both shapes are current, neither goes out of date, and this command moves in either direction under one lock, one backup and a re-validate-or-restore. `merge-driver install|uninstall|status` sets up the git merge driver that merges the manifest by record, in either layout.'
 disable-model-invocation: true
-argument-hint: '<sharded|single-file> [--dry-run] [--renumber] [--force] | merge-driver <install|uninstall|status> [--dry-run]'
+argument-hint: '<sharded|single-file> [--dry-run] [--renumber] [--force] | merge-driver <install|uninstall|status|resolve> [--dry-run] [--renumber ours|theirs]'
 allowed-tools: Read, Bash, AskUserQuestion
 ---
 
@@ -186,6 +186,23 @@ Print the script's output verbatim. `install` writes three things, and they reac
 
 It needs no lock: it never writes the manifest. `status` exits **1** when any piece is missing or
 the shim's plugin root no longer exists — say which, and that `install` is the repair.
+
+**`resolve` - the one collision the driver leaves you.** Ids minted off the development
+branch carry a branch suffix, so two branches cannot mint the same one; two clones minting
+on the development branch itself still can, and which one keeps the id depends on which was
+published first - which the driver cannot know and the user can. When the driver's conflict
+says an id was minted on both sides, ask the user which side keeps it, then:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/merge-manifest.py" resolve <manifestPath> --renumber ours|theirs
+```
+
+It runs while `git merge` has stopped, reads the three plans from the merge's commits
+(`HEAD`, `MERGE_HEAD`, their base), gives each id both sides minted the next free id of its
+kind on the side named - with every reference to it on that side - merges again, and writes
+the plan (every shard too, in the sharded layout). It takes the index lock itself. Print its
+output verbatim: it names each renumbering and the files it wrote, which the user then
+`git add`s. Anything still conflicted is a real disagreement, shown as marker blocks.
 
 **After a merge the driver ran.** A single-file plan is revalidated by the driver itself, and only a
 finding neither side had fails the merge. An index or shard cannot be validated alone, so after a

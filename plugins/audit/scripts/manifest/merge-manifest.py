@@ -38,6 +38,7 @@ Usage:
   merge-manifest.py install   <manifestPath> [--dry-run]
   merge-manifest.py uninstall <manifestPath> [--dry-run]
   merge-manifest.py status    <manifestPath>
+  merge-manifest.py resolve   <conflicted manifest file> --renumber ours|theirs
   merge-manifest.py --selftest
 
 Exit codes: driver - 0 merged cleanly, 1 conflicted (markers written). install /
@@ -47,10 +48,14 @@ installed or stale, 2 usage.
 This script carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_merge_manifest.py`.
 """
+import argparse
+import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -75,6 +80,9 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _id_refs  # noqa: E402  (rename: a renumbered id with every reference to it)
+import _id_shape  # noqa: E402  (the next free id of each kind)
+import _locks  # noqa: E402  (the index lock a structural write holds)
 import _manifest_io as _mio  # noqa: E402
 import _manifest_merge  # noqa: E402
 import _merge_install as _mi  # noqa: E402
@@ -86,7 +94,9 @@ _TAG = _mi.TAG
 
 _USAGE = ("usage: merge-manifest.py driver <base> <ours> <theirs> [<path>]\n"
           "       merge-manifest.py install|uninstall <manifestPath> [--dry-run]\n"
-          "       merge-manifest.py status <manifestPath>")
+          "       merge-manifest.py status <manifestPath>\n"
+          "       merge-manifest.py resolve <conflicted file> --renumber ours|theirs")
+_COLLISION = "the same id was added on both sides"
 
 
 # --- the driver -----------------------------------------------------------------
@@ -188,6 +198,11 @@ def run_driver(base_p, ours_p, theirs_p, path_label):
         lines += ["    %s - %s" % (c["path"], c["reason"]) for c in result["conflicts"]]
         lines.append("    each is one marker block; every other record is already merged. "
                      "Resolve, then run validate-manifest.py on the plan.")
+        if any(c["reason"].startswith(_COLLISION) for c in result["conflicts"]):
+            lines.append("    an id minted on both sides is renumbered on the side you name, "
+                         "with every reference to it: merge-manifest.py resolve %s "
+                         "--renumber ours|theirs  (/audit:layout merge-driver resolve)"
+                         % (label,))
         return 1, notes + lines
 
     kind = _kind(docs[1])
@@ -318,7 +333,220 @@ def status(manifest):
     return (0 if ok else 1), "\n".join(lines)
 
 
+# --- resolve: the collision the suffix cannot prevent ----------------------------
+# Two clones minting on the development branch itself mint the same id, and which
+# one keeps it depends on which was published first - a fact the merge cannot know
+# and the operator can. So the operator names the side to renumber, and this does
+# the rest the way the record merge does everything else: each id BOTH sides added
+# with different content gets the next free id of its kind on the named side, with
+# every reference on that side (`_id_refs`), and the three plans are merged again.
+# On that side the id is unambiguous - it did not exist in the base - so renaming
+# every occurrence there cannot repoint anything shared.
+#
+# THE THREE PLANS ARE READ FROM THE MERGE'S COMMITS, NOT FROM THE CONFLICTED FILE.
+# In the sharded layout a phase minted on both sides with one title merges its
+# index CLEANLY and conflicts only in the shard file both sides created, so git
+# keeps no stages for the index at all. HEAD, MERGE_HEAD and their merge base hold
+# every file of each plan, and the one loader assembles each.
+def _plan_at(top, commit, rel):
+    """The assembled plan as `commit` holds it, or None when it holds none."""
+    rel_dir = os.path.dirname(rel) or "."
+    r = subprocess.run(["git", "-C", top, "archive", "--format=tar", commit, "--", rel_dir],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if r.returncode != 0:
+        return None
+    tmp = tempfile.mkdtemp(prefix="audit-resolve-")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
+            tar.extractall(tmp)
+        path = os.path.join(tmp, rel)
+        return _mio.load_manifest(path) if os.path.isfile(path) else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _namespace(doc):
+    ids = set(_id_refs.all_ids(doc))
+    ids.update((p or {}).get("id") for p in (doc or {}).get("proposals") or [])
+    ids.discard(None)
+    return ids
+
+
+def _collisions(base, ours, theirs):
+    """Ids BOTH sides added, where the record merge reports a collision. Identical
+    additions merge on their own and are not in this list."""
+    added = (_namespace(ours) - _namespace(base)) & (_namespace(theirs) - _namespace(base))
+    result = _manifest_merge.merge3(base, ours, theirs)
+    conflicted = " ".join(c["path"] for c in result["conflicts"]
+                          if c["reason"].startswith(_COLLISION))
+    return sorted((i for i in added if "[%s]" % (i,) in conflicted),
+                  key=_manifest_merge.natural_key)
+
+
+def _phase_of(doc, ident):
+    for phase in (doc or {}).get("phases") or []:
+        if isinstance(phase, dict) and phase.get("id") == ident:
+            return phase
+    return None
+
+
+def _renumbering(ids, side_doc, other_doc, suffix):
+    """({old: new}, [ids no rule renumbers]) for the named side. Each new id is the
+    next free one of its kind over BOTH sides, so it is fresh in the result; a phase
+    takes its tasks with it."""
+    combined = {"phases": list(side_doc.get("phases") or []) + list(other_doc.get("phases") or []),
+                "bugs": list(side_doc.get("bugs") or []) + list(other_doc.get("bugs") or []),
+                "proposals": (list(side_doc.get("proposals") or [])
+                              + list(other_doc.get("proposals") or []))}
+    taken = _namespace(side_doc) | _namespace(other_doc)
+    mapping, refused = {}, []
+    for old in ids:
+        text = "%s" % (old,)
+        phase = _phase_of(side_doc, old)
+        if phase is not None:
+            moved = _id_refs.phase_mapping(phase, _id_shape.next_phase_id(taken, None))
+            mapping.update(moved)
+            taken.update(moved.values())
+            continue
+        if text.startswith("BUG-"):
+            new = _id_shape.next_bug_id(combined, suffix)
+            combined["bugs"].append({"id": new})
+        elif text.startswith("PROP-"):
+            new = _id_shape.next_prop_id(combined, suffix)
+            combined["proposals"].append({"id": new})
+        elif "." in text:
+            new = _id_shape.next_task_id(combined, text.rsplit(".", 1)[0], suffix,
+                                         extra_ids=list(taken))
+        else:
+            refused.append(old)
+            continue
+        mapping[old] = new
+        taken.add(new)
+    return mapping, refused
+
+
+def _render_plan(path, result, sharded):
+    """[(file, text)] the merged plan is written as. Sharded, it is split first and
+    each file rendered against the ONE conflict list, so a real disagreement left in
+    a phase is a marker block in that phase's shard."""
+    if not sharded:
+        return [(path, _manifest_merge.render(result, _mio.json_document))]
+    index, shards = _mio.split_manifest(result["doc"])
+    base_dir = os.path.dirname(path)
+    out = [(path, _manifest_merge.render({"doc": index, "conflicts": result["conflicts"]},
+                                         _mio.json_document))]
+    for pid, body in shards.items():
+        out.append((os.path.join(base_dir, _mio.shard_rel_path(pid)),
+                    _manifest_merge.render({"doc": body, "conflicts": result["conflicts"]},
+                                           _mio.json_document)))
+    return out
+
+
+def resolve(path, side):
+    """Renumber the collisions on `side`, re-merge the three plans, write the
+    result. Returns (exit code, message)."""
+    path = os.path.abspath(path)
+    code, top = _mi.git(os.path.dirname(path), "rev-parse", "--show-toplevel")
+    if code != 0 or not top:
+        return 1, "%s refused: %s is not inside a git work tree" % (_TAG, path)
+    top = os.path.realpath(top)
+    rel = os.path.relpath(os.path.realpath(path), top).replace(os.sep, "/")
+    code, _mh = _mi.git(top, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+    if code != 0:
+        return 1, ("%s refused: no merge is in progress, so there is no conflict to "
+                   "resolve (resolve runs while `git merge` has stopped on the plan)"
+                   % (_TAG,))
+    code, base_c = _mi.git(top, "merge-base", "HEAD", "MERGE_HEAD")
+    ours = _plan_at(top, "HEAD", rel)
+    theirs = _plan_at(top, "MERGE_HEAD", rel)
+    if ours is None or theirs is None:
+        return 1, ("%s refused: %s is not a plan on both sides of this merge"
+                   % (_TAG, rel))
+    base = (_plan_at(top, base_c, rel) if code == 0 and base_c else None) or {}
+    ids = _collisions(base, ours, theirs)
+    if not ids:
+        return 1, ("%s refused: no id in %s was minted on both sides; what conflicts "
+                   "is a real disagreement, which the marker blocks show" % (_TAG, rel))
+    named, other = (theirs, ours) if side == "theirs" else (ours, theirs)
+    mapping, refused = _renumbering(ids, named, other, _id_shape.suffix_here(top, named))
+    if refused:
+        return 1, ("%s refused: %s cannot be renumbered by kind - rename it by hand"
+                   % (_TAG, ", ".join("%s" % (r,) for r in refused)))
+    renamed, count = _id_refs.rename(named, mapping)
+    sides = (renamed, other) if side == "ours" else (other, renamed)
+    result = _manifest_merge.merge3(base, sides[0], sides[1])
+    files = _render_plan(path, result, _sharded_at(top, rel))
+    lock = None
+    if _locks.available(top):
+        lock = _locks.acquire(top, "index", note="merge-driver resolve",
+                              out=lambda *_a, **_k: None)
+        if not _locks.held(lock):
+            return 1, "%s refused: %s" % (_TAG, _locks.refusal(lock, "index"))
+    try:
+        for target, text in files:
+            _write(target, text)
+    finally:
+        if _locks.took(lock):
+            _locks.release(top, "index", out=lambda *_a, **_k: None)
+    written = [os.path.relpath(t, top).replace(os.sep, "/") for t, _x in files]
+    lines = ["%s %s: renumbered on %s (%d reference(s) rewritten):"
+             % (_TAG, rel, side, count)]
+    lines += ["    %s -> %s" % (old, mapping[old]) for old in ids]
+    lines.append("    written: %s" % (", ".join(written),))
+    if result["conflicts"]:
+        lines.append("    %d conflict(s) remain - real disagreements, one marker block "
+                     "each:" % (len(result["conflicts"]),))
+        lines += ["    %s - %s" % (c["path"], c["reason"]) for c in result["conflicts"]]
+        return 1, "\n".join(lines)
+    if not _mio.is_sharded(result["doc"]):
+        fresh = [f for f in _manifest_rules.validate(result["doc"])[0]]
+        if fresh:
+            lines.append("    the merged plan has finding(s) - resolve them before "
+                         "committing:")
+            lines += ["    %s" % (f,) for f in fresh]
+            return 1, "\n".join(lines)
+    lines.append("    next: validate-manifest.py on the plan, then `git add` the files "
+                 "written and finish the merge. The renumbered side's commit messages "
+                 "and journal rows still name the old id - they are history.")
+    return 0, "\n".join(lines)
+
+
+def _sharded_at(top, rel):
+    """The layout of the plan HEAD holds, read off its raw index - the assembled
+    plan carries no `shard` refs, and the working copy may be full of markers."""
+    code, text = _mi.git(top, "show", "HEAD:%s" % (rel,))
+    try:
+        return code == 0 and _mio.is_sharded(json.loads(text))
+    except ValueError:
+        return False
+
+
 # --- cli ------------------------------------------------------------------------
+RENUMBER_SIDES = ("ours", "theirs")
+
+
+def build_parser():
+    """The option surface of every verb but `driver`, MODULE LEVEL so the command
+    docs can be graded against it (`_help.command_choice_drift` asks argparse which
+    values `--renumber` takes, rather than trusting the hint that advertises them).
+
+    `driver` IS NOT PARSED HERE, and that is a safety property rather than an
+    omission: argparse answers a malformed call with exit 2, and git reads any exit
+    from 1 to 128 as "conflicted, %A is the result" - so a parse error would leave
+    the file as ours with no markers. The driver keeps its own argument handling,
+    which writes markers on every failure path."""
+    ap = argparse.ArgumentParser(prog="merge-manifest.py",
+                                 description="The audit manifest's git merge driver, "
+                                             "its install, and the collision resolver.")
+    ap.add_argument("verb", choices=["install", "uninstall", "status", "resolve"])
+    ap.add_argument("manifest")
+    ap.add_argument("--dry-run", action="store_true", dest="dry_run",
+                    help="install/uninstall: print what would be written, write nothing")
+    ap.add_argument("--renumber", choices=list(RENUMBER_SIDES), default=None,
+                    help="resolve: the side whose colliding ids are renumbered")
+    return ap
+
+
 def main(argv):
     if "--selftest" in argv:
         # It deliberately does NOT print the `N/M cases passed` contract - that string
@@ -326,24 +554,29 @@ def main(argv):
         print("merge-manifest.py has no inline --selftest; its cases live in "
               "plugins/audit/tests/test_merge_manifest.py - run that file instead.")
         return 0
-    if not argv:
-        sys.stderr.write(_USAGE + "\n")
+    if argv and argv[0] == "driver":
+        return driver_main(argv[1:])
+    try:
+        args = build_parser().parse_args(argv)
+    except SystemExit as exc:
+        return 2 if exc.code else 0
+    if args.verb == "resolve":
+        if args.renumber is None:
+            sys.stderr.write("%s resolve needs --renumber ours|theirs: which side keeps "
+                             "the id is the operator's call, never the tool's\n"
+                             % (_TAG,))
+            return 2
+        code, msg = resolve(args.manifest, args.renumber)
+    elif args.renumber is not None:
+        sys.stderr.write("%s --renumber is read by resolve only\n" % (_TAG,))
         return 2
-    verb, rest = argv[0], argv[1:]
-    if verb == "driver":
-        return driver_main(rest)
-    dry = "--dry-run" in rest
-    rest = [a for a in rest if a != "--dry-run"]
-    if verb not in ("install", "uninstall", "status") or len(rest) != 1:
-        sys.stderr.write(_USAGE + "\n")
-        return 2
-    if verb == "install":
-        code, msg = install(rest[0], _output.PLUGIN_ROOT, dry_run=dry)
-    elif verb == "uninstall":
-        code, msg = uninstall(rest[0], dry_run=dry)
+    elif args.verb == "install":
+        code, msg = install(args.manifest, _output.PLUGIN_ROOT, dry_run=args.dry_run)
+    elif args.verb == "uninstall":
+        code, msg = uninstall(args.manifest, dry_run=args.dry_run)
     else:
-        code, msg = status(rest[0])
-    (sys.stderr if code and verb != "status" else sys.stdout).write(msg + "\n")
+        code, msg = status(args.manifest)
+    (sys.stderr if code and args.verb != "status" else sys.stdout).write(msg + "\n")
     return code
 
 
