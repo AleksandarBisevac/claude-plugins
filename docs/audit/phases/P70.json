@@ -1,7 +1,7 @@
 {
   "id": "P70",
   "title": "A gate that could not reach a verdict says so, and names what failed",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "run-test-gate grades a step that never produced a verdict - a shell 127, a jest worker killed by a signal, vitest finding no test files - as could-not-run rather than red; a jest failed-to-run names its suite and signal in failing and in the evidence row; a reused verdict's first line carries how to re-measure; a cleared task gate is empty at task scope as the command docs promise, and a gate borrowed from the phase says so on its verdict; a task gate that runs far more than the task declares is reported; and the validator names a comma-joined gate entry and a running phase with no gate or no outcome",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "036e98e87346dfb55f49ffe233b7dfab1e8a5bbc",
+  "branch": "audit/p70-a-gate-that-could-not-reach-a",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,13 +29,16 @@
     {
       "id": "P70.1",
       "title": "run-test-gate grades a no-verdict exit as could-not-run, names a jest failed-to-run's suite and signal, and says whose gate ran",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Field reports on 3.0.1, reproduced at HEAD: (1) a gate entry that is not a command exits 127 and is graded RED; files_named reads /bin/sh from the shell's diagnostic as a printed path and produces a false NO OVERLAP. (2) a jest worker killed by SIGSEGV records failing ['Test suite failed to run'] with no suite and no signal, is graded failed, and is then REUSED on the same tree with the --no-reuse hint on the fifth line. (3) vitest's 'No test files found' is graded RED. One rule in observed_step: a non-zero exit with no end-of-run report and a recognised could-not-run signature is could-not-run (reached_a_verdict stays the guard for runners whose exit is a count); the jest reader pairs each failed-to-run heading with its FAIL path and first reason line; all-failed-to-run-with-signal is could-not-run with signal and a signalBasis naming jest's report; overlap asked only of steps that reached a verdict; the reuse banner's first line names --no-reuse. (4) a task whose gate was cleared: gateBasis cleared resolves EMPTY at task scope (commands/task.md already promises it; execute-task.md changes with it), an absent gate keeps the phase fallback, and the preamble names both ids and a 'graded by' line follows the banner without changing the GATE RED/GREEN literal. (5) under --task, coverage reports breadth when the run names suite paths the task does not declare - both counts, never a refusal.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/tests/test_run_test_gate.py",
         "plugins/audit/reference/execute-task.md",
-        "plugins/audit/commands/task.md"
+        "plugins/audit/commands/task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/schema/audit-plan.schema.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -60,26 +63,28 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T14:32:07Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P70.2",
       "title": "The validator names a comma-joined gate entry, and a running phase with an empty gate or no desiredOutcome",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Additive warnings only (validation stays additive): an entry in testGate or tests.gate that is not a buildCommands key, contains a comma, and whose every comma-part IS a key names the split spelling; a non-terminal phase with a blank or missing desiredOutcome; an in_progress phase (derived) with an empty testGate. The empty gate stays a designed state, so never a refusal.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
         "plugins/audit/tests/test__manifest_phases.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test_audit_doctor.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -104,16 +109,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T14:32:07Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T14:32:07Z"
 }

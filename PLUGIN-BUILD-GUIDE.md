@@ -3233,16 +3233,24 @@ just been told their pointer did not land.
 resolved commands *plus the scope they came from*. A task declaring `tests.gate` is run through its
 own commands; one declaring none falls back to the phase's and **says so**, because "this task's
 gate passed" and "the phase's gate passed while pointed at this task's files" are different claims
-for a record to make. Absent and empty are one answer; an unknown task id is an error rather than a
-quiet fallback, the distinction `owned_files` already draws.
+for a record to make — the preamble names both ids, and a `graded by:` line sits under the verdict
+banner without changing the banner's literal. Absent and empty are one answer, except that a gate
+**cleared on purpose** (`tests.gateBasis: cleared`, what `--gate-clear` writes) resolves EMPTY at task
+scope, as `commands/task.md` promises; an unknown task id is an error rather than a quiet fallback,
+the distinction `owned_files` already draws.
 
 **What did not finish is separated from what failed.** A timeout and a failure to *start* used to
 be one answer — both were swallowed into `except Exception` and reported as exit 127, so "the suite
 hung" and "the binary is missing" arrived identical. They are different repairs, so they are
 different words, and neither is read out of an exit code: 124 and 127 are codes a real command may
 return on its own, so the category comes from what the wrapper observed and travels beside the code.
-A missing binary under `shell=True` is therefore still a *failure* — the shell started fine — and
-that limit is pinned by a case rather than papered over.
+A missing binary under `shell=True` is read off the **shell's own diagnostic** beside the 127 —
+`no_verdict_signature()` holds each captured spelling, and vitest's `No test files found` beside its
+exit 1 — and only where the output carries no end-of-run report, so `reached_a_verdict()` stays the
+guard for a runner whose exit status is a count. A bare 127 is still a failure, pinned by a case.
+A jest worker killed by a signal leaves jest's own exit at 1, so that kill is read from jest's report
+(`jest_worker_signal()`), and only when every failure it names is one; the coverage question is asked
+only of steps that reached a verdict.
 
 **The process GROUP is torn down, not just the child.** `subprocess.run(timeout=)` kills the direct
 child, and under `shell=True` that child is the shell: `npx` → `node` → its workers outlive it, keep

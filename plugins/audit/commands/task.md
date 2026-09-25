@@ -141,7 +141,10 @@ per add is the class of error the script exists to delete.
      rescoped straight afterwards. It refuses alongside `--gate`, as `scope` and
      `/audit:phase retarget` do; a task created with no gate is **reported** as
      such rather than in silence, and the phase's `testGate` at sign-off is what
-     still grades it.
+     still grades it. It records `tests.gateBasis: cleared`, and that word is what
+     `run-test-gate.py --task` reads: such a task resolves EMPTY at task scope
+     rather than borrowing the phase's gate, while a task that merely declares no
+     gate still falls back to the phase's and says so.
    - `--model` (default `sonnet` — the floor for all fix work; the script escalates
      `risk: high` to `opus` when no model is passed; do NOT use `haiku` for
      audit-fix work), `--risk` (`low`/`med`/`high`).
@@ -552,7 +555,8 @@ retargeted to `testGate: []` (nothing in that repo could grade markdown and conf
 its pending tasks holding the `["lint"]` they had inherited at creation, and the only
 routes to the state the phase had just reached were a rescope mid-run or the hand edit
 this file forbids. An emptied gate is reported as such rather than in silence — the
-task then runs no gate command of its own, and the phase's `testGate` at sign-off is
+task then runs no gate command of its own (`run-test-gate.py --task` reads its
+`gateBasis: cleared` and answers EMPTY), and the phase's `testGate` at sign-off is
 what still grades it.
 
 **Why the verb exists.** `/audit:sync pull sprint` imports tasks with `files: []` and
