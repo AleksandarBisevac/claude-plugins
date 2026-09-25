@@ -410,6 +410,30 @@
       "title": "The index is committed only where the committed shards support it",
       "status": "in_progress",
       "shard": "phases/P68.json"
+    },
+    {
+      "id": "P69",
+      "title": "What the plan records about a finished phase is true, and the worktree tool knows its own branches",
+      "status": "pending",
+      "shard": "phases/P69.json"
+    },
+    {
+      "id": "P70",
+      "title": "A gate that could not reach a verdict says so, and names what failed",
+      "status": "pending",
+      "shard": "phases/P70.json"
+    },
+    {
+      "id": "P71",
+      "title": "A task commit carries what the index says and the verdict it was measured under",
+      "status": "pending",
+      "shard": "phases/P71.json"
+    },
+    {
+      "id": "P72",
+      "title": "Every hook judges the tree the work is in, and blames only what it can show",
+      "status": "pending",
+      "shard": "phases/P72.json"
     }
   ],
   "fileIndex": {
@@ -464,7 +488,11 @@
       "P66.3-x3g",
       "P66.4-x3g",
       "P67.2",
-      "P68.1"
+      "P68.1",
+      "P69.3",
+      "P70.2",
+      "P71.1",
+      "P72.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -801,7 +829,8 @@
       "P61.14",
       "P63.11",
       "P64.3",
-      "P68.1"
+      "P68.1",
+      "P70.1"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -826,12 +855,14 @@
       "P63.2",
       "P63.8",
       "P63.10",
-      "P63.13"
+      "P63.13",
+      "P72.1"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
       "P4.3",
-      "P15.4"
+      "P15.4",
+      "P72.1"
     ],
     "plugins/audit/hooks/guard-bash-writes.py": [
       "P4.2",
@@ -842,16 +873,19 @@
       "P41.5",
       "P41.7",
       "P51.3",
-      "P54.2"
+      "P54.2",
+      "P72.1"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
-      "P15.4"
+      "P15.4",
+      "P72.1"
     ],
     "plugins/audit/hooks/guard-edits.py": [
       "P1.4",
       "P2.1",
       "P15.4",
-      "P41.5"
+      "P41.5",
+      "P72.1"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -872,7 +906,8 @@
       "P55.15",
       "P55.16",
       "P59.3",
-      "P62.2"
+      "P62.2",
+      "P72.1"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -893,12 +928,14 @@
       "P66.2-x3g",
       "P66.3-x3g",
       "P66.4-x3g",
-      "P66.5-x3g"
+      "P66.5-x3g",
+      "P72.1"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
       "P47.6",
-      "P56.1"
+      "P56.1",
+      "P72.1"
     ],
     "plugins/audit/hooks/py-launch.sh": [
       "P1.2",
@@ -912,7 +949,8 @@
       "P1.2",
       "P4.3",
       "P41.5",
-      "P42.4"
+      "P42.4",
+      "P72.1"
     ],
     "plugins/audit/hooks/require-plan.py": [
       "P1.3",
@@ -934,7 +972,8 @@
       "P55.17",
       "P55.23",
       "P58.2",
-      "P59.5"
+      "P59.5",
+      "P72.1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -995,7 +1034,8 @@
       "P55.20",
       "P60.3",
       "P63.11",
-      "P64.3"
+      "P64.3",
+      "P69.3"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -1058,7 +1098,8 @@
       "P61.1",
       "P61.7",
       "P61.11",
-      "P67.1"
+      "P67.1",
+      "P72.1"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1087,7 +1128,8 @@
       "P63.1",
       "P63.3",
       "P63.5",
-      "P65.1"
+      "P65.1",
+      "P69.3"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1344,7 +1386,8 @@
       "P61.5",
       "P63.7",
       "P65.1",
-      "P65.2-iy2"
+      "P65.2-iy2",
+      "P69.3"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1357,7 +1400,8 @@
       "P61.5",
       "P63.7",
       "P65.1",
-      "P65.2-iy2"
+      "P65.2-iy2",
+      "P69.3"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1365,14 +1409,16 @@
       "P18.9",
       "P21.1",
       "P63.7",
-      "P64.1"
+      "P64.1",
+      "P69.1"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
       "P18.7",
       "P18.9",
       "P21.1",
-      "P64.1"
+      "P64.1",
+      "P69.1"
     ],
     "tools/check-git-pipeline.py": [
       "P18.8",
@@ -1455,7 +1501,8 @@
       "P18.9",
       "P57.1",
       "P57.3",
-      "P61.14"
+      "P61.14",
+      "P69.1"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
@@ -1581,7 +1628,8 @@
       "P20.1",
       "P31.6",
       "P51.3",
-      "P54.2"
+      "P54.2",
+      "P72.1"
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
@@ -1652,7 +1700,8 @@
       "P56.2",
       "P59.3",
       "P59.6",
-      "P59.8"
+      "P59.8",
+      "P70.1"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1676,7 +1725,8 @@
       "P59.3",
       "P59.6",
       "P59.8",
-      "P59.13"
+      "P59.13",
+      "P70.1"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1694,13 +1744,15 @@
       "P55.23",
       "P59.7",
       "P59.12",
-      "P63.3"
+      "P63.3",
+      "P72.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
       "P54.4",
       "P61.2",
-      "P63.8"
+      "P63.8",
+      "P69.3"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1711,7 +1763,8 @@
       "P22.5",
       "P54.4",
       "P61.2",
-      "P63.8"
+      "P63.8",
+      "P69.3"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -1725,7 +1778,8 @@
       "P55.15",
       "P55.16",
       "P59.3",
-      "P62.2"
+      "P62.2",
+      "P72.1"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -1772,7 +1826,8 @@
       "P63.8",
       "P63.12",
       "P64.1",
-      "P68.1"
+      "P68.1",
+      "P69.3"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1813,7 +1868,8 @@
       "P63.8",
       "P64.1",
       "P64.4-uym",
-      "P68.1"
+      "P68.1",
+      "P69.3"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -1832,7 +1888,8 @@
       "P51.6",
       "P51.8",
       "P58.1",
-      "P61.2"
+      "P61.2",
+      "P70.2"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1842,7 +1899,8 @@
       "P51.6",
       "P51.8",
       "P58.1",
-      "P61.2"
+      "P61.2",
+      "P70.2"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1880,7 +1938,8 @@
       "P66.2-x3g",
       "P66.3-x3g",
       "P66.4-x3g",
-      "P66.5-x3g"
+      "P66.5-x3g",
+      "P72.1"
     ],
     "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass": [
       "P22.12"
@@ -1995,13 +2054,15 @@
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
       "P32.8",
-      "P38.3"
+      "P38.3",
+      "P72.1"
     ],
     "plugins/audit/tests/test_guard_history_rewrite.py": [
       "P29.2",
       "P32.8",
       "P38.3",
-      "P59.13"
+      "P59.13",
+      "P72.1"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -2310,7 +2371,8 @@
       "P41.1"
     ],
     "plugins/audit/tests/test_guard_edits.py": [
-      "P41.5"
+      "P41.5",
+      "P72.1"
     ],
     "plugins/audit/tests/test__config.py": [
       "P41.5",
@@ -2322,7 +2384,8 @@
       "P59.13",
       "P63.2",
       "P63.8",
-      "P63.10"
+      "P63.10",
+      "P72.1"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2332,7 +2395,8 @@
       "P59.15"
     ],
     "plugins/audit/tests/test_remind_tdd.py": [
-      "P42.4"
+      "P42.4",
+      "P72.1"
     ],
     ".claude/hooks/guard-uncommitted.py": [
       "P43.1",
@@ -2488,10 +2552,12 @@
       "P59.4"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
-      "P56.3"
+      "P56.3",
+      "P69.3"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
-      "P56.3"
+      "P56.3",
+      "P69.3"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -2518,7 +2584,8 @@
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
       "P64.3",
-      "P68.1"
+      "P68.1",
+      "P70.1"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2536,7 +2603,8 @@
       "P59.13"
     ],
     "plugins/audit/tests/test__doctor_completions.py": [
-      "P59.13"
+      "P59.13",
+      "P69.2"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13"
@@ -2584,7 +2652,8 @@
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
-      "P63.11"
+      "P63.11",
+      "P69.3"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
@@ -2638,6 +2707,30 @@
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
       "P67.3-2e7"
+    ],
+    "plugins/audit/scripts/status/_doctor_completions.py": [
+      "P69.2"
+    ],
+    "plugins/audit/COMPATIBILITY.md": [
+      "P69.3"
+    ],
+    "plugins/audit/scripts/governance/commit-task-work.py": [
+      "P71.1"
+    ],
+    "plugins/audit/tests/test_commit_task_work.py": [
+      "P71.1"
+    ],
+    "plugins/audit/tests/test_guard_capabilities.py": [
+      "P72.1"
+    ],
+    "plugins/audit/tests/test_meter_usage.py": [
+      "P72.1"
+    ],
+    "plugins/audit/tests/test_detect_plan_skip.py": [
+      "P72.1"
+    ],
+    "plugins/audit/SECURITY.md": [
+      "P72.1"
     ]
   },
   "bugs": [
@@ -2853,6 +2946,31 @@
       "taskId": "P68.1",
       "fixedIn": "46bd442",
       "notes": "found signing off P66, 2026-09-25"
+    },
+    {
+      "id": "BUG-11",
+      "title": "manage-worktrees list/remove/sweep compose a phase's branch without the git user's initials, so the worktree add just cut is a stranger to its own tool",
+      "status": "in_progress",
+      "severity": "high",
+      "reportedAt": "2026-09-25T12:01:47Z",
+      "reportedBy": null,
+      "description": "Since start performs phase entry, manage-worktrees add names the branch through _branch.phase_answer(meta, phase, git user name), which applies a meta.branch template's initials. list, remove, sweep and parents_of still compose it through wanted_branches(manifest) / parents_of(manifest) with no user name. Under a template with initials the two disagree: the worktree add created is listed as a stranger and remove says no worktree holds the phase's branch. Unreleased regression; 3.0.1 composed the wrong name in both places and so agreed with itself. This repo's own template has no initials, which is why dogfooding cannot see it.",
+      "repro": [
+        "a plan whose meta.branch template carries the user's initials (resolve-branch.py --phase P48 prints feature/ab/p48-...)",
+        "manage-worktrees.py add <plan> P48 -> branch feature/ab/p48-...",
+        "manage-worktrees.py list <plan> -> owned=[] strangers=[feature/ab/p48-...] missing=[feature/p48-...]",
+        "manage-worktrees.py remove <plan> P48 -> exit 1, no worktree holds feature/p48-..."
+      ],
+      "expected": "every manage-worktrees verb names a phase's branch the way add and resolve-branch do, so add then list shows the worktree as owned and remove finds it",
+      "actual": "add cuts feature/ab/p48-...; list, remove and sweep look for feature/p48-...",
+      "files": [
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/manifest/_branch.py",
+        "plugins/audit/tests/test_manage_worktrees.py"
+      ],
+      "taskId": "P69.1",
+      "fixedIn": null,
+      "notes": null
     }
   ],
   "deferred": {
