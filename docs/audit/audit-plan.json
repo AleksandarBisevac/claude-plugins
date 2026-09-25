@@ -591,7 +591,8 @@
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P74.2-qq5"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -657,7 +658,8 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P74.2-qq5"
     ],
     "README.md": [
       "P2.3",
@@ -796,7 +798,8 @@
       "P80.12",
       "P81.2",
       "P81.8",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -904,7 +907,8 @@
       "P69.3",
       "P70.3-fos",
       "P78.4",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -1554,7 +1558,8 @@
       "P23.3",
       "P63.7",
       "P64.1",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test__worktrees.py": [
       "P18.1",
@@ -1563,7 +1568,8 @@
       "P21.1",
       "P23.3",
       "P63.7",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -1581,7 +1587,8 @@
       "P69.3",
       "P69.4-j6r",
       "P80.2",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1598,7 +1605,8 @@
       "P69.3",
       "P69.4-j6r",
       "P80.2",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1608,7 +1616,8 @@
       "P63.7",
       "P64.1",
       "P69.1",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
@@ -1617,7 +1626,8 @@
       "P21.1",
       "P64.1",
       "P69.1",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P74.2-qq5"
     ],
     "tools/check-git-pipeline.py": [
       "P18.8",
@@ -1958,7 +1968,8 @@
       "P79.5",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1992,7 +2003,8 @@
       "P79.5",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -2107,7 +2119,8 @@
       "P79.4",
       "P81.2",
       "P81.5",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -2161,7 +2174,8 @@
       "P79.4",
       "P81.2",
       "P81.5",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -2571,7 +2585,8 @@
       "P63.5",
       "P63.8",
       "P70.3-fos",
-      "P80.6"
+      "P80.6",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2582,7 +2597,8 @@
       "P63.5",
       "P63.8",
       "P70.3-fos",
-      "P80.6"
+      "P80.6",
+      "P74.2-qq5"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -3040,7 +3056,8 @@
       "P78.11",
       "P79.7",
       "P80.12",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
