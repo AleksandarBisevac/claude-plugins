@@ -1,0 +1,172 @@
+{
+  "id": "P69",
+  "title": "What the plan records about a finished phase is true, and the worktree tool knows its own branches",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "manage-worktrees names a phase's branch the same way in every verb; doctor accepts the verb's own close record and keeps the FINDING for a real hand edit; and the stored status of a phase and a linked bug is the derived one, written by the verbs that change it, read through the derivation by lookup, and checked by the validator - with one command that settles a plan already carrying stale values",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P69.1",
+      "title": "Every manage-worktrees verb names a phase's branch the way add does, and --apply exists only where it means something",
+      "status": "pending",
+      "description": "BUG-11. add names the branch through _branch.phase_answer(meta, phase, git user name); list, remove, sweep and parents_of compose it through wanted_branches(manifest)/parents_of(manifest) with no user name, so under a template with initials the worktree add just cut is listed as a stranger and remove says no worktree holds the phase's branch. One branch_of used by every verb. Also: one argparse parser lists --apply unscoped and add --apply is silently accepted while the usage scopes it to sweep - subparsers, or refuse it elsewhere. worktree.md: a new worktree has no installed dependencies; install inside it (a symlinked node_modules resolves into the main checkout and trips Vite's server.fs.allow).",
+      "files": [
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "plugins/audit/commands/worktree.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_manage_worktrees.py: repro that FAILS on current code - under a meta.branch template with the user's initials, add then list shows the new worktree as a stranger and remove finds nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-11"
+    },
+    {
+      "id": "P69.2",
+      "title": "Doctor accepts the verb's task.done row as the completion record and keeps the FINDING for a done task with none",
+      "status": "pending",
+      "description": "Measured on this repo: doctor prints a FINDING naming ten tasks closed by audit-task.py done in worktree phases. journal-writes derives task.complete only for a task it saw open in its before-snapshot, and it resolves the session's project dir, so a task closed in a linked worktree, or added and closed in one Bash call, gets none. audit-task.py's _journal_done writes task.done and says that row is the record of the close where no hook watches; _doctor_completions reads task.complete alone. Accept a task.done row whose completedAt matches the task's as the receipt; keep the FINDING (and its tier) for a done task with neither - the allow case that must stay red is a hand-flipped status.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_completions.py: repro that FAILS on current code - a done task whose journal holds task.add and task.done (via cli) but no task.complete is reported as edited outside the pipeline"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P69.3",
+      "title": "The stored status of a phase and a linked bug is the derived one: the verbs write it, lookup and the validator read the derivation",
+      "status": "pending",
+      "description": "Since derived status, the signoff verb writes review.status and never status, so every signed-off phase keeps a stale stored status on its index stub and shard (this repo: in_progress on 24 signed-off phases, pending on 10), and a linked bug keeps triaged/in_progress with fixedIn null after its task is done. Raw readers - an older plugin's hooks (the installed 3.0.1 gate reads these phases as running), jq, an agent, a teammate - get the wrong answer. Decided: materialise. Every write that changes an input of effective_phase_status / effective_bug_status stores the derived value (signoff for a parent-branch phase, close-phase's mergedAt stamp for a branch phase, done for a bug's fix task; status and fixedIn), mirrored onto the stub. audit-lookup prints the derived value, and 'stored X, derived Y (basis ...)' where they differ. validate-manifest warns (additively) when stored and derived disagree, naming one command that settles an existing plan (a settle verb that materialises every derived value under the index lock, revalidated). orchestrator.md's status-mirror sentence and phase-signoff.md say what writes it. COMPATIBILITY: no reader may treat a stored done as authoritative over the derivation - check before changing.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - after signoff (parent-branch phase) the stored status on the stub and the shard still reads in_progress while effective_phase_status says done"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
