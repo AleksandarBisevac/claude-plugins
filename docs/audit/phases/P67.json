@@ -1,0 +1,119 @@
+{
+  "id": "P67",
+  "title": "/audit:version says which build is running and whether a newer one is published",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "one command prints the running version, what the marketplace clone offers and whether it auto-updates, the installed copies, and the newest published release - each with its basis - and says exactly how to update",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P67.1",
+      "title": "audit-version.py: the running version, the marketplace and installed copies, and the newest published release",
+      "status": "pending",
+      "description": "Reads the running build's plugin.json; the marketplace clone and its autoUpdate flag and the installed copies from Claude Code's own records under the Claude home (undocumented files, read with their basis and fail-open); and, unless --offline, the newest GitHub release for plugin.json's repository (one unauthenticated GET, short timeout). Prints each fact with its basis, a verdict, and the documented update commands.",
+      "files": [
+        "plugins/audit/scripts/status/audit-version.py",
+        "plugins/audit/tests/test_audit_version.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_version.py: each fact with its basis, the verdict, and every read that can fail says why"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P67.2",
+      "title": "The /audit:version command and the surfaces that list commands",
+      "status": "pending",
+      "description": "commands/version.md; the README command table; the handbook's command reference; SECURITY.md states the one outbound call and what it sends; CHANGELOG.",
+      "files": [
+        "plugins/audit/commands/version.md",
+        "plugins/audit/README.md",
+        "docs/handbook.html",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
