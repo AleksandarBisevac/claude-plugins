@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P70-R1",
@@ -72,9 +72,10 @@
         "issue": "The docstring says the outcome and empty-gate lines 'wait until the phase RUNS, which is when sign-off is next going to read them'. But `_mio.phase_running` is False for a phase whose only remaining step is sign-off. So both warnings disappear at exactly the moment sign-off reads the outcome. The P70.2 description also asked for the outcome warning on any non-terminal phase, not only a running one",
         "resolution": "fix task P70.3-fos"
       }
-    ]
+    ],
+    "outcome": "matches; seven findings (four med, three low) and two pre-existing fixed in P70.3-fos"
   },
-  "summary": null,
+  "summary": "run-test-gate grades a step that never reached a verdict - the shell's 127 for a word that names no program, a jest worker killed by a signal, vitest finding no test files - as could-not-run, from a diagnostic captured beside its exit code and only where no end-of-run report exists, and asks the coverage question only of steps that reached one. A jest failed-to-run names its suite, reason and signal, signal first so a truncated row keeps it; the reuse banner's first line names --no-reuse; a task gate cleared on purpose is empty at task scope and recorded as such; the preamble and a graded-by line say whose gate ran; under --task a breadth clause reports suites the task does not declare. The validator names a comma-joined gate entry and an in-flight phase with no gate or outcome. Reviewed in phase mode: a cleared task tripped no-test-evidence, the jest-kill retry was undocumented, the signal fell past the row cut on long paths, and an uncaptured cmd.exe signature was claimed as captured - all fixed in P70.3-fos. Merged with main (P69) before the gate; phase gate green, tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P70.1",
@@ -242,5 +243,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-25T14:32:07Z"
+  "startedAt": "2026-09-25T14:32:07Z",
+  "testEvidence": {
+    "runId": "2026-09-25T17:31:06Z.926a5f",
+    "status": "passed",
+    "at": "2026-09-25T17:31:06Z"
+  }
 }
