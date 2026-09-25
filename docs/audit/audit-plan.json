@@ -426,7 +426,7 @@
     {
       "id": "P71",
       "title": "A task commit carries what the index says and the verdict it was measured under",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P71.json"
     },
     {
@@ -491,8 +491,8 @@
       "P68.1",
       "P69.3",
       "P70.2",
-      "P71.1",
-      "P72.1"
+      "P72.1",
+      "P71.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -548,7 +548,8 @@
       "P63.4",
       "P63.8",
       "P64.1",
-      "P67.1"
+      "P67.1",
+      "P71.1"
     ],
     "README.md": [
       "P2.3",
@@ -1129,7 +1130,8 @@
       "P63.3",
       "P63.5",
       "P65.1",
-      "P69.3"
+      "P69.3",
+      "P71.1"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1701,7 +1703,8 @@
       "P59.3",
       "P59.6",
       "P59.8",
-      "P70.1"
+      "P70.1",
+      "P71.1"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -2122,7 +2125,8 @@
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
-      "P31.5"
+      "P31.5",
+      "P71.1"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -2585,7 +2589,8 @@
       "P55.21",
       "P64.3",
       "P68.1",
-      "P70.1"
+      "P70.1",
+      "P71.1"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2714,12 +2719,6 @@
     "plugins/audit/COMPATIBILITY.md": [
       "P69.3"
     ],
-    "plugins/audit/scripts/governance/commit-task-work.py": [
-      "P71.1"
-    ],
-    "plugins/audit/tests/test_commit_task_work.py": [
-      "P71.1"
-    ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
     ],
@@ -2731,6 +2730,12 @@
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
+    ],
+    "plugins/audit/scripts/governance/commit-task-work.py": [
+      "P71.1"
+    ],
+    "plugins/audit/tests/test_commit_task_work.py": [
+      "P71.1"
     ]
   },
   "bugs": [
