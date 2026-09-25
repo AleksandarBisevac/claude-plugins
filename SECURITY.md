@@ -807,6 +807,16 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    to your `.gitignore`. Files older than 7 days are garbage-collected
    opportunistically on prompt submission (since 0.6.0).
 
+## Outbound network
+
+The plugin makes **one** outbound request, and only when you ask for it: `/audit:version`
+(`scripts/status/audit-version.py`) asks the GitHub releases API for the newest release of the
+repository its own `plugin.json` names - an unauthenticated `GET
+https://api.github.com/repos/<owner>/<repo>/releases/latest` with a fixed user agent, a five-second
+timeout, and nothing about your project, plan, code or identity in it. No hook, gate or background
+path reaches the network. `--offline` skips the request, and an unreachable or refused one is
+reported as "could not be asked" rather than retried or guessed around.
+
 ## Reporting a vulnerability
 
 Email **alek.bisevac@gmail.com** (subject: `[quality-gates security]`). Please
