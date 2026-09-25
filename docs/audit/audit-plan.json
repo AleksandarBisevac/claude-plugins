@@ -432,7 +432,7 @@
     {
       "id": "P72",
       "title": "Every hook judges the tree the work is in, and blames only what it can show",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P72.json"
     }
   ],
@@ -571,7 +571,8 @@
       "P53.4",
       "P54.1",
       "P54.3",
-      "P67.2"
+      "P67.2",
+      "P72.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1551,7 +1552,8 @@
       "P55.11",
       "P55.13",
       "P50.5",
-      "P50.8"
+      "P50.8",
+      "P72.1"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -2185,7 +2187,8 @@
       "P50.8",
       "P50.9",
       "P55.22",
-      "P59.1"
+      "P59.1",
+      "P72.1"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1",
@@ -2730,6 +2733,9 @@
       "P72.1"
     ],
     "plugins/audit/SECURITY.md": [
+      "P72.1"
+    ],
+    "plugins/audit/tests/_harness.py": [
       "P72.1"
     ]
   },
