@@ -312,8 +312,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       | 0 | the parent contains the branch — merged now, or already did | continue to (d) |
       | 0 + `NOT MERGED` in the output | `meta.merge.auto` is **false** | the human merges; the phase is signed off and deliberately unlanded. Say so in the report and **do not** stamp `mergedAt` yourself |
       | 3 | **not a fast-forward** — the parent moved during the phase | ask the human (AskUserQuestion): `--no-ff` (recommended — preserves the branch history and keeps every `task.commit` SHA, and the `bug.fixedIn` derived from it, valid), or stop and leave it unmerged. **Never rebase**: that rewrites the SHAs the manifest records |
-      | 4 | git could not be **asked** | report it; it is not a refusal, and retrying the same command will not help. The same exit when the phase records no branch and the name composed for it is not one: the output says so — pass `--branch <name>`, and sign phases built on one combined branch off as a group (below) |
-      | 1 | a precondition failed or git refused | the output names the path or ref that has to change |
+      | 4 | git could not be **asked** | report it; it is not a refusal, and retrying the same command will not help |
+      | 1 | a precondition failed or git refused | the output names the path or ref that has to change. Two of these are the command itself: a branch that is its own parent (`--branch` or `phase.branch` naming the parent — nothing lands, and the cleanup would delete the parent), and a phase that records no branch whose composed name is not one — pass `--branch <name>`, and sign phases built on one combined branch off as a group (below) |
 
       **When the resolved parent is not the development branch, the sign-off report must say so** —
       name the branch the work merged into and state that it has NOT reached the development branch
@@ -351,7 +351,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       - A phase branch **checked out in the main worktree** lands, and the main tree is never
         removed or switched. The output prints the two commands that free the branch, to run
         there yourself: `git switch <parent>` (or `git switch --detach <parent>` when another
-        worktree holds the parent), then `git branch -d <branch>`.
+        worktree holds the parent, which leaves the main tree on a detached HEAD at the parent,
+        and the output says so), then `git branch -d <branch>`. Under `--dry-run` the same
+        commands are worded as what the cleanup will need once the merge lands.
       - A **dirty** worktree is never removed, because removal also destroys ignored files — a
         `.env`, a `node_modules` — that `git status` never mentioned.
 
@@ -369,24 +371,38 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
 
 It refuses, naming every reason, what the group cannot be signed off with: a member with open
 work or already signed off, a member recording another branch, members resolving to different
-parents, a finished task with no `commit`, a task commit the branch does not carry (asked of git,
-not read off the plan), and a union no member's gate holds. Then, in this order:
+parents, a `--branch` that is that parent, a finished task with no `commit`, a task commit the
+branch does not carry (asked of git, not read off the plan), a commit the branch carries past its
+fork that no member records, and a union no member's gate holds. The plan and the record ask the
+same planner, so what the plan accepts the record re-checks under the lock. Then, in this order:
 
-1. **Review** from the tasks' `commit` list the plan prints — hand the reviewer those commits and
-   the files union in place of `git diff <baseRef> -- <files>`. Findings become tasks exactly as
-   in step 1, in the member whose files they touch.
-2. **One gate run**: the plan names the member whose `testGate` holds the union of every member's
-   gate, and the `run-test-gate.py … --record` call for it. The members share one tree, so one run
-   measures all of them. The row is recorded against that member; the others carry no
-   `testEvidence` of their own, and the record's output names the member whose run graded them.
-3. **One invariants run**: `verify-invariants.py <manifestPath> --all`, the one spelling that
+1. **Bind** with `--bind` in place of `--plan`: each member gets the branch as `branch` and the
+   point it left the parent (`git merge-base <parent> <branch>`) as `baseRef`, and nothing of a
+   verdict. The record refuses a member that is not bound, because step 4 grades the base-ref
+   and branch-history checks off those two fields and would otherwise not apply them.
+2. **Review** from the tasks' `commit` list the plan prints — hand the reviewer those commits and
+   the files union in place of `git diff <baseRef> -- <files>`. They are every commit the branch
+   carries past its fork: any other commit is refused unless the journal records it as a member's
+   audit-state or index commit. Findings become tasks exactly as in step 1, in the member whose
+   files they touch.
+3. **One gate run**: the plan names the member whose `testGate` holds the union of every member's
+   gate, and prints its `run-test-gate.py … --also <the others> --record` call. `--also` makes the
+   one run own the union of every member's files, so a rewrite of a file only another member
+   declares reads `gate-mutated` rather than passing, and the tree stamp covers all of them.
+4. **One invariants run**: `verify-invariants.py <manifestPath> --all`, the one spelling that
    covers more than one phase — read the rows for the group's members. A breach is the human
    decision it is in step 3.
-4. **Record** with the same command, `--verdict` and `--summary` in place of `--plan`. Every
-   member is written in one write, all or nothing; each gets the branch as `branch` and the point
-   it left the parent (`git merge-base <parent> <branch>`) as `baseRef` when it has none, so the
-   derivation waits for the landing and later invariants runs have a fork point to check.
-5. **Commit** the sign-off on the combined branch, then **land each phase** with the
-   `close-phase.py --branch` lines the record prints, in order. The first merges the whole branch
-   and keeps it (`--keep-worktree --keep-branch`); each later one finds it already contained and
-   stamps its own `mergedAt`; only the last may take the branch and its worktree away.
+5. **Record** with the same command, `--verdict` and `--summary` in place of `--plan`. A `passed`
+   verdict needs the carrier's recorded run to be current — a ledger row taken over every
+   member's files as they stand now — or `--no-evidence-reason "<why>"`, which is recorded on
+   every member's review; the single-phase sign-off holds the same rule. Every member is written
+   in one write, all or nothing, and each non-carrier member takes the carrier's pointer as its
+   `testEvidence` with `gradedBy: <carrier>`, so `--fail-on no-test-evidence` and the report read
+   it as graded, by that run.
+6. **Commit** the sign-off with the lines the record prints — one `commit-audit-state.py` per
+   member, and in the sharded layout `commit-manifest-index.py` after them, because one commit
+   carrying two members' shards reads as a scope breach for each.
+7. **Land each phase** with the `close-phase.py --branch` lines, in order. The first merges the
+   whole branch and keeps it (`--keep-worktree --keep-branch`); each later one finds it already
+   contained and stamps its own `mergedAt`; only the last may take the branch and its worktree
+   away.

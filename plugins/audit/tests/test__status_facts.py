@@ -1417,10 +1417,34 @@ def _derived_status_cases(check):
           and "in-progress" not in M.evaluate_gate(signed, ["in-progress"]))
 
 
+def _graded_by_cases(check):
+    """A member of a group sign-off carries the carrier's pointer with the carrier
+    named on it: evidence for `no-test-evidence`, and a row that says whose run it
+    was so no surface presents it as the member's own."""
+    carrier = {"id": "P1", "status": "done", "mergedAt": "2026-01-01T00:00:00Z",
+               "testEvidence": {"runId": "r1", "status": "passed", "at": "t"}}
+    member = {"id": "P2", "status": "done", "mergedAt": "2026-01-01T00:00:00Z",
+              "testEvidence": {"runId": "r1", "status": "passed", "at": "t",
+                               "gradedBy": "P1"}}
+    plan = {"meta": {"version": 2}, "phases": [dict(carrier, tasks=[]),
+                                               dict(member, tasks=[])]}
+    summary = M.test_evidence_summary(plan)
+    check("gb1 a member graded by the group's carrier is NOT a done subject with no "
+          "run recorded: %r" % (summary["missingOnDone"],),
+          [r["id"] for r in summary["missingOnDone"]] == [])
+    check("gb2 ...and its evidence row names the carrier, while the carrier's own "
+          "row names nobody - the pointer is not presented as the member's run: "
+          "%r / %r" % (M.evidence_row(member, "phase").get("gradedBy"),
+                       M.evidence_row(carrier, "phase").get("gradedBy")),
+          M.evidence_row(member, "phase").get("gradedBy") == "P1"
+          and M.evidence_row(carrier, "phase").get("gradedBy") is None)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _derived_status_cases(check)
+        _graded_by_cases(check)
     return _harness.run(body)
 
 

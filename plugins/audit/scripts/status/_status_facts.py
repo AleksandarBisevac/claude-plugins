@@ -606,7 +606,19 @@ def evidence_row(holder, scope):
             # looked up again later: the boundary comparison and the walk that
             # finds the gaps are the same pass, and a second read of the plan is
             # a second chance to read a different field.
-            "finishedAt": finished_at(holder, scope)}
+            "finishedAt": finished_at(holder, scope),
+            # WHOSE RUN THE POINTER IS, when it is not the subject's own: a member
+            # of a group sign-off carries the carrier's pointer, and a surface
+            # rendering it as the member's run would claim a gate nobody ran.
+            "gradedBy": graded_by(holder)}
+
+
+def graded_by(holder):
+    """The phase whose gate run a pointer is, when a group sign-off copied it onto
+    another member - or None for a pointer that is the subject's own."""
+    block = holder.get("testEvidence") if isinstance(holder, dict) else None
+    value = block.get("gradedBy") if isinstance(block, dict) else None
+    return str(value) if isinstance(value, str) and value else None
 
 
 def evidence_rows(manifest):

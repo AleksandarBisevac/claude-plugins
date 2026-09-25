@@ -546,7 +546,8 @@ def _cases(check):
                                             foreign_main["blocked"]]),
           foreign_main.get("followUp") == {
               "from": "/main",
-              "commands": ["git switch dev", "git branch -d feature/p2"]}
+              "commands": ["git switch dev", "git branch -d feature/p2"],
+              "note": None}
           and not foreign_main["steps"]
           and any("`git switch dev`" in b["remedy"]
                   and "`git branch -d feature/p2`" in b["remedy"]
@@ -559,11 +560,14 @@ def _cases(check):
     _pe = _cp(parent_elsewhere, "feature/p2", "dev", M.CONTAINED, False,
               want_worktree=False, want_branch=True)
     check("mt3 with the parent checked out in another worktree, `git switch dev` "
-          "cannot run in the main tree, so the command detaches at it instead: %r"
+          "cannot run in the main tree, so the command detaches at it instead - "
+          "and says that leaves the main tree on a detached HEAD: %r"
           % (_pe.get("followUp"),),
           _pe.get("followUp") == {
               "from": "/main",
-              "commands": ["git switch --detach dev", "git branch -d feature/p2"]})
+              "commands": ["git switch --detach dev", "git branch -d feature/p2"],
+              "note": "leaves /main on a detached HEAD at dev"}
+          and any("detached HEAD" in b["remedy"] for b in _pe["blocked"]))
     _linked = _cp(open_trees, "feature/p2", "dev", M.CONTAINED, False,
                   want_worktree=False, want_branch=True)
     check("mt4 SECOND DIRECTION: a branch held by a LINKED worktree gets no "

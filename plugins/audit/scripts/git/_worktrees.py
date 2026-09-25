@@ -1032,9 +1032,11 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                 blocked.append(_refusal(
                     "%r is checked out in the main worktree (%s), and this never "
                     "moves a HEAD" % (branch, _rest[0].get("path")),
-                    "from %s, run %s"
+                    "from %s, run %s%s"
                     % (follow_up["from"],
-                       ", then ".join("`%s`" % c for c in follow_up["commands"]))))
+                       ", then ".join("`%s`" % c for c in follow_up["commands"]),
+                       " - which %s" % (follow_up["note"],)
+                       if follow_up["note"] else "")))
             else:
                 blocked.append(_refusal(
                     "%r is still checked out at %s"
@@ -1079,8 +1081,9 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
 
 
 def main_tree_release(trees, branch, parent, main_tree):
-    """{"from", "commands"} -- what the operator runs to free `branch` from the main
-    worktree, since nothing here moves a HEAD.
+    """{"from", "commands", "note"} -- what the operator runs to free `branch` from
+    the main worktree, since nothing here moves a HEAD. `note` says what the
+    commands leave behind when that is not the parent checked out, else None.
 
     `git switch <parent>` puts HEAD where `git branch -d` then grades the right
     question, because `-d` grades against HEAD. When another worktree holds the
@@ -1091,8 +1094,10 @@ def main_tree_release(trees, branch, parent, main_tree):
                  and not same_tree(r.get("path"), main_tree.get("path"))]
     switch = ("git switch --detach %s" % (parent,) if elsewhere
               else "git switch %s" % (parent,))
+    note = ("leaves %s on a detached HEAD at %s" % (main_tree.get("path"), parent)
+            if elsewhere else None)
     return {"from": main_tree.get("path"),
-            "commands": [switch, "git branch -d %s" % (branch,)]}
+            "commands": [switch, "git branch -d %s" % (branch,)], "note": note}
 
 
 # --- planning a sweep (pure) -----------------------------------------------------

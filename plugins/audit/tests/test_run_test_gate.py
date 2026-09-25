@@ -5451,8 +5451,85 @@ def _interrupt_cases(check):
                                     {"test": "npx playwright test"}}}) == _claim)
 
 
+def _group_cases(check):
+    """`--also`: one gate run over a GROUP of phases built on one branch owns the
+    union of their files, so a rewrite of a file only a non-carrier member declares
+    is the gate grading bytes it produced. A real repository and a real command,
+    because the ownership answer is read off `git status`."""
+    root = _harness.fixture_root("run-test-gate-group-")
+    try:
+        os.makedirs(os.path.join(root, "src"))
+        os.makedirs(os.path.join(root, ".claude"))
+        os.makedirs(os.path.join(root, "docs", "audit"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        for name in ("p1.txt", "p2.txt"):
+            with open(os.path.join(root, "src", name), "w") as fh:
+                fh.write("0\n")
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w") as fh:
+            json.dump({"meta": {"version": 3,
+                                "buildCommands": {"rw": "printf 1 > src/p2.txt"}},
+                       "phases": [
+                           {"id": "P1", "title": "one", "status": "in_progress",
+                            "testGate": ["rw"],
+                            "tasks": [{"id": "P1.1", "title": "a",
+                                       "status": "done", "files": ["src/p1.txt"]}]},
+                           {"id": "P2", "title": "two", "status": "in_progress",
+                            "testGate": ["rw"],
+                            "tasks": [{"id": "P2.1", "title": "b",
+                                       "status": "done",
+                                       "files": ["src/p2.txt"]}]}]}, fh)
+
+        def reset():
+            for arg in (["add", "-A"],
+                        ["-c", "user.email=f@e", "-c", "user.name=F",
+                         "-c", "commit.gpgsign=false", "commit", "-qm", "fixture",
+                         "--allow-empty"]):
+                subprocess.run(["git", "-C", root] + arg, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "init", "-q", root], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        reset()
+
+        def run_json(argv):
+            lines = []
+            code = M.main(argv, out=lines.append)
+            try:
+                return code, json.loads("\n".join(lines))
+            except ValueError:
+                return code, {"raw": "\n".join(lines)}
+        code, alone = run_json([mpath, "P1", "--project-dir", root, "--json",
+                                "--no-reuse"])
+        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
+                       check=True)
+        code_g, grp = run_json([mpath, "P1", "--also", "P2", "--project-dir", root,
+                                "--json", "--no-reuse"])
+        check("gg1 a gate run for P1 with --also P2 owns P2's files too, so the "
+              "command rewriting src/p2.txt is `gate-mutated`, not a pass: exit %r "
+              "status %r" % (code_g, grp.get("status") or grp.get("raw", "")[:200]),
+              code_g == M.E_FAIL and grp.get("status") == "gate-mutated")
+        check("gg2 SECOND DIRECTION: without --also the same run owns only P1's "
+              "files and passes - the union is what widened the refusal: exit %r "
+              "status %r" % (code, alone.get("status")),
+              code == M.E_OK and alone.get("status") == "passed")
+        code_t, _t = run_json([mpath, "P1", "--also", "P2", "--task", "P1.1",
+                               "--project-dir", root, "--json"])
+        check("gg3 --also is a PHASE-scope group and is refused beside --task, which "
+              "narrows to one task: exit %r" % (code_t,), code_t == M.E_ASK)
+        code_u, _u = run_json([mpath, "P1", "--also", "P9", "--project-dir", root,
+                               "--json"])
+        check("gg4 an --also member the plan does not carry is refused, not "
+              "skipped: exit %r" % (code_u,), code_u == M.E_ASK)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _group_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

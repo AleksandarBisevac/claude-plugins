@@ -370,7 +370,7 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _tree_stamp, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -3297,6 +3297,16 @@ files, so a digest read afterwards would answer a different question than the on
 stated and pinned: `dirtyDigest` records *which* paths were dirty, not their contents, so editing an
 already-dirty file outside the declared scope moves neither digest. It discriminates retries; it is
 not a reproducible snapshot of the repository.
+
+**`--also <phase,...>` is a group's one run.** Phases built on one combined branch share one tree,
+and a group sign-off runs the phase gate once, for the member whose `testGate` holds the union.
+Owned by that member's files alone, the run reported a rewrite of a file only another member
+declares beside a pass. `--also` makes the run own the union of every named member's files
+(`group_owned_files`), so the `GATE MUTATED THE TREE` refusal, the coverage answer and the
+`scopeDigest` all cover the group. It is additive — absent, the run is what it was — refused beside
+`--task`, and a member the plan does not carry is refused rather than skipped. `audit-task.py
+signoff` compares that `scopeDigest` against the members' files as they stand when it records a
+`passed` verdict, which is how the verdict knows the run it rests on is current.
 
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]

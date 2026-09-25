@@ -56,16 +56,16 @@ Exit codes:
      every cleanup asked for was done and read back. Also the answer when
      `meta.merge.auto` is false and the run deliberately stopped before the merge
   1  it could not: git refused a write, a precondition failed, or a cleanup was
-     blocked. The refusal names the path or ref that has to change
+     blocked. The refusal names the path or ref that has to change - a branch that
+     is its own parent, or a phase that records no branch whose composed name is
+     not one, included: git answered, and it is the command that has to change
   2  usage error -- the manifest will not load, or there is no such phase
   3  NOT A FAST-FORWARD -- the parent moved while the phase ran. Nothing was written.
      Its own sentinel because it is the normal case on a team repo and the
      orchestrator has a human question for it; folded into 1 it would be
      indistinguishable from "the tree was dirty", which is a different conversation
   4  it could not be ASKED -- git is not on PATH, or would not describe the worktrees
-     or the ancestry, or the phase records no branch and the name composed for it
-     is not one, so there is no branch to ask about until `--branch` names it.
-     NOT 1, for `verify-invariants.py`'s reason: "git refused" and
+     or the ancestry. NOT 1, for `verify-invariants.py`'s reason: "git refused" and
      "git could not be asked" are different states of the world, and a caller that
      cannot tell them apart will retry the wrong one
 """
@@ -152,8 +152,18 @@ def resolve(manifest, phase, parent_arg=None, branch_arg=None, initials=None):
     else:
         resolved = _branch.parent_branch(meta, phase)
         parent, pbasis = resolved["branch"], resolved["basis"]
+    # A BRANCH THAT IS ITS OWN PARENT HAS NOTHING TO LAND, and the cleanup would
+    # then plan deleting the parent itself: already contained, settled, and held by
+    # no worktree reads as a branch to reap. Refused here, where both names meet.
+    refusal = None
+    if branch and branch == parent:
+        refusal = ("%r is its own parent (%s; parent from %s) - there is nothing to "
+                   "land, and the cleanup would delete %r. Name the branch the "
+                   "phase's work is on with --branch" % (branch, bbasis, pbasis,
+                                                          parent))
     return {"branch": branch, "parent": parent, "branchBasis": bbasis,
-            "parentBasis": pbasis, "policy": _branch.merge_policy(meta)}
+            "parentBasis": pbasis, "policy": _branch.merge_policy(meta),
+            "refusal": refusal}
 
 
 # --- observing the repository ----------------------------------------------------
@@ -880,10 +890,15 @@ def render(answer, out=print):
         out("    %s" % (answer["finishCommand"],))
     follow = answer.get("followUp")
     if follow:
-        out("  cleanup is not finished, and this never moves a HEAD. From %s, run:"
-            % (follow["from"],))
+        # A PREVIEW HAS RUN NOTHING, so it says what the cleanup will need rather
+        # than that a cleanup stopped.
+        out(("  after the merge, cleanup will need, from %s:" if answer.get("dryRun")
+             else "  cleanup is not finished, and this never moves a HEAD. From %s, "
+                  "run:") % (follow["from"],))
         for command in follow["commands"]:
             out("    %s" % (command,))
+        if follow.get("note"):
+            out("  (that %s)" % (follow["note"],))
     parked = answer.get("parkedOnBranch") or []
     if parked:
         out("  parked on %s, materializable now that it has landed - on %s, run:"
@@ -954,6 +969,9 @@ def main(argv, out=print):
 
     names = resolve(manifest, phase, args.parent, args.branch,
                     initials=_wt.git_user_name(git_root))
+    if names["refusal"]:
+        out("[close-phase] REFUSED: %s. Nothing was written." % (names["refusal"],))
+        return E_FAIL
     # ALREADY LANDED AND CLEANED UP: the plan records the merge and the branch is
     # gone. Containment cannot be asked of a branch that no longer exists, and the
     # planner then said "merge it into the parent first" about a phase that had
@@ -986,7 +1004,7 @@ def main(argv, out=print):
             "about, %s, was %s - and it is not a branch in this repository. Nothing was "
             "written. Pass --branch <name>: the branch that carries this phase's "
             "work" % (args.phase, names["branch"], names["branchBasis"]))
-        return E_NO_BASIS
+        return E_FAIL
     observation = observe(git_root, names["branch"], names["parent"])
     if observation["why"]:
         out("[close-phase] %s" % (observation["why"],))

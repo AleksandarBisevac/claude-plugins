@@ -19,10 +19,88 @@
   "branch": "audit/p74-close-phase-and-the-worktree-t",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P74-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group's one gate run only covers the carrier member's files, not the whole group. The printed command is `run-test-gate.py <manifest> <carrier> --record`, and run-test-gate works out what the run owns with `owned_files(manifest, carrier)` (run-test-gate.py:1936, used at :3573). That is the carrier's task files only, and three things are scoped by it. (a) The gate-mutated refusal: `attributed_m",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R2",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "Nothing refuses a `--branch` that is the members' resolved parent, e.g. `signoff P1,P2 --branch main` for phases whose work was committed straight onto main. Every task commit is CONTAINED in main, `merge-base main main` gives a fork, and no refusal fires. The record then writes `phase.branch = main`, and the last printed landing is `close-phase.py ... --branch main` without `--keep-branch`. In cl",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The review is scoped to the members' `task.commit` list, and each listed commit is checked to be ON the branch. Nothing checks the other direction: which commits the branch carries beyond those. Another phase's work, a hand fix-up or a stray commit between `fork` and the branch tip is neither in the printed review scope nor refused. It still lands, because the first `close-phase --branch` merges t",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "Nothing persistent records that the non-carrier members were graded by the carrier's run. The only statement is one stdout line: 'the others carry no testEvidence of their own'. Once they land, `/audit:status --gate --fail-on no-test-evidence` will name them as 'done subject(s) with no run recorded' (_status_facts / audit-status.py:1402), and its repair is to run their gate, which defeats the one-",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The procedure runs invariants (step 3) before the record (step 4), and step 4 is what first writes `branch` and `baseRef` on the members. So at the sign-off's only invariants run the members have no branch and no baseRef. `base_ref` and `branch_history` (_invariants.py:793,1170) then do not apply, and the group gets fewer checks than a single-phase sign-off, which has both from `start`. The doc sa",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "phase.md:448 says the plan 'prints the whole sign-off with the one command each step runs'. Step 5's commit prints no command at all. In the sharded layout that commit spans several shards plus the index. The single-phase path prints `_index_dirty_note` for exactly this, and the group path drops it. An audit-state commit carrying two members' shards also reads as a breach of `audit-state-scope` (_",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py",
+        "issue": "The composed-name refusal changes the exit code for this case from 1 to 4. Before, `merged_into` came back UNKNOWN, `_merge_plan` refused, and `close()` returned E_FAIL. Exit 4's contract is 'git could not be ASKED', and the table row says 'it is not a refusal, and retrying the same command will not help'. This case is neither: git answered (`rev-parse --verify` exit 1), and the repair is a change",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R8",
+        "severity": "low",
+        "file": "CHANGELOG.md",
+        "issue": "The diff adds no CHANGELOG entry, although it has user-visible changes: the new `signoff P1,P2 --branch --plan` form, close-phase's follow-up commands from the main tree, and the composed-name refusal with its exit-code change. Sibling phases (P69, P70) each added one.",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/_worktrees.py",
+        "issue": "The follow-up has two gaps. (a) `git switch --detach <parent>` leaves the main worktree on a detached HEAD, and neither the output nor phase-signoff.md:352-354 says so. (b) `render` prints 'cleanup is not finished, and this never moves a HEAD. From X, run:' for a `--dry-run` preview too (followUp is set at :431), where nothing has run.",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/manage-worktrees.py",
+        "issue": "The same defect class survives in the worktree tool that the phase title names, and the fix's class sweep did not reach it. `manage-worktrees.py remove <phaseId>` resolves `holder_of(trees, branch)` without excluding `isMain`, unlike the `--path` arm at :287. When the main tree stands on the phase branch, the first refusal is usually 'standing inside /main ... Run it from somewhere else', which te",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R11",
+        "severity": "low",
+        "file": "commit",
+        "issue": "The claims block asserts 'red on the previous code; the probe reddens every row' and 'full selftest sweep, ruff, vermin, validate; the group run end to end on a real repo' with no command, no exit code and no stamp. Under this brief that makes them unverified. Line 3 also answers a different question from #3 (class vs instance). Line 7 says 'no number written into prose' while phase-signoff.md:352",
+        "resolution": "fix task P74.2-qq5"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -81,6 +159,64 @@
         "test_audit_task gs1",
         "test_audit_task gs12"
       ]
+    },
+    {
+      "id": "P74.2-qq5",
+      "title": "Review findings: the group gate owns the union, a group branch is never its own parent, and every commit on the branch is accounted for",
+      "status": "in_progress",
+      "description": "Phase review findings, all to be fixed, pre-existing 1 and 2 included (pre-existing 2: a --verdict passed on either path requires a current testEvidence for the phase, or an explicit recorded reason). Orchestrator decisions: the group's one gate run owns the UNION of the members' files (run-test-gate takes the group), the branch may never equal a member's parent (group_plan and close-phase resolve both refuse), every commit fork..branch is a member's recorded commit or is refused by name, non-carrier members carry a persistent record of what graded them that no-test-evidence and the report read, the invariants run sees branch/baseRef (record them first or re-run after), and the composed-name refusal is exit 1 (git answered; the command must change).\nR1 (high) plugins/audit/scripts/manifest/audit-task.py:5221-5234,5474-5477; plugins/audit/reference/phase-signoff.md:378-381: The group's one gate run only covers the carrier member's files, not the whole group. The printed command is `run-test-gate.py <manifest> <carrier> --record`, and run-test-gate works out what the run owns with `owned_files(manifest, carrier)` (run-test-gate.py:1936, used at :3573). That is the carrier's task files only, and three things are scoped by it. (a) The gate-mutated refusal: `attributed_mutations` (run-test-gate.py:372-391) refuses only on OWNED changes, so if the gate rewrites a file a non-carrier member owns, that change is only reported beside a `passed` verdict. (b) The coverage answer. (c) The `testedState` stamp (`tested_state(project, owns, ...)`, :2700). So phase-signoff.md:380 'The members share one tree, so one run measures all of them' is true of which commands run and false of what the run grades. Judged from reading the code; I did not run it. -> Give run-test-gate a group scope: accept a comma list of phases, or `--also <pid,...>`, so `owned_files` returns the union of every member's task files. Have `_print_group_plan` print that spelling. Add a case where the gate rewrites a file only a non-carrier member owns, and prove it reads `gate-mutated` (red on the current code). Until then, have the doc say which answers the one run is scoped to.\nR2 (high) plugins/audit/scripts/manifest/audit-task.py:5236-5314 (group_plan), :5322-5331 (landing_commands): Nothing refuses a `--branch` that is the members' resolved parent, e.g. `signoff P1,P2 --branch main` for phases whose work was committed straight onto main. Every task commit is CONTAINED in main, `merge-base main main` gives a fork, and no refusal fires. The record then writes `phase.branch = main`, and the last printed landing is `close-phase.py ... --branch main` without `--keep-branch`. In close-phase that case is already-contained and settled. If main is checked out nowhere, `cleanup_plan` then plans `update-ref -d refs/heads/main <sha>` (_worktrees.py:1061-1066), which deletes the development branch and its reflog. If the main tree holds main, the new follow-up prints `git switch main` and then `git branch -d main`, which git refuses. Judged from reading; not run. -> In group_plan, refuse when `branch` equals any member's resolved parent: 'a group branch is not its own parent'. Add a gs case (red first) where `--branch` is the parent. The same guard belongs in close-phase `resolve()`; see preExisting 1.\nR3 (med) plugins/audit/scripts/manifest/audit-task.py:5262-5270,5298-5303: The review is scoped to the members' `task.commit` list, and each listed commit is checked to be ON the branch. Nothing checks the other direction: which commits the branch carries beyond those. Another phase's work, a hand fix-up or a stray commit between `fork` and the branch tip is neither in the printed review scope nor refused. It still lands, because the first `close-phase --branch` merges the whole branch. So a group can record a `passed` verdict and land work nobody reviewed, including work from a phase that is not in the group and not signed off. -> Compute `git rev-list <fork>..<branch>`. Refuse, naming each one, any commit that is neither a member's `task.commit` nor an audit-state/index commit the journal records for a member. Or print those commits under 'not in any member - not reviewed' and make the record refuse while any remain. Add a case with an unrecorded commit on the branch.\nR4 (med) plugins/audit/scripts/manifest/audit-task.py:5378-5391,5450-5451; plugins/audit/reference/phase-signoff.md:380-381: Nothing persistent records that the non-carrier members were graded by the carrier's run. The only statement is one stdout line: 'the others carry no testEvidence of their own'. Once they land, `/audit:status --gate --fail-on no-test-evidence` will name them as 'done subject(s) with no run recorded' (_status_facts / audit-status.py:1402), and its repair is to run their gate, which defeats the one-run design. The report and panel show a passed phase with no evidence. The record also never checks that the carrier has a gate row on this tree, which matches the single-phase path but means the group verdict can be written before any gate ran. -> At record time, require the carrier's `testEvidence` (status passed or empty-gate). Write to each non-carrier member either the same pointer or a field such as `review.gradedBy: <carrierId>` that `no-test-evidence` and the report read as evidence. Check the pointer against doctor's pointer-vs-ledger check (_doctor_completions.py:125) so it does not read as a mismatch. Add cases for both.\nR5 (med) plugins/audit/scripts/manifest/audit-task.py:5481-5487; plugins/audit/reference/phase-signoff.md:382-389: The procedure runs invariants (step 3) before the record (step 4), and step 4 is what first writes `branch` and `baseRef` on the members. So at the sign-off's only invariants run the members have no branch and no baseRef. `base_ref` and `branch_history` (_invariants.py:793,1170) then do not apply, and the group gets fewer checks than a single-phase sign-off, which has both from `start`. The doc says the fork point is for 'later invariants runs'. Nothing says the sign-off's own run skipped those checks. -> Either record branch/baseRef before step 3, as a separate write or a `--plan` side-effect that is refused later if the group changes, or add a step-4b invariants re-run after the record. Otherwise have the plan output say that base-ref and branch-history are not graded at this sign-off.\nR6 (low) plugins/audit/scripts/manifest/audit-task.py:5440-5456,5488; plugins/audit/commands/phase.md:441,448: phase.md:448 says the plan 'prints the whole sign-off with the one command each step runs'. Step 5's commit prints no command at all. In the sharded layout that commit spans several shards plus the index. The single-phase path prints `_index_dirty_note` for exactly this, and the group path drops it. An audit-state commit carrying two members' shards also reads as a breach of `audit-state-scope` (_invariants.py:437-518) for each phase. phase.md:441 'writes the same record, under the same refusals' is also not quite true: the group writes `branch`/`baseRef` and adds refusals. -> Print the per-member `commit-audit-state.py` and `commit-manifest-index.py` commands in step 5, and emit the index-dirty note from the group record. Reword phase.md:441 to say the group writes the single sign-off's record plus `branch`/`baseRef`, under its refusals plus the group's.\nR7 (low) plugins/audit/scripts/git/close-phase.py:65-70,985-994; plugins/audit/reference/phase-signoff.md:315: The composed-name refusal changes the exit code for this case from 1 to 4. Before, `merged_into` came back UNKNOWN, `_merge_plan` refused, and `close()` returned E_FAIL. Exit 4's contract is 'git could not be ASKED', and the table row says 'it is not a refusal, and retrying the same command will not help'. This case is neither: git answered (`rev-parse --verify` exit 1), and the repair is a changed command (`--branch`). That is exactly the exit-1 row ('the output names the path or ref that has to change'). The amended row now contradicts itself. A grep of every caller finds only phase-signoff.md's table and the tests reading close-phase's exit codes, so no code caller breaks. -> Return E_FAIL (1) for the composed-name case and move the sentence to the exit-1 row. If 4 is kept on purpose, rewrite exit 4's docstring and row so they cover 'no name to ask about' without saying 'not a refusal / retry will not help'.\nR8 (low) CHANGELOG.md:7 ([Unreleased]): The diff adds no CHANGELOG entry, although it has user-visible changes: the new `signoff P1,P2 --branch --plan` form, close-phase's follow-up commands from the main tree, and the composed-name refusal with its exit-code change. Sibling phases (P69, P70) each added one. -> Add [Unreleased] entries (Added: group sign-off; Fixed: the main-tree cleanup follow-up and the composed-name refusal), including the exit 1 to 4 change if it stays.\nR9 (low) plugins/audit/scripts/git/_worktrees.py:1081-1096; plugins/audit/scripts/git/close-phase.py:431,881-886: The follow-up has two gaps. (a) `git switch --detach <parent>` leaves the main worktree on a detached HEAD, and neither the output nor phase-signoff.md:352-354 says so. (b) `render` prints 'cleanup is not finished, and this never moves a HEAD. From X, run:' for a `--dry-run` preview too (followUp is set at :431), where nothing has run. -> Append 'leaves <main> on a detached HEAD at <parent>' to the detach variant. In dry-run, word the follow-up as 'after the merge, cleanup will need, from X:'.\nR10 (low) plugins/audit/scripts/git/manage-worktrees.py:295-316: The same defect class survives in the worktree tool that the phase title names, and the fix's class sweep did not reach it. `manage-worktrees.py remove <phaseId>` resolves `holder_of(trees, branch)` without excluding `isMain`, unlike the `--path` arm at :287. When the main tree stands on the phase branch, the first refusal is usually 'standing inside /main ... Run it from somewhere else', which tells the operator how to try removing the main tree. -> Refuse `tree.get(\"isMain\")` right after the lookup with the same main-tree reason. Optionally point at `git switch <parent>` the way `main_tree_release` does. Add a test.\nR11 (low) commit fa6727f7 message, claims lines 2-3,7: The claims block asserts 'red on the previous code; the probe reddens every row' and 'full selftest sweep, ruff, vermin, validate; the group run end to end on a real repo' with no command, no exit code and no stamp. Under this brief that makes them unverified. Line 3 also answers a different question from #3 (class vs instance). Line 7 says 'no number written into prose' while phase-signoff.md:352 adds 'the two commands'. That number is true by construction, but the claim is not. -> Re-state the red-first evidence as named commands with exit codes and a stamp (or a `probe/mutations.py` the orchestrator ran), answer question 3 with the grep and its hits (this would have found finding 10), and correct line 7.\nR1 (med) plugins/audit/scripts/git/close-phase.py:126-156 (resolve): close-phase has no guard for `--branch` (or a recorded `phase.branch`) naming the resolved parent. The cleanup then plans deleting the parent branch whenever the parent is checked out nowhere. Before this phase that needed an operator to type it. Finding 2's group record now writes it and prints the command. -> Refuse branch == parent in `resolve()` or `plan()` with exit 1, and add a case.\nR2 (low) plugins/audit/scripts/manifest/audit-task.py:5112-5191 (_locked_signoff): The single-phase sign-off also records a `passed` verdict without checking that any gate row exists for the phase. The group path inherits this; finding 4 asks for it on the group path. -> Consider requiring a current `testEvidence` for `--verdict passed` on both paths.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - signoff P1,P2 --branch main for phases whose parent is main is accepted and plans deleting main"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T21:50:46Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:38Z"

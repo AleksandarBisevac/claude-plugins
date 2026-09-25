@@ -3790,8 +3790,8 @@ def _cases(check):
               "rendered by every report surface and one quoted back to the next "
               "executor: %r" % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
-              == ["description", "descriptive", "outcome", "reason", "rename",
-                  "review_outcome", "summary", "technical"]
+              == ["description", "descriptive", "no_evidence_reason", "outcome",
+                  "reason", "rename", "review_outcome", "summary", "technical"]
               and "gate" not in M.PROSE_FLAGS
               and "commit" not in M.PROSE_FLAGS
               and "verified_by" not in M.PROSE_FLAGS
@@ -3972,7 +3972,8 @@ def _cases(check):
         _vf_sign_proj, _vf_sign_mp = mk("vf-sign", _vf_sign)
         _vf_ok["signoff/--verdict"] = run(
             ["signoff", "P2", "--verdict", "passed", "--summary", "s",
-             "--review-outcome", "r", "--json", "--project-dir", _vf_sign_proj])[0]
+             "--review-outcome", "r", "--no-evidence-reason", "fixture",
+             "--json", "--project-dir", _vf_sign_proj])[0]
         # `seed` alone, against its own empty project rather than `vf_proj`
         # every row above shares -- see `_vf_seed_proj`'s comment.
         _vf_ok["seed/--gate"] = run(
@@ -5533,7 +5534,8 @@ def _cases(check):
             # `next-id` writes nothing, and it still names the tree it READ: the
             # id it prints is only true of that tree's plan and branch.
             ("next-id", ["next-id", "bug"]),
-            ("signoff", ["signoff", "P2", "--verdict", "passed", "--summary", "s"]),
+            ("signoff", ["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "fixture"]),
             # `settle` writes nothing on a plan already settled, and still names
             # the tree it read: "nothing to settle" is only true of that plan.
             ("settle", ["settle"]),
@@ -5731,7 +5733,9 @@ def _cases(check):
               code == 2 and "P2.3" in txt)
         code, txt = run(["signoff", "P2", "--verdict", "passed",
                          "--summary", "Search sanitised end to end.",
-                         "--review-outcome", "no findings", "--project-dir", projs])
+                         "--review-outcome", "no findings",
+                         "--no-evidence-reason", "fixture: no gate is run here",
+                         "--project-dir", projs])
         ph2 = [p for p in _mio.load_manifest(mpaths)["phases"] if p["id"] == "P2"][0]
         check("so3 every task terminal: sign-off records the verdict, the outcome and the "
               "summary, clears the claim - and STORES the status the derivation now "
@@ -5766,6 +5770,7 @@ def _cases(check):
         branched["phases"][1]["branch"] = "feature/p2"
         projb2, mpathb2 = mk("so-branch", branched)
         code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "z",
+                         "--no-evidence-reason", "fixture",
                          "--project-dir", projb2, "--json"])
         try:
             payload = json.loads(txt)
@@ -5791,6 +5796,7 @@ def _cases(check):
         shardsign["phases"][1]["tasks"][1]["status"] = "done"
         projss, mpss = mk("so-sharded", shardsign, sharded=True)
         code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "fixture",
                          "--project-dir", projss])
         _ss_idx = _mio.read_json(mpss)
         _ss_stub = [s for s in _ss_idx["phases"] if s.get("id") == "P2"][0]
@@ -5855,6 +5861,18 @@ def _cases(check):
                 _panel_write._atomic_write_json(mpath, written)
             return proj, mpath, shas
 
+        def gs_gate(proj, mpath, carrier, also=None):
+            """The group's one gate run, recorded - the real script, so the
+            evidence the record checks is a row a real run wrote."""
+            argv = [sys.executable, os.path.join(_output.SCRIPTS_DIR, "governance",
+                                                 "run-test-gate.py"),
+                    mpath, carrier, "--record", "--no-reuse", "--project-dir", proj]
+            if also:
+                argv += ["--also", also]
+            done_ = subprocess.run(argv, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, cwd=proj)
+            return done_.returncode
+
         gs_proj, gs_mp, gs_shas = gs_fixture("gs-plan")
         _gs_before = open(gs_mp, "rb").read()
         code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
@@ -5892,7 +5910,9 @@ def _cases(check):
         _g2_gate = [ln for ln in txt.split("\n") if "run-test-gate.py" in ln]
         check("gs4 the one gate run is carried by the member whose testGate covers "
               "the union - P2's, here: %r" % (_g2_gate,),
-              code == 0 and len(_g2_gate) == 1 and " P2 " in _g2_gate[0])
+              code == 0 and len(_g2_gate) == 1
+              and 'run-test-gate.py" docs/audit/audit-plan.json P2 --also P1'
+              in _g2_gate[0])
         g3_proj, g3_mp, _g3 = gs_fixture("gs-nogate", gates=(["lint"], ["test"]))
         code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
                          "--project-dir", g3_proj])
@@ -5900,18 +5920,39 @@ def _cases(check):
               "naming the verb that makes one carry it - no single run could "
               "measure it: exit %r, %s" % (code, txt),
               code == 2 and "run-test-gate.py" not in txt and "retarget" in txt)
-        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
-                         "--verdict", "passed", "--summary", "both landed",
-                         "--review-outcome", "no findings",
+        _gs_record = ["signoff", "P1,P2", "--branch", "combined",
+                      "--verdict", "passed", "--summary", "both landed",
+                      "--review-outcome", "no findings", "--project-dir", gs_proj]
+        _gs_b0 = open(gs_mp, "rb").read()
+        code, txt = run(_gs_record)
+        check("gsb1 the record refuses a group whose branch and baseRef are not "
+              "bound yet, naming --bind - the sign-off's invariants run has to see "
+              "them, so they are written before it: exit %r, %s" % (code, txt),
+              code == 2 and "--bind" in txt and open(gs_mp, "rb").read() == _gs_b0)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--bind",
                          "--project-dir", gs_proj])
-        _gs_after = dict((p["id"], p) for p in _mio.load_manifest(gs_mp)["phases"])
+        _gs_bound = dict((p["id"], p) for p in _mio.load_manifest(gs_mp)["phases"])
         _gs_fork = gs_git(gs_proj, "merge-base", "main", "combined")
-        check("gs6 the record signs off EVERY member in one write, records the "
-              "branch they were built on and where it left the parent as baseRef "
-              "(a branch with no baseRef is an invariants breach on every later "
-              "run), and stores no done - each reads done once close-phase lands "
-              "it: %s" % (txt,),
+        check("gsb2 --bind writes each member's branch and its fork point as baseRef "
+              "and NOTHING of the verdict: %s" % (txt,),
               code == 0 and len(_gs_fork) == 40
+              and all(_gs_bound[p]["branch"] == "combined"
+                      and _gs_bound[p]["baseRef"] == _gs_fork
+                      and not _mio.signoff_recorded(_gs_bound[p])
+                      for p in ("P1", "P2")))
+        _gs_b1 = open(gs_mp, "rb").read()
+        code, txt = run(_gs_record)
+        check("gse1 --verdict passed with no gate evidence for the carrier is refused, "
+              "naming the gate run that supplies it: exit %r, %s" % (code, txt),
+              code == 2 and "run-test-gate.py" in txt and "--also P2" in txt
+              and open(gs_mp, "rb").read() == _gs_b1)
+        _gs_gate = gs_gate(gs_proj, gs_mp, "P1", "P2")
+        code, txt = run(_gs_record)
+        _gs_after = dict((p["id"], p) for p in _mio.load_manifest(gs_mp)["phases"])
+        check("gs6 the record signs off EVERY member in one write, keeps the bound "
+              "branch and baseRef, and stores no done - each reads done once "
+              "close-phase lands it: gate %r / %s" % (_gs_gate, txt),
+              code == 0
               and all(_gs_after[p]["review"]["status"] == "passed"
                       and _gs_after[p]["summary"] == "both landed"
                       and _gs_after[p]["branch"] == "combined"
@@ -5919,8 +5960,16 @@ def _cases(check):
                       and _gs_after[p]["status"] == "in_progress"
                       and _mio.effective_phase_status(_gs_after[p]) == "in_progress"
                       for p in ("P1", "P2"))
-              and len([ln for ln in txt.split("\n") if "close-phase.py" in ln]) == 2
-              and "one run is P1's" in txt)
+              and len([ln for ln in txt.split("\n") if "close-phase.py" in ln]) == 2)
+        _gs_p1ev = _gs_after["P1"].get("testEvidence") or {}
+        _gs_p2ev = _gs_after["P2"].get("testEvidence") or {}
+        check("gse2 ...and the member that did not carry the gate records the "
+              "carrier's run as its evidence, naming the carrier - a record that "
+              "outlives this output: %r / %r" % (_gs_p1ev, _gs_p2ev),
+              _gs_p1ev.get("runId") and _gs_p2ev.get("runId") == _gs_p1ev["runId"]
+              and _gs_p2ev.get("status") == _gs_p1ev.get("status")
+              and _gs_p2ev.get("gradedBy") == "P1"
+              and "gradedBy" not in _gs_p1ev)
         _gs_rows = [r for r in _journal_io.read_all(gs_proj)
                     if r.get("action") == "phase.verdict"]
         check("gs7 ...with one phase.verdict row per member: %r"
@@ -5975,6 +6024,9 @@ def _cases(check):
               "lands in one: exit %r, %s" % (code, txt),
               code == 2 and "develop" in txt and "different parents" in txt)
         g7_proj, g7_mp, _g7 = gs_fixture("gs-sharded", sharded=True)
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", g7_proj])
+        gs_gate(g7_proj, g7_mp, "P1", "P2")
         code, txt = run(["signoff", "P1,P2", "--branch", "combined",
                          "--verdict", "passed", "--summary", "s",
                          "--project-dir", g7_proj])
@@ -5985,6 +6037,102 @@ def _cases(check):
               and all(_g7_ph[p]["review"]["status"] == "passed"
                       and _g7_ph[p]["branch"] == "combined" for p in ("P1", "P2"))
               and "phases/P1.json" in txt and "phases/P2.json" in txt)
+        g9_proj, g9_mp, _g9 = gs_fixture("gs-self")
+        _g9_before = open(g9_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "main", "--plan",
+                         "--project-dir", g9_proj])
+        check("gs14 a group --branch that IS the members' parent is refused - landing "
+              "it would plan deleting the parent - and nothing is written or "
+              "printed to land: exit %r, %s" % (code, txt),
+              code == 2 and "its own parent" in txt and "close-phase.py" not in txt
+              and open(g9_mp, "rb").read() == _g9_before)
+        g10_proj, g10_mp, _g10 = gs_fixture("gs-unrecorded")
+        gs_git(g10_proj, "checkout", "-q", "combined")
+        gs_git(g10_proj, "commit", "-q", "--allow-empty", "-m", "hand fix-up")
+        _g10_extra = gs_git(g10_proj, "rev-parse", "HEAD")
+        gs_git(g10_proj, "checkout", "-q", "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g10_proj])
+        check("gs15 a commit on the branch that is no member's recorded commit is "
+              "refused BY NAME - the first landing would carry it unreviewed: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and _g10_extra[:12] in txt and "not reviewed" in txt)
+        _journal_io.append_from_cli(g10_proj, {
+            "action": "audit.state.committed", "actor": {"via": "cli"},
+            "target": "docs/audit/audit-plan.json", "summary": "state",
+            "details": {"commit": _g10_extra, "phaseId": "P2"}})
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g10_proj])
+        check("gs16 SECOND DIRECTION: the same commit, journaled as a member's "
+              "audit-state commit, is accounted for and the plan stands: exit %r, %s"
+              % (code, txt[:300]),
+              code == 0 and "not reviewed" not in txt)
+        _g10_row_other = gs_fixture("gs-other-phase")
+        g11_proj = _g10_row_other[0]
+        gs_git(g11_proj, "checkout", "-q", "combined")
+        gs_git(g11_proj, "commit", "-q", "--allow-empty", "-m", "another phase")
+        _g11_extra = gs_git(g11_proj, "rev-parse", "HEAD")
+        gs_git(g11_proj, "checkout", "-q", "main")
+        _journal_io.append_from_cli(g11_proj, {
+            "action": "audit.state.committed", "actor": {"via": "cli"},
+            "target": "docs/audit/audit-plan.json", "summary": "state",
+            "details": {"commit": _g11_extra, "phaseId": "P7"}})
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g11_proj])
+        check("gs17 ...but a commit the journal records for a phase OUTSIDE the "
+              "group is still refused: exit %r, %s" % (code, txt[:300]),
+              code == 2 and _g11_extra[:12] in txt)
+        g12_proj = gs_fixture("gs-plan-sharded", sharded=True)[0]
+        _gs_plan_lines = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                              "--project-dir", g12_proj])[1]
+        check("gs18 the plan prints the commit step's commands too - one "
+              "commit-audit-state per member and the index commit in the sharded "
+              "layout - and the gate spelled with --also: %s" % (_gs_plan_lines,),
+              ('commit-audit-state.py" docs/audit/audit-plan.json P1'
+               in _gs_plan_lines
+               and 'commit-audit-state.py" docs/audit/audit-plan.json P2'
+               in _gs_plan_lines
+               and "commit-manifest-index.py" in _gs_plan_lines
+               and 'run-test-gate.py" docs/audit/audit-plan.json P1 --also P2'
+               in _gs_plan_lines))
+        # --- sign-off's gate evidence on the single-phase path too --------------
+        s1_proj, s1_mp, _s1 = gs_fixture("so-evidence")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", s1_proj])
+        check("so11 --verdict passed on ONE phase with no gate evidence is refused, "
+              "naming the gate run and the reason flag: exit %r, %s" % (code, txt),
+              code == 2 and "run-test-gate.py" in txt
+              and "--no-evidence-reason" in txt)
+        gs_gate(s1_proj, s1_mp, "P1")
+        os.makedirs(os.path.join(s1_proj, "src"), exist_ok=True)
+        with open(os.path.join(s1_proj, "src", "p1.py"), "w") as fh:
+            fh.write("changed after the gate\n")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", s1_proj])
+        check("so12 ...and evidence taken BEFORE the phase's files changed is not "
+              "current, so it is refused too: exit %r, %s" % (code, txt),
+              code == 2 and "not current" in txt)
+        gs_gate(s1_proj, s1_mp, "P1")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", s1_proj])
+        check("so13 SECOND DIRECTION: with a current recorded run, the same sign-off "
+              "is written: exit %r, %s" % (code, txt), code == 0)
+        s2_proj, s2_mp, _s2 = gs_fixture("so-reason")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "graded by hand: no runner here",
+                         "--project-dir", s2_proj])
+        _s2_ph = [p for p in _mio.load_manifest(s2_mp)["phases"]
+                  if p["id"] == "P1"][0]
+        check("so14 ...and an explicit reason is RECORDED on the review, where the "
+              "report and the next reader meet it: exit %r, %r"
+              % (code, _s2_ph.get("review")),
+              code == 0 and (_s2_ph.get("review") or {}).get("noEvidenceReason")
+              == "graded by hand: no runner here")
+        s3_proj, s3_mp, _s3 = gs_fixture("so-skipped")
+        code, txt = run(["signoff", "P1", "--verdict", "skipped", "--summary", "s",
+                         "--project-dir", s3_proj])
+        check("so15 --verdict skipped needs no gate evidence - it says no review "
+              "passed anything: exit %r, %s" % (code, txt), code == 0)
 
         # ---- (sv) a close stores its bug's derived status; settle stores the rest
         # A linked bug derives `fixed` and its `fixedIn` from its fix task's close,
@@ -6122,7 +6270,7 @@ def _cases(check):
                                                  completedAt="2026-01-02T00:00:00Z")
         projro, mpro = mk("ro-signed", rosigned)
         run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
-             "--project-dir", projro])
+             "--no-evidence-reason", "fixture", "--project-dir", projro])
         _ro_hand = _mio.load_manifest(mpro)
         for _t in _ro_hand["phases"][1]["tasks"]:
             if _t["id"] == "P2.3":

@@ -7,6 +7,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **Phases built on one branch sign off as a group: `audit-task.py signoff P1,P2 --branch <name>`.**
+  Phases whose work sits on one combined branch record no `branch` or `baseRef`, so the single
+  sign-off had no diff to review and `close-phase.py` no name to land. `--plan` prints the whole
+  sign-off with the command each step runs; `--bind` records each member's branch and the point it
+  left the parent as `baseRef` first, so the sign-off's invariants run grades them; the review is
+  scoped by the tasks' commits, and every commit the branch carries past its fork must be one of
+  them or a member's journaled audit-state or index commit; one gate run owns every member's files;
+  the record writes every member in one write, all or nothing, and gives the non-carrier members the
+  carrier's evidence pointer with `gradedBy`, which `--fail-on no-test-evidence` and the evidence
+  rows read; and one `close-phase.py --branch` per phase lands it, every one but the last keeping
+  the branch. A `--branch` that is the members' parent is refused.
+- **`run-test-gate.py --also <phase,...>`** makes one phase-scope run own the union of the named
+  phases' files, so a rewrite of a file only another member declares reads `gate-mutated` instead of
+  passing beside it. Additive: without it nothing changes.
+
 - **The manifest merges by record: `/audit:layout merge-driver install`.** Every writer appends at a
   list tail, so two branches that each add a different phase, task, bug or `fileIndex` row conflicted
   on the same lines — in both layouts, because sharding keeps a phase RUN in its own file while every
@@ -89,6 +104,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   they differ.
 
 ### Changed
+- **`signoff --verdict passed` needs the gate run it rests on**, on the single-phase path and the
+  group's alike: the phase's `testEvidence` must be `empty-gate`, or `passed` with a ledger row taken
+  over its declared files as they stand now. Otherwise the verb refuses and prints the
+  `run-test-gate.py … --record` call, or takes `--no-evidence-reason "<why>"`, which it records on
+  `review.noEvidenceReason`. `--verdict skipped` needs neither.
+- **`close-phase.py`'s refusal for a phase with no recorded branch whose composed name is not a
+  branch exits 1**, not the 4 an unanswerable ancestry gave before: git answered, and the command
+  is what has to change (`--branch`).
+
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
   names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
   the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the
@@ -159,6 +183,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`close-phase.py` run from the main worktree standing on the phase branch** lands it, and now
+  prints the two commands that free the branch there - `git switch <parent>` (or `--detach` when
+  another worktree holds the parent, saying it leaves a detached HEAD), then `git branch -d
+  <branch>` - instead of telling the operator to `git worktree remove` the main tree. `--dry-run`
+  words them as what the cleanup will need after the merge. `manage-worktrees.py remove` refuses
+  the main tree the same way, where it used to attempt the removal, and `add` for a branch the main
+  tree holds names that switch instead of telling the operator to remove the main tree.
+- **A branch that is its own parent is refused by `close-phase.py`** (exit 1), recorded or passed:
+  landing it lands nothing, and the cleanup planned deleting the parent branch.
+
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,

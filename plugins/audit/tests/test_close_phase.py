@@ -136,6 +136,16 @@ def _cases(check):
     check("r4 the policy travels with the names, so one read of meta decides both "
           "where this goes and what happens after",
           r["policy"]["auto"] is True, repr(r["policy"]["auto"]))
+    _self = M.resolve({"meta": meta}, {"id": "P2", "branch": "dev"})
+    _self_arg = M.resolve({"meta": meta}, {"id": "P2", "branch": "feature/p2"},
+                          branch_arg="dev")
+    check("r5 a branch that IS the resolved parent is refused, recorded or passed - "
+          "landing it would plan deleting the parent: %r / %r"
+          % (_self.get("refusal"), _self_arg.get("refusal")),
+          bool(_self.get("refusal")) and "its own parent" in _self["refusal"]
+          and bool(_self_arg.get("refusal")))
+    check("r6 SECOND DIRECTION: a branch other than the parent carries no refusal",
+          r.get("refusal") is None, repr(r.get("refusal")))
 
     # --- auto: false, the human-in-the-loop exit ------------------------------
     run, calls = _fake({})
@@ -905,6 +915,16 @@ def _main_tree_cases(check):
         git("add", "-A")
         git("commit", "-q", "-m", "work")
         lines = []
+        M.main([mpath, "P1", "--project", root, "--delete-branch", "--dry-run"],
+               out=lines.append)
+        preview = "\n".join(lines)
+        check("mt0 --dry-run words the follow-up as what the cleanup WILL need after "
+              "the merge, not as a cleanup that has run and stopped: %r"
+              % (preview[-300:],),
+              "after the merge, cleanup will need, from" in preview
+              and "cleanup is not finished" not in preview
+              and "git switch main" in preview)
+        lines = []
         code = M.main([mpath, "P1", "--project", root, "--delete-branch"],
                       out=lines.append)
         text = "\n".join(lines)
@@ -948,7 +968,7 @@ def _composed_cases(check):
               "because none is recorded - and asked for --branch, instead of an "
               "ancestry that 'could not be established': exit %r, %r"
               % (composed, code, text[:300]),
-              code == M.E_NO_BASIS and "no branch is recorded" in text
+              code == M.E_FAIL and "no branch is recorded" in text
               and composed in text and "--branch" in text
               and "could not be established" not in text)
         git("checkout", "-q", "-b", composed)
@@ -967,6 +987,16 @@ def _composed_cases(check):
               code == M.E_OK and "no branch is recorded" not in text
               and git("merge-base", "--is-ancestor", composed,
                       "main").returncode == 0)
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--branch", "main"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        check("cn3 --branch naming the parent itself is refused with exit 1 and "
+              "leaves the parent branch where it was: exit %r, %r"
+              % (code, text[:300]),
+              code == M.E_FAIL and "its own parent" in text
+              and git("rev-parse", "--verify", "--quiet",
+                      "refs/heads/main").returncode == 0)
     finally:
         _harness.remove_tree(root)
 

@@ -1960,6 +1960,28 @@ def owned_files(manifest, phase_id, task_id=None):
     return None, "no phase %r in this manifest" % (phase_id,)
 
 
+def group_owned_files(manifest, phase_id, also):
+    """`(files, error)` -- what a GROUP's one gate run owns: the union of `phase_id`'s
+    files and every `also` member's, in that order.
+
+    One run measures one tree, and phases built on one branch share it, so the run
+    that grades them all has to own all of their files: owned by the carrier alone,
+    a rewrite of a file only another member declares was reported beside a pass
+    instead of refusing it. Every member must be a phase the plan carries - a
+    member skipped here would be one the verdict claims and the run never owned.
+    """
+    union, seen = [], set()
+    for pid in [phase_id] + list(also or []):
+        files, err = owned_files(manifest, pid)
+        if err:
+            return None, "--also: %s" % (err,)
+        for f in files:
+            if f not in seen:
+                seen.add(f)
+                union.append(f)
+    return union, None
+
+
 def attempt_of(manifest, task_id):
     """Which attempt this run is, when the plan RECORDS one -- else None.
 
@@ -3490,6 +3512,9 @@ def main(argv, out=print):
     # of the PHASE, which is where this script is invoked from - a task-level
     # gate needs this flag, since one with no caller states nothing.
     p.add_argument("--task", dest="task", default=None)
+    # A GROUP's one run: the other phases built on the same branch, whose files
+    # this run owns beside `phase`'s. Additive - absent, nothing here changes.
+    p.add_argument("--also", dest="also", default=None, metavar="PHASE,...")
     # The bound a step is held to, recorded on the row that reports a timeout so
     # "timed out" carries the number that makes it actionable rather than leaving
     # a reader to guess which limit was hit.
@@ -3547,6 +3572,16 @@ def main(argv, out=print):
     if err:
         out("[run-test-gate] %s" % err)
         return E_ASK
+    also = [p.strip() for p in (args.also or "").split(",") if p.strip()]
+    if also and args.task is not None:
+        out("[run-test-gate] --also groups PHASES for one phase-scope run, and "
+            "--task narrows it to one task - the two answer different questions")
+        return E_ASK
+    if also:
+        _group, gerr = group_owned_files(manifest, args.phase, also)
+        if gerr:
+            out("[run-test-gate] %s" % (gerr,))
+            return E_ASK
     subject = args.task if source == "task" else args.phase
     if not commands:
         # The EMPTY gate is a designed state (`audit-task.py:_phase_gate`), so it
@@ -3570,7 +3605,8 @@ def main(argv, out=print):
             return E_OK
         out("[run-test-gate] %s" % (said,))
         return E_OK
-    owns, terr = owned_files(manifest, args.phase, args.task)
+    owns, terr = (group_owned_files(manifest, args.phase, also) if also
+                  else owned_files(manifest, args.phase, args.task))
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
@@ -3678,8 +3714,10 @@ def main(argv, out=print):
     # reader who assumed otherwise would credit the wrong declaration. So a
     # task-scope run names both ids here, and says it again under the banner.
     if args.task is None:
-        out("[run-test-gate] %s: %d command(s), phase gate"
-            % (args.phase, len(commands)))
+        out("[run-test-gate] %s: %d command(s), phase gate%s"
+            % (args.phase, len(commands),
+               " - one run for the group with %s, owning all of their files"
+               % (", ".join(also),) if also else ""))
     else:
         out("[run-test-gate] task %s in phase %s: %d command(s), %s"
             % (args.task, args.phase, len(commands),
