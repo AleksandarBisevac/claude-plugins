@@ -496,10 +496,12 @@ not need to.
           shard is inside that commit, so writing it there would need a second commit or the amend
           this document forbids. It leaves an `audit.task.committed` journal row in the meantime,
           so the gap between the commit and this write is not a commit nothing points at.
-          **Do NOT write `bugs[]`.** A bug materialized into this task (`bug.taskId` ↔ `task.bugId`)
-          reads as **fixed** automatically once the task is `done` — the rollup derives it (with
-          `fixedIn` = this `task.commit`) — so the shared index stays untouched and parallel phases
-          merge clean. (`/audit:bug close` still records a human `wontfix` / `not_a_bug` / `fixed`
+          **Do NOT write `bugs[]` by hand.** A bug materialized into this task (`bug.taskId` ↔
+          `task.bugId`) reads as **fixed** once the task is `done` — the rollup derives it (with
+          `fixedIn` = this `task.commit`) — and `/audit:task done` stores both values on the bug in
+          the same write, under the index lock. That is the one write a task close makes to the
+          index, and the verb says so with the `commit-manifest-index.py` line that lands it on its
+          own; a close of a task no bug links to leaves the index untouched. (`/audit:bug close` still records a human `wontfix` / `not_a_bug` / `fixed`
           on the index, under the index lock — a structural decision, not part of a run.)
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
      d. **ADO echo** — now that the SHA is captured, echo the done transition

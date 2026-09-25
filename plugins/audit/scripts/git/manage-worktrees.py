@@ -115,30 +115,20 @@ NONE_ARE_OURS = ("linked worktrees exist and NONE of them belongs to this plan, 
 
 # --- the plan's own branches -----------------------------------------------------
 
-def wanted_branches(manifest, initials=None):
-    """{branchName: phaseId} -- the allow-list, built from the plan and nothing else.
-
-    A phase's RECORDED branch wins over a composed one: a phase that ran has the name
-    git actually got, and re-composing could produce a different string for a
-    manifest whose convention changed mid-flight. Composing is the fallback for a
-    phase that has not started, so `add` can be told about a worktree before there is
-    a branch to record.
-    """
-    meta = (manifest or {}).get("meta") or {}
-    out = {}
-    for phase in ((manifest or {}).get("phases") or []):
-        if not isinstance(phase, dict):
-            continue
-        pid = str(phase.get("id"))
-        recorded = phase.get("branch")
-        name = str(recorded) if recorded else _branch.compose(
-            meta, phase, initials=initials)["name"]
-        if name:
-            out[name] = pid
-    return out
+# ONE ANSWER FOR EVERY VERB, AND FOR THE PANEL'S SWEEP TOO: `_branch.branch_of`
+# is below both, so neither can name a phase's branch differently. Each verb reads
+# `user_name` once, off `_wt.git_user_name`.
+branch_of = _branch.branch_of
+_branches = _branch.plan_branches
 
 
-def parents_of(manifest):
+def wanted_branches(manifest, user_name):
+    """{branchName: phaseId} -- the allow-list, built from the plan and nothing else."""
+    return dict((made["name"], str(phase.get("id")))
+                for phase, made in _branches(manifest, user_name) if made["name"])
+
+
+def parents_of(manifest, user_name):
     """{branchName: parentBranch} -- where each of those branches is supposed to land.
 
     Per PHASE and not one global answer, because `phase.parentBranch` exists exactly
@@ -146,16 +136,8 @@ def parents_of(manifest):
     development branch" would keep a phase that had correctly landed on its story
     branch, for ever.
     """
-    meta = (manifest or {}).get("meta") or {}
-    out = {}
-    for phase in ((manifest or {}).get("phases") or []):
-        if not isinstance(phase, dict):
-            continue
-        recorded = phase.get("branch")
-        name = str(recorded) if recorded else _branch.compose(meta, phase)["name"]
-        if name:
-            out[name] = _branch.parent_branch(meta, phase)["branch"]
-    return out
+    return dict((made["name"], made["parent"])
+                for _phase, made in _branches(manifest, user_name) if made["name"])
 
 
 def phases_by_branch(manifest):
@@ -199,8 +181,9 @@ def do_list(git_root, manifest, run=None):
     listing = _wt.list_worktrees(git_root, run=run)
     if listing["error"]:
         return E_NO_BASIS, {"error": listing["error"]}
-    wanted = wanted_branches(manifest)
-    parents = parents_of(manifest)
+    user_name = _wt.git_user_name(git_root, run=run)
+    wanted = wanted_branches(manifest, user_name)
+    parents = parents_of(manifest, user_name)
     split = _wt.phase_trees(listing["trees"], wanted)
     rows = []
     for rec in split["named"]:
@@ -235,14 +218,12 @@ def do_add(git_root, manifest, phase_id, path=None, run=None):
             phase = ph
     if phase is None:
         return E_USAGE, {"error": "no phase %r in this plan" % (phase_id,)}
-    recorded = phase.get("branch")
     # THE NAME `start` WILL EXPECT, through the one answer it is composed by. This
     # composed without initials while `resolve-branch.py` read git user.name, so a
     # template carrying `{initials}` checked out one name here and resolved another
     # there - and a phase started in this worktree would not recognise its branch.
-    answer = _branch.phase_answer(meta, phase, _wt.git_user_name(git_root, run=run))
-    branch = str(recorded) if recorded else answer["branch"]
-    parent = answer["parent"]
+    made = branch_of(meta, phase, _wt.git_user_name(git_root, run=run))
+    branch, parent = made["name"], made["parent"]
     target = path or default_path(git_root, phase_id)
 
     listing = _wt.list_worktrees(git_root, run=run)
@@ -312,7 +293,7 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None):
                                        "knows about"}
         branch = tree.get("branch")
     else:
-        wanted = wanted_branches(manifest)
+        wanted = wanted_branches(manifest, _wt.git_user_name(git_root, run=run))
         for name, pid in wanted.items():
             if str(pid) == str(phase_id):
                 branch = name
@@ -408,8 +389,9 @@ def do_sweep(git_root, manifest, verbs, apply_it=False, run=None):
     if listing["error"]:
         return E_NO_BASIS, {"error": listing["error"]}
     trees = listing["trees"]
-    wanted = wanted_branches(manifest)
-    parents = parents_of(manifest)
+    user_name = _wt.git_user_name(git_root, run=run)
+    wanted = wanted_branches(manifest, user_name)
+    parents = parents_of(manifest, user_name)
     development = (((manifest or {}).get("meta") or {})
                    .get("developmentBranch") or _branch.DEFAULT_PARENT)
     obs = _wt.observe_for_sweep(git_root, trees, wanted, parents,
@@ -505,22 +487,41 @@ def render(verb, answer, out=print):
 # --- cli -------------------------------------------------------------------------
 
 def build_parser():
+    """One subparser per verb, so a flag parses only under the verb that acts on it.
+
+    A single flat parser accepted `add --apply` and `list --force` in silence: the
+    usage scoped them to one verb and the parser to none, and a flag the verb never
+    reads is an ask that is dropped without a word.
+    """
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("manifest")
+    common.add_argument("--project", default=".")
+    common.add_argument("--json", dest="as_json", action="store_true")
     p = argparse.ArgumentParser(prog="manage-worktrees.py",
                                 description="The worktrees this plan owns.")
-    p.add_argument("verb", choices=VERBS)
-    p.add_argument("manifest")
-    p.add_argument("phase", nargs="?", default=None)
-    p.add_argument("--project", default=".")
-    p.add_argument("--path", default=None)
-    p.add_argument("--force", action="store_true")
-    p.add_argument("--apply", dest="apply_it", action="store_true")
-    p.add_argument("--remove-worktrees", dest="rm_wt", action="store_true")
-    p.add_argument("--delete-branches", dest="rm_br", action="store_true")
-    p.add_argument("--prune", action="store_true")
+    sub = p.add_subparsers(dest="verb", metavar="{%s}" % ",".join(VERBS))
+    sub.required = True
+    sub.add_parser("list", parents=[common],
+                   help="every worktree, and which phase it belongs to")
+    add = sub.add_parser("add", parents=[common],
+                         help="create the worktree for one phase")
+    add.add_argument("phase")
+    add.add_argument("--path", default=None)
+    rm = sub.add_parser("remove", parents=[common],
+                        help="remove one worktree, by phase or by --path")
+    rm.add_argument("phase", nargs="?", default=None)
+    rm.add_argument("--path", default=None)
+    rm.add_argument("--force", action="store_true")
+    sw = sub.add_parser("sweep", parents=[common],
+                        help="what may be reaped, read-only unless --apply, "
+                             "which only sweep takes")
+    sw.add_argument("--apply", dest="apply_it", action="store_true")
+    sw.add_argument("--remove-worktrees", dest="rm_wt", action="store_true")
+    sw.add_argument("--delete-branches", dest="rm_br", action="store_true")
+    sw.add_argument("--prune", action="store_true")
     # `--include-strangers` was here and is deliberately gone; see the section above
     # `write_provenance`. Removing a worktree the plugin did not create is `remove
     # --path <dir>`: one directory, named by the person who wants it gone.
-    p.add_argument("--json", dest="as_json", action="store_true")
     return p
 
 
@@ -529,11 +530,11 @@ def verbs_from(args):
     caller refuses on it -- `--apply` with nothing named is a usage error, not an
     invitation to guess."""
     out = []
-    if args.rm_wt:
+    if getattr(args, "rm_wt", False):
         out.append("removeWorktrees")
-    if args.rm_br:
+    if getattr(args, "rm_br", False):
         out.append("deleteBranches")
-    if args.prune:
+    if getattr(args, "prune", False):
         out.append("prune")
     return tuple(out)
 

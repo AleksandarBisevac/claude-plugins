@@ -387,6 +387,12 @@ The journal's **completion-record actions**:
   work item (details: taskId?, phaseId, adoId). `lastSyncedAt` bumps deliberately
   draw NO row — the plan did not move (see tracker-sync.md → Journal)
 - `task.move` — a task was renumbered into another phase (details: fromId, toId, fromPhase, toPhase)
+- `task.reopen` — `audit-task.py reopen` put a done task back to pending (details: taskId, phaseId,
+  reason, changes - the task's cleared close and any linked bug moved back to `in_progress`)
+- `plan.settle` — `audit-task.py settle` stored the derived values a plan carried stale (details:
+  changes, one `{id, field, from, to}` per value: a phase's `status`, a bug's `status`/`fixedIn`).
+  It is the verb's own row, the way `phase.verdict` is; the values it moves are the ones
+  `validate-manifest` warned about
 - `test.evidence.recorded` — a gate run was written to the evidence record (details: runId,
   taskId?, phaseId). Its subject is the **evidence file**, and it says only that a run was
   recorded — which is true the moment it is written, whatever happens to the plan afterwards

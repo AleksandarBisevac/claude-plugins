@@ -31,6 +31,8 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -129,13 +131,13 @@ def _run_cases(check, root):
         return _fake(script, listing=listing, admin_root=root, ours=ours)
 
     # --- the plan's own branches ----------------------------------------------
-    wanted = M.wanted_branches(PLAN)
+    wanted = M.wanted_branches(PLAN, "Ann Bee")
     check("w1 a phase's RECORDED branch wins over a composed one - a phase that ran "
           "has the name git actually got, and re-composing can differ for a plan "
           "whose convention changed mid-flight",
           wanted == {"audit/p2-two": "P2", "audit/p3-three": "P3"},
           repr(wanted))
-    parents = M.parents_of(PLAN)
+    parents = M.parents_of(PLAN, "Ann Bee")
     check("w2 the parent is resolved PER PHASE, so a phase integrating into a story "
           "branch is judged against THAT - asking 'is it in the development "
           "branch' would keep a correctly landed phase for ever",
@@ -387,6 +389,52 @@ def _run_cases(check, root):
           "worktree recognises its branch: %r vs %r" % (ans.get("branch"), _want),
           code == M.E_OK and ans["branch"] == _want and "/ab-" in _want)
 
+    # --- every verb names a phase's branch the way `add` does ---------------
+    # The worktree `add` just cut, under a template carrying {initials} and a git
+    # identity that yields some: the listing git would print after that add. A verb
+    # that composes the name WITHOUT the user name reads `feature/-p5-five` (or the
+    # collapsed form) and so calls this worktree a stranger.
+    _cut = "worktree /repo\nHEAD aaa\nbranch refs/heads/dev\n\n" \
+           "worktree /wt-p5\nHEAD bbb\nbranch refs/heads/%s\n" % (_want,)
+    run, _c = _f({"config user.name": (0, "Ann Bee\n", ""),
+                  "status --porcelain": (0, "", "")},
+                 listing=_cut, ours=("/wt-p5",))
+    code, ans = M.do_list("/repo", _ini, run=run)
+    check("n1 `list` owns the worktree `add` cut under an {initials} template - it "
+          "names the branch through the same answer, git user.name included, so the "
+          "new worktree is a row and not a stranger: rows=%r strangers=%r"
+          % ([r["branch"] for r in ans.get("rows", [])],
+             [r.get("branch") for r in ans.get("strangers", [])]),
+          code == M.E_OK and [r["branch"] for r in ans["rows"]] == [_want]
+          and ans["strangers"] == [] and ans["missing"] == [])
+    run, calls = _f({"config user.name": (0, "Ann Bee\n", ""),
+                     "status --porcelain": (0, "", "")},
+                    listing=_cut, ours=("/wt-p5",))
+    code, ans = M.do_remove("/repo", _ini, "P5", run=run)
+    check("n2 ...and `remove P5` finds that worktree and removes it, rather than "
+          "reporting that no worktree holds a branch nobody cut: %r"
+          % (ans.get("error") or ans.get("removed"),),
+          code == M.E_OK and ans.get("removed") == "/wt-p5"
+          and any(c[:2] == ["worktree", "remove"] for c in calls))
+    _parents = M.parents_of(_ini, "Ann Bee")
+    check("n3 ...and `parents_of` keys the parent by that same name, so the sweep "
+          "judges containment against the phase's parent rather than against none: "
+          "%r" % (_parents,),
+          _parents == {_want: "dev"})
+    # THE OTHER DIRECTION: with no git identity the composed name carries no
+    # initials, and every verb must agree on THAT too - otherwise n1 passes by a
+    # verb reading user.name while `add` does not.
+    _bare = _branch.phase_answer(_ini["meta"], _ini["phases"][0], "")["branch"]
+    run, _c = _f({"rev-parse --verify": (1, "", ""),
+                  "config user.name": (1, "", "")})
+    code, bare_add = M.do_add("/repo", _ini, "P5", path="/tmp/does-not-exist-p5",
+                              run=run)
+    check("n4 with no git identity `add` and `wanted_branches` still agree, on the "
+          "name without initials: add=%r wanted=%r"
+          % (bare_add.get("branch"), sorted(M.wanted_branches(_ini, ""))),
+          code == M.E_OK and bare_add["branch"] == _bare
+          and sorted(M.wanted_branches(_ini, "")) == [_bare] and _bare != _want)
+
     # --- the CLI grammar ------------------------------------------------------
     class _P(object):
         rm_wt = rm_br = prune = False
@@ -397,13 +445,51 @@ def _run_cases(check, root):
     check("v2 ...and a named verb comes back by name",
           M.verbs_from(_P()) == ("removeWorktrees",), repr(M.verbs_from(_P())))
 
+    # A REAL manifest on disk, so a USAGE exit below is the grammar's answer and not
+    # the manifest failing to load - which also exits 2, and made every refusal here
+    # pass whatever the parser did.
+    _plan_path = os.path.join(root, "plan.json")
+    with open(_plan_path, "w") as fh:
+        fh.write(json.dumps(PLAN))
     lines = []
-    code = M.main(["sweep", "docs/audit/audit-plan.json", "--apply"],
-                  out=lines.append)
+    code = M.main(["sweep", _plan_path, "--apply"], out=lines.append)
     check("v3 `--apply` with no verb is a USAGE error and writes nothing - the "
           "irreversible half needs an explicit ask, because `git worktree remove` "
           "destroys ignored files a status never mentioned",
           code == M.E_USAGE and lines == [], "exit=%d" % (code,))
+
+    def _parses(argv):
+        # argparse writes its refusal to stderr; swallowed so the suite's own
+        # output stays the cases.
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                M.build_parser().parse_args(argv)
+            return True
+        except SystemExit:
+            return False
+    _refused = [v for v in (["add", _plan_path, "P2", "--apply"],
+                            ["list", _plan_path, "--apply"],
+                            ["remove", _plan_path, "P2", "--apply"],
+                            ["add", _plan_path, "P2", "--prune"],
+                            ["list", _plan_path, "--force"])
+                if _parses(v)]
+    check("v4 `--apply` and the sweep verbs parse ONLY under `sweep` - accepted "
+          "silently by `add`, they read as an ask the verb never acts on: accepted "
+          "%r" % (_refused,),
+          _refused == [])
+    _accepted = [v for v in (["sweep", _plan_path, "--apply", "--prune"],
+                             ["sweep", _plan_path, "--remove-worktrees",
+                              "--delete-branches", "--json"],
+                             ["add", _plan_path, "P2", "--path", "/x", "--project",
+                              "."],
+                             ["remove", _plan_path, "P2", "--force"],
+                             ["remove", _plan_path, "--path", "/x"],
+                             ["list", _plan_path, "--json", "--project", "."])
+                 if not _parses(v)]
+    check("v5 ...and every documented spelling still parses under its own verb - "
+          "the allow case, without which v4 passes by a parser that refuses "
+          "everything: refused %r" % (_accepted,),
+          _accepted == [])
 
 
 def _selftest():

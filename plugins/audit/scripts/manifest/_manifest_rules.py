@@ -190,6 +190,8 @@ _check_decisions = _crossrefs._check_decisions
 _check_proposals = _crossrefs._check_proposals
 _check_priority = _crossrefs._check_priority
 _check_ado_parents = _crossrefs._check_ado_parents
+_check_derived = _crossrefs._check_derived
+SETTLE_COMMAND = _crossrefs.SETTLE_COMMAND
 
 
 # --- the document's header --------------------------------------------------------
@@ -368,6 +370,7 @@ def validate(manifest):
     add(_check_proposals(manifest, index))
     add(_check_priority(manifest, phases))
     add(_check_ado_parents(manifest, phases))
+    add(_check_derived(manifest))
     return (f, w)
 
 

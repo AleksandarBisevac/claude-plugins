@@ -1,7 +1,7 @@
 {
   "id": "P60",
   "title": "Manifest merge by record",
-  "status": "in_progress",
+  "status": "done",
   "description": "Field report 14 (dbEmbed portal): every writer appends at a list tail, so branches that add different records conflict on the same lines. Ship a record-level git merge driver with an install verb, a shim under the git common dir that falls back to markers when the plugin root moved, and a doctor check.",
   "desiredOutcome": "Two branches that each add a phase, task, bug or fileIndex row merge the manifest with no conflict once the driver is installed, in both layouts and both merge directions with identical bytes; a real conflict is shown as only the records that disagree.",
   "testGate": [

@@ -223,9 +223,7 @@ def apply_repair(mpath, manifest, ans):
         # outside DETAILS_KEYS - by design, so a writer cannot decide the format
         # for every reader after it - and a `cleared` block was silently
         # discarded until this was run and the row read back.
-        "details": {"changes": [{"id": c["taskId"], "field": "commit",
-                                 "from": c["wasCommit"], "to": None}
-                                for c in cleared]},
+        "details": {"changes": _commit_trail.changes_of(cleared)},
         "actor": {"sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
                   "via": "cli"}},
         config={"manifestPath": rel}))

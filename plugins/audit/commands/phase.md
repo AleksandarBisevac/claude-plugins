@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT]'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT] | settle'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -14,8 +14,8 @@ every ready task and, once all of them are `done`, signs the phase off.
 
 ## 0. Which verb — read off `$ARGUMENTS`, before the manifest is
 
-The FIRST token decides, and the reserved words are `add`, `retarget`, `priority`, `cancel` and
-`signoff`.
+The FIRST token decides, and the reserved words are `add`, `retarget`, `priority`, `cancel`,
+`signoff` and `settle`.
 **Any other first token is a phase id**, and the command is the run form below — the
 shape this command has always had, unchanged.
 
@@ -409,8 +409,10 @@ this. It is documented in `${CLAUDE_PLUGIN_ROOT}/commands/task.md`; new work say
 
 **A phase's status is derived**: it reads `done` once every task is terminal, sign-off is
 recorded, and - for a phase with a branch - that branch has merged. This verb records the
-sign-off; it never writes `status`. Run it at the step of `reference/phase-signoff.md` that used
-to say "set `phase.status = done`", once the review and the gates it lists have passed:
+sign-off and then stores the status it derives, so a reader of the field alone reads it too:
+`done` now for a phase with no branch; for one with a branch, `close-phase.py` stores it when it
+stamps the merge. Run it at the step of `reference/phase-signoff.md` that used to say "set
+`phase.status = done`", once the review and the gates it lists have passed:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId> \
@@ -418,7 +420,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId>
         [--review-outcome "<the review's one-line result>"]
 ```
 
-It writes `review.status` (the verdict), `review.outcome`, `summary`, clears `claim`, and appends a
+It writes `review.status` (the verdict), `review.outcome`, `summary`, the status that record
+derives (on the shard and, sharded, the index stub), clears `claim`, and appends a
 `phase.verdict` journal row, under the index lock with revalidate-or-roll-back (`phase.signoff` is
 the row the journal-writes hook derives once the phase reaches done). It refuses a phase
 with open work (naming the open tasks), a phase with no task, one already signed off, and one
@@ -429,6 +432,26 @@ operator's and the reviewer's words: pass them verbatim, or `-` to read them off
 
 `--verdict` is the reviewer's call and has no default. `skipped` is honest where no review ran -
 say so in `--summary` - and is never a way to sign off work nobody looked at as if it had passed.
+
+## Subcommand: `settle`
+
+**Stores every derived value a plan carries stale.** A plan signed off, merged or closed before
+the verbs stored the derived status — or edited by hand since — reads correctly to every surface
+that derives, and wrongly to every reader of the stored field alone: an older plugin's hooks,
+`jq`, an agent reading the file. `validate-manifest` warns about each such value (a warning, never
+a finding) and names this command:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" settle
+```
+
+It stores a phase's derived `status`, a bug's derived `status` and `fixedIn`, and re-mirrors any
+index stub fallen behind its shard — under the index lock, revalidated, rolled back on findings,
+with one `plan.settle` journal row naming each value it moved. It only ever moves a value towards
+what the derivation already answers, so a stored `done`/`cancelled` and a person's
+`wontfix`/`not_a_bug` are never touched. A plan with nothing stale is reported as such, with what
+was examined, and nothing is written. Show the validator's warning to the human and let them
+decide when to run it; it is the plan owner's write, not a run's.
 
 ## Subcommand: `cancel <phaseId> --reason "<why>"`
 

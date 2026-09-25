@@ -1,7 +1,7 @@
 {
   "id": "P42",
   "title": "The loop the agents run in closes",
-  "status": "in_progress",
+  "status": "done",
   "description": "The loop the agents run in does not close. A retry spawns cold - nothing from attempt N enters attempt N+1's brief, so the executor re-runs the gate to rediscover what it already proved red. The reviewer receives the diff and never the claim, so it cannot check code against what was asserted, and its checklist never asks whether a test can fail. The executor's return is a shape nothing validates, so a false green is silently superseded rather than flagged. And an agent that is REFUSED the mutation its own discipline requires has no word for that outcome, so it reports an inference where it owes an unverified.",
   "desiredOutcome": "An attempt that failed hands its successor what it learned; the reviewer is handed the executor's claim and asked whether the change does what the task asked; the executor's return is validated by a script so a false green is a discrepancy rather than a superseded note; and a proof that could not be made is reported as such, with the refusal verbatim as its basis, rather than downgraded to a sentence read off the code.",
   "testGate": [

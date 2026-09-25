@@ -1,7 +1,7 @@
 {
   "id": "P33",
   "title": "Fourth field report, the run side: a remedy that shipped broken and a run that stops itself",
-  "status": "pending",
+  "status": "done",
   "description": "Two field reports about RUNS rather than about commands. F300: orchestrator.md\nprescribes widening a running task's files and continuing the executor, justified by a\nmeasurement, and in released 2.2.0 scope refused every in_progress task - so the\ncost-saving path was unreachable by construction. Driven against the tag it exits 2; driven\nagainst HEAD it exits 0, because P31.1 moved that gate from refusing the CALL to grading\nthe SHAPE of the change. F283 was written about the done half, so the in_progress half was\nrepaired without being named and nothing pins it.\n\nF301: a phase run with twenty ready tasks committed wave 1 and ended the turn. Nothing\nblocked it - lock held, manifest valid, sixteen tasks READY, no budget declared. The\nobligation to continue is prose nothing reads, which is F282's class in the behavioural\ndirection: every other fault here is a prescription the code refuses, this is one nothing\nenforces.",
   "desiredOutcome": "The widen-a-running-task flow cannot regress unnamed again, and a phase run that has not finished says so in a fact something can grade.",
   "testGate": [

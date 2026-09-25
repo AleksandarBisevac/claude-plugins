@@ -1,7 +1,7 @@
 {
   "id": "P66",
   "title": "A merge's write derives no completion the merged branch already recorded",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "a git merge, cherry-pick or rebase that brings a finished task in from another branch writes the change it made and no second task.complete, task.commit or phase.signoff, while completions done in the same call still are",
   "testGate": [

@@ -1,7 +1,7 @@
 {
   "id": "P37",
   "title": "before-you-claim: the authorship gate for the classes the register keeps recording",
-  "status": "pending",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A skill in this repo (.claude/skills/before-you-claim) asks seven evidence-bearing questions at the moment a comment, doc, check, guard, brief or fault fix is written -- one per recurring defect class -- and a hook in this repo's own .claude/hooks refuses a commit on those surfaces that carries no answer block, checking presence and shape only, never judging the answers. Built with skill-creator: three test prompts from real changes in this session, run with and without the skill, graded by script; red-first both directions on the hook; check-prohibitions row; CLAUDE.md skill-table row. The findings this session produced from three roles and eleven premises are in the register before any code.",
   "testGate": [

@@ -449,9 +449,10 @@ def _cases(check):
                   "phaseId": "P1", "from": "in_progress", "to": "done",
                   "mergedAt": "2026-08-11T01:00:00Z"}, repr(sign))
 
-        # The signoff verb records a verdict and never writes `status`, so the
-        # phase reaches done by DERIVATION - and the completion record has to be
-        # derived from that, or a signed-off phase leaves no phase.signoff at all.
+        # A verdict written with no `status` beside it - a plan signed off before
+        # the verb stored the derived status, or by hand - reaches done by
+        # DERIVATION, and the completion record has to be derived from that, or a
+        # signed-off phase leaves no phase.signoff at all.
         def _verdict(doc, verdict, branch=None, merged=None):
             doc = json.loads(json.dumps(doc))
             doc["phases"][0]["review"] = {"status": verdict}

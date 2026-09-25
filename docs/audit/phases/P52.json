@@ -1,7 +1,7 @@
 {
   "id": "P52",
   "title": "The gate lock is safe to take, safe to lose, and proven",
-  "status": "pending",
+  "status": "done",
   "description": "A code review of the locking work left ten findings and the two tasks that would have answered them were cancelled. Two are labelled release blockers: the acquire path catches only the already-exists error, so a lock directory that cannot be written kills the gate with a traceback and spends a retry, and a taker killed between creating its claim and writing it strands an empty file that reads as held and cannot be cleared by the documented escape. The rest are the same surface: a recorded identity that outlives the run it names, a takeover two waiters can both win, a row recording a distinction the file says it refuses to collapse, a wait bound that turns ordinary parallelism into a refusal with no answer for re-entry, and a branch whose defining properties survive every mutation - which is the only one of the ten that says the others could come back unnoticed.",
   "desiredOutcome": "No single killed run stalls the machine, no two runs both believe they hold one lock, and every property the lock claims has a case that goes red when it is removed.",
   "testGate": [

@@ -308,6 +308,13 @@ def clear(manifest, lost):
     `cleared` carries what was there, because the caller's job is to record it:
     a repair that erased the evidence of its own necessity would be the same
     silence, one step later.
+
+    A BUG'S `fixedIn` IS CLEARED WITH IT when it holds the commit its fix task just
+    lost. `/audit:task done` stores that copy, and nothing else would ever move it:
+    the derivation only fills an empty `fixedIn`, so the bug would go on naming a
+    commit the trail no longer has, where before the close stored it the report read
+    the task's commit and followed the repair. A `fixedIn` naming a DIFFERENT commit
+    was put there by someone else and is left alone. Its row carries `bugId`.
     """
     wanted = set((str(p), str(t)) for p, t, _sha in lost)
     cleared = []
@@ -322,17 +329,38 @@ def clear(manifest, lost):
                 cleared.append({"phaseId": key[0], "taskId": key[1],
                                 "wasCommit": str(task.get("commit"))})
                 task["commit"] = None
+    lost_by_task = dict((c["taskId"], c["wasCommit"]) for c in cleared)
+    for bug in ((manifest or {}).get("bugs") or []):
+        if not isinstance(bug, dict):
+            continue
+        was = lost_by_task.get(str(bug.get("taskId")))
+        if was and str(bug.get("fixedIn") or "") == was:
+            cleared.append({"bugId": str(bug.get("id")),
+                            "taskId": str(bug.get("taskId")), "wasFixedIn": was})
+            bug["fixedIn"] = None
     return manifest, cleared
+
+
+def changes_of(cleared):
+    """`cleared` as journal `changes` rows: `{id, field, from, to}`."""
+    return [{"id": c["bugId"], "field": "fixedIn", "from": c["wasFixedIn"], "to": None}
+            if "bugId" in c else
+            {"id": c["taskId"], "field": "commit", "from": c["wasCommit"], "to": None}
+            for c in cleared]
 
 
 def summary(cleared):
     """One line naming what the trail lost, for a journal row and for a human."""
     if not cleared:
         return "no recorded commit needed clearing"
+    tasks = [c for c in cleared if "bugId" not in c]
+    bugs = [c for c in cleared if "bugId" in c]
     names = ", ".join("%s (%s)" % (c["taskId"], c["wasCommit"][:12])
-                      for c in cleared[:4])
-    return ("cleared %d unreachable task commit(s) after a history rewrite: %s%s"
-            % (len(cleared), names, "" if len(cleared) <= 4 else ", ..."))
+                      for c in tasks[:4])
+    return ("cleared %d unreachable task commit(s) after a history rewrite: %s%s%s"
+            % (len(tasks), names, "" if len(tasks) <= 4 else ", ...",
+               ("; and the fixedIn of %s, which held one of them"
+                % (", ".join(c["bugId"] for c in bugs),)) if bugs else ""))
 
 
 # --- cli ----------------------------------------------------------------------

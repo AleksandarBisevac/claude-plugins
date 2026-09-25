@@ -1,7 +1,7 @@
 {
   "id": "P56",
   "title": "The plugin costs the user less than wild use, and can prove it",
-  "status": "in_progress",
+  "status": "done",
   "description": "Measured on this release's own session: cost is the sum of context size per turn, not the sum of work done. An agent living past three hours pays nearly three times per turn what a short one pays, because every later turn carries everything earlier and the cache is rewritten as it lapses; the spawn itself is cheap, a small fraction of the total. So the lever is short agents reading narrowly, which is exactly what a plan buys over one long-lived agent that accumulates the whole repository. The mechanisms that serve this mostly landed already - a gate that reuses a recorded verdict, a task gate narrowed to its own paths, an executor that no longer duplicates the recorded run, a question answered without reading the plan - and nothing measures whether they pay off. This phase makes the saving real where it is inert, cheap where it is loud, and provable where it is currently a claim.",
   "desiredOutcome": "A run through the plan costs measurably less than the same work done ad hoc, and the plugin reports the comparison rather than claiming it.",
   "testGate": [

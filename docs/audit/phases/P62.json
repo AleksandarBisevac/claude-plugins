@@ -1,7 +1,7 @@
 {
   "id": "P62",
   "title": "The doctor measures what the layout costs instead of guessing",
-  "status": "in_progress",
+  "status": "done",
   "description": "F468 (field report 14): a phase-count threshold is a proxy; the cost is conflicted merges, replayed with git merge-tree without the driver.",
   "desiredOutcome": "doctor reports, from the repository's own merges, how many conflicted in the manifest without the driver, and warns with the install command when that number is not zero and the driver is absent",
   "testGate": [
