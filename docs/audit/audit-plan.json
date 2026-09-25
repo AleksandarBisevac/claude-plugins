@@ -492,7 +492,8 @@
       "P69.3",
       "P70.2",
       "P72.1",
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -549,7 +550,8 @@
       "P63.8",
       "P64.1",
       "P67.1",
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ],
     "README.md": [
       "P2.3",
@@ -1131,7 +1133,8 @@
       "P63.5",
       "P65.1",
       "P69.3",
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1185,7 +1188,8 @@
       "P34.7",
       "P51.9",
       "P59.5",
-      "P63.6"
+      "P63.6",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -1261,7 +1265,8 @@
       "P34.6",
       "P41.1",
       "P42.1",
-      "P61.9"
+      "P61.9",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1560,7 +1565,8 @@
       "P18.9",
       "P32.7",
       "P63.7",
-      "P63.9"
+      "P63.9",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/ui/panel/branch-convention.js": [
       "P18.7",
@@ -1583,7 +1589,8 @@
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
       "P32.7",
-      "P63.9"
+      "P63.9",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -1602,7 +1609,8 @@
       "P32.2",
       "P34.6",
       "P40.2",
-      "P50.8"
+      "P50.8",
+      "P71.2-zso"
     ],
     "tools/verify.sh": [
       "P19.2",
@@ -1704,7 +1712,8 @@
       "P59.6",
       "P59.8",
       "P70.1",
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1729,7 +1738,8 @@
       "P59.6",
       "P59.8",
       "P59.13",
-      "P70.1"
+      "P70.1",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1892,7 +1902,8 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1903,7 +1914,8 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2011,7 +2023,8 @@
       "P32.7",
       "P34.7",
       "P51.9",
-      "P63.6"
+      "P63.6",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test_render_report.py": [
       "P25.1",
@@ -2041,13 +2054,15 @@
       "P31.5",
       "P31.6",
       "P32.7",
-      "P34.4"
+      "P34.4",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
       "P29.5",
       "P31.5",
-      "P34.4"
+      "P34.4",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test__invariants.py": [
       "P28.2",
@@ -2111,7 +2126,8 @@
       "P54.6",
       "P55.5",
       "P56.5",
-      "P55.14"
+      "P55.14",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2121,21 +2137,25 @@
       "P53.6",
       "P54.6",
       "P68.1",
-      "P68.2-v4q"
+      "P68.2-v4q",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
       "P31.5",
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
       "P34.4",
       "P68.1",
-      "P68.2-v4q"
+      "P68.2-v4q",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test__scoped_commit.py": [
-      "P29.5"
+      "P29.5",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test__output.py": [
       "P29.5",
@@ -2221,7 +2241,8 @@
       "P54.6",
       "P55.5",
       "P56.5",
-      "P59.13"
+      "P59.13",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -2422,14 +2443,16 @@
       "P43.4",
       "P46.3",
       "P55.5",
-      "P56.5"
+      "P56.5",
+      "P71.2-zso"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4"
     ],
     "plugins/audit/tests/test__tree_stamp.py": [
       "P43.4",
-      "P46.3"
+      "P46.3",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4"
@@ -2590,7 +2613,8 @@
       "P64.3",
       "P68.1",
       "P70.1",
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2732,10 +2756,12 @@
       "P72.1"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
-      "P71.1"
+      "P71.1",
+      "P71.2-zso"
     ]
   },
   "bugs": [
