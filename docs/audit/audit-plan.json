@@ -398,6 +398,12 @@
       "title": "A merge's write derives no completion the merged branch already recorded",
       "status": "in_progress",
       "shard": "phases/P66.json"
+    },
+    {
+      "id": "P67",
+      "title": "/audit:version says which build is running and whether a newer one is published",
+      "status": "pending",
+      "shard": "phases/P67.json"
     }
   ],
   "fileIndex": {
@@ -450,7 +456,8 @@
       "P66.1",
       "P66.2-x3g",
       "P66.3-x3g",
-      "P66.4-x3g"
+      "P66.4-x3g",
+      "P67.2"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -505,7 +512,8 @@
       "P62.1",
       "P63.4",
       "P63.8",
-      "P64.1"
+      "P64.1",
+      "P67.1"
     ],
     "README.md": [
       "P2.3",
@@ -527,7 +535,8 @@
       "P44.1",
       "P53.4",
       "P54.1",
-      "P54.3"
+      "P54.3",
+      "P67.2"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -627,7 +636,8 @@
       "P63.11",
       "P63.12",
       "P64.3",
-      "P66.1"
+      "P66.1",
+      "P67.2"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -1039,7 +1049,8 @@
       "P60.5",
       "P61.1",
       "P61.7",
-      "P61.11"
+      "P61.11",
+      "P67.1"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1378,7 +1389,8 @@
       "P26.2",
       "P31.7",
       "P63.11",
-      "P63.12"
+      "P63.12",
+      "P67.2"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -2599,6 +2611,15 @@
     ],
     "plugins/audit/tests/test_resolve_branch.py": [
       "P64.1"
+    ],
+    "plugins/audit/scripts/status/audit-version.py": [
+      "P67.1"
+    ],
+    "plugins/audit/tests/test_audit_version.py": [
+      "P67.1"
+    ],
+    "plugins/audit/commands/version.md": [
+      "P67.2"
     ]
   },
   "bugs": [
