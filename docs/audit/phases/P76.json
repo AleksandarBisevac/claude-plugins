@@ -1,0 +1,128 @@
+{
+  "id": "P76",
+  "title": "The verbs cover what operators were hand-editing",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "audit-task has verbs for what field reports hand-edited - a deliberate no-intent answer with a reader, a no-change close, move, block with a reason, an append-only note - add has a dry run and --json refusals that are JSON, list flags say their separator and repeat, scope reports the index dirty only when bytes changed and keeps fileIndex order, and the argv guard stops refusing a colon-prefixed identifier and names backtick substitution when that is what it saw",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P76.1",
+      "title": "New verbs and answers for what operators hand-edited: intent not-asked, done --no-change, move, block, note",
+      "status": "pending",
+      "description": "Reproduced at HEAD: (1) intentCheck has no spelling for 'not asked, on purpose' and nothing reads an absent answer - add enum member not-asked with a required basis (--intent not-asked --intent-basis TEXT), and a reader: sign-off and status list closed tasks with no answer. (2) done demands --commit - add done --no-change --reason TEXT recording outcome.noChange {reason, examinedAt: HEAD sha}; doctor's no-SHA check and verify-invariants' commit-scope skip such tasks. (3) move is a documented sequence of hand edits (commands/task.md) - make it a verb doing exactly those steps under the index lock (next-id task, movedFrom, references rewritten across index, shards and proposals, a task.move row, revalidate, rollback). (4) block <id> --reason (status + blockedReason + row) and note <id> - (append {at, text} to notes[] + row); manifest-conventions stops telling operators to put a dependency in the description, which scope refuses on a started task; orchestrator.md and execute-task.md set blocked through the verb.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - done --intent not-asked is an invalid choice, done without --commit is refused for a task whose answer was no change, and move/block/note are invalid verbs"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P76.2",
+      "title": "add has a dry run and JSON refusals, list flags say their separator, scope's dirty note means changed bytes, and the argv guard stops refusing colon identifiers",
+      "status": "pending",
+      "description": "Reproduced at HEAD: add --dry-run is unrecognised and --json refusals are prose; --verified-by/--files/--depends-on/--blocked-by carry no help and the separator is guessed (a comma); scope passes files_changed=True unconditionally so the DIRTY note fires on identical bytes, and its remove-then-append re-derivation reorders a shared fileIndex row on a no-op (merge-conflict material); the argv gap guard refuses 'params :id and :key' (a colon starting an identifier is not a hugging mark) and, when bash substituted backtick spans, blames 'whitespace before the first word' without naming substitution or pointing at the shell's stderr, in a ten-line message. Fix: --dry-run builds and validates in memory and writes nothing; --json refusals emit {ok:false, refused, findings}; list flags repeat (action append, comma split kept) with help and an example; scope passes whether anything was released or claimed, appends only newly claimed ids, and the index write skips identical bytes; the guard exempts [ \\t]:identifier (measure over the tree's own texts first), names likely backtick substitution when the window shows a leading or doubled space, and the refusal is cut to its route plus the marked span. Also: the verb that performs phase entry prints a warning (never a refusal - an empty gate is a designed state) when the phase has an empty testGate or no desiredOutcome; scope/add warn when a gate token resolves to a directory in the project tree.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - scope --gate-clear on a task that owns its fileIndex rows prints that the index is DIRTY while the index bytes are unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P76.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "id": "P75",
+  "title": "verify-invariants reports what is new, and user tooling can share the cross-worktree lock",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "verify-invariants can show only breaches that are new against a committed baseline, a baseline entry that no longer matches is reported, and user tooling can take the plugin's cross-worktree lock under a namespaced name",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P75.1",
+      "title": "verify-invariants reports only what is new against a committed baseline, and user tooling can take a namespaced cross-worktree lock",
+      "status": "pending",
+      "description": "A long history reported 8040 frozen breaches and the operator grepped for today's SHAs. Add a committed baseline of breach fingerprints (check id + subject + SHA - frozen history is SHA-stable): write it with an explicit flag, and when it exists print new breaches plus the baseline count; a baseline entry that no longer matches is reported, never dropped. The plugin's cross-worktree lock under git-common-dir/audit-locks refuses every name but index/usage/phase-<id>, so user tooling (an e2e guard driving one backend from several worktrees) cannot share it: admit a namespaced user-<name> through _locks.valid_name and document audit-lock.py acquire user-<name> --wait N in worktree.md.",
+      "files": [
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/commands/worktree.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_verify_invariants.py: repro that FAILS on current code - there is no way to see only the breaches that are not in a committed baseline"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
