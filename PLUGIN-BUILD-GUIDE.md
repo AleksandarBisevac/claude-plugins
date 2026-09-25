@@ -189,6 +189,7 @@ claude-plugins/                           # this repo (personal, public)
           _gate_feed.py                   # the plan-gate events feed's prune rule: which rows no longer belong
           audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
           audit-lookup.py                 # one question, one pointer: why cancelled, a bug's conclusion, fileIndex's last declarer
+          audit-version.py                # /audit:version: the running build, the marketplace and installed copies, the newest release
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads the ordered parts under scripts/ui/report{,-css}/, assembles _CSS/_SCRIPT
@@ -371,6 +372,7 @@ L7:
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _branch, _commit_trail, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
+  audit-version -> _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _output, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
@@ -2693,6 +2695,24 @@ feed that exists with rows left in it. "Nothing to remove" is otherwise a true s
 the rule and a misleading one about the file. The verb is `prune`, and it is mandatory: a bare
 invocation must not prune, which is why the positional takes one choice rather than defaulting
 to it. Exit 0 the prune ran, 1 it could not, 2 a usage error. Layer 7. `--selftest`.
+
+### `plugins/audit/scripts/status/audit-version.py`
+Which build of the plugin is running, and whether a newer one is published - the question
+a user asks before a field report, and one no documented interface answers, because a plugin
+cannot ask Claude Code which copy of it is loaded. So the answer is assembled from what can be
+read, each fact beside where it came from: the running copy's own `plugin.json`; the
+marketplace this copy was installed from (Claude Code's install record for this exact path,
+else the cache path it sits in) with what that clone offers, when it was refreshed and whether
+it auto-updates, read from `known_marketplaces.json`; every installed copy by scope and
+project from `installed_plugins.json` - both files Claude Code writes and does not document, so
+the lines say so and a missing or malformed file is reported, never guessed around; and,
+unless `--offline`, the newest release on the repository `plugin.json` names - the plugin's
+only outbound call, one unauthenticated GET to the GitHub API with a short timeout, which
+`SECURITY.md` states. The verdict is drawn only from what was read: an unanswered feed is
+"could not be asked", never "up to date"; the update commands (`claude plugin marketplace
+update`, `claude plugin update`, a restart) print only when a newer release is known and the
+marketplace is. Exit 0, 1 when a newer release is published, 2 a usage error. Layer 7 (an
+entry point); its cases are in `plugins/audit/tests/test_audit_version.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the

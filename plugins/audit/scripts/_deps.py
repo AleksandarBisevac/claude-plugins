@@ -566,6 +566,11 @@ LAYERS = (
      # every other reader of a manifest handed to it by path rather than by
      # this project's own config.
      "audit-lookup",
+     # `audit-version` answers "which build is running, and is a newer one
+     # published" for `/audit:version`. It reads only `_output` (PLUGIN_ROOT);
+     # Claude Code's install records and the release feed are files and a URL,
+     # not modules, so it sits with the other status commands.
+     "audit-version",
      # `check-ado-item` is the gate `/audit:sync push` runs an item through
      # before creating it. A command rather than a helper because the caller is
      # ORCHESTRATOR PROSE, which reaches Python only through Bash - and a
