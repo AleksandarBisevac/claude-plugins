@@ -1,7 +1,7 @@
 {
   "id": "P67",
   "title": "/audit:version says which build is running and whether a newer one is published",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "one command prints the running version, what the marketplace clone offers and whether it auto-updates, the installed copies, and the newest published release - each with its basis - and says exactly how to update",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "ba6b076c688a607ad5fe5d0f4a1a33c0db97dd53",
+  "branch": "audit/p67-audit-version-says-which-build",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,13 +29,14 @@
     {
       "id": "P67.1",
       "title": "audit-version.py: the running version, the marketplace and installed copies, and the newest published release",
-      "status": "pending",
+      "status": "done",
       "description": "Reads the running build's plugin.json; the marketplace clone and its autoUpdate flag and the installed copies from Claude Code's own records under the Claude home (undocumented files, read with their basis and fail-open); and, unless --offline, the newest GitHub release for plugin.json's repository (one unauthenticated GET, short timeout). Prints each fact with its basis, a verdict, and the documented update commands.",
       "files": [
         "plugins/audit/scripts/status/audit-version.py",
         "plugins/audit/tests/test_audit_version.py",
         "plugins/audit/scripts/_deps.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -60,16 +61,23 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "691f1c1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - audit-version.py with basis per fact, fail-open reads, one bounded GitHub call; v1-v11, eight mutations red",
+        "descriptive": "A new command reports which version of the plugin is running, what the marketplace offers and whether it updates itself, every installed copy, and the newest published release - and how to update."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-25T06:38:09Z",
+      "completedAt": "2026-09-25T06:43:27Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_version.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "691f1c1",
+        "at": "2026-09-25T06:43:27Z"
+      }
     },
     {
       "id": "P67.2",
@@ -115,5 +123,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T06:38:09Z"
 }
