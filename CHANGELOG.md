@@ -170,41 +170,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   truncation of HEAD's own version) is the merge's, rows that chain onto the
   committed tail with verifying hashes, a plugin `via` and a fresh stamp are named as the plugin's
   writer, and everything else keeps the tamper notice. A peer session's claim file is still not read.
-- **The history guard refused prose that named `git stash`.** Every word `git` started an
-  invocation, so `echo attempt used git stash` and an outcome piped into a script
-  (`cat <<'EOF' | python3 x.py -`) were refused as the operation. Every `git` word still counts,
-  except the arguments of a text emitter or no-op (`echo`, `printf`, `true`, `false`, `:`) at the
-  start of a command whose output reaches no shell - not a pipe (across a line continuation too),
-  not a substitution, not a file named like a shell script or a sourced dotfile. Writing the
-  emitter's output to any other file and running it later now passes; SECURITY.md records that
-  residual. A piped heredoc body stays graded except in one shape: `cat` with a quoted delimiter
-  into python or node running a script file with no interpreter option. An unquoted delimiter
-  whose body carries `$(…)` or a backquote is graded wherever the body goes.
+- **The history guard keeps refusing prose that names `git stash`, on purpose.** An exemption
+  for text emitters' arguments and a data reading of a piped heredoc's far side were both tried
+  in this release and both removed: each fix of them opened another pass (a later pipe stage, an
+  interpreter option set in the environment, a comment ending in a backslash, a file run by name
+  or by git itself). Every `git` word counts, and a piped heredoc body is graded as shell. The
+  need the field report named is met without either: feed the heredoc to the script directly,
+  `python3 x.py --technical - <<'EOF'`, which is data. An unquoted delimiter whose body carries
+  `$(…)` or a backquote is graded wherever the body goes.
 - **Commands the history and secret guards did not read.** The rest of a heredoc's own line after
   its marker (`cat <<'EOF' && …`) was dropped with the body; a here-string (`<<<`) was read as a
   heredoc and the lines after it dropped; a heredoc head that ran its body through a wrapper, an
   option value or process substitution (`env python3 -W ignore -`, `bash <(cat)`) was read as
   data; a `$(…)` inside double quotes was one word, so `echo "$(git stash)"` and
-  `eval "$(echo …)"` ran unread; and `xargs git` took its verb from stdin unseen - it is refused
-  while a plan exists. A reset or amend reaching several worktrees now resolves its refs in the
-  tree it runs in.
+  `eval "$(echo …)"` ran unread (quotes inside it are now tracked, and an inner body that will
+  not parse sends the command to the raw-text reading); a here-string fed to a shell or an
+  interpreter (`sh <<<'…'`) was never read; only the first `git reset --hard` of a command was
+  graded; and `xargs git` took its verb from stdin unseen - it is refused while a plan exists. A
+  reset or amend reaching several worktrees now resolves its refs in the tree it runs in, and a
+  backslash-newline is joined as the shell joins it, except inside a comment.
 - **A session's journal hook recorded other sessions' writes, and read a stored status as a
   sign-off.** After the orchestrator stored its phases' derived statuses, a different session's
   next unrelated Bash call derived rows from the manifest digest it saw move - 105 of them
   `phase.signoff` - and filed them under itself. The Bash and MCP lanes now refresh their
   baseline before each call, so a call derives rows only from what moved while it ran; and
-  `phase.signoff` is derived from the derivation's inputs (the verdict, and with a branch the
-  merge stamp), never from a `status` flipped by hand or stored to match the derivation. Such a
-  flip is still recorded, as the edit it is.
+  `phase.signoff` is derived from the derivation's inputs on both sides of a write (the verdict,
+  and with a branch the merge stamp), never from a `status` flipped by hand or stored to match the
+  derivation - so a hand flip made before the verdict no longer swallows it. Such a flip is still
+  recorded, as the edit it is. A move between calls that no trail row explains (an editor, a
+  terminal, a background job) is recorded as observed between calls and filed under no session,
+  rather than absorbed.
 - **One session's worktrees shared a journal file.** The writer id was the session alone, so
   every linked worktree a session drove appended the same `<month>.<session>.jsonl`, and merging
   two of those branches met a file whose same-second rows disagreed. A linked worktree now writes
   `<month>.<session>.wt-<key>.jsonl`, the key taken from the worktree's own writer token; a main
   checkout keeps the name it always had, and every reader still reads both. The evidence ledger
   had the same defect - and `audit-journal merge` reads the journal directory only, so its
-  conflict had no resolver - and is keyed the same way. **Limit:** a linked worktree is
-  recognised by the `.git` file at the project directory, so a project whose `gitRoot` is a
-  subdirectory still writes session-keyed names from every worktree.
+  conflict had no resolver - and is keyed the same way. Whether a checkout is a linked worktree
+  is git's answer, asked where `gitRoot` points, and the key is kept in the worktree's own git
+  dir, so a `gitRoot` subdirectory or a shared absolute `stateDir` no longer collapses it.
+  **Limit:** when git cannot be asked, or the key cannot be stored there, the session-keyed name
+  is used.
 
 ## [3.0.1] - 2026-09-18
 

@@ -1491,11 +1491,14 @@ def _config_call_name(node, aliases=()):
 
 
 def _config_aliases(tree):
-    """(name, attr) for every `name = _config.<attr>` binding in the file - an
-    alias calls the same function, and a lint reading only the spelling at the
-    call would pass `rr = _config.repo_root; rr(data)`."""
+    """(name, attr) for every `name = _config.<attr>` binding and every
+    `from _config import <attr> [as name]` in the file - an alias calls the same
+    function, and a lint reading only the spelling at the call would pass
+    `rr = _config.repo_root; rr(data)`."""
     out = []
     for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "_config":
+            out.extend((a.asname or a.name, a.name) for a in node.names)
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Attribute) \
                 and isinstance(node.value.value, ast.Name) \
                 and node.value.value.id == "_config":
@@ -1580,9 +1583,12 @@ def hook_tree_violations(hooks_dir=None):
     violations = []
     if not os.path.isdir(hooks_dir):
         return violations
+    exempt = dict(((f, sc), why) for f, sc, why in HOOK_TREE_EXEMPT)
+    visited = set()
     for rel, path in _output.lint_py_files(hooks_dir):
         if os.path.basename(rel) == "_config.py":
             continue
+        visited.add(os.path.basename(rel))
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 tree = ast.parse(fh.read(), filename=rel)
@@ -1616,7 +1622,6 @@ def hook_tree_violations(hooks_dir=None):
                     if callee in places and name not in places:
                         places.add(name)
                         changed = True
-        exempt = dict(((f, sc), why) for f, sc, why in HOOK_TREE_EXEMPT)
         for name in sorted(scopes):
             calls = scopes[name]
             uses_root = any(_config_call_name(c, aliases) == "repo_root"
@@ -1640,12 +1645,17 @@ def hook_tree_violations(hooks_dir=None):
                                         "another spelling; place the target, or "
                                         "declare the scope in HOOK_TREE_EXEMPT "
                                         "with its reason" % (name, reads[name])))
-        for (fname, scope), _why in sorted(exempt.items()):
-            if fname == os.path.basename(rel):
-                violations.append((rel, "HOOK_TREE_EXEMPT names %s, which the rule "
-                                        "no longer reports - a stale exemption "
-                                        "excuses whatever lands there next"
-                                        % (scope,)))
+    for (fname, scope), _why in sorted(exempt.items()):
+        if fname in visited:
+            violations.append((fname, "HOOK_TREE_EXEMPT names %s, which the rule "
+                                      "no longer reports - a stale exemption "
+                                      "excuses whatever lands there next"
+                                      % (scope,)))
+        else:
+            violations.append((fname, "HOOK_TREE_EXEMPT names %s in %s, a hook "
+                                      "file that does not exist - a row for a "
+                                      "renamed file excuses its successor by "
+                                      "accident" % (scope, fname)))
     return violations
 
 

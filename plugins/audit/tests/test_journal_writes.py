@@ -1728,18 +1728,49 @@ def _cases(check):
         sg_write(sg_doc(verdict="passed"))
         sg_call("sg-peer")                       # the observer has looked once
         # ANOTHER session stores the derived done - the settle - between the
-        # observer's calls, then the observer runs something unrelated.
+        # observer's calls, and ITS hook records the write; then the observer
+        # runs something unrelated.
         sg_write(sg_doc(stored="done", verdict="passed"))
-        _sg1 = sg_call("sg-peer")
+        _journal_io.append(sg, {"action": "manifest.edit", "target": sg_rel,
+                                "summary": "P1: status in_progress->done",
+                                "actor": {"sessionId": "the-peer",
+                                          "via": "hook"}}, sg_cfg)
+        _sg1_pre = _harness.attempt(getattr(M, "pre_pass", None), sg_bash("sg-peer"), cfg=sg_cfg,
+                                    root=sg)
+        _sg1 = M.post_entries(sg_bash("sg-peer"), cfg=sg_cfg, root=sg)
         check("sg1 a write another session made between this session's calls "
               "derives NOTHING here - not a manifest.edit and not a sign-off: "
               "the row belongs to whoever wrote it, under their session",
-              _sg1 == [], repr([(e.get("action"), e.get("summary"))
-                                for e in _sg1]))
+              _sg1 == [] and _sg1_pre[0] and _sg1_pre[1][1] == [],
+              repr(([(e.get("action"), e.get("summary")) for e in _sg1],
+                    _sg1_pre)))
         _sg1b = sg_call("sg-peer", write=sg_doc(stored="done", verdict="passed",
                                                 task="done"))
         check("sg1b ...and the absorbed write is not re-derived on the call "
               "after it either", _sg1b == [], repr(_sg1b))
+        # ...but a write between calls that NO trail row explains - an editor,
+        # a terminal, this session's own background job - is not absorbed in
+        # silence: the hook is the only writer of the completion rows, so it
+        # records what it saw, as observed between calls and unattributed.
+        sg_write(sg_doc(stored="in_progress", verdict="pending", task="in_progress"))
+        sg_call("sg-bg")
+        sg_write(sg_doc(stored="in_progress", verdict="pending", task="done"))
+        _ok5, _got5 = _harness.attempt(getattr(M, "pre_pass", None), sg_bash("sg-bg"), cfg=sg_cfg,
+                                       root=sg)
+        _rows5 = [e for _r, e in (_got5[1] if _ok5 else [])]
+        check("sg5 an unexplained move between calls yields rows - the edit and "
+              "its completion - each marked as observed, not written by this "
+              "call, and filed under no session",
+              [e.get("action") for e in _rows5] == ["manifest.edit",
+                                                    "task.complete"]
+              and all(getattr(M, "OBSERVED_BETWEEN_CALLS", "\0") in e.get("summary", "")
+                      and (e.get("details") or {}).get("reason")
+                      == getattr(M, "OBSERVED_BETWEEN_CALLS", "\0")
+                      and not (e.get("actor") or {}).get("sessionId")
+                      for e in _rows5), repr(_got5))
+        _sg5b = M.post_entries(sg_bash("sg-bg"), cfg=sg_cfg, root=sg)
+        check("sg5b ...and this call's own Post derives nothing more from it",
+              _sg5b == [], repr(_sg5b))
         # A HAND flip of the stored status, made by this call, is a hand edit.
         sg_write(sg_doc(stored="in_progress"))
         sg_call("sg-hand")
@@ -1763,6 +1794,26 @@ def _cases(check):
         check("sg4 storing the derived done after the verdict - the settle - is "
               "not a second sign-off", "phase.signoff" not in
               [e.get("action") for e in _sg4], repr(_sg4))
+
+        def _signoffs(old, new):
+            d = M.semantic_diff(old, new) or {}
+            return [e for e in d.get("events", [])
+                    if e.get("action") == "phase.signoff"]
+        _hand = sg_doc(stored="done", verdict="pending")
+        check("sg6 a hand flip BEFORE the verdict does not swallow it: stored "
+              "done with the review pending, then the verdict, is ONE sign-off",
+              len(_signoffs(_hand, sg_doc(stored="done", verdict="passed"))) == 1)
+        _br_old = sg_doc(stored="done", verdict="passed")
+        _br_old["phases"][0]["branch"] = "audit/p1"
+        _br_new = json.loads(json.dumps(_br_old))
+        _br_new["phases"][0]["mergedAt"] = "2026-09-25T12:00:00Z"
+        check("sg7 ...and stored done with a branch, then the merge stamp, is "
+              "ONE sign-off, carrying the merge",
+              [e["details"]["mergedAt"] for e in _signoffs(_br_old, _br_new)]
+              == ["2026-09-25T12:00:00Z"])
+        check("sg8 SECOND DIRECTION: the hand flip itself, before any verdict, "
+              "is none", _signoffs(sg_doc(stored="in_progress", verdict="pending"),
+                                   _hand) == [])
     finally:
         shutil.rmtree(sg, ignore_errors=True)
 

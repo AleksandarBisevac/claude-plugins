@@ -1388,6 +1388,24 @@ def _cases(check):
     finally:
         _harness.remove_tree(str(wroot))
 
+    # (jc) join_continuations, with no other layer in front of it: a comment
+    # runs to the end of its line and is not joined; everything else is.
+    _nl = "\\" + "\n"
+    _jc = M.join_continuations
+    check("jc1 a backslash ending a COMMENT keeps its newline - the next line "
+          "is a command of its own", _jc("echo x # " + _nl + "git stash")
+          == "echo x # " + _nl + "git stash",
+          repr(_jc("echo x # " + _nl + "git stash")))
+    check("jc2 ...while one ending an ordinary line is joined",
+          _jc("echo x " + _nl + "git stash") == "echo x git stash",
+          repr(_jc("echo x " + _nl + "git stash")))
+    check("jc3 a `#` in the middle of a word is not a comment, so that line is "
+          "joined", _jc("a#b " + _nl + "c") == "a#b c", repr(_jc("a#b " + _nl + "c")))
+    check("jc4 ...and neither is one inside quotes",
+          _jc("echo '#' " + _nl + "c") == "echo '#' c"
+          and _jc('echo "#" ' + _nl + "c") == 'echo "#" c',
+          repr((_jc("echo '#' " + _nl + "c"), _jc('echo "#" ' + _nl + "c"))))
+
     # (i) ensure_local_dir: plugin-managed local dirs are self-ignoring --------
     # state/, logs/ and the ledger hold live tokens, person identities and
     # session scratch; none of it belongs in git. The dirs make THEMSELVES

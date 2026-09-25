@@ -184,53 +184,48 @@ defect as one that fires on a read. `--help` and `-h` are reads for the same
 reason. A shell's `-c` argument and `eval`'s argument *are* commands and are
 parsed as such, so an interpreter is not a way around it.
 
-**Every `git` word counts, except the arguments of an inert emitter.** This is not a
-command-position reader: `git` is an invocation wherever it sits in a command
-(`grep git stash notes.md` is refused as a stash), and a shell's `-c` argument,
-`eval`'s argument and every `$(…)` or backquote — including one inside double quotes,
-which the lexer returns as a single word — are read as commands of their own. The one
-narrowing is a closed list of programs that never run their arguments, the text
-emitters and the no-ops (`echo`, `printf`, `true`, `false`, `:`), in the first
-position of a command: their arguments are what they print, so `echo attempt used
-git stash` is allowed. It is closed in the safe direction — a program missing from it
-keeps the old reading — and it holds only while the emitter's output goes nowhere a
-shell reads. `echo … | sh` (including across a backslash-newline continuation, which
-is joined before the command is read, as the shell joins it), `$(echo …)`, a
-backquoted emitter, and an emitter writing a shell script or a dotfile a shell sources
-(`> x.sh`, `>> ~/.bashrc`) are all still refused. **The cost of the narrowing:** an
-emitter writing any other file name is read as writing prose, so `echo … >
-notes.txt; sh notes.txt` passes — the same write-then-run gap the heredoc and `printf`
-spellings already carry, recorded by case `gp23`. `xargs git` with no verb on its
-own command line takes the verb from stdin, which this guard cannot read, and is
-refused while a plan exists. The deny cases beside each allow are in
-`test_guard_history_rewrite.py` (`gp*`, `gc*`), so the narrowing cannot quietly
-widen.
+**Every `git` word counts, prose included, and that over-refusal is deliberate.** This
+is not a command-position reader: `git` is an invocation wherever it sits in a command,
+so `echo attempt used git stash` and `grep git stash notes.md` are refused as a stash.
+An exemption for the arguments of text emitters was tried and removed — each fix of it
+opened another way through (a later pipe, a comment ending in a backslash, a file run
+by name or by git itself), and a fail-loud guard keeps only what it can prove. Write
+the rule into a file with an editor, or quote the whole phrase as one word. A shell's
+`-c` argument, `eval`'s argument, a here-string fed to a shell or an interpreter
+(`sh <<<'…'`), and every `$(…)` or backquote — including one inside double quotes,
+which the lexer returns as a single word, with quotes tracked inside it — are read as
+commands of their own; a substitution this cannot read makes the whole command
+unreadable, which sends it to the raw-text patterns rather than to a reading that
+contributes nothing. A backslash-newline is joined before the command is read, as the
+shell joins it, except inside a comment: an unquoted `#` starting a word runs to the
+end of its line, and the next line is a command of its own. `xargs git` with no verb
+on its own command line takes the verb from stdin, which this guard cannot read, and
+is refused while a plan exists. Every `git reset --hard` in a command is graded, not
+the first.
 
 **A heredoc body is graded by what consumes it** (`_config.split_heredocs`, which
 `guard-secrets-read` shares). A body on its way into a file, or into a program that
-is not an interpreter or a shell (`git commit -F -`), is data. A body fed to a shell
-or an interpreter is graded — read by the program in command position of the heredoc's
-head, past a wrapper that runs its argument (`env`, `sudo`, `xargs`, `timeout`,
-`nice`, …), so an option in front of `-` does not turn a program into data; process or
-command substitution anywhere in the head grades it as shell, and the one exception is
-a plain script run (`python3 x.py -`, `node tool.mjs`). A body PIPED onward stays
-graded as shell except in ONE shape, an allow-list entry rather than a list of the
-spellings that execute stdin (those cannot be listed completely): `cat` with a QUOTED
-delimiter, a single pipe, into python or node running a script FILE with no
-interpreter option before it — `cat <<'EOF' | python3 x.py --technical -`. A `-`,
-`/dev/stdin` or `/dev/fd/0` operand, an option value (`-W ignore -`), a subcommand
-(`deno run -`), `-i`, an environment assignment, a wrapper, any other head (`tee
->(sh)`), an unquoted delimiter, or a head line that continues with a backslash all
-keep the body graded. The rest of the heredoc's own line after the marker is command
-text and is graded (`cat <<'EOF' && …` used to drop it with the body), and a
-here-string (`<<<`) is not read as a heredoc. **An unquoted delimiter keeps the shell
-in the body**: with `<<EOF` the shell performs `$(…)` and backquote substitution
-inside the body before any consumer reads it, so such a body is graded whatever its
-destination. And a command that cannot be tokenized at all (an unbalanced quote)
-falls back to the older raw-text patterns, which over-refuse quoted text — the
-conservative direction, which is the only direction a guard may fail in when it
-cannot read its input. The general residual is the one this document opens with:
-text inspection is bypassable in principle.
+is not an interpreter or a shell (`git commit -F -`), is data — and so is a body fed
+straight to a script FILE run by python or node with no interpreter option before it,
+`python3 x.py --technical - <<'EOF'`, which is how an outcome is handed to a plugin
+script. A body fed to a shell or any other interpreter invocation is graded — read by
+the program in command position of the heredoc's head, past a wrapper that runs its
+argument (`env`, `sudo`, `xargs`, `timeout`, `nice`, …), so an option in front of `-`
+does not turn a program into data; process or command substitution anywhere in the
+head grades it as shell. **A body PIPED onward is graded as shell, whatever the far
+side** — a data reading of the far side was tried and removed, because every
+allow-list of it missed a spelling that runs the body. So `cat <<'EOF' | python3
+x.py -` naming these rules in its body is refused; feed the heredoc to the script
+directly instead. A heredoc line that continues with a backslash is graded as shell.
+The rest of the heredoc's own line after the marker is command text and is graded,
+and a here-string (`<<<`) is not read as a heredoc. **An unquoted delimiter keeps the
+shell in the body**: with `<<EOF` the shell performs `$(…)` and backquote
+substitution inside the body before any consumer reads it, so such a body is graded
+whatever its destination. And a command that cannot be tokenized at all (an
+unbalanced quote) falls back to the older raw-text patterns, which over-refuse quoted
+text — the conservative direction, which is the only direction a guard may fail in
+when it cannot read its input. The general residual is the one this document opens
+with: text inspection is bypassable in principle.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's

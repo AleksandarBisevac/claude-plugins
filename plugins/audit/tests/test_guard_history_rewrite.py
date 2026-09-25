@@ -77,6 +77,26 @@ def _decide(repo, command):
 
 def _cases(check):
     # --- parsing, before any repo exists --------------------------------------
+    # (qs) the double-quoted substitution reader, with no other layer in front
+    # of it: the bodies it returns, and None for one it cannot read.
+    _q = M._quoted_substitutions
+    _qg = "git " + "stash"
+    check("qs1 a quoted `)` inside a substitution does not end it - the whole "
+          "body comes back", _q('echo "$(echo \')\'; ' + _qg + ')"')
+          == ["echo ')'; " + _qg], repr(_q('echo "$(echo \')\'; ' + _qg + ')"')))
+    check("qs2 a substitution that never closes is unreadable: None, not an "
+          "empty list", _q('echo "$(' + _qg) is None
+          and _q('echo "`' + _qg) is None, repr(_q('echo "$(' + _qg)))
+    check("qs3 SECOND DIRECTION: a closed one is read and a single-quoted one "
+          "is not a substitution at all",
+          _q('echo "$(date)"') == ["date"] and _q("echo '$(date)'") == [])
+    check("qs4 an inner body that will not parse makes the whole command "
+          "unparseable (None) - the answer that sends every arm to the raw-text "
+          "reading, never an empty list",
+          M.git_calls('echo "`' + _qg + " '`" + '"') is None
+          and M.git_calls('echo "$(date)"') == [],
+          repr(M.git_calls('echo "`' + _qg + " '`" + '"')))
+
     check("gh1 `reset --hard` with no ref parses as 'no target' - the empty "
           "string, not None, because None means 'this is not a reset at all' "
           "and the two lead to opposite verdicts",
@@ -571,27 +591,27 @@ def _cases(check):
               "the narrowing would widen a secret guard that shares the rule",
               v == "deny", repr((v, why)))
 
-        # --- git is an invocation only where a shell would RUN it ---------------
-        # Every word equal to `git` started an invocation, so an `echo` naming the
-        # rule in prose was refused as the operation. A word is a command where the
-        # shell would run it: the start of a command, after a separator, after a
-        # prefix that runs its argument. The one narrowing is a program that
-        # provably never runs its arguments - a text emitter or a no-op - and only
-        # while its output goes nowhere a shell could read it. Each allow below
-        # stands beside the deny that proves it opened no hole.
+        # --- every `git` word counts, prose included ---------------------------
+        # An emitter's arguments were once read as inert. Each fix of that
+        # narrowing opened another pass (a later pipe, a comment ending in a
+        # backslash, a file run by name or by git itself), so it was REMOVED: a
+        # fail-loud guard keeps only what it can prove. `echo ... git stash`
+        # prose is refused on purpose; the rewritten rows below (gp1, gp2, gp3,
+        # gp7, gp17, gp19, gp23) pinned the removed allow and now pin the base.
         for _cid, _cmd, _want, _what in (
-                ("gp1", "echo attempt used " + _G, "allow",
-                 "the words after `echo` are its output, not a command"),
-                ("gp2", "printf '%s\\n' an attempt used " + _G + " drop", "allow",
+                ("gp1", "echo attempt used " + _G, "deny",
+                 "an emitter's words are read like any other - the over-refusal "
+                 "SECURITY.md states as deliberate"),
+                ("gp2", "printf '%s\\n' an attempt used " + _G + " drop", "deny",
                  "the other text emitter, the same reading"),
-                ("gp3", "echo attempt used " + _G + " > notes.md", "allow",
-                 "an emitter writing a FILE is still an emitter"),
+                ("gp3", "echo attempt used " + _G + " > notes.md", "deny",
+                 "...and an emitter writing a file, the same"),
                 ("gp4", "true && " + _G + " push", "deny",
                  "after `&&` is command position, whatever came before"),
                 ("gp5", _G, "deny", "the bare command, unchanged"),
                 ("gp6", "bash -c '" + _G + "'", "deny",
                  "a shell's -c argument is a command line"),
-                ("gp7", "bash -c 'echo " + _G + "'", "allow",
+                ("gp7", "bash -c 'echo " + _G + "'", "deny",
                  "...which is read by the same rule, emitter and all"),
                 ("gp8", "echo " + _G + " | sh", "deny",
                  "an emitter PIPED into a shell hands the words to something "
@@ -613,13 +633,13 @@ def _cases(check):
                  "that never run arguments, not an open list of ones that do"),
                 ("gp16", "echo done; " + _G, "deny",
                  "the emitter's reach ends at its own separator"),
-                ("gp17", "FOO=1 echo " + _G, "allow",
-                 "an assignment before the emitter is not the command"),
+                ("gp17", "FOO=1 echo " + _G, "deny",
+                 "an assignment before the emitter changes nothing"),
                 ("gp18", "echo " + _G + " 2>&1 | sh", "deny",
                  "a redirection does not end the command: its output still "
                  "reaches the pipe"),
-                ("gp19", "echo " + _G + " > notes.md 2>&1", "allow",
-                 "...while redirections that end in a file keep it inert"),
+                ("gp19", "echo " + _G + " > notes.md 2>&1", "deny",
+                 "...nor does a redirection that ends in a file"),
                 ("gp20", "$(echo " + _G + "; true)", "deny",
                  "an emitter OPENING a substitution is refused even when its "
                  "own command ends at a `;` - the substitution's output runs"),
@@ -627,10 +647,8 @@ def _cases(check):
                  "an emitter writing a SHELL SCRIPT is writing a command"),
                 ("gp22", "echo " + _G + " >> ~/.bashrc", "deny",
                  "...and so is one writing a dotfile a shell sources"),
-                ("gp23", "echo " + _G + " > notes.txt; sh notes.txt", "allow",
-                 "KNOWN LIMIT, recorded: any other file name is read as prose, "
-                 "so writing a command there and running it later passes - the "
-                 "write-then-run gap SECURITY.md names"),
+                ("gp23", "echo " + _G + " > notes.txt; sh notes.txt", "deny",
+                 "the write-then-run shape the removed exemption let through"),
                 # A SUBSTITUTION INSIDE DOUBLE QUOTES is one word to the lexer,
                 # and it runs.
                 ("gp24", 'echo "$(' + _G + ')"', "deny",
@@ -664,27 +682,42 @@ def _cases(check):
                  "a rebase, the same way"),
                 ("gc3", "echo " + _G + " " + _nl + "\t| bash", "deny",
                  "a stash, with a tab after the newline"),
-                ("gc4", "echo attempt used " + _G + " " + _nl + "  > notes.md",
-                 "allow", "...while a continuation into a FILE redirect is still "
-                 "an emitter writing a file")):
+                ("gc4", "git log --oneline " + _nl + "  -3", "allow",
+                 "...while a continuation inside an ordinary read joins it and "
+                 "is still that read"),
+                # A COMMENT RUNS TO THE END OF ITS LINE, and a backslash at its end
+                # does NOT continue it - bash starts the next line as a command.
+                ("gc5", "true # note " + _nl + "git push --force origin main",
+                 "deny", "a force-push on the line after a comment that ends in "
+                 "a backslash"),
+                ("gc6", "git status # note " + _nl + "git push --force origin main",
+                 "deny", "...where joining would have made it an argument of "
+                 "`git status`"),
+                ("gc7", ": # " + _nl + _G, "deny", "...a stash, the same way"),
+                ("gc8", "git " + _nl + "  stash", "deny",
+                 "a continuation outside a comment is still joined")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
 
-        # --- a piped heredoc is graded by what reads it -------------------------
-        # `cat <<EOF | <far side>` kept every body as shell, so an outcome written
-        # into a plugin script's stdin was refused when its prose named the rule.
-        # The far side decides: a script given a file operand reads the body as
-        # DATA; a shell, an interpreter reading its program from stdin, or anything
-        # else keeps the body in the graded text.
+        # --- a piped heredoc body is graded as shell ----------------------------
+        # A data reading of the far side was tried and REMOVED: each allow-list
+        # of it missed a spelling that runs the body (a later stage, an option set
+        # in the environment). The field report's need is met without it - the
+        # heredoc fed straight to the script is data (gq25). gq1 and gq2 pinned
+        # the removed allow and now pin the base.
         _body = "an attempt used " + _G + " and was refused"
         _D = _G + " drop"
         for _cid, _cmd, _want, _what in (
                 ("gq1", "cat <<'EOF' | python3 x.py --technical -\n%s\nEOF"
-                 % _body, "allow",
-                 "a script operand on the far side: the body is its data"),
+                 % _body, "deny", "a piped body is shell, whatever the far side"),
                 ("gq2", "cat <<'EOF' | node tools/log.mjs\n%s\nEOF" % _body,
-                 "allow", "the same for any interpreter given a script"),
+                 "deny", "...for any far side"),
+                ("gq30", "cat <<'EOF' | python3 echo.py | sh\n%s\nEOF" % _D,
+                 "deny", "a later stage runs what the first one echoed"),
+                ("gq31", "export NODE_OPTIONS='-r /dev/stdin'; "
+                 "cat <<'EOF' | node e.js\n%s\nEOF" % _D, "deny",
+                 "an interpreter option set in the environment runs the body"),
                 ("gq3", "cat <<'EOF' | bash\n%s\nEOF" % (_G + " drop"), "deny",
                  "a bare shell on the far side runs the body"),
                 ("gq4", "cat <<'EOF' | python3 -\n%s\nEOF" % (_G + " drop"),
@@ -800,6 +833,32 @@ def _cases(check):
               "machine is a guard whose hooks get switched off, which is the "
               "failure mode this whole file is organised around" % _G,
               v == "allow" and why == "", repr((v, why)))
+        # --- the reader's own limits refuse rather than pass -------------------
+        for _cid, _cmd, _want, _what in (
+                ("gs1", 'echo "$(echo \')\'; ' + _G + ')"', "deny",
+                 "a quoted `)` inside a double-quoted substitution does not end it"),
+                ("gs2", 'echo "$(' + _G + " ')" + '"', "deny",
+                 "an inner body that will not parse falls to the raw-text reading "
+                 "instead of contributing nothing"),
+                ("gs3", 'echo "$(date)"', "allow",
+                 "...while a substitution that runs no git is nothing to refuse"),
+                # EVERY `reset --hard` is graded, not the first.
+                ("gs4", "git reset --hard && git reset --hard HEAD~2", "deny",
+                 "the second reset orphans a recorded commit"),
+                ("gs5", "git reset --hard && git reset --hard HEAD", "allow",
+                 "...while two resets that orphan nothing pass"),
+                # A here-string fed to a shell or an interpreter is its program.
+                ("gs6", "sh <<<'" + _G + "'", "deny",
+                 "a here-string to a shell is a command"),
+                ("gs7", 'bash <<< "git push --force origin main"', "deny",
+                 "...a force-push, the same way"),
+                ("gs8", "python3 <<< '" + _G + " drop'", "deny",
+                 "...and to an interpreter it is code, read the way -c is"),
+                ("gs9", "cat <<< '" + _G + "'", "allow",
+                 "while a here-string to a program that only reads it is data")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
     finally:
         _harness.remove_tree(tmp)
 

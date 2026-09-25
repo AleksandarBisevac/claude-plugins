@@ -2609,6 +2609,28 @@ def _worktree_writer_cases(check):
           len(_files) == 3
           and sum(1 for f in _files if "." + M.WORKTREE_MARK in f) == 2,
           repr(_files))
+    # wk9-wk11: WHICH checkout is a linked worktree is git's answer, and the key
+    # lives in that worktree's own git dir - so neither the config's gitRoot nor
+    # a shared stateDir can make two worktrees one writer.
+    nested = os.path.join(pair["root"], "nested")
+    os.makedirs(os.path.join(nested, ".claude"))
+    with open(os.path.join(nested, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"gitRoot": "repo"}, fh)
+    subprocess.run(git + ["worktree", "add", "-q", os.path.join(nested, "repo"),
+                          "-b", "chore/nested"], cwd=main, check=True,
+                   capture_output=True, timeout=30)
+    ncfg = M.load_config(nested)
+    check("wk9 a project whose gitRoot is a linked worktree gets a worktree key "
+          "- git is asked where the gitRoot says the repository is",
+          bool(M.worktree_key(nested, ncfg)), repr(M.worktree_key(nested, ncfg)))
+    shared = {"stateDir": os.path.join(pair["root"], "one-shared-state")}
+    ka, kb = M.worktree_key(wt_a, shared), M.worktree_key(wt_b, shared)
+    check("wk10 two worktrees configured with ONE absolute stateDir still get "
+          "two keys - the key is kept in each worktree's own git dir",
+          bool(ka) and bool(kb) and ka != kb, repr((ka, kb)))
+    check("wk11 SECOND DIRECTION: the main checkout gets no key, whatever the "
+          "config says", M.worktree_key(main, shared) is None)
     check("wk7 ...and the merged trail verifies",
           M.verify(main)["ok"], repr(M.verify(main).get("findings")))
 

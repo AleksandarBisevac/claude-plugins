@@ -166,24 +166,12 @@ import _config  # noqa: E402  (hooks resolve scripts/ by basename through here)
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
 EVAL_WRAPPERS = ("eval",)
 
-# Programs that never run their arguments: the text emitters and the no-ops. A
-# `git` among their arguments is a word they print or ignore, so `echo attempt
-# used git stash` is prose and not the operation. A CLOSED list, and closed in
-# the safe direction: a program missing from it keeps the conservative reading
-# (every `git` word counts), so the cost of an omission is a refusal somebody
-# reports. The reverse table - programs that DO run an argument (`sudo`, `env`,
-# `xargs`, `timeout`, `nice`, ...) - is open by nature and is deliberately not
-# what this reads. Everything that is NOT an inert emitter's argument still
-# counts wherever it sits (`grep git stash notes.md` is refused as a stash):
-# this is not a command-position reader, only a narrowing of the old one.
-#
-# THE COST OF THE NARROWING, stated: an emitter's output written to a file that
-# is run LATER is read as prose, so `echo git stash > notes.txt; sh notes.txt`
-# passes where it used to be refused. A target named like a shell script or a
-# dotfile a shell sources keeps the emitter graded (`_runs_later`); any other
-# name does not, which is the same write-then-run gap the heredoc and `printf`
-# spellings already carry.
-INERT_PROGRAMS = ("echo", "printf", "true", "false", ":")
+# Programs that run their argument's text as a program read from a here-string
+# (`sh <<<'...'`, `python3 <<<'...'`): the word is graded as a command, through
+# the same door as a shell's `-c`. A shell's word is shell; an interpreter's is
+# code, read the way the heredoc body fed to it is.
+HERESTRING_READERS = SHELLS + ("python", "python3", "node", "nodejs", "ruby",
+                               "perl", "php", "deno", "bun")
 
 # Global options that take a SEPARATE value, so the value cannot be mistaken for
 # the verb: `git -C <path> rebase` is a rebase, and `<path>` is not the verb.
@@ -273,74 +261,6 @@ def _shell_pieces(command):
     return (out, True)
 
 
-def _inert_opening(before, after):
-    """May an inert program between these two separators be read as inert?
-
-    Not when a substitution or a subshell opens before it (`$(echo ...)` in
-    command position RUNS the output) or closes after it, and not when its
-    output flows into a pipe - `echo ... | sh` runs every word it printed. `||`
-    is a conditional and not a pipe. `before`/`after` are the separator
-    pieces, None at either end of the command."""
-    if before is not None and ("(" in before or "`" in before):
-        return False
-    if after is None:
-        return True
-    if "(" in after or ")" in after or "`" in after:
-        return False
-    return "|" not in after.replace("||", "")
-
-
-# A separator piece that REDIRECTS rather than ending the command: `>`, `>>`,
-# `2>&1`'s `>&`, `&>`, `<`, `>|`. The command, and where its output goes, runs
-# on past these to the next real terminator.
-_REDIRECT_PIECE = re.compile(r"^(?:[<>]+&?|&[<>]+|>\|)$")
-
-
-# Redirect targets a shell is known to RUN later: a shell script by extension,
-# and a dotfile - `.bashrc`, `.profile`, `.zshenv` - which a login or an
-# interactive shell sources. An emitter writing one is writing a command, so
-# its words stay graded. Any other file name is read as a file of prose, and
-# `echo ... > notes.txt; sh notes.txt` is the residual that leaves (SECURITY.md
-# says so; gp23 records it).
-_SCRIPT_TARGET = re.compile(r"(?:^|/)(?:\.[^/]+|[^/]+\.(?:sh|bash|zsh|ksh|fish))$")
-
-
-def _runs_later(target):
-    """Is this redirect target a file a shell runs later?"""
-    return bool(_SCRIPT_TARGET.search(str(target).strip("'\"")))
-
-
-def _inert_span(pieces, index):
-    """The index just past the inert command starting at `index`, or None
-    when the words there are not an inert program in command position.
-
-    The command runs to its terminator, THROUGH any redirection: `echo x
-    2>&1 | sh` still pipes its words into a shell, and ending the span at the
-    `>&` would read the pipe as somebody else's."""
-    if index > 0 and not pieces[index - 1][1]:
-        return None                        # not the first word of a command
-    before = pieces[index - 1][0] if index > 0 else None
-    if before is not None and _REDIRECT_PIECE.match(before):
-        return None                        # a redirect target, not a command
-    scan = index
-    while scan < len(pieces) and not pieces[scan][1] \
-            and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", pieces[scan][0]):
-        scan += 1
-    if scan >= len(pieces) or pieces[scan][1] \
-            or program_name(pieces[scan][0]) not in INERT_PROGRAMS:
-        return None
-    end = scan
-    while end < len(pieces) and (not pieces[end][1]
-                                 or _REDIRECT_PIECE.match(pieces[end][0])):
-        if pieces[end][1] and ">" in pieces[end][0] and end + 1 < len(pieces) \
-                and not pieces[end + 1][1] \
-                and _runs_later(pieces[end + 1][0]):
-            return None
-        end += 1
-    after = pieces[end][0] if end < len(pieces) else None
-    return end if _inert_opening(before, after) else None
-
-
 def program_name(word):
     """A command word's program name: basename, no `.exe`, folded to lower case.
 
@@ -424,7 +344,12 @@ def _quoted_substitutions(text):
     it, which is not the word `git`: the stash ran unread, and so did
     `eval "$(echo ...)"` and `sh -c "$(echo ...)"`. An unquoted substitution
     needs none of this - its parentheses are separators already. A single-
-    quoted one is literal text and is skipped."""
+    quoted one is literal text and is skipped.
+
+    -> the bodies, or None when a substitution never closes - an unreadable
+    command, which the caller hands to the raw-text reading rather than
+    reading as one that runs nothing. Quotes and escapes INSIDE `$( )` are
+    tracked, so a quoted `)` does not end it early."""
     out, quote, i, n = [], None, 0, len(text)
     while i < n:
         ch = text[i]
@@ -445,23 +370,49 @@ def _quoted_substitutions(text):
             i += 1
             continue
         if quote == '"' and text.startswith("$(", i):
-            depth, j = 1, i + 2
-            while j < n and depth:
-                if text[j] == "(":
-                    depth += 1
-                elif text[j] == ")":
-                    depth -= 1
-                j += 1
-            out.append(text[i + 2:j - 1] if depth == 0 else text[i + 2:])
-            i = j
+            j = _substitution_end(text, i + 2)
+            if j is None:
+                return None
+            out.append(text[i + 2:j])
+            i = j + 1
             continue
         if quote == '"' and ch == "`":
             j = text.find("`", i + 1)
-            out.append(text[i + 1:j] if j > 0 else text[i + 1:])
-            i = j + 1 if j > 0 else n
+            if j < 0:
+                return None
+            out.append(text[i + 1:j])
+            i = j + 1
             continue
         i += 1
     return out
+
+
+def _substitution_end(text, start):
+    """The index of the `)` that closes a `$(` whose body starts at `start`, or
+    None when it never closes. Parentheses count only outside quotes, and a
+    backslash escapes the character after it, which is how the shell reads the
+    body too."""
+    depth, quote, j, n = 1, None, start, len(text)
+    while j < n:
+        ch = text[j]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+        elif ch == "\\":
+            j += 1
+        elif quote == '"':
+            if ch == '"':
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return None
 
 
 def git_invocations(command, depth=0):
@@ -471,7 +422,7 @@ def git_invocations(command, depth=0):
     return None if calls is None else [(verb, args) for verb, args, _d in calls]
 
 
-def git_calls(command, depth=0, inert=True):
+def git_calls(command, depth=0):
     """[(verb, [args], dir), ...] for every `git` this command RUNS, or None.
     `dir` is the `-C` value the invocation names, joined when there are
     several, or None - the directory git runs in is part of what it does.
@@ -501,24 +452,39 @@ def git_calls(command, depth=0, inert=True):
         return None
     words = [None if sep else piece for piece, sep in pieces]
     out = []
-    # A substitution's output becomes an argument or a command - `eval` and
-    # `sh -c` run it - so its body is read with the emitter exemption OFF:
-    # `eval "$(echo git stash)"` runs a stash that `echo` only printed.
+    # A here-string's word fed to a shell or an interpreter is the program it
+    # runs: `sh <<<'git stash'` is a stash spelled as one quoted word.
+    for at, (piece, sep) in enumerate(pieces):
+        if not (sep and piece == "<<<") or depth >= _MAX_NEST:
+            continue
+        if at + 1 >= len(pieces) or pieces[at + 1][1]:
+            continue
+        start = at
+        while start > 0 and not pieces[start - 1][1]:
+            start -= 1
+        if start < at and program_name(pieces[start][0]) in HERESTRING_READERS:
+            nested = git_calls(pieces[at + 1][0], depth + 1)
+            if nested is None:
+                return None
+            out.extend(nested)
+    # A substitution inside double quotes is one word to the lexer and a
+    # command to the shell, so its body is read as one. A body this cannot
+    # read makes the whole command unreadable (None), which sends every arm to
+    # its raw-text reading - never to a reading that contributes nothing.
     if depth < _MAX_NEST:
-        for inner in _quoted_substitutions(_config.join_continuations(text)):
-            out.extend(git_calls(inner, depth + 1, inert=False) or [])
+        inners = _quoted_substitutions(_config.join_continuations(text))
+        if inners is None:
+            return None
+        for inner in inners:
+            nested = git_calls(inner, depth + 1)
+            if nested is None:
+                return None
+            out.extend(nested)
     index, total = 0, len(words)
     while index < total:
         word = words[index]
         if word is None:
             index += 1
-            continue
-        # A `git` word inside an inert program's arguments is printed or
-        # ignored, not run. Only at the start of a command, and only while the
-        # output goes nowhere a shell reads - see `_inert_opening`.
-        skip_to = _inert_span(pieces, index) if inert else None
-        if skip_to is not None:
-            index = skip_to
             continue
         program = program_name(word)
         if depth < _MAX_NEST and program in SHELLS:
@@ -868,6 +834,27 @@ def recorded_shas(root, cfg):
     return out
 
 
+def reset_targets(command):
+    """[(target, index)] for EVERY `git reset --hard` this command runs - the
+    index is the call's position in `git_calls(command)`, which `call_trees`
+    pairs with its tree, or None when the command will not parse and the
+    raw-text reading answered. Every reset is graded: the second of
+    `git reset --hard && git reset --hard HEAD~5` orphans commits the first
+    never touched."""
+    calls = git_calls(command)
+    if calls is None:
+        target = reset_target(command)
+        return [] if target is None else [(target, None)]
+    out = []
+    for index, call in enumerate(calls):
+        verb, args = call[0], call[1]
+        if verb != "reset" or not _has_option(args, "--hard") \
+                or help_requested(args):
+            continue
+        out.append((next((a for a in args if not a.startswith("-")), ""), index))
+    return out
+
+
 def reset_target(command):
     """The ref a `git reset --hard` names, or "" when it names none.
 
@@ -1059,16 +1046,15 @@ def decide(data):
                 "so the manifest stops claiming a commit that will not exist."
                 % (why, len(shas)))
 
-    target = reset_target(command)
-    if target is not None:
+    for target, index in reset_targets(command):
         if target == "":
             # The common, legitimate case, and the one this guard exists to keep
             # working: no ref means no branch pointer moves.
-            return ("allow", "")
-        reset_git = _tree_of_verb(
-            trees, project_git,
-            lambda c: c[0] == "reset" and _has_option(c[1], "--hard")
-            and not help_requested(c[1])) or fallback_git
+            continue
+        reset_git = fallback_git
+        if index is not None and calls and index < len(trees):
+            tree = trees[index][1]
+            reset_git = tree if tree is not None else project_git
         lost = orphaned_by(root, reset_git, target, shas)
         if lost:
             names = ", ".join("%s (%s)" % (t, s[:12]) for t, s in lost[:3])

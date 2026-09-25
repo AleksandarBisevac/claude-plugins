@@ -1828,6 +1828,15 @@ def _worktree_ledger_cases(check):
           "by its task", (M.reusable_run(read["rows"], "task", {"taskId": "P48.1",
                           "phaseId": "P48"}, "key-P48.1", ("passed",))
                           or {}).get("runId") == "run-a")
+    shared_cfg = dict(_journal_io.load_config(wt_a),
+                      stateDir=os.path.join(pair["root"], "one-shared-state"))
+    sa = M.append_row(wt_a, run("run-sa", "P48.1"), session_id="s" + sid[1:],
+                      config=shared_cfg)
+    sb = M.append_row(wt_b, run("run-sb", "P41.1"), session_id="s" + sid[1:],
+                      config=dict(shared_cfg))
+    check("ew7 two worktrees sharing ONE absolute stateDir still write two "
+          "ledger files - the key lives in each worktree's own git dir",
+          os.path.basename(sa) != os.path.basename(sb), repr((sa, sb)))
     committed, gaps = _invariants._committed_run_ids(main, ev_rel)
     check("ew6 ...and evidence-committed reads the committed worktree-keyed "
           "files as it reads the old one", not gaps

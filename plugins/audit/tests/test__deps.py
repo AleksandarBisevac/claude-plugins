@@ -2283,6 +2283,14 @@ def _cases(check):
               "project_only_placed.py" not in _ht_files)
         check("ht9 a name bound to `_config.repo_root` is the call itself: %r"
               % (_ht_files,), "alias.py" in _ht_files)
+        _wht("import_alias.py", "from _config import repo_root as rr\n"
+             "import _config\n\n\n"
+             "def decide(data):\n"
+             "    return _config.manifest_state(rr(data), 'm.json')\n")
+        _ht = M.hook_tree_violations(ht)
+        check("ht13 a name imported FROM `_config` is the call itself too: %r"
+              % (sorted(set(f for f, _w in _ht)),),
+              "import_alias.py" in set(f for f, _w in _ht))
         # The exemption table, both directions, on a fixture file of the
         # exempted name.
         _ex = tempfile.mkdtemp(prefix="deps-hooktree-ex-")
@@ -2310,6 +2318,11 @@ def _cases(check):
             check("ht12 ...and a row that no longer matches a finding is itself "
                   "reported as stale: %r" % (_stale,),
                   len(_stale) == 1 and "stale" in _stale[0][1])
+            os.remove(os.path.join(_ex, "guard-bash-writes.py"))
+            _gone = M.hook_tree_violations(_ex)
+            check("ht14 ...and so is a row naming a hook file that no longer "
+                  "exists: %r" % (_gone,),
+                  len(_gone) == 1 and "guard-bash-writes.py" in _gone[0][1])
         finally:
             shutil.rmtree(_ex, ignore_errors=True)
     finally:

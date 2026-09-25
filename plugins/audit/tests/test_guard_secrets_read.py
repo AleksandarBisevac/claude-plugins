@@ -2528,11 +2528,13 @@ def _cases(check):
     # file operand reads the body as data; a shell runs it; and an unquoted
     # delimiter lets the shell run a substitution in the body first.
     _hp_read = "cat " + ".env"
-    _expect("hp1 a body piped to a SCRIPT is its data, and a secret path named "
-            "in it is prose", "allow",
+    # hp1 pinned the piped-body-as-data allow, which was REMOVED: it now pins
+    # the base, where a piped body is shell whatever the far side.
+    _expect("hp1 a body piped to a script is still read as shell, and a secret "
+            "read in it is a read", "block",
             {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
                 "command": "cat <<'EOF' | python3 x.py -\n%s\nEOF" % _hp_read}})
-    _expect("hp2 ...the same body piped to a SHELL is still a read", "block",
+    _expect("hp2 ...the same body piped to a SHELL is a read", "block",
             {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
                 "command": "cat <<'EOF' | bash\n%s\nEOF" % _hp_read}})
     _expect("hp3 ...and so is a substitution in an UNQUOTED body headed for a "
@@ -2565,6 +2567,21 @@ def _cases(check):
     _expect("hp9 ...while the same emitter writing a file is still prose",
             "allow", {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
                 "command": "echo %s \\\n  > notes.md" % _hp_dump}})
+
+    _expect("hp11 a body echoed by a script into a LATER stage's shell is read",
+            "block", {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "cat <<'EOF' | python3 echo.py | sh\n%s\nEOF"
+                % _hp_read}})
+    _expect("hp12 ...and so is one run by an interpreter option set in the "
+            "environment", "block", {"tool_name": "Bash", "cwd": str(tmp),
+                                     "tool_input": {"command":
+            "export NODE_OPTIONS='-r /dev/stdin'; cat <<'EOF' | node e.js\n%s\nEOF"
+            % _hp_read}})
+    _expect("hp13 ...while a body fed straight to a script's stdin is its data - "
+            "the shape the field report needed", "allow",
+            {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "python3 x.py --technical - <<'EOF'\n%s\nEOF"
+                % _hp_read}})
 
     # (lw) A SHELL WRITE INTO A LINKED WORKTREE IS JUDGED AGAINST THAT
     # WORKTREE'S PLAN. The Edit arm (require-plan) re-rooted onto the worktree

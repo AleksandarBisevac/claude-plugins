@@ -1369,16 +1369,12 @@ _STDIN_SHELL = re.compile(
     re.IGNORECASE)
 
 
-# WHAT MAY READ A HEREDOC BODY AS DATA is one shape, written out rather than
-# derived: `cat` feeding a quoted-delimiter body through a pipe into a script
-# FILE run by python or node, with no interpreter option in front of it -
-# `cat <<'EOF' | python3 x.py --technical -`. It is an allow-list because the
-# other direction cannot be written: every interpreter has spellings that read
-# the PROGRAM from stdin (`-`, `/dev/stdin`, `/dev/fd/0`, an option whose
-# value hides the operand - `-W ignore -`, `-I lib -` - a subcommand such as
-# `deno run -`, `-i` or `PYTHONINSPECT` running stdin after the script), and a
-# list of those is short by one the day somebody types the next. A body this
-# does not prove to be data keeps the grading it had before the shape existed.
+# A heredoc HEAD that runs a script FILE - `python3 x.py --technical - <<'EOF'`
+# - hands the body to that script as its stdin, and that is data: the shape
+# the base always allowed and the one the field report needed. It is the ONLY
+# interpreter invocation `_head_runs_body` reads as not running the body, and
+# only with no option before the script: every other spelling (`-`,
+# `/dev/stdin`, an option value, a subcommand) may read its program from stdin.
 _DATA_SCRIPT_EXTS = (
     (re.compile(r"^python(?:3(?:\.\d+)?)?$"), (".py",)),
     (re.compile(r"^(?:node|nodejs)$"), (".js", ".mjs", ".cjs")),
@@ -1431,25 +1427,6 @@ def _last_command(text):
     return re.split(r"[;&|(\n]", text)[-1].split()
 
 
-def _pipe_reads_data(head, tail, quoted):
-    """Does a heredoc piped onward reach something that reads it as DATA?
-
-    Only the shape `_DATA_SCRIPT_EXTS` names: a QUOTED delimiter (an unquoted
-    one lets the shell run a substitution in the body first), `cat` as the only
-    reader on the head side - `tee >(sh)` or any other head is not vouched for
-    - a single real pipe (`||` is not one), no second heredoc on the line, and
-    a far-side stage that is a plain script run. Everything else answers no,
-    which keeps the body graded as shell, the grading every piped body had
-    before this existed."""
-    if not quoted or _last_command(head) not in (["cat"], ["cat", "-"]):
-        return False
-    at = tail.find("|")
-    if at < 0 or tail[at:at + 2] in ("||", "|&") or "<<" in tail:
-        return False
-    stage = re.split(r"[|;&\n]", tail[at + 1:], maxsplit=1)[0]
-    return _plain_script_run(stage.split())
-
-
 def _head_runs_body(head):
     """"shell", "code" or None: what the heredoc HEAD itself does with the body.
 
@@ -1486,15 +1463,27 @@ def join_continuations(text):
     """`text` with every backslash-newline outside single quotes removed - what
     the shell does before it reads a word.
 
-    A line continuation is not a separator: `echo x`, a backslash ending the
-    line, then `| sh` on the next is ONE pipeline, and a reader that kept the escaped newline as a boundary read the
-    pipe as a new command and the emitter's words as inert. Inside double
-    quotes the pair is removed too (POSIX); inside single quotes it is literal.
-    Any other backslash is kept with the character it escapes."""
+    A line continuation is not a separator: `git`, a backslash ending the
+    line, then `stash` on the next is ONE command, and a reader that kept the
+    escaped newline as a boundary read two. Inside double quotes the pair is
+    removed too (POSIX); inside single quotes it is literal. Any other
+    backslash is kept with the character it escapes.
+
+    A COMMENT RUNS TO THE END OF ITS LINE and is copied through untouched: an
+    unquoted `#` that starts a word opens it, and a backslash at its end does
+    NOT continue the line - bash runs the next line as a command of its own, so
+    joining it would make that command an argument of the one before."""
     out, quote, i, n = [], None, 0, len(text or "")
     text = text or ""
     while i < n:
         ch = text[i]
+        if quote is None and ch == "#" and (i == 0 or text[i - 1] in
+                                            " \t\n;&|()<>"):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            out.append(text[i:end])
+            i = end
+            continue
         if quote == "'":
             out.append(ch)
             if ch == "'":
@@ -1540,10 +1529,11 @@ def split_heredocs(cmd):
 
     A THIRD CLASSIFICATION, and it is the one that keeps this a narrowing. A body
     the consumer does not execute is DATA and leaves -- unless the head line pipes
-    it onward, in which case it stays shell unless `_pipe_reads_data` proves the
-    one data shape: `cat` into a plain python or node script file, with a quoted
-    delimiter. The head is read by program too (`_head_runs_body`), so a wrapper
-    or an option in front of an interpreter does not turn its program into data.
+    it onward, in which case what the far side does with it is not read here and
+    it is kept as shell. (A data reading of the far side was tried and removed:
+    each allow-list of it missed a spelling that runs the body.) The head is read
+    by program too (`_head_runs_body`), so a wrapper or an option in front of an
+    interpreter does not turn its program into data.
     `cat <<EOF | bash` really is a way to run a command; `cat <<'EOF' | python3
     x.py -` is an outcome handed to a script, and refusing its prose for naming
     a rule was the guard firing on a sentence.
@@ -1599,8 +1589,8 @@ def split_heredocs(cmd):
             code.append(body)
         elif tail.rstrip().endswith("\\"):
             shell.append(body)     # the line continues; its far side is unread
-        elif "|" in tail and not _pipe_reads_data(head, tail, bool(m.group(1))):
-            shell.append(body)
+        elif "|" in tail:
+            shell.append(body)     # piped onward: what the far side runs is unread
         elif live:
             shell.append(body)
         i = end + 1

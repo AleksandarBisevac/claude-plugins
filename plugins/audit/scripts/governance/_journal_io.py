@@ -585,27 +585,67 @@ def month_of(ts):
 WORKTREE_MARK = "wt-"
 
 
+# The per-worktree key's file, kept in the worktree's OWN git dir: git gives
+# every linked worktree a private one (`.git/worktrees/<name>`), so the key is
+# the worktree's whatever `stateDir` says - a shared absolute stateDir would
+# otherwise hand every worktree one token.
+WORKTREE_TOKEN_FILE = "audit-journal-writer"
+
+
 def worktree_key(project, config=None):
-    """`wt-<8 hex>` when `project` is a linked git worktree, else None.
+    """`wt-<8 hex>` when the project's repository checkout is a LINKED git
+    worktree, else None.
 
     ONE WRITER PER FILE is what keeps a journal merge free of conflicts, and the
     writer id used to be the session alone - so every worktree a session drove
     appended the same basename, and merging two of those branches met one file
-    whose same-second rows said different things. A linked worktree is told
-    apart by its `.git` being a FILE (git writes a pointer there, a directory in
-    a main checkout), and it is named by the first half of its own writer token:
-    the worktree keeps its state under its own `stateDir`, so the token is its
-    own, random, and names no path or machine. None - the name every earlier
-    release wrote - for a main checkout, so an existing file goes on growing,
-    and when no token can be stored, where a pid-shaped name would scatter one
-    worktree's month across files."""
+    whose same-second rows said different things.
+
+    GIT ANSWERS WHICH CHECKOUT THIS IS, asked where the config's `gitRoot` says
+    the repository is: a linked worktree's `--git-dir` differs from its
+    `--git-common-dir`, and a main checkout's - and a submodule's - do not.
+    Reading `<project>/.git` instead missed every project whose gitRoot is a
+    subdirectory and took a submodule for a worktree. The key is a random token
+    in that worktree's own git dir, so it names no path or machine and no two
+    worktrees can share it.
+
+    None - the session-keyed name every earlier release wrote - for a main
+    checkout, so an existing file goes on growing; and, as the stated limit,
+    when git cannot be asked or the token cannot be stored, where two
+    worktrees of one session do share that name again."""
+    import subprocess
+    mod = _config_mod()
     try:
-        if not os.path.isfile(os.path.join(str(project), ".git")):
-            return None
+        where = (str(mod.git_root_dir(mod.Path(project), config or {}))
+                 if mod is not None else str(project))
+        out = subprocess.run(["git", "-C", where, "rev-parse", "--git-dir",
+                              "--git-common-dir"], capture_output=True,
+                             text=True, timeout=5)
     except Exception:
         return None
-    token = writer_token(project, config)
-    return (WORKTREE_MARK + token[:8]) if token else None
+    lines = [ln.strip() for ln in out.stdout.splitlines()] \
+        if out.returncode == 0 else []
+    if len(lines) != 2:
+        return None
+    git_dir = os.path.realpath(os.path.join(where, lines[0]))
+    common = os.path.realpath(os.path.join(where, lines[1]))
+    if git_dir == common:
+        return None
+    path = os.path.join(git_dir, WORKTREE_TOKEN_FILE)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            held = fh.read().strip()
+        if _TOKEN_RE.match(held):
+            return WORKTREE_MARK + held[:8]
+    except Exception:
+        pass
+    minted = os.urandom(8).hex()
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(minted + "\n")
+    except Exception:
+        return None
+    return WORKTREE_MARK + minted[:8]
 
 
 def file_for(directory, ts, actor, fallback=None, worktree=None):
