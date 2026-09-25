@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "6cb94a4f878d9160ca7c8cc5278339d8f0b819c8",
   "branch": "audit/p66-a-merge-s-write-derives-no-com",
-  "mergedAt": null,
+  "mergedAt": "2026-09-25T06:36:52Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
