@@ -396,7 +396,7 @@
     {
       "id": "P66",
       "title": "A merge's write derives no completion the merged branch already recorded",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P66.json"
     }
   ],
@@ -446,7 +446,11 @@
       "P62.3",
       "P63.11",
       "P64.3",
-      "P65.1"
+      "P65.1",
+      "P66.1",
+      "P66.2-x3g",
+      "P66.3-x3g",
+      "P66.4-x3g"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -622,7 +626,8 @@
       "P63.8",
       "P63.11",
       "P63.12",
-      "P64.3"
+      "P64.3",
+      "P66.1"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -866,7 +871,11 @@
       "P41.7",
       "P63.8",
       "P63.12",
-      "P66.1"
+      "P66.1",
+      "P66.2-x3g",
+      "P66.3-x3g",
+      "P66.4-x3g",
+      "P66.5-x3g"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -915,7 +924,11 @@
       "P32.2",
       "P45.1",
       "P61.14",
-      "P63.8"
+      "P63.8",
+      "P66.1",
+      "P66.2-x3g",
+      "P66.3-x3g",
+      "P66.4-x3g"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1351,7 +1364,10 @@
       "P61.6",
       "P65.1",
       "P65.2-iy2",
-      "P66.1"
+      "P66.1",
+      "P66.2-x3g",
+      "P66.3-x3g",
+      "P66.4-x3g"
     ],
     "docs/handbook.html": [
       "P18.8",
@@ -1838,7 +1854,11 @@
       "P41.7",
       "P63.8",
       "P63.12",
-      "P66.1"
+      "P66.1",
+      "P66.2-x3g",
+      "P66.3-x3g",
+      "P66.4-x3g",
+      "P66.5-x3g"
     ],
     "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass": [
       "P22.12"
@@ -2754,7 +2774,7 @@
     {
       "id": "BUG-9",
       "title": "journal-writes derives completion rows from a git merge's write, recording a second task.complete for work the merged branch already records",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-09-24T22:37:27Z",
       "reportedBy": null,
@@ -2770,7 +2790,7 @@
         "plugins/audit/hooks/journal-writes.py"
       ],
       "taskId": "P66.1",
-      "fixedIn": null,
+      "fixedIn": "c1475e3",
       "notes": "found landing P65, 2026-09-24"
     }
   ],

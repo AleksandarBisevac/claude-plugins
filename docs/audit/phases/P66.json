@@ -1,7 +1,7 @@
 {
   "id": "P66",
   "title": "A merge's write derives no completion the merged branch already recorded",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "a git merge, cherry-pick or rebase that brings a finished task in from another branch writes the change it made and no second task.complete, task.commit or phase.signoff, while completions done in the same call still are",
   "testGate": [
@@ -15,26 +15,94 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6cb94a4f878d9160ca7c8cc5278339d8f0b819c8",
+  "branch": "audit/p66-a-merge-s-write-derives-no-com",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P66-R1",
+        "severity": "high",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "a rebase / cherry-pick / pick-finish landing commit is the call's own, so a completion made and then rebased or picked in the same call was suppressed and the row claimed it had arrived",
+        "resolution": "fixed in P66.2-x3g: only commits that existed before the call count (g8e, g8f, g8i)"
+      },
+      {
+        "id": "P66-R2",
+        "severity": "med",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "_write_slot forked git rev-parse on every Edit of the plan, against its docstring",
+        "resolution": "fixed in P66.2-x3g: HEAD read from the repository's files (hm4-hm6)"
+      },
+      {
+        "id": "P66-R3",
+        "severity": "high",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "a reset or checkout back onto the call's own commit still silenced its completion",
+        "resolution": "fixed in P66.3-x3g: a commit counts only if git dates it before the baseline (g8j)"
+      },
+      {
+        "id": "P66-R4",
+        "severity": "high",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "'pull --rebase -q (start)' slipped past the literal reflog table, deriving an arrived completion twice",
+        "resolution": "fixed in P66.3-x3g: the reflog's text is not read (g8k)"
+      },
+      {
+        "id": "P66-R5",
+        "severity": "med",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "MERGE_HEAD read one line only, missing an octopus merge's other branches",
+        "resolution": "fixed in P66.3-x3g: every line read (g8l)"
+      },
+      {
+        "id": "P66-R6",
+        "severity": "low",
+        "file": "plugins/audit/reference/manifest-conventions.md",
+        "issue": "the conventions and CHANGELOG claimed a guarantee the code did not provide",
+        "resolution": "fixed in P66.3-x3g: both state the date rule and its two limits"
+      },
+      {
+        "id": "P66-R7",
+        "severity": "high",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "a same-call commit dated in the past read as history and silenced its own completion",
+        "resolution": "fixed in P66.4-x3g: the journal's record decides, git's dates are not read (g8g)"
+      },
+      {
+        "id": "P66-R8",
+        "severity": "high",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "value equality taken for provenance: an unrelated old completion on a merged branch silenced this call's",
+        "resolution": "fixed in P66.4-x3g: withheld only on the identical record, keyed by completedAt / sha / mergedAt / id (g8i)"
+      },
+      {
+        "id": "P66-R9",
+        "severity": "low",
+        "file": "plugins/audit/hooks/journal-writes.py",
+        "issue": "the whole trail was read on every sweep-lane plan write, including writes deriving no completion",
+        "resolution": "fixed in P66.5-x3g: read lazily, once per call, only when an event was derived (hm6)"
+      }
+    ],
+    "outcome": "matches after four review rounds; nine findings, all fixed and recorded"
   },
-  "summary": null,
+  "summary": "The journal-writes hook no longer records a completion a second time when a merge, rebase or pull brings in a branch that already recorded it: a derived row is withheld only when the trail holds the identical record (task.complete by completedAt, task.commit by SHA, phase.signoff by mergedAt, ado.link by id), and a completion made in the call is always recorded. Three git-based rules (reflog wording, then commit dates) were each disproved by review on real git before this one; the git machinery is removed. The trail is read only for a write that derived something, once per call. Desired outcome met, proven on real git across fast-forward, merge commit, conflicted merge, pull --rebase, local, backdated, rebased and unrelated-old-completion shapes. Fixes BUG-9. The invariant check found a manifest-revalidated breach: at three task commits the committed index named tasks whose shard was not yet committed, because commit-audit-state was not run after each task; HEAD validates, and the operator chose to sign off and file the tool gap (commit-manifest-index lets an index be committed ahead of its shards) as its own bug. The phase gate ran green with the tree unchanged.",
   "tasks": [
     {
       "id": "P66.1",
       "title": "Fix BUG-9: journal-writes derives completion rows from a git merge's write",
-      "status": "pending",
+      "status": "done",
       "description": "Repro: finish a task on a phase branch, then from the parent tree run git merge <branch> in a Bash call; audit-journal.py show carries a second task.complete for that task. Expected: a write that brings in another branch's recorded history derives no completion rows, since those completions happened and were recorded where the work ran. Actual: task.complete and task.commit for P65.1 appended again by the hook after the P65 merge.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
         "plugins/audit/tests/test_journal_writes.py",
-        "tools/check-git-pipeline.py"
+        "tools/check-git-pipeline.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -60,17 +128,244 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1475e3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - derived rows filtered against the incoming commits (MERGE_HEAD etc., reflog to the baseline HEAD); g8b/g8c/g8d and hm1-hm3, each red first",
+        "descriptive": "Merging a branch no longer records its finished tasks as completed a second time in the audit trail, while work finished in the same step is still recorded."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "bugId": "BUG-9"
+      "startedAt": "2026-09-24T23:11:28Z",
+      "completedAt": "2026-09-24T23:19:14Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "python3 tools/check-git-pipeline.py"
+      ],
+      "bugId": "BUG-9",
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c1475e3",
+        "at": "2026-09-24T23:19:14Z"
+      }
+    },
+    {
+      "id": "P66.2-x3g",
+      "title": "Sign-off review findings: only commits that existed before the call count as history, and the baseline HEAD is read without a fork",
+      "status": "done",
+      "description": "P66 sign-off review: (1) brought_in took the landing commit of rebase / cherry-pick / pick-finish reflog entries - a commit the call itself made - so a completion made and committed in the same call as a rebase was suppressed and the row claimed it had arrived; (2) _write_slot ran git rev-parse on every manifest Edit, against its own docstring.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-git-pipeline.py: a completion committed then rebased in the same call is still derived",
+          "plugins/audit/tests/test_journal_writes.py: an ordinary Edit of the manifest runs no git process"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8b94f81",
+      "outcome": {
+        "technical": "met - only pre-existing commits count as history; HEAD read from files; g8b-g8i, hm4-hm6, seven mutations red",
+        "descriptive": "The trail no longer hides a completion that was made and then rebased, cherry-picked or merged over in the same step, and editing the plan no longer starts a git process."
+      },
+      "startedAt": "2026-09-24T23:30:42Z",
+      "completedAt": "2026-09-24T23:34:41Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "python3 tools/check-git-pipeline.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8b94f81",
+        "at": "2026-09-24T23:34:41Z"
+      }
+    },
+    {
+      "id": "P66.3-x3g",
+      "title": "Re-review findings: a commit counts as history by when it was made, not by what the reflog line says",
+      "status": "done",
+      "description": "P66 re-review: (1) checkout:/reset: back to a commit the call itself made still suppressed its completion; (2) 'pull --rebase -q (start)' did not match the literal table, so an arrived completion was derived twice; (3) MERGE_HEAD was read one line only. The reflog subject is not a contract; the committer date against the baseline is.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-git-pipeline.py: reset or checkout back to the call's own commit still derives; pull --rebase with a flag and an octopus MERGE_HEAD do not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9105c7d",
+      "outcome": {
+        "technical": "met - candidates = reflog landings + parents + MERGE_HEAD lines, counted only when dated before the baseline; g8j-g8l red first; five mutations each red",
+        "descriptive": "The trail's duplicate-completion guard now decides by when each commit was made, so it no longer misses flagged pulls or multi-branch merges, and never hides a completion made in the same step."
+      },
+      "startedAt": "2026-09-24T23:45:22Z",
+      "completedAt": "2026-09-24T23:48:43Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "python3 tools/check-git-pipeline.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9105c7d",
+        "at": "2026-09-24T23:48:43Z"
+      }
+    },
+    {
+      "id": "P66.4-x3g",
+      "title": "Second re-review findings: a completion is repeated only if the journal already holds the same record",
+      "status": "done",
+      "description": "P66 second re-review: (1) a commit the call made with a backdated committer date read as history and silenced its own completion; (2) value equality is not provenance - an unrelated old completion of the same task on a merged branch silenced this call's. Git cannot say whether a completion was recorded; the journal can. The derived row is dropped only when the journal already holds the identical record (task.complete by completedAt, task.commit by sha, phase.signoff by mergedAt, ado.link by id), and the git machinery goes.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-git-pipeline.py: a merge brings in the branch's recorded completion and derives no second; a backdated same-call commit and an unrelated old completion still derive"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "fe45fe2",
+      "outcome": {
+        "technical": "met - withhold by identical journal record, git machinery removed; g8b-g8i and hm1-hm5, four mutations red",
+        "descriptive": "The audit trail now skips a completion only when it already holds that exact completion, so merges no longer double-count finished work and nothing done in the current step is ever hidden."
+      },
+      "startedAt": "2026-09-25T00:02:54Z",
+      "completedAt": "2026-09-25T00:09:32Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py",
+        "python3 tools/check-git-pipeline.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fe45fe2",
+        "at": "2026-09-25T00:09:32Z"
+      }
+    },
+    {
+      "id": "P66.5-x3g",
+      "title": "Third re-review finding: the trail is read only for a write that derives something it could hold",
+      "status": "done",
+      "description": "P66 third re-review (matches, one low finding): recorded_keys read the whole trail on every sweep-lane plan write with a pre-image, including writes that derive no completion - every audit-task call pays it.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: hm6 a Bash write deriving no completion reads no journal"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "6d1cc1c",
+      "outcome": {
+        "technical": "met - lazy per-call reader; hm6 red first",
+        "descriptive": "Ordinary plan updates no longer re-read the whole audit trail; it is read only when a completion needs checking."
+      },
+      "startedAt": "2026-09-25T00:20:47Z",
+      "completedAt": "2026-09-25T00:22:02Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_journal_writes.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6d1cc1c",
+        "at": "2026-09-25T00:22:02Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-24T23:11:28Z",
+  "testEvidence": {
+    "runId": "2026-09-25T00:27:38Z.cf0d97",
+    "status": "passed",
+    "at": "2026-09-25T00:27:38Z"
+  }
 }

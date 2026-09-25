@@ -736,7 +736,75 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
 
 
 # --- the rows a write owes ---------------------------------------------------
-def _manifest_rows(entry, rel, old_obj, new_obj):
+# --- a completion already recorded is not recorded again ------------------------
+# The sweep lane diffs a recorded path whenever a Bash call moves it, and a `git
+# merge` moves the plan by the whole of another branch's history - so every task
+# that branch finished was derived as completed a second time, and the completion
+# count stopped being a count.
+#
+# THE JOURNAL IS WHAT KNOWS, NOT GIT. Three rules read off git were each wrong on a
+# shape nobody had tried - a reflog line's wording, then a commit's date: a
+# rebase's own picks, a reset back onto the call's own commit, a backdated commit
+# all silenced a completion the call had just made, and an unrelated old
+# completion of the same task on a merged branch was taken for this one. Whether a
+# completion was recorded is a question about the RECORD: a derived row is
+# withheld only when the trail already holds the identical one, keyed by what
+# makes it that completion and not another. A merge brings the branch's trail in
+# with its work, so a completion recorded where the work ran is found; one never
+# recorded anywhere, or one this call made, is not.
+#
+# The key's last field must be present: a phase signed off with no branch records
+# `mergedAt: null`, which cannot tell one sign-off from a later one, so that row is
+# never withheld - a repeated row, never a lost one.
+_RECORD_KEYS = {
+    "task.complete": ("taskId", "completedAt"),
+    "task.commit": ("taskId", "commit"),
+    "task.blocked": ("taskId", "attempts"),
+    "phase.signoff": ("phaseId", "mergedAt"),
+    "ado.link": ("taskId", "phaseId", "adoId"),
+}
+
+
+def _record_key(action, details):
+    """What makes this derived row THAT record, or None when nothing can say."""
+    fields = _RECORD_KEYS.get(action)
+    if not fields:
+        return None
+    details = details if isinstance(details, dict) else {}
+    values = tuple(details.get(f) for f in fields)
+    if values[-1] in (None, ""):
+        return None
+    return (action,) + values
+
+
+def recorded_keys(root):
+    """The record keys of every derived row the journal already holds, or None
+    when the journal cannot be read - which withholds nothing."""
+    mod = _journal_lib()
+    reader = getattr(mod, "read_all", None)
+    if not callable(reader):
+        return None
+    try:
+        rows = reader(str(root))
+    except Exception:
+        return None
+    keys = set()
+    for row in rows:
+        key = _record_key(row.get("action"), row.get("details"))
+        if key is not None:
+            keys.add(key)
+    return keys
+
+
+def _not_recorded(events, recorded):
+    """The derived events the journal does not already hold."""
+    if not recorded:
+        return list(events)
+    return [ev for ev in events
+            if _record_key(ev.get("action"), ev.get("details")) not in recorded]
+
+
+def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
     """(primary, chained) for a write to the manifest: the diff folded into the
     primary row, plus the completion rows derived from the SAME comparison.
 
@@ -758,10 +826,24 @@ def _manifest_rows(entry, rel, old_obj, new_obj):
         return row, []             # nothing this hook tracks moved: not a gap
     row["summary"] = diff["summary"]
     row["details"] = {"changes": diff["changes"]}
+    # `recorded` may be the READER rather than the keys: the trail is the whole
+    # project history, so it is read only for a write that derived something the
+    # trail could already hold, and then once per call.
+    if diff["events"] and callable(recorded):
+        recorded = recorded()
+    events = _not_recorded(diff["events"], recorded if not callable(recorded) else None)
+    held = len(diff["events"]) - len(events)
+    if held:
+        # SAID ON THE ROW, so the write is still accounted for: the change is
+        # recorded, and why its completions are not is readable beside it.
+        note = ("%d derived row(s) not repeated: the journal already holds the "
+                "same record, written where the work ran" % held)
+        row["summary"] = "%s; %s" % (row["summary"], note)
+        row["details"]["reason"] = note
     return row, [{"action": ev["action"], "target": rel,
                   "summary": ev["summary"], "details": ev["details"],
                   "actor": dict(row["actor"])}
-                 for ev in diff["events"]]
+                 for ev in events]
 
 
 def _config_rows(entry, old_obj, new_obj):
@@ -849,6 +931,14 @@ def swept_entries(data, *, cfg=None, root=None):
     # only because of the flip that turned it off - judged against the pre-image, as
     # on the edit lane. Sweeping the manifest here would be the plugin doing work
     # after being told to stop, and stating a shard directory it must not read.
+    held = {}
+
+    def recorded():
+        """The trail's record keys, read on first need and kept for the call."""
+        if "keys" not in held:
+            held["keys"] = recorded_keys(root) or set()
+        return held["keys"]
+
     for rel in (_swept_targets(root, cfg) if enabled else [_config.CONFIG_REL]):
         # The journal is never its own subject, on this lane too. guard-edits
         # refuses that write and no default layout puts a journal file behind one
@@ -876,7 +966,8 @@ def swept_entries(data, *, cfg=None, root=None):
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
-                            else _manifest_rows(entry, rel, old_obj, new_obj))
+                            else _manifest_rows(entry, rel, old_obj, new_obj,
+                                                recorded=recorded))
         rows.append(primary)
         rows.extend(chained)
         if enabled:

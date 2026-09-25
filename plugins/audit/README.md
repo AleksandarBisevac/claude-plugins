@@ -1303,7 +1303,8 @@ moved null → SHA), `phase.signoff` (a phase reached done — its derived statu
 recorded by `/audit:phase signoff` or the merge stamped after one counts) — plus `task.move`, written by
 `/audit:task move` when a task is renumbered into another phase. The hook derives them from
 a pre-image it refreshes after every row it writes, so **which tool wrote the manifest is
-not part of the answer**: a shell command inside a `Bash` call is recorded like an edit. Two
+not part of the answer** - and a merge that brings a finished task in from another branch
+derives no second completion for it, since that one was recorded where the work ran: a shell command inside a `Bash` call is recorded like an edit. Two
 limits are said out loud rather than left to be found — a path the hook has no pre-image for
 yet is seeded and claimed nothing about, and a path that moved with no parseable pre-image
 gets a row that states that the completion records were not derived from it. The hook is the
