@@ -2792,6 +2792,28 @@
       "taskId": "P66.1",
       "fixedIn": "c1475e3",
       "notes": "found landing P65, 2026-09-24"
+    },
+    {
+      "id": "BUG-10",
+      "title": "commit-manifest-index commits an index whose fileIndex names tasks their phase's shard has not committed, so the commit records a plan that does not validate",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-09-25T06:37:17Z",
+      "reportedBy": null,
+      "description": "audit-task add writes the new task into the phase shard and its files into the index's fileIndex. commit-manifest-index then commits the index alone - by design, so no phase's work rides with it - while the shard stays uncommitted until commit-audit-state. Every commit in between records an index naming tasks no committed shard holds, and verify-invariants' manifest-revalidated reports each as a breach. Measured on P66: three task commits in breach because commit-audit-state was not run after each task; nothing refused or warned when the index went ahead of its shard.",
+      "repro": [
+        "audit-task add <task> --phase <phase> on a sharded plan",
+        "commit-manifest-index <plan> <phase>",
+        "git show HEAD:<index> plus HEAD's shard: validate-manifest reports fileIndex naming a task that does not exist"
+      ],
+      "expected": "the index is committed only in a state the committed shards support - or commit-manifest-index says which shard must be committed with it, and does not leave a commit that fails validation",
+      "actual": "the index commit lands; the plan as that commit records it fails validation until the shard is committed later",
+      "files": [
+        "plugins/audit/scripts/governance/commit-manifest-index.py"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "found signing off P66, 2026-09-25"
     }
   ],
   "deferred": {
