@@ -4,7 +4,8 @@ The cases for `_doctor_completions.py` — the pipeline's receipts against the
 plan they are receipts for.
 
 The watermark is what most of these cases are really about. The era is decided
-by the FIRST `task.complete` row's `ts` and by nothing else, so every fixture
+by the FIRST receipt's `ts` - a `task.complete` row, or the `done` verb's
+`task.done` row - and by nothing else, so every fixture
 here carries TWO records at different timestamps: with one record the min and
 the max of the set are the same value, and a suite built on that cannot tell the
 rule from its opposite.
@@ -396,6 +397,97 @@ def _cases(check):
                   and "does not carry the journal"
                   not in _detail(rep, "completions")
                   and "chained records" in _detail(rep, "completions"))
+    finally:
+        _harness.remove_tree(tmp)
+
+    # ------------------------------------------- the verb's own close record
+    # `audit-task.py done` writes `task.done` and no hook derives `task.complete`
+    # for it when the close ran in a linked worktree, or when the task was added
+    # and closed in one Bash call. The row below is the shape that verb writes -
+    # `completedAt` in details, a second off the row's own ts - so the case is
+    # about the record the product leaves, not one invented for the check.
+    tmp = _harness.fixture_root("doctor-completions-done-")
+    try:
+        mrel = "docs/audit/audit-plan.json"
+        os.makedirs(os.path.join(tmp, "docs", "audit"))
+        cli = {"author": "a@b.c", "via": "cli"}
+        _journal_io.append(tmp, {"action": "task.complete", "actor": "p",
+                                 "ts": "2026-03-01T00:00:00Z",
+                                 "details": {"taskId": "P7.1"}})
+        _journal_io.append(tmp, {"action": "task.add", "actor": cli,
+                                 "ts": "2026-05-01T00:00:00Z",
+                                 "details": {"taskId": "P1.1", "phaseId": "P1"}})
+        _journal_io.append(tmp, {"action": "task.done", "actor": cli,
+                                 "ts": "2026-05-02T00:00:01Z",
+                                 "details": {"taskId": "P1.1", "phaseId": "P1",
+                                             "completedAt": "2026-05-02T00:00:00Z",
+                                             "commit": "abc1234"}})
+        closed = _task("P1.1", completedAt="2026-05-02T00:00:00Z")
+        mf = _manifest([closed])
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, mf, mrel, None)
+        check("dc32 a done task whose journal holds the verb's own `task.done` "
+              "row, with the task's completedAt, and no `task.complete` is NOT "
+              "reported as edited outside the pipeline - that row is the record "
+              "of the close where no hook watched: %r"
+              % (_detail(rep, "completions"),),
+              "FINDING" not in _levels(rep, "completions")
+              and "outside the pipeline" not in _detail(rep, "completions"))
+
+        hand = _task("P1.2", completedAt="2026-05-03T00:00:00Z")
+        mf = _manifest([closed, hand])
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, mf, mrel, None)
+        check("dc33 ...and a HAND-FLIPPED status beside it, a done task with "
+              "neither row, stays a FINDING that names it and only it. The case "
+              "that goes red when `task.done` is accepted for any task, or when "
+              "the finding is softened: %r" % (_detail(rep, "completions"),),
+              _levels(rep, "completions").count("FINDING") == 1
+              and "1 task(s) marked done with no completion record: P1.2"
+              in _detail(rep, "completions"))
+
+        reclosed = _task("P1.1", completedAt="2026-06-09T00:00:00Z")
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, _manifest([reclosed]), mrel, None)
+        check("dc34 ...and a `task.done` row whose completedAt is NOT the task's "
+              "is no receipt for it: a task reopened and re-closed by hand keeps "
+              "the verb's old row and must still be found: %r"
+              % (_detail(rep, "completions"),),
+              "FINDING" in _levels(rep, "completions")
+              and "P1.1" in _detail(rep, "completions"))
+    finally:
+        _harness.remove_tree(tmp)
+
+    # The era, when the verb's rows are the only receipts. A plan run entirely in
+    # linked worktrees carries `task.done` rows and not one `task.complete`, and
+    # the old watermark read that as "an older plugin wrote this history" - so a
+    # hand-flipped task there went unreported for ever.
+    tmp = _harness.fixture_root("doctor-completions-era-")
+    try:
+        mrel = "docs/audit/audit-plan.json"
+        os.makedirs(os.path.join(tmp, "docs", "audit"))
+        cli = {"author": "a@b.c", "via": "cli"}
+        for tid, at in (("P1.1", "2026-05-02T00:00:00Z"),
+                        ("P1.3", "2026-08-02T00:00:00Z")):
+            _journal_io.append(tmp, {"action": "task.done", "actor": cli,
+                                     "ts": at,
+                                     "details": {"taskId": tid, "phaseId": "P1",
+                                                 "completedAt": at}})
+        mf = _manifest([_task("P1.1", completedAt="2026-05-02T00:00:00Z"),
+                        _task("P1.3", completedAt="2026-08-02T00:00:00Z"),
+                        _task("P1.0", completedAt="2026-01-01T00:00:00Z"),
+                        _task("P1.2", completedAt="2026-06-01T00:00:00Z")])
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, mf, mrel, None)
+        detail = _detail(rep, "completions")
+        check("dc35 with ONLY `task.done` rows the era starts at the first of "
+              "them: the hand-flipped task inside it is a FINDING, the one "
+              "before it is out of scope and said so, and neither receipted task "
+              "is named: %r" % (detail,),
+              "not in use" not in detail
+              and "1 task(s) marked done with no completion record: P1.2"
+              in detail
+              and "1 done task(s) predate the first completion record" in detail)
     finally:
         _harness.remove_tree(tmp)
     # The spoken basis for an unchecked trail. Inside `_cases` on purpose -

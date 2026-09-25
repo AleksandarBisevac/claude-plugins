@@ -3,8 +3,8 @@
 The pipeline's receipts, joined against the plan they are receipts for.
 
 Split out of `audit-doctor.py`. This is the one check in the doctor that
-CORRELATES two records rather than inspecting one: the journal's hook-emitted
-`task.complete` rows against the manifest's done tasks, plus the commit SHAs
+CORRELATES two records rather than inspecting one: the journal's close
+receipts (`receipts()`) against the manifest's done tasks, plus the commit SHAs
 those tasks name against what git actually has, plus the usage ledger's
 coverage of the same task ids.
 
@@ -12,8 +12,8 @@ Its grading rule is why it stands alone. A done task INSIDE the record era with
 no record is positive evidence that the manifest was edited outside the pipeline
 - a FINDING - while everything the check merely could not look up is a WARNING
 at most, and the era boundary is decided by the WATERMARK with no config knob:
-the first `task.complete` row's ts. Zero such rows means an older plugin wrote
-this history, and that is one ok line rather than a nag.
+the first receipt's ts. Zero receipts means an older plugin wrote this history,
+and that is one ok line rather than a nag.
 
 Layer 4, for the same reason `_doctor_trail` is: it runtime-loads `usage_ledger`
 (layer 3) for the coverage arm. `_journal_io` (layer 1) is imported, not loaded.
@@ -194,18 +194,66 @@ def check_evidence_pointers(rep, project, manifest):
                            % (len(pointers), len(read["rows"])))
 
 
+RECEIPT_ACTIONS = ("task.complete", "task.done")
+
+
+def receipts(rows):
+    """{"rows", "watermark", "tasks", "doneAt", "ts", "file"} -- the pipeline's
+    receipts for a close, out of the journal's rows.
+
+    TWO WRITERS, ONE RECEIPT. `task.complete` is derived by `journal-writes.py`
+    from a status flip it saw; `task.done` is `audit-task.py done`'s own row, and
+    it is the only record of the close when that hook did not watch - a close run
+    in a linked worktree, or a task added and closed in one Bash call. A
+    `task.complete` receipts its task id; a `task.done` receipts the close whose
+    `completedAt` it carries and no other, so a task reopened and re-closed by
+    hand is not covered by the verb's row for the earlier close.
+
+    The watermark is the first receipt of either kind: a plan whose every close
+    went through the verb carries no `task.complete` at all, and reading that as
+    "an older plugin wrote this history" left its hand edits unreported.
+    """
+    mine = [r for r in rows or [] if r.get("action") in RECEIPT_ACTIONS]
+    tasks, done_at, row_ts, row_file = set(), {}, {}, {}
+    for r in mine:
+        det = r.get("details") if isinstance(r.get("details"), dict) else {}
+        tid = det.get("taskId")
+        if not tid:
+            continue
+        if r.get("action") == "task.complete":
+            tasks.add(tid)
+        elif isinstance(det.get("completedAt"), str):
+            done_at.setdefault(tid, set()).add(det["completedAt"])
+        else:
+            continue
+        row_ts.setdefault(tid, str(r.get("ts") or ""))
+        if r.get("_file"):
+            row_file.setdefault(tid, r["_file"])
+    return {"rows": mine,
+            "watermark": (min(str(r.get("ts") or "") for r in mine)
+                          if mine else None),
+            "tasks": tasks, "doneAt": done_at, "ts": row_ts, "file": row_file}
+
+
+def has_receipt(got, task):
+    """Does `receipts()`' answer carry a record of this task's close?"""
+    tid = task.get("id")
+    return (tid in got["tasks"]
+            or task.get("completedAt") in got["doneAt"].get(tid, ()))
+
+
 def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=False):
     """Completion records against the manifest (workstream B). Read-only.
 
-    The journal's `task.complete` rows are hook-emitted, one per status flip to
-    done — the pipeline's receipt. A done task INSIDE their era with no record
+    The receipts are `receipts()`': the hook's `task.complete` rows and the
+    `done` verb's `task.done` rows. A done task INSIDE their era with neither
     means the manifest was edited outside the pipeline or a record was removed:
     positive evidence, so a FINDING. A commit SHA git has never heard of is the
     same class. Everything the check cannot know is a WARNING at most, and the
     era is decided by the WATERMARK rule with no config knob: the first
-    task.complete row's ts. Zero such rows means an older plugin wrote this
-    history, and that is a single ok line, not a nag."""
+    receipt's ts. Zero receipts means an older plugin wrote this history, and
+    that is a single ok line, not a nag."""
     if not manifest:
         return
     # The trail check runs FIRST and unconditionally, because it does not depend
@@ -222,21 +270,13 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     except Exception as exc:
         rep.warn("completions", "could not check: %s" % exc)
         return
-    completes = [r for r in rows if r.get("action") == "task.complete"]
-    if not completes:
+    got = receipts(rows)
+    if not got["rows"]:
         rep.ok("completions",
                "completion records not in use (older plugin wrote this history)")
         return
-    watermark = min(str(r.get("ts") or "") for r in completes)
-    recorded, row_ts, row_file = set(), {}, {}
-    for r in completes:
-        det = r.get("details") if isinstance(r.get("details"), dict) else {}
-        tid = det.get("taskId")
-        if tid:
-            recorded.add(tid)
-            row_ts.setdefault(tid, str(r.get("ts") or ""))
-            if r.get("_file"):
-                row_file.setdefault(tid, r["_file"])
+    watermark = got["watermark"]
+    row_ts, row_file = got["ts"], got["file"]
 
     done, pre_era = [], 0
     mio = _load("_manifest_io", "_manifest_io.py")
@@ -260,7 +300,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
         return
 
     could_not = []
-    missing = [t.get("id") for t in done if t.get("id") not in recorded]
+    missing = [t.get("id") for t in done if not has_receipt(got, t)]
     if missing:
         rep.finding("completions",
                     "%d task(s) marked done with no completion record: %s -- "

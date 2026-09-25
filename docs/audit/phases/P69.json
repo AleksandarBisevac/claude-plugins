@@ -29,7 +29,7 @@
     {
       "id": "P69.1",
       "title": "Every manage-worktrees verb names a phase's branch the way add does, and --apply exists only where it means something",
-      "status": "in_progress",
+      "status": "done",
       "description": "BUG-11. add names the branch through _branch.phase_answer(meta, phase, git user name); list, remove, sweep and parents_of compose it through wanted_branches(manifest)/parents_of(manifest) with no user name, so under a template with initials the worktree add just cut is listed as a stranger and remove says no worktree holds the phase's branch. One branch_of used by every verb. Also: one argparse parser lists --apply unscoped and add --apply is silently accepted while the usage scopes it to sweep - subparsers, or refuse it elsewhere. worktree.md: a new worktree has no installed dependencies; install inside it (a symlinked node_modules resolves into the main checkout and trips Vite's server.fs.allow).",
       "files": [
         "plugins/audit/scripts/git/manage-worktrees.py",
@@ -64,14 +64,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "91c7891",
       "outcome": {
         "technical": null,
         "descriptive": null
       },
       "startedAt": "2026-09-25T14:32:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-25T15:29:44Z",
+      "verifiedBy": [
+        "test_manage_worktrees n1",
+        "test_manage_worktrees n2",
+        "test_manage_worktrees n3",
+        "test_manage_worktrees n4",
+        "test_manage_worktrees v4",
+        "test_manage_worktrees v5",
+        "test__deps e8"
+      ],
       "bugId": "BUG-11"
     },
     {
