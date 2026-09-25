@@ -3369,16 +3369,15 @@ def _cases(check):
         _eb_at = dict((_marker, [i for i, _l in enumerate(_eb_lines)
                                  if _marker in _l])
                       for _marker in ("<<'BRIEF'", "Seen at:",
-                                      "COMMAND SUBSTITUTION",
-                                      "Refused rather than written"))
+                                      "COMMAND SUBSTITUTION"))
         check("eb2b ...and it says it in THAT order: the heredoc the reader "
-              "retypes first, then each reason in one sentence. Before this the "
-              "same facts arrived with two paragraphs of argument in front of "
-              "the three lines that are the repair: %r" % (_eb_at,),
+              "retypes first, then the marked span, then one line of cause. "
+              "Before this the same facts arrived with two paragraphs of "
+              "argument in front of the three lines that are the repair: %r"
+              % (_eb_at,),
               all(_hits for _hits in _eb_at.values())
               and _eb_at["<<'BRIEF'"][0] < _eb_at["Seen at:"][0]
-              < _eb_at["COMMAND SUBSTITUTION"][0]
-              < _eb_at["Refused rather than written"][0])
+              < _eb_at["COMMAND SUBSTITUTION"][0])
         # SECOND-DIRECTION CASE, and the one that decides whether this can ship:
         # an ordinary sentence with a comma in it is most of the corpus.
         code, txt = run(["add", "Ordinary brief", "--phase", "P2",
@@ -3480,7 +3479,10 @@ def _cases(check):
         # of a backtick span being eaten. There were no backticks: the check
         # tests `_GAP_SHAPES` and none of them is one.
         gm_brief = "foo() ? (a ? 280 : 70) : 0"
-        gm_what, gm_excerpt, gm_rs, gm_re = M.shell_eaten_gap(gm_brief)
+        # A MISS IS A FAILED CASE, not a raise: unpacking None would stop the
+        # suite here and every case after this line would go unrun.
+        gm_what, gm_excerpt, gm_rs, gm_re = (M.shell_eaten_gap(gm_brief)
+                                             or (None, "", 0, 0))
         check("gm0 fixture check: the ternary matches the space-before-a-mark "
               "shape on exactly the space+colon after `280`, and the excerpt "
               "is the whole short brief -- so the assertions below are "
@@ -3523,8 +3525,8 @@ def _cases(check):
               "here, with no shell and no backtick anywhere in the call: %r"
               % (gm_txt[-460:],),
               "COMMAND SUBSTITUTION" in gm_txt
-              and "cannot tell that apart from code quoted straight into "
-                  "the brief" in gm_txt
+              and "cannot tell COMMAND SUBSTITUTION of a backtick span from "
+                  "code quoted straight into the brief" in gm_txt
               and "`" not in gm_brief)
         # SECOND-DIRECTION CASE, and the one that decides whether this reads
         # as a repair rather than a rewording: the OLD sentence asserted the
@@ -6612,6 +6614,259 @@ def _cases(check):
               "write - no --to, the same phase, a done task, a running task, a done "
               "target, an unknown phase, an unknown task: %r" % (_mv_codes,),
               _mv_codes == [2] * 7 and _mv_after == _mv_before)
+
+        # ---- (dr) `add --dry-run`: built and validated, nothing written -------
+        projdr, mpdr = mk("dr-dry", base_manifest())
+        with open(mpdr, "rb") as _fh:
+            _dr_before = _fh.read()
+        code, txt = run(["add", "Would be", "--phase", "P2", "--files", "src/a.ts",
+                         "--dry-run", "--project-dir", projdr])
+        with open(mpdr, "rb") as _fh:
+            _dr_after = _fh.read()
+        _dr_rows = [r for r in _journal_io.read_all(projdr)
+                    if r.get("action") == "task.add"]
+        check("dr1 `add --dry-run` names the id and the task it WOULD write, and "
+              "writes nothing - the manifest byte identical and no task.add row: %s"
+              % (txt,),
+              code == 0 and "DRY RUN" in txt and "P2.4" in txt
+              and _dr_after == _dr_before and _dr_rows == [])
+        code, txt = run(["add", "Bad dep", "--phase", "P2", "--depends-on", "P9.9",
+                         "--dry-run", "--project-dir", projdr])
+        with open(mpdr, "rb") as _fh:
+            _dr_after2 = _fh.read()
+        check("dr2 ...and it VALIDATES what it built: a dependency on nothing is the "
+              "same FINDING the real add rolls back on, with nothing written: %s"
+              % (txt,),
+              code == M.E_INVALID and "FINDING" in txt and "P9.9" in txt
+              and _dr_after2 == _dr_before)
+        code, txt = run(["add", "Would be", "--phase", "P2", "--dry-run", "--json",
+                         "--project-dir", projdr])
+        try:
+            _dr_js = json.loads(txt)
+        except ValueError:
+            _dr_js = {}
+        check("dr3 ...and `--json` says it was a dry run, as data: %r"
+              % (sorted(_dr_js),),
+              code == 0 and _dr_js.get("dryRun") is True
+              and _dr_js.get("id") == "P2.4" and _dr_js.get("written") == [])
+
+        # ---- (jr) `--json` refusals are JSON -----------------------------------
+        projjr, mpjr = mk("jr-refusals", base_manifest())
+        _jr = {}
+        for _jrwhat, _jrargv in (
+                ("validator", ["add", "Bad", "--phase", "P2", "--depends-on", "P9.9"]),
+                ("argv-gap", ["add", "Gap", "--phase", "P2", "--description",
+                              " leading space"]),
+                ("usage", ["add", "No phase", "--phase", "P9"])):
+            _jrc, _jrt = run(_jrargv + ["--json", "--project-dir", projjr])
+            try:
+                _jrj = json.loads(_jrt)
+            except ValueError:
+                _jrj = None
+            _jr[_jrwhat] = (_jrc, _jrj)
+        check("jr1 every refusal under `--json` is ONE JSON object - {ok: false, "
+              "refused, findings} - on the validator's refusal, the argv-gap "
+              "refusal and a usage refusal alike, with the exit code unchanged: %r"
+              % (dict((k, (v[0], sorted(v[1]) if isinstance(v[1], dict) else v[1]))
+                      for k, v in _jr.items()),),
+              all(isinstance(v[1], dict) and v[1].get("ok") is False
+                  and isinstance(v[1].get("refused"), str) and v[1]["refused"]
+                  and isinstance(v[1].get("findings"), list)
+                  for v in _jr.values())
+              and _jr["validator"][0] == M.E_INVALID
+              and any("P9.9" in f for f in _jr["validator"][1]["findings"])
+              and _jr["argv-gap"][0] == 2 and _jr["usage"][0] == 2)
+        code, txt = run(["add", "Fine", "--phase", "P2", "--json",
+                         "--project-dir", projjr])
+        try:
+            _jr_ok = json.loads(txt)
+        except ValueError:
+            _jr_ok = {}
+        check("jr2 SECOND DIRECTION: a successful `--json` call is still the verb's "
+              "own object, not wrapped: %r" % (sorted(_jr_ok)[:6],),
+              code == 0 and _jr_ok.get("ok") is True and "refused" not in _jr_ok)
+
+        # ---- (lf) list flags repeat, and say their separator ---------------------
+        projlf, mplf = mk("lf-lists", base_manifest())
+        code, txt = run(["add", "Repeated", "--phase", "P2",
+                         "--depends-on", "P2.1", "--depends-on", "P2.3",
+                         "--files", "src/a.ts", "--files", "src/b.ts,src/c.ts",
+                         "--project-dir", projlf])
+        _lf_t = task_in(mplf, "P2.4") or {}
+        check("lf1 a list flag REPEATS and still splits on commas: two --depends-on "
+              "and a mixed --files land as one list each, in order: %r"
+              % ((_lf_t.get("dependsOn"), _lf_t.get("files")),),
+              code == 0 and _lf_t.get("dependsOn") == ["P2.1", "P2.3"]
+              and _lf_t.get("files") == ["src/a.ts", "src/b.ts", "src/c.ts"])
+        _lf_help = dict((a.dest, a.help or "") for a in M.build_parser()._actions)
+        _lf_miss = [d for d in ("files", "depends_on", "blocked_by", "verified_by")
+                    if not ("comma" in _lf_help.get(d, "")
+                            and "repeat" in _lf_help.get(d, "")
+                            and re.search(r"--[a-z-]+ \S+,\S+", _lf_help.get(d, "")))]
+        check("lf2 each list flag's --help names the separator, says it repeats and "
+              "shows an example - the separator was guessed before: %r" % (_lf_miss,),
+              _lf_miss == [])
+        projlf2, mplf2 = mk("lf-verified", pd_fixture())
+        code, txt = run(["done", "P2.4", "--commit", _PD_SHA,
+                         "--verified-by", "t_one", "--verified-by", "t_two,t_three",
+                         "--project-dir", projlf2])
+        check("lf3 ...and `done --verified-by` repeats the same way: %r"
+              % ((task_in(mplf2, "P2.4") or {}).get("verifiedBy"),),
+              code == 0 and (task_in(mplf2, "P2.4") or {}).get("verifiedBy")
+              == ["t_one", "t_two", "t_three"])
+
+        # ---- (dy) scope's DIRTY note means the index bytes changed ---------------
+        def dy_manifest():
+            fx = base_manifest()
+            fx["phases"][1]["tasks"] += [
+                {"id": "P2.4", "title": "owns b", "status": "pending",
+                 "files": ["src/b.ts"],
+                 "tests": {"mode": "gate-only", "add": [], "gate": ["test"]}},
+                {"id": "P2.5", "title": "shares b", "status": "pending",
+                 "files": ["src/b.ts"]}]
+            fx["fileIndex"]["src/b.ts"] = ["P2.4", "P2.5"]
+            return fx
+
+        projdy, mpdy = mk("dy-dirty", dy_manifest(), sharded=True, git=True)
+        git(projdy, "add", "-A")
+        git(projdy, "commit", "-q", "-m", "base")
+        with open(mpdy, "rb") as _fh:
+            _dy_before = _fh.read()
+        code, txt = run(["scope", "P2.4", "--gate-clear", "--json",
+                         "--project-dir", projdy])
+        with open(mpdy, "rb") as _fh:
+            _dy_after = _fh.read()
+        try:
+            _dy_js = json.loads(txt)
+        except ValueError:
+            _dy_js = {}
+        _dy_rel = _output.posix_rel(mpdy, projdy)
+        check("dy1 a scope that moves no index row leaves the index BYTE IDENTICAL - "
+              "the shared row P2.4 heads keeps its order - and carries no DIRTY note "
+              "and no index in `written`: %r"
+              % ((_dy_js.get("written"), _dy_js.get("indexDirtyNote")),),
+              code == 0 and _dy_after == _dy_before
+              and "indexDirtyNote" not in _dy_js
+              and _dy_js.get("written") and _dy_rel not in _dy_js["written"])
+        code, txt = run(["scope", "P2.4", "--files", "src/b.ts,src/a.ts",
+                         "--project-dir", projdy])
+        with open(mpdy, "rb") as _fh:
+            _dy_after2 = _fh.read()
+        _dy_idx = json.loads(_dy_after2.decode("utf-8")).get("fileIndex") or {}
+        check("dy2 SECOND DIRECTION: a scope that claims a path writes the index and "
+              "says it is DIRTY, and the shared row still reads in its old order: %r"
+              % (_dy_idx,),
+              code == 0 and _dy_after2 != _dy_before and "is now DIRTY" in txt
+              and _dy_idx.get("src/b.ts") == ["P2.4", "P2.5"]
+              and _dy_idx.get("src/a.ts") == ["P2.1", "P2.4"])
+
+        # IDENTICAL BYTES ARE NOT A WRITE, asked of the writer itself: handed a
+        # fileIndex it calls changed and is not, it leaves the index alone and
+        # does not name it in `written` - which is what the DIRTY note reads.
+        projdy3, mpdy3 = mk("dy-same-bytes", dy_manifest(), sharded=True)
+        with open(mpdy3, "rb") as _fh:
+            _dy3_before = _fh.read()
+        _dy3_written = M._write_add(projdy3, mpdy3, _mio.read_json(mpdy3),
+                                    _mio.load_manifest(mpdy3), "P2", True)
+        with open(mpdy3, "rb") as _fh:
+            _dy3_after = _fh.read()
+        check("dy3 a write handed `fileIndex` as changed when it is not leaves the "
+              "index byte identical and out of `written`: %r" % (_dy3_written,),
+              _dy3_after == _dy3_before
+              and _output.posix_rel(mpdy3, projdy3) not in _dy3_written)
+
+        # ---- (cg) the colon that starts an identifier is not a hole ------------
+        projcg, mpcg = mk("cg-colon", base_manifest())
+        _cg_texts = ("params :id and :key are validated",
+                     "the retry comment at :2680-2701 moved")
+        _cg = [run(["add", "Colon %d" % i, "--phase", "P2", "--description", t,
+                    "--project-dir", projcg])[0] for i, t in enumerate(_cg_texts)]
+        _cg_stored = sorted(t.get("description") for t in
+                            _mio.tasks_by_id(_mio.load_manifest(mpcg)).values()
+                            if (t.get("title") or "").startswith("Colon"))
+        check("cg1 a colon that STARTS an identifier or a line number (`:id`, "
+              "`:2680`) is written verbatim - measured over this plan's own texts, "
+              "the only shapes the old rule fired on at a colon: %r" % (_cg_stored,),
+              _cg == [0, 0] and _cg_stored == sorted(_cg_texts))
+        code, txt = run(["add", "Spaced colon", "--phase", "P2", "--description",
+                         "the value : is gone", "--project-dir", projcg])
+        check("cg2 SECOND DIRECTION: a colon with whitespace on BOTH sides is still "
+              "the hole it was, and refused: %s" % (txt[:120],),
+              code == 2 and "hugs the word" in txt)
+
+        # ---- (gs) the refusal names substitution, and is short ------------------
+        projgs, _mpgs = mk("gs-short", base_manifest())
+        code, txt = run(["add", "Lead", "--phase", "P2", "--description",
+                         " now returns 204", "--project-dir", projgs])
+        _gs_lines = txt.splitlines()
+        _gs_route = [i for i, ln in enumerate(_gs_lines) if "<<'BRIEF'" in ln]
+        check("gs1 a leading or doubled space is named as LIKELY backtick "
+              "substitution, pointing at the shell's own stderr, in a refusal cut to "
+              "the route and the marked span: %d line(s): %r"
+              % (len(_gs_lines), txt),
+              code == 2 and "COMMAND SUBSTITUTION" in txt
+              and "command not found" in txt and len(_gs_lines) <= 8
+              and _gs_route and _gs_route[0] <= 2 and "Seen at:" in txt)
+        code, txt = run(["add", "Comma", "--phase", "P2", "--description",
+                         "gating on , returning it", "--project-dir", projgs])
+        check("gs2 SECOND DIRECTION: a shape that is just as likely code quoted into "
+              "prose does not claim substitution as likely - it says the check "
+              "cannot tell them apart: %r" % (txt,),
+              code == 2 and "likely" not in txt.lower()
+              and "cannot tell" in txt and len(txt.splitlines()) <= 8)
+
+        # ---- (ew) phase entry warns about an empty gate or a missing outcome ---
+        ewfx = base_manifest()
+        ewfx["phases"][2]["tasks"] = [{"id": "P3.1", "title": "first",
+                                       "status": "pending"}]
+        projew, _mpew = mk("ew-entry", ewfx)
+        code, txt = run(["start", "P3.1", "--project-dir", projew])
+        _ew = [ln for ln in txt.splitlines() if "phase entry" in ln.lower()
+               and "WARNING" in ln]
+        check("ew1 the start that ENTERS a phase with an empty testGate and no "
+              "desiredOutcome warns about each - and still exits 0, because an "
+              "empty gate is a designed state: %r" % (_ew,),
+              code == 0 and len(_ew) == 2
+              and any("testGate" in ln for ln in _ew)
+              and any("desiredOutcome" in ln for ln in _ew))
+        ewok = base_manifest()
+        ewok["phases"][2].update(testGate=["test"], desiredOutcome="it ships")
+        ewok["phases"][2]["tasks"] = [{"id": "P3.1", "title": "first",
+                                       "status": "pending"}]
+        projew2, _mpew2 = mk("ew-entry-ok", ewok)
+        code, txt = run(["start", "P3.1", "--project-dir", projew2])
+        code2, txt2 = run(["start", "P2.3", "--project-dir", projew])
+        check("ew2 SECOND DIRECTION: entering a phase that has both prints no such "
+              "warning, and neither does a start inside a phase already running: %r"
+              % ((txt[-120:], txt2[-120:]),),
+              code == 0 and "phase entry" not in txt.lower()
+              and code2 == 0 and "phase entry" not in txt2.lower())
+
+        # ---- (gd) a gate token that is a directory ------------------------------
+        projgd, _mpgd = mk("gd-dir", base_manifest())
+        os.makedirs(os.path.join(projgd, "src"), exist_ok=True)
+        code, txt = run(["add", "Dir gate", "--phase", "P2", "--gate", "src",
+                         "--project-dir", projgd])
+        _gd = [ln for ln in txt.splitlines() if "directory" in ln and "src" in ln]
+        check("gd1 a gate entry that is one token, no buildCommands key, and a "
+              "DIRECTORY in the project tree is warned about - it names no command "
+              "- and the add still happens: %r" % (_gd,),
+              code == 0 and len(_gd) == 1 and _gd[0].startswith("WARNING"))
+        code, txt = run(["scope", "P2.3", "--gate", "src", "--tests-mode",
+                         "gate-only", "--project-dir", projgd])
+        check("gd2 ...and `scope --gate` warns the same way: %s" % (txt[-200:],),
+              code == 0 and any("directory" in ln and "src" in ln
+                                and ln.startswith("WARNING")
+                                for ln in txt.splitlines()))
+        # A DIRECTORY NAMED LIKE THE KEY, so the key check is what keeps this quiet
+        # rather than the absence of a directory.
+        os.makedirs(os.path.join(projgd, "test"), exist_ok=True)
+        code, txt = run(["add", "Key gate", "--phase", "P2", "--gate", "test",
+                         "--gate", "pytest src", "--project-dir", projgd])
+        check("gd3 SECOND DIRECTION: a buildCommands key and a command that merely "
+              "NAMES a directory draw no such warning: %s" % (txt[-200:],),
+              code == 0 and not [ln for ln in txt.splitlines()
+                                 if "directory" in ln and ln.startswith("WARNING")])
 
     finally:
         _harness.remove_tree(tmp)

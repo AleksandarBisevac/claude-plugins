@@ -7,6 +7,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **`/audit:task` has verbs for what operators were hand-editing.** `move <taskId> --to <phaseId>`
+  performs the procedure `commands/task.md` used to describe as Edits: the new id from the
+  allocator `next-id task` prints, every reference rewritten (dependencies, `fileIndex`, a bug's
+  `taskId`, parked proposals), `movedFrom`, a `task.move` row, revalidated and rolled back on
+  findings, in both layouts. `block <taskId> --reason` sets a task blocked with the reason in a new
+  `blockedReason` field and a `task.block` row (the next `start` clears it), for a dependency no id
+  can name. `note <taskId> --text` appends a dated `{at, text}` entry to a new `notes[]` - the one
+  addition a started task takes, since `scope --description` refuses one. `reopen` is now listed in
+  `commands/task.md` beside them.
+- **A close whose answer was "nothing needed to change", and an intent question skipped on
+  purpose.** `done --no-change --reason` closes a started task with no commit, recording the reason
+  and the HEAD it examined in `outcome.noChange`; `/audit:doctor`'s no-SHA warning leaves such a task
+  out and names it on its own line. `done --intent not-asked --intent-basis TEXT` records an intent
+  question deliberately not put, and is refused without its basis. Sign-off and `/audit:status` (on
+  a phase whose sign-off is due) now name the done tasks carrying no intent answer at all, which
+  nothing read before.
+- **`add --dry-run`** builds the task and validates the plan with it in memory, and writes nothing.
 - **The manifest merges by record: `/audit:layout merge-driver install`.** Every writer appends at a
   list tail, so two branches that each add a different phase, task, bug or `fileIndex` row conflicted
   on the same lines — in both layouts, because sharding keeps a phase RUN in its own file while every
@@ -89,6 +106,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   they differ.
 
 ### Changed
+- **Under `--json`, every `audit-task.py` refusal is one JSON object**, `{ok: false, exit, refused,
+  findings}`, where it used to be prose on the stdout a caller was about to parse.
+- **The list flags repeat.** `--files`, `--blocked-by`, `--depends-on` and `--verified-by` take the
+  flag more than once and still split each value on commas, and `--help` says so on each, with an
+  example - the separator used to be guessed.
+- **The argv gap refusal is short and says what it most likely saw.** It is the heredoc to retype,
+  the marked span and one line of cause; for a leading or doubled space it names backtick command
+  substitution as likely and points at the shell's `command not found` lines, and for every other
+  shape it says the check cannot tell substitution from code quoted into the brief.
+- **The start that enters a phase warns about an empty `testGate` or a missing `desiredOutcome`**,
+  and `add`/`scope --gate` warn about a gate entry that is a directory rather than a command. Both
+  are warnings, never refusals.
+- **The orchestrator sets `blocked` through `audit-task.py block`**, so the reason is recorded; a
+  cross-session dependency goes there and into `note` rather than into a description.
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
   names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
   the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the
@@ -159,6 +190,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`scope` said the index was DIRTY when its bytes had not changed, and reordered a shared
+  `fileIndex` row on a call that moved nothing.** It re-derived every row it held by removing and
+  re-appending, and always passed `fileIndex` as changed; it now touches only the rows it claims or
+  releases, and the index write is skipped when its bytes would come out identical - so the note
+  appears only when there is something for `commit-manifest-index.py` to land.
+- **The argv guard refused `params :id and :key`.** A colon that starts an identifier or a line
+  number (`:2680`) no longer reads as a hole; one with whitespace on both sides still does.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,

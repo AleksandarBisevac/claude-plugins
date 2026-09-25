@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -63,7 +63,10 @@ two phases can merge without a conflict there), so it needs its own commit —
 refuses an index that names a task or phase the committed shard does not hold yet, because
 that commit would record a plan that does not validate. **The script prints this itself, naming that
 exact command, the moment its own write leaves the index dirty** — read it off the output
-rather than remembering the rule here.
+rather than remembering the rule here. It is printed only when the index **bytes** changed:
+a write whose index would come out identical does not rewrite it, and `scope` touches only
+the `fileIndex` rows it claims or releases, so a shared row keeps its order on a call that
+moves nothing.
 
 ## Subcommand: `add "<title>" [--phase <id>]`
 
@@ -178,7 +181,10 @@ per add is the class of error the script exists to delete.
        it STOPS the area fallback so nothing loads. Distinct from leaving skills
        unconsidered (`[]`, the default), where the area default stays in force.
      Then `--skills a,b`, `--skills null`, or omit the flag for unconsidered.
-   - `--blocked-by` / `--depends-on` — comma-separated ids (omit when none).
+   - `--blocked-by` / `--depends-on` — comma-separated ids (omit when none). These two,
+     `--files` and `done --verified-by` also REPEAT, and every value is still split on
+     commas: `--depends-on P2.1 --depends-on P2.2` and `--depends-on P2.1,P2.2` are the
+     same list. `--help` says so on each flag, with an example.
 3. **Run it** (Bash) — the brief on **stdin**, which is the only form a shell
    cannot rewrite:
    ```bash
@@ -275,6 +281,18 @@ the marker is what lets you tell your own punctuation from real damage without
 reading the regex. **This is the route to reach for whether or not you see a
 backtick** — `--help` on the flag says as much now, which it did not before.
 
+**A colon that starts a word is not a hole**: `params :id and :key`, a line reference
+`at :2680`. Measured over this plan's own texts before the rule was narrowed, those were
+the shapes the colon arm fired on at an identifier or a digit, so a space before `:id` is
+written as typed while a colon with whitespace on both sides (` : `) is still refused.
+
+**The refusal is short**: the heredoc to retype, the marked span, and one line of cause.
+For a **leading space or two spaces in a row** — the two shapes a substituted backtick
+span leaves on its own — it names command substitution as the likely cause and points at
+the shell's own stderr, which says `<word>: command not found` for every span it ran. For
+the other shapes it says the check cannot tell substitution from code quoted into the
+brief.
+
 **The route out is `--description -`**, and it is the fix rather than a bypass: the
 brief is read from **stdin**, which no shell rewrites and which this stores verbatim.
 `-` where a value goes means stdin throughout this plugin — `scripts/manifest/check-ado-item.py`
@@ -301,6 +319,21 @@ the brief that still *reads* complete and is not.
 
 Every verb here that takes `--description` refuses the same way, because the flag
 is one flag on one parser and each of them writes the value straight into the manifest.
+
+**`--dry-run`** builds the task exactly as the call would and validates the plan with it
+**in memory** — same allocator, same derived gate, same validator the real write re-reads
+from disk — and writes nothing: no manifest, no journal row. A finding exits `1` with the
+`FINDING:` lines, as the real add would have rolled back on; a clean one prints the id it
+would take. **Under `--json` every refusal is one JSON object** —
+`{"ok": false, "exit": <code>, "refused": "<message>", "findings": [...]}` — the validator's,
+the argv-gap refusal and every usage refusal alike, so a caller parsing stdout never meets
+prose; a success is the verb's own object, unwrapped. (An argparse error, before any verb
+runs, still goes to stderr as argparse prints it.)
+
+**A gate entry that is a directory is warned about**, on `add` and on `scope --gate`: an
+entry that is one token, no `meta.buildCommands` key, and a directory in the project tree
+names nothing to run. A command that merely mentions a directory (`pytest tests/`) draws
+nothing. A warning, never a refusal.
 
 ## Subcommand: `start <taskId>`
 
@@ -374,6 +407,12 @@ still promoted, with a `NOTE:` naming what it waits on — `/audit:run` is where
 decides a spawn, and the case this verb exists for is a task whose edits are being denied
 right now. **Nothing refuses a promotion of unready work**, here or in the script; the
 note is the whole of it.
+
+**The start that enters a phase warns about what sign-off will ask for** — an empty
+`testGate` (sign-off then rests on review alone) and a missing `desiredOutcome` — as
+`WARNING: phase entry: ...` lines and `entryWarnings` under `--json`. Never a refusal: an
+empty gate is a designed state, and this is the last moment either is cheap to set. A start
+inside a phase already running prints neither.
 
 ## Subcommand: `done <taskId> --commit <sha>`
 

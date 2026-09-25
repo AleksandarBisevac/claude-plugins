@@ -96,13 +96,14 @@
     {
       "id": "P76.2",
       "title": "add has a dry run and JSON refusals, list flags say their separator, scope's dirty note means changed bytes, and the argv guard stops refusing colon identifiers",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reproduced at HEAD: add --dry-run is unrecognised and --json refusals are prose; --verified-by/--files/--depends-on/--blocked-by carry no help and the separator is guessed (a comma); scope passes files_changed=True unconditionally so the DIRTY note fires on identical bytes, and its remove-then-append re-derivation reorders a shared fileIndex row on a no-op (merge-conflict material); the argv gap guard refuses 'params :id and :key' (a colon starting an identifier is not a hugging mark) and, when bash substituted backtick spans, blames 'whitespace before the first word' without naming substitution or pointing at the shell's stderr, in a ten-line message. Fix: --dry-run builds and validates in memory and writes nothing; --json refusals emit {ok:false, refused, findings}; list flags repeat (action append, comma split kept) with help and an example; scope passes whether anything was released or claimed, appends only newly claimed ids, and the index write skips identical bytes; the guard exempts [ \\t]:identifier (measure over the tree's own texts first), names likely backtick substitution when the window shows a leading or doubled space, and the refusal is cut to its route plus the marked span. Also: the verb that performs phase entry prints a warning (never a refusal - an empty gate is a designed state) when the phase has an empty testGate or no desiredOutcome; scope/add warn when a gate token resolves to a directory in the project tree.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/commands/task.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -129,14 +130,14 @@
       "dependsOn": [
         "P76.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T22:03:15Z",
       "completedAt": null,
       "verifiedBy": []
     }

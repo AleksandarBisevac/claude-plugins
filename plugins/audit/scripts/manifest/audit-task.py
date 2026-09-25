@@ -17,7 +17,7 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
-                [--project-dir DIR] [--takeover] [--json]
+                [--dry-run] [--project-dir DIR] [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
@@ -70,6 +70,11 @@ Usage:
   means "unconsidered" and is written as [] (the area default stays in
   force). A skill literally named "null" cannot be spelled from this flag;
   no such skill exists. --tests-add and --gate repeat (one value each).
+  --files, --blocked-by, --depends-on and --verified-by repeat too, and each
+  value is still split on commas, so `--files a --files b,c` is three paths.
+  `add --dry-run` builds the task and validates the plan with it in memory,
+  and writes nothing. Under --json every refusal is one object,
+  {ok: false, exit, refused, findings}, never prose on stdout.
   A --tests-add value reaches `files` through the PATH it names, written as
   "<path>: <what it asserts>"; the field is free prose, so an entry
   naming no file adds nothing and the report says which entries those were
@@ -338,7 +343,15 @@ _PHASE_TEMPLATE_KEYS = ("id", "title", "status", "description",
 
 # --- flag parsing helpers ------------------------------------------------------
 def _split_csv(val):
-    """`a,b , c` -> ["a", "b", "c"]; None/empty -> []."""
+    """`a,b , c` -> ["a", "b", "c"]; None/empty -> [].
+
+    A LIST IS THE SAME ANSWER, one element per repeat of the flag: the list flags
+    are `action="append"`, so `--files a --files b,c` arrives as `["a", "b,c"]`
+    and reads as `["a", "b", "c"]`. The comma split is kept inside each value,
+    because that is the spelling every existing call and document uses.
+    """
+    if isinstance(val, (list, tuple)):
+        return [part for item in val for part in _split_csv(item)]
     if not isinstance(val, str):
         return []
     return [part.strip() for part in val.split(",") if part.strip()]
@@ -563,7 +576,14 @@ def _parse_skills(val):
 _GAP_SHAPES = (
     (re.compile(r"(?<=[^\s.!?])[ \t]{2,}"),
      "a run of spaces inside a sentence"),
-    (re.compile(r"[ \t][,;:)]"),
+    # A COLON THAT STARTS A WORD IS NOT A HOLE: `params :id and :key`, a line
+    # reference `at :2680`. Measured before narrowing, over the prose strings
+    # this plan, the shipped example and the starter template carry: the arm
+    # fired at a colon on three strings - those two shapes and a pytest `::` -
+    # and the narrowing releases the first two only, so a colon followed by an
+    # identifier character or a digit is left alone and one followed by
+    # whitespace, punctuation or the end is still the gap it was.
+    (re.compile(r"[ \t](?:[,;)]|:(?![A-Za-z0-9_]))"),
      "whitespace before a mark that hugs the word in front of it"),
     # The full stop has to be a full stop and not an ARGUMENT. A bare `.` is a
     # path, and this plan's own prose quotes `git fetch . b:p`, which the loose
@@ -764,56 +784,50 @@ def read_brief(value, flag, stream=None):
     return text, True, None
 
 
+# The two shapes a substituted backtick span leaves when it sat at the start of
+# the text or between two words: nothing where the span was, so a leading space
+# or two spaces in a row. The other shapes are just as often code quoted into
+# prose, which is why only these two are named as likely substitution.
+_SUBSTITUTION_SHAPES = ("a run of spaces inside a sentence",
+                        "whitespace before the first word")
+
+
 def brief_gap_refusal(flag, what, excerpt, rel_start, rel_end):
     """The refusal for a prose flag that reached argv with a hole in it.
 
-    It has to say WHAT WAS SEEN and WHAT TO DO, because a reader told only that
-    their input was malformed retypes the same command -- and the same shell eats
-    the same clause a second time.
+    THE ROUTE AND THE MARKED SPAN, AND ONE LINE OF CAUSE. It used to carry every
+    reason in full and ran to ten lines, so the three lines that are the repair
+    sat inside a paragraph a terminal wrapped to most of a screen. What stays is
+    what the reader acts on: the heredoc to retype (its word quoted, because an
+    unquoted one expands the body the way the double quotes did), the exact span
+    that matched, and what that span most likely is.
 
-    IT NAMES WHAT MATCHED, NOT A CAUSE THE CHECK NEVER TESTED FOR. Reported live:
-    a nested ternary (`foo() ? (a ? 280 : 70) : 0`), passed through a list-form
-    call with NO SHELL ANYWHERE, tripped one of the same whitespace-adjacency
-    shapes (`_GAP_SHAPES`) this function is refusing on now -- and the sentence
-    used to say outright that a backtick span had been eaten, when there was no
-    backtick in the text at all. `shell_eaten_gap` tests for the SHAPE and
-    never for a backtick, so this reads the mechanism as one thing the shape is
-    CONSISTENT with rather than the diagnosis, and the marker below is what
-    lets the reader tell the two apart without reading the regex.
-
-    THE COMMAND THE READER RETYPES COMES FIRST, and every reason after it in one
-    sentence. Nothing is cut: this carried the same facts in the opposite order
-    and a terminal wrapped it to most of a screen, so the three lines that are
-    the repair arrived under two paragraphs of argument the reader had to finish
-    before reaching them. A refusal is read in the order it is printed, and the
-    reader wants the way out first and the argument for it second.
+    IT NAMES WHAT MATCHED, NOT A CAUSE THE CHECK NEVER TESTED FOR. The shapes are
+    whitespace adjacency and no backtick, and a nested ternary passed through a
+    list-form call with no shell anywhere trips the same one. So substitution is
+    named as LIKELY only for the two shapes it leaves on its own - a leading or a
+    doubled space - with a pointer at the shell's own stderr, which says
+    `command not found` for every span it ran; for the rest the line says the
+    check cannot tell substitution from code quoted into the brief.
     """
     seen_line, mark_line = _marked_excerpt(excerpt, rel_start, rel_end)
+    if what in _SUBSTITUTION_SHAPES:
+        cause = ("  Likely COMMAND SUBSTITUTION: inside double quotes the shell ran "
+                 "a backtick span and left its output (nothing) here - its stderr "
+                 "above will say `<word>: command not found`.")
+    else:
+        cause = ("  The check cannot tell COMMAND SUBSTITUTION of a backtick span "
+                 "from code quoted straight into the brief; if the marked span is "
+                 "what you meant, stdin writes it verbatim.")
     return (
-        "[audit-task] %s carries %s. Pass it on stdin, which no shell rewrites "
-        "and this writes through unchanged:\n"
+        "[audit-task] %s carries %s -- refused, nothing written. Pass it on stdin "
+        "(quote the word):\n"
         "    ... %s - <<'BRIEF'\n"
         "    the text, backticks and all\n"
         "    BRIEF\n"
-        "  QUOTE the heredoc word ('BRIEF'): an unquoted <<BRIEF expands its "
-        "body exactly as the double quotes did.\n"
         "%s\n"
         "%s\n"
-        "  The check above tests every whitespace-adjacency SHAPE it knows and "
-        "no backtick at all, so the marker is what actually matched -- not a "
-        "diagnosis of why. One way this shape appears: inside double quotes, a "
-        "backtick span is COMMAND SUBSTITUTION, and the words between the "
-        "backticks are RUN and replaced by their output, which for prose is "
-        "nothing -- but the check cannot tell that apart from code quoted "
-        "straight into the brief (a ternary, a path, a colon-joined pair), which "
-        "reads the same once it sits in this text.\n"
-        "  Refused rather than written, because the marked span above is "
-        "exactly what would reach the manifest, and this route cannot tell a "
-        "shell-deleted clause from an operator's own punctuation.\n"
-        "  Text arriving on stdin is never REFUSED for this -- it is written as "
-        "you typed it, with a note saying what was seen -- so if the marked "
-        "span is what you meant, that route is still the way in."
-        % (flag, what, flag, seen_line, mark_line))
+        "%s" % (flag, what, flag, seen_line, mark_line, cause))
 
 
 def stdin_gap_note(flag, what, excerpt, rel_start, rel_end):
@@ -984,6 +998,32 @@ def _model_floor(risk):
     opus" would be two answers about what a rescoped task runs on.
     """
     return "opus" if risk == "high" else "sonnet"
+
+
+def _gate_directory_notes(project, entries, meta):
+    """A WARNING line for each gate entry that is a DIRECTORY rather than a command.
+
+    One token, no `meta.buildCommands` key (`key` or `key:project`), and a
+    directory under the project: an entry like that names no command, so the
+    gate either fails to run or runs whatever the shell makes of a path. A
+    command that merely MENTIONS a directory (`pytest tests/`) is several tokens
+    and is left alone. Warned, never refused - the entry is legal JSON and the
+    caller may be about to create a script of that name.
+    """
+    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
+    notes = []
+    for entry in entries or []:
+        token = entry.strip() if isinstance(entry, str) else ""
+        if not token or len(token.split()) != 1:
+            continue
+        if isinstance(build, dict) and (token in build
+                                        or token.split(":", 1)[0] in build):
+            continue
+        if os.path.isdir(os.path.join(project, token)):
+            notes.append("WARNING: gate entry %r is a directory in the project "
+                         "tree, not a command or a meta.buildCommands key - it "
+                         "names nothing to run" % (token,))
+    return notes
 
 
 def _empty_task_gate_note(now):
@@ -1653,9 +1693,26 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed,
             idx["fileIndex"] = assembled.get("fileIndex") or {}
         for key in index_fields:
             idx[key] = assembled.get(key)
-        _panel_write._atomic_write_json(mpath, idx)
-        written.append(_output.posix_rel(mpath, project))
+        # IDENTICAL BYTES ARE NOT A WRITE. A mirrored key or a field handed over
+        # here can come back exactly as it was, and rewriting the index then
+        # dirties nothing git can see while `written` - which the DIRTY note is
+        # read off - says the index moved. So the bytes are compared first.
+        if not _same_bytes(mpath, _mio.json_document(idx, 2)):
+            _panel_write._atomic_write_json(mpath, idx)
+            written.append(_output.posix_rel(mpath, project))
     return written
+
+
+def _same_bytes(path, text):
+    """Does the file at `path` already hold exactly `text`? False when unreadable.
+
+    Read in text mode like the writer writes, so the line endings a platform's
+    text mode translates compare as the same text they were written from."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read() == text
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 # THE SECOND-ORDER TRAP `commit-task-work.py` DOES NOT CLOSE. That script
@@ -2339,6 +2396,9 @@ def _locked_add(args, project, config, mpath, title, out):
     # v0.37 A4, at THIS write site too: reused from _panel_write, scoped to
     # the target phase -- the one shard this add writes anyway.
     healed = _panel_write._heal_phase_status({"phases": [phase]})
+    if args.dry_run:
+        return _dry_run_report(args, out, vm, assembled, task, phase_id, gate_basis,
+                               missing, unnamed_add, project, mpath)
 
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
@@ -2393,6 +2453,8 @@ def _locked_add(args, project, config, mpath, title, out):
                   # comparing a phase's basis with a task's is comparing one
                   # kind of answer.
                   "testGateBasis": gate_basis,
+                  "gateDirectories": _gate_directory_notes(
+                      project, task["tests"]["gate"], assembled.get("meta")),
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
@@ -2415,6 +2477,9 @@ def _locked_add(args, project, config, mpath, title, out):
     out("  gate: %s (%s)"
         % (", ".join(task["tests"]["gate"]) if task["tests"]["gate"]
            else "none", gate_basis))
+    for line in _gate_directory_notes(project, task["tests"]["gate"],
+                                      assembled.get("meta")):
+        out(line)
     if task["tests"]["mode"] == "tdd" and not task["tests"]["add"]:
         # SAID HERE AS WELL AS BY THE VALIDATOR, and the reason is when. A
         # live run created two tdd tasks with no case named, and the operator only
@@ -2460,6 +2525,51 @@ def _locked_add(args, project, config, mpath, title, out):
         out(branch_note)
     for line in _readiness_lines(waiting, task_id):
         out(line)
+    return 0
+
+
+def _dry_run_report(args, out, vm, assembled, task, phase_id, gate_basis, missing,
+                    unnamed_add, project, mpath):
+    """`add --dry-run`: the task built, the plan validated IN MEMORY, nothing written.
+
+    THE SAME VALIDATOR THE REAL ADD RE-READS FROM DISK, over the same assembled
+    plan it would have written, so a finding here is the finding the write would
+    have rolled back on. Nothing is journaled and no file is touched; the id is
+    the one the allocator would take now, under the lock this call holds, and a
+    later real call allocates afresh.
+    """
+    findings, warnings = vm.validate(assembled)
+    if args.as_json:
+        if findings:
+            for line in ["[audit-task] DRY RUN: the add would leave the manifest "
+                         "invalid -- nothing written"] + ["FINDING: " + f
+                                                          for f in findings]:
+                out(line)
+            return E_INVALID
+        result = {"ok": True, "dryRun": True, "id": task["id"], "phase": phase_id,
+                  "task": task, "written": [], "testGateBasis": gate_basis,
+                  "filesNotOnDisk": missing,
+                  "testsAddNamingNoFile": list(unnamed_add),
+                  "warnings": _wg.collapse_machine(warnings, assembled)}
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if findings:
+        out("[audit-task] DRY RUN: %s would leave the manifest invalid -- nothing "
+            "written:" % (task["id"],))
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    out("[audit-task] DRY RUN: would add %s to %s -- %s; nothing written, and the "
+        "plan validates with it" % (task["id"], phase_id, task["title"]))
+    out("  gate: %s (%s)" % (", ".join(task["tests"]["gate"]) or "none", gate_basis))
+    if task["files"]:
+        out("  files: %s" % ", ".join(task["files"]))
+    for note in (_unnamed_add_note(unnamed_add), _not_on_disk_note(project, missing)):
+        if note:
+            out(note)
+    for line in _wg.collapse(warnings, assembled):
+        out("WARNING: " + line)
     return 0
 
 
@@ -2936,6 +3046,27 @@ def _entry_line(entry, phase_id):
     return None
 
 
+def _entry_warnings(phase):
+    """What a phase ENTERED by this start is missing that sign-off will ask for.
+
+    WARNINGS AND NEVER A REFUSAL: an empty gate is a designed state (sign-off
+    then rests on review alone), and a phase with no outcome can still be
+    worked. They are said at entry because that is the last moment either is
+    cheap to set - after it, the work has already been judged against it.
+    """
+    pid = phase.get("id")
+    out = []
+    if not phase.get("testGate"):
+        out.append("phase entry: %s has an EMPTY testGate - sign-off will rest on "
+                   "review alone. A designed state, said here so it is chosen "
+                   "rather than inherited" % (pid,))
+    if not (phase.get("desiredOutcome") or "").strip():
+        out.append("phase entry: %s states no desiredOutcome - sign-off asks "
+                   "whether the phase met it (/audit:phase retarget %s --outcome "
+                   "\"<what success is>\")" % (pid, pid))
+    return out
+
+
 def _locked_start(args, project, config, mpath, tid, out):
     """Promote one task to `in_progress`, under the lock, with a row and a
     revalidation -- the path every mutating verb in this file takes.
@@ -3080,6 +3211,8 @@ def _locked_start(args, project, config, mpath, tid, out):
 
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
                           healed, entry)
+    entry_warnings = (_entry_warnings(phase)
+                      if healed or entry["state"] in ("cut", "adopt") else [])
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     entry_line = _entry_line(entry, phase_id)
     # REPORTED, NEVER REFUSED. The plan gate is what this verb serves, and the
@@ -3110,6 +3243,7 @@ def _locked_start(args, project, config, mpath, tid, out):
         result.update(_index_dirty_key(index_note))
         result["phaseEntry"] = {k: entry.get(k) for k in ("state", "branch", "parent",
                                                           "baseRef")}
+        result["entryWarnings"] = entry_warnings
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if was["status"] == "in_progress":
@@ -3133,6 +3267,8 @@ def _locked_start(args, project, config, mpath, tid, out):
         out("  NOTE: still waiting on %s -- promoted anyway, because this verb "
             "does not decide a spawn; /audit:run is where readiness does"
             % ", ".join(waiting))
+    for line in entry_warnings:
+        out("WARNING: " + line)
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -4969,11 +5105,15 @@ def _locked_scope(args, project, config, mpath, tid, out):
         # what unioning the whole entry, rather than just its path, used to do,
         # since a sentence unioned in is not the path
         # `commit_scope` will be looking for.
-        was_files = list(node.get("files") or [])
-        now_files = _union_paths(was_files, _tests_add_paths(now_add)[0])
-        if was_files != now_files:
+        # A NAME OF ITS OWN, not `was_files`: that one is the scope the task held
+        # BEFORE this call, and the `fileIndex` derivation below reads it - rebound
+        # here it would be the scope `--files` just wrote, and a path that call
+        # claimed would never reach the index.
+        before_union = list(node.get("files") or [])
+        now_files = _union_paths(before_union, _tests_add_paths(now_add)[0])
+        if before_union != now_files:
             changes.append({"id": tid, "field": "files",
-                            "from": was_files, "to": now_files})
+                            "from": before_union, "to": now_files})
             node["files"] = now_files
     if args.gate or args.gate_clear:
         now_gate = [] if args.gate_clear else list(args.gate)
@@ -5060,26 +5200,26 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # THE WHOLE POINT, and it is a re-derivation rather than an append: the task
     # is losing files as well as gaining them, and an index that only ever grew
     # would keep matching edits to a scope the task no longer claims.
+    #
+    # ONLY WHAT MOVED IS TOUCHED. The loop used to remove the task from every path
+    # it held and append it back, which on a no-op moved it to the END of a row it
+    # shares - a reordered shared `fileIndex` row on a call that changed nothing,
+    # which is merge-conflict material in the one file two phases both write.
+    # `released` and `claimed` ARE the derivation, so the index is rewritten for
+    # exactly those paths and a row the task keeps stays as it was.
+    released = [f for f in was_files if f not in (node.get("files") or [])]
+    claimed = [f for f in (node.get("files") or []) if f not in was_files]
     fidx = assembled.setdefault("fileIndex", {})
-    for fpath in was_files:
+    for fpath in released:
         entry = fidx.get(fpath)
         if isinstance(entry, list) and tid in entry:
             entry.remove(tid)
             if not entry:
                 del fidx[fpath]
-    for fpath in (node.get("files") or []):
+    for fpath in claimed:
         entry = fidx.setdefault(fpath, [])
         if tid not in entry:
             entry.append(tid)
-
-    # THE READ-BEFORE-WRITE FIX'S ADJACENT HALF. The report line below used to print unconditionally,
-    # including when `--files` was absent and the re-derivation was a no-op over
-    # an unchanged list - read live it said work had been dropped when none had.
-    # These two ARE the derivation's outcome: `fidx` gains a row for every path
-    # in `claimed` and loses this task from every path in `released`, so empty
-    # both ways is an index the loop above rewrote byte for byte.
-    released = [f for f in was_files if f not in (node.get("files") or [])]
-    claimed = [f for f in (node.get("files") or []) if f not in was_files]
 
     # SAME REPAIR AS `add`'s, AND FOR THE SAME REASON: the entry may carry a
     # `:line-range` suffix the schema allows, and stating a declaration is
@@ -5091,7 +5231,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
     phase_id = phase.get("id")
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
-        written = _write_add(project, mpath, raw_index, assembled, phase_id, True)
+        written = _write_add(project, mpath, raw_index, assembled, phase_id,
+                             bool(released or claimed))
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -5208,6 +5349,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
         # this task runs none of its own and the phase's is what still grades it.
         # Silence would leave a designed state to read as breakage.
         out(_empty_task_gate_note(True))
+    if any(row["field"] == "tests.gate" for row in changes):
+        for line in _gate_directory_notes(project, (node.get("tests") or {})
+                                          .get("gate"), assembled.get("meta")):
+            out(line)
     unnamed_note = _unnamed_add_note(unnamed_add)
     if unnamed_note:
         # BEFORE the index lines, because it is about what did NOT reach the
@@ -6175,7 +6320,7 @@ VERB_FLAGS = {
     # afterwards is its own verb and its own refusals.
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
-            "tests_add", "gate", "gate_clear"),
+            "tests_add", "gate", "gate_clear", "dry_run"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -6223,6 +6368,17 @@ VERB_FLAGS = {
 
 
 
+def _list_help(what, example, empties=True):
+    """The `--help` text every comma-list flag carries: the separator, that the
+    flag repeats, and an example - the separator used to be guessed. `empties`
+    is whether `--flag ""` empties the field, which holds for the id lists and
+    `--verified-by` and not for `--files` (a scope with no files is refused)."""
+    return ("%s, comma-separated; the flag may also repeat, and the values join "
+            "in order (e.g. %s, or the same flag once per value)%s"
+            % (what, example, ". An empty value empties the field" if empties
+               else ""))
+
+
 def build_parser():
     """The parser, reachable without starting a process.
 
@@ -6248,15 +6404,20 @@ def build_parser():
                         "materialize on the development branch after this branch merges")
     p.add_argument("--skills", default=None)
     p.add_argument("--model", default=None)
-    p.add_argument("--files", default=None)
+    p.add_argument("--files", action="append", default=None,
+                   help=_list_help("repo-relative paths", "--files src/a.ts,src/b.ts",
+                                   empties=False))
     # `add` only. The patterns for what this task PRODUCES, beside the list of
     # what it edits: a comma list like `--files`, and anchored at a literal
     # directory name so a plan cannot declare the whole tree and switch the plan
     # gate off through the door built to keep it on.
     p.add_argument("--outputs", default=None)
     p.add_argument("--risk", choices=["low", "med", "high"], default=None)
-    p.add_argument("--blocked-by", dest="blocked_by", default=None)
-    p.add_argument("--depends-on", dest="depends_on", default=None)
+    p.add_argument("--blocked-by", dest="blocked_by", action="append", default=None,
+                   help=_list_help("task, phase or decision ids",
+                                   "--blocked-by P2.1,P3"))
+    p.add_argument("--depends-on", dest="depends_on", action="append", default=None,
+                   help=_list_help("task ids", "--depends-on P2.1,P2.2"))
     p.add_argument("--description", default="", help=_PROSE_HELP)
     # `retarget --rename "<new title>"`. Not `--title`: this verb's
     # POSITIONAL slot is called `title` and carries the phase id, so the flag
@@ -6308,7 +6469,9 @@ def build_parser():
     # `verifiedBy`: the test names this task added, the field `reference/
     # orchestrator.md` step 4b fills beside the outcome. A comma list of names for
     # `--blocked-by`'s reason, and `--verified-by ""` empties it for the same one.
-    p.add_argument("--verified-by", dest="verified_by", default=None)
+    p.add_argument("--verified-by", dest="verified_by", action="append",
+                   default=None,
+                   help=_list_help("test names", "--verified-by t_refund,t_retry"))
     # `done` only. The reviewer's own per-task verdict on whether the diff
     # does what `description` asked - `matches` / `diverges` / `cannot-tell`,
     # never a bare flag: an ENUM argparse grades, so this needs no place on
@@ -6330,6 +6493,10 @@ def build_parser():
     p.add_argument("--to", default=None, metavar="PHASE")
     # `note` only. The note itself, appended to `notes[]` verbatim.
     p.add_argument("--text", default=None, metavar="TEXT", help=_PROSE_HELP)
+    # `add` only. Build and validate the task in memory and write nothing.
+    p.add_argument("--dry-run", dest="dry_run", action="store_true", default=False,
+                   help="add: build the task and validate the plan with it, and "
+                        "write nothing - no manifest, no journal row")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p
@@ -6451,12 +6618,54 @@ def misplaced_flag_refusal(verb, supplied, flags=None):
     return "\n".join(lines)
 
 
+def json_refusal(code, lines):
+    """`{ok: false, refused, findings}` for a refusal whose text went to `lines`.
+
+    A `--json` caller parses stdout, and a refusal printed as prose there is a
+    `json.loads` error standing in for the answer - so every refusal, from any
+    door of any verb, reaches that caller as one object. `refused` is the
+    message; `findings` are its `FINDING:` lines, apart, because they are the
+    validator's own words and a consumer acting on them should not parse prose.
+    """
+    text = [ln for ln in lines if not ln.startswith("FINDING: ")]
+    return json.dumps({"ok": False, "exit": code,
+                       "refused": "\n".join(text).strip(),
+                       "findings": [ln[len("FINDING: "):] for ln in lines
+                                    if ln.startswith("FINDING: ")]},
+                      indent=2, sort_keys=True)
+
+
 def main(argv, out=print):
     p = build_parser()
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
+    if not args.as_json:
+        return _dispatch(args, argv, out)
+    # UNDER `--json` THE OUTPUT IS BUFFERED, so a refusal can be handed over as
+    # data: a verb that answers prints its one object and it is passed through
+    # unchanged; one that refuses printed prose, which becomes `json_refusal`.
+    lines = []
+    code = _dispatch(args, argv, lines.append)
+    if code != 0 and not _is_one_object(lines):
+        out(json_refusal(code, "\n".join(str(x) for x in lines).splitlines()))
+        return code
+    for line in lines:
+        out(line)
+    return code
+
+
+def _is_one_object(lines):
+    """Is the buffered output exactly one JSON object?"""
+    try:
+        return isinstance(json.loads("\n".join(str(x) for x in lines)), dict)
+    except ValueError:
+        return False
+
+
+def _dispatch(args, argv, out):
+    """The checks every call gets, then the verb's door."""
     # This check comes FIRST because it is the cheapest true thing that can be
     # said about this call: a flag the verb does not read is a usage error whatever
     # its value, and asking about the VALUE of a flag nothing will read would be
