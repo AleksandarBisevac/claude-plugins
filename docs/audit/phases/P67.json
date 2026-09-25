@@ -19,10 +19,25 @@
   "branch": "audit/p67-audit-version-says-which-build",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P67-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-version.py",
+        "issue": "an installed version that does not parse defaulted to 0.0.0 and was called older than the running copy",
+        "resolution": "fixed in P67.3-2e7: said to be not comparable (v9e)"
+      },
+      {
+        "id": "P67-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-version.py",
+        "issue": "parse_version dropped a pre-release suffix, so 3.1.0-beta read as 3.1.0 and up to date",
+        "resolution": "fixed in P67.3-2e7: semver ordering (v2b-v2d)"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -128,6 +143,56 @@
         "answer": "matches",
         "commit": "ed2abb1",
         "at": "2026-09-25T06:45:27Z"
+      }
+    },
+    {
+      "id": "P67.3-2e7",
+      "title": "Sign-off review findings: versions compare by semver, and an uncomparable installed version is said, not taken as older",
+      "status": "done",
+      "description": "P67 review: an unparseable installed version defaulted to 0.0.0 and was called older than the running copy; parse_version dropped a pre-release suffix, so 3.1.0-beta read as 3.1.0 and up to date.",
+      "files": [
+        "plugins/audit/scripts/status/audit-version.py",
+        "plugins/audit/tests/test_audit_version.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_version.py: a pre-release is older than its release, and an uncomparable installed version is not called older"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5af605e",
+      "outcome": {
+        "technical": "met - semver ordering, uncomparable marker; v2b-v2d, v9e red first; three mutations red",
+        "descriptive": "The version command orders pre-release builds correctly and never calls a copy older when its version cannot be read."
+      },
+      "startedAt": "2026-09-25T06:51:47Z",
+      "completedAt": "2026-09-25T06:53:20Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_version.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5af605e",
+        "at": "2026-09-25T06:53:20Z"
       }
     }
   ],
