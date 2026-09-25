@@ -414,7 +414,7 @@
     {
       "id": "P69",
       "title": "What the plan records about a finished phase is true, and the worktree tool knows its own branches",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P69.json"
     },
     {
