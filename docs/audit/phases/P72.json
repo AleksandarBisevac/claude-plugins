@@ -218,7 +218,7 @@
     {
       "id": "P72.3-ttl",
       "title": "journal-writes derives no sign-off from a stored status, and no row for a write another session made",
-      "status": "in_progress",
+      "status": "done",
       "description": "Measured on this repo: after the orchestrator's settle (which stored the derived done on 34 phase bodies and mirrored status onto 69 index stubs), a DIFFERENT session's installed journal-writes hook, on an unrelated Bash call, derived 147 rows under its own session - 105 phase.signoff for 70 phases - from the manifest digest change it saw. Two defects compose. (1) Meaning: a sign-off is recorded by the signoff verb (its own journal row); a stored-status flip is not a sign-off - at HEAD phase.signoff is derived only from phase bodies, but a parent-branch body settle moved to done has mergedAt null, and a null last field is never a dedup key, so HEAD still derives one per such body. Stop deriving phase.signoff from status (or derive it only from a review.status/verdict change the verb did not record), and recognise settle and the stub mirror as the plugin's own materialisation (settle journals plan.settle). (2) Attribution: the sweep lane derives rows from any manifest digest change it sees, whoever wrote it, and files them under the observing session. Derive only from writes this tool call made - its own target, or the command's tree through tree_for - never from a digest a peer's write moved. Cases: settle, then a peer session's unrelated Bash call derives nothing; a hand status flip still yields a hand-edit row; the verb's sign-off row is not duplicated.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -256,14 +256,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0b89afff",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Pre pass refreshes moved slots; phase.signoff derived from its inputs, not the stored status.",
+        "descriptive": "A session's hook no longer records another session's plan writes as its own, and storing a status is never read as a sign-off."
       },
       "startedAt": "2026-09-25T17:47:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T18:03:26Z",
+      "verifiedBy": [
+        "test_journal_writes sg1",
+        "test_journal_writes sg2",
+        "test_journal_writes sg4"
+      ]
     },
     {
       "id": "P72.4-ttl",

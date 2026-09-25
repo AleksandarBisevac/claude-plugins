@@ -581,9 +581,41 @@ def month_of(ts):
     return str(ts)[:7] if len(str(ts)) >= 7 else time.strftime("%Y-%m", time.gmtime())
 
 
-def file_for(directory, ts, actor, fallback=None):
-    return os.path.join(directory, "%s.%s.jsonl"
-                        % (month_of(ts), writer_id(actor, fallback=fallback)))
+# The part of a writer id that names a LINKED WORKTREE, after the session's.
+WORKTREE_MARK = "wt-"
+
+
+def worktree_key(project, config=None):
+    """`wt-<8 hex>` when `project` is a linked git worktree, else None.
+
+    ONE WRITER PER FILE is what keeps a journal merge free of conflicts, and the
+    writer id used to be the session alone - so every worktree a session drove
+    appended the same basename, and merging two of those branches met one file
+    whose same-second rows said different things. A linked worktree is told
+    apart by its `.git` being a FILE (git writes a pointer there, a directory in
+    a main checkout), and it is named by the first half of its own writer token:
+    the worktree keeps its state under its own `stateDir`, so the token is its
+    own, random, and names no path or machine. None - the name every earlier
+    release wrote - for a main checkout, so an existing file goes on growing,
+    and when no token can be stored, where a pid-shaped name would scatter one
+    worktree's month across files."""
+    try:
+        if not os.path.isfile(os.path.join(str(project), ".git")):
+            return None
+    except Exception:
+        return None
+    token = writer_token(project, config)
+    return (WORKTREE_MARK + token[:8]) if token else None
+
+
+def file_for(directory, ts, actor, fallback=None, worktree=None):
+    """`<YYYY-MM>.<writer>.jsonl`, the writer being the session (or the
+    fallback) and, in a linked worktree, `worktree_key`'s answer after it:
+    `<YYYY-MM>.<writer>.wt-<8 hex>.jsonl`."""
+    writer = writer_id(actor, fallback=fallback)
+    if worktree:
+        writer = "%s.%s" % (writer, worktree)
+    return os.path.join(directory, "%s.%s.jsonl" % (month_of(ts), writer))
 
 
 # --- the plugin's own appends, declared to the guard -------------------
@@ -835,7 +867,11 @@ def session_index(project, config=None):
                 stamps.append(str(row["ts"]))
         writer = writer_of(os.path.basename(path))
         known = set(sids) | set(esids)
-        mine = bool(env) and (env in known or writer == env_writer)
+        # A worktree-keyed file is `<session writer>.wt-<key>`: still the
+        # session's, named one worktree further.
+        mine = bool(env) and (env in known or writer == env_writer
+                              or writer.startswith("%s.%s" % (env_writer,
+                                                             WORKTREE_MARK)))
         entry = {"file": where, "writer": writer, "rows": len(rows),
                  "first": min(stamps) if stamps else None,
                  "last": max(stamps) if stamps else None,
@@ -1322,7 +1358,8 @@ def _append(project, entry, config=None):
     # append neither reads nor creates state it will not use.
     path = file_for(directory, row["ts"], row["actor"],
                     fallback=None if has_session(row["actor"])
-                    else writer_token(project, config))
+                    else writer_token(project, config),
+                    worktree=worktree_key(project, config))
 
     # The state the write produced, so a later change with no row to explain it is
     # visible. Resolved against the project, since `target` is repo-relative.

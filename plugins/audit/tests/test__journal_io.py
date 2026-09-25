@@ -2526,6 +2526,92 @@ def _gone_cases(check):
           and "git log --diff-filter=D -- docs/audit/journal/2026-01.a.jsonl"
           in _gw12)
 
+    _worktree_writer_cases(check)
+
+
+def _worktree_writer_cases(check):
+    """(wk) ONE WRITER PER FILE, AND A SESSION DRIVING TWO WORKTREES IS TWO.
+
+    The per-writer layout keeps journal merges conflict-free only while each file
+    has one writer, and the writer id was the session alone: every worktree a
+    session drove appended the same basename, and merging two of those branches
+    refused a file whose same-second rows said different things. Measured merging
+    main into a phase branch, resolved by hand."""
+    import subprocess
+    ok, pair = _harness.attempt(_harness.worktree_pair, "journal-io-wt-")
+    if not ok:
+        check("wk0 the worktree fixture builds (%s)" % (pair,), False)
+        return
+    main, wt_a = pair["main"], pair["wt"]
+    wt_b = os.path.join(pair["root"], "main-B")
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false"]
+    subprocess.run(git + ["worktree", "add", "-q", wt_b, "-b", "chore/b"],
+                   cwd=main, check=True, capture_output=True, timeout=30)
+    sid = "cccccccc-0000-4000-8000-00000000000c"
+
+    def row(project, what):
+        return M.append(project, {"action": "task.start", "target": "",
+                                  "summary": what,
+                                  "actor": {"sessionId": sid, "via": "cli"}})
+    in_a, in_b, in_main = row(wt_a, "a"), row(wt_b, "b"), row(main, "m")
+    check("wk1 two linked worktrees driven by ONE session append to two "
+          "different files - the writer is the session AND the worktree",
+          bool(in_a) and bool(in_b)
+          and os.path.basename(in_a) != os.path.basename(in_b),
+          repr((in_a, in_b)))
+    check("wk2 ...while the main checkout keeps the session-keyed name every "
+          "earlier release wrote, so an existing file goes on growing",
+          bool(in_main) and os.path.basename(in_main)
+          == "%s.%s.jsonl" % (time.strftime("%Y-%m", time.gmtime()),
+                              M.writer_id({"sessionId": sid})),
+          repr(in_main))
+    check("wk3 the worktree files still name the session they belong to - "
+          "the session's writer id is the file's writer's first part",
+          bool(in_a) and M.writer_of(os.path.basename(in_a)).startswith(
+              M.writer_id({"sessionId": sid}) + "."),
+          repr(in_a))
+    check("wk4 a second row from the same worktree lands in the SAME file - "
+          "the key is stable, not per append",
+          row(wt_a, "a2") == in_a)
+    old_env = os.environ.get(M.ENV_SESSION_VAR)
+    os.environ[M.ENV_SESSION_VAR] = sid
+    try:
+        idx = M.session_index(wt_a)
+    finally:
+        if old_env is None:
+            os.environ.pop(M.ENV_SESSION_VAR, None)
+        else:
+            os.environ[M.ENV_SESSION_VAR] = old_env
+    check("wk5 the session index calls a worktree-keyed file the session's own",
+          any(os.path.basename(in_a) == os.path.basename(f) for f in idx["mine"]),
+          repr(idx["mine"]))
+    # Both branches commit their journal and merge into main: no conflict.
+    for tree, msg in ((wt_a, "a"), (wt_b, "b")):
+        subprocess.run(git + ["add", "-A", "docs/audit/journal"], cwd=tree,
+                       check=True, capture_output=True, timeout=30)
+        subprocess.run(git + ["commit", "-qm", msg], cwd=tree, check=True,
+                       capture_output=True, timeout=30)
+    subprocess.run(git + ["add", "-A", "docs/audit/journal"], cwd=main,
+                   check=True, capture_output=True, timeout=30)
+    subprocess.run(git + ["commit", "-qm", "m"], cwd=main, check=True,
+                   capture_output=True, timeout=30)
+    merges = [subprocess.run(git + ["merge", "--no-edit", "-q", br], cwd=main,
+                             capture_output=True, text=True, timeout=30)
+              for br in ("chore/p48", "chore/b")]
+    check("wk6 merging both worktree branches into main raises no journal "
+          "conflict", all(m.returncode == 0 for m in merges),
+          repr([(m.returncode, m.stdout[-200:]) for m in merges]))
+    _files = sorted(set(r.get("_file") for r in M.read_all(main)))
+    check("wk8 every reader that walks the trail - read_all, and through it the "
+          "record-key dedup and the session index - reads the worktree-keyed "
+          "names beside the old one",
+          len(_files) == 3
+          and sum(1 for f in _files if "." + M.WORKTREE_MARK in f) == 2,
+          repr(_files))
+    check("wk7 ...and the merged trail verifies",
+          M.verify(main)["ok"], repr(M.verify(main).get("findings")))
+
 
 def _selftest():
     return _harness.run(_cases)

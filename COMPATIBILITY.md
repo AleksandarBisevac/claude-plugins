@@ -281,6 +281,12 @@ depending on an implementation:
 - the audit trail's row shape, the usage ledger's NDJSON fields, and the evidence
   record's — all three are files this plugin writes and re-derives; the manifest's
   `testEvidence` block is the interface, and an evidence row is not,
+- **the audit trail's file names.** A journal file is named by its month and its
+  writer, and the writer has already been refined once: a linked worktree now writes
+  `<month>.<session>.wt-<key>.jsonl` beside the session-keyed name a main checkout
+  keeps, so one session's worktrees never share a file. Every name an earlier release
+  wrote is still read — every reader walks the directory — but a tool that builds a
+  name itself instead of listing the directory is depending on an implementation,
 - every file the hooks keep under `stateDir` — the session slots and the
   running-copy stamp. They are scratch a session writes and the next one replaces,
   garbage-collected after a week, and `/audit:doctor` reads the SHAPE of one of them

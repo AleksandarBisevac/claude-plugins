@@ -188,6 +188,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `eval "$(echo …)"` ran unread; and `xargs git` took its verb from stdin unseen - it is refused
   while a plan exists. A reset or amend reaching several worktrees now resolves its refs in the
   tree it runs in.
+- **A session's journal hook recorded other sessions' writes, and read a stored status as a
+  sign-off.** After the orchestrator stored its phases' derived statuses, a different session's
+  next unrelated Bash call derived rows from the manifest digest it saw move - 105 of them
+  `phase.signoff` - and filed them under itself. The Bash and MCP lanes now refresh their
+  baseline before each call, so a call derives rows only from what moved while it ran; and
+  `phase.signoff` is derived from the derivation's inputs (the verdict, and with a branch the
+  merge stamp), never from a `status` flipped by hand or stored to match the derivation. Such a
+  flip is still recorded, as the edit it is.
+- **One session's worktrees shared a journal file.** The writer id was the session alone, so
+  every linked worktree a session drove appended the same `<month>.<session>.jsonl`, and merging
+  two of those branches met a file whose same-second rows disagreed. A linked worktree now writes
+  `<month>.<session>.wt-<key>.jsonl`, the key taken from the worktree's own writer token; a main
+  checkout keeps the name it always had, and every reader still reads both. The evidence ledger
+  had the same defect - and `audit-journal merge` reads the journal directory only, so its
+  conflict had no resolver - and is keyed the same way. **Limit:** a linked worktree is
+  recognised by the `.git` file at the project directory, so a project whose `gitRoot` is a
+  subdirectory still writes session-keyed names from every worktree.
 
 ## [3.0.1] - 2026-09-18
 
