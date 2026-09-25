@@ -1,7 +1,7 @@
 {
   "id": "P57",
   "title": "The instructions cost what they are worth",
-  "status": "in_progress",
+  "status": "done",
   "description": "The token audit's finding, in one sentence: the expensive surfaces of this plugin are its instructions rather than its code. The Python runs locally and costs the user nothing, and the two largest artifacts never enter a context window; what costs tokens is prose the model is told to read and prose it is told to re-type. This phase takes the three cheapest of those: the orchestration reference read whole by commands that execute none of it, a discovery payload printed unprojected beside a projection nothing calls, and command descriptions carried by every session including the ones that never open a plan.",
   "desiredOutcome": "A command loads only the instruction it executes, a projection is used where one exists, and no description sits in a session that will never call it.",
   "testGate": [

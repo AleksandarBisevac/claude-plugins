@@ -1,7 +1,7 @@
 {
   "id": "P43",
   "title": "The orchestrator's own errors get mechanisms",
-  "status": "in_progress",
+  "status": "done",
   "description": "Five orchestration errors were made in one long parallel run and each was recorded as it happened: a claim that an agent was running when none had been spawned; a tree-wide `git reset --hard` that destroyed uncommitted work in three places; a worktree diff taken against a branch that had moved, which silently reverted a sibling task's cases; task status hand-written into two files because no verb closes a task; and a brief that told an agent a field exists which does not. None was a knowledge failure - every rule was known and written down. They are moment-of-action failures, which is the class this repo already answers with a question plus a mechanism rather than with a reminder.",
   "desiredOutcome": "The three orchestration failures a mechanism can catch are caught by one: a destructive tree-wide git command is refused while uncommitted work exists and names what would be lost; a task is closed by a verb that writes one record under the lock rather than by hand-editing two files; and a worktree's work is taken by a tool that diffs against the base that worktree actually had. What no mechanism can read - a claim about work in flight, and a brief that asserts what the code does not do - is carried by a skill whose every rule names the command that checks it.",
   "testGate": [
