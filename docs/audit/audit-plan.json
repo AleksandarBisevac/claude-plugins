@@ -2833,7 +2833,7 @@
     {
       "id": "BUG-10",
       "title": "commit-manifest-index commits an index whose fileIndex names tasks their phase's shard has not committed, so the commit records a plan that does not validate",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-09-25T06:37:17Z",
       "reportedBy": null,
@@ -2849,7 +2849,7 @@
         "plugins/audit/scripts/governance/commit-manifest-index.py"
       ],
       "taskId": "P68.1",
-      "fixedIn": null,
+      "fixedIn": "46bd442",
       "notes": "found signing off P66, 2026-09-25"
     }
   ],
