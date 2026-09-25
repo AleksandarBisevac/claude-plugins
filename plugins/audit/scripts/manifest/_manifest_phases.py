@@ -236,29 +236,35 @@ def _check_phase_intent(phase, pwhere, build_keys):
 
     ADDITIVE AND NEVER A REFUSAL (`COMPATIBILITY.md` -> Validation stays
     additive). An empty gate is a designed state - sign-off then rests on
-    review alone - so a running phase holding one is named, not refused. A
-    finished phase is history nobody can act on, so nothing fires on one; the
-    outcome and empty-gate lines wait until the phase RUNS, which is when
-    sign-off is next going to read them.
+    review alone - so a phase holding one is named, not refused. A finished
+    phase is history nobody can act on, so nothing fires on one.
+
+    THE OUTCOME AND EMPTY-GATE LINES ASK OF A PHASE IN FLIGHT: running, or
+    with every task finished and its sign-off still due - the moment sign-off
+    reads both. A phase not yet started is not asked; a plan parks phases whose
+    outcome is written when they are picked up, and naming every one of them
+    is the noise that teaches a reader to skip the class.
     """
     if _mio.effective_phase_status(phase) in TERMINAL:
         return []
     out = _comma_joined_gate(_gate_entries(phase.get("testGate")), build_keys,
                              pwhere, "testGate")
-    if not _mio.phase_running(phase):
+    if not (_mio.phase_running(phase) or _mio.signoff_due(phase)):
         return out
     outcome = phase.get("desiredOutcome")
     # The bodies carry no phase id, so `_warning_groups.collapse` folds the
     # same state across phases into one line.
     if not (isinstance(outcome, str) and outcome.strip()):
-        out.append("%s: running with no desiredOutcome - sign-off asks whether "
-                   "a phase met its outcome, and this one states none. Set it "
-                   "with `/audit:phase retarget <phaseId> --outcome \"<what "
-                   "success is>\"`" % (pwhere,))
+        out.append("%s: in flight (running or awaiting sign-off) with no "
+                   "desiredOutcome - sign-off asks whether a phase met its "
+                   "outcome, and this one states none. Set it with "
+                   "`/audit:phase retarget <phaseId> --outcome \"<what success "
+                   "is>\"`" % (pwhere,))
     if not _gate_entries(phase.get("testGate")):
-        out.append("%s: running with an EMPTY testGate - a designed state, and "
-                   "its sign-off rests on review alone. If a command can grade "
-                   "this work, `/audit:phase retarget <phaseId> --gate <entry>`"
+        out.append("%s: in flight (running or awaiting sign-off) with an "
+                   "EMPTY testGate - a designed state, and its sign-off rests "
+                   "on review alone. If a command can grade this work, "
+                   "`/audit:phase retarget <phaseId> --gate <entry>`"
                    % (pwhere,))
     return out
 

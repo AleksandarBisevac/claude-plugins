@@ -875,6 +875,17 @@ def _cases(check):
           "gate, say nothing about the gate: %r"
           % ([x for x in _gw_qw + _gw_gw if "EMPTY testGate" in x],),
           not [x for x in _gw_qw + _gw_gw if "EMPTY testGate" in x])
+    _gw_sd = _gw([], outcome=None, status="in_progress", tstatus="done")[1]
+    check("gw8 a phase whose tasks are all finished and whose SIGN-OFF IS DUE "
+          "is still asked both questions - that is the moment sign-off reads "
+          "the outcome and runs the gate, so a rule that went quiet there "
+          "would go quiet exactly when it matters: %r"
+          % ([x for x in _gw_sd if "desiredOutcome" in x
+              or "EMPTY testGate" in x],),
+          _mio.signoff_due(_phase(status="in_progress", tasks=[
+              _task("P0.1", status="done")]))
+          and len([x for x in _gw_sd if "desiredOutcome" in x]) == 1
+          and len([x for x in _gw_sd if "EMPTY testGate" in x]) == 1)
     # --- `outputs`: the only key on a task that can WIDEN the plan gate -------
     # A FINDING AND NOT A WARNING, which is the decision rather than an
     # oversight: a warning leaves the entry in the file, and the gate would then

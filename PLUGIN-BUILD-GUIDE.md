@@ -3245,7 +3245,7 @@ hung" and "the binary is missing" arrived identical. They are different repairs,
 different words, and neither is read out of an exit code: 124 and 127 are codes a real command may
 return on its own, so the category comes from what the wrapper observed and travels beside the code.
 A missing binary under `shell=True` is read off the **shell's own diagnostic** beside the 127 —
-`no_verdict_signature()` holds each captured spelling, and vitest's `No test files found` beside its
+`no_verdict_signature()` holds each spelling a case holds the tool's own output for, and vitest's `No test files found` beside its
 exit 1 — and only where the output carries no end-of-run report, so `reached_a_verdict()` stays the
 guard for a runner whose exit status is a count. A bare 127 is still a failure, pinned by a case.
 A jest worker killed by a signal leaves jest's own exit at 1, so that kill is read from jest's report

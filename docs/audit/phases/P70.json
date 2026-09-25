@@ -19,10 +19,60 @@
   "branch": "audit/p70-a-gate-that-could-not-reach-a",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P70-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "This is a boundary change. A task whose gate is `gateBasis: cleared` now resolves EMPTY at task scope, and main() returns E_OK before anything is recorded. Nothing in the tree writes an `empty-gate` pointer: the enum member exists and has no writer. So a cleared task that reaches `done` has no `testEvidence`. `missingOnDone` counts every done subject without a pointer, and it does not check whethe",
+        "resolution": "fix task P70.3-fos"
+      },
+      {
+        "id": "P70-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "`jest_worker_signal` sets `step['signal']`, and the retry arm in run_gate keys on that field. So a jest step whose report ends with its own summary ('Test Suites: 1 failed, 2 passed' at exit 1) is now run a second time, at a lowered `--maxWorkers`. jf6 even supplies a second canned output. phase-signoff.md still says 'It never retries a step that exited non-zero **having printed its own end-of-run",
+        "resolution": "fix task P70.3-fos"
+      },
+      {
+        "id": "P70-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "The docstring says the signal is 'lifted IN FRONT of the reason' so the committed row keeps it under `_journal_io.MAX_VALUE_CHARS` (120). But the entry starts with the suite path and the heading: '<suite>: Test suite failed to run (signal=SIGSEGV) - ...'. For any suite path longer than about 77 characters (120 - 26 - 17), the signal falls past the cut. Such paths are ordinary in a monorepo, e.g. p",
+        "resolution": "fix task P70.3-fos"
+      },
+      {
+        "id": "P70-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "The block says 'Each spelling was captured from the tool itself; the cases hold the captures', and PLUGIN-BUILD-GUIDE.md repeats 'holds each captured spelling'. The cmd.exe row has no capture and no case at all: the capture note lists only sh, dash, zsh, vitest and jest. It is also the loosest arm. It is not anchored to line start, and it accepts exit 1 as well as 9009. On Windows, a harness with ",
+        "resolution": "fix task P70.3-fos"
+      },
+      {
+        "id": "P70-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "`NO CHECK RAN:` is the banner for the `no-checks` verdict, and it is missing from the banner list. So a task-scope run that ends in no-checks prints no `graded by:` line. execute-task.md, PLUGIN-BUILD-GUIDE.md and the CHANGELOG all say the line sits under the verdict banner, which is not true for this verdict.",
+        "resolution": "fix task P70.3-fos"
+      },
+      {
+        "id": "P70-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "The task-scope EMPTY sentence always says \"phase %s's testGate at sign-off is what still does\" grade the task. It does not check that the phase's testGate is non-empty. For a cleared task in a phase whose gate is also empty, sign-off rests on review alone and the sentence is false.",
+        "resolution": "fix task P70.3-fos"
+      },
+      {
+        "id": "P70-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "issue": "The docstring says the outcome and empty-gate lines 'wait until the phase RUNS, which is when sign-off is next going to read them'. But `_mio.phase_running` is False for a phase whose only remaining step is sign-off. So both warnings disappear at exactly the moment sign-off reads the outcome. The P70.2 description also asked for the outcome warning on any non-terminal phase, not only a running one",
+        "resolution": "fix task P70.3-fos"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -129,6 +179,60 @@
         "test__manifest_phases gw4",
         "test__manifest_phases gw6"
       ]
+    },
+    {
+      "id": "P70.3-fos",
+      "title": "Sign-off review findings: cleared tasks carry evidence, the jest retry is decided and documented, the signal survives the row cut, and the uncaptured cmd.exe signature is dropped",
+      "status": "in_progress",
+      "description": "Findings of the phase review, every one to be fixed (or answered with a measured reason) in this task:\nR1 (med) plugins/audit/scripts/governance/run-test-gate.py:3500-3520 (main, empty-gate return) with plugins/audit/scripts/status/_status_facts.py:640-700 (test_evidence_summary / missingOnDone) and plugins/audit/commands/status.md:136-138: This is a boundary change. A task whose gate is `gateBasis: cleared` now resolves EMPTY at task scope, and main() returns E_OK before anything is recorded. Nothing in the tree writes an `empty-gate` pointer: the enum member exists and has no writer. So a cleared task that reaches `done` has no `testEvidence`. `missingOnDone` counts every done subject without a pointer, and it does not check whether the subject could have had one. The result is that `audit-status --gate --fail-on no-test-evidence` now fails on every cleared task in a phase that has a gate. Before this diff, the phase's gate was borrowed and a row was written. The repair text the condition prints (`sinceBoundary`: run the gate) cannot be done for these tasks. status.md's 'that could have carried one' is also false for them. The CHANGELOG entry for the cleared-gate fix does not mention this. -> Scope a task that covers both sides. Either (a) under `--record`, write an `empty-gate` pointer and ledger row for a task-scope EMPTY answer (the schema already defines the word as 'no gate was configured'), or (b) have `test_evidence_summary` exclude a done task whose `tests.gateBasis` is `cleared` from `missingOnDone`. Add a case that drives `--fail-on no-test-evidence` over a done cleared task, and add a CHANGELOG line.\nR2 (med) plugins/audit/scripts/governance/run-test-gate.py:2590-2607 (observed_step, jest_worker_signal) and :2680-2701 (retry comment); plugins/audit/reference/phase-signoff.md:181-184: `jest_worker_signal` sets `step['signal']`, and the retry arm in run_gate keys on that field. So a jest step whose report ends with its own summary ('Test Suites: 1 failed, 2 passed' at exit 1) is now run a second time, at a lowered `--maxWorkers`. jf6 even supplies a second canned output. phase-signoff.md still says 'It never retries a step that exited non-zero **having printed its own end-of-run report**, whatever the exit code', and the run_gate comment still says 'The key read here is the one `ended_by_signal` wrote ... a non-zero exit beside an end-of-run report is a measurement'. Both are now false. No case asserts `retriedAfterSignal`/`retryBasis` on the jest path, and the CHANGELOG does not mention the retry. -> Decide whether the retry is intended. If it is, reword the phase-signoff.md sentence and the run_gate comment to name the jest-report exception, add a case that pins `retriedAfterSignal == 'SIGSEGV'` plus the lowered bound on a jest-killed step (and its red-first mutation), and add a CHANGELOG line. If it is not, have the retry arm skip steps whose signal came from `jest_worker_signal`.\nR3 (med) plugins/audit/scripts/governance/run-test-gate.py:773-795 (_jest_failure_name); plugins/audit/scripts/governance/_evidence_io.py:319-326,341-345: The docstring says the signal is 'lifted IN FRONT of the reason' so the committed row keeps it under `_journal_io.MAX_VALUE_CHARS` (120). But the entry starts with the suite path and the heading: '<suite>: Test suite failed to run (signal=SIGSEGV) - ...'. For any suite path longer than about 77 characters (120 - 26 - 17), the signal falls past the cut. Such paths are ordinary in a monorepo, e.g. packages/<app>/src/features/.../__tests__/x.e2e.test.tsx. `signal` is not in STEP_KEYS, and the _evidence_io comment now names `failing` as the channel a reader recovers the signal from, so for those rows the signal is lost from the record. jf6's fixture path is 64 characters, so no case reaches this. -> Put the signal first (e.g. '(signal=SIGSEGV) <suite>: Test suite failed to run - <reason>'), or put `signal` on the row for this channel only. Add a case with a suite path over 100 characters that asserts SIGSEGV survives `row_for`.\nR4 (med) plugins/audit/scripts/governance/run-test-gate.py:1005-1022 (_NO_VERDICT_SIGNATURES, cmd.exe row): The block says 'Each spelling was captured from the tool itself; the cases hold the captures', and PLUGIN-BUILD-GUIDE.md repeats 'holds each captured spelling'. The cmd.exe row has no capture and no case at all: the capture note lists only sh, dash, zsh, vitest and jest. It is also the loosest arm. It is not anchored to line start, and it accepts exit 1 as well as 9009. On Windows, a harness with an unrecognised report that exits 1 for a real failure, whose failing test prints a child's \"'x' is not recognized as an internal or external command\", becomes could-not-run. The orchestrator then reverts the attempt and calls it infrastructure, so a regression is hidden behind a stall. The 'bash proper' spelling also has no capture. -> Capture `cmd.exe /c <missing>` output and exit code on Windows, and keep only the exit code actually observed (probably 9009 alone). Anchor the pattern to line start. Add the capture as a fixture with an nv-case in both directions. Until then, drop the row or drop 'captured' from the comment and the guide.\nR5 (low) plugins/audit/scripts/governance/run-test-gate.py:3275-3277 (_VERDICT_BANNERS): `NO CHECK RAN:` is the banner for the `no-checks` verdict, and it is missing from the banner list. So a task-scope run that ends in no-checks prints no `graded by:` line. execute-task.md, PLUGIN-BUILD-GUIDE.md and the CHANGELOG all say the line sits under the verdict banner, which is not true for this verdict. -> Add 'NO CHECK RAN:' to _VERDICT_BANNERS, and add a gb-case for a zero-count step under --task.\nR6 (low) plugins/audit/scripts/governance/run-test-gate.py:3508-3512: The task-scope EMPTY sentence always says \"phase %s's testGate at sign-off is what still does\" grade the task. It does not check that the phase's testGate is non-empty. For a cleared task in a phase whose gate is also empty, sign-off rests on review alone and the sentence is false. -> Resolve the phase gate in that branch. When it is empty, say that nothing grades the task and sign-off rests on review alone. Add a case for it.\nR7 (low) plugins/audit/scripts/manifest/_manifest_phases.py:236-243 (_check_phase_intent docstring): The docstring says the outcome and empty-gate lines 'wait until the phase RUNS, which is when sign-off is next going to read them'. But `_mio.phase_running` is False for a phase whose only remaining step is sign-off. So both warnings disappear at exactly the moment sign-off reads the outcome. The P70.2 description also asked for the outcome warning on any non-terminal phase, not only a running one; the title and CHANGELOG say 'running'. -> Either widen the predicate to 'running or signoff_due', or reword the docstring so it does not claim sign-off timing. Note the narrowing against the task description.\npre-existing 1 (low) plugins/audit/commands/phase.md:163-165; plugins/audit/scripts/status/_status_facts.py:362-364; plugins/audit/commands/status.md:134: These describe `could-not-run` as 'the runner never started' or 'exited non-zero having run zero checks'. The class already included OS kills after checks had run, and it now also includes jest runs where other suites passed. -> Reword to the schema's three-member class.\npre-existing 2 (low) plugins/audit/scripts/governance/run-test-gate.py:3500-3520: An EMPTY gate under `--json` prints a prose line rather than JSON (true for phase scope before this diff; now also reachable at task scope). -> Emit a JSON object with status empty-gate under --json.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - a done task whose gate is cleared fails audit-status --gate --fail-on no-test-evidence"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T16:35:16Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T14:32:07Z"

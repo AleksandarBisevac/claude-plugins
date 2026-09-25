@@ -359,9 +359,11 @@ TERMINAL = _mio.TERMINAL
 # `failed` ran to completion and came back red; `no-checks` is the exit-0-that-is-
 # not-a-verdict above; `timed-out` and `cancelled` were stopped rather than answered
 # (the schema pairs those two in one sentence, and splitting them here would be this
-# file inventing a distinction the record does not draw); `could-not-run` means the
-# runner never started -- no interpreter, an unreadable command -- so there is no
-# verdict at all, which is emphatically not the same claim as a failing test.
+# file inventing a distinction the record does not draw); `could-not-run` means no
+# verdict was reached for a reason that is not the work's -- the runner never
+# started, it started and never reached a check, or the OS ended it, which can
+# come after checks ran -- and that is emphatically not the same claim as a
+# failing test.
 #
 #   * `gate-mutated` IS EXIT 0 TOO, AND IT IS THE SAME MISTAKE ONE STEP FURTHER ON.
 #     Every command came back green and the gate rewrote files the work

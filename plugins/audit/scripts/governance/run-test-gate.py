@@ -775,16 +775,16 @@ def _jest_failure_name(title, suite, reason):
     suite it belongs to and why. `Test suite failed to run` repeated once per
     crashed suite named nothing a reader could act on.
 
-    A worker's signal is lifted IN FRONT of the reason, because a committed
-    row keeps each line only up to `_journal_io.MAX_VALUE_CHARS` and jest's
-    sentence puts the signal past that cut.
+    A worker's signal is the entry's FIRST word, because a committed row keeps
+    each line only up to `_journal_io.MAX_VALUE_CHARS`: behind a monorepo's
+    suite path, a signal anywhere later falls past that cut.
     """
     if title != JEST_EXEC_ERROR:
         return title
     name = "%s: %s" % (suite, title) if suite else title
     hit = _JEST_WORKER_SIGNAL.search(reason or "")
     if hit:
-        name = "%s (signal=%s)" % (name, hit.group(1))
+        name = "(signal=%s) %s" % (hit.group(1), name)
     return "%s - %s" % (name, reason) if reason else name
 
 
@@ -1004,18 +1004,17 @@ def reached_a_verdict(text, command=None):
 # reached a question, each bound to the exit code that diagnostic comes with.
 # NEITHER HALF IS ENOUGH ALONE. 127 is a code a command may return by choice,
 # and a diagnostic can be quoted inside a real report - so `no_verdict_signature`
-# asks for both, and only of output that carries no end-of-run report. Each
-# spelling was captured from the tool itself; the cases hold the captures.
+# asks for both, and only of output that carries no end-of-run report. A row
+# is here only when its tool's own output is a fixture a case reads; cmd.exe
+# has none, so on windows a missing program stays a failure - a stated gap,
+# pinned by `lc16`, and the loose phrase it prints at exit 1 is not read.
 _NO_VERDICT_SIGNATURES = (
     # `sh` as bash (`/bin/sh: x: command not found`), dash (`/bin/sh: 1: x: not
-    # found`), zsh (`zsh:1: command not found: x`) and bash proper.
+    # found`), zsh (`zsh:1: command not found: x`) and bash (`bash: line 1: x:
+    # command not found`).
     ("the shell could not find the command", (127,),
      re.compile(r"^(?:\S*/)?(?:sh|bash|dash|zsh|ash|ksh)\b[^\n]*?"
                 r"(?:command not found|: not found)[^\n]*", re.M)),
-    # `cmd.exe /c`, which is what `shell=True` runs on windows.
-    ("cmd.exe could not find the command", (1, 9009),
-     re.compile(r"[^\n]*is not recognized as an internal or external "
-                r"command[^\n]*")),
     # vitest, when the filter selects no test file and `passWithNoTests` is off.
     ("vitest found no test file to run", (1,),
      re.compile(r"^[ \t]*No test files found, exiting with code 1[^\n]*",
@@ -2262,6 +2261,51 @@ def reused_result(identity, row, elapsed_ms):
     }
 
 
+EMPTY_GATE = "empty-gate"
+
+
+def empty_gate_sentence(manifest, phase_id, task_id, source):
+    """What an EMPTY gate means for this subject, as the one sentence every
+    surface prints and the row carries.
+
+    A task whose gate was cleared is graded at sign-off by its phase's
+    `testGate` - unless that is empty too, and then by nothing but review.
+    """
+    if source != "task":
+        return ("%s declares an EMPTY gate: nothing here can prove it done, so "
+                "sign-off rests on review alone" % (phase_id,))
+    phase_cmds, _src, _err = gate_of(manifest, phase_id)
+    if phase_cmds:
+        return ("%s declares an EMPTY gate (tests.gateBasis `cleared`): nothing "
+                "here grades it at task scope, and phase %s's testGate at "
+                "sign-off is what still does" % (task_id, phase_id))
+    return ("%s declares an EMPTY gate (tests.gateBasis `cleared`), and phase "
+            "%s's testGate is EMPTY too: nothing grades this task, and "
+            "sign-off rests on review alone" % (task_id, phase_id))
+
+
+def empty_gate_result(source, basis):
+    """`run_gate`'s shape for a gate that declares no command.
+
+    Every observation is None with the sentence that says why, for
+    `reused_result`'s reason: nothing ran, so nothing was observed, and an
+    empty list would be a measurement.
+    """
+    nothing = "no command is declared, so nothing ran"
+    return {
+        "status": EMPTY_GATE, "emptyBasis": basis, "gateSource": source,
+        "failed": [], "steps": [], "durationMs": 0,
+        "treeMutated": None, "treeBasis": "%s and the tree was not bracketed"
+                                          % (nothing,),
+        "treeMutatedOwned": None, "treeMutatedForeign": None,
+        "ranTotal": None, "countsBasis": "%s and no check was counted"
+                                         % (nothing,),
+        "sharedCounts": [], "notAttributable": None, "attributionBasis": None,
+        "cancelledBy": None, "overlap": None,
+        "coverageBasis": "%s and no runner named a path" % (nothing,),
+    }
+
+
 def render_reuse(res, out=print):
     """Print a verdict nothing here measured, and return the code it earns.
 
@@ -2678,10 +2722,14 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             step = observed_step(name, command, code, text, facts,
                                  _elapsed_ms(step_started))
             # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
-            # here is the one `ended_by_signal` wrote, never the exit code: a
-            # non-zero exit beside an end-of-run report is a measurement, and a
-            # re-run of a measurement is a red rolled again until it comes back
-            # green. Nor does a timeout or a runner that never started reach
+            # here is `signal`, never the exit code: a non-zero exit beside an
+            # end-of-run report is a measurement, and a re-run of a measurement
+            # is a red rolled again until it comes back green. ONE report is the
+            # exception, and it is `jest_worker_signal`'s: jest's summary after
+            # workers it names as killed - EVERY failure one - is jest reporting
+            # the kill, not a measurement of the suites that died, and a worker
+            # killed for memory is exactly what a lowered bound is for (`jr1`
+            # pins the halved bound). Nor does a timeout or a runner that never started reach
             # this - our own teardown is not the OS ending the run, and a
             # missing interpreter answers the same way however many workers it
             # is asked for. What a kill has that neither of those has is a cause
@@ -3274,7 +3322,7 @@ def graded_by(task_id, phase_id, source):
 # repeat prints the banner it repeats underneath it.
 _VERDICT_BANNERS = ("GATE RED:", "GATE GREEN:", "GATE COULD NOT RUN:",
                     "GATE TIMED OUT:", "GATE CANCELLED:",
-                    "GATE MUTATED THE TREE:")
+                    "GATE MUTATED THE TREE:", "NO CHECK RAN:")
 
 
 def _graded_by_after_banner(out, line):
@@ -3332,7 +3380,8 @@ def _say_who_else_was_running(project, res, row, out=print):
                                       for o in others)))
     else:
         out("  machine:  this run had the machine to itself")
-    if res.get("status") == "passed":
+    # An EMPTY gate measured nothing, so there is no verdict to attribute.
+    if res.get("status") in ("passed", EMPTY_GATE):
         return
     verdict = _ev.attribution_of(row, rows)
     if verdict["attributed"] is None:
@@ -3504,16 +3553,22 @@ def main(argv, out=print):
         # is reported as itself rather than as a pass: saying "green" here would
         # claim a measurement nobody made. WHOSE empty gate it is decides the
         # sentence: a task whose gate was cleared is still graded by its phase
-        # at sign-off, while an empty phase gate leaves review alone.
-        if source == "task":
-            out("[run-test-gate] %s declares an EMPTY gate (tests.gateBasis "
-                "`cleared`): nothing here grades it at task scope, and phase "
-                "%s's testGate at sign-off is what still does"
-                % (args.task, args.phase))
-        else:
-            out("[run-test-gate] %s declares an EMPTY gate: nothing here can "
-                "prove it done, so sign-off rests on review alone"
-                % (args.phase,))
+        # at sign-off - when that phase HAS a gate - while an empty phase gate
+        # leaves review alone.
+        said = empty_gate_sentence(manifest, args.phase, args.task, source)
+        res = empty_gate_result(source, said)
+        res["subject"] = subject
+        # RECORDED, because an EMPTY answer is an answer: without a row a done
+        # task reads as work that never carried evidence, and
+        # `--fail-on no-test-evidence` names it with a repair (run the gate)
+        # that has nothing to run.
+        if args.record:
+            res["recorded"] = _record_run(project, args, res, source, [],
+                                          manifest, out=out)
+        if args.as_json:
+            out(json.dumps(res, indent=2, sort_keys=True))
+            return E_OK
+        out("[run-test-gate] %s" % (said,))
         return E_OK
     owns, terr = owned_files(manifest, args.phase, args.task)
     if terr:

@@ -36,6 +36,8 @@ import _loader                                     # noqa: E402  (script_path: r
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
+import io as _io
+import contextlib as _ctx
 
 M = _loader.load_script("run-test-gate.py", "rtg")
 
@@ -247,8 +249,10 @@ mypy....................................................................."""
 # --- what a runner prints when it reached no verdict ----------------------------
 # CAPTURED, NOT COMPOSED. Each of these is what the named tool printed on this
 # machine when it was driven into the state the name describes, trimmed only of
-# a long relative prefix on a stack frame. The shells were run as `sh -c`,
-# `dash -c` and `zsh -c` over a word that names no program; vitest 4.1.10 was
+# a long relative prefix on a stack frame, and the one cmd.exe line, which is
+# labelled as NOT captured where it sits. The shells were run as `sh -c`,
+# `dash -c`, `zsh -c` and `bash -c` over a word that names no program (the
+# word itself swapped for the entry the cases use); vitest 4.1.10 was
 # run as `vitest run src/a.ts` over a tree whose only file is not a test; jest
 # 30.0.5 was run with `--maxWorkers=2 --ci` over suites one of which calls
 # `process.kill(process.pid, 'SIGSEGV')` inside a worker, and again over a
@@ -257,6 +261,12 @@ mypy....................................................................."""
 SH_NOT_FOUND = "/bin/sh: lint,format,typecheck,test: command not found\n"
 DASH_NOT_FOUND = "/bin/sh: 1: lint,format,typecheck,test: not found\n"
 ZSH_NOT_FOUND = "zsh:1: command not found: lint,format,typecheck,test\n"
+BASH_NOT_FOUND = "bash: line 1: lint,format,typecheck,test: command not found\n"
+# cmd.exe's wording, which `_NO_VERDICT_SIGNATURES` deliberately does NOT read:
+# no capture of it exists here, and an unanchored phrase at exit 1 would turn a
+# windows harness's real failure into an infrastructure excuse.
+CMD_NOT_RECOGNIZED = ("'lint' is not recognized as an internal or external "
+                      "command,\r\noperable program or batch file.\r\n")
 VITEST_NO_FILES = """\
 
  RUN  v4.1.10 /proj
@@ -2588,11 +2598,18 @@ def _cases(check):
           "`nv2` pins that half - because a real command may return it: %r"
           % ((res_127["status"], res_127["steps"][0].get("outcome"),
               res_127["steps"][0].get("outcomeBasis")),),
-          res_127["status"] == M.CANNOT_RUN
-          and res_127["steps"][0].get("outcome") == M.CANNOT_RUN
-          and res_127["failed"] == []
-          and "could not find" in (res_127["steps"][0].get("outcomeBasis")
-                                   or ""))
+          # WHICH SHELL `shell=True` STARTS is `subprocess`'s own switch, read
+          # here rather than a platform name. Under cmd.exe no diagnostic is
+          # read (none was captured, see CMD_NOT_RECOGNIZED), so there the
+          # missing binary stays the failure it always was - a stated gap.
+          (res_127["status"] == "failed"
+           and res_127["steps"][0].get("outcome") is None)
+          if getattr(subprocess, "_mswindows", False) else
+          (res_127["status"] == M.CANNOT_RUN
+           and res_127["steps"][0].get("outcome") == M.CANNOT_RUN
+           and res_127["failed"] == []
+           and "could not find" in (res_127["steps"][0].get("outcomeBasis")
+                                    or "")))
 
     # --- a signal-killed runner is not a failing test -----------------------
     # DRIVEN, and the two commands are the whole fault: `sh -c 'kill -9 $$'`
@@ -4159,6 +4176,8 @@ def _cases(check):
     # on both would mean asserting a `cancelled` row nothing cancelled.
     _harness.stage(check, "ru0 the verdict-reuse block", _reuse_cases)
     _harness.stage(check, "nv0 the no-verdict block", _no_verdict_cases)
+    _harness.stage(check, "ce0 the empty-and-retry block",
+                   _empty_and_retry_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -4196,7 +4215,8 @@ def _no_verdict_cases(check):
 
     # --- a non-zero exit with no report and a could-not-run signature -------
     shells = [(label, _obs(127, text)) for label, text in (
-        ("sh", SH_NOT_FOUND), ("dash", DASH_NOT_FOUND), ("zsh", ZSH_NOT_FOUND))]
+        ("sh", SH_NOT_FOUND), ("dash", DASH_NOT_FOUND), ("zsh", ZSH_NOT_FOUND),
+        ("bash", BASH_NOT_FOUND))]
     check("nv1 each shell's own `not found` diagnostic, at exit 127 with no "
           "report after it, is `could-not-run` with a basis naming what was "
           "read - the spelling differs per shell and every one was captured: %r"
@@ -4285,9 +4305,9 @@ def _no_verdict_cases(check):
           "suite and WHY - the bare heading named neither, and an ordinary "
           "assertion bullet beside it is unchanged: %r" % (named_mix,),
           len(named_mix) == 2 and named_mix[0] == "f"
-          and named_mix[1].startswith(JEST_KILLED_SUITE
-                                      + ": Test suite failed to run")
-          and "signal=SIGSEGV" in named_mix[1])
+          and named_mix[1].startswith("(signal=SIGSEGV) " + JEST_KILLED_SUITE
+                                      + ": Test suite failed to run - A jest "
+                                      "worker process"))
 
     killed = _obs(1, JEST_WORKER_KILLED, "jest")
     check("jf2 EVERY failure a killed worker: `could-not-run`, the signal "
@@ -4329,7 +4349,8 @@ def _no_verdict_cases(check):
           "around the dirname, and they are not part of the path: %r"
           % (colored_named,),
           len(colored_named) == 1
-          and colored_named[0].startswith(JEST_KILLED_SUITE + ": "))
+          and colored_named[0].startswith("(signal=SIGSEGV) "
+                                          + JEST_KILLED_SUITE + ": "))
 
     res_jest = M.run_gate(root, [("test", "jest")],
                           runner=_canned([(1, JEST_WORKER_KILLED),
@@ -4463,6 +4484,178 @@ def _no_verdict_cases(check):
           % ([ln for ln in p_lines if "graded by" in ln],),
           p_code == M.E_FAIL
           and not any("graded by" in ln for ln in p_lines))
+
+
+def _empty_and_retry_cases(check):
+    """An EMPTY answer is a recorded one, a jest kill is retried on the terms
+    the retry was built for, and the signal survives the row's cut.
+
+    A FUNCTION SO THE BLOCK CAN BE NAMED: the fixture is a real repository with
+    a real manifest and a real `audit-status` read of it.
+    """
+    def _obs(code, text, command="gate"):
+        return M.observed_step("gate", command, code, text, {}, 1)
+
+    cmd = _obs(9009, CMD_NOT_RECOGNIZED)
+    cmd1 = _obs(1, CMD_NOT_RECOGNIZED)
+    check("nv7 cmd.exe's wording is NOT read, at either exit code: nothing here "
+          "captured it, and an unanchored phrase at exit 1 would excuse a real "
+          "windows failure as infrastructure: %r"
+          % ((cmd.get("outcome"), cmd1.get("outcome")),),
+          cmd.get("outcome") is None and cmd1.get("outcome") is None)
+
+    # --- the signal is the FIRST thing in the entry -------------------------
+    long_suite = ("packages/storefront-admin/src/features/projects/"
+                  "duplicate-detection/__tests__/"
+                  "create-project-duplicate-title.e2e.test.tsx")
+    long_text = JEST_WORKER_KILLED.replace(JEST_KILLED_SUITE, long_suite)
+
+    def _canned(outputs, seen=None):
+        queue = list(outputs)
+
+        def _runner(_project, command, _timeout):
+            if seen is not None:
+                seen.append(command)
+            code, text = queue.pop(0)
+            return code, text, {}
+        return _runner
+
+    root = _harness.fixture_root("run-test-gate-empty-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    res_long = M.run_gate(root, [("test", "jest")],
+                          runner=_canned([(1, long_text), (1, long_text)]),
+                          owns=["src/a.ts"])
+    lrow = _ev_io.row_for(root, res_long, "task",
+                          {"phaseId": "P1", "taskId": "P1.1"},
+                          {"runId": "run-long", "ts": "2026-09-25T00:00:00Z"})
+    lfail = [f for st in lrow.get("steps") or [] for f in st.get("failing") or []]
+    check("jf7 a suite path past a hundred characters still leaves SIGSEGV in "
+          "the committed row: the row keeps each line only up to the journal's "
+          "value cap, so the signal is the entry's FIRST word, not its middle: %r"
+          % (lfail,),
+          len(long_suite) > 100 and len(lfail) == 1
+          and lfail[0].startswith("(signal=SIGSEGV) ")
+          and "SIGSEGV" in lfail[0])
+
+    # --- a jest-reported kill is retried at a lowered bound -----------------
+    seen = []
+    res_retry = M.run_gate(root, [("test", "jest --maxWorkers=4")],
+                           runner=_canned([(1, JEST_WORKER_KILLED),
+                                           (0, " PASS  src/a.test.ts\n"
+                                               "Tests:       3 passed, 3 total\n")],
+                                          seen),
+                           owns=["src/a.ts"])
+    rstep = res_retry["steps"][0]
+    check("jr1 A WORKER jest reports killed is the case the retry was built for "
+          "- a parallel suite bounded by memory per worker - so the step is run "
+          "once more at half the declared bound, and the row says so: %r"
+          % ((seen, rstep.get("retriedAfterSignal"), rstep.get("retryBasis")),),
+          seen == ["jest --maxWorkers=4", "jest --maxWorkers=2"]
+          and rstep.get("retriedAfterSignal") == "SIGSEGV"
+          and "from 4 to 2" in (rstep.get("retryBasis") or "")
+          and res_retry["status"] == "passed")
+
+    # --- the EMPTY answer, recorded and read back ----------------------------
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    say = os.path.join(root, "say.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\nsys.stdout.write(sys.argv[1])\n"
+                 "raise SystemExit(int(sys.argv[2]))\n")
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+
+    def _plan(phase_gate):
+        cleared = {"mode": "gate-only", "add": [], "gate": [],
+                   "gateBasis": "cleared"}
+        plan = {"meta": {"version": 2, "evidenceSince": {"at": "2026-01-01T00:00:00Z"},
+                         "buildCommands": {
+                             "suite": _step(sys.executable, say, "ok", "0"),
+                             "zero": _step(sys.executable, say,
+                                           "Tests:       0 total", "0")}},
+                "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                            "desiredOutcome": "p", "testGate": phase_gate,
+                            "tasks": [
+                                {"id": "P1.1", "title": "docs",
+                                 "status": "in_progress", "files": ["d.md"],
+                                 "tests": cleared},
+                                {"id": "P1.4", "title": "zero",
+                                 "status": "in_progress", "files": ["z.py"],
+                                 "tests": {"mode": "gate-only", "add": [],
+                                           "gate": ["zero"]}}]}],
+                "fileIndex": {"d.md": ["P1.1"], "z.py": ["P1.4"]}, "bugs": []}
+        with open(mp, "w") as fh:
+            json.dump(plan, fh, indent=2)
+
+    def _main(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--no-reuse"]
+                      + list(extra), out=lines.append)
+        return code, lines
+
+    _plan(["suite"])
+    e_code, e_lines = _main("--task", "P1.1", "--record")
+    with open(mp) as fh:
+        plan = json.load(fh)
+    t11 = plan["phases"][0]["tasks"][0]
+    evdir = os.path.join(root, "docs", "audit", "evidence")
+    rows = _recorded_rows(evdir) if os.path.isdir(evdir) else []
+    check("ce1 a cleared task's EMPTY answer under --record is RECORDED: an "
+          "`empty-gate` row and a pointer the plan carries, the one word the "
+          "enum has for 'no gate was configured' - so a reader never has to "
+          "read a missing answer as missing evidence: %r"
+          % ((e_code, [r.get("status") for r in rows],
+              (t11.get("testEvidence") or {}).get("status")),),
+          e_code == M.E_OK and len(rows) == 1
+          and rows[0].get("status") == "empty-gate"
+          and rows[0].get("taskId") == "P1.1" and rows[0].get("steps") == []
+          and (t11.get("testEvidence") or {}).get("status") == "empty-gate")
+
+    t11["status"] = "done"
+    t11["completedAt"] = "2026-09-25T12:00:00Z"
+    t11["commit"] = "0" * 40
+    with open(mp, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    status_mod = _loader.load_script("audit-status.py", "ast_ce")
+    buf = _io.StringIO()
+    with _ctx.redirect_stdout(buf):
+        s_code = status_mod.main([mp, "--gate", "--fail-on",
+                                  "no-test-evidence"])
+    check("ce2 THE REPRO: a done task whose gate was cleared no longer fails "
+          "`audit-status --gate --fail-on no-test-evidence` - its pointer is "
+          "the recorded EMPTY answer, not an absence the repair text could "
+          "never fix: exit=%r %r" % (s_code, buf.getvalue()[-160:]),
+          s_code == 0 and "GATE PASSED: no-test-evidence" in buf.getvalue()
+          and "GATE FAILED" not in buf.getvalue())
+
+    j_code, j_lines = _main("--task", "P1.1", "--json")
+    try:
+        j_obj = json.loads("\n".join(j_lines))
+    except ValueError:
+        j_obj = None
+    check("ce3 ...and under --json the EMPTY answer is a JSON object, never a "
+          "prose line a machine reader cannot parse: %r" % (j_lines[:1],),
+          j_code == M.E_OK and isinstance(j_obj, dict)
+          and j_obj.get("status") == "empty-gate")
+
+    _plan([])
+    n_code, n_lines = _main("--task", "P1.1")
+    n_text = "\n".join(n_lines)
+    check("ce4 a cleared task in a phase whose gate is EMPTY too is graded by "
+          "NOTHING, and the line says review alone rather than pointing at a "
+          "phase gate that does not exist: %r" % (n_text[:200],),
+          n_code == M.E_OK and "review alone" in n_text
+          and "testGate at sign-off is what still does" not in n_text)
+
+    _plan(["suite"])
+    z_code, z_lines = _main("--task", "P1.4")
+    z_at = [i for i, ln in enumerate(z_lines) if ln.startswith("NO CHECK RAN:")]
+    check("gb5 `NO CHECK RAN` is a verdict banner too, so the `graded by:` line "
+          "sits directly under it: %r" % ([z_lines[i:i + 2] for i in z_at],),
+          z_code == M.E_FAIL and len(z_at) == 1
+          and z_lines[z_at[0] + 1].strip().startswith("graded by:"))
 
 
 def _reuse_cases(check):

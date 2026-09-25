@@ -148,8 +148,10 @@ not need to.
      a `graded by:` line sits under the `GATE …` banner — so a task with no gate of its own is never
      credited with having passed one. **A gate cleared on purpose is not "no gate":** a task whose
      `tests.gateBasis` is `cleared` (what `--gate-clear` writes) resolves EMPTY at task scope and
-     the script says so and exits 0 without running anything; the phase's `testGate` at sign-off
-     is what still grades it. Under `--task` the coverage lines also carry one `breadth:` clause
+     the script says so and exits 0 without running anything - and under `--record` it writes an
+     `empty-gate` row and pointer, so the done task carries evidence of that answer rather than
+     tripping `--fail-on no-test-evidence`. The phase's `testGate` at sign-off is what still
+     grades it, and where that is EMPTY too the line says review alone. Under `--task` the coverage lines also carry one `breadth:` clause
      when the run named suites the task neither declares nor is named after — both counts, never
      a refusal.
 

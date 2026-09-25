@@ -181,7 +181,11 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `plugins/audit/tests/test_run_test_gate.py` — run it with `--selftest`.** It never retries a
    step that exited non-zero **having printed its own end-of-run report**, whatever the exit code:
    a suite that reported has measured, and re-running a measurement until it comes back green is
-   how a real failure becomes an infrastructure excuse. And a step ended by a signal on **both**
+   how a real failure becomes an infrastructure excuse. One report is the exception, and it is
+   read narrowly: a jest run whose **every** failure is `Test suite failed to run` naming a worker
+   terminated by a signal is jest reporting the kill, not a measurement of the suites that died -
+   so it is retried like any other kill, at a halved `--maxWorkers` where the command declares
+   one. One real assertion failure beside the kill keeps it a measurement, and no retry. And a step ended by a signal on **both**
    attempts is not a third attempt — it is a `GATE COULD NOT RUN` naming both attempts and both
    signals, which is the arm above: fix the host, spend no retry.
 
