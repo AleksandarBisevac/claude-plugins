@@ -1,7 +1,7 @@
 {
   "id": "P68",
   "title": "The index is committed only where the committed shards support it",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "commit-manifest-index never records an index that names tasks or phases its committed shards do not hold - it refuses and names the shard to commit first - and the notes that point at it state the order",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "d498013c38d01a61d6c5ff5dd54072726855a319",
+  "branch": "audit/p68-the-index-is-committed-only-wh",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P68.1",
       "title": "Fix BUG-10: commit-manifest-index commits an index ahead of the shards it names",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Repro: audit-task add on a sharded plan, then commit-manifest-index before the shard is committed; git show HEAD's index plus HEAD's shard fails validation (fileIndex names a task that does not exist). Expected: the index is committed only in a state the committed shards support, or the command names the shard to commit first. Actual: the index commit lands and the plan as that commit records it fails validation; audit-task's own note says to land it before or beside the next commit.",
       "files": [
         "plugins/audit/scripts/governance/commit-manifest-index.py",
@@ -63,17 +63,18 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T11:07:45Z",
       "completedAt": null,
       "verifiedBy": [],
       "bugId": "BUG-10"
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T11:07:45Z"
 }

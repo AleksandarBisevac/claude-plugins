@@ -762,6 +762,11 @@ def _cases(check):
               % (ix_txt[-320:],),
               code == 0 and "commit-manifest-index.py" in ix_txt
               and "DIRTY" in ix_txt)
+        check("ix1b ...and it gives the ORDER: the shard it names is committed "
+              "first, the index after - the other order records a plan that does "
+              "not validate, and commit-manifest-index refuses it: %r"
+              % (ix_txt[-320:],),
+              "AFTER the shard" in ix_txt and "before or beside" not in ix_txt)
         ix_phase = [p for p in _mio.load_manifest(ixmp)["phases"]
                     if p.get("title") == "Second wave"][0]
         check("ix2 ...and the invocation it prints names THIS write's phase "

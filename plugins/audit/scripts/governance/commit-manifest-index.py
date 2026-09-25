@@ -199,6 +199,67 @@ def stage_targets(phase, manifest_path, git_root):
     return out
 
 
+# --- what the committed shards support ------------------------------------------
+# `/audit:task add` writes a task into its phase's shard and its files into the
+# index; `/audit:phase add` writes a stub into the index and a new shard beside it.
+# Committing the index BEFORE the shard records a plan whose index names a task or
+# a phase no committed shard holds - a commit that fails validation, which
+# `verify-invariants`' `manifest-revalidated` then reports against every commit
+# after it until the shard lands. The order is the shard first, and this is where it
+# is enforced. Only a reference AHEAD of its shard is refused: one the committed
+# shard holds (a widened scope, whose pairing sign-off settles) commits, and one no
+# shard holds at all is the validator's to report, not this command's.
+def _shard_at_head(git_root, rel):
+    """The shard as HEAD holds it, parsed, or None when HEAD holds none."""
+    code, out, _err = _scoped_commit.run_git(git_root, ["show", "HEAD:%s" % rel])
+    if code != 0:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def _task_ids(doc):
+    return set(t.get("id") for t in ((doc or {}).get("tasks") or [])
+               if isinstance(t, dict) and t.get("id"))
+
+
+def ahead_of_shards(git_root, manifest_path, index_doc):
+    """[(reference, shardRel)] - what the index would record that only an
+    UNCOMMITTED shard supports, each with the shard to commit first."""
+    if not isinstance(index_doc, dict):
+        return []
+    base = os.path.dirname(os.path.abspath(manifest_path))
+    ahead, now_ids, head_ids = [], {}, {}
+    for stub in index_doc.get("phases") or []:
+        if not isinstance(stub, dict) or not stub.get("shard"):
+            continue
+        path = os.path.join(base, stub["shard"])
+        rel = os.path.relpath(path, git_root).replace(os.sep, "/")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                now = json.load(fh)
+        except (OSError, ValueError):
+            continue               # a shard that is not there is the validator's
+        head = _shard_at_head(git_root, rel)
+        if head is None:
+            ahead.append(("phase %s" % (stub.get("id"),), rel))
+            continue
+        for tid in _task_ids(now):
+            now_ids[tid] = rel
+        head_ids.update((tid, rel) for tid in _task_ids(head))
+    for path_key, ids in sorted((index_doc.get("fileIndex") or {}).items()):
+        for tid in ids if isinstance(ids, list) else []:
+            if tid in now_ids and tid not in head_ids:
+                ahead.append(("task %s (fileIndex %r)" % (tid, path_key), now_ids[tid]))
+    for bug in index_doc.get("bugs") or []:
+        tid = bug.get("taskId") if isinstance(bug, dict) else None
+        if tid in now_ids and tid not in head_ids:
+            ahead.append(("task %s (%s's fix)" % (tid, bug.get("id")), now_ids[tid]))
+    return ahead
+
+
 # --- the commit ---------------------------------------------------------------
 def commit_message(phase_id, subject, coauthor):
     """The message paragraphs: a conventional subject, and the co-author trailer.
@@ -369,6 +430,18 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
     if not pending:
         return E_OK, _scoped_commit.answer(skipped, quiet=NOTHING_UNCOMMITTED)
+
+    # THE SHARD FIRST. Refused before anything is staged, naming each reference
+    # and the shard that holds it, so the remedy is one command away.
+    ahead = ahead_of_shards(git_root, manifest_path, _mio.read_json(manifest_path))
+    if ahead:
+        shards = sorted(set(rel for _what, rel in ahead))
+        return E_FAIL, _scoped_commit.answer(skipped, refused=(
+            "the index names %s, which the shard committed at HEAD does not hold "
+            "yet - committed now, it would record a plan that does not validate. "
+            "Commit %s first (the task commit that carries it, or "
+            "commit-audit-state.py <manifest> <phase>), then run this again"
+            % ("; ".join(what for what, _rel in ahead), ", ".join(shards))))
 
     code, add_out, add_err = _scoped_commit.run_git(git_root,
                                                     ["add", "--"] + allowed)

@@ -545,6 +545,66 @@ def _cases(check):
               % (lone_writers, lone_token),
               lone_code == 0 and bool(lone_token)
               and lone_writers == [lone_token])
+
+        # --- the index is committed only where the committed shards support it --
+        # `/audit:task add` writes a task into the shard and its files into the
+        # index. Committing the index first records a plan whose fileIndex names a
+        # task no committed shard holds - a commit that fails validation.
+        fx = repos.make()
+        shard = _mio.read_json(fx["shard"])
+        shard["tasks"].append(dict(shard["tasks"][0], id="P1.3", status="pending",
+                                   files=["src/new.py"]))
+        TI._write_json(fx["shard"], shard)
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/new.py"] = ["P1.3"]
+        TI._write_json(fx["manifest"], index)
+        before = _head(fx)
+        code, text = _run(fx)
+        check("cmi21 an index naming a task its COMMITTED shard does not hold yet is "
+              "refused, nothing is committed, and the refusal names the task and the "
+              "shard to commit first: %r / %r" % (code, text),
+              code != 0 and _head(fx) == before and "P1.3" in text
+              and SHARD_REL in text and _staged(fx) == [])
+        TI._git(fx["root"], "add", "--", SHARD_REL)
+        TI._git(fx["root"], "commit", "-q", "-m", "the shard first")
+        code, text = _run(fx)
+        check("cmi22 SECOND DIRECTION: once the shard is committed the same index "
+              "commits, alone: %r / %r" % (code, text),
+              code == 0 and _carried(fx, _head(fx)) == [INDEX_REL])
+
+        fx = repos.make()
+        index = _mio.read_json(fx["manifest"])
+        index["phases"].append({"id": "P3", "title": "new phase",
+                                "shard": "phases/P3.json"})
+        TI._write_json(fx["manifest"], index)
+        TI._write_json(os.path.join(os.path.dirname(fx["manifest"]), "phases",
+                                    "P3.json"),
+                       {"id": "P3", "title": "new phase", "status": "pending",
+                        "tasks": []})
+        before = _head(fx)
+        code, text = _run(fx)
+        check("cmi23 ...and so is an index whose new phase stub points at a shard "
+              "that is not committed: %r / %r" % (code, text),
+              code != 0 and _head(fx) == before and "P3" in text
+              and "phases/P3.json" in text)
+
+        fx = repos.make()
+        _widen(fx)
+        code, text = _run(fx)
+        check("cmi24 CONTROL: widening an EXISTING task's scope still commits the "
+              "index alone - the task is in the committed shard, only its files "
+              "are not, which is the pairing sign-off settles: %r" % (text,),
+              code == 0)
+
+        fx = repos.make()
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/orphan.py"] = ["P9.9"]
+        TI._write_json(fx["manifest"], index)
+        code, text = _run(fx)
+        check("cmi25 ...and an index naming a task NO shard holds, committed or not, "
+              "is not this command's to refuse - it is not ahead of a shard, it is "
+              "dangling, and the validator reports that: %r" % (text,),
+              code == 0 and "P9.9" not in text)
     finally:
         repos.close()
 
