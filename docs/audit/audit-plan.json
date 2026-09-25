@@ -592,7 +592,8 @@
       "P80.12",
       "P81.8",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -660,7 +661,8 @@
       "P80.5",
       "P80.10",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "README.md": [
       "P2.3",
@@ -1425,7 +1427,8 @@
       "P63.5",
       "P63.8",
       "P80.6",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -1702,7 +1705,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P75.3-j5h"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -1733,7 +1737,8 @@
       "P61.14",
       "P69.1",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
@@ -2034,7 +2039,8 @@
       "P22.5",
       "P29.5",
       "P59.7",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -2226,7 +2232,8 @@
       "P55.1",
       "P55.2",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -2239,7 +2246,8 @@
       "P55.1",
       "P55.2",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
       "P22.11"
@@ -2313,7 +2321,8 @@
       "P53.2",
       "P57.1",
       "P57.3",
-      "P77.1"
+      "P77.1",
+      "P75.3-j5h"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -2352,7 +2361,8 @@
       "P63.8",
       "P69.3",
       "P80.6",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2378,7 +2388,8 @@
       "P28.2",
       "P29.5",
       "P59.7",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -2928,7 +2939,8 @@
       "P55.4",
       "P76.1",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "tools/check-report-interactive.mjs": [
       "P55.7",
@@ -3186,7 +3198,8 @@
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P75.3-j5h"
     ]
   },
   "bugs": [
