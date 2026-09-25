@@ -302,6 +302,48 @@ def _cases(check):
                   and M._compact(2_000_000_000) == "2.0B")
         finally:
             shutil.rmtree(adv_root, ignore_errors=True)
+
+        # (tf) SPEND IS ATTRIBUTED BY THE PLAN OF THE TREE THE SESSION IS IN.
+        # The claim that names this session sits in the WORKTREE's manifest -
+        # the orchestrator stamps it where the phase runs - so reading the main
+        # checkout's copy left the whole phase's spend `unattributed`. The
+        # ledger stays with the project: it is this machine's record of the
+        # session, not a file of either tree.
+        _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "meter-wt-")
+        if not _tf_ok:
+            check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
+        else:
+            _tf_man = os.path.join(_tf["wt"], _tf["manifest_rel"])
+            with open(_tf_man, "r", encoding="utf-8") as fh:
+                _tf_doc = json.load(fh)
+            for _ph in _tf_doc["phases"]:
+                if _ph["id"] == "P48":
+                    _ph["claim"] = {"sessionId": "sess-tf"}
+                    _ph["tasks"][0]["startedAt"] = "2026-08-06T07:00:00Z"
+            with open(_tf_man, "w", encoding="utf-8") as fh:
+                json.dump(_tf_doc, fh)
+            _tf_tr = Path(_tf["root"]) / "sess-tf.jsonl"
+            _tf_tr.write_text(entry("w1", 11), encoding="utf-8")
+            os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
+            try:
+                _ok, _n = _harness.attempt(
+                    M.meter, {"session_id": "sess-tf", "cwd": _tf["wt"],
+                              "transcript_path": str(_tf_tr),
+                              "hook_event_name": "Stop"}, ul=ul)
+            finally:
+                os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+            _tf_cfg = _config.load(Path(_tf["main"]))
+            _tf_rows = ul.read_ledger(
+                str(_config.ledger_dir(Path(_tf["main"]), _tf_cfg)))
+            check("tf1 a session standing in a linked worktree is attributed "
+                  "to the phase the WORKTREE's plan says it claimed",
+                  _ok and _n and _tf_rows
+                  and all(r.get("phaseId") == "P48" for r in _tf_rows),
+                  repr((_n, [(r.get("phaseId"), r.get("attr"))
+                             for r in _tf_rows])))
+            check("tf2 ...and the ledger is the PROJECT's - nothing was written "
+                  "into the worktree", not os.path.exists(os.path.join(
+                      _tf["wt"], str(_config.usage_cfg(_tf_cfg)["ledgerDir"]))))
     finally:
         if prev_env is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

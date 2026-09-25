@@ -151,6 +151,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **The README said ids "never collide" because they are allocated under the index lock.** The lock
   is per clone; two branches can mint the same `max+1` id, and the sentence now says so. The same
   documents' "no manifest conflict" promise is scoped to a phase RUN, which is the case it held for.
+- **Every hook judges a linked worktree's work against that worktree's plan.** Only `require-plan`
+  re-rooted onto a worktree beside the checkout. `guard-secrets-read` skipped a `sed -i` or
+  `python3 -c` write into a worktree file, or refused it naming the main checkout's running phase;
+  the capability policy read the main checkout's live areas; `remind-tdd` was silent; `guard-edits`
+  let a worktree's journal and bypass state be edited by hand; the journal recorder filed no
+  `task.complete` / `task.commit` for a task finished in a worktree; spend was `unattributed`; and the
+  history guard read the main checkout's recorded SHAs for a rebase of the worktree branch. One
+  helper, `_config.tree_for`, now places each path (and each Bash command, where its shell stood after
+  any `cd`) in its tree, and `_deps.hook_tree_violations()` fails the build on a hook that reads the
+  plan beside a bare `repo_root`. The config and the session's own state stay with the project.
+- **The bash-write guard blamed a shell command for journal rows the plugin wrote.** A peer
+  session's hook rows, a plugin script's rows and a merge's journal files each drew "that shell
+  command wrote into the append-only audit journal". The verdict is read from the bytes now: a file
+  identical to its version at `MERGE_HEAD` or `ORIG_HEAD` is the merge's, rows that chain onto the
+  committed tail with verifying hashes, a plugin `via` and a fresh stamp are named as the plugin's
+  writer, and everything else keeps the tamper notice. A peer session's claim file is still not read.
+- **The history guard refused prose that named `git stash`.** Every word `git` started an
+  invocation, so `echo attempt used git stash` and an outcome piped into a script
+  (`cat <<'EOF' | python3 x.py -`) were refused as the operation. `git` now counts only in command
+  position, text emitters that print their arguments are read as printing them (unless their
+  output is piped or substituted into a command), and a piped heredoc body is graded by the far side
+  of the pipe. An unquoted delimiter whose body carries `$(…)` or a backquote is graded wherever the
+  body goes, since the shell runs those substitutions first.
 
 ## [3.0.1] - 2026-09-18
 

@@ -1591,6 +1591,99 @@ def _cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # (tf) A WORKTREE'S PLAN IS RECORDED IN THE WORKTREE'S JOURNAL. The recorder
+    # spelled every path from CLAUDE_PROJECT_DIR, so a write to a linked
+    # worktree's manifest was "not a manifest path" and a phase finished in a
+    # worktree left no task.complete / task.commit anywhere - the rows the
+    # dedupe reads back after a merge, and the rows `verify` explains a moved
+    # plan with.
+    _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "journal-wt-")
+    if not _tf_ok:
+        check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
+    else:
+        _prev_tf = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
+        _tf_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        _tf_man = os.path.join(_tf["wt"], _tf["manifest_rel"])
+        # Through getattr so a build without it is a failing case, not a
+        # suite that stops at the first reference.
+        _tf_post_rows = getattr(M, "post_rows", None)
+
+        def _tf_finish(task_id, commit):
+            with open(_tf_man, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+            for ph in doc["phases"]:
+                for t in ph["tasks"]:
+                    if t["id"] == task_id:
+                        t.update(status="done", commit=commit,
+                                 completedAt="2026-09-25T10:00:00Z")
+            with open(_tf_man, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, indent=2)
+        try:
+            _tf_edit = {"tool_name": "Edit", "session_id": "tf-e",
+                        "cwd": _tf["main"],
+                        "tool_input": {"file_path": _tf_man, "new_string": "x"}}
+            M.pre_cache(_tf_edit, cfg=_tf_cfg)
+            _tf_finish("P48.1", "a" * 40)
+            _ok, _ents = _harness.attempt(M.post_entries, _tf_edit, cfg=_tf_cfg)
+            _acts = [e.get("action") for e in _ents] if _ok else _ents
+            check("tf1 an Edit of a linked worktree's manifest derives the "
+                  "completion rows, as the same edit in the project does",
+                  _ok and _acts == ["manifest.edit", "task.complete",
+                                    "task.commit"], repr(_acts))
+            _tf_edit2 = dict(_tf_edit, session_id="tf-e3")
+            M.pre_cache(_tf_edit2, cfg=_tf_cfg)
+            _tf_finish("P48.1", "c" * 40)
+            _ok, _rows = _harness.attempt(_tf_post_rows, _tf_edit2, cfg=_tf_cfg)
+            check("tf2 ...and every row is bound for the WORKTREE's journal - "
+                  "the trail rides the branch that did the work",
+                  _ok and _rows and all(
+                      _config._same_dir(r, _tf["wt"]) for r, _e in _rows)
+                  and all(e.get("target") == _tf["manifest_rel"]
+                          for _r, e in _rows), repr([r for r, _e in _rows])
+                  if _ok else _rows)
+            # The Bash lane an agent takes: its shell starts in the session's
+            # directory, so the payload names the MAIN checkout and only the
+            # command's own `cd` says which tree it wrote.
+            _tf_bash = {"tool_name": "Bash", "session_id": "tf-b",
+                        "cwd": _tf["main"], "tool_input": {
+                            "command": "cd %s && python3 audit-task.py done "
+                                       "P41.1" % _tf["wt"]}}
+            M.pre_cache(_tf_bash, cfg=_tf_cfg)
+            _tf_finish("P41.1", "b" * 40)
+            _ok, _rows = _harness.attempt(_tf_post_rows, _tf_bash, cfg=_tf_cfg)
+            _got = ([(e.get("action"), (e.get("details") or {}).get("taskId"))
+                     for _r, e in _rows] if _ok else _rows)
+            check("tf3 a Bash call that walked into the worktree with `cd` "
+                  "derives the completion of the task it finished THERE",
+                  _ok and ("task.complete", "P41.1") in _got
+                  and ("task.commit", "P41.1") in _got, repr(_got))
+            check("tf4 ...into the worktree's journal, and the main tree - "
+                  "whose own P41.1 never moved - is credited with nothing",
+                  _ok and _rows and all(
+                      _config._same_dir(r, _tf["wt"]) for r, _e in _rows),
+                  repr([r for r, _e in _rows]) if _ok else _rows)
+            # The same lane standing still: without the `cd` the command is in
+            # the main tree, and the main tree's plan did not move.
+            _tf_still = dict(_tf_bash, session_id="tf-s",
+                             tool_input={"command": "python3 x.py"})
+            M.pre_cache(_tf_still, cfg=_tf_cfg)
+            _ok, _rows = _harness.attempt(_tf_post_rows, _tf_still, cfg=_tf_cfg)
+            check("tf5 a Bash call that never left the main checkout sweeps the "
+                  "main tree only - the worktree's plan is not every command's "
+                  "business", _ok and _rows == [], repr(_rows))
+            # post_entries keeps its contract: the entries alone.
+            _ok, _ents = _harness.attempt(M.post_entries, dict(
+                _tf_edit, session_id="tf-e2"), cfg=_tf_cfg)
+            check("tf6 post_entries still returns entries alone, whatever tree "
+                  "they are bound for", _ok and isinstance(_ents, list)
+                  and all(isinstance(e, dict) for e in _ents), repr(_ents)[:200])
+        finally:
+            if _prev_tf is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
+
     # (p) the sidecar's state dir is self-ignoring
     tmp_i = tempfile.mkdtemp(prefix="jw-ignore-")
     try:

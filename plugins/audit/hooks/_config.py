@@ -530,6 +530,12 @@ def git_root_rel(cfg):
 # worktree's `--show-toplevel` is the worktree, its `--git-common-dir` is the shared
 # `.git`. Path arithmetic cannot stand in for either - an agent worktree sits UNDER
 # the project directory, so every containment test calls it the same tree.
+# The basis clause both answers below give a linked worktree of this same
+# repository. A constant because `tree_for` reads it back to decide whether to
+# re-root, and a re-spelled literal in one of three places would re-root nothing.
+LINKED_WORKTREE = "a linked worktree of the same repository"
+
+
 def _same_dir(a, b):
     """Do two path strings name the same directory on disk?
 
@@ -696,7 +702,7 @@ def command_tree(data, root, cfg):
         return {"tree": got[0], "watching": str(watching), "watched": True,
                 "basis": "the command ran in the watched tree"}
     return {"tree": got[0], "watching": str(watching), "watched": False,
-            "basis": ("a linked worktree of the same repository"
+            "basis": (LINKED_WORKTREE
                       if _shares_repository(cwd, got[1], watching)
                       else "a separate git repository")}
 
@@ -789,8 +795,7 @@ def path_tree(file_path, root, cfg):
         return {"root": str(root), "placed": True,
                 "basis": "git names no working tree for %s" % start}
     if _shares_repository(start, got[1], watching, ours=ours):
-        return {"root": got[0], "placed": True,
-                "basis": "a linked worktree of the same repository"}
+        return {"root": got[0], "placed": True, "basis": LINKED_WORKTREE}
     return {"root": str(root), "placed": True,
             "basis": "a separate git repository"}
 
@@ -814,6 +819,106 @@ def in_project(file_path, root, cfg):
         return True
     placement = path_tree(file_path, root, cfg)
     return bool(placement["placed"]) and placement["root"] != str(root)
+
+
+# `tree_for`'s target when the caller judges nothing yet and wants only the
+# homes - the config and the session's state - because it places each target
+# itself afterwards. Named rather than implied by some other value, so asking
+# for less than a verdict is visible at the call site.
+PROJECT_ONLY = object()
+
+
+def tree_for(data, target=None, cfg=None, project=None):
+    """Which tree's PLAN governs the work this hook is judging - the one
+    question every hook that reads the manifest asks before it reads it.
+
+    -> {"root":    the tree whose manifest, shards and journal are read - the
+                   project, or a linked worktree of it,
+        "project": where the config and the session's own state live
+                   (`repo_root`, or the caller's `project`),
+        "cfg":     the config, loaded from `project` unless handed in,
+        "moved":   `root` is a different tree from `project`,
+        "placed":  False only when `target` cannot be placed at all,
+        "inside":  `target` lies inside `root` (always True with no target),
+        "rel":     `target` relative to `root`, or None,
+        "basis":   the clause a verdict may quote,
+        "command": `command_tree`'s own answer when it was asked, else None}
+
+    TWO QUESTIONS, TWO HOMES. `repo_root` answers where the config lives, and
+    CLAUDE_PROJECT_DIR wins there on purpose. It is the wrong answer to "whose
+    plan is this edit held to": an executor in a linked worktree of the
+    project was told "Phase P41 is in_progress" by one hook while the tree it
+    was writing in ran P48, and skipped by another hook for the same file. A
+    worktree does not share an uncommitted manifest with its sibling, so the
+    project's copy is not a stand-in for the worktree's. Session state (bypass
+    flags, baselines, throttles) stays with `project`: it is keyed by session,
+    and the prompt hook that arms a bypass cannot know which tree the next edit
+    will land in.
+
+    WHAT IS JUDGED:
+      * a `target` PATH (a file, or the directory a command runs in) - inside
+        `project` it is the project, answered with no process at all; outside
+        it `path_tree` asks git, and only a linked worktree of this repository
+        re-roots. A separate repository, or no repository, is `inside: False`
+        - not this plan's business; no existing directory at all is `placed:
+        False`, which the caller refuses or skips, never guesses;
+      * no target - the SESSION's working directory from the payload, through
+        the same containment shortcut and then `command_tree`. A Bash command
+        that walks with `cd` is placed by handing `effective_cwd`'s answer in
+        as the target; this function does not read command text;
+      * `PROJECT_ONLY` - nothing is judged and nothing is asked of git: the
+        caller wants the config and the state home, and places its own
+        targets through this function afterwards.
+
+    RESIDUAL, stated because the containment shortcut is what makes it: a
+    linked worktree placed UNDER the project directory is judged as part of
+    the project, since `within_root` answers before git is asked. The default
+    exempt globs cover `.claude/**`, where the harness puts its own agent
+    worktrees; a worktree elsewhere under the project is judged against the
+    project's plan with its path spelled from the project root.
+    """
+    project = Path(project) if project is not None else repo_root(data)
+    cfg = cfg if cfg is not None else load(project)
+    out = {"root": project, "project": project, "cfg": cfg, "moved": False,
+           "placed": True, "inside": True, "rel": None, "basis": "",
+           "command": None}
+    if target is PROJECT_ONLY:
+        out["basis"] = "no target named yet"
+        return out
+    if target is None or str(target) == "":
+        cwd = str((data or {}).get("cwd") or "")
+        if not cwd or within_root(project, cwd):
+            out["basis"] = ("the session's directory is the project" if cwd
+                            else "the hook payload named no working directory")
+            return out
+        tree = command_tree(data, project, cfg)
+        out["command"] = tree
+        out["basis"] = tree["basis"]
+        if not tree["watched"] and tree["basis"] == LINKED_WORKTREE \
+                and tree["tree"]:
+            out["root"] = Path(tree["tree"])
+            out["moved"] = True
+        return out
+    if within_root(project, target):
+        out["rel"] = rel_path(project, target)
+        out["basis"] = "inside the project"
+        return out
+    placement = path_tree(target, project, cfg)
+    out["basis"] = placement["basis"]
+    if not placement["placed"]:
+        out["placed"] = False
+        out["inside"] = False
+        return out
+    if placement["root"] == str(project):
+        out["inside"] = False
+        return out
+    # git answers `--show-toplevel` fully resolved, so `target` is resolved
+    # too before the subtraction: a symlinked component on one side only would
+    # climb back out of the worktree as `../..`, which no `files` entry holds.
+    out["root"] = Path(placement["root"])
+    out["moved"] = True
+    out["rel"] = rel_path(out["root"], os.path.realpath(str(target)))
+    return out
 
 
 def state_dir(root, cfg):
@@ -1058,6 +1163,164 @@ def _areas_of_fallback(area):
     return out
 
 
+# --- where a Bash command stands -------------------------------------------------
+def command_clauses(cmd):
+    """Split a shell command into clauses on `;`, `|`, `&`, NEWLINE, outside quotes.
+
+    The newline was added as a separator, matching how a multi-line Bash block is
+    actually written -- and its absence was this function's own documented
+    defect surviving in the one spelling nobody had tried. Measured: the two
+    lines below deny together and neither denies alone, while the same two joined
+    with `;` are allowed. The evidence was being taken from two different
+    commands and applied to the block as a whole.
+
+    The inline-eval heuristics must judge each clause on its own facts:
+    `x.py --selftest >/tmp/out; python3 -c "json.load(open('a.json'))"` is a
+    redirect in one clause and an eval in another, and reading them as one
+    command manufactured a deny neither clause earns (reproduced live).
+
+    Deliberately simple, and FAIL-SAFE about its own limits: quote tracking
+    covers '...', "..." and backslash escapes; when the quoting cannot be
+    tracked (unbalanced at end of string) the WHOLE command is returned as one
+    clause, so an unparseable command is judged exactly as strictly as before
+    the split existed. A single-clause command comes back unchanged either way
+    — the split can only narrow multi-clause false positives, never widen what
+    one clause may do. Separators inside `$( )` are an accepted imprecision:
+    full shell parsing is out of scope here (see the header's trade-off note),
+    and each fragment is still judged by the same regexes.
+
+    A LINE CONTINUATION IS NOT A SEPARATOR and needs no special case: the
+    backslash branch above already consumes the character after it, so one
+    ending a line eats its own newline and the two lines stay one clause.
+    (Spelled without the character itself: in a non-raw docstring it would
+    open an invalid escape sequence, which is a SyntaxWarning -- and the
+    warning machinery pulls `warnings`, `linecache` and `tokenize` into a
+    hook that must import fast, which is how `bench-hooks --gate` found it.)
+    A newline inside quotes is likewise held together by the quote tracking, which
+    is why the transport shape -- an interpreter invocation and a repo path both
+    inside ONE quoted argument handed to another program -- is still refused.
+    That one cannot be fixed by splitting: it needs knowing the text is an
+    argument rather than a program, which is real shell parsing. Stated here
+    rather than left to be rediscovered."""
+    parts, buf, quote = [], [], None
+    i, n = 0, len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if quote:
+            buf.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < n:
+                buf.append(cmd[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch == "\\" and i + 1 < n:
+            buf.append(ch)
+            buf.append(cmd[i + 1])
+            i += 2
+            continue
+        elif ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+        elif ch in (";", "|", "&", "\n", "\r"):
+            if "".join(buf).strip():
+                parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    if quote is not None:
+        return [cmd]  # unbalanced quoting: unsure, so judge it as ONE clause
+    if "".join(buf).strip():
+        parts.append("".join(buf))
+    return parts or [cmd]
+
+
+_DIR_CHANGE_CLAUSE = re.compile(
+    r"^\s*(cd|pushd|popd)(?:\s+(.*))?$", re.IGNORECASE)
+
+
+def effective_cwd(cmd, payload_cwd):
+    """Where this command's shell is standing when its writes actually run.
+
+    -> an absolute directory, or None when this cannot be said at all
+
+    A RELATIVE WRITE TARGET IS A WORD ABOUT SOMEWHERE, AND "SOMEWHERE" WAS
+    ALWAYS THE REPOSITORY ROOT in `guard-secrets-read` - never read from the
+    payload and never read from the command. `sed -i 's/a/b/' notes.py` run from a directory
+    outside the repository, or reached through `cd <elsewhere> &&`, named a
+    repository-relative path that does not exist and was refused for plan
+    coverage under that name, while the identical write spelled from inside
+    the tree was refused correctly - one file, one command shape, two
+    verdicts decided by where the shell happened to be standing. The payload
+    already carries the shell's own starting point: `cwd`, the SESSION's
+    directory and the same field `guard-bash-writes.directory_change_basis`
+    reads for the same reason (a hook may not import a hook, so this is a
+    second reading of the same field rather than a second field). A leading
+    `cd`/`pushd` in the command text is the one thing that moves it before a
+    write runs. The journal recorder and the history guard ask the same
+    question to place a command in a working tree, which is why the answer
+    lives here rather than in the guard that first needed it.
+
+    NO PAYLOAD `cwd` AT ALL IS UNRESOLVABLE - not a silent fallback to this
+    process's own directory or to the repository root. Either guess answers a
+    question about the SHELL with an answer about something else, which is
+    the same invented-target class `_resolve_write_expr` already refuses to
+    commit for a bound name it cannot read.
+
+    A DIRECTORY CHANGE THIS CANNOT READ ENDS THE WALK, for every write that
+    follows it in the command. `cd`/`pushd` with anything but exactly one
+    plain argument - no expansion, substitution, glob or home shorthand, the
+    same marks `resolvable_destination` already will not guess through - and
+    `popd` (which needs a push stack this process never saw a matching
+    `pushd` build) both leave the rest of the command standing somewhere this
+    cannot name. That is not a second mechanism: it is the withdrawal
+    `resolvable_destination` already makes for a mark in the target's OWN
+    text, extended to the one case it was one short of - a plain word with
+    nothing to resolve it against.
+
+    ONE PASS, ACCUMULATING, over every clause in the command in the order it
+    is written - not the directory change nearest a particular write's own
+    clause. That is coarser than a real shell, and coarser on purpose:
+    `guard-secrets-read` reasons about the whole command for the shell-write
+    grammars and clause-by-clause only for the eval heuristics, and a write's
+    position relative to a `cd` is evidence read nowhere else in it. What this may not
+    be is finer than it can prove, which is why one unreadable change stops
+    the walk rather than being skipped past.
+
+    NEVER REALPATH HERE. `guard-secrets-read._placed_target` joins this
+    answer onto a relative write target and hands the join straight to
+    `rel_path`, which
+    compares it against `root` WITHOUT resolving either side - on purpose, so
+    a relative target stays comparable to a relative task-file entry. A
+    working directory quietly resolved through a symlink (`/tmp` ->
+    `/private/tmp` on macOS, which is where a test fixture and a real
+    session scratchpad both commonly live) would then compare a resolved
+    path against an unresolved `root` and manufacture a `../../..` mismatch
+    for a file that never left the tree. `within_root` is the one place
+    symlinks get resolved, on both sides at once, and it is asked separately -
+    this only normalises the arithmetic of `..` and `.`."""
+    if not payload_cwd:
+        return None
+    current = str(payload_cwd)
+    for clause in command_clauses(cmd):
+        m = _DIR_CHANGE_CLAUSE.match(clause)
+        if not m:
+            continue
+        verb = m.group(1).lower()
+        if verb == "popd":
+            return None
+        args = [w.strip("'\"") for w in (m.group(2) or "").split()
+                if not w.startswith("-")]
+        if len(args) != 1 or not resolvable_destination(args[0]):
+            return None
+        try:
+            current = os.path.normpath(os.path.join(current, args[0]))
+        except Exception:
+            return None
+    return current
+
+
 # --- a Bash command's heredoc bodies: data, or text a machine will run --------
 # WHY THIS IS HERE AND NOT IN A GUARD. Two guards in this directory have to
 # answer the same question before they grade anything - `guard-secrets-read`
@@ -1102,6 +1365,55 @@ _STDIN_SHELL = re.compile(
     re.IGNORECASE)
 
 
+# The far side of a heredoc's pipe that reads the body as DATA: an interpreter
+# handed a SCRIPT operand. What it does with stdin is that script's business,
+# the same line `python3 x.py - <<EOF` already falls on. A flag that makes the
+# next word code (`-c`, `-e`, `-m`), or no operand at all, leaves the body
+# possibly a program, and those stay graded.
+_SCRIPT_INTERPRETERS = re.compile(
+    r"^(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php)$",
+    re.IGNORECASE)
+_CODE_FLAGS = ("-c", "-e", "-m", "-E", "-r", "--eval", "--print", "-p")
+# A body the SHELL still expands: an unquoted delimiter leaves command
+# substitution live, so the shell runs it before any consumer reads a byte.
+_LIVE_SUBSTITUTION = re.compile(r"\$\(|`")
+
+
+def _pipe_reads_data(tail):
+    """Does the pipeline stage after a heredoc's `|` read the body as DATA?
+
+    `tail` is the head line's text after the heredoc marker. The stage is read
+    up to its own separator, as plain words: a word carrying a quote or an
+    expansion names something only the shell resolves, and is not guessed at.
+    Only the one shape named above answers yes; everything else - a shell, an
+    interpreter reading its program from stdin, a program this does not know,
+    `||` - answers no, which keeps the body graded."""
+    at = tail.find("|")
+    if at < 0 or tail[at:at + 2] == "||":
+        return False
+    stage = re.split(r"[|;&\n]", tail[at + 1:], maxsplit=1)[0]
+    words = stage.split()
+    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+        words = words[1:]
+    if not words or not all(resolvable_destination(w)
+                            and "'" not in w and '"' not in w for w in words):
+        return False
+    program = words[0].replace("\\", "/").rsplit("/", 1)[-1]
+    if program.lower().endswith(".exe"):
+        program = program[:-4]
+    if not _SCRIPT_INTERPRETERS.match(program):
+        return False
+    for word in words[1:]:
+        if word in ("-", "/dev/stdin"):
+            return False
+        if word.startswith("-"):
+            if word in _CODE_FLAGS or word.split("=", 1)[0] in _CODE_FLAGS:
+                return False
+            continue
+        return True
+    return False
+
+
 def split_heredocs(cmd):
     """(text without heredoc bodies, bodies that are CODE, bodies that are SHELL).
 
@@ -1125,8 +1437,18 @@ def split_heredocs(cmd):
 
     A THIRD CLASSIFICATION, and it is the one that keeps this a narrowing. A body
     the consumer does not execute is DATA and leaves -- unless the head line pipes
-    it onward, in which case what the far side does with it cannot be read here
-    and it is kept as shell. `cat <<EOF | bash` really is a way to run a command.
+    it onward, in which case the FAR SIDE decides (`_pipe_reads_data`): a script
+    given a file operand reads it as data, and anything else keeps it as shell.
+    `cat <<EOF | bash` really is a way to run a command; `cat <<'EOF' | python3
+    x.py -` is an outcome handed to a script, and refusing its prose for naming
+    a rule was the guard firing on a sentence.
+
+    AN UNQUOTED DELIMITER KEEPS THE SHELL IN THE BODY. With `<<EOF` rather than
+    `<<'EOF'` the shell performs command substitution inside the body before
+    any consumer reads it, so `$(...)` or a backquote there is a command that
+    runs whatever the body's destination - a file, a script's stdin. Such a
+    body is kept as shell rather than dropped as data; quoting the delimiter is
+    what makes the same bytes inert text.
 
     Fail-safe about its own limits: a heredoc whose terminator never arrives is
     left in the text, so an unparseable command is judged exactly as strictly as
@@ -1160,11 +1482,14 @@ def split_heredocs(cmd):
         head = line[:m.start()].strip()
         kept.append(line[:m.start()])
         body = "\n".join(lines[i + 1:end])
+        live = not m.group(1) and _LIVE_SUBSTITUTION.search(body)
         if _STDIN_SHELL.search(head):
             shell.append(body)
         elif _STDIN_INTERP.search(head):
             code.append(body)
-        elif "|" in line[m.end():]:
+        elif "|" in line[m.end():] and not _pipe_reads_data(line[m.end():]):
+            shell.append(body)
+        elif live:
             shell.append(body)
         i = end + 1
     return "\n".join(kept), code, shell

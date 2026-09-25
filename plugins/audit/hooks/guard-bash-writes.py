@@ -1350,6 +1350,149 @@ def _git_dirty(root):
         return (None, "git-error")
 
 
+# --- who moved the journal: read from the rows -----------------------------------
+# A journal file that went dirty with no claim in THIS session's sidecar was
+# blamed on the shell command in hand - and the plugin's own writers put files
+# there that no sidecar here can name: a peer session's hook (whose sidecar is
+# deliberately unread, see `_plugin_wrote`), a plugin script whose `--project`
+# resolved another state directory, a merge. The claim is bound to CONTENT
+# instead, and each verdict names the evidence it read.
+#
+# `via` values the plugin's own writers stamp: the journal-writes hook, the
+# plugin's CLI scripts, the panel. A row carrying any other label - including
+# the free-text one `audit-journal.py append --via` accepts - is not taken for
+# the plugin's, and keeps the tamper notice.
+PLUGIN_VIAS = ("hook", "cli", "panel")
+# How far a row's second-resolution `ts` may sit before this session's previous
+# look and still be an append made inside the window, and after now (clocks).
+_FRESH_SLACK_SECONDS = 2
+_FUTURE_SLACK_SECONDS = 300
+_ORIGIN_REFS = ("MERGE_HEAD", "ORIG_HEAD")
+
+PLUGIN_JOURNAL_TEMPLATE = (
+    "[bash-write-guard] The audit journal moved while that shell command ran, and "
+    "the new rows are the plugin's own: %s. Each one chains onto the file's "
+    "committed tail with a hash that verifies, says the plugin wrote it, and is "
+    "stamped inside this window - so this is not a shell write into the trail. "
+    "`audit-journal.py verify` checks the whole chain."
+)
+MERGED_JOURNAL_TEMPLATE = (
+    "[bash-write-guard] Audit journal file(s) changed, byte-identical to a version "
+    "git holds: %s - brought in by the merge (or the reset or rebase that moved "
+    "HEAD), not written by this command. `audit-journal.py verify` checks the "
+    "chain."
+)
+
+
+def _git_blobs(git_root, specs):
+    """{spec: bytes, or None when git says it is missing} for `<rev>:<path>`
+    specs, from ONE `git cat-file --batch` - or None when git cannot answer at
+    all (no repository, no git, a timeout), which is no evidence either way.
+
+    `subprocess` is imported here for the reason `_git_dirty` gives: this path
+    runs only for a journal file that moved, never on the ordinary pass."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "cat-file", "--batch"], cwd=str(git_root),
+            input="".join(sp + "\n" for sp in specs).encode("utf-8"),
+            capture_output=True, timeout=_GIT_TIMEOUT_SECONDS)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    data, pos, found = out.stdout, 0, {}
+    for spec in specs:
+        end = data.find(b"\n", pos)
+        if end < 0:
+            return None
+        header = data[pos:end].decode("utf-8", "replace").split()
+        pos = end + 1
+        if len(header) == 3 and header[1] == "blob" and header[2].isdigit():
+            size = int(header[2])
+            found[spec] = data[pos:pos + size]
+            pos += size + 1
+        else:
+            found[spec] = None
+    return found
+
+
+def _ts_epoch(ts):
+    """A journal row's `%Y-%m-%dT%H:%M:%SZ` stamp as epoch seconds, or None."""
+    import calendar
+    import time
+    try:
+        return calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+
+
+def _plugin_rows_writers(mod, committed, current, basename, since, now):
+    """The writers of the rows `current` appends to `committed`, when every one
+    of them is the plugin's own - or None.
+
+    The committed bytes must be an untouched PREFIX (an append, not a rewrite);
+    each new row must chain onto the one before it - the committed tail's last
+    hash, or the file's genesis anchor - with a hash that verifies; its `via`
+    must be one of `PLUGIN_VIAS`; and its `ts` must fall inside this pass's
+    window. The chain algorithm is `_journal_io`'s own, loaded through
+    `_config`, so this cannot come to disagree with `verify` about a row."""
+    if mod is None or since is None or not current.startswith(committed):
+        return None
+    try:
+        added, torn = mod.rows_from_text(current[len(committed):].decode("utf-8"))
+        old, _torn = mod.rows_from_text(committed.decode("utf-8"))
+    except Exception:
+        return None
+    if torn or not added:
+        return None
+    prev = old[-1].get("hash") if old else mod.genesis_prev(basename)
+    writers = []
+    for row in added:
+        actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+        stamp = _ts_epoch(row.get("ts"))
+        if (row.get("_unparseable") or row.get("prev") != prev
+                or mod.row_hash(row) != row.get("hash")
+                or actor.get("via") not in PLUGIN_VIAS or stamp is None
+                or stamp < since - _FRESH_SLACK_SECONDS
+                or stamp > now + _FUTURE_SLACK_SECONDS):
+            return None
+        prev = row.get("hash")
+        who = ("session %s" % actor["sessionId"] if actor.get("sessionId")
+               else "writer %s" % (mod.writer_of(basename) or "?"))
+        name = "%s via %s" % (who, actor.get("via"))
+        if name not in writers:
+            writers.append(name)
+    return writers
+
+
+def journal_origin(git_root, git_rel, path, since, now):
+    """Where a dirty journal file's bytes came from, as far as git and the rows
+    can show - ("merge", ref), ("plugin", [writer, ...]) or None.
+
+    None is "nothing shows it", and the caller keeps the tamper notice for it:
+    a file git cannot be asked about, bytes matching no version git holds,
+    rows that do not all verify. The merge question is asked first because it
+    needs no reading of rows at all: bytes equal to the file at MERGE_HEAD or
+    ORIG_HEAD are git's write."""
+    try:
+        with open(str(path), "rb") as fh:
+            current = fh.read()
+    except OSError:
+        return None
+    specs = ["HEAD:" + git_rel] + ["%s:%s" % (r, git_rel) for r in _ORIGIN_REFS]
+    blobs = _git_blobs(git_root, specs)
+    if blobs is None:
+        return None
+    for ref in _ORIGIN_REFS:
+        if blobs.get("%s:%s" % (ref, git_rel)) == current:
+            return ("merge", ref)
+    writers = _plugin_rows_writers(
+        _config._load_journal_lib(), blobs.get(specs[0]) or b"", current,
+        os.path.basename(str(path)), since, now)
+    return ("plugin", writers) if writers else None
+
+
 # --- decision -----------------------------------------------------------------
 def decide(data, *, cfg=None, state_dir=None, dirty=None):
     """Returns ("record"|"warn"|"silent", detail). `dirty` is injectable for
@@ -1358,8 +1501,10 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     if tool not in _EDIT_TOOLS + ("Bash",):
         return ("silent", "unknown tool")
 
-    root = _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    # One tree is watched, and it is the project's: every rel in this state
+    # file is a path in it, and a command from another tree is declined below.
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg)
+    root, cfg = home["project"], home["cfg"]
     if not _config.bash_write_check_enabled(cfg):
         return ("silent", "disabled")
 
@@ -1646,7 +1791,24 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
             for r, c in locked))
     if journalled:
         state["warned"].extend(journalled)
-        parts.append(JOURNAL_TEMPLATE % ", ".join(journalled))
+        merged, own, tampered = [], [], []
+        git_root = _config.git_root_dir(root, cfg)
+        for rel in journalled:
+            git_rel = rel[len(prefix) + 1:] if prefix else rel
+            origin = journal_origin(git_root, git_rel, os.path.join(
+                str(root), rel), since, now)
+            if origin and origin[0] == "merge":
+                merged.append("%s (the version at %s)" % (rel, origin[1]))
+            elif origin and origin[0] == "plugin":
+                own.append("%s (%s)" % (rel, ", ".join(origin[1])))
+            else:
+                tampered.append(rel)
+        if tampered:
+            parts.append(JOURNAL_TEMPLATE % ", ".join(tampered))
+        if own:
+            parts.append(PLUGIN_JOURNAL_TEMPLATE % "; ".join(own))
+        if merged:
+            parts.append(MERGED_JOURNAL_TEMPLATE % "; ".join(merged))
     if suspicious:
         state["warned"].extend(suspicious)
         # BOTH KINDS OF OTHER-AUTHOR, joined rather than ranked. A peer session and

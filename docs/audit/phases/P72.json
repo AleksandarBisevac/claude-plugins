@@ -1,7 +1,7 @@
 {
   "id": "P72",
   "title": "Every hook judges the tree the work is in, and blames only what it can show",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "every hook that reads the manifest or the plugin's state resolves the tree of the path or command it judges through one helper, so an executor in a linked worktree is held to that worktree's plan (and a lint keeps a bare repo_root from coming back); journal-writes derives completions in a worktree; the bash write guard names the plugin's own writers and a merge as what they are, from the rows and the merge refs; and the history guard reads git only in command position",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "036e98e87346dfb55f49ffe233b7dfab1e8a5bbc",
+  "branch": "audit/p72-every-hook-judges-the-tree-the",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P72.1",
       "title": "One tree resolver for every hook, attribution from the rows, and git read only in command position",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Field report on 3.0.1, reproduced at HEAD: only require-plan re-roots onto a linked worktree (_config.path_tree). guard-secrets-read judges shell writes against CLAUDE_PROJECT_DIR's plan ('Phase P41 is in_progress' for an executor in the P48 worktree) and skips out-of-root worktree targets; guard-capabilities applies main's area policy; remind-tdd is silent; guard-history-rewrite, journal-writes, guard-edits, meter-usage and detect-plan-skip use repo_root. One _config.tree_for(data, target) over path_tree/command_tree, every manifest/state reader calls it, and a lint over hooks/ (hosted where the cross-file lints live, reading source only - hooks may not import scripts) bans a bare repo_root beside a manifest or state read. journal-writes then derives task.complete/task.commit for a worktree's writes. guard-bash-writes blames a shell command for journal rows the plugin's own writers appended (peer session hook rows, CLI rows filed under another --project state dir, a merge): bind the verdict to content - new rows that chain validly onto the committed tail with via hook/cli/panel and a fresh ts are named as the plugin's writer; bytes equal to a version reachable from MERGE_HEAD/ORIG_HEAD are 'brought in by the merge'; otherwise the tamper notice stands; peer sidecar claims stay unread. guard-history-rewrite denies 'echo ... git stash' and a piped heredoc body 'cat <<EOF | python3 x.py -' containing the words: recognise git only in command position (start, ; && || | newline, or after xargs/sudo/env/bash -c), classify a piped heredoc body by the far side of the pipe; 'true && git stash push' stays DENY.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -56,7 +56,11 @@
         "plugins/audit/tests/test_require_plan.py",
         "plugins/audit/scripts/_deps.py",
         "plugins/audit/SECURITY.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/tests/_harness.py",
+        "SECURITY.md",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -81,16 +85,17 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T14:32:08Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T14:32:08Z"
 }

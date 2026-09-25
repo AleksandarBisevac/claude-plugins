@@ -570,6 +570,100 @@ def _cases(check):
               "filename sits there. The conservative direction, kept on purpose - "
               "the narrowing would widen a secret guard that shares the rule",
               v == "deny", repr((v, why)))
+
+        # --- git is an invocation only where a shell would RUN it ---------------
+        # Every word equal to `git` started an invocation, so an `echo` naming the
+        # rule in prose was refused as the operation. A word is a command where the
+        # shell would run it: the start of a command, after a separator, after a
+        # prefix that runs its argument. The one narrowing is a program that
+        # provably never runs its arguments - a text emitter or a no-op - and only
+        # while its output goes nowhere a shell could read it. Each allow below
+        # stands beside the deny that proves it opened no hole.
+        for _cid, _cmd, _want, _what in (
+                ("gp1", "echo attempt used " + _G, "allow",
+                 "the words after `echo` are its output, not a command"),
+                ("gp2", "printf '%s\\n' an attempt used " + _G + " drop", "allow",
+                 "the other text emitter, the same reading"),
+                ("gp3", "echo attempt used " + _G + " > notes.md", "allow",
+                 "an emitter writing a FILE is still an emitter"),
+                ("gp4", "true && " + _G + " push", "deny",
+                 "after `&&` is command position, whatever came before"),
+                ("gp5", _G, "deny", "the bare command, unchanged"),
+                ("gp6", "bash -c '" + _G + "'", "deny",
+                 "a shell's -c argument is a command line"),
+                ("gp7", "bash -c 'echo " + _G + "'", "allow",
+                 "...which is read by the same rule, emitter and all"),
+                ("gp8", "echo " + _G + " | sh", "deny",
+                 "an emitter PIPED into a shell hands the words to something "
+                 "that runs them - the allow above holds only while the output "
+                 "goes nowhere a shell reads"),
+                ("gp9", "echo " + _G + " | xargs -I{} sh -c {}", "deny",
+                 "any pipe keeps the conservative reading, not only into sh"),
+                ("gp10", "$(echo " + _G + ")", "deny",
+                 "a substitution in command position RUNS its output"),
+                ("gp11", "echo `echo " + _G + "`", "deny",
+                 "...and so does a backquoted one inside an argument"),
+                ("gp12", "sudo " + _G, "deny", "sudo runs its argument"),
+                ("gp13", "env FOO=1 " + _G, "deny", "env runs its argument"),
+                ("gp14", "echo x | xargs " + _G + " drop", "deny",
+                 "xargs runs its argument"),
+                ("gp15", "timeout 5 " + _G, "deny",
+                 "a prefix this guard has no table entry for is still read "
+                 "conservatively - the narrowing is a closed list of programs "
+                 "that never run arguments, not an open list of ones that do"),
+                ("gp16", "echo done; " + _G, "deny",
+                 "the emitter's reach ends at its own separator"),
+                ("gp17", "FOO=1 echo " + _G, "allow",
+                 "an assignment before the emitter is not the command"),
+                ("gp18", "echo " + _G + " 2>&1 | sh", "deny",
+                 "a redirection does not end the command: its output still "
+                 "reaches the pipe"),
+                ("gp19", "echo " + _G + " > notes.md 2>&1", "allow",
+                 "...while redirections that end in a file keep it inert"),
+                ("gp20", "$(echo " + _G + "; true)", "deny",
+                 "an emitter OPENING a substitution is refused even when its "
+                 "own command ends at a `;` - the substitution's output runs")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
+
+        # --- a piped heredoc is graded by what reads it -------------------------
+        # `cat <<EOF | <far side>` kept every body as shell, so an outcome written
+        # into a plugin script's stdin was refused when its prose named the rule.
+        # The far side decides: a script given a file operand reads the body as
+        # DATA; a shell, an interpreter reading its program from stdin, or anything
+        # else keeps the body in the graded text.
+        _body = "an attempt used " + _G + " and was refused"
+        for _cid, _cmd, _want, _what in (
+                ("gq1", "cat <<'EOF' | python3 x.py --technical -\n%s\nEOF"
+                 % _body, "allow",
+                 "a script operand on the far side: the body is its data"),
+                ("gq2", "cat <<'EOF' | node tools/log.mjs\n%s\nEOF" % _body,
+                 "allow", "the same for any interpreter given a script"),
+                ("gq3", "cat <<'EOF' | bash\n%s\nEOF" % (_G + " drop"), "deny",
+                 "a bare shell on the far side runs the body"),
+                ("gq4", "cat <<'EOF' | python3 -\n%s\nEOF" % (_G + " drop"),
+                 "deny", "an interpreter reading its PROGRAM from stdin runs the "
+                 "body, so the body stays in the graded text"),
+                ("gq5", "cat <<'EOF' | python3 -m pdb x.py\n%s\nEOF" % _G,
+                 "deny", "a code flag on the far side (`-m`, `-c`, `-e`) may run "
+                 "what it reads - pdb executes its stdin - so it is not data"),
+                ("gq6", "cat <<'EOF' | frobnicate --x\n%s\nEOF" % _G, "deny",
+                 "an unknown far side keeps the conservative reading"),
+                ("gq7", "cat <<EOF | python3 x.py -\n$(%s)\nEOF" % _G, "deny",
+                 "an UNQUOTED delimiter lets the shell run a substitution in the "
+                 "body before the script ever reads it"),
+                ("gq8", "cat > notes.md <<EOF\n$(%s)\nEOF" % _G, "deny",
+                 "...and so it does for a body on its way into a file - the same "
+                 "class, closed where it was open"),
+                ("gq9", "cat > notes.md <<'EOF'\n$(%s)\nEOF" % _G, "allow",
+                 "while a QUOTED delimiter makes the same bytes inert text"),
+                ("gq10", "cat <<'EOF' | sh deploy.sh\n%s\nEOF" % _G, "deny",
+                 "a SHELL given a script is not on the data list - a shell "
+                 "script reading its stdin is one `read`+`eval` from running it")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
         check("gh34 the text the guard grades, per heredoc kind: the body going "
               "into a FILE is gone, the body fed to a shell and the body fed to "
               "an interpreter are both still there. An interpreter body is kept "
@@ -613,6 +707,55 @@ def _cases(check):
               v == "allow" and why == "", repr((v, why)))
     finally:
         _harness.remove_tree(tmp)
+
+    # --- a git command is judged by the plan of the tree it runs in -----------
+    # The recorded SHAs came from CLAUDE_PROJECT_DIR's manifest. A worktree's
+    # plan records the commits ITS tasks made, which the main checkout's copy
+    # does not hold until a merge - so a rebase of the worktree branch orphaned
+    # them with nothing refused. The tree is the one git runs in: `-C <dir>`, or
+    # the directory a `cd` moved the shell to, or the payload's own.
+    _wt_ok, _wt = _harness.attempt(_harness.worktree_pair, "histguard-wt-")
+    if not _wt_ok:
+        check("gw0 the worktree fixture builds (%s)" % (_wt,), False)
+        return
+    with open(os.path.join(_wt["wt"], "f.txt"), "w", encoding="utf-8") as fh:
+        fh.write("x")
+    _git(_wt["wt"], "add", "f.txt")
+    _git(_wt["wt"], "-c", "user.email=t@t.t", "-c", "user.name=t",
+         "commit", "-qm", "wt work")
+    _wt_sha = _git(_wt["wt"], "rev-parse", "HEAD").stdout.decode().strip()
+    _wt_man = os.path.join(_wt["wt"], _wt["manifest_rel"])
+    with open(_wt_man, "r", encoding="utf-8") as fh:
+        _doc = json.load(fh)
+    _doc["phases"][1]["tasks"][0]["commit"] = _wt_sha
+    with open(_wt_man, "w", encoding="utf-8") as fh:
+        json.dump(_doc, fh)
+    _prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = _wt["main"]
+    try:
+        for _cid, _cwd, _cmd, _want, _what in (
+                ("gw1", _wt["main"], "git -C %s rebase main" % _wt["wt"], "deny",
+                 "`git -C <worktree>` rebases the worktree branch, whose plan "
+                 "records a commit the rebase rewrites"),
+                ("gw2", _wt["main"], "cd %s && git reset --hard HEAD~1"
+                 % _wt["wt"], "deny",
+                 "a `cd` into the worktree, then a reset that orphans the "
+                 "commit ITS plan records"),
+                ("gw3", _wt["wt"], "git commit --amend -m x", "deny",
+                 "a session standing in the worktree amends the commit its plan "
+                 "records"),
+                ("gw4", _wt["main"], "git rebase main", "allow",
+                 "the same verb in the main checkout, whose plan records "
+                 "nothing - the tree is per command, not a switch")):
+            v, why = M.decide({"tool_name": "Bash", "cwd": _cwd,
+                               "tool_input": {"command": _cmd}})
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:160])))
+    finally:
+        if _prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev
 
 
 def _selftest():

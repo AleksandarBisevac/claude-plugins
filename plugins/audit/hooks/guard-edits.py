@@ -302,8 +302,8 @@ def _decide_mcp(data, cfg):
     resolved by `_config.mcp_payload`; the operation is used in the sentence only,
     to name the call back to whoever made it.
     """
-    root = _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg)
+    root, cfg = home["project"], home["cfg"]
     payload = _config.mcp_payload(data.get("tool_input", {}) or {})
     op = _config.mcp_operation(data.get("tool_name", "")) or "?"
 
@@ -318,13 +318,14 @@ def _decide_mcp(data, cfg):
     state_rel = str(cfg.get("stateDir")
                     or _config.DEFAULTS["stateDir"]).strip("/")
     for loc in payload["locators"]:
-        if not _config.within_root(root, loc):
+        tree = _config.tree_for(data, loc, cfg, project=root)
+        if not tree["inside"]:
             continue
-        rel = _config.rel_path(root, loc)
+        rel = tree["rel"]
         base = rel.rsplit("/", 1)[-1]
         if rel.startswith(state_rel + "/") and base.startswith("plan-bypass-"):
             return ("block", _MCP_BYPASS % (rel, basis, op))
-        if _config.in_journal(root, cfg, loc):
+        if _config.in_journal(tree["root"], cfg, loc):
             return ("block", _MCP_JOURNAL % (rel, basis, op))
     return ("allow", "mcp: names no path this guard holds")
 
@@ -339,8 +340,11 @@ def decide(data, *, cfg=None):
         return ("allow", "unknown tool")
 
     path, text = collect(tool, data.get("tool_input", {}) or {})
-    root = _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    # The rules below hold files of the PLAN's tree - its journal, its bypass
+    # state, its manifest - so the tree that holds `path` is the one asked: a
+    # linked worktree's journal is as append-only as the project's own.
+    tree = _config.tree_for(data, path or _config.PROJECT_ONLY, cfg)
+    root, cfg = tree["project"], tree["cfg"]
 
     # path-based blocks first — they apply even to empty/whitespace content
     if path:
@@ -352,10 +356,11 @@ def decide(data, *, cfg=None):
                     "A model must not modify the hooks that govern it. To change "
                     "the plugin, edit it in its own repository checkout." % path)
 
-        # 4. bypass forgery
+        # 4. bypass forgery. A path outside every tree of this project holds
+        #    none of what 4-6 protect, so it goes straight to the text rules.
         state_rel = str(cfg.get("stateDir")
                         or _config.DEFAULTS["stateDir"]).strip("/")
-        rel = _config.rel_path(root, path)
+        rel = tree["rel"] if tree["inside"] else ""
         base = rel.rsplit("/", 1)[-1]
         if rel.startswith(state_rel + "/") and base.startswith("plan-bypass-"):
             return ("block",
@@ -365,7 +370,7 @@ def decide(data, *, cfg=None):
                     "keyword in their prompt." % rel)
 
         # 5. the append-only audit trail
-        if _config.in_journal(root, cfg, path):
+        if tree["inside"] and _config.in_journal(tree["root"], cfg, path):
             return ("block",
                     "The audit journal is append-only: %s\n"
                     "It is written by the plugin (panel saves, the journal-writes "
@@ -384,7 +389,7 @@ def decide(data, *, cfg=None):
             if (rel == manifest_rel
                     or _config.governing_lock(manifest_rel, rel)):
                 ti = data.get("tool_input", {}) or {}
-                if _touches_state(tool, ti, path, root):
+                if _touches_state(tool, ti, path, tree["root"]):
                     return ("ask",
                             "journal.strictManifestState is \"ask\": this edit "
                             "changes task/phase state (status, completedAt, "

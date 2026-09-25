@@ -1339,6 +1339,52 @@ def _cases(check):
               "not the verdict `decide()` itself hands back for the one it "
               "settles on, so it never needs to refuse",
               _ip4 is False)
+
+        # (tr) tree_for - the one question every plan-reading hook asks, over
+        # w1-w9's real trees. Each answer is asserted on `root`, `moved` and
+        # `inside` together, because a helper that re-rooted everything, or
+        # nothing, would satisfy any one of them alone.
+        _tr = M.tree_for({"cwd": str(wprim)}, str(wprim / "pkg" / "a.py"), wcfg,
+                         project=wprim)
+        check("tr1 a path inside the project is the project, spelled from it",
+              _tr["moved"] is False and _tr["inside"] is True
+              and _tr["rel"] == "pkg/a.py" and str(_tr["root"]) == str(wprim),
+              repr(_tr))
+        _tr = M.tree_for({"cwd": str(wprim)}, str(wlink / "src" / "a.py"), wcfg,
+                         project=wprim)
+        check("tr2 a path in a LINKED WORKTREE re-roots onto it, spelled from "
+              "the worktree - the plan read next is the worktree's",
+              _tr["moved"] is True and _tr["inside"] is True
+              and M._same_dir(_tr["root"], wlink) and _tr["rel"] == "src/a.py"
+              and str(_tr["project"]) == str(wprim), repr(_tr))
+        _tr = M.tree_for({"cwd": str(wprim)}, str(wother / "b.py"), wcfg,
+                         project=wprim)
+        check("tr3 a path in a SEPARATE repository is outside the plan - not "
+              "re-rooted, not inside, the project unchanged",
+              _tr["moved"] is False and _tr["inside"] is False
+              and str(_tr["root"]) == str(wprim)
+              and _tr["basis"] == "a separate git repository", repr(_tr))
+        _tr = M.tree_for({"cwd": str(wlink)}, M.PROJECT_ONLY, wcfg,
+                         project=wprim)
+        check("tr4 PROJECT_ONLY asks nothing: the homes, with the session's "
+              "worktree cwd ignored rather than placed",
+              _tr["moved"] is False and _tr["command"] is None
+              and str(_tr["root"]) == str(wprim), repr(_tr))
+        _tr = M.tree_for({"cwd": str(wlink)}, None, wcfg, project=wprim)
+        check("tr5 no target places the SESSION: a cwd in a linked worktree "
+              "re-roots onto it, through `command_tree`",
+              _tr["moved"] is True and M._same_dir(_tr["root"], wlink)
+              and _tr["command"] is not None, repr(_tr))
+        _tr = M.tree_for({"cwd": str(wprim / "pkg")}, None, wcfg, project=wprim)
+        check("tr6 ...while a cwd inside the project is the project, answered "
+              "by containment with no git call at all",
+              _tr["moved"] is False and _tr["command"] is None, repr(_tr))
+        _cd = M.effective_cwd("cd %s && sed -i x f.ts" % wlink, str(wprim))
+        check("tr7 effective_cwd reads a literal `cd` - the reading every hook "
+              "that places a Bash command now shares - and declines one it "
+              "cannot resolve", M._same_dir(_cd, wlink)
+              and M.effective_cwd("cd $X && y", str(wprim)) is None
+              and M.effective_cwd("y", str(wprim)) == str(wprim), repr(_cd))
     finally:
         _harness.remove_tree(str(wroot))
 

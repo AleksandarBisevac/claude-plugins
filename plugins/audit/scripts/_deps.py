@@ -1453,6 +1453,126 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
     return violations
 
 
+# --- which tree a hook reads the plan from --------------------------------------
+# `_config` functions that read the PLAN'S TREE - the manifest, its derived
+# state, its lock, its journal. A hook passing one of them the root
+# `repo_root` returns reads the main checkout's plan for work done in a linked
+# worktree, which is the defect `_config.tree_for` exists to end.
+HOOK_TREE_READERS = ("manifest_state", "in_progress_files",
+                     "in_progress_task_map", "in_progress_outputs",
+                     "declaring_tasks", "active_area_tags",
+                     "manifest_lock_conflict", "_load_manifest_assembled",
+                     "journal_dir", "in_journal")
+
+
+def _config_call_name(node):
+    """`name` for a call spelled `_config.<name>(...)`, else None."""
+    fn = node.func if isinstance(node, ast.Call) else None
+    if isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name) \
+            and fn.value.id == "_config":
+        return fn.attr
+    return None
+
+
+def _own_calls(body):
+    """Every Call in `body`, not descending into a nested def or lambda - a
+    nested function is judged as its own scope."""
+    out, stack = [], list(body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda,
+                             ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Call):
+            out.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _hook_scopes(tree):
+    """{scope name: [calls]} - every function at any depth, plus `<module>`."""
+    scopes = {"<module>": _own_calls(tree.body)}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            scopes.setdefault(node.name, [])
+            scopes[node.name].extend(_own_calls(node.body))
+    return scopes
+
+
+def hook_tree_violations(hooks_dir=None):
+    """(file, what) for every hook scope that resolves `_config.repo_root` and
+    reads the plan's tree - directly, or through a function of its own file.
+
+    WHY A LINT AND NOT A SENTENCE. `repo_root` answers where the CONFIG lives
+    (CLAUDE_PROJECT_DIR wins there on purpose), and every hook but one also
+    used it as the answer to "whose plan governs this work". An executor in a
+    linked worktree was then judged against the main checkout's running phase
+    by one hook, skipped by another, and credited to nobody by a third - each
+    hook one call away from the right answer, each written before
+    `_config.tree_for` existed. One helper is a convention; this is what keeps
+    the next hook from reaching for `repo_root` beside a manifest read.
+
+    WHAT IS READ: this file's SOURCE, never the hook - hooks may not be imported
+    from here, and a lint that ran them would need a payload. A scope is every
+    function at any depth plus the module body; it reads the plan's tree when
+    it calls one of `HOOK_TREE_READERS` on `_config`, or calls a function of its
+    own file that does (a fixpoint, so `decide` -> `classify` -> `in_journal`
+    is seen). `_config.py` is exempt: it defines both halves.
+
+    WHAT IT CANNOT SEE, and why each is left. A root that travels between
+    FILES - a hook cannot import a hook, so there is no such path today. A root
+    handed in as a parameter by a caller that got it from `repo_root` in
+    another scope of the same file is seen only because that caller is itself a
+    reader by the fixpoint. And `tree_for(data, PROJECT_ONLY)["root"]` handed to
+    a reader passes: that is the project by definition, spelled at the call
+    site where a reviewer reads it, and a lint that tracked dict keys through
+    assignments would be a dataflow engine rather than a check.
+    """
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
+    violations = []
+    if not os.path.isdir(hooks_dir):
+        return violations
+    for rel, path in _output.lint_py_files(hooks_dir):
+        if os.path.basename(rel) == "_config.py":
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError):
+            violations.append((rel, "file does not parse; cannot be scanned for "
+                                    "the tree its plan reads come from"))
+            continue
+        scopes = _hook_scopes(tree)
+        reads = {}
+        for name, calls in scopes.items():
+            direct = [_config_call_name(c) for c in calls
+                      if _config_call_name(c) in HOOK_TREE_READERS]
+            if direct:
+                reads[name] = "_config." + direct[0]
+        changed = True
+        while changed:
+            changed = False
+            for name, calls in scopes.items():
+                if name in reads:
+                    continue
+                for call in calls:
+                    callee = (call.func.id if isinstance(call.func, ast.Name)
+                              else None)
+                    if callee in reads and callee != name:
+                        reads[name] = "%s -> %s" % (callee, reads[callee])
+                        changed = True
+                        break
+        for name in sorted(scopes):
+            uses_root = any(_config_call_name(c) == "repo_root"
+                            for c in scopes[name])
+            if uses_root and name in reads:
+                violations.append((rel, "%s resolves `_config.repo_root` and reads "
+                                        "the plan's tree through %s - ask "
+                                        "`_config.tree_for` which tree the work "
+                                        "is in" % (name, reads[name])))
+    return violations
+
+
 # --- the tracker connector's own doors -------------------------------------------
 def _tracker_doors(script_dir=None):
     """Basenames of the tracker connector's own entry points, DERIVED off the

@@ -166,6 +166,16 @@ import _config  # noqa: E402  (hooks resolve scripts/ by basename through here)
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
 EVAL_WRAPPERS = ("eval",)
 
+# Programs that never run their arguments: the text emitters and the no-ops. A
+# `git` among their arguments is a word they print or ignore, so `echo attempt
+# used git stash` is prose and not the operation. A CLOSED list, and closed in
+# the safe direction: a program missing from it keeps the conservative reading
+# (every `git` word counts), so the cost of an omission is a refusal somebody
+# reports, never a command that runs unread. The reverse table - programs that
+# DO run an argument (`sudo`, `env`, `xargs`, `timeout`, `nice`, ...) - is open
+# by nature and is deliberately not what this reads.
+INERT_PROGRAMS = ("echo", "printf", "true", "false", ":")
+
 # Global options that take a SEPARATE value, so the value cannot be mistaken for
 # the verb: `git -C <path> rebase` is a rebase, and `<path>` is not the verb.
 GLOBAL_VALUE_OPT = ("-C", "-c", "--git-dir", "--work-tree", "--namespace",
@@ -226,6 +236,15 @@ def shell_words(command):
     into unbalanced halves, `shlex` would raise, and every multi-line commit
     message would land in the conservative text fallback.
     """
+    pieces, parsed = _shell_pieces(command)
+    return ([None if sep else piece for piece, sep in pieces], parsed)
+
+
+def _shell_pieces(command):
+    """(pieces, parsed) - `shell_words` before the separators lose their
+    spelling: each piece is (text, is_separator). `git_calls` needs to know
+    WHICH separator ends a command, because a pipe hands the command's output
+    to whatever is on its far side and a `;` does not."""
     try:
         lex = shlex.shlex(command or "", posix=True)
         lex.whitespace_split = True
@@ -239,8 +258,58 @@ def shell_words(command):
         for piece in _SEP_SPLIT.split(word):
             if not piece:
                 continue
-            out.append(None if _SEP_ONLY.match(piece) else piece)
+            out.append((piece, bool(_SEP_ONLY.match(piece))))
     return (out, True)
+
+
+def _inert_opening(before, after):
+    """May an inert program between these two separators be read as inert?
+
+    Not when a substitution or a subshell opens before it (`$(echo ...)` in
+    command position RUNS the output) or closes after it, and not when its
+    output flows into a pipe - `echo ... | sh` runs every word it printed. `||`
+    is a conditional and not a pipe. `before`/`after` are the separator
+    pieces, None at either end of the command."""
+    if before is not None and ("(" in before or "`" in before):
+        return False
+    if after is None:
+        return True
+    if "(" in after or ")" in after or "`" in after:
+        return False
+    return "|" not in after.replace("||", "")
+
+
+# A separator piece that REDIRECTS rather than ending the command: `>`, `>>`,
+# `2>&1`'s `>&`, `&>`, `<`, `>|`. The command, and where its output goes, runs
+# on past these to the next real terminator.
+_REDIRECT_PIECE = re.compile(r"^(?:[<>]+&?|&[<>]+|>\|)$")
+
+
+def _inert_span(pieces, index):
+    """The index just past the inert command starting at `index`, or None
+    when the words there are not an inert program in command position.
+
+    The command runs to its terminator, THROUGH any redirection: `echo x
+    2>&1 | sh` still pipes its words into a shell, and ending the span at the
+    `>&` would read the pipe as somebody else's."""
+    if index > 0 and not pieces[index - 1][1]:
+        return None                        # not the first word of a command
+    before = pieces[index - 1][0] if index > 0 else None
+    if before is not None and _REDIRECT_PIECE.match(before):
+        return None                        # a redirect target, not a command
+    scan = index
+    while scan < len(pieces) and not pieces[scan][1] \
+            and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", pieces[scan][0]):
+        scan += 1
+    if scan >= len(pieces) or pieces[scan][1] \
+            or program_name(pieces[scan][0]) not in INERT_PROGRAMS:
+        return None
+    end = scan
+    while end < len(pieces) and (not pieces[end][1]
+                                 or _REDIRECT_PIECE.match(pieces[end][0])):
+        end += 1
+    after = pieces[end][0] if end < len(pieces) else None
+    return end if _inert_opening(before, after) else None
 
 
 def program_name(word):
@@ -311,7 +380,16 @@ def help_requested(args):
 
 
 def git_invocations(command, depth=0):
-    """[(verb, [args]), ...] for every `git` this command RUNS, or None.
+    """[(verb, [args]), ...] for every `git` this command RUNS, or None - the
+    `git_calls` answer without the directory each one runs in."""
+    calls = git_calls(command, depth)
+    return None if calls is None else [(verb, args) for verb, args, _d in calls]
+
+
+def git_calls(command, depth=0):
+    """[(verb, [args], dir), ...] for every `git` this command RUNS, or None.
+    `dir` is the `-C` value the invocation names, joined when there are
+    several, or None - the directory git runs in is part of what it does.
 
     None means the command could not be parsed - the signal for the text
     fallback. An empty LIST means it parsed and runs no git, which is the
@@ -332,9 +410,10 @@ def git_invocations(command, depth=0):
     what makes it impossible for one arm to forget, and the recursion below
     re-enters the same door, so no nesting depth is graded by a different rule.
     """
-    words, parsed = shell_words(runnable(command))
+    pieces, parsed = _shell_pieces(runnable(command))
     if not parsed:
         return None
+    words = [None if sep else piece for piece, sep in pieces]
     out = []
     index, total = 0, len(words)
     while index < total:
@@ -342,13 +421,20 @@ def git_invocations(command, depth=0):
         if word is None:
             index += 1
             continue
+        # A `git` word inside an inert program's arguments is printed or
+        # ignored, not run. Only at the start of a command, and only while the
+        # output goes nowhere a shell reads - see `_inert_opening`.
+        skip_to = _inert_span(pieces, index)
+        if skip_to is not None:
+            index = skip_to
+            continue
         program = program_name(word)
         if depth < _MAX_NEST and program in SHELLS:
             scan = index + 1
             while scan < total and words[scan] is not None:
                 if _is_shell_command_flag(words[scan]) and scan + 1 < total \
                         and words[scan + 1]:
-                    nested = git_invocations(words[scan + 1], depth + 1)
+                    nested = git_calls(words[scan + 1], depth + 1)
                     out.extend(nested or [])
                     break
                 scan += 1
@@ -360,18 +446,23 @@ def git_invocations(command, depth=0):
             scan = index + 1
             while scan < total and words[scan] is not None:
                 if not words[scan].startswith("-"):
-                    out.extend(git_invocations(words[scan], depth + 1) or [])
+                    out.extend(git_calls(words[scan], depth + 1) or [])
                     break
                 scan += 1
         if program != "git":
             index += 1
             continue
         index += 1
+        cdir = None
         while index < total and words[index] is not None \
                 and words[index].startswith("-"):
-            takes_value = words[index] in GLOBAL_VALUE_OPT
+            opt = words[index]
+            takes_value = opt in GLOBAL_VALUE_OPT
             index += 1
             if takes_value and index < total and words[index] is not None:
+                if opt == "-C":
+                    cdir = (words[index] if cdir is None
+                            else os.path.join(cdir, words[index]))
                 index += 1
         if index >= total or words[index] is None:
             continue                       # `git` with no verb after it
@@ -381,7 +472,7 @@ def git_invocations(command, depth=0):
         while index < total and words[index] is not None:
             args.append(words[index])
             index += 1
-        out.append((verb, args))
+        out.append((verb, args, cdir))
     return out
 
 
@@ -729,6 +820,47 @@ def orphaned_by(root, git_root, target, shas):
     return lost
 
 
+def command_roots(data, cfg, project, command, calls):
+    """The trees whose plans this command's git invocations answer to: the
+    project first, then each linked worktree of it that one of them runs in.
+
+    WHERE GIT RUNS IS PART OF WHAT IT DOES. `git -C <dir>` runs in `<dir>`,
+    resolved from wherever the shell stands; the shell stands where the
+    payload's `cwd` says, moved by any `cd` the command makes first
+    (`_config.effective_cwd`, the reading `guard-secrets-read` places its write
+    targets with). `_config.tree_for` then says whose tree each directory is.
+    The recorded SHAs a worktree's plan holds are the commits ITS tasks made,
+    which the project's copy does not carry until a merge - reading only the
+    project's let a rebase of the worktree branch orphan them unrefused.
+
+    The project stays first whatever the command did, and the union is the
+    conservative direction for a guard: a commit recorded in either plan is
+    one this command may not orphan. A `-C` value or a `cd` this cannot read
+    adds no tree, which leaves the project's plan standing - never fewer
+    trees than before this existed."""
+    base = _config.effective_cwd(runnable(command), (data or {}).get("cwd"))
+    base = base or (data or {}).get("cwd") or ""
+    dirs = []
+    for _verb, _args, cdir in (calls or [(None, None, None)]):
+        if cdir is None:
+            where = base
+        elif not _config.resolvable_destination(cdir):
+            continue
+        elif os.path.isabs(cdir) or not base:
+            where = cdir
+        else:
+            where = os.path.join(base, cdir)
+        if where and where not in dirs:
+            dirs.append(where)
+    roots = [project]
+    for where in dirs:
+        tree = _config.tree_for(data, where, cfg, project=project)
+        if tree["moved"] and tree["inside"] and all(
+                not _config._same_dir(tree["root"], r) for r in roots):
+            roots.append(tree["root"])
+    return roots
+
+
 def decide(data):
     """("deny", reason) or ("allow", "").
 
@@ -747,8 +879,16 @@ def decide(data):
     if not command.strip():
         return ("allow", "")
 
-    root = _config.repo_root(data)
-    cfg = _config.load(root)
+    home = _config.tree_for(data, _config.PROJECT_ONLY)
+    root, cfg = home["project"], home["cfg"]
+
+    # A command that parses and runs no git has nothing any arm below could
+    # refuse - every arm reads `git_calls` - so it is answered before a
+    # manifest is opened or a tree is placed.
+    calls = git_calls(command)
+    if calls == []:
+        return ("allow", "")
+    roots = command_roots(data, cfg, root, command, calls)
 
     # THE STASH ARM IS DECIDED BEFORE THE SHA CHECK, and the ordering is the
     # difference between the two halves of this hook rather than a preference.
@@ -758,15 +898,20 @@ def decide(data):
     # runs first and the stat only behind it, because this hook is on every
     # Bash call and `tools/bench-hooks.py --gate` is what keeps it cheap.
     moves = moving_stash(command)
-    if moves and plan_present(root, cfg):
+    if moves and any(plan_present(r, cfg) for r in roots):
         return ("deny", _stash_reason(moves))
 
-    shas = recorded_shas(root, cfg)
+    shas = []
+    for r in roots:
+        shas.extend(s for s in recorded_shas(r, cfg) if s not in shas)
     if not shas:
         # Nothing to protect. Said here rather than left implicit: the guard is
         # inert on a repo with no trail, and that is an answer, not a miss.
         return ("allow", "")
-    git_root = _config.git_root_dir(root, cfg)
+    # Refs resolve per working tree (`HEAD`, `HEAD~1`, `ORIG_HEAD`), so git is
+    # asked from the tree the command runs in: the first worktree it reaches,
+    # else the project's own gitRoot.
+    git_root = roots[1] if len(roots) > 1 else _config.git_root_dir(root, cfg)
 
     why = always_refused(command)
     if why:

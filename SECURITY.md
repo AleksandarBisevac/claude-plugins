@@ -184,17 +184,41 @@ defect as one that fires on a read. `--help` and `-h` are reads for the same
 reason. A shell's `-c` argument and `eval`'s argument *are* commands and are
 parsed as such, so an interpreter is not a way around it.
 
-Two residuals, both stated rather than left to be discovered. A **heredoc body is
-not a quoted argument**: the lexer splits `<<'EOF'` at the `<` and reads the body
-as bare words, so `cat <<'EOF' > NOTES.md` naming one of these commands is
-refused. That is deliberate — whether a heredoc body is data or a script depends
-on what consumes it, and `sh <<EOF` is a script — and the cost is that writing one
-of these rules into a file through a heredoc needs an editor or an `echo` instead.
-And a command that cannot be tokenized at all (an unbalanced quote) falls back to
-the older raw-text patterns, which over-refuse quoted text. Both are the
-conservative direction, which is the only direction a guard may fail in when it
-cannot read its input. The general residual is the one this document opens with:
-text inspection is bypassable in principle.
+**`git` counts only where a shell would run it.** A word is a git invocation in
+command position — the start of a command, after `;` `&&` `||` `|` or a newline, or
+among the arguments of a program that may run them (`sudo`, `env`, `xargs`, a shell's
+`-c`). The one narrowing is a closed list of programs that never run their
+arguments, the text emitters and the no-ops (`echo`, `printf`, `true`, `false`,
+`:`): `echo attempt used git stash` is prose and is allowed. It is closed in the safe
+direction — a program missing from it keeps the old reading, where every `git` word
+counts — and it holds only while the emitter's output goes nowhere a shell reads:
+`echo … | sh`, `$(echo …)` in command position and a backquoted emitter are all
+still refused. The deny cases beside each allow are in
+`test_guard_history_rewrite.py` (`gp*`), so the narrowing cannot quietly widen.
+
+**A heredoc body is graded by what consumes it** (`_config.split_heredocs`, which
+`guard-secrets-read` shares). A body on its way into a file is data. A body fed to a
+shell, or to an interpreter reading its program from stdin, is a script and every
+rule reads it. A body PIPED onward is graded by the far side of the pipe: an
+interpreter given a script operand (`cat <<'EOF' | python3 x.py -`) reads it as data;
+a bare shell, a code flag (`-c`, `-e`, `-m`) or a program this does not know keeps it
+graded. **An unquoted delimiter keeps the shell in the body**: with `<<EOF` the shell
+performs `$(…)` and backquote substitution inside the body before any consumer reads
+it, so such a body is graded whatever its destination — a file included, which closed
+the same gap for file-bound bodies. Quoting the delimiter (`<<'EOF'`) is what makes
+the same bytes inert text. And a command that cannot be tokenized at all (an
+unbalanced quote) falls back to the older raw-text patterns, which over-refuse quoted
+text — the conservative direction, which is the only direction a guard may fail in
+when it cannot read its input. The general residual is the one this document opens
+with: text inspection is bypassable in principle.
+
+**The plan a git command answers to is the one of the tree it runs in.** `git -C
+<dir>`, a `cd` before it, or the payload's own directory names the tree, and the
+recorded SHAs and the plan-present test are read from that tree's manifest as well as
+the project's — the union, because a commit recorded in either is one the command may
+not orphan. A linked worktree's plan records the commits its tasks made before any
+merge brings them to the main checkout, so reading only the project's let a rebase of
+the worktree branch orphan them unrefused.
 
 ### When the plan gate actually blocks (0.20.0)
 
@@ -317,13 +341,33 @@ by the path git prints. The manifest rule asks the same question for the same re
 `rel_path` normalises and enough `..` walks an unresolvable word onto the literal it compares
 against.
 
+**A linked worktree of the project is not outside it, and every hook that reads the plan says
+so.** `_config.tree_for` is the one question they ask before a manifest, a shard, the lock or
+the journal is read: a path inside the project is the project, answered with no process; a path
+outside it that git places in a linked worktree of this same repository is judged against **that
+worktree's** plan, spelled from its own root; anything else is out of scope as above. The
+config and the session's own state — bypass flags, baselines, throttles, the usage ledger —
+stay with the project directory, because they belong to the session rather than to a tree. So
+`sed -i` into a worktree file is refused naming the worktree's running phase (it used to be
+skipped, or refused naming the main checkout's), the capability policy's live areas, the TDD
+reminder, the append-only journal protection and the journal recorder all follow the same file
+to the same tree, and a task finished in a worktree leaves its `task.complete` / `task.commit`
+rows in that worktree's journal. A Bash command is placed where its shell stood — the payload's
+directory, moved by a `cd` the command makes first. `_deps.hook_tree_violations()` fails the
+build on a hook scope that resolves `_config.repo_root` and reads the plan's tree, directly or
+through a helper of its own file. **The residual**, which the containment shortcut makes: a
+linked worktree placed *under* the project directory is judged as part of the project. The
+default exempt globs cover `.claude/**`, where the harness puts its own agent worktrees; one
+elsewhere under the project is judged against the project's plan. `guard-bash-writes` still
+watches the project's tree alone and declines a command from another tree with a notice (see
+bypass class 1 below).
+
 `remind-tdd` asks the same question for a reason worth stating separately: its nudge is a
 CLAIM about a file rather than a decision about one, and it was also spending the session's
 throttle on a tree it does not govern, which silenced the next reminder that was deserved.
-This is the same posture `guard-bash-writes` already takes toward a command that ran in
-another tree, and the practical consequence is the same: a session whose project directory
-is one checkout does not gate edits into a *different* one, and opening the session in the
-tree being edited is what restores coverage. That guard's *edit* branch asks the same
+A linked worktree of the project is not such a tree (the paragraph above): its edits get the
+reminder, worded by the worktree's own plan. A *different repository* is, and there opening
+the session in the tree being edited is what restores coverage. `guard-bash-writes`'s *edit* branch asks the same
 question now, and it is a retention rule rather than a gate: an out-of-tree Edit used to be
 appended to its per-session `toolEdited` list under relpath's `../..` spelling, where no
 `git status` line from the watched tree could ever equal it. Nothing read it and nothing
@@ -561,6 +605,24 @@ point:
   the change declared in its `BASELINE` with a reason.
 - Hand edits to the journal are refused by `guard-edits.py`. `journal.enabled:
   false` turns the whole thing off.
+- **A shell command is blamed for a journal file only when the bytes do not show
+  another writer.** `guard-bash-writes` reports every journal file that goes dirty
+  after a Bash call, and it used to call each one a shell write into the trail unless
+  THIS session's sidecar claimed it — so a peer session's hook rows, a plugin script
+  whose state landed in another directory, and a merge were all reported as tampering.
+  The verdict is read from the content now, once per file, and each names its
+  evidence: bytes identical to the file at `MERGE_HEAD` or `ORIG_HEAD` are the merge's
+  (or the reset's or rebase's); new rows that leave the committed bytes untouched,
+  chain onto the committed tail with hashes that verify (`_journal_io`'s own algorithm),
+  carry `via` hook, cli or panel and are stamped inside the window are **the plugin's
+  own**, named by session or writer. Anything else — a rewritten row, a broken chain,
+  another `via`, a stale stamp, no git to ask what is committed — keeps the tamper
+  notice. **What this does not claim:** a row forged with the public algorithm, a
+  plugin `via` and a fresh stamp is taken for the plugin's; the notice is a PostToolUse
+  report and was never a lock, and `verify` plus the review of the commit remain what
+  closes that door. A peer session's sidecar is still not read, for the reason it
+  never was: honouring its claim would pass a real `sed` into a file that session had
+  once appended to.
 
 So it is a smoke detector, not a vault: it makes a quiet change loud, and an
 accident visible. If your threat model includes an adversary with write access to
