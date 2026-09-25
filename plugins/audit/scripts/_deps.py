@@ -1465,13 +1465,56 @@ HOOK_TREE_READERS = ("manifest_state", "in_progress_files",
                      "journal_dir", "in_journal")
 
 
-def _config_call_name(node):
-    """`name` for a call spelled `_config.<name>(...)`, else None."""
+# Hook scopes that read the plan's tree from the PROJECT on purpose, each with
+# the reason. A row here is checked both ways: it must name a scope the rule
+# below actually reports (a stale row is a finding), and it must carry a reason.
+HOOK_TREE_EXEMPT = (
+    ("guard-bash-writes.py", "decide",
+     "watches ONE tree - the project's gitRoot - because every rel in its state "
+     "file and in a sibling session's is a path in that tree; a command from "
+     "another tree is declined with a notice (`command_tree`), not judged"),
+)
+
+
+def _config_call_name(node, aliases=()):
+    """`name` for a call spelled `_config.<name>(...)` - or through a name the
+    file bound to `_config.<name>` - else None."""
     fn = node.func if isinstance(node, ast.Call) else None
     if isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name) \
             and fn.value.id == "_config":
         return fn.attr
+    if isinstance(fn, ast.Name):
+        for alias, target in aliases:
+            if fn.id == alias:
+                return target
     return None
+
+
+def _config_aliases(tree):
+    """(name, attr) for every `name = _config.<attr>` binding in the file - an
+    alias calls the same function, and a lint reading only the spelling at the
+    call would pass `rr = _config.repo_root; rr(data)`."""
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Attribute) \
+                and isinstance(node.value.value, ast.Name) \
+                and node.value.value.id == "_config":
+            out.extend((t.id, node.value.attr) for t in node.targets
+                       if isinstance(t, ast.Name))
+    return tuple(out)
+
+
+def _tree_for_target(call):
+    """"project-only" when a `tree_for` call passes `PROJECT_ONLY` as its
+    target, "placed" for any other target (a path, the session, an
+    expression), None when `call` is not `tree_for` at all."""
+    target = call.args[1] if len(call.args) > 1 else None
+    for kw in call.keywords:
+        if kw.arg == "target":
+            target = kw.value
+    if isinstance(target, ast.Attribute) and target.attr == "PROJECT_ONLY":
+        return "project-only"
+    return "placed"
 
 
 def _own_calls(body):
@@ -1519,14 +1562,19 @@ def hook_tree_violations(hooks_dir=None):
     own file that does (a fixpoint, so `decide` -> `classify` -> `in_journal`
     is seen). `_config.py` is exempt: it defines both halves.
 
-    WHAT IT CANNOT SEE, and why each is left. A root that travels between
-    FILES - a hook cannot import a hook, so there is no such path today. A root
-    handed in as a parameter by a caller that got it from `repo_root` in
-    another scope of the same file is seen only because that caller is itself a
-    reader by the fixpoint. And `tree_for(data, PROJECT_ONLY)["root"]` handed to
-    a reader passes: that is the project by definition, spelled at the call
-    site where a reviewer reads it, and a lint that tracked dict keys through
-    assignments would be a dataflow engine rather than a check.
+    THE SAME DEFECT BY ANOTHER SPELLING is the second rule. `tree_for(data,
+    PROJECT_ONLY)` hands back the project, so a scope that asks only that and
+    reads the plan - with no `tree_for` call placing a real target anywhere it
+    or its callees reach - is reading the project's plan exactly as a bare
+    `repo_root` did. It is reported unless `HOOK_TREE_EXEMPT` names the scope
+    with a reason, and a row there that no longer matches a finding is itself
+    a finding. A name bound to `_config.<fn>` counts as the call.
+
+    WHAT IT CANNOT SEE. A root that travels between FILES - a hook cannot
+    import a hook, so there is no such path today. A scope that places a tree
+    somewhere and still hands the PROJECT_ONLY answer to a reader elsewhere in
+    the same scope passes: telling the two dict values apart would need
+    dataflow through assignments, which this lint does not do.
     """
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     violations = []
@@ -1543,33 +1591,61 @@ def hook_tree_violations(hooks_dir=None):
                                     "the tree its plan reads come from"))
             continue
         scopes = _hook_scopes(tree)
-        reads = {}
+        aliases = _config_aliases(tree)
+        reads, places = {}, set()
         for name, calls in scopes.items():
-            direct = [_config_call_name(c) for c in calls
-                      if _config_call_name(c) in HOOK_TREE_READERS]
+            direct = [_config_call_name(c, aliases) for c in calls
+                      if _config_call_name(c, aliases) in HOOK_TREE_READERS]
             if direct:
                 reads[name] = "_config." + direct[0]
+            if any(_config_call_name(c, aliases) == "tree_for"
+                   and _tree_for_target(c) == "placed" for c in calls):
+                places.add(name)
         changed = True
         while changed:
             changed = False
             for name, calls in scopes.items():
-                if name in reads:
-                    continue
                 for call in calls:
                     callee = (call.func.id if isinstance(call.func, ast.Name)
                               else None)
-                    if callee in reads and callee != name:
+                    if callee not in scopes or callee == name:
+                        continue
+                    if callee in reads and name not in reads:
                         reads[name] = "%s -> %s" % (callee, reads[callee])
                         changed = True
-                        break
+                    if callee in places and name not in places:
+                        places.add(name)
+                        changed = True
+        exempt = dict(((f, sc), why) for f, sc, why in HOOK_TREE_EXEMPT)
         for name in sorted(scopes):
-            uses_root = any(_config_call_name(c) == "repo_root"
-                            for c in scopes[name])
+            calls = scopes[name]
+            uses_root = any(_config_call_name(c, aliases) == "repo_root"
+                            for c in calls)
+            project_only = any(_config_call_name(c, aliases) == "tree_for"
+                               and _tree_for_target(c) == "project-only"
+                               for c in calls)
             if uses_root and name in reads:
                 violations.append((rel, "%s resolves `_config.repo_root` and reads "
                                         "the plan's tree through %s - ask "
                                         "`_config.tree_for` which tree the work "
                                         "is in" % (name, reads[name])))
+            elif project_only and name in reads and name not in places:
+                key = (os.path.basename(rel), name)
+                if exempt.pop(key, "").strip():
+                    continue
+                violations.append((rel, "%s asks `tree_for` only for "
+                                        "PROJECT_ONLY and reads the plan's tree "
+                                        "through %s, with no tree placed anywhere "
+                                        "it reaches - the project's plan by "
+                                        "another spelling; place the target, or "
+                                        "declare the scope in HOOK_TREE_EXEMPT "
+                                        "with its reason" % (name, reads[name])))
+        for (fname, scope), _why in sorted(exempt.items()):
+            if fname == os.path.basename(rel):
+                violations.append((rel, "HOOK_TREE_EXEMPT names %s, which the rule "
+                                        "no longer reports - a stale exemption "
+                                        "excuses whatever lands there next"
+                                        % (scope,)))
     return violations
 
 

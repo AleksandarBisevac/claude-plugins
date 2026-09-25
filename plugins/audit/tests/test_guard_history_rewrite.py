@@ -622,7 +622,51 @@ def _cases(check):
                  "...while redirections that end in a file keep it inert"),
                 ("gp20", "$(echo " + _G + "; true)", "deny",
                  "an emitter OPENING a substitution is refused even when its "
-                 "own command ends at a `;` - the substitution's output runs")):
+                 "own command ends at a `;` - the substitution's output runs"),
+                ("gp21", "echo " + _G + " > x.sh; sh x.sh", "deny",
+                 "an emitter writing a SHELL SCRIPT is writing a command"),
+                ("gp22", "echo " + _G + " >> ~/.bashrc", "deny",
+                 "...and so is one writing a dotfile a shell sources"),
+                ("gp23", "echo " + _G + " > notes.txt; sh notes.txt", "allow",
+                 "KNOWN LIMIT, recorded: any other file name is read as prose, "
+                 "so writing a command there and running it later passes - the "
+                 "write-then-run gap SECURITY.md names"),
+                # A SUBSTITUTION INSIDE DOUBLE QUOTES is one word to the lexer,
+                # and it runs.
+                ("gp24", 'echo "$(' + _G + ')"', "deny",
+                 "a double-quoted substitution runs its command"),
+                ("gp25", 'eval "$(echo ' + _G + ')"', "deny",
+                 "...and eval runs what the substitution printed"),
+                ("gp26", 'sh -c "$(echo ' + _G + ')"', "deny",
+                 "...and so does a shell's -c"),
+                ("gp27", 'echo "`' + _G + '`"', "deny",
+                 "a double-quoted backquote runs its command too"),
+                ("gp28", "echo '$(" + _G + ")'", "allow",
+                 "while a SINGLE-quoted one is literal text"),
+                # `xargs git` with no verb: the verb comes from stdin.
+                ("gp29", "echo stash | xargs git", "deny",
+                 "the verb arrives on stdin and cannot be read"),
+                ("gp30", "echo x | xargs git log --oneline", "allow",
+                 "...while a verb on the command line is graded as itself")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
+
+        # --- a line continuation is not a separator -----------------------------
+        # bash removes backslash-newline before it reads a word, so the emitter
+        # and the pipe on the next line are ONE pipeline. Read as two, the pipe
+        # started a new command and the emitter's words were inert.
+        _nl = "\\\n"
+        for _cid, _cmd, _want, _what in (
+                ("gc1", "echo git push --force origin main " + _nl + "  | sh",
+                 "deny", "a force-push printed into a shell across a continuation"),
+                ("gc2", "echo git rebase -i HEAD~2 " + _nl + " | sh", "deny",
+                 "a rebase, the same way"),
+                ("gc3", "echo " + _G + " " + _nl + "\t| bash", "deny",
+                 "a stash, with a tab after the newline"),
+                ("gc4", "echo attempt used " + _G + " " + _nl + "  > notes.md",
+                 "allow", "...while a continuation into a FILE redirect is still "
+                 "an emitter writing a file")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
@@ -634,6 +678,7 @@ def _cases(check):
         # DATA; a shell, an interpreter reading its program from stdin, or anything
         # else keeps the body in the graded text.
         _body = "an attempt used " + _G + " and was refused"
+        _D = _G + " drop"
         for _cid, _cmd, _want, _what in (
                 ("gq1", "cat <<'EOF' | python3 x.py --technical -\n%s\nEOF"
                  % _body, "allow",
@@ -660,7 +705,57 @@ def _cases(check):
                  "while a QUOTED delimiter makes the same bytes inert text"),
                 ("gq10", "cat <<'EOF' | sh deploy.sh\n%s\nEOF" % _G, "deny",
                  "a SHELL given a script is not on the data list - a shell "
-                 "script reading its stdin is one `read`+`eval` from running it")):
+                 "script reading its stdin is one `read`+`eval` from running it"),
+                # Every spelling below reads its PROGRAM from stdin, or hands the
+                # body to something that does. The data shape is one allow-list
+                # entry, so each of these keeps the grading it had before it.
+                ("gq11", "cat <<'EOF' | python3 -W ignore -\n%s\nEOF" % _D,
+                 "deny", "an option's VALUE is not a script operand"),
+                ("gq12", "cat <<'EOF' | perl -I lib -\n%s\nEOF" % _D, "deny",
+                 "the same for perl's include path"),
+                ("gq13", "cat <<'EOF' | deno run -\n%s\nEOF" % _D, "deny",
+                 "a SUBCOMMAND is not a script operand"),
+                ("gq14", "cat <<'EOF' | python3 /dev/fd/0\n%s\nEOF" % _D, "deny",
+                 "a /dev path to stdin is the dash written out"),
+                ("gq15", "cat <<'EOF' | python3 -i x.py\n%s\nEOF" % _D, "deny",
+                 "-i reads stdin as commands after the script"),
+                ("gq16", "cat <<'EOF' | PYTHONINSPECT=1 python3 x.py -\n%s\nEOF"
+                 % _D, "deny", "...and so does its environment spelling"),
+                ("gq17", "tee >(sh) <<'EOF' | python3 x.py -\n%s\nEOF" % _D,
+                 "deny", "a head other than cat can hand the body to a shell"),
+                ("gq18", "cat <<EOF | python3 x.py -\n%s\nEOF" % _D, "deny",
+                 "an UNQUOTED delimiter is not vouched for as data"),
+                ("gq19", "env python3 -W ignore - <<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a wrapper and an option in front of an interpreter's stdin "
+                 "program, in the heredoc's own head"),
+                ("gq20", "bash <(cat) <<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a shell reading the body through process substitution"),
+                ("gq21", "sh <<<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a here-string is not a heredoc - the next line is a command"),
+                ("gq22", "cat <<'EOF' && %s\nx\nEOF" % _D, "deny",
+                 "the rest of the heredoc's own line is command text"),
+                ("gq23", "cat <<'EOF' | xargs python3 x.py\n%s\nEOF" % _D,
+                 "deny", "a wrapper on the far side is not a plain script run"),
+                ("gq24", "cat <<'EOF' \\\n  | bash\n%s\nEOF" % _D, "deny",
+                 "a heredoc line that continues is not read to its far side"),
+                ("gq25", "python3 x.py --technical - <<'EOF'\n%s\nEOF" % _body,
+                 "allow", "a script run fed the body directly is still data"),
+                ("gq26", "sudo python3 tools/x.py - <<'EOF'\n%s\nEOF" % _body,
+                 "allow", "...and so behind a wrapper - gq19 is the deny beside "
+                 "it"),
+                # Each spelling below reaches exactly one check: no process
+                # substitution in the head, no option before the operand, no
+                # shell reading the body - so removing that one check is what
+                # lets it through.
+                ("gq27", "awk '{system($0)}' <<'EOF' | python3 x.py -\n%s\nEOF"
+                 % _D, "deny", "a head that is not cat is not vouched for - awk "
+                 "runs each line it reads"),
+                ("gq28", "cat <<'EOF' | python3 runner -\n%s\nEOF" % _D, "deny",
+                 "an operand without the interpreter's extension is not a "
+                 "script file the data shape can vouch for"),
+                ("gq29", "cat <<<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a here-string read as a heredoc would drop the next line as "
+                 "data - it is a command")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
@@ -748,6 +843,28 @@ def _cases(check):
                  "the same verb in the main checkout, whose plan records "
                  "nothing - the tree is per command, not a switch")):
             v, why = M.decide({"tool_name": "Bash", "cwd": _cwd,
+                               "tool_input": {"command": _cmd}})
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:160])))
+        # A SECOND worktree, still at the base commit, so `HEAD~1` does not
+        # resolve there: a reset asked about in the wrong tree is a question
+        # git cannot answer, and an unanswerable question is an allow.
+        _wt_b = os.path.join(_wt["root"], "main-B")
+        _git(_wt["main"], "worktree", "add", "-q", _wt_b, "-b", "wt-b")
+        for _cid, _cmd, _want, _what in (
+                ("gw5", "git -C %s status; git -C %s reset --hard HEAD~1"
+                 % (_wt_b, _wt["wt"]), "deny",
+                 "the reset's `HEAD~1` is resolved in the tree the RESET runs "
+                 "in, not in the first tree the command reached"),
+                ("gw6", "git -C %s status; git -C %s commit --amend -m x"
+                 % (_wt_b, _wt["wt"]), "deny",
+                 "...and the amend's HEAD is the amended tree's"),
+                ("gw7", "git -C %s status; git -C %s reset --hard HEAD"
+                 % (_wt_b, _wt["wt"]), "allow",
+                 "while a reset of the worktree onto ITS OWN HEAD, which holds "
+                 "the recorded commit, is allowed - asked in the first tree, "
+                 "HEAD there is the base and the reset read as orphaning it")):
+            v, why = M.decide({"tool_name": "Bash", "cwd": _wt["main"],
                                "tool_input": {"command": _cmd}})
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:160])))

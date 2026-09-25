@@ -184,41 +184,63 @@ defect as one that fires on a read. `--help` and `-h` are reads for the same
 reason. A shell's `-c` argument and `eval`'s argument *are* commands and are
 parsed as such, so an interpreter is not a way around it.
 
-**`git` counts only where a shell would run it.** A word is a git invocation in
-command position — the start of a command, after `;` `&&` `||` `|` or a newline, or
-among the arguments of a program that may run them (`sudo`, `env`, `xargs`, a shell's
-`-c`). The one narrowing is a closed list of programs that never run their
-arguments, the text emitters and the no-ops (`echo`, `printf`, `true`, `false`,
-`:`): `echo attempt used git stash` is prose and is allowed. It is closed in the safe
-direction — a program missing from it keeps the old reading, where every `git` word
-counts — and it holds only while the emitter's output goes nowhere a shell reads:
-`echo … | sh`, `$(echo …)` in command position and a backquoted emitter are all
-still refused. The deny cases beside each allow are in
-`test_guard_history_rewrite.py` (`gp*`), so the narrowing cannot quietly widen.
+**Every `git` word counts, except the arguments of an inert emitter.** This is not a
+command-position reader: `git` is an invocation wherever it sits in a command
+(`grep git stash notes.md` is refused as a stash), and a shell's `-c` argument,
+`eval`'s argument and every `$(…)` or backquote — including one inside double quotes,
+which the lexer returns as a single word — are read as commands of their own. The one
+narrowing is a closed list of programs that never run their arguments, the text
+emitters and the no-ops (`echo`, `printf`, `true`, `false`, `:`), in the first
+position of a command: their arguments are what they print, so `echo attempt used
+git stash` is allowed. It is closed in the safe direction — a program missing from it
+keeps the old reading — and it holds only while the emitter's output goes nowhere a
+shell reads. `echo … | sh` (including across a backslash-newline continuation, which
+is joined before the command is read, as the shell joins it), `$(echo …)`, a
+backquoted emitter, and an emitter writing a shell script or a dotfile a shell sources
+(`> x.sh`, `>> ~/.bashrc`) are all still refused. **The cost of the narrowing:** an
+emitter writing any other file name is read as writing prose, so `echo … >
+notes.txt; sh notes.txt` passes — the same write-then-run gap the heredoc and `printf`
+spellings already carry, recorded by case `gp23`. `xargs git` with no verb on its
+own command line takes the verb from stdin, which this guard cannot read, and is
+refused while a plan exists. The deny cases beside each allow are in
+`test_guard_history_rewrite.py` (`gp*`, `gc*`), so the narrowing cannot quietly
+widen.
 
 **A heredoc body is graded by what consumes it** (`_config.split_heredocs`, which
-`guard-secrets-read` shares). A body on its way into a file is data. A body fed to a
-shell, or to an interpreter reading its program from stdin, is a script and every
-rule reads it. A body PIPED onward is graded by the far side of the pipe: an
-interpreter given a script operand (`cat <<'EOF' | python3 x.py -`) reads it as data;
-a bare shell, a code flag (`-c`, `-e`, `-m`) or a program this does not know keeps it
-graded. **An unquoted delimiter keeps the shell in the body**: with `<<EOF` the shell
-performs `$(…)` and backquote substitution inside the body before any consumer reads
-it, so such a body is graded whatever its destination — a file included, which closed
-the same gap for file-bound bodies. Quoting the delimiter (`<<'EOF'`) is what makes
-the same bytes inert text. And a command that cannot be tokenized at all (an
-unbalanced quote) falls back to the older raw-text patterns, which over-refuse quoted
-text — the conservative direction, which is the only direction a guard may fail in
-when it cannot read its input. The general residual is the one this document opens
-with: text inspection is bypassable in principle.
+`guard-secrets-read` shares). A body on its way into a file, or into a program that
+is not an interpreter or a shell (`git commit -F -`), is data. A body fed to a shell
+or an interpreter is graded — read by the program in command position of the heredoc's
+head, past a wrapper that runs its argument (`env`, `sudo`, `xargs`, `timeout`,
+`nice`, …), so an option in front of `-` does not turn a program into data; process or
+command substitution anywhere in the head grades it as shell, and the one exception is
+a plain script run (`python3 x.py -`, `node tool.mjs`). A body PIPED onward stays
+graded as shell except in ONE shape, an allow-list entry rather than a list of the
+spellings that execute stdin (those cannot be listed completely): `cat` with a QUOTED
+delimiter, a single pipe, into python or node running a script FILE with no
+interpreter option before it — `cat <<'EOF' | python3 x.py --technical -`. A `-`,
+`/dev/stdin` or `/dev/fd/0` operand, an option value (`-W ignore -`), a subcommand
+(`deno run -`), `-i`, an environment assignment, a wrapper, any other head (`tee
+>(sh)`), an unquoted delimiter, or a head line that continues with a backslash all
+keep the body graded. The rest of the heredoc's own line after the marker is command
+text and is graded (`cat <<'EOF' && …` used to drop it with the body), and a
+here-string (`<<<`) is not read as a heredoc. **An unquoted delimiter keeps the shell
+in the body**: with `<<EOF` the shell performs `$(…)` and backquote substitution
+inside the body before any consumer reads it, so such a body is graded whatever its
+destination. And a command that cannot be tokenized at all (an unbalanced quote)
+falls back to the older raw-text patterns, which over-refuse quoted text — the
+conservative direction, which is the only direction a guard may fail in when it
+cannot read its input. The general residual is the one this document opens with:
+text inspection is bypassable in principle.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
-<dir>`, a `cd` before it, or the payload's own directory names the tree, and the
-recorded SHAs and the plan-present test are read from that tree's manifest as well as
-the project's — the union, because a commit recorded in either is one the command may
-not orphan. A linked worktree's plan records the commits its tasks made before any
-merge brings them to the main checkout, so reading only the project's let a rebase of
-the worktree branch orphan them unrefused.
+<dir>`, a `cd` before it, or the payload's own directory names each invocation's
+tree, and the recorded SHAs and the plan-present test are read from those trees'
+manifests as well as the project's — the union, because a commit recorded in either
+is one the command may not orphan. A linked worktree's plan records the commits its
+tasks made before any merge brings them to the main checkout, so reading only the
+project's let a rebase of the worktree branch orphan them unrefused. Refs resolve per
+working tree, so the ancestry of a reset and the HEAD of an amend are asked in the
+tree that invocation runs in.
 
 ### When the plan gate actually blocks (0.20.0)
 
@@ -354,8 +376,12 @@ reminder, the append-only journal protection and the journal recorder all follow
 to the same tree, and a task finished in a worktree leaves its `task.complete` / `task.commit`
 rows in that worktree's journal. A Bash command is placed where its shell stood — the payload's
 directory, moved by a `cd` the command makes first. `_deps.hook_tree_violations()` fails the
-build on a hook scope that resolves `_config.repo_root` and reads the plan's tree, directly or
-through a helper of its own file. **The residual**, which the containment shortcut makes: a
+build on a hook scope that resolves `_config.repo_root` (or a name bound to it) and reads the
+plan's tree, directly or through a helper of its own file — and on one that asks `tree_for`
+only for `PROJECT_ONLY`, places no target anywhere it reaches, and reads the plan, which is the
+same defect spelled differently. The one scope that does that on purpose,
+`guard-bash-writes`' `decide`, is declared in `_deps.HOOK_TREE_EXEMPT` with its reason, and a
+row there that stops matching is itself a finding. **The residual**, which the containment shortcut makes: a
 linked worktree placed *under* the project directory is judged as part of the project. The
 default exempt globs cover `.claude/**`, where the harness puts its own agent worktrees; one
 elsewhere under the project is judged against the project's plan. `guard-bash-writes` still
@@ -612,7 +638,9 @@ point:
   whose state landed in another directory, and a merge were all reported as tampering.
   The verdict is read from the content now, once per file, and each names its
   evidence: bytes identical to the file at `MERGE_HEAD` or `ORIG_HEAD` are the merge's
-  (or the reset's or rebase's); new rows that leave the committed bytes untouched,
+  (or the reset's or rebase's) — but only when git wrote that ref inside this pass's
+  window, since `ORIG_HEAD` outlives the operation that set it, and never when the
+  bytes are HEAD's own version with rows cut off the end; new rows that leave the committed bytes untouched,
   chain onto the committed tail with hashes that verify (`_journal_io`'s own algorithm),
   carry `via` hook, cli or panel and are stamped inside the window are **the plugin's
   own**, named by session or writer. Anything else — a rewritten row, a broken chain,

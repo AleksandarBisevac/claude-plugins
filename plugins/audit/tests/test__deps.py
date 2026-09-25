@@ -2256,6 +2256,62 @@ def _cases(check):
               "while a file that will not parse is reported rather than skipped: "
               "%r" % (_ht_files,),
               "_config.py" not in _ht_files and "broken.py" in _ht_files)
+        # The same defect by another spelling: PROJECT_ONLY is the project.
+        _wht("project_only.py", _hdr +
+             "def decide(data):\n"
+             "    home = _config.tree_for(data, _config.PROJECT_ONLY)\n"
+             "    return _config.manifest_state(home['root'], 'm.json')\n")
+        _wht("project_only_placed.py", _hdr +
+             "def _judge(data, path, cfg):\n"
+             "    tree = _config.tree_for(data, path, cfg)\n"
+             "    return tree\n\n\n"
+             "def decide(data, path):\n"
+             "    home = _config.tree_for(data, _config.PROJECT_ONLY)\n"
+             "    tree = _judge(data, path, home['cfg'])\n"
+             "    return _config.in_journal(tree['root'], home['cfg'], path)\n")
+        _wht("alias.py", _hdr +
+             "rr = _config.repo_root\n\n\n"
+             "def decide(data):\n"
+             "    return _config.manifest_state(rr(data), 'm.json')\n")
+        _ht = M.hook_tree_violations(ht)
+        _ht_files = sorted(set(f for f, _w in _ht))
+        check("ht7 a scope that asks `tree_for` only for PROJECT_ONLY and reads "
+              "the plan is reported - the project's plan by another spelling: %r"
+              % (_ht_files,), "project_only.py" in _ht_files)
+        check("ht8 ...while one whose callee PLACES a target is not - the "
+              "allow case beside ht7: %r" % (_ht_files,),
+              "project_only_placed.py" not in _ht_files)
+        check("ht9 a name bound to `_config.repo_root` is the call itself: %r"
+              % (_ht_files,), "alias.py" in _ht_files)
+        # The exemption table, both directions, on a fixture file of the
+        # exempted name.
+        _ex = tempfile.mkdtemp(prefix="deps-hooktree-ex-")
+        try:
+            with open(os.path.join(_ex, "guard-bash-writes.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_hdr + "def decide(data):\n"
+                         "    home = _config.tree_for(data, _config.PROJECT_ONLY)\n"
+                         "    return _config.manifest_state(home['root'], 'm')\n")
+            check("ht10 a scope HOOK_TREE_EXEMPT names, with a reason, is "
+                  "excused: %r" % (M.hook_tree_violations(_ex),),
+                  M.hook_tree_violations(_ex) == [])
+            _saved = M.HOOK_TREE_EXEMPT
+            M.HOOK_TREE_EXEMPT = (("guard-bash-writes.py", "decide", "  "),)
+            try:
+                _blank = M.hook_tree_violations(_ex)
+            finally:
+                M.HOOK_TREE_EXEMPT = _saved
+            check("ht11 ...but a row with no reason excuses nothing: %r"
+                  % (_blank,), len(_blank) == 1)
+            with open(os.path.join(_ex, "guard-bash-writes.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_hdr + "def decide(data):\n    return data\n")
+            _stale = M.hook_tree_violations(_ex)
+            check("ht12 ...and a row that no longer matches a finding is itself "
+                  "reported as stale: %r" % (_stale,),
+                  len(_stale) == 1 and "stale" in _stale[0][1])
+        finally:
+            shutil.rmtree(_ex, ignore_errors=True)
     finally:
         shutil.rmtree(ht, ignore_errors=True)
     check("ht6 ...and the REAL hooks carry none: every manifest or journal read "

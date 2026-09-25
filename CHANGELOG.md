@@ -160,20 +160,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   history guard read the main checkout's recorded SHAs for a rebase of the worktree branch. One
   helper, `_config.tree_for`, now places each path (and each Bash command, where its shell stood after
   any `cd`) in its tree, and `_deps.hook_tree_violations()` fails the build on a hook that reads the
-  plan beside a bare `repo_root`. The config and the session's own state stay with the project.
+  plan beside `repo_root` (or an alias of it), or beside a `tree_for` asked only for `PROJECT_ONLY`
+  with no target placed; the one scope that reads the project's plan on purpose is declared with
+  its reason. The config and the session's own state stay with the project.
 - **The bash-write guard blamed a shell command for journal rows the plugin wrote.** A peer
   session's hook rows, a plugin script's rows and a merge's journal files each drew "that shell
   command wrote into the append-only audit journal". The verdict is read from the bytes now: a file
-  identical to its version at `MERGE_HEAD` or `ORIG_HEAD` is the merge's, rows that chain onto the
+  identical to its version at a `MERGE_HEAD` or `ORIG_HEAD` git wrote inside the window (and not a
+  truncation of HEAD's own version) is the merge's, rows that chain onto the
   committed tail with verifying hashes, a plugin `via` and a fresh stamp are named as the plugin's
   writer, and everything else keeps the tamper notice. A peer session's claim file is still not read.
 - **The history guard refused prose that named `git stash`.** Every word `git` started an
   invocation, so `echo attempt used git stash` and an outcome piped into a script
-  (`cat <<'EOF' | python3 x.py -`) were refused as the operation. `git` now counts only in command
-  position, text emitters that print their arguments are read as printing them (unless their
-  output is piped or substituted into a command), and a piped heredoc body is graded by the far side
-  of the pipe. An unquoted delimiter whose body carries `$(…)` or a backquote is graded wherever the
-  body goes, since the shell runs those substitutions first.
+  (`cat <<'EOF' | python3 x.py -`) were refused as the operation. Every `git` word still counts,
+  except the arguments of a text emitter or no-op (`echo`, `printf`, `true`, `false`, `:`) at the
+  start of a command whose output reaches no shell - not a pipe (across a line continuation too),
+  not a substitution, not a file named like a shell script or a sourced dotfile. Writing the
+  emitter's output to any other file and running it later now passes; SECURITY.md records that
+  residual. A piped heredoc body stays graded except in one shape: `cat` with a quoted delimiter
+  into python or node running a script file with no interpreter option. An unquoted delimiter
+  whose body carries `$(…)` or a backquote is graded wherever the body goes.
+- **Commands the history and secret guards did not read.** The rest of a heredoc's own line after
+  its marker (`cat <<'EOF' && …`) was dropped with the body; a here-string (`<<<`) was read as a
+  heredoc and the lines after it dropped; a heredoc head that ran its body through a wrapper, an
+  option value or process substitution (`env python3 -W ignore -`, `bash <(cat)`) was read as
+  data; a `$(…)` inside double quotes was one word, so `echo "$(git stash)"` and
+  `eval "$(echo …)"` ran unread; and `xargs git` took its verb from stdin unseen - it is refused
+  while a plan exists. A reset or amend reaching several worktrees now resolves its refs in the
+  tree it runs in.
 
 ## [3.0.1] - 2026-09-18
 

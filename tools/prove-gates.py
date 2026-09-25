@@ -451,6 +451,11 @@ TABLE = (
   "def hook_tree_violations(hooks_dir=None):",
   "def hook_tree_violations(hooks_dir=None):\n    return []",
   DEP, "ht1"),
+ # ...and its second rule, the same defect spelled `tree_for(PROJECT_ONLY)`.
+ ("hook_tree_violations", S + "_deps.py", "replace",
+  "            elif project_only and name in reads and name not in places:",
+  "            elif False:",
+  DEP, "ht7"),
  # The whole mechanism, crippled the same way. A comment or a document citing
  # the private register is a claim nobody can check on the far side of it, and
  # a version reporting nothing reads exactly like a tree with no citations left
@@ -1311,6 +1316,11 @@ ALLOW = (
  ("hook_tree_violations", S + "_deps.py", "replace",
   "            if uses_root and name in reads:",
   "            if uses_root:", DEP, "ht3"),
+ # The exemption table, ignored: the one scope that reads the project's plan
+ # on purpose, with its reason declared, would be convicted anyway.
+ ("hook_tree_violations", S + "_deps.py", "replace",
+  '                if exempt.pop(key, "").strip():',
+  "                if False:", DEP, "ht10"),
  # `reference/tracker-sync.md` names its own live-network probes "live-gate
  # F<n>", which resolves inside that same document and is not the private
  # register - drop the narrowing and the lint convicts the document for

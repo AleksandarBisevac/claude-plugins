@@ -1338,7 +1338,11 @@ def effective_cwd(cmd, payload_cwd):
 # importing product internals inverts that dependency. Two homes on either side
 # of a release boundary is a boundary; two homes inside this directory would just
 # be a duplicate.
-_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+# `(?<!<)<<(?!<)`: a here-string (`sh <<<'EOF'`) is not a heredoc, and reading
+# one as a heredoc dropped the lines after it - commands the shell runs - as a
+# body nothing executes.
+_HEREDOC_START = re.compile(
+    r"(?<!<)<<(?!<)-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 # The head of a heredoc line, when what it invokes reads its PROGRAM from stdin.
 # `python3 - <<PY`, `python3 <<PY`, `node <<JS`, `bash -s <<EOF` are all the same
 # capability as `python -c`, spelled differently; `git commit -F - <<MSG` and
@@ -1365,53 +1369,152 @@ _STDIN_SHELL = re.compile(
     re.IGNORECASE)
 
 
-# The far side of a heredoc's pipe that reads the body as DATA: an interpreter
-# handed a SCRIPT operand. What it does with stdin is that script's business,
-# the same line `python3 x.py - <<EOF` already falls on. A flag that makes the
-# next word code (`-c`, `-e`, `-m`), or no operand at all, leaves the body
-# possibly a program, and those stay graded.
-_SCRIPT_INTERPRETERS = re.compile(
-    r"^(?:python3?|python3\.\d+|node|nodejs|deno|bun|ruby|perl|php)$",
-    re.IGNORECASE)
-_CODE_FLAGS = ("-c", "-e", "-m", "-E", "-r", "--eval", "--print", "-p")
+# WHAT MAY READ A HEREDOC BODY AS DATA is one shape, written out rather than
+# derived: `cat` feeding a quoted-delimiter body through a pipe into a script
+# FILE run by python or node, with no interpreter option in front of it -
+# `cat <<'EOF' | python3 x.py --technical -`. It is an allow-list because the
+# other direction cannot be written: every interpreter has spellings that read
+# the PROGRAM from stdin (`-`, `/dev/stdin`, `/dev/fd/0`, an option whose
+# value hides the operand - `-W ignore -`, `-I lib -` - a subcommand such as
+# `deno run -`, `-i` or `PYTHONINSPECT` running stdin after the script), and a
+# list of those is short by one the day somebody types the next. A body this
+# does not prove to be data keeps the grading it had before the shape existed.
+_DATA_SCRIPT_EXTS = (
+    (re.compile(r"^python(?:3(?:\.\d+)?)?$"), (".py",)),
+    (re.compile(r"^(?:node|nodejs)$"), (".js", ".mjs", ".cjs")),
+)
+# Programs that run their argument as a command, for reading a heredoc HEAD:
+# `env python3 -`, `sudo bash`, `xargs sh -c ...`, `timeout 5 python3 -`.
+_HEAD_WRAPPERS = ("env", "sudo", "doas", "xargs", "timeout", "nice", "ionice",
+                  "nohup", "command", "exec", "time", "stdbuf", "chrt", "setsid")
+_SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash")
+_ANY_INTERPRETER = re.compile(
+    r"^(?:python(?:3(?:\.\d+)?)?|node|nodejs|deno|bun|ruby|perl|php|awk|gawk"
+    r"|lua|tclsh|Rscript|osascript)$")
 # A body the SHELL still expands: an unquoted delimiter leaves command
 # substitution live, so the shell runs it before any consumer reads a byte.
 _LIVE_SUBSTITUTION = re.compile(r"\$\(|`")
+# Shell syntax in a heredoc head that can hand the body to something that runs
+# it by a route no word of the head names: process substitution, command
+# substitution.
+_HEAD_INDIRECTION = re.compile(r"[<>]\(|\$\(|`")
 
 
-def _pipe_reads_data(tail):
-    """Does the pipeline stage after a heredoc's `|` read the body as DATA?
+def _program_of(word):
+    """A word's program name: basename, quotes and `.exe` dropped."""
+    name = str(word).strip("'\"").replace("\\", "/").rsplit("/", 1)[-1]
+    return name[:-4] if name.lower().endswith(".exe") else name
 
-    `tail` is the head line's text after the heredoc marker. The stage is read
-    up to its own separator, as plain words: a word carrying a quote or an
-    expansion names something only the shell resolves, and is not guessed at.
-    Only the one shape named above answers yes; everything else - a shell, an
-    interpreter reading its program from stdin, a program this does not know,
-    `||` - answers no, which keeps the body graded."""
+
+def _plain_script_run(words):
+    """Is `words` exactly `<python|node> <script file> [args...]`?
+
+    No leading assignment, no option before the script, a script operand that
+    is a real file name with that interpreter's extension - never `-`, a
+    `/dev/` or `/proc/` path - and no word carrying a quote, an expansion or a
+    redirection. That is the only invocation `_DATA_SCRIPT_EXTS` vouches for."""
+    if len(words) < 2:
+        return False
+    if any(ch in w for w in words for ch in "'\"$`()<>"):
+        return False
+    program, script = _program_of(words[0]), words[1]
+    if script.startswith("-") or script.startswith(("/dev/", "/proc/")):
+        return False
+    for pattern, exts in _DATA_SCRIPT_EXTS:
+        if pattern.match(program):
+            return script.lower().endswith(exts)
+    return False
+
+
+def _last_command(text):
+    """The words of the last simple command in `text` (after `;` `&` `|` `(`)."""
+    return re.split(r"[;&|(\n]", text)[-1].split()
+
+
+def _pipe_reads_data(head, tail, quoted):
+    """Does a heredoc piped onward reach something that reads it as DATA?
+
+    Only the shape `_DATA_SCRIPT_EXTS` names: a QUOTED delimiter (an unquoted
+    one lets the shell run a substitution in the body first), `cat` as the only
+    reader on the head side - `tee >(sh)` or any other head is not vouched for
+    - a single real pipe (`||` is not one), no second heredoc on the line, and
+    a far-side stage that is a plain script run. Everything else answers no,
+    which keeps the body graded as shell, the grading every piped body had
+    before this existed."""
+    if not quoted or _last_command(head) not in (["cat"], ["cat", "-"]):
+        return False
     at = tail.find("|")
-    if at < 0 or tail[at:at + 2] == "||":
+    if at < 0 or tail[at:at + 2] in ("||", "|&") or "<<" in tail:
         return False
     stage = re.split(r"[|;&\n]", tail[at + 1:], maxsplit=1)[0]
-    words = stage.split()
-    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+    return _plain_script_run(stage.split())
+
+
+def _head_runs_body(head):
+    """"shell", "code" or None: what the heredoc HEAD itself does with the body.
+
+    The two patterns below the marker regex answer the spellings they know; this
+    answers by the program in command position of the head's last command, past
+    any wrapper that runs its argument, so `env python3 -W ignore -`,
+    `sudo -u x bash` and `bash <(cat)` are graded rather than dropped. A shell
+    is shell whatever its operands - a script reading its stdin is one `read`
+    and `eval` from running it. An interpreter is code unless it is a plain
+    script run. Process or command substitution anywhere in the head is shell.
+    None means no word of the head is a program that could run the body."""
+    if _HEAD_INDIRECTION.search(head):
+        return "shell"
+    words = _last_command(head)
+    wrapped = False
+    while words and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])
+                     or _program_of(words[0]) in _HEAD_WRAPPERS):
+        wrapped = wrapped or _program_of(words[0]) in _HEAD_WRAPPERS
         words = words[1:]
-    if not words or not all(resolvable_destination(w)
-                            and "'" not in w and '"' not in w for w in words):
-        return False
-    program = words[0].replace("\\", "/").rsplit("/", 1)[-1]
-    if program.lower().endswith(".exe"):
-        program = program[:-4]
-    if not _SCRIPT_INTERPRETERS.match(program):
-        return False
-    for word in words[1:]:
-        if word in ("-", "/dev/stdin"):
-            return False
-        if word.startswith("-"):
-            if word in _CODE_FLAGS or word.split("=", 1)[0] in _CODE_FLAGS:
-                return False
+        while wrapped and words and (words[0].startswith("-")
+                                     or words[0].isdigit()):
+            words = words[1:]
+    candidates = words[:1] if not wrapped else words
+    for index, word in enumerate(candidates):
+        program = _program_of(word)
+        if program in _SHELL_PROGRAMS:
+            return "shell"
+        if _ANY_INTERPRETER.match(program):
+            return None if _plain_script_run(words[index:]) else "code"
+    return None
+
+
+def join_continuations(text):
+    """`text` with every backslash-newline outside single quotes removed - what
+    the shell does before it reads a word.
+
+    A line continuation is not a separator: `echo x`, a backslash ending the
+    line, then `| sh` on the next is ONE pipeline, and a reader that kept the escaped newline as a boundary read the
+    pipe as a new command and the emitter's words as inert. Inside double
+    quotes the pair is removed too (POSIX); inside single quotes it is literal.
+    Any other backslash is kept with the character it escapes."""
+    out, quote, i, n = [], None, 0, len(text or "")
+    text = text or ""
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            out.append(ch)
+            if ch == "'":
+                quote = None
+            i += 1
             continue
-        return True
-    return False
+        if ch == "\\" and i + 1 < n:
+            if text[i + 1] == "\n":
+                i += 2
+                continue
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if ch == '"':
+            quote = None if quote == '"' else '"'
+        elif ch == "'" and quote is None:
+            quote = "'"
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def split_heredocs(cmd):
@@ -1437,8 +1540,10 @@ def split_heredocs(cmd):
 
     A THIRD CLASSIFICATION, and it is the one that keeps this a narrowing. A body
     the consumer does not execute is DATA and leaves -- unless the head line pipes
-    it onward, in which case the FAR SIDE decides (`_pipe_reads_data`): a script
-    given a file operand reads it as data, and anything else keeps it as shell.
+    it onward, in which case it stays shell unless `_pipe_reads_data` proves the
+    one data shape: `cat` into a plain python or node script file, with a quoted
+    delimiter. The head is read by program too (`_head_runs_body`), so a wrapper
+    or an option in front of an interpreter does not turn its program into data.
     `cat <<EOF | bash` really is a way to run a command; `cat <<'EOF' | python3
     x.py -` is an outcome handed to a script, and refusing its prose for naming
     a rule was the guard firing on a sentence.
@@ -1452,9 +1557,9 @@ def split_heredocs(cmd):
 
     Fail-safe about its own limits: a heredoc whose terminator never arrives is
     left in the text, so an unparseable command is judged exactly as strictly as
-    before this existed. The pipe is read on the heredoc's own line only -- a
-    pipeline continued onto the next line with a backslash is not seen, which is
-    said here rather than left to be discovered.
+    before this existed. The pipe is read on the heredoc's own line only; a
+    heredoc line that ends in a backslash continues somewhere this does not
+    read, so its body is kept as shell.
     """
     if "<<" not in (cmd or ""):
         return (cmd or ""), [], []
@@ -1480,14 +1585,21 @@ def split_heredocs(cmd):
             i += 1
             continue
         head = line[:m.start()].strip()
-        kept.append(line[:m.start()])
+        tail = line[m.end():]
+        # THE REST OF THE HEAD LINE IS COMMAND TEXT, and it was dropped with
+        # the body: `cat <<'EOF' && git stash` kept only `cat`, so whatever
+        # followed the marker on its own line was invisible to every rule.
+        kept.append(line[:m.start()] + " " + tail)
         body = "\n".join(lines[i + 1:end])
         live = not m.group(1) and _LIVE_SUBSTITUTION.search(body)
-        if _STDIN_SHELL.search(head):
+        runs = _head_runs_body(head)
+        if _STDIN_SHELL.search(head) or runs == "shell":
             shell.append(body)
-        elif _STDIN_INTERP.search(head):
+        elif _STDIN_INTERP.search(head) or runs == "code":
             code.append(body)
-        elif "|" in line[m.end():] and not _pipe_reads_data(line[m.end():]):
+        elif tail.rstrip().endswith("\\"):
+            shell.append(body)     # the line continues; its far side is unread
+        elif "|" in tail and not _pipe_reads_data(head, tail, bool(m.group(1))):
             shell.append(body)
         elif live:
             shell.append(body)

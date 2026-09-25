@@ -2541,6 +2541,31 @@ def _cases(check):
             {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
                 "command": "cat <<EOF | python3 x.py -\n$(%s)\nEOF" % _hp_read}})
 
+    _expect("hp10 ...and a substitution in an UNQUOTED body on its way into a "
+            "FILE, where no pipe is read at all - only the live-substitution "
+            "rule keeps it", "block",
+            {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "cat > notes.md <<EOF\n$(%s)\nEOF" % _hp_read}})
+
+    _hp_py = "print(open('.env').read())"
+    for _hid, _hcmd in (
+            ("hp4", "cat <<'EOF' | python3 -W ignore -\n%s\nEOF" % _hp_py),
+            ("hp5", "cat <<'EOF' && %s\nx\nEOF" % _hp_read),
+            ("hp6", "env python3 -W ignore - <<'EOF'\n%s\nEOF" % _hp_py),
+            ("hp7", "cat <<'EOF' | xargs python3 x.py\n%s\nEOF" % _hp_read)):
+        _expect("%s a body or a line this guard used to drop as data, in a "
+                "spelling that RUNS it, is read again" % _hid, "block",
+                {"tool_name": "Bash", "cwd": str(tmp),
+                 "tool_input": {"command": _hcmd}})
+    _hp_dump = "print" + "env"
+    _expect("hp8 an emitter's words piped to a shell across a line "
+            "continuation are a command - the continuation is joined first",
+            "block", {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "echo %s \\\n  | sh" % _hp_dump}})
+    _expect("hp9 ...while the same emitter writing a file is still prose",
+            "allow", {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "echo %s \\\n  > notes.md" % _hp_dump}})
+
     # (lw) A SHELL WRITE INTO A LINKED WORKTREE IS JUDGED AGAINST THAT
     # WORKTREE'S PLAN. The Edit arm (require-plan) re-rooted onto the worktree
     # while this arm skipped every target outside CLAUDE_PROJECT_DIR - so an

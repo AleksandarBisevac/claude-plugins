@@ -1466,6 +1466,41 @@ def _plugin_rows_writers(mod, committed, current, basename, since, now):
     return writers
 
 
+def _fresh_refs(git_root, since):
+    """Which of `_ORIGIN_REFS` git moved inside this pass's window - the refs
+    whose file in the git dir was written at or after `since`.
+
+    A ref is evidence only for the operation that just wrote it. ORIG_HEAD
+    outlives the reset, rebase or merge that set it, so a shell command that
+    later restores a journal file to that version - `git show ORIG_HEAD:<f> >
+    <f>` - would otherwise be acquitted as git's write. One `rev-parse
+    --git-path` names both files in whatever git dir this tree uses (a linked
+    worktree has its own); a ref this cannot stat is not fresh."""
+    import subprocess
+    if since is None:
+        return ()
+    argv = ["git", "rev-parse"]
+    for ref in _ORIGIN_REFS:
+        argv += ["--git-path", ref]
+    try:
+        out = subprocess.run(argv, cwd=str(git_root), capture_output=True,
+                             text=True, timeout=_GIT_TIMEOUT_SECONDS)
+    except Exception:
+        return ()
+    paths = out.stdout.splitlines() if out.returncode == 0 else []
+    if len(paths) != len(_ORIGIN_REFS):
+        return ()
+    fresh = []
+    for ref, rel in zip(_ORIGIN_REFS, paths):
+        try:
+            if os.path.getmtime(os.path.join(str(git_root), rel)) >= \
+                    since - _FRESH_SLACK_SECONDS:
+                fresh.append(ref)
+        except OSError:
+            continue
+    return tuple(fresh)
+
+
 def journal_origin(git_root, git_rel, path, since, now):
     """Where a dirty journal file's bytes came from, as far as git and the rows
     can show - ("merge", ref), ("plugin", [writer, ...]) or None.
@@ -1474,7 +1509,10 @@ def journal_origin(git_root, git_rel, path, since, now):
     a file git cannot be asked about, bytes matching no version git holds,
     rows that do not all verify. The merge question is asked first because it
     needs no reading of rows at all: bytes equal to the file at MERGE_HEAD or
-    ORIG_HEAD are git's write."""
+    ORIG_HEAD are git's write - but only a ref git moved inside this window
+    (`_fresh_refs`), and never bytes that are a strict prefix of HEAD's own
+    version, which is a trail with committed rows cut off whatever put it
+    there."""
     try:
         with open(str(path), "rb") as fh:
             current = fh.read()
@@ -1484,9 +1522,15 @@ def journal_origin(git_root, git_rel, path, since, now):
     blobs = _git_blobs(git_root, specs)
     if blobs is None:
         return None
-    for ref in _ORIGIN_REFS:
-        if blobs.get("%s:%s" % (ref, git_rel)) == current:
-            return ("merge", ref)
+    committed = blobs.get(specs[0]) or b""
+    truncated = len(current) < len(committed) and committed.startswith(current)
+    matching = [ref for ref in _ORIGIN_REFS
+                if blobs.get("%s:%s" % (ref, git_rel)) == current]
+    if matching and not truncated:
+        fresh = _fresh_refs(git_root, since)
+        for ref in matching:
+            if ref in fresh:
+                return ("merge", ref)
     writers = _plugin_rows_writers(
         _config._load_journal_lib(), blobs.get(specs[0]) or b"", current,
         os.path.basename(str(path)), since, now)

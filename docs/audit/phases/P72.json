@@ -19,10 +19,60 @@
   "branch": "audit/p72-every-hook-judges-the-tree-the",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P72-R1",
+        "severity": "high",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "A line continuation gets past the inert-emitter exemption. shlex keeps an escaped newline as its own piece, and _SEP_ONLY classes that piece as a separator. So the emitter's span ends there, and the pipe on the continued line is read as a new command. In bash, backslash-newline is removed, so the emitter's output really is piped into the shell. I called the functions directly with bytecode writes ",
+        "resolution": "fix task P72.2-ttl"
+      },
+      {
+        "id": "P72-R2",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "The detail of this finding was withheld by a safety classifier when the report was first delivered, and it is deliberately not written out again here. What can be said: I have a base-vs-HEAD comparison showing that the new far-side-of-the-pipe classification drops, as data, a heredoc body that the base graded as a program. Because split_heredocs is shared, this reaches guard-secrets-read as well a",
+        "resolution": "fix task P72.2-ttl"
+      },
+      {
+        "id": "P72-R3",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-bash-writes.py",
+        "issue": "The ORIG_HEAD acquittal is not tied to this window. ORIG_HEAD persists from any earlier reset, rebase or merge. So a shell command that restores a journal file to that version is reported as 'brought in by the merge' - for example `git show ORIG_HEAD:<journal> > <journal>`, or `git checkout ORIG_HEAD -- docs/audit/journal/`. Such a restore can drop committed rows while the chain that remains still",
+        "resolution": "fix task P72.2-ttl"
+      },
+      {
+        "id": "P72-R4",
+        "severity": "low",
+        "file": "SECURITY.md",
+        "issue": "Both documents say `git` counts only in command position (the start of a command, after a separator, or as the argument of a runner). The code does not do that. git_calls still counts every `git` word except those in an inert emitter's span. Measured on HEAD: `grep -n git stash notes.md`, `ls git stash` and `cat git stash` all give moving_stash == [''], i.e. they are refused as a stash. This errs ",
+        "resolution": "fix task P72.2-ttl"
+      },
+      {
+        "id": "P72-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_deps.py",
+        "issue": "The lint binds to the spelling `_config.repo_root`, not to what the code does. The migrated shape `_config.tree_for(data, _config.PROJECT_ONLY)['project']` handed to a HOOK_TREE_READER is the identical defect, and it passes. guard-bash-writes.decide does exactly this, on purpose. An alias (`rr = _config.repo_root; rr(data)`) also evades it, because _config_call_name needs the attribute spelled at ",
+        "resolution": "fix task P72.2-ttl"
+      },
+      {
+        "id": "P72-R6",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "When a command reaches several trees, the ancestry question is asked only in roots[1]. Refs resolve per worktree (HEAD, HEAD~n, ORIG_HEAD), so in `git -C <wtA> status; git -C <wtB> reset --hard HEAD~1` the reset's HEAD~1 is resolved in wtA. The comment ('the first worktree it reaches') states the behaviour but not that it can be the wrong tree.",
+        "resolution": "fix task P72.2-ttl"
+      },
+      {
+        "id": "P72-R7",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "The emitter exemption widens the write-then-execute gap to unquoted `echo`. `echo git stash > x.sh; sh x.sh` and `echo git stash >> ~/.bashrc` were refused on the base and are allowed on HEAD. The module header records this class for heredoc and printf spellings. But the INERT_PROGRAMS comment says 'the cost of an omission is a refusal', and the new SECURITY.md paragraph does not say that emitting",
+        "resolution": "fix task P72.2-ttl"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -102,6 +152,161 @@
         "test_guard_bash_writes ja1",
         "test__deps ht1"
       ]
+    },
+    {
+      "id": "P72.2-ttl",
+      "title": "Sign-off review findings: the history guard reads line continuations, piped heredocs and substitutions the way bash does, ORIG_HEAD acquits only inside the window, and the tree lint binds to what the code does",
+      "status": "in_progress",
+      "description": "Findings of the phase review, every one to be fixed (or answered with a measured reason) in this task:\nR1 (high) plugins/audit/hooks/guard-history-rewrite.py:286-313 (_inert_span / _inert_opening, fed by _shell_pieces:241-262): A line continuation gets past the inert-emitter exemption. shlex keeps an escaped newline as its own piece, and _SEP_ONLY classes that piece as a separator. So the emitter's span ends there, and the pipe on the continued line is read as a new command. In bash, backslash-newline is removed, so the emitter's output really is piped into the shell. I called the functions directly with bytecode writes off, on the base and on HEAD. These were REFUSED on the base and are ALLOWED on HEAD: `echo git push --force origin main` + backslash-newline + `  | sh` (always_refused: base WHY_FORCE, HEAD None); `echo git rebase -i HEAD~2` + backslash-newline + ` | sh` (base WHY_REBASE, HEAD None); `echo git stash` + backslash-newline + tab + `| bash` (moving_stash: base [''], HEAD []). Only the spelling with no whitespace after the newline is still caught, because there the `|` shares a piece with the newline. I confirmed bash joins the lines by running `echo hi` + backslash-newline + `  | tr h H` through bash, which printed `Hi`. No gp* case covers a continuation. -> In _shell_pieces, remove backslash-newline outside quotes before lexing, as bash does. Add deny cases next to gp8/gp18 for the stash, force-push and rebase spellings above.\nR2 (high) plugins/audit/hooks/_config.py:1368-1414 (_pipe_reads_data), used by split_heredocs:1492 and so by both guard-history-rewrite and guard-secrets-read: The detail of this finding was withheld by a safety classifier when the report was first delivered, and it is deliberately not written out again here. What can be said: I have a base-vs-HEAD comparison showing that the new far-side-of-the-pipe classification drops, as data, a heredoc body that the base graded as a program. Because split_heredocs is shared, this reaches guard-secrets-read as well as the history guard. -> Have a maintainer review which operands _pipe_reads_data (and the head-form _STDIN_INTERP beside it) accepts as a SCRIPT operand, against every spelling an interpreter accepts for reading its program from stdin. Keep one shared set that answers 'program, keep graded'. Add red-first deny cases in test_guard_secrets_read.py and in the gq* table.\nR3 (med) plugins/audit/hooks/guard-bash-writes.py:1379 (_ORIGIN_REFS), 1484-1487 (journal_origin); SECURITY.md:608-625: The ORIG_HEAD acquittal is not tied to this window. ORIG_HEAD persists from any earlier reset, rebase or merge. So a shell command that restores a journal file to that version is reported as 'brought in by the merge' - for example `git show ORIG_HEAD:<journal> > <journal>`, or `git checkout ORIG_HEAD -- docs/audit/journal/`. Such a restore can drop committed rows while the chain that remains still verifies. No case exercises ORIG_HEAD at all: ja7/ja8 drive MERGE_HEAD only. So removing ORIG_HEAD from _ORIGIN_REFS, or accepting a stale one, would both survive the suite. -> Accept ORIG_HEAD only when HEAD moved inside this pass's window, e.g. the ORIG_HEAD ref file's mtime >= since, or a HEAD sha recorded at the previous look that differs now. Never acquit a file whose bytes are a truncation of HEAD's blob. Add a stale-ORIG_HEAD case that must keep the tamper notice, and a fresh `git reset HEAD~1` case that is acquitted.\nR4 (low) SECURITY.md:187-197; CHANGELOG.md:170-176: Both documents say `git` counts only in command position (the start of a command, after a separator, or as the argument of a runner). The code does not do that. git_calls still counts every `git` word except those in an inert emitter's span. Measured on HEAD: `grep -n git stash notes.md`, `ls git stash` and `cat git stash` all give moving_stash == [''], i.e. they are refused as a stash. This errs toward over-refusal, but it is a changed SECURITY.md sentence that is not true of the code. It also means the phase's desiredOutcome clause is not met as written (see intent). -> Either reword both documents to say what the code does - every `git` word counts except the arguments of a closed list of inert emitters whose output reaches no shell - or implement real command-position reading, with allow cases for grep/ls/cat.\nR5 (low) plugins/audit/scripts/_deps.py:1500-1573 (hook_tree_violations): The lint binds to the spelling `_config.repo_root`, not to what the code does. The migrated shape `_config.tree_for(data, _config.PROJECT_ONLY)['project']` handed to a HOOK_TREE_READER is the identical defect, and it passes. guard-bash-writes.decide does exactly this, on purpose. An alias (`rr = _config.repo_root; rr(data)`) also evades it, because _config_call_name needs the attribute spelled at the call. The docstring admits the PROJECT_ONLY route. The SECURITY.md/CHANGELOG wording is literally accurate, but the desiredOutcome's 'keeps a bare repo_root from coming back' is all the lint guarantees. -> Also flag a scope chain that calls a HOOK_TREE_READER where every tree_for call it can reach passes PROJECT_ONLY, unless the file is in a declared exemption table with a checked reason (guard-bash-writes: one watched tree). Treat a Name bound from `_config.repo_root` as the call itself.\nR6 (low) plugins/audit/hooks/guard-history-rewrite.py:855-861, 908-911 (command_roots / git_root choice): When a command reaches several trees, the ancestry question is asked only in roots[1]. Refs resolve per worktree (HEAD, HEAD~n, ORIG_HEAD), so in `git -C <wtA> status; git -C <wtB> reset --hard HEAD~1` the reset's HEAD~1 is resolved in wtA. The comment ('the first worktree it reaches') states the behaviour but not that it can be the wrong tree. -> Pair each invocation with its own directory (git_calls already returns it) and ask orphaned_by per invocation, in that invocation's tree.\nR7 (low) plugins/audit/hooks/guard-history-rewrite.py:169-177 (INERT_PROGRAMS comment); SECURITY.md:187-197: The emitter exemption widens the write-then-execute gap to unquoted `echo`. `echo git stash > x.sh; sh x.sh` and `echo git stash >> ~/.bashrc` were refused on the base and are allowed on HEAD. The module header records this class for heredoc and printf spellings. But the INERT_PROGRAMS comment says 'the cost of an omission is a refusal', and the new SECURITY.md paragraph does not say that emitting into a file that is later executed is now read as prose. -> State it next to the inert list in SECURITY.md and in the INERT_PROGRAMS comment, or keep an emitter graded when its redirect target is a shell script or shell rc file. Either way, add a case that records the choice.\npre-existing 101 (med) plugins/audit/hooks/guard-history-rewrite.py:_SEP_SPLIT / _shell_pieces: A double-quoted command substitution is never read as an operation. `echo \"$(git stash)\"`, `eval \"$(echo git stash)\"` and `sh -c \"$(echo git stash)\"` lex to one word, 'git stash', which is not the word `git`. Allowed on the base and on HEAD alike. -> Re-parse the contents of `$(...)` and backquotes found inside a double-quoted word as a nested command, through the same git_calls door.\npre-existing 102 (low) plugins/audit/hooks/guard-history-rewrite.py:git_calls: When `xargs git` takes the verb from stdin, the operation is not seen: `echo stash | xargs git`, and a heredoc piped to `xargs git`, are allowed on the base and on HEAD. The SECURITY.md sentence naming xargs as a runner holds only when the verb is on the command line. -> Treat `xargs git` (git as the runner's program, with no verb after it) as an unknown verb that is refused while a plan exists, or state the residual.",
+      "files": [
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: repro that FAILS on current code - echo git push --force origin main followed by a backslash-newline and | sh is allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T16:35:17Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P72.3-ttl",
+      "title": "journal-writes derives no sign-off from a stored status, and no row for a write another session made",
+      "status": "pending",
+      "description": "Measured on this repo: after the orchestrator's settle (which stored the derived done on 34 phase bodies and mirrored status onto 69 index stubs), a DIFFERENT session's installed journal-writes hook, on an unrelated Bash call, derived 147 rows under its own session - 105 phase.signoff for 70 phases - from the manifest digest change it saw. Two defects compose. (1) Meaning: a sign-off is recorded by the signoff verb (its own journal row); a stored-status flip is not a sign-off - at HEAD phase.signoff is derived only from phase bodies, but a parent-branch body settle moved to done has mergedAt null, and a null last field is never a dedup key, so HEAD still derives one per such body. Stop deriving phase.signoff from status (or derive it only from a review.status/verdict change the verb did not record), and recognise settle and the stub mirror as the plugin's own materialisation (settle journals plan.settle). (2) Attribution: the sweep lane derives rows from any manifest digest change it sees, whoever wrote it, and files them under the observing session. Derive only from writes this tool call made - its own target, or the command's tree through tree_for - never from a digest a peer's write moved. Cases: settle, then a peer session's unrelated Bash call derives nothing; a hand status flip still yields a hand-edit row; the verb's sign-off row is not duplicated.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/reference/orchestrator.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: repro that FAILS on current code - a status flip to done written by settle is derived as a phase.signoff row by the next hook sweep, under the observing session"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P72.4-ttl",
+      "title": "A session's journal writer is keyed by its worktree too, so parallel worktrees of one session never share a file",
+      "status": "pending",
+      "description": "Hit merging main into P70: audit-journal merge refused 2026-09.<session>.jsonl because rows written in two linked worktrees of ONE session at the same second said different things (task starts in sibling worktrees), and timestamp order cannot separate them; it was resolved by hand. The per-writer file layout that makes journal merges conflict-free assumes one writer per file, but the writer id is the session id, so every worktree a session drives appends the same basename. Key the writer by session AND worktree (a linked worktree's .claude/state already holds its own writer token) so two worktrees never share a file; keep reading existing session-keyed files; check verify, merge, doctor and the record-key dedup read the new names. Cases: two worktrees of one session write two files; the old name is still read; a merge of both branches has no journal conflict.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "tools/check-git-pipeline.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__journal_io.py: repro that FAILS on current code - two linked worktrees driven by one session resolve the same journal writer file"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T14:32:08Z"

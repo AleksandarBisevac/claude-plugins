@@ -45,6 +45,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -2247,6 +2248,47 @@ def _journal_origin_cases(check):
               v == "warn" and "append-only audit journal" in why
               and "brought in by the merge" not in why, repr((v, why[:300])))
         run_git("merge", "--abort")
+        # ja9-ja11: ORIG_HEAD is evidence only for the operation that just
+        # set it, and never for bytes that cut committed rows off HEAD's own.
+        # The rows are not the plugin's (no chain), so only the ref can acquit.
+        orig = jdir / "2026-09.origtest.jsonl"
+        v1 = '{"row": 1}\n'
+        v2 = v1 + '{"row": 2}\n'
+        orig.write_text(v1, encoding="utf-8")
+        run_git("add", "-A")
+        run_git("commit", "-qm", "orig v1")
+        orig.write_text(v2, encoding="utf-8")
+        run_git("add", "-A")
+        run_git("commit", "-qm", "orig v2")
+        b_sha = run_git("rev-parse", "HEAD").stdout.strip()
+        baseline("ja-i")
+        run_git("reset", "-q", "HEAD~1")
+        v, why = look("ja-i", "git reset HEAD~1")
+        check("ja9 a reset made in this window leaves the journal file at the "
+              "version ORIG_HEAD names, and that is git's write",
+              v == "warn" and "brought in by the merge" in why
+              and "append-only audit journal" not in why, repr((v, why[:300])))
+        run_git("checkout", "--", ".")
+        orig_path = run_git("rev-parse", "--git-path", "ORIG_HEAD").stdout.strip()
+        old = time.time() - 3600
+        os.utime(str(repo / orig_path), (old, old))
+        baseline("ja-j")
+        orig.write_text(v2, encoding="utf-8")
+        v, why = look("ja-j", "git show ORIG_HEAD:x > x")
+        check("ja10 ...but a STALE ORIG_HEAD acquits nothing: restoring a file "
+              "to the version an hour-old reset left behind is a shell write",
+              v == "warn" and "append-only audit journal" in why
+              and "brought in by the merge" not in why, repr((v, why[:300])))
+        run_git("checkout", "--", ".")
+        run_git("reset", "-q", "--hard", b_sha)
+        baseline("ja-k")
+        orig.write_text(v1, encoding="utf-8")
+        v, why = look("ja-k", "git show ORIG_HEAD:x > x")
+        check("ja11 ...and a fresh one does not acquit bytes that are HEAD's own "
+              "version with rows cut off the end",
+              v == "warn" and "append-only audit journal" in why
+              and "brought in by the merge" not in why, repr((v, why[:300])))
+        run_git("checkout", "--", ".")
     finally:
         if prev_env is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

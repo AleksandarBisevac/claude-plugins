@@ -1155,7 +1155,10 @@ def _executed_text(cmd):
     same heredoc rule without the emitter half.
     """
     text, code, shell = _config.split_heredocs(cmd)
-    text = _TEXT_EMITTER_ARGS.sub(_strip_emitter_args, text)
+    # A continuation joins the emitter's line to the pipe on the next one, which
+    # the pattern's `|` exclusion must see: `echo printenv \<newline> | sh`.
+    text = _TEXT_EMITTER_ARGS.sub(_strip_emitter_args,
+                                  _config.join_continuations(text))
     return "\n".join([text] + shell + code)
 
 
