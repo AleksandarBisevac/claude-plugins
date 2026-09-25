@@ -492,7 +492,8 @@
       "P69.3",
       "P71.1",
       "P72.1",
-      "P70.2"
+      "P70.2",
+      "P70.3-fos"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -549,7 +550,8 @@
       "P63.8",
       "P64.1",
       "P67.1",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos"
     ],
     "README.md": [
       "P2.3",
@@ -770,7 +772,8 @@
       "P61.3",
       "P63.4",
       "P63.8",
-      "P63.12"
+      "P63.12",
+      "P70.3-fos"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -800,7 +803,8 @@
       "P33.2",
       "P48.1",
       "P57.1",
-      "P57.4"
+      "P57.4",
+      "P70.3-fos"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -1705,7 +1709,8 @@
       "P59.3",
       "P59.6",
       "P59.8",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1730,7 +1735,8 @@
       "P59.6",
       "P59.8",
       "P59.13",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1893,7 +1899,8 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1904,7 +1911,8 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2113,7 +2121,8 @@
       "P55.5",
       "P56.5",
       "P55.14",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2232,7 +2241,8 @@
       "P48.1",
       "P59.5",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2241,7 +2251,8 @@
       "P46.6",
       "P48.1",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7"
@@ -2590,7 +2601,8 @@
       "P55.21",
       "P64.3",
       "P68.1",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2658,7 +2670,8 @@
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
       "P63.11",
-      "P69.3"
+      "P69.3",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
