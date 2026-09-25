@@ -29,7 +29,7 @@
     {
       "id": "P76.1",
       "title": "New verbs and answers for what operators hand-edited: intent not-asked, done --no-change, move, block, note",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reproduced at HEAD: (1) intentCheck has no spelling for 'not asked, on purpose' and nothing reads an absent answer - add enum member not-asked with a required basis (--intent not-asked --intent-basis TEXT), and a reader: sign-off and status list closed tasks with no answer. (2) done demands --commit - add done --no-change --reason TEXT recording outcome.noChange {reason, examinedAt: HEAD sha}; doctor's no-SHA check and verify-invariants' commit-scope skip such tasks. (3) move is a documented sequence of hand edits (commands/task.md) - make it a verb doing exactly those steps under the index lock (next-id task, movedFrom, references rewritten across index, shards and proposals, a task.move row, revalidate, rollback). (4) block <id> --reason (status + blockedReason + row) and note <id> - (append {at, text} to notes[] + row); manifest-conventions stops telling operators to put a dependency in the description, which scope refuses on a started task; orchestrator.md and execute-task.md set blocked through the verb.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -77,14 +77,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "07a974f3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "not-asked intent answer and intent_unanswered reader; done --no-change with outcome.noChange; move/block/note verbs under the index lock with journal rows.",
+        "descriptive": "Operators can record a deliberate skipped intent check, close a task that needed no change, and move, block or annotate a task without editing the plan by hand."
       },
       "startedAt": "2026-09-25T18:00:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T22:03:14Z",
+      "verifiedBy": [
+        "test_audit_task ia1",
+        "test_audit_task nc1",
+        "test_audit_task mv1-sharded",
+        "test_audit_task bk1",
+        "test_audit_task nt1",
+        "test_audit_status ni1"
+      ]
     },
     {
       "id": "P76.2",
