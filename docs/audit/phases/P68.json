@@ -1,0 +1,79 @@
+{
+  "id": "P68",
+  "title": "The index is committed only where the committed shards support it",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "commit-manifest-index never records an index that names tasks or phases its committed shards do not hold - it refuses and names the shard to commit first - and the notes that point at it state the order",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P68.1",
+      "title": "Fix BUG-10: commit-manifest-index commits an index ahead of the shards it names",
+      "status": "pending",
+      "description": "Repro: audit-task add on a sharded plan, then commit-manifest-index before the shard is committed; git show HEAD's index plus HEAD's shard fails validation (fileIndex names a task that does not exist). Expected: the index is committed only in a state the committed shards support, or the command names the shard to commit first. Actual: the index commit lands and the plan as that commit records it fails validation; audit-task's own note says to land it before or beside the next commit.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/commands/task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_manifest_index.py: repro that FAILS on current code - an index naming a task its committed shard lacks is committed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-10"
+    }
+  ]
+}
