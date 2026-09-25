@@ -1723,10 +1723,10 @@ def _evidence_specs(manifest):
             tstatus = task.get("status")
             if tstatus not in ("done", "in_progress", "blocked"):
                 continue
-            entries = ((task.get("tests") or {}).get("gate")
-                       or phase.get("testGate") or [])
-            resolved = [(e, build.get(e, e)) for e in entries
-                        if isinstance(e, str) and e.strip()]
+            # WHICH GATE is `_manifest_io.gate_entries`' answer, the one the
+            # runner the demo imitates resolves by.
+            entries, _source = _mio.gate_entries(phase, task)
+            resolved = [(e, build.get(e, e)) for e in entries]
             if not resolved:
                 continue                    # the ungated task: nothing to record
             owns = list(task.get("files") or [])

@@ -724,33 +724,19 @@ def _evidence_gap_of(holder, scope, boundary):
 def _gate_source(phase, task=None):
     """`"task"`, `"phase"` or None -- whose gate would grade this subject.
 
-    A SECOND EXPRESSION OF `run-test-gate.gate_of`'s resolution, and it is spelled
-    here rather than imported because that file is an entry point at layer 7 while
-    this module sits at 4: importing it would be an upward edge the layer lint
-    fails by name. What keeps the two honest is not this paragraph --
-    `tests/test__panel_composition.py` drives both over one table of subjects and
-    goes red when they disagree.
-
-    ABSENT, EMPTY AND ALL-BLANK ARE ONE ANSWER, which is `gate_of`'s own rule: a
-    task with no `tests` block and a task with `tests.gate: []` both declare no
-    gate, and making them two answers would be two chances to disagree about one
-    question. The fallback direction is `gate_of`'s too -- a task declaring
-    nothing is graded by the PHASE's gate, and 'this task's gate passed' and 'the
-    phase's gate passed while pointed at this task's files' are different claims a
-    badge must not merge.
+    `_manifest_io.gate_entries` answers it, the same function `run-test-gate`'s
+    `gate_of` resolves by, so the badge and the runner cannot disagree about
+    whose gate grades a task; `tests/test__panel_composition.py` still drives
+    both over one table of subjects. Absent, empty and all-blank are one answer
+    there, and a task declaring nothing is graded by the PHASE's gate - 'this
+    task's gate passed' and 'the phase's gate passed while pointed at this task's
+    files' are different claims a badge must not merge.
 
     None is NOT 'nothing ran'. It is 'nothing could have run', which is the
     sentence `No gate configured` says and the one `No evidence` does not.
     """
-    if task is not None:
-        tests = task.get("tests")
-        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
-        if any(isinstance(e, str) and e.strip() for e in entries):
-            return "task"
-    if any(isinstance(e, str) and e.strip()
-           for e in (phase.get("testGate") or [])):
-        return "phase"
-    return None
+    entries, source = _mio.gate_entries(phase, task)
+    return source if entries else None
 
 
 # The positional columns of one evidence fact row, and of one step inside it. The

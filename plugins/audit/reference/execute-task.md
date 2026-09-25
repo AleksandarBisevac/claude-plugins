@@ -391,22 +391,33 @@ not need to.
         It stages the task's own `files`, the phase's manifest file, the journal and the evidence,
         commits them with an explicit pathspec, and **names any staged path outside that list
         instead of sweeping it in**. Read the exit code: **0** it committed (the SHA is printed) or
-        there was nothing to commit and it said which; **1** git refused, the index already held
-        paths this commit may not carry, each one named — unstage them, or declare them with
-        `/audit:task scope` — a declared file git ignores was named (`ignored; -f is yours to
-        decide`: the script never forces one in), or the task's verdict refused the commit;
-        **2** the manifest will not load, there is no such task, or an override carries no reason.
+        there was nothing to commit and it said which; **1** git refused (a commit hook, or a
+        partial commit git will not make during a merge), the index already held paths this commit
+        may not carry, each one named — unstage them, or declare them with `/audit:task scope`,
+        which widens the scope and so means **recording the gate again** before this commit — a
+        declared file git ignores was named (`ignored; -f is yours to decide`: the script never
+        forces one in), a record path git ignores was named (un-ignore it), the index could not be
+        read to be put back, or the task's verdict refused the commit; **2** the manifest will not
+        load, there is no such task, or an override carries no reason.
 
         **The commit is bound to the gate you recorded above, and the script enforces it.** It
         reads the task's newest evidence row — the rows carrying its task id, so a task measured
         by its phase's gate under `--task` counts and a sign-off run does not — and refuses unless
-        that row is `passed` and its `testedState.scopeDigest` still matches the declared files it
-        is about to commit. So the order of this step is load-bearing: record the gate, then
-        commit, and **any edit to a declared file after the gate means recording it again** — the
-        refusal names the run, the two digests and the command to run. A verdict the recorder
-        repeated rather than re-measured is graded against the run it names. A task nothing can
-        measure — its own `tests.gate` and its phase's `testGate` both empty — gets no row from
-        the recorder, so it commits and the output says it is bound to no verdict.
+        that row is `passed`, was measured under the gate the task declares now (the row's steps
+        against `tests.gate`, or the phase's), and its `testedState.scopeDigest` still matches the
+        declared files it is about to commit. So the order of this step is load-bearing: record
+        the gate, then commit, and **any edit to a declared file, any change to the declared
+        scope and any change to the gate after the gate ran means recording it again** — the
+        refusal names the run, says whether the declared LIST or the files' CONTENTS moved, and
+        gives the command to run. The digest is taken the same way on both sides: a `:line-range`
+        entry is hashed as its file, a directory as the files git lists under it, and the paths
+        the recorder itself writes (the manifest, its shards, the ledger, the trail) are left
+        out. A verdict the recorder repeated rather than re-measured is graded against the run it
+        names. A ledger line that will not parse refuses unless it names another task's id, and
+        the refusal names the file and line (`audit-journal.py verify` shows it). A task nothing
+        can measure — its own `tests.gate` and its phase's `testGate` both empty — commits and
+        the output says it is bound to no verdict, unless its newest recorded verdict is a red
+        one: emptying a gate does not retire it.
         `--override-verdict "<reason>"` commits over a refusal and writes an
         `audit.task.verdict-overridden` journal row naming the commit, the run and the reason; it
         is refused while `journal.enabled` is false. An override is a human's call, like the risk
@@ -427,10 +438,14 @@ not need to.
         git root, or one that is neither in the working tree, the index nor HEAD (the red-first
         case a task names before writing it), is **reported and passed over** rather than failing
         the commit; a declared path only HEAD still holds — the source of a staged `git mv`, or a
-        staged `git rm` — is committed as the rename or deletion it is; a tracked file under a
-        gitignored directory is staged as the tracked file it is; the manifest **index** is
-        refused with a sentence of its own; the staged list is read back after staging as well as
-        before it; and any refusal after staging puts the git index back exactly as it was found.
+        staged `git rm` — is committed as the rename or deletion it is, and so is a file taken out
+        of the index with `git rm --cached` and then ignored; a tracked file under a gitignored
+        directory is staged as the tracked file it is; a conflict resolved in the working tree is
+        resolved by the staging, as plain `git add` would; the manifest **index** is refused with a
+        sentence of its own; the staged list is read back after staging as well as before it; and
+        any refusal after staging puts the allowed paths' index entries back as they were found —
+        an entry you had staged at its own bytes, a conflict's stages and an intent-to-add path
+        included.
         `verify-invariants.py`'s `commit-scope` re-derives the same allow-list from git
         afterwards, so these commits are graded by something that did not make them.
 

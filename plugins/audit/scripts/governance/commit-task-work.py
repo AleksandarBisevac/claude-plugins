@@ -20,8 +20,9 @@ carries the shared index and nothing else; this one carries the WORK. Each
 derives its own allow-list and none of them shares a builder, because a shared
 builder taking a flag would be one function holding three safety properties -
 the shape in which a widened list stops being noticed. What they do share is
-`_scoped_commit`: the staging discipline, the two index reads and the answer
-shape, so no two of them can disagree about what "refused" means.
+`_scoped_commit`: how each path is staged, the two index reads, the pathspec'd
+commit, putting the index back on a refusal, and the answer shape, so no two of
+them can disagree about what "refused" means.
 
 WHAT IT STAGES. Exactly the four things step 4c allows, each named in the output:
 the task's own `files`, the phase's manifest file (the shard when sharded), the
@@ -40,42 +41,38 @@ against the same allow-list before anything is committed. A path outside the lis
 is NAMED in the refusal: "something is staged that should not be" sends a reader
 to find it, and finding it is the step that gets skipped.
 
-EACH PATH IS STAGED BY WHAT GIT HOLDS FOR IT, because one `git add -- <path>...`
-over the whole list is wrong three ways (measured on git 2.50.1):
+EACH PATH IS STAGED BY WHAT GIT HOLDS FOR IT - `_scoped_commit.classify`, whose
+comment block says what each kind is staged with and why a single `git add --
+<path>...` is wrong for it. The consequences a caller sees: the source of a staged
+`git mv` or `git rm` is committed as the rename or deletion it is; a tracked file
+under a gitignored directory is staged as the tracked file it is; an untracked
+declared file git ignores is refused by name before anything is staged, `-f`
+being the operator's decision; and a file taken out of the index with `git rm
+--cached` and then ignored is committed as the deletion the operator made. A
+declared path git holds nowhere - the case the red-first workflow names before
+writing it - is reported and passed over.
 
-  * a path in the INDEX is staged with `git add -u --`. `git add --` naming a
-    tracked file under a gitignored directory exits 1 AND stages it, so the
-    plain call reports a refusal over an index it has already changed;
-  * a path on disk and NOT in the index is staged with `git add --`, and the
-    ignore rule is honoured for exactly these: one git ignores is refused before
-    anything is staged, by name, and `-f` is never passed - forcing past an
-    ignore rule is the operator's decision;
-  * a path in HEAD ALONE - the source of a staged `git mv`, or a staged `git rm`
-    - is in neither call, because both fail 128 on it, and it stays in the
-    commit's pathspec, which is what records the rename (`R100`) or the
-    deletion. Skipping it would commit the new name beside the old one: a copy.
-
-A declared path in none of the three - the case the red-first workflow names
-before writing it - is reported and passed over, since a pathspec matching
-nothing fails the whole staging call.
-
-A REFUSAL LEAVES THE INDEX AS IT WAS FOUND, AND AFTER STAGING THAT TAKES WORK.
-Every refusal reached before staging touches nothing. For the ones after it - git
-refusing the staging call, a path arriving through it, a commit a hook refuses -
-the index is written to a tree first (`git write-tree`) and the allowed paths are
-reset to that tree (`git reset <tree> -- <paths>`), which restores an entry the
-operator had staged at its own bytes rather than merely unstaging it.
+A REFUSAL LEAVES THE INDEX AS IT WAS FOUND. Every refusal reached before staging
+touches nothing; every one after it puts the allowed paths' index entries back
+from a snapshot (`_scoped_commit.snapshot`), including an entry the operator had
+staged at its own bytes, a conflict's stages and an intent-to-add path.
 
 BOUND TO THE VERDICT IT WAS MEASURED UNDER. `reference/execute-task.md` records
 the task's gate (`run-test-gate.py --task <id> --record`) before this commit, and
 the row it writes carries `testedState.scopeDigest` - `_tree_stamp`'s digest of
-the declared files as the gate read them. So this refuses unless the task's
-NEWEST row is `passed` and that digest still matches the declared files it is
-about to commit. HEAD and the dirty-path digest are deliberately not compared:
-a sibling task committing between this task's gate and its commit moves both, and
-that is the ordinary parallel run rather than stale work. A task nothing can
-measure - its own `tests.gate` and its phase's `testGate` both empty - gets no row
-from the recorder at all, so it commits and says it is bound to no verdict.
+the declared files as the gate read them - and `scopeListDigest`, the digest of
+the declared list itself. So this refuses unless the task's NEWEST row is
+`passed`, was measured under the gate the task declares now, and its digest
+still matches the declared files it is about to commit; a changed LIST is told
+apart from changed CONTENT in the refusal. Both sides compute the digest through
+`_tree_stamp.scope_digest` over the same normalised scope with the same record
+paths left out, so a `:line-range` entry, a directory entry and a task that
+declares its own manifest file are all compared on the bytes they name. HEAD and
+the dirty-path digest are deliberately not compared: a sibling task committing
+between this task's gate and its commit moves both, and that is the ordinary
+parallel run rather than stale work. A task nothing can measure - its own
+`tests.gate` and its phase's `testGate` both empty - commits and says it is
+bound to no verdict, unless its newest recorded verdict is a red one.
 `--override-verdict <reason>` commits anyway and leaves a journal row naming the
 run it went over and the reason; it is refused while the journal is off, because
 an override recorded nowhere is a gate quietly removed.
@@ -97,8 +94,9 @@ Usage:
 Exit codes:
   0  it ran - it committed, or there was nothing to commit and it said which
   1  it could not - git refused, the git index already held paths this commit
-     may not carry (each one named), a declared file is ignored, or the task's
-     newest gate verdict is not `passed` on the work being committed
+     may not carry (each one named), a declared file or a record path is
+     ignored, the index could not be read to be put back, or the task's newest
+     gate verdict does not bind the work being committed
   2  usage error - the manifest will not load, there is no such task, or an
      override carries no reason
 
@@ -116,6 +114,7 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -202,26 +201,14 @@ NOTHING_UNCOMMITTED = ("nothing uncommitted: this task's files and the records "
 NOTHING_TO_STAGE = ("there is nothing this commit may carry - the lines above "
                     "say which way each entry went missing. Nothing was staged.")
 
-# What git holds for one allowed path, which decides how it is staged: `git add
-# -u` for an index entry, `git add` for a path only on disk, neither for a path
-# only in HEAD (the commit's pathspec records it), and a refusal for a path on
-# disk that git ignores.
-IN_INDEX = "index"
-ON_DISK = "disk"
-HEAD_ONLY = "head"
-IGNORED = "ignored"
-
 # The words an ignored declared path is named with. Ends the sentence rather than
 # opening it so the path comes first; the decision it hands back is the whole
 # content - `-f` is never passed here.
 IGNORED_HINT = "ignored; -f is yours to decide"
 
-# What a refusal after staging says when the index was put back, and the other
-# sentence when it could not be. Different repairs: one leaves nothing to undo,
-# the other names what is still staged.
-INDEX_RESTORED = "the git index was put back exactly as it was found"
-INDEX_NOT_RESTORED = ("and the git index could NOT be put back (%s), so what "
-                      "this command staged is still staged: %s")
+# Shared with the other scoped commits, re-exported so a reader of this command's
+# output finds the sentence it printed here.
+INDEX_RESTORED = _scoped_commit.INDEX_RESTORED
 
 # The trail's word for a commit made over a verdict that would have refused it.
 # Local for `ACTION_TASK_COMMITTED`'s reason: nothing outside this file reads it.
@@ -233,119 +220,33 @@ VERDICT_PASSED = "passed"
 # A task with nothing to measure it. Said on every such commit, because a silent
 # commit here reads exactly like one a green gate stood behind.
 NO_GATE = ("no gate measures this task - neither its own `tests.gate` nor its "
-           "phase's `testGate` declares an entry, so the recorder writes no "
-           "verdict for it and this commit is bound to none; sign-off rests on "
-           "review alone")
+           "phase's `testGate` declares an entry, so this commit is bound to no "
+           "verdict; sign-off rests on review alone")
+
+# The command that shows an unreadable ledger line for what it is.
+VERIFY_COMMAND = "audit-journal.py verify"
+
+# A `taskId` value spelled out WHOLE on a line - its closing quote included - is
+# proof of whose row the line was even when the rest of it will not parse.
+_TASK_ID_VALUE = re.compile(r'"taskId"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
 
 # --- what this commit may carry -----------------------------------------------
-def _named(git_root, args, paths, nul=True):
-    """The paths git prints for `args -- paths`, or None when git will not say.
-
-    NUL-separated (`-z`) where the command allows it, so a path git would
-    otherwise quote comes back verbatim; `check-ignore` takes `-z` only with
-    `--stdin`, so it is read by line, and a path it quotes then fails to match
-    and is left to `git add`, which applies the ignore rule itself. None rather
-    than an empty list for `_scoped_commit.foreign_staged`'s reason: "git named
-    nothing" is an answer and "git could not be asked" is not.
-    """
-    code, out, _err = _scoped_commit.run_git(
-        git_root, list(args) + (["-z"] if nul else []) + ["--"] + list(paths))
-    if code is None or code != 0:
-        return None
-    if not nul:
-        return _scoped_commit.lines(out)
-    return [f.replace("\\", "/") for f in out.split("\0") if f]
-
-
-def _covering(listed, paths):
-    """The subset of `paths` that is, or holds, an entry of `listed`.
-
-    A declared entry may be a DIRECTORY, and git lists what is inside it rather
-    than the directory itself, so equality alone would call a tracked directory
-    untracked.
-    """
-    return set(p for p in paths
-               if any(_invariants._under(entry, p) for entry in listed))
-
-
-def _in_head(git_root, paths):
-    """The subset of `paths` HEAD holds, or None when that is not established.
-
-    A repository with no commit yet has an unborn HEAD, and there `ls-tree`
-    fails; that is an answer - nothing is in HEAD - rather than an unknown, so
-    it is asked for separately instead of being folded into the failure arm.
-    """
-    listed = _named(git_root, ["ls-tree", "-r", "--name-only", "HEAD"], paths)
-    if listed is not None:
-        return _covering(listed, paths)
-    code, _out, _err = _scoped_commit.run_git(
-        git_root, ["rev-parse", "--verify", "-q", "HEAD"])
-    return set() if code == 1 else None
-
-
-def classify(git_root, entries):
-    """`{rel: kind}` for `(rel, on_disk)` pairs; a path git holds nowhere is absent.
-
-    The kinds are `IN_INDEX`, `ON_DISK`, `HEAD_ONLY` and `IGNORED`, and the module
-    docstring says what each is staged with. An EXACT index entry is `IN_INDEX`;
-    a path on disk that is not one - an untracked file, or a directory - is
-    `ON_DISK` unless git ignores it. A path not on disk is `IN_INDEX` when the
-    index still holds it (an unstaged deletion) and `HEAD_ONLY` when only HEAD
-    does.
-
-    EVERY UNCERTAIN ANSWER IS THE ONE THAT SKIPS NOTHING, which is the loud
-    direction: an index git will not list reads as holding everything, so the
-    staging call below fails and says why; a HEAD it will not list keeps an
-    absent path in the pathspec, where the commit refuses a path git does not
-    know; an ignore check it will not answer leaves the path to `git add`, which
-    applies the rule itself. The other direction drops a path and commits a
-    subset of the work while reporting success.
-    """
-    rels = [rel for rel, _on_disk in entries]
-    if not rels:
-        return {}
-    index = _named(git_root, ["ls-files"], rels)
-    exact = set(rels) if index is None else set(index)
-    held = set(rels) if index is None else _covering(index, rels)
-    kinds, loose, absent = {}, [], []
-    for rel, on_disk in entries:
-        if on_disk:
-            if rel in exact:
-                kinds[rel] = IN_INDEX
-            else:
-                loose.append(rel)
-        elif rel in held:
-            kinds[rel] = IN_INDEX
-        else:
-            absent.append(rel)
-    if loose:
-        ignored = _named(git_root, ["check-ignore"], loose,
-                         nul=False) or []
-        for rel in loose:
-            kinds[rel] = IGNORED if rel in ignored else ON_DISK
-    if absent:
-        head = _in_head(git_root, absent)
-        for rel in absent:
-            if head is None or rel in head:
-                kinds[rel] = HEAD_ONLY
-    return kinds
-
-
 def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                   config=None):
-    """`{"paths", "declared", "kinds", "ignored", "skipped", "indexRel"}` - the
-    allow-list, resolved.
+    """The allow-list, resolved: `{"paths", "declared", "kinds", "ignored",
+    "ignoredRecords", "skipped", "indexRel"}`.
 
     `paths` are git-root-relative and are the ONLY thing anything downstream may
     stage or commit; `declared` is the subset that came from the task's own
     `files`, kept apart so the refusal can say which half of the list a path
-    failed against; `kinds` is `classify`'s answer for each of `paths`, which is
-    how each is staged; `ignored` holds the declared paths git ignores, kept out
-    of `paths` because nothing may stage them; `skipped` carries one sentence per
-    entry that could not be reached; `indexRel` is the manifest index, carried so
-    the refusal can name it as the specific mistake it is rather than as one more
-    stray path.
+    failed against; `kinds` is `_scoped_commit.classify`'s answer for each of
+    `paths`, which is how each is staged; `ignored` and `ignoredRecords` hold the
+    declared paths and the record paths git ignores, kept out of `paths` because
+    nothing may stage them and apart from each other because their repairs
+    differ; `skipped` carries one sentence per entry that could not be reached;
+    `indexRel` is the manifest index, carried so the refusal can name it as the
+    specific mistake it is rather than as one more stray path.
 
     THE LIST IS THE SAFETY PROPERTY, exactly as it is in the other two scoped
     commits. Nothing downstream widens it - the staging calls take these paths and
@@ -395,9 +296,9 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     # ONE CLASSIFICATION FOR THE WHOLE LIST, asked of git in a fixed number of
     # calls rather than one per path, so a task declaring many files does not pay
     # a process apiece.
-    kinds = classify(git_root, [(rel, on_disk)
-                                for rel, _name, on_disk, _mine in candidates])
-    paths, declared, ignored = [], [], []
+    kinds = _scoped_commit.classify(
+        git_root, [(rel, on_disk) for rel, _name, on_disk, _mine in candidates])
+    paths, declared, ignored, ignored_records = [], [], [], []
     for rel, name, _on_disk, mine in candidates:
         kind = kinds.get(rel)
         if kind is None:
@@ -405,8 +306,11 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                            "git, so there is nothing of it to commit yet"
                            % (DECLARED_LABEL, name))
             continue
-        if kind == IGNORED:
-            ignored.append(rel)
+        if kind == _scoped_commit.IGNORED:
+            if mine:
+                ignored.append(rel)
+            else:
+                ignored_records.append((name, rel))
             continue
         paths.append(rel)
         if mine:
@@ -422,7 +326,8 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
         index_rel = None
     return {"paths": paths, "declared": declared,
             "kinds": dict((rel, kinds[rel]) for rel in paths),
-            "ignored": ignored, "skipped": skipped, "indexRel": index_rel}
+            "ignored": ignored, "ignoredRecords": ignored_records,
+            "skipped": skipped, "indexRel": index_rel}
 
 
 def foreign_refusal(foreign, targets):
@@ -450,17 +355,35 @@ def foreign_refusal(foreign, targets):
             "file, the journal and the evidence - and refuses rather than "
             "sweeping anything else in. Unstage them, or declare them on the "
             "task with `/audit:task scope <taskId> --files ...` if they really "
-            "are its work" % (", ".join(foreign),))
+            "are its work - and a widened scope is a new declared scope, so "
+            "record the gate again before committing" % (", ".join(foreign),))
 
 
-def ignored_refusal(ignored):
-    """The sentence an ignored path in the allow-list earns, naming each, or None."""
-    if not ignored:
+def ignored_refusal(ignored, ignored_records):
+    """The sentence the ignored paths in the allow-list earn, naming each, or None.
+
+    A DECLARED path and a RECORD path are worded apart because the repairs are
+    opposite: a declared file may simply not be the task's work, while a record
+    this commit is required to carry cannot be dropped - it has to be
+    un-ignored.
+    """
+    parts = []
+    if ignored:
+        parts.append("%s - %s. A path git ignores is staged only with `git add "
+                     "-f`, and this command never passes it; add it yourself if "
+                     "it really is this task's work, or drop it from the task's "
+                     "`files`" % (", ".join(ignored), IGNORED_HINT))
+    if ignored_records:
+        parts.append("%s - git ignores it, and it is a record this commit is "
+                     "required to carry, so dropping it is not the repair: "
+                     "remove the `.gitignore` rule that matches it (`git "
+                     "check-ignore -v %s` names the rule)"
+                     % ("; ".join("%s (%s)" % (label, rel)
+                                  for label, rel in ignored_records),
+                        ignored_records[0][1]))
+    if not parts:
         return None
-    return ("%s - %s. A path git ignores is staged only with `git add -f`, and "
-            "this command never passes it; add it yourself if it really is this "
-            "task's work, or drop it from the task's `files`. Nothing was staged"
-            % (", ".join(ignored), IGNORED_HINT))
+    return "%s. Nothing was staged" % (". ".join(parts),)
 
 
 # --- the verdict the work was measured under ------------------------------------
@@ -479,93 +402,220 @@ def _newest(rows):
     return best
 
 
-def verdict_binding(manifest_path, phase, task, project, config=None):
-    """`{"state", "sentence", "row"}` - whether the task's newest verdict binds
-    this commit.
+def unreadable_lines(project, task_id, config=None):
+    """`(blocking, excused)` - the ledger lines that will not parse, as
+    `"<file>:<line>"`, split by whether they could be this task's row.
 
-    `state` is `"bound"` (a `passed` row whose declared-work digest matches the
-    declared files now), `"no-gate"` (nothing declares a gate, so no row can
-    exist) or `"refused"`; `sentence` says which, naming the run; `row` is the
-    newest row for the task when there is one, so an override can name it.
+    A LINE IS EXCUSED ONLY WHEN IT PROVES WHOSE IT IS: a whole `taskId` value
+    naming another task. Everything else might be this task's newest verdict -
+    a torn line can end before its `taskId`, and a phase row carries none - so
+    it blocks. One torn row elsewhere in the project therefore no longer refuses
+    every task commit in it, and a line that could be this task's still does.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    blocking, excused = [], []
+    for path in _evidence_io.ledger_files(project, config):
+        where = _journal_io.repo_relative_or_token(project, path)
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except Exception:
+            blocking.append("%s (unreadable)" % (where,))
+            continue
+        raw = text.splitlines()
+        parsed, torn = _journal_io.rows_from_text(text)
+        numbers = [r.get("_line") for r in parsed if r.get("_unparseable")]
+        if torn:
+            numbers.append(len(raw))
+        for number in numbers:
+            line = raw[number - 1] if number and number <= len(raw) else ""
+            found = _TASK_ID_VALUE.search(line)
+            label = "%s:%s" % (where, number)
+            if found and found.group(1) != str(task_id):
+                excused.append(label)
+            else:
+                blocking.append(label)
+    return blocking, excused
+
+
+def _gate_mismatch(measured, entries, source):
+    """The sentence a verdict measured under a different gate earns, or None.
+
+    THE ROW'S STEPS ARE ITS GATE: `run-test-gate` runs every declared entry in
+    order and records one step per entry under the entry's name, so the names in
+    order are the declaration it was measured under. A row that dropped steps for
+    length is compared on the steps it kept. `gateSource` is compared too when
+    the row has one: the same names measured as a task gate and as its phase's
+    fallback are different claims.
+    """
+    recorded = [str(s.get("name")) for s in (measured.get("steps") or [])
+                if isinstance(s, dict)]
+    now = list(entries)
+    if measured.get("stepsDropped"):
+        now = now[:len(recorded)]
+    was_source = measured.get("gateSource")
+    if recorded == now and (was_source is None or was_source == source):
+        return None
+    return ("it was measured under the gate [%s]%s, and the task declares "
+            "[%s] (%s gate) now - a verdict about a different gate is not this "
+            "gate's verdict"
+            % (", ".join(recorded),
+               " (%s gate)" % (was_source,) if was_source else "",
+               ", ".join(entries), source))
+
+
+def verdict_binding(manifest_path, phase, task, project, config=None):
+    """`{"state", "sentence", "row", "notes"}` - whether the task's newest verdict
+    binds this commit.
+
+    `state` is `"bound"` (a `passed` row measured under the gate declared now,
+    whose declared-work digest matches the declared files now), `"no-gate"`
+    (nothing declares a gate, and no red verdict is recorded) or `"refused"`;
+    `sentence` says which, naming the run; `row` is the newest row for the task
+    when there is one, so an override can name it; `notes` are ledger lines that
+    will not parse and were passed over, said rather than absorbed.
 
     THE TASK'S ROWS ARE THE ONES CARRYING ITS ID, whatever their `scope`. A task
     with no gate of its own is measured by its phase's under `--task`, and that
     row reads `scope: phase` beside the task id; a sign-off run carries no task
     id and is not this task's verdict. `_evidence_io._same_subject` is that rule.
 
+    THE LEDGER IS READ BEFORE THE GATE IS: a task whose gate was emptied after it
+    went red still has that red as its newest verdict, and "nothing measures
+    this task" would be false while it sits there.
+
     A REPEATED VERDICT IS GRADED AGAINST THE RUN THAT MEASURED IT. A row the
     recorder repeated carries no `testedState` of its own and names its source
     in `reusedFrom`; the repeat was only made because the tree's content matched
     that run's, so the source's digest is the one that describes these bytes.
-
-    AN UNREADABLE LEDGER LINE REFUSES, because it may be the newest row: a
-    verdict read around a line that could not be read is not the newest verdict.
     """
     config = _journal_io.load_config(project) if config is None else config
-    entries, _source = _mio.gate_entries(phase, task)
+    entries, source = _mio.gate_entries(phase, task)
     task_id, phase_id = str(task.get("id")), str(phase.get("id"))
-    if not entries:
-        return {"state": "no-gate", "sentence": NO_GATE, "row": None}
     record = ("run `run-test-gate.py %s %s --task %s --record` on the work, then "
               "commit" % (manifest_path, phase_id, task_id))
+    blocking, excused = unreadable_lines(project, task_id, config)
+    notes = []
+    if excused:
+        notes.append("%d evidence ledger line(s) will not parse and each names "
+                     "another task, so they were passed over: %s (`%s` shows "
+                     "them)" % (len(excused), _output.some_of(excused),
+                                VERIFY_COMMAND))
+    if blocking:
+        return {"state": "refused", "row": None, "notes": notes, "sentence": (
+            "the evidence ledger holds line(s) that will not parse and could be "
+            "%s's newest verdict - %s - so the verdict this commit stands under "
+            "is not established. `%s` shows each; repair or remove it, then "
+            "commit" % (task_id, ", ".join(blocking), VERIFY_COMMAND))}
     ledger = _evidence_io.read_rows(project, config)
-    if ledger["unreadable"]:
-        return {"state": "refused", "row": None, "sentence": (
-            "%d line(s) of the evidence ledger could not be read, and one of "
-            "them may be %s's newest verdict, so the verdict this commit stands "
-            "under is not established" % (ledger["unreadable"], task_id))}
     ids = {"taskId": task_id, "phaseId": phase_id}
     rows = [r for r in ledger["rows"]
             if isinstance(r, dict) and _evidence_io._same_subject(r, ids)]
     newest = _newest(rows)
+    run = ("run %s at %s" % (newest.get("runId"), newest.get("ts"))
+           if newest else "")
+    if not entries:
+        if newest is not None and newest.get("status") != VERDICT_PASSED:
+            return {"state": "refused", "row": newest, "notes": notes,
+                    "sentence": (
+                        "%s declares no gate now, and its newest recorded "
+                        "verdict is `%s` (%s) - emptying a gate does not "
+                        "retire the red it last answered. Record a green on "
+                        "a gate, or commit over it with a reason"
+                        % (task_id, newest.get("status"), run))}
+        sentence = NO_GATE
+        if newest is not None:
+            sentence = "%s (the newest verdict recorded for it is %s, `%s`)" % (
+                NO_GATE, run, VERDICT_PASSED)
+        return {"state": "no-gate", "sentence": sentence, "row": newest,
+                "notes": notes}
     if newest is None:
-        return {"state": "refused", "row": None, "sentence": (
+        return {"state": "refused", "row": None, "notes": notes, "sentence": (
             "no gate verdict is recorded for %s, and its gate declares entries "
             "- %s" % (task_id, record))}
-    run = "run %s at %s" % (newest.get("runId"), newest.get("ts"))
     if newest.get("status") != VERDICT_PASSED:
-        return {"state": "refused", "row": newest, "sentence": (
+        return {"state": "refused", "row": newest, "notes": notes, "sentence": (
             "%s's newest gate verdict is `%s` (%s), and a task commit is bound "
             "to `%s` - the gate is what decides the task is done. Fix the work "
             "and %s" % (task_id, newest.get("status"), run, VERDICT_PASSED,
                         record))}
     measured = newest
     if newest.get(_evidence_io.VERDICT_SOURCE) == _evidence_io.REUSED:
-        source = (newest.get("reusedFrom") or {}).get("runId")
+        origin = (newest.get("reusedFrom") or {}).get("runId")
         found = [r for r in ledger["rows"]
-                 if isinstance(r, dict) and source and r.get("runId") == source]
+                 if isinstance(r, dict) and origin and r.get("runId") == origin]
         measured = found[-1] if found else None
         if measured is None:
-            return {"state": "refused", "row": newest, "sentence": (
-                "%s's newest verdict (%s) repeats run %s, which is not in the "
-                "ledger, so the tree it was measured on is not established - %s"
-                % (task_id, run, source, record))}
+            return {"state": "refused", "row": newest, "notes": notes,
+                    "sentence": (
+                        "%s's newest verdict (%s) repeats run %s, which is not "
+                        "in the ledger, so the tree it was measured on is not "
+                        "established - %s" % (task_id, run, origin, record))}
+    mismatch = _gate_mismatch(measured, entries, source)
+    if mismatch:
+        return {"state": "refused", "row": newest, "notes": notes, "sentence": (
+            "%s's newest verdict is `%s` (%s), but %s; %s"
+            % (task_id, VERDICT_PASSED, run, mismatch, record))}
+    return _digest_binding(manifest_path, task, project, config, newest,
+                           measured, run, record, notes)
+
+
+def _digest_binding(manifest_path, task, project, config, newest, measured, run,
+                    record, notes):
+    """The declared-work half of `verdict_binding`: the row's digest against now.
+
+    The record paths are left out on this side exactly as the recorder left
+    them out (`_evidence_io.recorded_paths`), which is what lets a task declare
+    its own manifest file and still be graded on the rest of its work.
+    """
+    task_id = str(task.get("id"))
+    excluded, _dropped = _evidence_io.recorded_paths(project, manifest_path,
+                                                     config)
     owns = list(task.get("files") or [])
-    was = (measured.get("testedState") or {}).get("scopeDigest")
-    now, basis = _tree_stamp.scope_digest(project, owns)
+    state = measured.get("testedState") or {}
+    was = state.get("scopeDigest")
+    now, basis = _tree_stamp.scope_digest(project, owns, excluded=excluded)
+    list_now = _tree_stamp.scope_list_digest(owns, excluded=excluded)
     field = _tree_stamp.field_state("scopeDigest", was, now,
-                                    bool(_tree_stamp.declared_scope(owns)))
+                                    list_now is not None)
+    out = {"state": "refused", "row": newest, "notes": notes}
     if field == _tree_stamp.MOVED:
-        return {"state": "refused", "row": newest, "sentence": (
-            "%s's newest verdict is `%s` (%s), but the declared files have "
-            "changed since it was measured - scopeDigest was %s and is %s now "
-            "(%s). The green is about bytes this commit would not carry; %s"
-            % (task_id, VERDICT_PASSED, run, was, now, basis, record))}
+        list_was = state.get("scopeListDigest")
+        if list_was is not None and list_was != list_now:
+            what = ("the task's declared file LIST has changed since it was "
+                    "measured - a scope change is a change to what the gate "
+                    "covered, so the gate owes a new run on the new scope")
+        elif list_was is not None:
+            what = ("the declared files' CONTENTS have changed since it was "
+                    "measured")
+        else:
+            what = ("the declared files, or the list of them, have changed "
+                    "since it was measured (the row predates the list digest, "
+                    "so which is not recorded)")
+        out["sentence"] = ("%s's newest verdict is `%s` (%s), but %s - "
+                           "scopeDigest was %s and is %s now (%s); %s"
+                           % (task_id, VERDICT_PASSED, run, what, was, now,
+                              basis, record))
+        return out
     if field == _tree_stamp.UNANSWERABLE:
-        return {"state": "refused", "row": newest, "sentence": (
-            "%s's newest verdict is `%s` (%s), and whether it was measured on "
-            "the declared files as they stand is not established - scopeDigest "
-            "was %s and is %s now (%s); %s"
-            % (task_id, VERDICT_PASSED, run, was, now, basis, record))}
+        out["sentence"] = ("%s's newest verdict is `%s` (%s), and whether it was "
+                           "measured on the declared files as they stand is not "
+                           "established - scopeDigest was %s and is %s now "
+                           "(%s); %s" % (task_id, VERDICT_PASSED, run, was, now,
+                                         basis, record))
+        return out
+    out["state"] = "bound"
     if field == _tree_stamp.NOT_DECLARED:
-        return {"state": "bound", "row": newest, "sentence": (
-            "bound to %s (`%s`); the task declares no files, so the verdict word "
-            "is bound and no declared-work digest could be" % (run,
-                                                                VERDICT_PASSED))}
-    return {"state": "bound", "row": newest, "sentence": (
-        "bound to %s (`%s`) - the declared-work digest it recorded matches the "
-        "declared files being committed. %s" % (run, VERDICT_PASSED,
-                                                _tree_stamp.SCOPE_LIMIT))}
+        out["sentence"] = ("bound to %s (`%s`); the task declares no files the "
+                           "recorder does not write itself, so the verdict word "
+                           "is bound and no declared-work digest could be"
+                           % (run, VERDICT_PASSED))
+        return out
+    out["sentence"] = ("bound to %s (`%s`) - measured under the gate declared "
+                       "now, and the declared-work digest it recorded matches "
+                       "the declared files being committed. %s"
+                       % (run, VERDICT_PASSED, _tree_stamp.SCOPE_LIMIT))
+    return out
 
 
 def override_row(project, task_id, phase_id, sha, verdict, reason, config=None):
@@ -589,48 +639,6 @@ def override_row(project, task_id, phase_id, sha, verdict, reason, config=None):
                    % (task_id, sha[:12], verdict.get("sentence")),
         "details": details,
     }, config=config)
-
-
-# --- putting the index back ---------------------------------------------------
-def index_snapshot(git_root):
-    """`(tree, why)` - the git index written as a tree, so it can be restored.
-
-    Taken before the first staging call. `write-tree` refuses an index with
-    unmerged entries, and then nothing is staged at all: a staging this command
-    could not undo is not one it may start.
-    """
-    code, out, err = _scoped_commit.run_git(git_root, ["write-tree"])
-    if code is None or code != 0 or not out.strip():
-        return None, ("git would not write the index as a tree (%s), so a "
-                      "failed staging could not be undone - nothing was staged"
-                      % ((err or out).strip()[:200],))
-    return out.strip(), ""
-
-
-def restore_index(git_root, tree, paths):
-    """`""` when every path in `paths` is back at its `tree` entry, else why not.
-
-    `git reset <tree> -- <paths>` and not a plain unstage: an entry the operator
-    had staged before this ran - an edit at bytes older than the working tree's,
-    a `git mv` - is put back at those bytes, and a path this command added is
-    removed again. Only the allowed paths are named, so whatever anybody else
-    staged meanwhile is left alone.
-    """
-    code, out, err = _scoped_commit.run_git(git_root,
-                                            ["reset", "-q", tree, "--"]
-                                            + list(paths))
-    if code is None or code != 0:
-        return (err or out).strip()[:200] or "git reset exited %r" % (code,)
-    return ""
-
-
-def after_staging(git_root, tree, paths, skipped, refused, staged=None):
-    """The answer for a failure after staging: the index restored, and saying so."""
-    why = restore_index(git_root, tree, paths)
-    tail = INDEX_RESTORED if not why else INDEX_NOT_RESTORED % (
-        why, ", ".join(paths))
-    return E_FAIL, _scoped_commit.answer(skipped, staged=staged,
-                                         refused="%s - %s" % (refused, tail))
 
 
 # --- the commit ---------------------------------------------------------------
@@ -710,30 +718,10 @@ def build_parser():
     parser.add_argument("--override-verdict", default=None, dest="override",
                         metavar="REASON",
                         help="commit even though the task's newest gate verdict "
-                             "is not `passed` on this work; the reason is "
-                             "written to the journal with the commit")
+                             "does not bind this work; the reason is written to "
+                             "the journal with the commit")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
-
-
-def _stage(git_root, targets):
-    """`""` when every allowed path was staged by the call its kind needs, else
-    git's own words.
-
-    Two calls at most, `git add -u` for index entries and `git add` for paths
-    only on disk; a `HEAD_ONLY` path is in neither and reaches the commit through
-    its pathspec alone. The module docstring says why each.
-    """
-    kinds = targets["kinds"]
-    for argv, kind in ((["add", "-u", "--"], IN_INDEX), (["add", "--"], ON_DISK)):
-        group = [rel for rel in targets["paths"] if kinds.get(rel) == kind]
-        if not group:
-            continue
-        code, out, err = _scoped_commit.run_git(git_root, argv + group)
-        if code is None or code != 0:
-            return "`git %s` refused (%s)" % (" ".join(argv[:-1]),
-                                              (err or out).strip()[:200])
-    return ""
 
 
 def commit_work(manifest, phase, task, manifest_path, project, git_root,
@@ -774,7 +762,7 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     # AHEAD OF BOTH DO-NOTHING ANSWERS: `git status` does not list an ignored
     # file, so an ignored declared file alone would otherwise read as "nothing
     # uncommitted" over work that is sitting right there.
-    refusal = ignored_refusal(targets["ignored"])
+    refusal = ignored_refusal(targets["ignored"], targets["ignoredRecords"])
     if refusal:
         return E_FAIL, _scoped_commit.answer(skipped, refused=refusal)
     if not allowed:
@@ -791,6 +779,7 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
 
     # THE VERDICT, still before staging: a refusal here has nothing to undo.
     verdict = verdict_binding(manifest_path, phase, task, project, config=config)
+    skipped = skipped + list(verdict.get("notes") or [])
     overriding = verdict["state"] == "refused" and override is not None
     if verdict["state"] == "refused" and not overriding:
         answer = _scoped_commit.answer(skipped, refused=(
@@ -809,68 +798,30 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     if verdict["state"] == "no-gate":
         skipped = skipped + [verdict["sentence"]]
 
-    tree, why = index_snapshot(git_root)
-    if why:
-        return E_FAIL, _scoped_commit.answer(skipped, refused=why)
-    why = _stage(git_root, targets)
-    if why:
-        return after_staging(git_root, tree, allowed, skipped,
-                             "git refused to stage the task's paths: %s"
-                             % (why,))
-
-    # AND THE GIT INDEX IS READ BACK, which is not belt and braces. The first pass
-    # judged an index this command had not touched; this one judges the index it is
-    # about to commit, and it is the only check that can see a path that arrived
-    # through the `git add` rather than past it - a declared entry that is a
-    # DIRECTORY is exactly such a path.
-    foreign, why = _scoped_commit.foreign_staged(git_root, allowed)
-    if why:
-        return after_staging(git_root, tree, allowed, skipped, why)
-    refusal = foreign_refusal(foreign, targets)
-    if refusal:
-        code, answer = after_staging(git_root, tree, allowed, skipped, refusal)
-        answer["foreign"] = list(foreign)
-        return code, answer
-    # `--no-renames` so the report names BOTH halves of a staged rename; with
-    # rename detection on, git lists the new name alone and the source a
-    # `HEAD_ONLY` path contributes would be missing from what is printed.
-    code, staged_out, staged_err = _scoped_commit.run_git(
-        git_root, ["diff", "--cached", "--name-only", "--no-renames"])
-    if code is None or code != 0:
-        return after_staging(git_root, tree, allowed, skipped,
-                             "git would not list the staged paths (%s)"
-                             % ((staged_err or staged_out).strip()[:200],))
-    staged = _scoped_commit.lines(staged_out)
-
-    argv_commit = ["commit"]
-    for paragraph in commit_message(task_id, subject, manifest):
-        argv_commit.extend(["-m", paragraph])
-    # AN EXPLICIT PATHSPEC, which is step 4c's own rule and is not redundant with
-    # the allow-list above: the git index does not arrive empty, and a bare
-    # `git commit` carries whatever else is in it even after both reads passed. It
-    # is also the only route a `HEAD_ONLY` path has into the commit.
-    argv_commit.extend(["--"] + allowed)
-    code, c_out, c_err = _scoped_commit.run_git(git_root, argv_commit)
-    if code is None or code != 0:
-        return after_staging(git_root, tree, allowed, skipped,
-                             "git refused the commit (%s)"
-                             % ((c_err or c_out).strip()[:200],), staged=staged)
-    code, head, head_err = _scoped_commit.run_git(git_root, ["rev-parse", "HEAD"])
-    sha = head.strip() if code == 0 else ""
+    done = _scoped_commit.stage_and_commit(
+        git_root, allowed, targets["kinds"],
+        commit_message(task_id, subject, manifest),
+        lambda paths: foreign_refusal(paths, targets))
+    if not done["committed"]:
+        answer = _scoped_commit.answer(skipped, staged=done["staged"],
+                                       foreign=done["foreign"],
+                                       refused=done["refused"])
+        answer["verdict"] = verdict
+        return E_FAIL, answer
+    sha = done["sha"]
     if not sha:
         # The commit exists and this process cannot name it. A failure rather than
         # a success with a blank field: `/audit:task done` needs the SHA, and a
         # caller told "committed" with nothing to pass it would close the task
         # against no commit at all.
         return E_FAIL, _scoped_commit.answer(
-            skipped, committed=True, staged=staged,
-            refused="the commit was made and git would not print its SHA (%s), "
-                    "so nothing can name it to `/audit:task done`"
-                    % ((head_err or "").strip()[:200],))
+            skipped, committed=True, staged=done["staged"],
+            refused="%s, so nothing can name it to `/audit:task done`"
+                    % (done["refused"],))
 
     journalled = bool(record_row(project, task_id, phase_id, sha, config=config))
     answer = _scoped_commit.answer(skipped, committed=True, commit=sha,
-                                   staged=staged, journalled=journalled)
+                                   staged=done["staged"], journalled=journalled)
     answer["verdict"] = verdict
     if not overriding:
         return E_OK, answer
@@ -879,9 +830,9 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
                     config=config):
         return E_OK, answer
     # THE COMMIT HAPPENED AND ITS OVERRIDE IS ON NO RECORD. Exit 1 with the SHA
-    # still reported, `rev-parse`'s arm above: the operator is owed the one fact
-    # the flag promised, and a success here would be a commit over a red verdict
-    # that nothing points at.
+    # still reported, the unnamed-SHA arm's reason: the operator is owed the one
+    # fact the flag promised, and a success here would be a commit over a red
+    # verdict that nothing points at.
     answer["refused"] = ("committed %s over the verdict that refused it, and the "
                          "journal row recording the override could NOT be "
                          "written - nothing in the trail says this commit went "

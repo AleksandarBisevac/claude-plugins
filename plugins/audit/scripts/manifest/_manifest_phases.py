@@ -193,19 +193,10 @@ def _check_review(phase, pwhere, warnings):
                    ", ".join(FINDING_SEVERITY)))
 
 
-def _gate_entries(value):
-    """A `testGate` / `tests.gate` value as the entries that will actually run.
-
-    ONE NORMALISATION FOR BOTH SIDES, because the only question asked of it is
-    whether two gates are the same gate. A non-list is [], a non-string entry is
-    dropped (nothing resolves it and nothing runs it), and a blank string is
-    dropped too — `["lint", ""]` and `["lint"]` order the same commands, so a
-    comparison that told them apart would be reading whitespace rather than
-    scope. Order is KEPT: gate entries run in the order they are written, and
-    two lists holding the same commands in a different order are two different
-    runs.
-    """
-    return [e for e in _safe_list(value) if isinstance(e, str) and e.strip()]
+# A `testGate` / `tests.gate` value as the entries that will actually run - the
+# one normalisation every reader of a gate uses, so the validator's "is this task's
+# gate its phase's gate verbatim" is asked of exactly what the runner would run.
+_gate_entries = _mio.declared_gate_entries
 
 
 def _check_area_tag(phase, pwhere, findings):

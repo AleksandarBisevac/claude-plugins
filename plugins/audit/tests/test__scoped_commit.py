@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-The cases for `_scoped_commit.py` — what two committing commands share.
+The cases for `_scoped_commit.py` — what the three committing commands share.
 
-WHAT THIS FILE IS ABOUT. `commit-audit-state.py` and `commit-manifest-index.py`
-each stage a fixed allow-list and refuse everything else, and the parts that
-decide "refuse" are here rather than in either of them. The suites beside those
-two commands prove each verb end to end; this one proves the shared parts in both
+WHAT THIS FILE IS ABOUT. `commit-audit-state.py`, `commit-manifest-index.py` and
+`commit-task-work.py` each stage a fixed allow-list and refuse everything else,
+and the parts that decide "refuse" - and how each path is staged, and how the
+index is put back - are here rather than in any of them. The suites beside those
+commands prove each verb end to end; this one proves the shared parts in both
 directions, because a helper that is only ever seen agreeing with its caller may
 be asserting nothing.
 
@@ -213,6 +214,76 @@ def _cases(check):
           "in the caller's half is not a cut to make in the command's: %r"
           % (M.fitted_header(outgrown, "a subject nobody will read"),),
           M.fitted_header(outgrown, "a subject nobody will read") == outgrown)
+    _staging_cases(check, tmp, outside)
+
+
+# --- how a path is staged, and putting the index back ------------------------
+def _unborn(tmp, name):
+    """A repository with no commit at all: HEAD names a branch that does not exist."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    _git(repo, "init", "-q")
+    return repo
+
+
+def _staging_cases(check, tmp, outside):
+    unborn = _unborn(tmp, "unborn")
+    check("sc14 in a repository with no commit yet, HEAD holds NOTHING - an "
+          "answer, not an unknown: `ls-tree HEAD` fails there, and reading that "
+          "failure as 'not established' would keep every absent declared path "
+          "in a pathspec the first commit then refuses: %r"
+          % (M.in_head(unborn, ["x.py"]),),
+          M.in_head(unborn, ["x.py"]) == set())
+    check("sc15 ...and a directory git will not describe at all is NOT "
+          "established, which is the other answer and a different one: %r"
+          % (M.in_head(outside, ["x.py"]),),
+          M.in_head(outside, ["x.py"]) is None)
+
+    snap, why = M.snapshot(outside, ["x.py"])
+    check("sc16 an index this module cannot read is not snapshotted, and the "
+          "refusal says nothing was staged - a staging it could not undo is not "
+          "one it may start: %r" % (why,),
+          snap is None and "nothing was staged" in why)
+    said = M.restored(outside, {"entries": [], "ita": []}, ["x.py"], "boom")
+    check("sc17 a restore that FAILS says so, names what is still staged and "
+          "keeps the refusal it was restoring for - 'the index is as you left "
+          "it' over an index that is not is the false clean sheet: %r" % (said,),
+          said.startswith("boom - ") and "could NOT be put back" in said
+          and "x.py" in said and M.INDEX_RESTORED not in said)
+
+    # AN UNMERGED PATH AND AN INTENT-TO-ADD PATH, snapshotted and restored.
+    repo = _repo(tmp, "conflict")
+    _write(os.path.join(repo, "keep", "a.txt"), "stashed\n")
+    _git(repo, "stash", "-q")
+    _write(os.path.join(repo, "keep", "a.txt"), "other\n")
+    _git(repo, "commit", "-q", "-am", "other")
+    subprocess.run(["git", "-C", repo, "stash", "pop", "-q"],
+                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    _write(os.path.join(repo, "keep", "ita.txt"), "intent\n")
+    _git(repo, "add", "-N", "--", "keep/ita.txt")
+    paths = ["keep/a.txt", "keep/ita.txt"]
+    found = _git(repo, "ls-files", "-s", "--", *paths)
+    found_status = _git(repo, "status", "--porcelain=v2", "--", "keep/ita.txt")
+    snap, why = M.snapshot(repo, paths)
+    _write(os.path.join(repo, "keep", "a.txt"), "resolved\n")
+    staged = M.stage(repo, paths, {"keep/a.txt": M.IN_INDEX,
+                                   "keep/ita.txt": M.IN_INDEX})
+    moved = _git(repo, "ls-files", "-s", "--", *paths)
+    why_back = M.restore(repo, snap, paths)
+    check("sc18 an index holding a CONFLICT is snapshotted and put back stage by "
+          "stage - `git write-tree` refuses an unmerged index outright, so a "
+          "snapshot built on it would refuse every commit made mid-conflict: "
+          "%r / %r" % (why, why_back),
+          why == "" and staged == "" and moved != found and why_back == ""
+          and _git(repo, "ls-files", "-s", "--", *paths) == found
+          and found.count("keep/a.txt") == 3)
+    check("sc19 ...and an INTENT-TO-ADD path comes back intent-to-add rather "
+          "than as a staged empty file, which `ls-files -s` alone cannot tell "
+          "apart: %r" % (_git(repo, "status", "--porcelain=v2", "--",
+                              "keep/ita.txt"),),
+          found_status.startswith("1 .A ")
+          and _git(repo, "status", "--porcelain=v2", "--",
+                   "keep/ita.txt") == found_status)
 
 
 def _selftest():

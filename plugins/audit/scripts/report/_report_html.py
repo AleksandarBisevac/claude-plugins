@@ -536,19 +536,15 @@ def tev_pointer(holder):
 def tev_configured(task, phase):
     """Whether ANY gate would run for this task - its own, or its phase's.
 
-    `run-test-gate.gate_of` is the rule and this is its reading half, taking the
-    same two declarations in the same order: a task's `tests.gate` when it has
-    one, else the phase's `testGate`. ABSENT AND EMPTY ARE ONE ANSWER there, so
-    they are one answer here - otherwise "declares no gate" would mean one thing
-    to the runner and another to the report.
+    `_manifest_io.gate_entries` is the rule - the one `run-test-gate` runs by -
+    and this asks it rather than re-reading the two declarations, so "declares no
+    gate" cannot mean one thing to the runner and another to the report: absent,
+    empty and all-blank are one answer in both.
     """
-    task = task if isinstance(task, dict) else {}
-    phase = phase if isinstance(phase, dict) else {}
-    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
-    for entries in (tests.get("gate"), phase.get("testGate")):
-        if isinstance(entries, list) and [x for x in entries if x]:
-            return True
-    return False
+    entries, _source = _manifest_io.gate_entries(
+        phase if isinstance(phase, dict) else {},
+        task if isinstance(task, dict) else None)
+    return bool(entries)
 
 
 def tev_flags(row):

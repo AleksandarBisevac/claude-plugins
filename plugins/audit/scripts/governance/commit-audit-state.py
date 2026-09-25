@@ -31,10 +31,12 @@ would be a commit nobody reviewed, made on the one path where nobody was going t
 look.
 
 HOW THE EXCLUSION IS ENFORCED RATHER THAN INTENDED. Paths are staged
-EXPLICITLY (`git add -- <path>...`, never `git add -A`), and the index is read
-back with `git diff --cached --name-only` and compared against the same
-allow-list BEFORE anything is committed. The index is also read BEFORE staging:
-work somebody else had already staged would otherwise ride along, and refusing
+EXPLICITLY, each by what git holds for it and never `git add -A`, the index is
+read back and compared against the same allow-list BEFORE anything is
+committed, and the commit carries the list as its pathspec - all of it
+`_scoped_commit.stage_and_commit`, which also puts the index back as it was
+found on any refusal after staging. The index is also read BEFORE staging: work
+somebody else had already staged would otherwise ride along, and refusing
 before touching anything leaves no half-made state to unpick. `_invariants`'
 `audit-state-scope` check then re-derives the same rule from git after the fact,
 so the commits this makes are graded by something that did not make them.
@@ -180,14 +182,12 @@ EVIDENCE_LABEL = "the evidence directory"
 
 # --- git ----------------------------------------------------------------------
 # ALIASES, NOT COPIES, and `_deps` attributes the edge to the import above. Each
-# is a step of the discipline a committing command owes -- the stderr-keeping git
-# runner, git's own line shape, the working-tree read that decides before staging,
-# the index read that refuses after it -- and `commit-manifest-index.py` owes the
+# is a step of the discipline a committing command owes -- the answer shape, the
+# working-tree read that decides before staging, the index read that refuses
+# before it -- and `commit-manifest-index.py` owes the
 # same one over a different list. `_scoped_commit` owns them; a second spelling
 # here is how one of the two commands comes to permit a path the other refuses,
 # and the names are kept so a reader who knows this file still finds them here.
-_git = _scoped_commit.run_git
-_lines = _scoped_commit.lines
 _answer = _scoped_commit.answer
 uncommitted = _scoped_commit.uncommitted
 foreign_staged = _scoped_commit.foreign_staged
@@ -243,7 +243,17 @@ def stage_targets(manifest, phase, manifest_path, project, git_root, config=None
             journal = rel
         if rel not in paths:
             paths.append(rel)
-    return {"paths": paths, "journal": journal, "skipped": skipped}
+    # `kinds` is how each path is staged, `_scoped_commit.classify`'s answer;
+    # every path here exists on disk, which is what the loop above required.
+    kinds = _scoped_commit.classify(git_root, [(rel, True) for rel in paths])
+    return {"paths": paths, "journal": journal, "skipped": skipped,
+            "kinds": kinds}
+
+
+def _foreign_after_staging(foreign):
+    """The sentence for a path that arrived THROUGH the staging, naming it."""
+    return ("staging produced paths outside the allow-list (%s), so nothing was "
+            "committed" % (", ".join(foreign),))
 
 
 # One predicate, one signature, and it is `_invariants._under` rather than a
@@ -421,6 +431,11 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
                     "audit-state commit stages the record and never the work, so "
                     "it refuses rather than sweeping them in - unstage them and "
                     "re-run")
+    # AHEAD OF THE DO-NOTHING ANSWERS: `git status` does not list an ignored
+    # file, so an ignored record would otherwise read as "nothing uncommitted".
+    ignored = _scoped_commit.ignored_records(targets["kinds"])
+    if ignored:
+        return E_FAIL, _answer(skipped, refused=ignored)
     if not allowed:
         return E_OK, _answer(skipped, quiet=NOTHING_UNCOMMITTED)
 
@@ -434,49 +449,25 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
     if all(_under(path, targets["journal"]) for path in pending):
         return E_OK, _answer(skipped, quiet=ONLY_THE_TRAIL)
 
-    code, add_out, add_err = _git(git_root, ["add", "--"] + allowed)
-    if code is None or code != 0:
-        return E_FAIL, _answer(skipped,
-                               refused="git refused to stage the record (%s)"
-                                       % ((add_err or add_out).strip()[:200],))
-
-    # AND THE INDEX IS READ BACK, which is not belt and braces. The first pass
-    # judged an index this command had not touched; this one judges the index it
-    # is about to commit, and it is the only check that can see a path that
-    # arrived through one of the three directories rather than past them.
-    foreign, why = foreign_staged(git_root, allowed)
-    if why or foreign:
-        return E_FAIL, _answer(
-            skipped, foreign=foreign,
-            refused=why or ("staging produced paths outside the allow-list, so "
-                            "nothing was committed"))
-    code, staged_out, staged_err = _git(git_root,
-                                        ["diff", "--cached", "--name-only"])
-    if code is None or code != 0:
-        return E_FAIL, _answer(
-            skipped, refused="git would not list the staged paths (%s)"
-                             % ((staged_err or staged_out).strip()[:200],))
-    # AND NO SECOND EMPTY-INDEX GUARD HERE. `pending` above already answered
-    # "is there anything to commit", and a duplicate of it after `git add` is
-    # reachable only if the tree moved under this process between the two
-    # questions - which no case can produce, so nothing would ever have verified
-    # it. The promise not to make an empty commit does not rest on it either way:
-    # `git commit` refuses an empty index on its own, and that refusal is
-    # reported below like any other.
-    staged = _lines(staged_out)
-
-    argv_commit = ["commit"]
-    for paragraph in commit_message(_phase_id(phase), subject,
-                                    _coauthor(manifest)):
-        argv_commit.extend(["-m", paragraph])
-    code, c_out, c_err = _git(git_root, argv_commit)
-    if code is None or code != 0:
-        return E_FAIL, _answer(
-            skipped, staged=staged,
-            refused="git refused the commit (%s) - the record is still staged"
-                    % ((c_err or c_out).strip()[:200],))
-    code, head, head_err = _git(git_root, ["rev-parse", "HEAD"])
-    sha = head.strip() if code == 0 else ""
+    # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.stage_and_commit`, the
+    # one sequence all three scoped commits share: each path staged by what git
+    # holds for it, the index read back against this same list, a commit with the
+    # list as its pathspec, and the index put back as it was found on any
+    # refusal after staging. The read-back is the only check that can see a path
+    # that arrived through one of the three directories rather than past them.
+    #
+    # NO SECOND EMPTY-INDEX GUARD. `pending` above already answered "is there
+    # anything to commit"; `git commit` refuses an empty index on its own, and
+    # that refusal is reported like any other.
+    done = _scoped_commit.stage_and_commit(
+        git_root, allowed, targets["kinds"],
+        commit_message(_phase_id(phase), subject, _coauthor(manifest)),
+        _foreign_after_staging)
+    staged = done["staged"]
+    if not done["committed"]:
+        return E_FAIL, _answer(skipped, staged=staged, foreign=done["foreign"],
+                               refused=done["refused"])
+    sha = done["sha"]
     if not sha:
         # The commit exists and this process cannot name it. A failure rather
         # than a success with a blank field: the journal row is the only handle
@@ -484,9 +475,7 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
         # no row at all.
         return E_FAIL, _answer(
             skipped, committed=True, staged=staged,
-            refused="the commit was made and git would not print its SHA (%s), "
-                    "so no journal row could name it"
-                    % ((head_err or "").strip()[:200],))
+            refused="%s, so no journal row could name it" % (done["refused"],))
 
     journalled = bool(record_row(project, _phase_id(phase), sha, config=config))
     return E_OK, _answer(skipped, committed=True, commit=sha, staged=staged,

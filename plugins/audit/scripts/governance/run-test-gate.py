@@ -2404,7 +2404,8 @@ def observed_step(name, command, code, text, facts, duration_ms):
     return step
 
 
-def run_gate(project, commands, runner=None, owns=None, timeout=None):
+def run_gate(project, commands, runner=None, owns=None, timeout=None,
+             recorded=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -2422,7 +2423,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None):
     # rewrites the very files it checks, so a fingerprint taken after the run
     # would describe what the gate PRODUCED rather than what it was asked to
     # judge. Both digests are spent from `before`, above the first command.
-    state = _tree_stamp.tested_state(project, owns, before)
+    # `recorded` is the paths the recorder writes (`_evidence_io.recorded_paths`),
+    # left out of the scope digest because the pointer lands in one of them after
+    # this is taken; `commit-task-work` grades the row with the same set.
+    state = _tree_stamp.tested_state(project, owns, before, excluded=recorded)
     started = time.monotonic()
     # THE WALL CLOCK BESIDE THE MONOTONIC ONE, and both are needed for different
     # questions. `started` measures how long this run took and is immune to a
@@ -3291,7 +3295,9 @@ def main(argv, out=print):
         # a second Ctrl-C should be free to stop a session that is already stopping.
         previous = _arm_interrupt()
         try:
-            res = run_gate(project, commands, owns=owns, timeout=args.timeout)
+            res = run_gate(project, commands, owns=owns, timeout=args.timeout,
+                           recorded=_ev.recorded_paths(project,
+                                                       args.manifest)[0])
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no

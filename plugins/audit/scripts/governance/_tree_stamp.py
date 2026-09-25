@@ -75,6 +75,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _journal_io  # noqa: E402  (the ONE canonical spelling and file digest)
+import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry's line suffix)
 
 
 # --- the tree as git describes it ---------------------------------------------
@@ -173,32 +174,98 @@ def _digest(payload):
         return None
 
 
-def scope_digest(project, owns):
+def _files_under(project, directory):
+    """The files git lists under `directory` - tracked and untracked-not-ignored
+    - project-relative, or None when git will not say.
+
+    A declared DIRECTORY has no bytes of its own: `file_hash` reads it as
+    missing, so hashing the entry would say nothing about any file inside it.
+    Its members are what the work declares, and git is asked for them rather
+    than a walk written here, for `content_digest`'s reason - a second answer
+    to "which files count" is the thing this module exists to prevent. Tracked
+    entries are listed even when deleted, so a deletion under the directory
+    moves the digest as a missing file.
+    """
+    fields = _git_fields(project, ("ls-files", "-z", "--cached", "--others",
+                                   "--exclude-standard", "--", directory))
+    if fields is None:
+        return None
+    return sorted(set(f.replace("\\", "/") for f in fields))
+
+
+def scope_digest(project, owns, excluded=None):
     """`(digest, basis)` for the DECLARED work as it stands right now.
 
     EXACT FOR THE DECLARED SCOPE and nothing wider, which is the whole claim, and
     `SCOPE_LIMIT` is that sentence in the words the output prints.
 
+    THE SCOPE IS `declared_scope(owns)`, the one normalisation, and a directory
+    in it is expanded into the files git lists under it. `excluded` is the
+    paths the caller's own recorder writes - `_evidence_io.recorded_paths` - and
+    they are left out: a gate row is written AFTER this digest is taken and
+    rewrites the manifest it points from, so a task declaring that file would
+    otherwise read as changed by its own recording, for ever.
+
     A MISSING FILE HASHES AS NULL RATHER THAN BEING DROPPED. Absent is itself
     evidence about the state under test, and skipping it would let a scope of
-    three files and a scope of two share a digest.
+    three files and a scope of two share a digest. A file that IS on disk and
+    still hashes as null is the opposite case: its bytes are unknown, and a null
+    there would compare equal to the next null - so the digest is None, the
+    comparison `unanswerable`, and the basis names the file.
 
     None when nothing is declared, the shape `coverage()` already uses one
     question over: a digest of an empty list is a real digest that would compare
     equal across every such run and read as agreement.
     """
-    declared = [f for f in (owns or []) if isinstance(f, str) and f.strip()]
+    declared = declared_scope(owns)
     if not declared:
         return None, ("the work under test declares no files, so there is "
                       "nothing to fingerprint")
+    drop = _outside(excluded)
+    files, left_out = set(), []
+    for rel in declared:
+        if drop(rel):
+            left_out.append(rel)
+            continue
+        if os.path.isdir(os.path.join(project, rel)):
+            members = _files_under(project, rel)
+            if members is None:
+                return None, ("git would not list the files under the declared "
+                              "directory %s, so the declared work cannot be "
+                              "fingerprinted" % (rel,))
+            files.update(m for m in members if not drop(m))
+            continue
+        files.add(rel)
     entries, missing = [], 0
-    for rel in sorted(set(declared)):
-        digest = _journal_io.file_hash(os.path.join(project, rel))
+    for rel in sorted(files):
+        absolute = os.path.join(project, rel)
+        digest = _journal_io.file_hash(absolute)
+        if digest is None and os.path.lexists(absolute):
+            return None, ("%s is on disk and could not be read, so the declared "
+                          "work cannot be fingerprinted" % (rel,))
         if digest is None:
             missing += 1
         entries.append([rel, digest])
-    return _digest(entries), ("%d declared file(s); %d read, %d missing"
-                              % (len(entries), len(entries) - missing, missing))
+    basis = ("%d declared file(s); %d read, %d missing"
+             % (len(entries), len(entries) - missing, missing))
+    if left_out:
+        basis = ("%s; %d declared path(s) this recorder writes itself were left "
+                 "out: %s" % (basis, len(left_out), _output.some_of(left_out)))
+    if not entries:
+        return None, basis
+    return _digest(entries), basis
+
+
+def scope_list_digest(owns, excluded=None):
+    """A digest of the declared LIST, or None when nothing is declared.
+
+    Kept apart from `scope_digest` so a reader can tell a scope that was
+    changed - an entry added or dropped - from files that were edited: both move
+    the content digest, and they are different repairs to name.
+    """
+    drop = _outside(excluded)
+    declared = [rel for rel in declared_scope(owns) if not drop(rel)]
+    return _digest(declared) if declared else None
 
 
 def dirty_digest(before):
@@ -218,12 +285,18 @@ def dirty_digest(before):
             % (len(before),))
 
 
-def tested_state(project, owns, before):
-    """The three identity fields, each with the basis that bounds it."""
-    scope, sbasis = scope_digest(project, owns)
+def tested_state(project, owns, before, excluded=None):
+    """The three identity fields, each with the basis that bounds it, plus the
+    digest of the declared list itself (`scope_list_digest`).
+
+    `excluded` reaches `scope_digest` and nothing else; the gate runner passes
+    the paths its recorder writes, and the committer that grades the row passes
+    the same set."""
+    scope, sbasis = scope_digest(project, owns, excluded=excluded)
     dirty, dbasis = dirty_digest(before)
     return {"head": _head(project), "headBasis": HEAD_BASIS,
             "scopeDigest": scope, "scopeBasis": sbasis,
+            "scopeListDigest": scope_list_digest(owns, excluded=excluded),
             "dirtyDigest": dirty, "dirtyBasis": dbasis}
 
 
@@ -425,13 +498,18 @@ VERDICT_HELP = {
 
 
 def declared_scope(owns):
-    """The declared paths as a stamp stores them: non-blank strings, deduplicated,
-    sorted.
+    """The declared paths as a stamp stores them: non-blank strings with any
+    `:line-range` suffix stripped, deduplicated, sorted.
 
-    THE SAME NARROWING `scope_digest` APPLIES, spelled once and called twice,
-    because a stamp whose stored scope and whose digest disagreed about which
-    files were in play would be a stamp that cannot be re-derived."""
-    return sorted(set(f for f in (owns or []) if isinstance(f, str) and f.strip()))
+    THE ONE NORMALISATION OF A DECLARED SCOPE, and every reader of one goes
+    through it - `scope_digest` (so the gate row and the committer hash the same
+    paths), the stamp's stored scope, and `field_state`'s "was anything
+    declared". A suffix left on reaches `file_hash` as a path that does not
+    exist and hashes as missing on BOTH sides of a comparison, which reads as
+    agreement whatever happened to the file."""
+    return sorted(set(_vocab._strip_line_suffix(f).strip()
+                      for f in (owns or []) if isinstance(f, str) and f.strip()
+                      and _vocab._strip_line_suffix(f).strip()))
 
 
 def take(project, owns):

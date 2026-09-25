@@ -487,28 +487,37 @@ def gate_entries(phase, task=None):
     and fall back, so the three cannot come to disagree about one question. Only
     non-blank string entries are returned, which is what a gate may run.
 
-    HERE RATHER THAN IN `run-test-gate`, which resolves these entries into the
-    commands it runs, because `commit-task-work` must ask the same question - is
-    there any gate whose verdict this commit can be bound to - and an entry point
-    cannot import another. A second spelling of the fallback is how a task the
-    runner measures by its phase's gate would read to the committer as gateless.
+    HERE, AT THE BOTTOM LAYER, BECAUSE EVERY READER OF "WHICH GATE MEASURES
+    THIS" MUST GIVE ONE ANSWER: `run-test-gate` (which resolves the entries into
+    the commands it runs), `commit-task-work` (which binds a commit to that
+    gate's verdict), the panel's gate badge, the report's gate-configured read
+    and the demo generator. Entry points cannot import one another, and a second
+    spelling of the fallback is how a task the runner measures by its phase's
+    gate would read to another surface as gateless.
 
     The entries are returned as declared, unresolved: resolving them through
-    `meta.buildCommands` is the runner's job and the committer needs only to
-    know whether any exist.
+    `meta.buildCommands` is the runner's job.
     """
     if isinstance(task, dict):
         tests = task.get("tests")
-        own = _declared_gate(tests.get("gate") if isinstance(tests, dict)
-                             else None)
+        own = declared_gate_entries(tests.get("gate") if isinstance(tests, dict)
+                                    else None)
         if own:
             return own, "task"
     phase = phase if isinstance(phase, dict) else {}
-    return _declared_gate(phase.get("testGate")), "phase"
+    return declared_gate_entries(phase.get("testGate")), "phase"
 
 
-def _declared_gate(entries):
-    """The non-blank string entries of one gate declaration, in order."""
+def declared_gate_entries(entries):
+    """ONE gate declaration (`testGate` or `tests.gate`) as the entries that will
+    run: non-blank strings, in order.
+
+    A non-list is [], a non-string entry is dropped (nothing resolves it and
+    nothing runs it), and a blank string is dropped too - `["lint", ""]` and
+    `["lint"]` run the same commands. Order is KEPT: entries run in the order
+    they are written. `gate_entries` reads both declarations through this, and so
+    does the validator's comparison of a task's gate with its phase's.
+    """
     return [e for e in (entries if isinstance(entries, list) else [])
             if isinstance(e, str) and e.strip()]
 

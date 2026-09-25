@@ -78,14 +78,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   evidence the orchestrator records one step earlier, so a task whose last gate went red, or whose
   declared files were edited after a green one, committed as if it had passed. It now refuses
   unless the task's newest evidence row (the rows carrying its task id, so a task measured by its
-  phase's gate counts and a sign-off run does not) is `passed` and its `testedState.scopeDigest`
-  still matches the declared files being committed; a verdict the recorder repeated is graded
-  against the run it names. A task whose own gate and phase gate are both empty gets no row from
-  the recorder, so it commits and says it is bound to no verdict. `--override-verdict "<reason>"`
-  commits anyway and writes an `audit.task.verdict-overridden` journal row naming the commit, the
-  run and the reason, and is refused while the journal is off. `reference/execute-task.md` step 4c
-  says so; which gate measures a task is now one function, `_manifest_io.gate_entries()`, shared
-  with `run-test-gate.py`.
+  phase's gate counts and a sign-off run does not) is `passed`, was measured under the gate the
+  task declares now, and its `testedState.scopeDigest` still matches the declared files being
+  committed; the refusal says whether the declared list or the files' contents moved, and a
+  verdict the recorder repeated is graded against the run it names. A task whose own gate and
+  phase gate are both empty commits and says it is bound to no verdict - unless its newest recorded
+  verdict is red. An unparseable evidence line refuses only when it could be this task's row, and
+  names its file and line. `--override-verdict "<reason>"` commits anyway and writes an
+  `audit.task.verdict-overridden` journal row naming the commit, the run and the reason, and is
+  refused while the journal is off. `reference/execute-task.md` step 4c says so.
+- **The declared-work digest a gate row records is taken over a normalised scope.** A
+  `:line-range` entry is hashed as the file it names and a directory as the files git lists under
+  it - both used to hash as "missing" on every run, so an edit after a green gate compared as
+  agreement - and the paths the recorder itself writes (the manifest, its shards, the ledger, the
+  trail) are left out, so a task declaring its own manifest file is not made stale by its own
+  recording. Rows gain `testedState.scopeListDigest`, the digest of the declared list. **A row
+  recorded before this upgrade for a task declaring a `:line-range` entry, a directory or its
+  manifest file reads as stale** and needs its gate recording again.
+- **Which gate measures a task is one function, `_manifest_io.gate_entries()`.** `run-test-gate`,
+  `commit-task-work`, the panel's gate badge, the report's gate-configured read, the demo
+  generator and the validator's wide-gate check each had their own reading; the report counted
+  an all-blank task gate as a gate and the demo generator did not fall back from one to the
+  phase's.
+- **All three scoped commits stage, commit and undo through one sequence.** `commit-audit-state`
+  and `commit-manifest-index` now stage each path by what git holds for it, commit with the
+  allow-list as the pathspec (`commit-audit-state` committed the whole index), refuse a record
+  path git ignores by name, and put the index back as they found it on any refusal after staging,
+  where they used to leave it staged. The index read they share lists both halves of a staged
+  rename, so a rename from outside either allow-list into it is refused naming its source.
 - **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
   phase branch was prose the orchestrator ran before the verb, so every phase driven through the
   verbs rather than `/audit:run` ran on its parent with no branch - most of this repository's own -
@@ -128,9 +148,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   Index entries are now staged with `git add -u --`, and only a path git does not track is subject
   to the ignore rule - refused by name (`ignored; -f is yours to decide`) before anything is staged,
   including when it is the only thing uncommitted, where the command used to report "nothing
-  uncommitted". `-f` is never passed. Any refusal after staging now resets the allowed paths to a
-  snapshot of the index taken before it, so a failed staging or a commit a hook refuses leaves the
-  index exactly as it was found.
+  uncommitted". `-f` is never passed. A file taken out of the index with `git rm --cached` and then
+  ignored is committed as the deletion it is. Any refusal after staging now puts the allowed paths'
+  index entries back from a snapshot taken before it - an entry staged at its own bytes, a
+  conflict's stages and an intent-to-add path included - so a failed staging or a commit a hook
+  refuses leaves the index as it was found, and a conflict resolved in the tree is staged rather
+  than refused.
 - **`commit-manifest-index` committed an index ahead of the shards it names.** `/audit:task add`
   writes a task into its phase's shard and its files into the index, and committing the index
   first recorded a plan whose `fileIndex` named a task no committed shard held - a commit that

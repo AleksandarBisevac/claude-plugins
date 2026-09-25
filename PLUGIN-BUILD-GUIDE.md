@@ -314,7 +314,7 @@ L2:
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
-  _tree_stamp -> _journal_io, _output
+  _tree_stamp -> _journal_io, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _manifest_io, _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
@@ -2938,15 +2938,28 @@ on absent evidence would fire on every finished phase. Wired into Phase sign-off
 `/audit:status --gate --fail-on invariant-breach`.
 
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
-Everything the two **commit-a-narrow-allow-list** commands share, so that neither holds a second
-copy of it: the git runner that keeps stderr (a refusal is the only thing a human can act on, so
+Everything the three **commit-a-narrow-allow-list** commands (`commit-audit-state.py`,
+`commit-manifest-index.py`, `commit-task-work.py`) share, so that none holds a second copy of it:
+the git runner that keeps stderr (a refusal is the only thing a human can act on, so
 `_commit_trail._git`'s `DEVNULL` is wrong here), git's own line shape, `under_any` over
 `_invariants._under`, the working-tree read that decides **before** anything is staged, the index
-read that refuses **after** it, and the one answer shape and renderer both commands print.
+read that refuses **after** it (with `--no-renames`, so a staged rename from outside the list names
+its source), and the one answer shape and renderer the commands print.
 
-**Neither command can import the other** — nothing may import a hyphenated entry point — so this
-module is the only place the two halves meet, and a second spelling of a refusal rule is how one
-commit comes to carry what the other forbids. Layer 5: it reads `_invariants` (L4) for `_under`,
+**How each path is staged, and how the index is put back.** `classify()` asks git what it holds
+for each allowed path and `stage()` stages it accordingly — `git add -u --` for an index entry,
+`git add --` for a path only on disk, neither for a path only HEAD holds (a staged rename's source,
+a staged deletion) — and `stage_and_commit()` is the whole sequence: snapshot the allowed paths'
+index entries (`ls-files -s`, every stage of a conflict kept, intent-to-add read from `status
+--porcelain=v2`), stage, read back, commit with the list as the pathspec, and on any refusal put
+the entries back through `update-index --index-info`. The one commit made without a pathspec is
+one carrying a file taken out of the index with `git rm --cached` and then ignored: a pathspec
+commit reads the working tree and records nothing for it, so the read-back is taken a third time
+immediately before that commit instead.
+
+**No command can import another** — nothing may import a hyphenated entry point — so this
+module is the only place they meet, and a second spelling of a refusal rule is how one commit
+comes to carry what another forbids. Layer 5: it reads `_invariants` (L4) for `_under`,
 which is the one answer to "is this path inside that entry" that the writer and the after-the-fact
 checker both have to give.
 
@@ -3102,22 +3115,26 @@ carries an explicit pathspec. A path outside the list is **named** in the refusa
 index gets a sentence of its own — reporting the expensive mistake in the same words as a stray
 README is what makes a reader skim past it.
 
-**Each path is staged by what git holds for it.** An index entry takes `git add -u --` (plain
-`git add --` on a tracked file under a gitignored directory exits 1 *and* stages it); a path only
-on disk takes `git add --`, and one git ignores is refused by name before anything is staged —
-`-f` is never passed; a path only HEAD holds, the source of a staged `git mv` or a staged `git rm`,
-is in neither call and reaches the commit through its pathspec, which is what records the rename or
-the deletion. A refusal after staging resets the allowed paths to a `git write-tree` snapshot taken
-before it, so the index is left exactly as it was found.
+**Each path is staged by what git holds for it**, through `_scoped_commit` (below the section on
+that module): the source of a staged `git mv` or `git rm` is committed as the rename or deletion it
+is, a tracked file under a gitignored directory is staged as the tracked file it is, an untracked
+declared file git ignores is refused by name before anything is staged — `-f` is never passed — and
+a record path git ignores is refused in words of its own. A refusal after staging puts the allowed
+paths' index entries back from a snapshot taken before it.
 
 **Bound to the verdict it was measured under.** It refuses unless the task's newest evidence row
-(the rows carrying its task id) is `passed` and its `testedState.scopeDigest` — `_tree_stamp`'s
-digest of the declared files — still matches the files being committed. HEAD and the dirty-path
-digest are not compared, because a sibling commit between a task's gate and its commit moves both.
-A task whose own gate and whose phase's gate are both empty gets no row from the recorder, so it
-commits and says it is bound to no verdict. `--override-verdict <reason>` commits anyway and writes
-an `audit.task.verdict-overridden` journal row; it is refused while the journal is off. Which gate
-measures a task is `_manifest_io.gate_entries()`, the same answer `run-test-gate.py` resolves.
+(the rows carrying its task id) is `passed`, was measured under the gate the task declares now,
+and its `testedState.scopeDigest` — `_tree_stamp.scope_digest()` of the declared files, with the
+scope normalised once (`declared_scope()`: line suffixes stripped, directories expanded to the
+files git lists) and the recorder's own paths left out on both sides — still matches the files
+being committed; `scopeListDigest` beside it tells a changed declared list from changed contents.
+HEAD and the dirty-path digest are not compared, because a sibling commit between a task's gate and
+its commit moves both. A task whose own gate and whose phase's gate are both empty commits and says
+it is bound to no verdict, unless its newest recorded verdict is red. An unparseable ledger line
+refuses unless it names another task. `--override-verdict <reason>` commits anyway and writes an
+`audit.task.verdict-overridden` journal row; it is refused while the journal is off. Which gate
+measures a task is `_manifest_io.gate_entries()` — the one answer `run-test-gate.py`, the panel's
+gate badge, the report and the demo generator all read.
 
 **It does not write `task.commit`.** The SHA is only knowable after the commit this makes, and the
 shard is inside that commit, so writing it here would need a second commit or an amend — which

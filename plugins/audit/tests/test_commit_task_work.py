@@ -28,6 +28,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import io
+import json
 import os
 import subprocess
 import sys
@@ -903,6 +904,357 @@ def _verdict_cases(check, repos):
           "task for ever, and saying nothing would read as a green: %r / %r"
           % (code, text),
           code == 0 and _const('NO_GATE') in text)
+    _scope_cases(check, repos)
+    _branch_cases(check, repos)
+
+
+# --- helpers for editing a recorded ledger -------------------------------------
+def _ledger_file_with(fx, needle):
+    """The ledger file holding `needle`, and its lines."""
+    directory = os.path.join(fx["root"], "docs", "audit", "evidence")
+    for name in sorted(os.listdir(directory)):
+        path = os.path.join(directory, name)
+        text = _read(path) or ""
+        if needle in text:
+            return path, text.splitlines()
+    raise RuntimeError("no ledger file holds %r" % (needle,))
+
+
+def _rewrite_row(fx, run_id, edit):
+    """Rewrite the ledger row `run_id` through `edit(row)`, or drop it when
+    `edit` returns None. The chain is not re-hashed: the reader under test does
+    not verify it, and the cases are about what the committer reads."""
+    path, lines = _ledger_file_with(fx, run_id)
+    out = []
+    for line in lines:
+        # The row's OWN id, parsed: a repeat names its source in `reusedFrom`,
+        # so a substring match would edit the repeat too.
+        if run_id in line and json.loads(line).get("runId") == run_id:
+            row = edit(json.loads(line))
+            if row is None:
+                continue
+            line = json.dumps(row, sort_keys=True)
+        out.append(line)
+    _write(path, "\n".join(out) + "\n")
+
+
+def _append_ledger(fx, text):
+    """Append raw `text` to the newest ledger file."""
+    directory = os.path.join(fx["root"], "docs", "audit", "evidence")
+    path = os.path.join(directory, sorted(os.listdir(directory))[-1])
+    with io.open(path, "a", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
+
+
+# --- the declared scope, normalised once ---------------------------------------
+def _scope_cases(check, repos):
+    # A `:line-range` ENTRY EDITED AFTER A GREEN GATE.
+    fx = repos.make()
+    _set_task(fx, files=["%s:1-2" % (OWNED,)])
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 3  # after the gate\n")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw51 a declared entry carrying a `:line-range` suffix is hashed as "
+          "the FILE it names, so an edit after a green gate is refused as stale "
+          "- with the suffix left on, both sides hashed a path that does not "
+          "exist, called it missing, and agreed whatever happened to the file. "
+          "Asserted on the CONTENTS sentence, because an unreadable digest is "
+          "also a refusal and would pass a bare exit-code check: %r / %r"
+          % (code, text),
+          code == 1 and "CONTENTS" in text and _head(fx) == before)
+
+    # A DIRECTORY ENTRY EDITED AFTER A GREEN GATE.
+    fx = repos.make()
+    _set_task(fx, files=["src"])
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 3  # after the gate\n")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw52 a declared DIRECTORY is hashed as the files git lists under it, "
+          "so an edit to one of them after a green gate is refused as stale - a "
+          "directory has no bytes of its own, and hashing the entry read it as "
+          "missing on both sides - and, unexpanded, reads as a path on disk "
+          "that cannot be read, which is a refusal of a different kind: %r / %r"
+          % (code, text),
+          code == 1 and "CONTENTS" in text and _head(fx) == before)
+
+    # A TASK THAT DECLARES ITS OWN SHARD.
+    fx = repos.make()
+    _set_task(fx, files=[OWNED, SHARD_REL])
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw53 a task that declares its OWN manifest file is not refused by its "
+          "own recording - the pointer `--record` writes lands in that file after "
+          "the digest is taken, so the digest leaves the recorder's paths out on "
+          "both sides, as the content identity already did: %r / %r"
+          % (code, text),
+          code == 0 and _head(fx) != before
+          and SHARD_REL in _carried(fx, _head(fx)))
+
+    # ...AND IN THE SINGLE-FILE LAYOUT, where the file is the whole manifest.
+    fx = repos.make()
+    single = _mio.load_manifest(fx["manifest"])
+    single_path = os.path.join(fx["root"], "docs", "audit", "single.json")
+    single_rel = "docs/audit/single.json"
+    for phase in single.get("phases") or []:
+        phase.pop("shard", None)
+    for phase, task in _mio.iter_tasks(single):
+        if task.get("id") == TASK:
+            task["files"] = [OWNED, single_rel]
+    TI._write_json(single_path, single)
+    TI._git(fx["root"], "add", "--", single_rel)
+    TI._git(fx["root"], "commit", "-q", "-m", "chore: single-file layout", "--",
+            single_rel)
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx, manifest=single_path)
+    before = _head(fx)
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = M.main([single_path, TASK, "--project", fx["root"]],
+                      out=lines.append)
+    finally:
+        sys.stderr = held
+    check("ctw53b ...and in the SINGLE-FILE layout, where the task declares the "
+          "whole manifest the pointer is written into: %r / %r"
+          % (code, lines),
+          code == 0 and _head(fx) != before)
+
+    # THE DECLARED LIST CHANGED, NOT THE FILES.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    _write(os.path.join(fx["root"], "src", "added.py"), "added = 1\n")
+    _set_task(fx, files=[OWNED, "src/added.py"])
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw54 a scope WIDENED after a green gate is refused and said to be a "
+          "change to the declared LIST - 'the declared files have changed' is "
+          "untrue when only the list did, and the repair is a gate run on the "
+          "new scope: %r / %r" % (code, text),
+          code == 1 and "declared file LIST" in text and _head(fx) == before)
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 3  # edited after the gate\n")
+    code, text = _run(fx)
+    check("ctw55 SECOND-DIRECTION CASE: an edit to a declared file under an "
+          "unchanged list is said to be a change to the CONTENTS: %r" % (text,),
+          code == 1 and "CONTENTS" in text and "LIST" not in text)
+
+    # A RED VERDICT, AND THEN THE GATE EMPTIED.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=["false"])
+    _gate(fx)
+    _set_task(fx, gate=[], phase_gate=[])
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw56 a task whose newest verdict is red and whose gate has since been "
+          "EMPTIED is refused - the ledger is read before the gate is, and "
+          "emptying a gate does not retire the red it last answered: %r / %r"
+          % (code, text),
+          code == 1 and "declares no gate now" in text and _head(fx) == before)
+
+    # A GREEN VERDICT UNDER AN OLDER GATE.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    _set_task(fx, gate=["test", "true"])
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw57 a `passed` verdict measured under a gate the task no longer "
+          "declares is refused - widening the gate after a green would "
+          "otherwise commit on a verdict about the narrower one: %r / %r"
+          % (code, text),
+          code == 1 and "measured under the gate" in text
+          and _head(fx) == before)
+
+
+# --- the branches each refusal and each allowance takes ------------------------
+def _branch_cases(check, repos):
+    # A CONFLICT RESOLVED IN THE TREE BUT NOT ADDED.
+    fx = repos.make()
+    _write(os.path.join(fx["root"], OWNED), "a = stashed\n")
+    TI._git(fx["root"], "stash", "-q")
+    _write(os.path.join(fx["root"], OWNED), "a = other\n")
+    TI._git(fx["root"], "commit", "-q", "-m", "fixture: other", "--", OWNED)
+    subprocess.run(["git", "-C", fx["root"], "stash", "pop", "-q"],
+                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    conflicted = TI._git(fx["root"], "ls-files", "-s", "--", OWNED).count(OWNED)
+    _write(os.path.join(fx["root"], OWNED), "a = resolved\n")
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw58 a conflict resolved in the working tree and not yet added is "
+          "committed - staging resolves it, as plain `git add` always did, and "
+          "an index snapshot that refused an unmerged index would refuse every "
+          "such commit: %r / %r" % (conflicted, text),
+          conflicted == 3 and code == 0
+          and _read(os.path.join(fx["root"], OWNED)) == "a = resolved\n"
+          and OWNED in _carried(fx, _head(fx)))
+
+    # AN INTENT-TO-ADD DECLARED FILE, AND A COMMIT A HOOK REFUSES.
+    fx = repos.make()
+    _set_task(fx, files=[OWNED, "src/ita.py"])
+    _write(os.path.join(fx["root"], "src", "ita.py"), "ita = 1\n")
+    TI._git(fx["root"], "add", "-N", "--", "src/ita.py")
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx)
+    hooks = os.path.join(fx["root"], ".git", "hooks")
+    if not os.path.isdir(hooks):
+        os.makedirs(hooks)
+    _write(os.path.join(hooks, "pre-commit"), "#!/bin/sh\nexit 1\n")
+    os.chmod(os.path.join(hooks, "pre-commit"), 0o755)
+    TI._git(fx["root"], "config", "core.hooksPath", hooks)
+    found = TI._git(fx["root"], "status", "--porcelain=v2", "--", "src/ita.py")
+    code, text = _run(fx)
+    check("ctw59 an INTENT-TO-ADD declared file is put back intent-to-add when "
+          "the commit is refused - `git write-tree` dropped the flag, so the "
+          "file came back as a staged empty one: %r / %r"
+          % (found, TI._git(fx["root"], "status", "--porcelain=v2", "--",
+                            "src/ita.py")),
+          code == 1 and found.startswith("1 .A ")
+          and TI._git(fx["root"], "status", "--porcelain=v2", "--",
+                      "src/ita.py") == found)
+
+    # THE OVERRIDE ROW FAILING AFTER THE COMMIT.
+    fx = repos.make()
+    _dirty_work(fx)
+    held_row = M.override_row
+    M.override_row = lambda *args, **kwargs: False
+    try:
+        code, text = _run(fx, TASK, "--override-verdict", "nothing was measured")
+    finally:
+        M.override_row = held_row
+    after = _head(fx)
+    check("ctw60 a commit made over its verdict whose override row could NOT be "
+          "written exits 1 and still names the SHA - the operator is owed the one "
+          "fact the flag promised, and a success would be a commit over a red "
+          "verdict nothing points at: %r / %r" % (code, text),
+          code == 1 and after[:12] in text and "could NOT be written" in text)
+
+    # AN UNREADABLE LEDGER LINE THAT COULD BE THIS TASK'S.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    ledger = _append_ledger(fx, '{"taskId":"%s","status":\n{"v":1}\n' % (TASK,))
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw61 an unparseable ledger line carrying this task's id refuses, "
+          "NAMING the file and line and the command that shows it: %r / %r"
+          % (code, text),
+          code == 1 and os.path.basename(ledger) in text
+          and _const("VERIFY_COMMAND") in text and _head(fx) == before)
+    # ...AND ONE THAT PROVABLY IS ANOTHER TASK'S.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    _append_ledger(fx, '{"taskId":"P9.9","status":\n{"v":1}\n')
+    code, text = _run(fx)
+    check("ctw62 SECOND-DIRECTION CASE: an unparseable line whose `taskId` names "
+          "ANOTHER task is passed over and said - one torn row elsewhere must not "
+          "refuse every task commit in the project: %r / %r" % (code, text),
+          code == 0 and "passed over" in text)
+    # ...AND A TORN TAIL THAT PROVES NOTHING.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    _append_ledger(fx, '{"v":1,"ts":"2026')
+    code, text = _run(fx)
+    check("ctw63 ...and a torn last line that stops before any `taskId` refuses, "
+          "because it could be this task's newest verdict: %r" % (code,),
+          code == 1 and _const("VERIFY_COMMAND") in text)
+
+    # A REPEATED VERDICT WHOSE SOURCE IS GONE.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    measured = _newest_row(fx)
+    _gate(fx, reuse=True)
+    _rewrite_row(fx, measured.get("runId"), lambda row: None)
+    code, text = _run(fx)
+    check("ctw64 a repeated verdict whose measured run is no longer in the "
+          "ledger is refused - there is no tree state left to grade it against: "
+          "%r / %r" % (code, text),
+          code == 1 and "not in the ledger" in text)
+
+    # A ROW WHOSE DIGEST COULD NOT BE TAKEN.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    newest = _newest_row(fx)
+
+    def _no_digest(row):
+        row.setdefault("testedState", {})["scopeDigest"] = None
+        return row
+    _rewrite_row(fx, newest.get("runId"), _no_digest)
+    code, text = _run(fx)
+    check("ctw65 a row whose declared-work digest is null is `unanswerable` and "
+          "refused, never read as agreement: %r / %r" % (code, text),
+          code == 1 and "not established" in text)
+
+    # A TASK THAT DECLARES ONLY WHAT THE RECORDER WRITES.
+    fx = repos.make()
+    _set_task(fx, files=[SHARD_REL])
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw66 a task declaring nothing but its own manifest file is bound on "
+          "the verdict word alone and says so - its declared-work digest has "
+          "nothing left in it: %r / %r" % (code, text),
+          code == 0 and "declares no files the recorder does not write" in text)
+
+    # AN OVERRIDE NOBODY NEEDED.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    code, text = _run(fx, TASK, "--override-verdict", "just in case")
+    rows = [r for r in _journal_io.read_all(fx["root"])
+            if r.get("action") == _const("ACTION_VERDICT_OVERRIDDEN")]
+    check("ctw67 an override given over a verdict that binds is NOT recorded, "
+          "and the output says it was not needed: %r / %r" % (code, text),
+          code == 0 and "not needed" in text and rows == [])
+
+    # AN IGNORED RECORD PATH.
+    fx = repos.make()
+    _write(os.path.join(fx["root"], ".gitignore"), "docs/audit/evidence/\n")
+    TI._git(fx["root"], "add", "--", ".gitignore")
+    TI._git(fx["root"], "commit", "-q", "-m", "fixture: ignore the evidence",
+            "--", ".gitignore")
+    _dirty_work(fx)
+    _gate(fx, set_apart=False)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw68 a RECORD path git ignores is refused in its own words - it is a "
+          "record this commit must carry, so 'drop it from the task's files' "
+          "would be the wrong repair: %r / %r" % (code, text),
+          code == 1 and "a record this commit is required to carry" in text
+          and "drop it from the task's" not in text and _head(fx) == before)
+
+    # A FILE TAKEN OUT OF THE INDEX AND THEN IGNORED.
+    fx = repos.make()
+    _ignored_dir(fx)
+    _set_task(fx, files=[OWNED, IGN_TRACKED])
+    TI._git(fx["root"], "rm", "-q", "--cached", "--", IGN_TRACKED)
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    check("ctw69 a declared file removed with `git rm --cached` and then ignored "
+          "is committed as the DELETION the operator made - HEAD still holds it, "
+          "and '-f is yours to decide' is advice for a file nobody tracked: "
+          "%r / %r" % (code, text),
+          code == 0 and after != before
+          and ("D\t%s" % (IGN_TRACKED,)) in _name_status(fx, after)
+          and os.path.exists(os.path.join(fx["root"], IGN_TRACKED))
+          and _staged(fx) == [])
 
 
 def _selftest():

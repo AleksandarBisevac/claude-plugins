@@ -46,6 +46,7 @@ M = _loader.load_script("commit-audit-state.py", "cas")
 
 PHASE = "P1"
 OWNED = "src/a.py"
+SIBLING = "src/b.py"
 SHARD_REL = "docs/audit/phases/P1.json"
 INDEX_REL = "docs/audit/audit-plan.json"
 EVIDENCE_REL = "docs/audit/evidence/" + TI.EVIDENCE_NAME
@@ -700,8 +701,54 @@ def _cases(check):
               and _state_rows(silent) == []
               and "journal row could NOT be written" in text
               and "rides along with the next commit" not in text)
+        _staging_cases(check, repos)
     finally:
         repos.close()
+
+
+def _refusing_hook(fx):
+    """A pre-commit hook that refuses every commit, installed in the fixture."""
+    hooks = os.path.join(fx["root"], ".git", "hooks")
+    if not os.path.isdir(hooks):
+        os.makedirs(hooks)
+    path = os.path.join(hooks, "pre-commit")
+    with io.open(path, "w", encoding="utf-8") as fh:
+        fh.write("#!/bin/sh\nexit 1\n")
+    os.chmod(path, 0o755)
+    TI._git(fx["root"], "config", "core.hooksPath", hooks)
+
+
+# --- the shared staging, driven through this command ---------------------------
+def _staging_cases(check, repos):
+    # A RENAME INTO THE ALLOW-LIST FROM OUTSIDE IT.
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    # A CLEAN file, so the rename is `R100` to both index reads: moving the
+    # fixture's dirty file would let staging re-read its bytes and break the
+    # pairing, and the read-back would then name the source for a reason that
+    # is not the one this case is about.
+    TI._git(fx["root"], "mv", SIBLING, "docs/audit/evidence/moved.jsonl")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("cas30 a staged rename from OUTSIDE the allow-list into it is refused "
+          "and its SOURCE named - read with rename detection on, the index "
+          "lists only the new name, which is inside, and the deletion would be "
+          "neither refused nor committed: %r / %r" % (code, text),
+          code == 1 and SIBLING in text and _head(fx) == before)
+
+    # A COMMIT A HOOK REFUSES, AFTER STAGING.
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    _refusing_hook(fx)
+    found = TI._git(fx["root"], "ls-files", "-s")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("cas31 a commit refused AFTER staging leaves the index exactly as it "
+          "was found and says so - it used to leave the record staged: %r / %r"
+          % (code, text),
+          code == 1 and _head(fx) == before
+          and TI._git(fx["root"], "ls-files", "-s") == found
+          and _scoped_commit.INDEX_RESTORED in text)
 
 
 def _selftest():
