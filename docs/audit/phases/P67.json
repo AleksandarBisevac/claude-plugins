@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "ba6b076c688a607ad5fe5d0f4a1a33c0db97dd53",
   "branch": "audit/p67-audit-version-says-which-build",
-  "mergedAt": null,
+  "mergedAt": "2026-09-25T07:00:13Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
