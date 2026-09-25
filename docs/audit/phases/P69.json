@@ -134,7 +134,7 @@
     {
       "id": "P69.3",
       "title": "The stored status of a phase and a linked bug is the derived one: the verbs write it, lookup and the validator read the derivation",
-      "status": "in_progress",
+      "status": "done",
       "description": "Since derived status, the signoff verb writes review.status and never status, so every signed-off phase keeps a stale stored status on its index stub and shard (this repo: in_progress on 24 signed-off phases, pending on 10), and a linked bug keeps triaged/in_progress with fixedIn null after its task is done. Raw readers - an older plugin's hooks (the installed 3.0.1 gate reads these phases as running), jq, an agent, a teammate - get the wrong answer. Decided: materialise. Every write that changes an input of effective_phase_status / effective_bug_status stores the derived value (signoff for a parent-branch phase, close-phase's mergedAt stamp for a branch phase, done for a bug's fix task; status and fixedIn), mirrored onto the stub. audit-lookup prints the derived value, and 'stored X, derived Y (basis ...)' where they differ. validate-manifest warns (additively) when stored and derived disagree, naming one command that settles an existing plan (a settle verb that materialises every derived value under the index lock, revalidated). orchestrator.md's status-mirror sentence and phase-signoff.md say what writes it. COMPATIBILITY: no reader may treat a stored done as authoritative over the derivation - check before changing.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -193,14 +193,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7b60dbb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "signoff, close-phase's merge stamp and done on a fix task store the derived status (and fixedIn); settle materialises every derived value; validate warns on disagreement; audit-lookup reads the derivation.",
+        "descriptive": "What the plan file says about a finished phase or a fixed bug is now true for any reader, and one command settles a plan that already carries stale values."
       },
       "startedAt": "2026-09-25T14:32:07Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T15:29:57Z",
+      "verifiedBy": [
+        "test_audit_task so10",
+        "test_audit_task sv1",
+        "test_close_phase s5",
+        "test__manifest_crossrefs sd1",
+        "test__manifest_io dd1",
+        "test_audit_lookup al30",
+        "test_validate_manifest c24"
+      ]
     }
   ],
   "startedAt": "2026-09-25T14:32:06Z"
