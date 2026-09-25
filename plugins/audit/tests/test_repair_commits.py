@@ -68,6 +68,18 @@ def _repo_with_orphan(tmp, name="r"):
     return repo, mpath, shas
 
 
+def _with_bug(mpath, sha):
+    """The fixture's manifest, plus a bug fixed by P0.1 whose stored fixedIn is the
+    commit P0.1 records - the copy `/audit:task done` writes."""
+    with open(mpath, encoding="utf-8") as fh:
+        man = json.load(fh)
+    man["phases"][0]["tasks"][0]["bugId"] = "BUG-1"
+    man["bugs"] = [{"id": "BUG-1", "title": "b", "status": "fixed",
+                    "taskId": "P0.1", "fixedIn": sha}]
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(man, fh)
+
+
 def _journal_rows(repo):
     rows = []
     jdir = os.path.join(repo, "docs", "audit", "journal")
@@ -129,6 +141,19 @@ def _cases(check):
               [c.get("from") for c in (det.get("changes") or [])] == [shas[2]]
               and [c.get("to") for c in (det.get("changes") or [])] == [None],
               repr(det))
+        repo_b, mpath_b, shas_b = _repo_with_orphan(tmp, name="rb")
+        _with_bug(mpath_b, shas_b[2])
+        code_b = M.main([mpath_b, "--apply"])
+        after_b = json.load(open(mpath_b))
+        det_b = ((_journal_rows(repo_b) or [{}])[-1].get("details") or {})
+        check("rc11 --apply clears the fixedIn of the bug its lost commit fixed, in "
+              "the same write, and journals it beside the task's commit - a bug "
+              "left naming a commit the trail no longer has is what the repair "
+              "exists to stop: %r / %r" % (after_b.get("bugs"), det_b),
+              code_b == 0 and after_b["bugs"][0]["fixedIn"] is None
+              and sorted((c.get("id"), c.get("field"))
+                         for c in det_b.get("changes") or [])
+              == [("BUG-1", "fixedIn"), ("P0.1", "commit")])
         check("rc8 the summary names the task, so the trail is readable without "
               "opening the manifest it describes",
               "P0.1" in (rows[0].get("summary") or ""), repr(rows[0].get("summary")))

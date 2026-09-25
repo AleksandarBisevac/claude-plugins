@@ -1,7 +1,7 @@
 {
   "id": "P54",
   "title": "The guards' last read shapes, and the work the plan has no place for",
-  "status": "in_progress",
+  "status": "done",
   "description": "Two halves that share a cause: the product knows about the work it was designed for and is silent about the rest. On the guard side, several read shapes still reach a secret file's contents with no refusal and no event, two of them the everyday way an agent reads a file; an interpreter heredoc is judged inconsistently; a write is attributed to a background job when it could be attributed with certainty; nothing verifies the plugin's own installed files, and the control the security document calls load-bearing is opt-in that nothing mentions at first contact. On the plan side, a decision has no home so approvals travel second-hand, a bug that turned out to be wrong has no status, requested work and documentation output are uncovered on every write, the successful task commit is the one git operation nothing scripts, and a push is a suite run the plugin cannot see.",
   "desiredOutcome": "No documented-secret read reaches a file's contents without a refusal and an event, and every kind of work an operator actually does has somewhere in the plan to live.",
   "testGate": [

@@ -1,7 +1,7 @@
 {
   "id": "P63",
   "title": "A phase's status is derived, so a finished phase stops holding the gate",
-  "status": "in_progress",
+  "status": "done",
   "description": "F466, operator decision 2026-09-24: derived status with recorded sign-off; sign-off due does not hold the gate.",
   "desiredOutcome": "a phase whose tasks are all terminal and whose sign-off is recorded (and, with a branch, merged) reads done everywhere; one only awaiting sign-off reads 'sign-off due' and no longer holds the plan gate in deny; sign-off is recorded by a verb",
   "testGate": [

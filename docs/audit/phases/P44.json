@@ -1,7 +1,7 @@
 {
   "id": "P44",
   "title": "The plan gate says one thing to one file",
-  "status": "in_progress",
+  "status": "done",
   "description": "Field report 8's last three sections, triaged 2026-09-13: two write rules grading one file two ways, and an advisory notice that repeats itself per file while its wording fits a tier it does not run at.",
   "desiredOutcome": "All three write surfaces grade one file one way and the interpreter arm names the path, the cause, the remedy and the exempt classes as the shell arm does - while every secret READ stays denied at every tier, which is the sentence that must remain literally true. And the advisory notice speaks its paragraph once per session, names each later file on one line with the running total, and stops asking to be relayed before a write that has already landed.",
   "testGate": [

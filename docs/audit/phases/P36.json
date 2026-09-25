@@ -1,7 +1,7 @@
 {
   "id": "P36",
   "title": "F319/F320 fallout: a check whose reason is false, and the wiring's fail modes",
-  "status": "pending",
+  "status": "done",
   "description": "",
   "desiredOutcome": "check-prohibitions asks the property it wants -- does this hook emit a permission decision -- instead of reading py-launch.sh's no-interpreter fail mode as a proxy for it, with the token/property agreement itself asserted; and SECURITY.md's per-hook fail-mode table is compared to hooks.json's wiring in both directions by a gate, so a table that tells a security reader a blocking guard fails silently cannot ship. The reported .env evasion is NOT in scope: it does not reproduce in this tree or in v2.2.0, and the liveness half is F320.",
   "testGate": [

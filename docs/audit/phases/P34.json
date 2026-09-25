@@ -1,7 +1,7 @@
 {
   "id": "P34",
   "title": "Fifth field report: the ledger is 27% false failures, and most of it is the machine",
-  "status": "pending",
+  "status": "done",
   "description": "A night's use on another project with two concurrent sessions recorded 30 gate runs, 10 of\nthem failed, and 8 of those reflected no defect in the code under test. The ledger exists to\nbe the trustworthy record of what was measured; at that rate it is not, and nothing in a row\ntells a false failure from a real one.\n\nFour of the report's eight items were already fixed in this tree and unreleased (F294, F300,\nthe journal-write-as-gate-mutation banner, and F273's owned/foreign split), which is its own\nfinding about release cadence rather than about code. What is left is this phase: the largest\ncause is CPU contention nobody arbitrates between parallel phases, the sharpest is a\nsignal-killed runner recorded as a failing test, and the rest are a commit the plugin cannot\nland under commitlint, a journal with no merge path that lost 37 rows, a warning that fires on\ntwo runs in three, and two documents that describe mechanisms the code no longer has.",
   "desiredOutcome": "A gate verdict a reader cannot trust is either corrected or told apart from a real one: an infrastructure kill is not a failing test, two measurements do not starve each other, the plugin's own commit lands where conventional commits are enforced, and the journal survives one writer on two branches.",
   "testGate": [

@@ -697,6 +697,28 @@ def sweep_rows(project, plan):
     return out
 
 
+def sweep_maps(manifest, user_name):
+    """{"wanted", "parents", "phases"} -- the sweep's allow-list, each branch's
+    parent, and the phase behind each RECORDED branch, from `_branch.plan_branches`.
+
+    The same answer `manage-worktrees.py sweep` builds, so the button and the CLI
+    agree about which worktree is this plan's. It used to read recorded branches
+    alone, which made the worktree `/audit:worktree add` cut for an unstarted phase
+    a stranger here and a row there. `phases` stays recorded-only on purpose, as the
+    CLI's does: settlement is asked of a phase that ran, and one with no recorded
+    branch has not.
+    """
+    wanted, parents, phases = {}, {}, {}
+    for phase, made in _branch.plan_branches(manifest, user_name):
+        if not made["name"]:
+            continue
+        wanted[made["name"]] = str(phase.get("id"))
+        parents[made["name"]] = made["parent"]
+        if phase.get("branch"):
+            phases[str(phase["branch"])] = phase
+    return {"wanted": wanted, "parents": parents, "phases": phases}
+
+
 def sweep_worktrees(project, body):
     """`POST /api/worktrees/sweep` — the panel's FIRST git write, and the only one.
 
@@ -745,16 +767,8 @@ def sweep_worktrees(project, body):
                 "findings": ["no git root at %s, so there are no worktrees to "
                              "sweep" % (git_root,)]}
 
-    meta = (manifest or {}).get("meta") or {}
-    wanted, parents, phases = {}, {}, {}
-    for phase in ((manifest or {}).get("phases") or []):
-        if not isinstance(phase, dict):
-            continue
-        name = phase.get("branch")
-        if name:
-            wanted[str(name)] = str(phase.get("id"))
-            parents[str(name)] = _branch.parent_branch(meta, phase)["branch"]
-            phases[str(name)] = phase
+    maps = sweep_maps(manifest, _worktrees.git_user_name(git_root))
+    wanted, parents, phases = maps["wanted"], maps["parents"], maps["phases"]
     listing = _worktrees.list_worktrees(git_root)
     if listing["error"]:
         return {"ok": False, "findings": [listing["error"]]}

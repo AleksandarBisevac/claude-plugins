@@ -144,8 +144,16 @@ not need to.
      evidence. It has to be yours and not its, for the reason the script exists at all: the
      bracket, the check count, the coverage answer and the tree comparison are only true of a run
      the wrapper made. `--task` resolves that task's `tests.gate` when it declares one and falls
-     back to the phase's otherwise, saying which — so a task with no gate of its own is never
-     credited with having passed one.
+     back to the phase's otherwise, saying which — the preamble names the task and the phase, and
+     a `graded by:` line sits under the `GATE …` banner — so a task with no gate of its own is never
+     credited with having passed one. **A gate cleared on purpose is not "no gate":** a task whose
+     `tests.gateBasis` is `cleared` (what `--gate-clear` writes) resolves EMPTY at task scope and
+     the script says so and exits 0 without running anything - and under `--record` it writes an
+     `empty-gate` row and pointer, so the done task carries evidence of that answer rather than
+     tripping `--fail-on no-test-evidence`. The phase's `testGate` at sign-off is what still
+     grades it, and where that is EMPTY too the line says review alone. Under `--task` the coverage lines also carry one `breadth:` clause
+     when the run named suites the task neither declares nor is named after — both counts, never
+     a refusal.
 
      **Grade the returned `stamp` before you quote anything the return says.** A claim whose
      stamp is stale is **re-taken, never argued with** — and re-taking is cheap, because the
@@ -529,10 +537,12 @@ not need to.
           shard is inside that commit, so writing it there would need a second commit or the amend
           this document forbids. It leaves an `audit.task.committed` journal row in the meantime,
           so the gap between the commit and this write is not a commit nothing points at.
-          **Do NOT write `bugs[]`.** A bug materialized into this task (`bug.taskId` ↔ `task.bugId`)
-          reads as **fixed** automatically once the task is `done` — the rollup derives it (with
-          `fixedIn` = this `task.commit`) — so the shared index stays untouched and parallel phases
-          merge clean. (`/audit:bug close` still records a human `wontfix` / `not_a_bug` / `fixed`
+          **Do NOT write `bugs[]` by hand.** A bug materialized into this task (`bug.taskId` ↔
+          `task.bugId`) reads as **fixed** once the task is `done` — the rollup derives it (with
+          `fixedIn` = this `task.commit`) — and `/audit:task done` stores both values on the bug in
+          the same write, under the index lock. That is the one write a task close makes to the
+          index, and the verb says so with the `commit-manifest-index.py` line that lands it on its
+          own; a close of a task no bug links to leaves the index untouched. (`/audit:bug close` still records a human `wontfix` / `not_a_bug` / `fixed`
           on the index, under the index lock — a structural decision, not part of a run.)
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
      d. **ADO echo** — now that the SHA is captured, echo the done transition
@@ -559,7 +569,8 @@ not need to.
      exhausted), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not commit.
      A transition to `blocked` gets the **ADO echo** (`reference/orchestrator.md` → **ADO echo**).
    - **infrastructure failure** (gates could NOT run: missing command, runner crash before tests,
-     zero tests collected where `tests.add` expects some) → this is NOT the task's failure:
+     zero tests collected where `tests.add` expects some, a filter that selected no test file, a
+     worker the OS killed — `GATE COULD NOT RUN` and a `could-not-run` row) → this is NOT the task's failure:
      **revert the `attempts` increment from step 2** (Edit it back down), record the cause in
      `task.outcome.technical`, leave `status = "in_progress"`, and **STOP with a human action item**
      (fix `meta.buildCommands` / `tests.gate` first). Never burn retries on missing infrastructure.

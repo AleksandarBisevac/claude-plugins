@@ -1,7 +1,7 @@
 {
   "id": "P67",
   "title": "/audit:version says which build is running and whether a newer one is published",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "one command prints the running version, what the marketplace clone offers and whether it auto-updates, the installed copies, and the newest published release - each with its basis - and says exactly how to update",
   "testGate": [

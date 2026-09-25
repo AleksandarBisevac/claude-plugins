@@ -215,7 +215,11 @@ A task is **ready** when ALL of:
 task terminal with a sign-off verdict recorded and, for a phase with a branch, `mergedAt` stamped.
 
 A phase becomes `done` only after `reference/phase-signoff.md`'s **Phase sign-off**, whose verb
-records the verdict and never writes `status`. Phase order
+records the verdict and then stores the status that verdict derives — `done` at once for a phase
+with no branch, and at the merge, through `close-phase.py`'s `mergedAt` stamp, for one with a
+branch. Do not write it by hand: `validate-manifest` warns when a stored status disagrees with
+its derivation and names `audit-task.py settle`, the one command that stores every derived value
+of an existing plan. Phase order
 follows the manifest; within a phase, order by task id.
 
 **`phase.priority` re-sorts that order, and nothing else.** An optional positive integer on a
@@ -280,7 +284,10 @@ names; `phase-<phaseId>` also works — **take the narrowest one that covers you
 
 - **`index`** — held **briefly** for STRUCTURAL writes and id allocation: `init`, `task`, `bug`,
   `sync`, allocating a new phase/task/bug id, and the phase **status-mirror** write in the index.
-  Acquire → edit the index → release, within that step.
+  Acquire → edit the index → release, within that step. The status mirror is written by the
+  scripts that store a derived status, never by hand, and each takes this lock itself:
+  `audit-task.py signoff` and `done` (a fixed bug's `status`/`fixedIn` too) and `settle`, and
+  `close-phase.py` when its `mergedAt` stamp stores `done`.
 - **`usage`** — held while the usage ledger's monthly files are rewritten by the backfill; the
   orchestrator's own verbs never take it.
 - **`phase-<phaseId>`** — held for the DURATION of a phase run by `next`/`run`/`phase`/`review`/

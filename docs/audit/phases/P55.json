@@ -1,7 +1,7 @@
 {
   "id": "P55",
   "title": "The last small ones the register still holds",
-  "status": "in_progress",
+  "status": "done",
   "description": "What the register still holds after the release phases: an ownership check that discards half the identity it was given, a document pair that contradicts each other about how many tiers a lock has, a fixture that aborts a suite on a platform this project supports, a hook paragraph repeated once per tool result in a batch, a derivation that is silently inert under a symlinked path, and two hand-maintained lists that opt a new caller out by being forgotten. None is user-visible today and every one of them is a check or a sentence somebody will trust the next time they need it.",
   "desiredOutcome": "Every open entry in the register that is not an explicit out-of-scope decision is either closed by code or restated as a decision with its own trigger.",
   "testGate": [

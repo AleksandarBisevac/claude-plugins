@@ -1,7 +1,7 @@
 {
   "id": "P58",
   "title": "Release 3.0.0 obligations",
-  "status": "in_progress",
+  "status": "done",
   "description": "What the published contract owes at the major bump, and the followers a bump stales.",
   "desiredOutcome": "Every promise COMPATIBILITY.md dated to this release is delivered in code, and the document records it as delivered rather than pending.",
   "testGate": [

@@ -277,6 +277,41 @@ def index_only_in_bodies(path):
     return out
 
 
+def stale_stubs(path):
+    """`[(phase id, key, stub value, shard value)]` for every `_STUB_KEYS` value an
+    index stub mirrors differently from its shard.
+
+    `index_only_in_bodies`' reason, the other way round: the assembled manifest lets
+    the body win, so by the time `validate()` sees it the stub's stale copy is gone -
+    and the stub is exactly what a reader of the index alone is answered from. Asked
+    here, where both halves are open, for `validate-manifest.py` to warn about and
+    for the writers that re-mirror a stub to decide what moved. [] for the
+    single-file layout and for an unreadable shard, for that function's reasons.
+    """
+    try:
+        data = _read_json(path)
+    except Exception:
+        return []
+    if not is_sharded(data):
+        return []
+    base = os.path.dirname(os.path.abspath(path))
+    out = []
+    for stub in (data.get("phases") or []):
+        if not isinstance(stub, dict) or "shard" not in stub:
+            continue
+        try:
+            body = _read_json(os.path.join(base, stub["shard"]))
+        except Exception:
+            continue
+        if not isinstance(body, dict):
+            continue
+        for key in _STUB_KEYS:
+            if key in body and stub.get(key) != body.get(key):
+                out.append((stub.get("id") or body.get("id"), key, stub.get(key),
+                            body.get(key)))
+    return out
+
+
 def load_manifest_safe(path):
     """Like `load_manifest` but returns {} on ANY error — for the hooks' read path,
     which must never raise (a blocking guard degrades to 'no in-progress coverage'
@@ -481,8 +516,9 @@ def gate_entries(phase, task=None):
     """`(entries, source)` - the gate entries that measure `task`, and WHOSE.
 
     The task's own `tests.gate` when it declares one, else the phase's
-    `testGate`; `source` is `"task"` or `"phase"` accordingly. ABSENT, EMPTY AND
-    ALL-BLANK ARE ONE ANSWER: a task with no `tests` block, one with
+    `testGate`; `source` is `"task"` or `"phase"` accordingly. A gate cleared on
+    purpose (`gate_cleared`) is the task's own EMPTY answer. Otherwise ABSENT, EMPTY
+    AND ALL-BLANK ARE ONE ANSWER: a task with no `tests` block, one with
     `tests.gate: []` and one whose entries are all blank strings declare no gate
     and fall back, so the three cannot come to disagree about one question. Only
     non-blank string entries are returned, which is what a gate may run.
@@ -502,10 +538,21 @@ def gate_entries(phase, task=None):
         tests = task.get("tests")
         own = declared_gate_entries(tests.get("gate") if isinstance(tests, dict)
                                     else None)
-        if own:
+        if own or gate_cleared(tests):
             return own, "task"
     phase = phase if isinstance(phase, dict) else {}
     return declared_gate_entries(phase.get("testGate")), "phase"
+
+
+def gate_cleared(tests):
+    """Whether a task's `tests` block records its gate as cleared ON PURPOSE.
+
+    `--gate-clear` writes `tests.gateBasis: cleared`, and that empty gate is the
+    caller's recorded decision: the task is measured by NO gate of its own, and
+    the phase's `testGate` grades it at sign-off. It is the one exception to
+    absent, empty and all-blank falling back to the phase - an empty gate that
+    was chosen is an answer, not a missing one."""
+    return isinstance(tests, dict) and tests.get("gateBasis") == "cleared"
 
 
 def declared_gate_entries(entries):
@@ -584,10 +631,11 @@ def effective_bug_status(bug, task_by_id):
     import layer 7, so that copy was STRUCTURAL rather than lazy — the only place
     one implementation can serve both readers is underneath them.
 
-    The rule itself: the orchestrator never writes `bugs[]` during a run (that
-    leaves the shared index untouched, so parallel phase branches merge clean), so
-    a bug materialized into a task (`bug.taskId` <-> `task.bugId`) reads 'fixed'
-    once that task is done. A human verdict always wins — `HUMAN_BUG_VERDICT`
+    The rule itself: a bug materialized into a task (`bug.taskId` <->
+    `task.bugId`) reads 'fixed' once that task is done, whatever `bug.status`
+    stores - the close that makes it so stores it too (`audit-task.py done`), but a
+    plan closed before that, or by hand, still carries the old value and still
+    reads 'fixed' here. A human verdict always wins — `HUMAN_BUG_VERDICT`
     above is the pair, and reading the tuple rather than testing one word is what
     keeps the second one from being learned here and nowhere else; an
     un-materialized bug keeps its reported status (open / triaged / in_progress).
@@ -696,6 +744,95 @@ def area_active(phase):
     if (phase or {}).get("mergedAt"):
         return False
     return phase_running(phase) or signoff_due(phase)
+
+
+# --- stored against derived -------------------------------------------------------
+# THE DERIVED VALUE IS ALSO STORED, because not every reader derives. An older
+# plugin's hooks, `jq`, an agent reading the shard, a teammate reading the index stub
+# all read `status` as written - and a phase that signed off while nothing wrote its
+# status reads `in_progress` to every one of them, for ever. So each write that
+# changes an input of the derivations above stores what they now answer, and this is
+# the one question every such writer, the validator, `audit-lookup` and the `settle`
+# verb ask: where does the stored value differ from the derived one, and on what
+# basis. A stored terminal status wins inside the derivation, so a row here only
+# ever moves a value TOWARDS the derived one and never overrides a person's verdict.
+
+def phase_basis(phase):
+    """The inputs `effective_phase_status` read, as a clause a reader can check."""
+    phase = phase or {}
+    stored = phase.get("status")
+    if stored in TERMINAL:
+        return "the stored %s wins" % (stored,)
+    review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
+    tasks = _phase_tasks(phase)
+    return ("%s, review.status %s, %s"
+            % ("every task terminal" if _all_terminal(phase)
+               else ("tasks unreadable" if tasks is None
+                     else ("no task" if not tasks else "a task still open")),
+               review.get("status") or "unset",
+               ("mergedAt %s" % (phase["mergedAt"],)) if phase.get("mergedAt")
+               else ("branch %s not merged" % (phase["branch"],)
+                     if phase.get("branch") else "no branch")))
+
+
+def _fix_task(bug, task_by_id):
+    """The bug's linked task when it is done, else None."""
+    tid = (bug or {}).get("taskId")
+    task = task_by_id.get(tid) if tid else None
+    return task if isinstance(task, dict) and task.get("status") == "done" else None
+
+
+def bug_basis(bug, task_by_id):
+    """The input `effective_bug_status` read, as a clause a reader can check."""
+    bug = bug or {}
+    if bug.get("status") in HUMAN_BUG_VERDICT:
+        return "the stored %s is a person's verdict" % (bug["status"],)
+    tid = bug.get("taskId")
+    if not tid:
+        return "no fix task linked"
+    task = _fix_task(bug, task_by_id)
+    if task is None:
+        return "fix task %s is not done" % (tid,)
+    return "fix task %s is done at %s" % (tid, task.get("commit") or "no commit")
+
+
+def derived_disagreements(manifest):
+    """[{"kind", "id", "field", "stored", "derived", "basis"}] -- every stored value
+    a derivation answers differently, in plan order: a phase's `status`, and a
+    bug's `status` and `fixedIn`.
+
+    `fixedIn` is derived only where `fixed` is derived from the fix task, and only
+    filled, never replaced: a recorded commit was put there by someone, and the
+    task's commit is merely the plugin's reading of the same fact.
+    """
+    out = []
+    if not isinstance(manifest, dict):
+        return out
+    for ph in (manifest.get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        derived = effective_phase_status(ph)
+        if derived != ph.get("status"):
+            out.append({"kind": "phase", "id": ph.get("id"), "field": "status",
+                        "stored": ph.get("status"), "derived": derived,
+                        "basis": phase_basis(ph)})
+    index = tasks_by_id(manifest)
+    for bug in (manifest.get("bugs") or []):
+        if not isinstance(bug, dict):
+            continue
+        derived = effective_bug_status(bug, index)
+        if derived != bug.get("status"):
+            out.append({"kind": "bug", "id": bug.get("id"), "field": "status",
+                        "stored": bug.get("status"), "derived": derived,
+                        "basis": bug_basis(bug, index)})
+        task = _fix_task(bug, index)
+        if (derived == "fixed" and task is not None and task.get("commit")
+                and bug.get("status") not in HUMAN_BUG_VERDICT
+                and not bug.get("fixedIn")):
+            out.append({"kind": "bug", "id": bug.get("id"), "field": "fixedIn",
+                        "stored": bug.get("fixedIn"), "derived": task["commit"],
+                        "basis": bug_basis(bug, index)})
+    return out
 
 
 # --- writer (split a manifest into index + per-phase shards) ---------------------

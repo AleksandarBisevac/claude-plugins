@@ -262,8 +262,33 @@ def _cases(check):
           repr(sorted(set(M.DEFAULT_TYPES) - set(M.TYPE_HELP))))
 
 
+def _branch_of_cases(check):
+    """The one answer every worktree surface gives to "which branch is this
+    phase's": the CLI's list/add/remove/sweep and the panel's sweep."""
+    meta = {"developmentBranch": "dev",
+            "branch": {"template": "{type}/{initials}-{phase}-{slug}"}}
+    fresh = {"id": "P5", "title": "Five", "tasks": []}
+    ran = {"id": "P6", "title": "Six", "branch": "feature/old-name", "tasks": []}
+    made = M.branch_of(meta, fresh, "Ann Bee")
+    check("bo1 an unstarted phase's branch is COMPOSED with the git user's "
+          "initials, and its parent is resolved: %r" % (made,),
+          made == {"name": M.phase_answer(meta, fresh, "Ann Bee")["branch"],
+                   "parent": "dev"} and "/ab-" in made["name"])
+    check("bo2 ...and a phase that ran keeps the branch it RECORDED, whatever the "
+          "template composes now: %r" % (M.branch_of(meta, ran, "Ann Bee"),),
+          M.branch_of(meta, ran, "Ann Bee")["name"] == "feature/old-name")
+    pairs = M.plan_branches({"meta": meta, "phases": [fresh, "junk", ran]},
+                            "Ann Bee")
+    check("bo3 plan_branches walks every phase dict in plan order and skips what "
+          "is not one: %r" % ([p.get("id") for p, _m in pairs],),
+          [p.get("id") for p, _m in pairs] == ["P5", "P6"])
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _branch_of_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

@@ -727,6 +727,102 @@ def _distinct(items):
     return out
 
 
+# jest's heading for a suite that never ran a test (`jest-message-util`'s
+# `EXEC_ERROR_MESSAGE`). The heading alone names neither the suite nor the
+# cause, and both sit on lines of their own: the suite on the `FAIL <path>`
+# header above it, the cause on the first line under it.
+JEST_EXEC_ERROR = "Test suite failed to run"
+# The header jest prints per suite. Colour, where a caller forces it through a
+# pipe, wraps both the word and the path's two halves in escapes, which is why
+# the text is stripped of them before this reads it.
+_JEST_SUITE_HEADER = re.compile(r"^[ \t]*(?:PASS|FAIL)[ \t]+(\S+)")
+_ANSI = re.compile("\x1b\\[[0-9;]*m")
+# `jest-worker`'s own sentence for a worker that died with a request in flight,
+# written only when the child exited on a signal.
+_JEST_WORKER_SIGNAL = re.compile(
+    r"was terminated by another process: signal=(SIG[A-Z0-9]+)")
+
+
+def jest_failures(text):
+    """`[(title, suite, reason)]` - each jest failure bullet, in output order.
+
+    `suite` is the path on the nearest `PASS`/`FAIL` header above the bullet,
+    or None when none was printed. `reason` is read for a failed-to-run
+    heading only - the first non-blank line under it - and is None for an
+    ordinary assertion bullet, whose title already names the check.
+    """
+    lines = _ANSI.sub("", text or "").splitlines()
+    out, suite = [], None
+    for i, line in enumerate(lines):
+        header = _JEST_SUITE_HEADER.match(line)
+        if header:
+            suite = header.group(1)
+            continue
+        bullet = _FAILURE_READERS["jest"].match(line)
+        if not bullet:
+            continue
+        title = bullet.group(1)
+        reason = None
+        if title == JEST_EXEC_ERROR:
+            reason = next((ln.strip() for ln in lines[i + 1:] if ln.strip()),
+                          None)
+        out.append((title, suite, reason))
+    return out
+
+
+def _jest_failure_name(title, suite, reason):
+    """One failing entry: an assertion by its title, a failed-to-run by the
+    suite it belongs to and why. `Test suite failed to run` repeated once per
+    crashed suite named nothing a reader could act on.
+
+    A worker's signal is the entry's FIRST word, because a committed row keeps
+    each line only up to `_journal_io.MAX_VALUE_CHARS`: behind a monorepo's
+    suite path, a signal anywhere later falls past that cut.
+    """
+    if title != JEST_EXEC_ERROR:
+        return title
+    name = "%s: %s" % (suite, title) if suite else title
+    hit = _JEST_WORKER_SIGNAL.search(reason or "")
+    if hit:
+        name = "(signal=%s) %s" % (hit.group(1), name)
+    return "%s - %s" % (name, reason) if reason else name
+
+
+def jest_worker_signal(exit_code, text, command=None):
+    """`(signal, basis)` when EVERY failure jest reports is a worker the OS
+    terminated; `(None, None)` otherwise.
+
+    THE THIRD CHANNEL FOR A KILL, and the only one that exists here. jest reaps
+    its own workers, so a worker that died of SIGSEGV leaves the parent's exit
+    status at 1 - the code carries no signal, and `ended_by_signal` rightly
+    reads 1 as an answer. What does carry it is jest's report, which names the
+    signal per suite. All of them or none: one real assertion failure beside
+    a kill is a verdict about the work, and it stays one.
+    """
+    if wrapper_words(command) or summary_reader(text)[0] != "jest":
+        return None, None
+    found = jest_failures(text)
+    if not found:
+        return None, None
+    killed = []
+    for _title, suite, reason in found:
+        # `reason` is read for a failed-to-run heading only, so an assertion
+        # bullet has none and ends the question here.
+        hit = _JEST_WORKER_SIGNAL.search(reason or "")
+        if not hit:
+            return None, None
+        killed.append((suite or "(no suite path printed)", hit.group(1)))
+    names = _distinct(sig for _suite, sig in killed)
+    return names[0], ("jest's own report names every failing suite as a "
+                      "worker terminated by %s - %s - read from its `%s` "
+                      "lines, because exit %s carries no signal: jest reaps "
+                      "its workers itself"
+                      % (", ".join(names),
+                         _output.some_of(_distinct(s for s, _g in killed),
+                                         budget=SAMPLE_BUDGET),
+                         JEST_EXEC_ERROR, exit_code))
+
+
 def failing_lines(text, limit):
     """`(lines, basis)` - the names of the checks that failed, or a capped tail.
 
@@ -759,7 +855,11 @@ def failing_lines(text, limit):
     # what reports the drift; this is only what survives it.
     reader = _FAILURE_READERS.get(name)
     if reader is not None:
-        named = _distinct(reader.findall(body))
+        # jest's failed-to-run heading is paired with its suite and reason;
+        # every other runner's line already names the check it failed.
+        named = _distinct(
+            [_jest_failure_name(*f) for f in jest_failures(body)]
+            if name == "jest" else reader.findall(body))
         if named:
             kept = named[:limit]
             if len(named) > len(kept):
@@ -897,6 +997,57 @@ def reached_a_verdict(text, command=None):
     if summary_count(body) is not None:
         return True
     return any(pattern.search(body) for _name, pattern in _END_OF_RUN)
+
+
+# --- a step that said, in its own words, that it asked nothing ----------------
+# `(what, exit codes, the diagnostic)`: the ways a command reports that it never
+# reached a question, each bound to the exit code that diagnostic comes with.
+# NEITHER HALF IS ENOUGH ALONE. 127 is a code a command may return by choice,
+# and a diagnostic can be quoted inside a real report - so `no_verdict_signature`
+# asks for both, and only of output that carries no end-of-run report. A row
+# is here only when its tool's own output is a fixture a case reads; cmd.exe
+# has none, so on windows a missing program stays a failure - a stated gap,
+# pinned by `lc16`, and the loose phrase it prints at exit 1 is not read.
+_NO_VERDICT_SIGNATURES = (
+    # `sh` as bash (`/bin/sh: x: command not found`), dash (`/bin/sh: 1: x: not
+    # found`), zsh (`zsh:1: command not found: x`) and bash (`bash: line 1: x:
+    # command not found`).
+    ("the shell could not find the command", (127,),
+     re.compile(r"^(?:\S*/)?(?:sh|bash|dash|zsh|ash|ksh)\b[^\n]*?"
+                r"(?:command not found|: not found)[^\n]*", re.M)),
+    # vitest, when the filter selects no test file and `passWithNoTests` is off.
+    ("vitest found no test file to run", (1,),
+     re.compile(r"^[ \t]*No test files found, exiting with code 1[^\n]*",
+                re.M)),
+)
+
+
+def no_verdict_signature(exit_code, text, command=None):
+    """The basis for reading a non-zero step as `could-not-run`, or None.
+
+    A STEP THAT NEVER ASKED ITS QUESTION HAS NO ANSWER TO BE RED ABOUT. A gate
+    entry that is not a command, and a filter that selects no test file, both
+    exit non-zero having run nothing - and both were graded `failed`, so a
+    ledger recorded a red against work no check had looked at.
+
+    `reached_a_verdict` STAYS THE GUARD. A runner that printed its own
+    end-of-run report has spoken for its exit code, whatever else its output
+    quotes; and a wrapper's output belongs to the runs it wraps, so nothing in
+    it speaks for the wrapper's step.
+    """
+    try:
+        code = int(exit_code)
+    except (TypeError, ValueError):
+        return None
+    body = text or ""
+    if code == 0 or wrapper_words(command) or reached_a_verdict(body, command):
+        return None
+    for what, codes, pattern in _NO_VERDICT_SIGNATURES:
+        hit = pattern.search(body) if code in codes else None
+        if hit:
+            return ("%s: exit %d, no end-of-run report, and its own words - %r"
+                    % (what, code, hit.group(0).strip()))
+    return None
 
 
 # --- what a count may be ADDED to, and what each step COST ---------------------
@@ -1175,10 +1326,12 @@ def ended_by_signal(exit_code, text, command=None):
         reader that took the observation alone would have left the field's own
         instances (2 of 10 recorded failures at exit 139) exactly as they were.
 
-    SO THE CONVENTION ARM IS NARROWED TWICE RATHER THAN TRUSTED, because `lc16`
-    pins the objection to it: 127 is NOT read as "could not run", since a real
-    command may return 127 deliberately and reading a category out of a number
-    lets a child claim the category by exiting with it. This arm fires only for
+    SO THE CONVENTION ARM IS NARROWED TWICE RATHER THAN TRUSTED, because a code
+    alone is not an observation: a real command may return 127 deliberately,
+    and reading a category out of a number lets a child claim the category by
+    exiting with it - which is why `no_verdict_signature` reads 127 only beside
+    the shell's own diagnostic, and `nv2` pins the bare code as a failure. This
+    arm fires only for
     a signal that TERMINATES by default, and only where the step's runner printed
     no END-OF-RUN REPORT for the code to be an answer to. A runner that reached
     its own last line has spoken for its exit code - which is what keeps mocha
@@ -1626,8 +1779,54 @@ def declared_coverage_answer(task_files):
     return None
 
 
-def coverage(task_files, named):
+def _declared_stem(path):
+    """A declared entry's basename without its extension or `:line-range`."""
+    base = str(_vocab._strip_line_suffix(path)).rsplit("/", 1)[-1]
+    return base.rsplit(".", 1)[0] if "." in base else base
+
+
+def suite_breadth(task_files, named):
+    """`"; breadth: ..."` when the run named suites this task has no claim to,
+    else `""`.
+
+    A TASK GATE WIDER THAN THE TASK IS A FACT, NOT A FAULT. A directory handed
+    to jest runs every suite under it, so a task declaring one test file is
+    graded by a dozen - green or red, the verdict is mostly about work the task
+    never touched. Both counts are given so the reader can judge the ratio; it
+    refuses nothing, for `coverage`'s reason: the paths are what a runner
+    happened to print.
+
+    A suite the task declares, or one NAMED AFTER a file it declares, is the
+    task's own and not breadth. Vendored paths are nobody's.
+    """
+    owned = [_vocab._strip_line_suffix(f) for f in _declared_files(task_files)]
+    stems = set(_declared_stem(f) for f in owned)
+    suites = sorted(n for n in (named or ())
+                    if _is_suite_path(n)
+                    and not any(seg in _VENDOR_DIRS for seg in _segments(n)))
+
+    def _theirs(path):
+        return (any(path == f or path.endswith("/" + f) or f.endswith("/" + path)
+                    for f in owned)
+                or _subject_of(path) in stems)
+
+    extra = [n for n in suites if not _theirs(n)]
+    if not extra:
+        return ""
+    return ("; breadth: the run named %d suite path(s) and this task declares "
+            "%d file(s), and %d of them are suites the task neither declares "
+            "nor is named after (%s) - this gate asks more than the task "
+            "changed; that is reported, not refused"
+            % (len(suites), len(owned), len(extra),
+               _output.some_of(extra, budget=SAMPLE_BUDGET)))
+
+
+def coverage(task_files, named, task_scope=False, reached=True):
     """`(overlap, basis)` -- which of the task's files the run actually named.
+
+    `reached` is False when no step reached a verdict, and `task_scope` adds
+    the one breadth clause `suite_breadth` writes; both are the caller's to
+    know, because `named` alone carries neither.
 
     `basis` also carries the COMPLEMENT: the declared files the run did NOT
     name, sampled the same way `named` is above it, or the one sentence for
@@ -1652,14 +1851,16 @@ def coverage(task_files, named):
     if settled is not None:
         return settled
     owned = _declared_files(task_files)
+    if not reached:
+        # A step that never answered printed diagnostics, not the paths of what
+        # it exercised: the shell's own `/bin/sh` was once read as one.
+        return None, ("no step reached a verdict, so nothing a runner printed "
+                      "here is evidence about what the gate exercised - "
+                      "coverage is NOT KNOWABLE from this run")
     if named is None:
         return None, ("this runner printed no file paths, so coverage is not "
                       "knowable from its output")
     subjects = set(s for s in (_subject_of(n) for n in named) if s)
-
-    def _stem(path):
-        base = str(_vocab._strip_line_suffix(path)).rsplit("/", 1)[-1]
-        return base.rsplit(".", 1)[0] if "." in base else base
 
     def _hit(f):
         """Whether `named` could have printed the FILE `f` declares.
@@ -1675,9 +1876,10 @@ def coverage(task_files, named):
         path = _vocab._strip_line_suffix(f)
         return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
                     for n in named)
-                or _stem(f) in subjects)
+                or _declared_stem(f) in subjects)
 
     hits = sorted(f for f in owned if _hit(f))
+    wide = suite_breadth(owned, named) if task_scope else ""
     basis = ("the runner named %d path(s); the work under test declares "
              "%d file(s)" % (len(named), len(owned)))
     if subjects:
@@ -1707,9 +1909,9 @@ def coverage(task_files, named):
                       "that prints the suites it ran has not said which sources "
                       "they exercised. So whether this run touched the declared "
                       "work is NOT KNOWABLE from its output; it is not evidence "
-                      "that it did not"
+                      "that it did not%s"
                       % (basis, _output.some_of(_kinds(owned),
-                                                budget=SAMPLE_BUDGET)))
+                                                budget=SAMPLE_BUDGET), wide))
     # THE COMPLEMENT IS THE INTERESTING HALF, an operator said so unprompted:
     # a green gate that exercised a subset is the thing you want to see, and
     # this is the only frame that has both sets to subtract. `owned` is the
@@ -1728,7 +1930,7 @@ def coverage(task_files, named):
     basis += ("; every declared file was named by the run" if not missing
               else "; declared but not named by the run: %s"
               % (_output.some_of(missing, budget=SAMPLE_BUDGET),))
-    return hits, basis
+    return hits, basis + wide
 
 
 def owned_files(manifest, phase_id, task_id=None):
@@ -1839,9 +2041,13 @@ def gate_of(manifest, phase_id, task_id=None):
     "the phase's gate passed while pointed at this task's files" are different
     claims for a record to make.
 
-    ABSENT AND EMPTY ARE ONE ANSWER. A task with no `tests` block and a task with
-    `tests.gate: []` both declare no gate, so they take one path; making them two
-    would be two chances to disagree about the same question.
+    ABSENT AND EMPTY ARE ONE ANSWER - UNLESS THE EMPTY ONE WAS CHOSEN. A task
+    with no `tests` block and a task with `tests.gate: []` both declare no gate
+    and fall back to the phase's. `tests.gateBasis: cleared` is different: it
+    is what `--gate-clear` writes, and it says nothing here can grade this task,
+    so at task scope it resolves EMPTY - `commands/task.md` promises exactly
+    that, and borrowing the phase's gate would grade the task anyway. The
+    phase's own gate still grades it at sign-off.
 
     AN UNKNOWN TASK IS AN ERROR, never a quiet fall back to the phase - the
     distinction `owned_files` already draws, and for its reason: "declares no
@@ -2050,6 +2256,51 @@ def reused_result(identity, row, elapsed_ms):
     }
 
 
+EMPTY_GATE = "empty-gate"
+
+
+def empty_gate_sentence(manifest, phase_id, task_id, source):
+    """What an EMPTY gate means for this subject, as the one sentence every
+    surface prints and the row carries.
+
+    A task whose gate was cleared is graded at sign-off by its phase's
+    `testGate` - unless that is empty too, and then by nothing but review.
+    """
+    if source != "task":
+        return ("%s declares an EMPTY gate: nothing here can prove it done, so "
+                "sign-off rests on review alone" % (phase_id,))
+    phase_cmds, _src, _err = gate_of(manifest, phase_id)
+    if phase_cmds:
+        return ("%s declares an EMPTY gate (tests.gateBasis `cleared`): nothing "
+                "here grades it at task scope, and phase %s's testGate at "
+                "sign-off is what still does" % (task_id, phase_id))
+    return ("%s declares an EMPTY gate (tests.gateBasis `cleared`), and phase "
+            "%s's testGate is EMPTY too: nothing grades this task, and "
+            "sign-off rests on review alone" % (task_id, phase_id))
+
+
+def empty_gate_result(source, basis):
+    """`run_gate`'s shape for a gate that declares no command.
+
+    Every observation is None with the sentence that says why, for
+    `reused_result`'s reason: nothing ran, so nothing was observed, and an
+    empty list would be a measurement.
+    """
+    nothing = "no command is declared, so nothing ran"
+    return {
+        "status": EMPTY_GATE, "emptyBasis": basis, "gateSource": source,
+        "failed": [], "steps": [], "durationMs": 0,
+        "treeMutated": None, "treeBasis": "%s and the tree was not bracketed"
+                                          % (nothing,),
+        "treeMutatedOwned": None, "treeMutatedForeign": None,
+        "ranTotal": None, "countsBasis": "%s and no check was counted"
+                                         % (nothing,),
+        "sharedCounts": [], "notAttributable": None, "attributionBasis": None,
+        "cancelledBy": None, "overlap": None,
+        "coverageBasis": "%s and no runner named a path" % (nothing,),
+    }
+
+
 def render_reuse(res, out=print):
     """Print a verdict nothing here measured, and return the code it earns.
 
@@ -2062,13 +2313,16 @@ def render_reuse(res, out=print):
     switches on.
     """
     prior = res.get("reusedFrom") or {}
-    out("GATE VERDICT REUSED: nothing ran here. This verdict was MEASURED by run "
-        "%s at %s, on a tree with the identity below, and is being repeated "
-        "rather than re-taken." % (prior.get("runId"), prior.get("ts")))
+    # THE WAY BACK TO A MEASUREMENT IS ON THE FIRST LINE, because the reader
+    # who most needs it - one holding a red they did not expect - is the one
+    # who stops at the banner.
+    out("GATE VERDICT REUSED (re-run with --no-reuse to measure it): nothing "
+        "ran here. This verdict was MEASURED by run %s at %s, on a tree with "
+        "the identity below, and is being repeated rather than re-taken."
+        % (prior.get("runId"), prior.get("ts")))
     out("  identity: %s" % (res.get(_ev.REUSE_KEY),))
     out("  basis:    %s" % (res.get("reuseBasis"),))
     out("  says:     %s" % (REUSE_LIMIT,))
-    out("  measure:  re-run with --no-reuse to take this gate again on this tree.")
     if res["status"] == "failed":
         out("GATE RED: %s" % ", ".join(res.get("failed") or []))
         return E_FAIL
@@ -2375,10 +2629,22 @@ def observed_step(name, command, code, text, facts, duration_ms):
         # a step that wraps other runners belongs to one of them, not to the
         # step.
         sig_name, sig_basis = ended_by_signal(step["exit"], text, command)
+        if not sig_name:
+            # The kill jest's report names and its exit status cannot.
+            sig_name, sig_basis = jest_worker_signal(step["exit"], text,
+                                                     command)
         if sig_name:
             step["outcome"] = CANNOT_RUN
             step["signal"] = sig_name
             step["signalBasis"] = sig_basis
+    if not step.get("outcome"):
+        # The command's own words for "I asked nothing". The basis rides on the
+        # step for the terminal; the row keeps the words themselves, in the
+        # `failing` tail below.
+        said = no_verdict_signature(step["exit"], text, command)
+        if said:
+            step["outcome"] = CANNOT_RUN
+            step["outcomeBasis"] = said
     # AFTER the wrapper's own facts, never instead of them: `_shell` observed the
     # failure to spawn directly, and an inference must not overwrite an
     # observation. No basis key is written beside this because the step already
@@ -2405,7 +2671,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
-             recorded=None):
+             recorded=None, task_scope=False):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -2416,6 +2682,9 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     caller records anything, which is what keeps a recorder out of the measurement
     it is recording - an evidence file written inside this function would appear in
     the very `git status --porcelain` it is being judged by.
+
+    `task_scope` is whether the work under test is one task, which is the only
+    scope a gate can be too WIDE for (`suite_breadth`).
     """
     runner = runner or _shell
     before = _tree_stamp.porcelain(project)
@@ -2434,26 +2703,31 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # is the only thing an overlap question can be asked with -- a monotonic
     # reading cannot be compared against another process's.
     started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # THE OUTPUT OF STEPS THAT ANSWERED, and nothing else, is what the coverage
+    # question reads: a step that never reached a verdict printed a diagnostic,
+    # and `files_named` read `/bin/sh` out of one as a path the run exercised.
     steps, texts = [], []
-    # STRICTLY PARALLEL TO `steps`, which `texts` is not: it is appended the
-    # moment the runner returns, so a stop signal arriving while a step's row is
-    # still being built leaves it one entry long. `shared_counts` indexes one
-    # list by the other, and a list that can be off by one is a list that would
-    # attribute one step's paths to another.
+    # STRICTLY PARALLEL TO `steps`, which `texts` is not: it skips every step
+    # that never answered. `shared_counts` indexes one list by the other, and a
+    # list that can be off by one is a list that would attribute one step's
+    # paths to another.
     step_named = []
     cancelled_by = None
     try:
         for name, command in commands:
             step_started = time.monotonic()
             code, text, facts = runner(project, command, timeout)
-            texts.append(text or "")
             step = observed_step(name, command, code, text, facts,
                                  _elapsed_ms(step_started))
             # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
-            # here is the one `ended_by_signal` wrote, never the exit code: a
-            # non-zero exit beside an end-of-run report is a measurement, and a
-            # re-run of a measurement is a red rolled again until it comes back
-            # green. Nor does a timeout or a runner that never started reach
+            # here is `signal`, never the exit code: a non-zero exit beside an
+            # end-of-run report is a measurement, and a re-run of a measurement
+            # is a red rolled again until it comes back green. ONE report is the
+            # exception, and it is `jest_worker_signal`'s: jest's summary after
+            # workers it names as killed - EVERY failure one - is jest reporting
+            # the kill, not a measurement of the suites that died, and a worker
+            # killed for memory is exactly what a lowered bound is for (`jr1`
+            # pins the halved bound). Nor does a timeout or a runner that never started reach
             # this - our own teardown is not the OS ending the run, and a
             # missing interpreter answers the same way however many workers it
             # is asked for. What a kill has that neither of those has is a cause
@@ -2468,17 +2742,16 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
                 retry_started = time.monotonic()
                 lowered, change = lowered_parallelism(command)
                 code, text, facts = runner(project, lowered or command, timeout)
-                # APPENDED FOR ITS OWN ATTEMPT. `texts` is joined for the
-                # coverage question alone, and both attempts really did print -
-                # so a retried step contributes two entries here and still one
-                # to each of the two lists that must stay parallel.
-                texts.append(text or "")
                 first = step
                 step = observed_step(name, command, code, text, facts,
                                      _elapsed_ms(retry_started))
                 step["retriedAfterSignal"] = first["signal"]
                 step["retryBasis"] = retry_note(first["signal"], change)
             steps.append(step)
+            # The attempt that ANSWERED, if one did: a retried step's first
+            # attempt was ended by a signal, so only the second can speak here.
+            if not step.get("outcome"):
+                texts.append(text or "")
             # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
             # come apart. Scraped per step rather than sliced out of the joined
             # text below, because which STEP printed a path is the whole
@@ -2534,7 +2807,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
         # noise - and it would be on the overwhelming majority of rows.
         basis = "%s; %s" % (basis, own_basis)
     named = files_named("".join(texts)) if texts else None
-    overlap, cbasis = coverage(owns, named)
+    overlap, cbasis = coverage(owns, named, task_scope=task_scope,
+                               reached=bool(texts) or not steps)
     # THE TOTAL IS THE SIZE OF THE GATE AND NOT THE SIZE OF ITS RUNS. A
     # plain sum over the steps reported one suite twice as twice as much
     # assurance, which is the reading that concealed a duplicated command for a
@@ -2762,6 +3036,9 @@ def _render_verdict(res, out):
             out("  %s never got as far as a check - a missing command, a runner "
                 "that died before its first test, a port it could not bind."
                 % (", ".join(unstarted),))
+            for st in res["steps"]:
+                if st["name"] in unstarted and st.get("outcomeBasis"):
+                    out("  basis: %s" % (st["outcomeBasis"],))
         for st in killed:
             # ONE SENTENCE PER KILLED STEP, carrying the signal AND the basis:
             # the two channels are not equally strong - one is what the OS
@@ -3023,6 +3300,48 @@ def runtime_claim(manifest):
             "about nothing that only happens at runtime.")
 
 
+def graded_by(task_id, phase_id, source):
+    """The `graded by:` line for a task-scope run, or None at phase scope.
+
+    A task borrowing its phase's gate and a task graded by its own print the
+    same banner, and "this task's gate passed" is a different claim from "the
+    phase's gate passed while pointed at this task's files".
+    """
+    if task_id is None:
+        return None
+    if source == "task":
+        return "  graded by: %s's own tests.gate" % (task_id,)
+    return ("  graded by: the testGate of phase %s - %s declares no gate of its "
+            "own, so this verdict is the phase's gate pointed at its files"
+            % (phase_id, task_id))
+
+
+# The banners a verdict opens with. `GATE VERDICT REUSED` is not one of them: a
+# repeat prints the banner it repeats underneath it.
+_VERDICT_BANNERS = ("GATE RED:", "GATE GREEN:", "GATE COULD NOT RUN:",
+                    "GATE TIMED OUT:", "GATE CANCELLED:",
+                    "GATE MUTATED THE TREE:", "NO CHECK RAN:")
+
+
+def _graded_by_after_banner(out, line):
+    """`out`, printing `line` directly under the first verdict banner.
+
+    Under the banner and never inside it: `reference/orchestrator.md` keys its
+    arms on the banner literals, so the literal stays exactly what it was and
+    the provenance is the line a reader meets next.
+    """
+    if not line:
+        return out
+    said = []
+
+    def _out(text):
+        out(text)
+        if not said and str(text).startswith(_VERDICT_BANNERS):
+            said.append(True)
+            out(line)
+    return _out
+
+
 def _say_who_else_was_running(project, res, row, out=print):
     """Print who else was moving this machine while the run happened.
 
@@ -3059,7 +3378,8 @@ def _say_who_else_was_running(project, res, row, out=print):
                                       for o in others)))
     else:
         out("  machine:  this run had the machine to itself")
-    if res.get("status") == "passed":
+    # An EMPTY gate measured nothing, so there is no verdict to attribute.
+    if res.get("status") in ("passed", EMPTY_GATE):
         return
     verdict = _ev.attribution_of(row, rows)
     if verdict["attributed"] is None:
@@ -3228,12 +3548,25 @@ def main(argv, out=print):
     subject = args.task if source == "task" else args.phase
     if not commands:
         # The EMPTY gate is a designed state (`audit-task.py:_phase_gate`), so it
-        # is reported as itself rather than as a pass: sign-off rests on review
-        # alone, and saying "green" here would claim a measurement nobody made.
-        # It names the PHASE even under `--task`, because an empty answer here is
-        # always the phase's: a task with a gate of its own never reaches this.
-        out("[run-test-gate] %s declares an EMPTY gate: nothing here can prove it "
-            "done, so sign-off rests on review alone" % (args.phase,))
+        # is reported as itself rather than as a pass: saying "green" here would
+        # claim a measurement nobody made. WHOSE empty gate it is decides the
+        # sentence: a task whose gate was cleared is still graded by its phase
+        # at sign-off - when that phase HAS a gate - while an empty phase gate
+        # leaves review alone.
+        said = empty_gate_sentence(manifest, args.phase, args.task, source)
+        res = empty_gate_result(source, said)
+        res["subject"] = subject
+        # RECORDED, because an EMPTY answer is an answer: without a row a done
+        # task reads as work that never carried evidence, and
+        # `--fail-on no-test-evidence` names it with a repair (run the gate)
+        # that has nothing to run.
+        if args.record:
+            res["recorded"] = _record_run(project, args, res, source, [],
+                                          manifest, out=out)
+        if args.as_json:
+            out(json.dumps(res, indent=2, sort_keys=True))
+            return E_OK
+        out("[run-test-gate] %s" % (said,))
         return E_OK
     owns, terr = owned_files(manifest, args.phase, args.task)
     if terr:
@@ -3297,7 +3630,8 @@ def main(argv, out=print):
         try:
             res = run_gate(project, commands, owns=owns, timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
-                                                       args.manifest)[0])
+                                                       args.manifest)[0],
+                           task_scope=args.task is not None)
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no
@@ -3341,9 +3675,18 @@ def main(argv, out=print):
         return E_OK if res["status"] == "passed" else E_FAIL
     # WHOSE gate ran is printed, not left to be inferred from the id: under
     # `--task` a task with no gate of its own is measured by the PHASE's, and a
-    # reader who assumed otherwise would credit the wrong declaration.
-    out("[run-test-gate] %s: %d command(s), %s gate"
-        % (subject, len(commands), source))
+    # reader who assumed otherwise would credit the wrong declaration. So a
+    # task-scope run names both ids here, and says it again under the banner.
+    if args.task is None:
+        out("[run-test-gate] %s: %d command(s), phase gate"
+            % (args.phase, len(commands)))
+    else:
+        out("[run-test-gate] task %s in phase %s: %d command(s), %s"
+            % (args.task, args.phase, len(commands),
+               "its own gate" if source == "task"
+               else "the phase's gate - %s declares none of its own"
+               % (args.task,)))
+    out = _graded_by_after_banner(out, graded_by(args.task, args.phase, source))
     # WHAT THE GATE SET NEVER MEASURES, beside what it did. A reader meeting a
     # green verdict with no such sentence reads broader coverage than was taken,
     # and this is the one place the sentence can be both true and cheap: the plan
