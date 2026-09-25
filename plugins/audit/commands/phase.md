@@ -160,9 +160,12 @@ what moved and never who moved it, so this is reported with both readings named 
 refused. `GATE MUTATED THE TREE` is the other half — a declared file, which the gate itself was
 grading — and that one still refuses.
 
-**`GATE COULD NOT RUN` is not a red suite.** The step exited non-zero having run zero checks:
-a missing command, a runner that died before its first test. Fix the runner and re-run rather
-than spending a retry on the task, and do not let it be recorded as the task's failure.
+**`GATE COULD NOT RUN` is not a red suite.** The step reached no verdict, for a reason that is
+not the work's: the runner never started (a missing command, a gate entry the shell could not
+find), it started and never reached a check (a port it could not bind, a filter that selected no
+test file), or the OS ended it - which can come after checks ran, and for a jest worker is read
+from jest's own report while other suites passed. Fix the runner and re-run rather than spending
+a retry on the task, and do not let it be recorded as the task's failure.
 
 **A runner that prints only SUITE paths still names your work.** `tests/parser.spec.ts` is matched
 to `src/parser.ts` — the stem the test is named after, across directories, because `src/` tested

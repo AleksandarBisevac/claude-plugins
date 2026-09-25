@@ -455,7 +455,7 @@
     {
       "id": "P70",
       "title": "A gate that could not reach a verdict says so, and names what failed",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P70.json"
     },
     {
@@ -524,11 +524,12 @@
       "P66.4-x3g",
       "P67.2",
       "P68.1",
-      "P70.2",
-      "P71.1",
-      "P72.1",
       "P69.3",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P70.2",
+      "P70.3-fos",
+      "P71.1",
+      "P72.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -588,7 +589,9 @@
       "P69.2",
       "P69.1",
       "P69.3",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P70.1",
+      "P70.3-fos"
     ],
     "README.md": [
       "P2.3",
@@ -812,7 +815,8 @@
       "P63.4",
       "P63.8",
       "P63.12",
-      "P69.3"
+      "P69.3",
+      "P70.3-fos"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -843,7 +847,8 @@
       "P33.2",
       "P48.1",
       "P57.1",
-      "P57.4"
+      "P57.4",
+      "P70.3-fos"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -1105,7 +1110,8 @@
       "P49.4",
       "P57.5",
       "P61.1",
-      "P61.8"
+      "P61.8",
+      "P70.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1541,7 +1547,8 @@
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
       "P32.2",
-      "P69.3"
+      "P69.3",
+      "P70.2"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -1592,7 +1599,8 @@
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
       "P26.1",
-      "P47.2"
+      "P47.2",
+      "P70.2"
     ],
     "tools/prove-gates.py": [
       "P18.6",
@@ -1767,7 +1775,8 @@
       "P59.3",
       "P59.6",
       "P59.8",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1792,7 +1801,8 @@
       "P59.6",
       "P59.8",
       "P59.13",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1959,7 +1969,8 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1970,7 +1981,8 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2182,7 +2194,9 @@
       "P54.6",
       "P55.5",
       "P56.5",
-      "P55.14"
+      "P55.14",
+      "P70.1",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2303,7 +2317,8 @@
       "P48.1",
       "P59.5",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P70.3-fos"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2312,7 +2327,8 @@
       "P46.6",
       "P48.1",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7"
@@ -2665,7 +2681,8 @@
       "P64.3",
       "P68.1",
       "P70.1",
-      "P69.3"
+      "P69.3",
+      "P70.3-fos"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2736,7 +2753,8 @@
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
       "P63.11",
-      "P69.3"
+      "P69.3",
+      "P70.3-fos"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"

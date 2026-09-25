@@ -89,6 +89,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   they differ.
 
 ### Changed
+- **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
+  names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
+  the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the
+  `GATE RED:` / `GATE GREEN:` literals the orchestrator keys on are unchanged (`NO CHECK RAN:`
+  counts as a banner too). The coverage basis
+  gains one `breadth:` clause when the run named suites the task neither declares nor is named
+  after, with both counts; it refuses nothing. A repeated verdict's first line now carries the
+  `--no-reuse` spelling.
+- **`validate-manifest.py` names three more states, as warnings.** A `testGate` or `tests.gate`
+  entry whose every comma-separated part is a `meta.buildCommands` key - one string the shell
+  runs as a single command it cannot find - with the split spelling; a phase in flight (running,
+  or with its sign-off due) with no `desiredOutcome`; and one with an EMPTY `testGate`, which stays
+  a designed state. Finished tasks and phases are exempt, a phase not yet started is not asked,
+  and nothing is refused.
 - **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
   phase branch was prose the orchestrator ran before the verb, so every phase driven through the
   verbs rather than `/audit:run` ran on its parent with no branch - most of this repository's own -
@@ -145,6 +159,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
+  shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
+  vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,
+  and the shell's diagnostic was read for paths - `/bin/sh` became a printed path and produced a
+  false `NO OVERLAP`. `run-test-gate.py` now reads each diagnostic a case holds the tool's own
+  output for (sh, dash, zsh, bash and vitest - not cmd.exe, which stays a failure) beside its exit code,
+  only where the output carries no end-of-run report (`reached_a_verdict` stays the guard for a
+  runner whose exit status is a count, and a bare 127 stays a failure), prints the words it read
+  as the basis, and asks the coverage question only of steps that reached a verdict.
+- **A jest suite that failed to run names its suite, its reason and its signal.** `failing` held
+  `Test suite failed to run` with neither the suite nor the cause, so a worker killed by SIGSEGV
+  was graded `failed`, recorded without a trace of the signal, and then repeated as a red on the
+  same tree. Each such heading is now paired with its `FAIL <path>` and first reason line, the
+  signal written FIRST so the committed row keeps it behind however long a suite path, and a run
+  whose every failure is a killed worker is `could-not-run` carrying `signal` and a `signalBasis`
+  naming jest's report as the channel - jest reaps its workers, so its exit stays 1. Such a step is
+  run once more at a halved `--maxWorkers` where the command declares one, which is what the
+  signal retry is for. One real assertion failure beside a kill stays `failed`, is not retried,
+  and the list names both.
+- **A task whose gate was cleared is EMPTY at task scope, as `commands/task.md` promises.**
+  `--gate-clear` writes `tests.gateBasis: cleared`, and `run-test-gate.py --task` ignored it and
+  ran the phase's gate against the task anyway. It now answers EMPTY, names the task and says the
+  phase's `testGate` at sign-off still grades it - or that nothing does, when that gate is EMPTY
+  too; a task that merely declares no gate keeps the phase fallback. Under `--record` an EMPTY
+  answer, at task or phase scope, writes an `empty-gate` row and pointer, so a done task with a
+  cleared gate does not trip `--fail-on no-test-evidence`; under `--json` it is a JSON object.
 - **`/audit:worktree` named a phase's branch one way in `add` and another everywhere else
   (BUG-11).** `add` composed the branch with git user.name while `list`, `remove` and `sweep`
   composed it with no user name, so under a template carrying `{initials}` the worktree `add` had
