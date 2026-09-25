@@ -1,7 +1,7 @@
 {
   "id": "P69",
   "title": "What the plan records about a finished phase is true, and the worktree tool knows its own branches",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "manage-worktrees names a phase's branch the same way in every verb; doctor accepts the verb's own close record and keeps the FINDING for a real hand edit; and the stored status of a phase and a linked bug is the derived one, written by the verbs that change it, read through the derivation by lookup, and checked by the validator - with one command that settles a plan already carrying stale values",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "036e98e87346dfb55f49ffe233b7dfab1e8a5bbc",
   "branch": "audit/p69-what-the-plan-records-about-a",
-  "mergedAt": null,
+  "mergedAt": "2026-09-25T17:12:10Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
