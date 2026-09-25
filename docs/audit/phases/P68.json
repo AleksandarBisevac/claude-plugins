@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "d498013c38d01a61d6c5ff5dd54072726855a319",
   "branch": "audit/p68-the-index-is-committed-only-wh",
-  "mergedAt": null,
+  "mergedAt": "2026-09-25T11:32:11Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
