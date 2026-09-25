@@ -93,6 +93,19 @@ def _cases(check):
               M.parse_version("v3.10.0") > M.parse_version("3.9.1")
               and M.parse_version("release-candidate") is None)
 
+        pv = M.parse_version
+        check("v2b a pre-release is OLDER than its release and newer than the one "
+              "before, as semver orders them; build metadata is ignored",
+              pv("3.0.0") < pv("3.1.0-beta") < pv("3.1.0")
+              and pv("3.1.0+build.7") == pv("3.1.0")
+              and pv("3.1.0-alpha") < pv("3.1.0-beta"))
+        check("v2c ...and anything after the numbers that is neither is not a version",
+              pv("3.1.0beta") is None and pv("3.1") is None)
+        check("v2d a running pre-release is NOT up to date with the release of the same "
+              "number - the release is newer",
+              M.verdict({"version": "3.1.0-beta"}, None, {"tag": "v3.1.0"})[0]
+              == M.E_NEWER)
+
         name, basis = M.marketplace_of(plug, home)
         check("v3 the marketplace is found from Claude Code's install record for this "
               "exact path: %r" % ((name, basis),),
@@ -180,6 +193,15 @@ def _cases(check):
               and "claude plugin update audit@quality-gates" in text)
         check("v9b ...and an older installed copy is flagged as older",
               "2.0.1 in /work/old  (older than the running copy)" in text)
+        home_nv, plug_nv = _home(os.path.join(root, "nightly"), copies=[
+            {"scope": "project", "projectPath": "/work/nightly", "installPath": "/y",
+             "version": "nightly-build"}])
+        nv_text = M.render(M.collect(fetch=_release("v3.0.1"), home=home_nv,
+                                     plugin_root=plug_nv))
+        check("v9e an installed copy whose version does not read as one is said to be "
+              "not comparable - never called older on a default:\n%s" % (nv_text,),
+              "nightly-build in /work/nightly  (version not comparable)" in nv_text
+              and "nightly-build in /work/nightly  (older" not in nv_text)
         same = M.render(M.collect(fetch=_release("v3.0.1"), home=home, plugin_root=plug))
         check("v9c SECOND DIRECTION: up to date prints no update commands",
               "claude plugin update" not in same)

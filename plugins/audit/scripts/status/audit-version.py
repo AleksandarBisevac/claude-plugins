@@ -79,10 +79,28 @@ def _read_json(path):
         return None, "%s is not JSON (%s)" % (path, exc)
 
 
+_SEMVER = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)"
+                     r"(?:-([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?"
+                     r"(?:\+[0-9A-Za-z.-]+)?$")
+
+
 def parse_version(text):
-    """`3.0.1` / `v3.0.1` as a comparable tuple, or None for anything else."""
-    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", str(text or "").strip())
-    return tuple(int(g) for g in m.groups()) if m else None
+    """A version as semver orders it, or None for anything that is not one.
+
+    `v3.1.0`, `3.1.0-beta.2`, `3.1.0+build.7`. A pre-release sorts BEFORE its
+    release - a running `3.1.0-beta` is not up to date with a published `3.1.0` -
+    its identifiers numerically where they are numbers and a number before a word;
+    build metadata does not order at all. Anything else after the numbers is not a
+    version, and a caller reports that rather than comparing it to a default."""
+    m = _SEMVER.match(str(text or "").strip())
+    if not m:
+        return None
+    core = tuple(int(g) for g in m.groups()[:3])
+    if m.group(4) is None:
+        return core + ((1,),)
+    ids = tuple((0, int(p), "") if p.isdigit() else (1, 0, p)
+                for p in m.group(4).split("."))
+    return core + ((0,) + ids,)
 
 
 def running(plugin_root=None):
@@ -279,11 +297,18 @@ def render(facts):
             lines.append("               offered version: %s" % market["offeredWhy"])
     have = parse_version(run.get("version"))
     for copy in facts.get("installed") or []:
-        older = (parse_version(copy.get("version")) or (0, 0, 0)) < (have or (0, 0, 0))
+        theirs = parse_version(copy.get("version"))
+        # NO DEFAULT FOR A VERSION THAT DOES NOT READ AS ONE: it is not older, it is
+        # not comparable, and the line says which.
+        if theirs is None:
+            mark = "  (version not comparable)"
+        elif have is not None and theirs < have:
+            mark = "  (older than the running copy)"
+        else:
+            mark = ""
         lines.append("  installed    %s %s%s%s" % (
             copy.get("scope") or "?", copy.get("version") or "?",
-            (" in %s" % copy["project"]) if copy.get("project") else "",
-            "  (older than the running copy)" if older and have else ""))
+            (" in %s" % copy["project"]) if copy.get("project") else "", mark))
     if facts.get("installedWhy"):
         lines.append("  installed    %s" % facts["installedWhy"])
     if pub.get("error"):
