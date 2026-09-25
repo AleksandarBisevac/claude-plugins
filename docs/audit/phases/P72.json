@@ -29,7 +29,7 @@
     {
       "id": "P72.1",
       "title": "One tree resolver for every hook, attribution from the rows, and git read only in command position",
-      "status": "in_progress",
+      "status": "done",
       "description": "Field report on 3.0.1, reproduced at HEAD: only require-plan re-roots onto a linked worktree (_config.path_tree). guard-secrets-read judges shell writes against CLAUDE_PROJECT_DIR's plan ('Phase P41 is in_progress' for an executor in the P48 worktree) and skips out-of-root worktree targets; guard-capabilities applies main's area policy; remind-tdd is silent; guard-history-rewrite, journal-writes, guard-edits, meter-usage and detect-plan-skip use repo_root. One _config.tree_for(data, target) over path_tree/command_tree, every manifest/state reader calls it, and a lint over hooks/ (hosted where the cross-file lints live, reading source only - hooks may not import scripts) bans a bare repo_root beside a manifest or state read. journal-writes then derives task.complete/task.commit for a worktree's writes. guard-bash-writes blames a shell command for journal rows the plugin's own writers appended (peer session hook rows, CLI rows filed under another --project state dir, a merge): bind the verdict to content - new rows that chain validly onto the committed tail with via hook/cli/panel and a fresh ts are named as the plugin's writer; bytes equal to a version reachable from MERGE_HEAD/ORIG_HEAD are 'brought in by the merge'; otherwise the tamper notice stands; peer sidecar claims stay unread. guard-history-rewrite denies 'echo ... git stash' and a piped heredoc body 'cat <<EOF | python3 x.py -' containing the words: recognise git only in command position (start, ; && || | newline, or after xargs/sudo/env/bash -c), classify a piped heredoc body by the far side of the pipe; 'true && git stash push' stays DENY.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -87,14 +87,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c9a2333",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_config.tree_for is the one resolver, enforced by _deps.hook_tree_violations; journal attribution reads the bytes and the chain; the history guard reads git only in command position.",
+        "descriptive": "Hooks judge an executor in a linked worktree against that worktree's plan, and stop blaming commands for the plugin's own journal writes or for prose that mentions git."
       },
       "startedAt": "2026-09-25T14:32:08Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T15:37:23Z",
+      "verifiedBy": [
+        "test__config tr1",
+        "test_guard_secrets_read lw1",
+        "test_journal_writes tf1",
+        "test_guard_history_rewrite gp1",
+        "test_guard_bash_writes ja1",
+        "test__deps ht1"
+      ]
     }
   ],
   "startedAt": "2026-09-25T14:32:08Z"
