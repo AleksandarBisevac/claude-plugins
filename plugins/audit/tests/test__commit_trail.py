@@ -122,6 +122,23 @@ def _cases(check):
               tasks[0]["commit"] is None
               and shas[0] not in [str(t["commit"]) for t in tasks[:1]],
               repr(tasks[0]))
+        # A bug's `fixedIn` stored off its fix task's commit goes with that commit;
+        # one naming ANOTHER commit was put there by someone and is left alone.
+        man = _manifest(shas[2], shas[0])
+        man["bugs"] = [{"id": "BUG-1", "taskId": "P0.1", "fixedIn": shas[2]},
+                       {"id": "BUG-2", "taskId": "P0.1", "fixedIn": shas[1]},
+                       {"id": "BUG-3", "taskId": "P0.2", "fixedIn": shas[0]}]
+        out_b, cleared_b = M.clear(man, [("P0", "P0.1", shas[2])])
+        fixed_in = [b["fixedIn"] for b in out_b["bugs"]]
+        check("t5b clear() also clears a bug's fixedIn that held the commit its fix "
+              "task lost, names it in `cleared`, and leaves a fixedIn naming any "
+              "other commit - and the bug of a healthy task - alone: %r / %r"
+              % (fixed_in, cleared_b),
+              fixed_in == [None, shas[1], shas[0]]
+              and [c.get("bugId") for c in cleared_b] == [None, "BUG-1"]
+              and M.changes_of(cleared_b)[1] == {"id": "BUG-1", "field": "fixedIn",
+                                                 "from": shas[2], "to": None}
+              and "BUG-1" in M.summary(cleared_b))
         check("t8 summary() names the task and the SHA it used to hold, so the "
               "journal row is readable without opening the manifest",
               "P0.1" in M.summary(cleared) and shas[2][:12] in M.summary(cleared),

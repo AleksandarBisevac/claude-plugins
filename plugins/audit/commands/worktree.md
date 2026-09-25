@@ -44,6 +44,13 @@ and whether the branch needs creating are all answered before git is called, bec
 refusals here arrive with three different exit codes. `--path` names somewhere other than the
 default `../<repo>-<phaseId>`.
 
+**A new worktree has no installed dependencies.** Git checks out tracked files only, so an ignored
+`node_modules/`, a virtualenv or a build cache is not there. Say so in the next step, and install
+inside the worktree with the project's own command before the phase runs its test gate. Do not
+symlink the main checkout's `node_modules` in: the link resolves to a path outside the worktree,
+and a dev server that confines file access to the project root — Vite's `server.fs.allow`, for
+one — refuses to serve through it.
+
 **`remove <phaseId>`** — removes it, after asking the questions git does not. It refuses a dirty
 tree, a tree git will not describe, and the tree the process is standing in. `--force` is the
 explicit escape; state what it destroys before offering it.

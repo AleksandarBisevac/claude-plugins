@@ -1227,8 +1227,8 @@ def _cases(_record):
           and "open-bugs" in M.evaluate_gate(s, ("open-bugs",)))
 
     # (d) derived bug status — a bug materialized into a DONE task reads as fixed
-    #     even though bugs[].status is still 'open' (the orchestrator never writes
-    #     bugs[] during a run, so the index stays untouched for parallel phases).
+    #     even though bugs[].status is still 'open' (a plan closed before
+    #     `/audit:task done` stored the derived value, or closed by hand).
     dm = {"meta": {"version": 2},
           "phases": [{"id": "P0", "title": "P", "status": "in_progress", "tasks": [
               {"id": "P0.1", "title": "fix", "status": "done", "bugId": "BUG-1"}]}],

@@ -184,7 +184,7 @@ claude-plugins/                           # this repo (personal, public)
           _doctor_policy.py               # meta.areas, the capability policy, the buildCommands runners
           _doctor_ado.py                  # the ADO connector's operational half (transport, switches, links)
           _doctor_trail.py                # has anything run here, and which plugin copy ran it: hook state, the running-copy stamp, usage ledger, journal chain
-          _doctor_completions.py          # the task.complete receipts against the plan, git and the ledger
+          _doctor_completions.py          # the close receipts against the plan, git and the ledger
           _doctor_hygiene.py              # what is HELD (locks) and what is LEAKING (local artifacts in git)
           _gate_feed.py                   # the plan-gate events feed's prune rule: which rows no longer belong
           audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
@@ -374,7 +374,7 @@ L7:
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _journal_io, _manifest_io, _output, _proposals, _worktrees
+  close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit
@@ -826,7 +826,10 @@ one hard-coded answer each. `parent_branch()` resolves `phase.parentBranch ?? me
 .developmentBranch`, the same chain `_areas` uses for the review skill, so a phase can integrate
 into a story branch, a release line, or another phase's branch instead of always into the
 repository's development branch. `compose()` expands `meta.branch.template` — `{type}`,
-`{initials}`, `{phase}`, `{slug}` — into the name.
+`{initials}`, `{phase}`, `{slug}` — into the name. `branch_of()` is the one answer every
+worktree surface gives to "which branch is this phase's" — the recorded `phase.branch`, else the
+composed name with git user.name — so `manage-worktrees.py` and the panel's sweep cannot name a
+phase two ways; `plan_branches()` is that answer over a whole plan.
 
 **It is Python because a template cannot be followed from prose.** `reference/orchestrator.md`
 could say "compose `<prefix>/<phaseId>-<slug>`" while the shape was fixed, and a reader would get
@@ -971,7 +974,11 @@ grades reachability from HEAD and will delete a branch that never reached its de
 Sign-off steps 5c–5e as one command. It merges the phase branch into its resolved parent, writes
 `phase.mergedAt`, and performs whatever cleanup `meta.merge` asks for — each step planned in full
 before the first write, and each result read back by asking a *different* question than the write
-answered.
+answered. The merge is an input of the phase's derived status, so the stamp stores that status in
+the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
+re-mirrors the index stub from the shard under the index lock. Both writes are revalidated, and a
+finding the write introduced restores the prior bytes (`_revalidated_write`). Any failure of the
+mirror, the lock's own included, is a sentence naming `audit-task.py settle`, never a failed merge.
 
 **It never runs `git switch`.** Not as a preference: `git switch <parent>` from inside the worktree
 a phase ran in fails with `fatal: '<parent>' is already used by worktree at '<the main tree>'`, so
@@ -1045,7 +1052,9 @@ sentence, and only one of them describes a repository somebody should feel good 
 ### `plugins/audit/scripts/manifest/_commit_trail.py` + `repair-commits.py`
 Is every recorded `task.commit` still reachable, and what to write when one is not. The manifest
 names a SHA per finished task and derives `bug.fixedIn` from it; that is the audit trail, and it
-is a trail only while git still reaches every commit it names.
+is a trail only while git still reaches every commit it names. `clear()` nulls a lost task commit
+and, with it, a bug's `fixedIn` holding that same commit — the copy `/audit:task done` stores,
+which nothing else would ever move — and `changes_of()` is the journal's spelling of both.
 
 **Existence is not reachability, and the gap between them was a real hole.** `/audit:doctor`
 asked `git rev-parse --verify` alone — which answers *is this object in the store* — so a
@@ -2400,11 +2409,13 @@ feature gets zero new lines.
 ### `plugins/audit/scripts/manifest/_manifest_crossrefs.py`
 Every question about how one part of the manifest **refers** to another (layer 2): unique
 ids across the one phase/task/bug namespace, `blockedBy`/`dependsOn` resolution, dependency
-cycles, `fileIndex` integrity in **both** directions, the reciprocal `bug ↔ task` link, and
-parked `proposals[]` (reserved ids, staged refs, the `materializedAs`/status pair). Each
-takes the index `_manifest_phases` produced plus, for three of them, the manifest, and
-returns its own `(findings, warnings)` — no accumulator shared, no order depended on, so a
-case can call any of them with a hand-built index and no manifest anywhere near it.
+cycles, `fileIndex` integrity in **both** directions, the reciprocal `bug ↔ task` link,
+parked `proposals[]` (reserved ids, staged refs, the `materializedAs`/status pair), and a
+stored phase or bug value its derivation answers differently (`_check_derived`, one warning
+per record in the `<kind> <id>: <body>` shape with an id-free body naming `SETTLE_COMMAND`, so
+`_warning_groups.collapse` prints a stale plan as a count per kind of move). Each takes the index `_manifest_phases` produced, the manifest,
+or both, and returns its own `(findings, warnings)` — no accumulator shared, no order depended
+on, so a case can call any of them with a hand-built argument and no file anywhere near it.
 
 ### `plugins/audit/scripts/manifest/_warning_groups.py`
 The **shape** a repeated warning prints in (layer 2), and the reason it is not inside the rule
@@ -2438,6 +2449,12 @@ fires once per task prints one line naming the count and the phases; `--verbose`
 one per item and is the flag every elided line names. Findings are printed as they come — see
 that module for why they are not grouped. The `OK:` tail keeps counting WARNINGS and not
 lines, because the two are meant to differ and the collapsed line says its own size aloud.
+Two warnings are asked here rather than by `validate()`, because the assembled manifest has
+already lost what they are about: an index-only field in a shard body
+(`_manifest_io.index_only_in_bodies`) and an index stub whose mirrored key has fallen behind
+its shard (`_manifest_io.stale_stubs`). The second, like `_manifest_crossrefs._check_derived`'s
+stored-against-derived warning, names `audit-task.py settle` - a warning and never a finding,
+because every plan written before the verbs stored derived values carries some.
 
 ### `plugins/audit/scripts/status/_status_facts.py`
 What the manifest SAYS, as a machine-readable answer (layer 2) — the half of status that
@@ -2620,13 +2637,15 @@ state cannot tell an operator they are paying for a gate that keeps earning noth
 trail can, and doing so is advice rather than a build failure.
 
 ### `plugins/audit/scripts/status/_doctor_completions.py`
-The one check that CORRELATES two records rather than inspecting one: the journal's
-hook-emitted `task.complete` rows against the manifest's done tasks, the commit SHAs those
-tasks name against what git has, and the usage ledger's coverage of the same ids. A done task
-inside the record era with no record is positive evidence the manifest was edited outside the
-pipeline — a FINDING, as is a SHA git has never heard of; everything the check merely could
-not look up is a WARNING. The era is the WATERMARK with no config knob: the first
-`task.complete` row's `ts`. `--deep` adds the journal-in-commit cross-check. Layer 4.
+The one check that CORRELATES two records rather than inspecting one: the journal's close
+receipts against the manifest's done tasks, the commit SHAs those tasks name against what git
+has, and the usage ledger's coverage of the same ids. A receipt is a row carrying the task's
+current `completedAt`: the hook-emitted `task.complete`, or the `done` verb's own `task.done` —
+the only record of a close the hook did not watch, such as one run in a linked worktree. A
+`task.complete` carrying no `completedAt` still receipts its task id alone. A done task inside the record era with neither is positive evidence the manifest was
+edited outside the pipeline — a FINDING, as is a SHA git has never heard of; everything the
+check merely could not look up is a WARNING. The era is the WATERMARK with no config knob: the
+first receipt's `ts`. `--deep` adds the journal-in-commit cross-check. Layer 4.
 
 ### `plugins/audit/scripts/status/_doctor_hygiene.py`
 The two questions about the working copy itself: what is HELD, and what is LEAKING.
@@ -2723,11 +2742,16 @@ cancel verb in `audit-task.py` actually writes the reason) and cross-checks the 
 matching `task.cancel`/`phase.cancel` journal row, matched by `details.taskId`/`phaseId`
 rather than the row's shard `target`, which several tasks in one phase share. `bug <id>`
 reads the bug's own `status`/`notes`/`fixedIn` — there is no separate resolution field in
-this schema, so that is the honest answer rather than an invented one. `file <path>` is a
+this schema, so that is the honest answer rather than an invented one. A bug's `status` and
+`fixedIn`, and a phase's status under `cancel`, are the DERIVED values
+(`_manifest_io.derived_disagreements`); where the stored ones differ the answer prints
+`stored X, derived Y (basis)`, because echoing the stored field would repeat the stale answer
+the derivation exists to correct. `file <path>` is a
 LOOKUP over `fileIndex`, never a search: an exact key match only, and the last entry in
 `fileIndex[path]` is the answer by the index's own append-only convention (never remove
-another task's id). All three return a plain "no match" — never a nearest id or a similar
-path — when the manifest does not carry an answer; an id that exists but does not apply to
+another task's id). `brief <taskId>` is `file` folded over every path the task declares,
+one call at spawn time instead of one per path. Each returns a plain "no match" — never a
+nearest id or a similar path — when the manifest does not carry an answer; an id that exists but does not apply to
 the question (a task that was never cancelled) is a different, legitimate answer and not a
 miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error. Layer 7 (an entry point
 reaching `_manifest_io`/`_journal_io` at layer 1 and `_evidence_io` at layer 2, for the
@@ -3530,10 +3554,29 @@ passes at the site — sharing them would have made `seed` appear, to the suite'
 
 `signoff <phaseId> --verdict passed|skipped --summary TEXT` records the sign-off a phase's
 derived `done` reads (`_manifest_io.effective_phase_status`): `review.status`, `review.outcome`,
-`summary`, the claim cleared, a `phase.signoff` row - and never `status`, which used to be a hand
-edit made on the phase branch before `close-phase` merged it, so a phase worked on its parent
-branch had nothing to hand `close-phase` and stayed in_progress for ever. It refuses open work, a
-task-less phase, a second sign-off and a closed phase.
+`summary`, the claim cleared, a `phase.verdict` row - and then STORES the status that record now
+derives, on the shard and the index stub: `done` for a phase with no branch, nothing yet for one
+awaiting its merge, whose `done` `close-phase.py`'s stamp stores. A hand edit of `status` made on
+the phase branch before `close-phase` merged it used to be the only writer, so a phase worked on
+its parent branch had nothing to hand `close-phase` and stayed in_progress for ever; the verb then
+stored nothing, which left the same stale value for every reader that does not derive. It refuses
+open work, a task-less phase, a second sign-off and a closed phase. `done` does the same for a bug
+its task fixes: `fixed` and `fixedIn` go onto the bug in the index, the one write a close makes
+there.
+
+`reopen <taskId> --reason TEXT` is `/audit:run`'s re-open, which was a hand edit of the task's
+close and its linked bug. It clears the close (`status` back to pending, `attempts` 0, `commit`,
+`completedAt`, `outcome`, `verifiedBy`, `intentCheck`), puts a linked bug back to `in_progress`
+with no `fixedIn`, and journals `task.reopen`. It refuses a task that is not done, and one whose
+phase is signed off - done, or awaiting its merge - because that verdict is not re-decided, and a
+stored `done` over an open task is a finding every later verb refuses on.
+
+`settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
+`status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its
+shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled back on findings,
+with one `plan.settle` row naming each value it moved. It is the command `validate-manifest`'s
+warnings name, and it only ever moves a value towards the derivation: a stored terminal status and
+a person's `wontfix`/`not_a_bug` win inside the derivation, so settle cannot overwrite either.
 
 `add-phase --park` writes the same phase `add-phase` builds as a parked proposal instead
 (`PROP-<n>[-suffix]`; on a side branch the reserved phase id is the placeholder `P<n>-<suffix>`,
