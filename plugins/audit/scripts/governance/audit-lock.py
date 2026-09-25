@@ -24,9 +24,11 @@ This module carries no inline `--selftest` any more; its cases live in
   decides, so a name listed there is a name this command accepts.
   `user-<name>` is the namespace for tooling that is not the plugin's -- an e2e
   guard driving one backend from several worktrees takes `user-e2e` here and is
-  refused from every worktree of the clone while it is held. The name rules are
-  `_locks.USER_NAME_RULES`, which a refused name prints; no user name can equal
-  or read as one of the plugin's own.
+  refused from every worktree of the clone while it is held, by the SAME session
+  and pid too: a user lock excludes by holder and never answers re-entry. The
+  name rules are `_locks.USER_NAME_RULES`, which a refused name prints from
+  acquire and release alike; no user name can equal or read as one of the
+  plugin's own.
   --session / --pid override the identity written into the lock; they default to
   $CLAUDE_CODE_SESSION_ID and $CLAUDE_PID.
   --wait says how long a LIVE holder is waited out before the refusal is printed.

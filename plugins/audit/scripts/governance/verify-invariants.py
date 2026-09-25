@@ -25,7 +25,10 @@ Usage:
 
 Exit codes:
   0  answered - no breach found (gaps are printed and do not fail)
-  1  at least one breach
+  1  at least one breach - with a baseline in use, at least one it does not
+     hold. A --write-baseline that succeeded exits 0: what it found is exactly
+     what it just baselined, and the count it wrote is printed; a refused write
+     is 2
   2  usage error, an unreadable manifest, or a phase id that is not there
 
 WHY A GAP EXITS 0 AND A BREACH EXITS 1. They are different claims. A breach is
@@ -39,28 +42,27 @@ Printing the gap where the verdict goes is the honest half: `partial` and
 THE BASELINE. A long history carries breaches nobody will ever repair - frozen
 commits are not rewritten to fix their scope - and printing every one of them
 on every run buries the one made today. `--write-baseline` records the current
-breaches as fingerprints in `invariants-baseline.json` beside the manifest, and
-once that file exists a run prints only what it does not hold, plus how many it
-does. It lives beside the manifest, next to the journal and evidence directories
-and not inside either, because it is a committed record about THIS plan's history
-that a clone must receive with the plan, and both of those directories have
-readers that parse every file in them as their own rows.
+breaches in `invariants-baseline.json` beside the manifest, and once that file
+exists a run prints only what it does not hold, plus how many it does, and exits
+1 only on a new one. It lives beside the manifest, next to the journal and
+evidence directories and not inside either, because it is a record about THIS
+plan's history that a clone must receive with the plan, and both of those
+directories have readers that parse every file in them as their own rows.
 
-A fingerprint is the phase, the check and the breach line, which names its
-subject and the commit's SHA. Frozen history is SHA-stable, so that is enough to
-match on; a REWRITE is not. A rebase, squash or amend gives a commit a new SHA,
-so its breach comes back as new and its old entry matches nothing. Neither is
-hidden: a baseline entry that no longer matches is always printed, with what git
-says about the commit it names, and the output states the rule on every run
-that reads a baseline.
+What an entry is matched on, what is set aside rather than compared, and why the
+write refuses while a phase is in flight are `_invariants`' - the gate reads the
+same baseline through the same functions, so the two cannot disagree about which
+breaches count. An entry that no longer matches is always printed, never
+dropped, and the rule for a rewritten history is printed on every run that reads
+a baseline.
 
 Nothing mutates without `--write-baseline`: no lock is taken, no file is
-written, and git is only read. With it, the one file written is the baseline.
+written, and git is only read. With it, the one file written is the baseline,
+under the `index` lock.
 """
 import argparse
 import json
 import os
-import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -85,7 +87,6 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _commit_trail  # noqa: E402  (does this clone still have a commit)
 import _invariants  # noqa: E402  (the rule this command carries)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 
@@ -113,162 +114,12 @@ ledger_dir_for = _invariants.ledger_dir_for
 git_root_for = _invariants.git_root_for
 
 
-# --- the baseline -------------------------------------------------------------
-BASELINE_NAME = "invariants-baseline.json"
-BASELINE_VERSION = 1
-
-# A commit SHA as the checks print one. The digit is required because an
-# abbreviation of twelve hex characters with no digit in it is vanishingly rare,
-# while an English word spelled only from a-f is not.
-_SHA = re.compile(r"\b(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}\b")
-
-REWRITE_RULE = (
-    "a fingerprint is the phase, the check and the breach line, which names its "
-    "subject and commit SHA. A rebase, squash or amend gives a commit a new SHA, "
-    "so its breach is listed as NEW and its old entry as no longer matching - "
-    "review both, then re-run with --write-baseline")
-
-BASELINE_ABOUT = (
-    "Breach fingerprints verify-invariants.py reports as known rather than new. "
-    "Written only by --write-baseline; commit it beside the manifest. %s."
-    % (REWRITE_RULE[0].upper() + REWRITE_RULE[1:],))
-
-
-def baseline_path_for(manifest_path):
-    """Where the baseline lives: beside the manifest, next to its records."""
-    return os.path.join(os.path.dirname(os.path.abspath(manifest_path)),
-                        BASELINE_NAME)
-
-
-def _key(entry):
-    return (entry["phase"], entry["check"], entry["breach"])
-
-
-def _entry(phase_id, check, line):
-    commits = []
-    for sha in _SHA.findall(line):
-        if sha not in commits:
-            commits.append(sha)
-    return {"phase": str(phase_id), "check": check, "breach": line,
-            "commits": commits}
-
-
-def fingerprints(answers):
-    """One entry per distinct breach across `answers`, in a total order."""
-    seen = {}
-    for answer in answers:
-        for check in answer["checks"]:
-            for line in check["breaches"]:
-                entry = _entry(answer["phaseId"], check["name"], line)
-                seen[_key(entry)] = entry
-    return [seen[k] for k in sorted(seen)]
-
-
-def read_baseline(path):
-    """`(entries, None)`, or `(None, why)` when the file is not a baseline.
-
-    A file that is there and cannot be read is an error and never an empty
-    baseline: reading it as empty would print every frozen breach as new, and
-    reading it as absent would print them all without saying a baseline was
-    asked for.
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            body = json.load(fh)
-    except (OSError, ValueError) as exc:
-        return None, "cannot read the baseline %s: %s" % (path, exc)
-    rows = body.get("entries") if isinstance(body, dict) else None
-    if not isinstance(rows, list):
-        return None, ("the baseline %s has no `entries` list, so it is not a "
-                      "file --write-baseline wrote" % (path,))
-    entries = []
-    for row in rows:
-        if not (isinstance(row, dict)
-                and all(isinstance(row.get(k), str)
-                        for k in ("phase", "check", "breach"))):
-            return None, ("the baseline %s holds an entry without a phase, a "
-                          "check and a breach: %r" % (path, row))
-        entries.append(_entry(row["phase"], row["check"], row["breach"]))
-    return entries, None
-
-
-def compare(entries, current, examined):
-    """Split the baseline and the current breaches against each other.
-
-    Only entries for a phase this run examined can be matched or not; the rest
-    are counted as `notCompared`, because a single-phase run has said nothing
-    about any other phase and calling their entries stale would be a claim
-    about evidence it never read.
-    """
-    known = set(_key(e) for e in entries)
-    now = set(_key(e) for e in current)
-    in_scope = [e for e in entries if e["phase"] in examined]
-    return {
-        "matched": len([e for e in current if _key(e) in known]),
-        "new": [e for e in current if _key(e) not in known],
-        "unmatched": [e for e in in_scope if _key(e) not in now],
-        "notCompared": len(entries) - len(in_scope),
-    }
-
-
-def _commit_state(git_root, sha, cut):
-    """What git says about one commit a stale entry names, as a sentence."""
-    state = _commit_trail.resolve(git_root, sha, cut=cut)
-    if state == "absent":
-        return ("commit %s is not in this clone - a rewrite whose old commits "
-                "were collected, or history this clone never fetched" % (sha,))
-    if state != "present":
-        return ("whether commit %s is in this clone could not be asked (no git, "
-                "or a shallow clone)" % (sha,))
-    code, refs = _commit_trail._git(git_root, [
-        "for-each-ref", "--contains", sha, "--count=1", "--format=%(refname)"])
-    if code is None or code != 0:
-        return "git would not say which refs contain commit %s" % (sha,)
-    if not refs.strip():
-        return ("commit %s is reachable from no branch or tag - a rebase, squash "
-                "or amend rewrote it, or its branch was deleted" % (sha,))
-    return "commit %s is still reachable" % (sha,)
-
-
-def explain_unmatched(entries, git_root):
-    """Each stale entry with `reason`: what became of the commits it names."""
-    if not entries:
-        return []
-    cut = _commit_trail.is_shallow(git_root) is not False
-    out = []
-    for entry in entries:
-        states = [_commit_state(git_root, sha, cut) for sha in entry["commits"]]
-        gone = [s for s in states if not s.endswith("is still reachable")]
-        if gone:
-            reason = "; ".join(gone)
-        else:
-            reason = ("the breach is no longer reported - it was repaired, or "
-                      "the check's wording changed%s"
-                      % ("; " + "; ".join(states) if states else ""))
-        row = dict(entry)
-        row["reason"] = reason
-        out.append(row)
-    return out
-
-
-def write_baseline(path, current, examined, previous):
-    """Write the baseline -> `(written, removed)`.
-
-    Entries for phases this run did not examine are carried over unchanged, so
-    rewriting after one phase cannot erase another's. What it does remove is
-    returned, because a rewrite is the one place an entry leaves the file, and
-    it must not leave without being named.
-    """
-    kept = [e for e in (previous or []) if e["phase"] not in examined]
-    now = set(_key(e) for e in current)
-    removed = [e for e in (previous or [])
-               if e["phase"] in examined and _key(e) not in now]
-    merged = dict((_key(e), e) for e in kept + list(current))
-    written = [merged[k] for k in sorted(merged)]
-    _mio.atomic_write_json(path, {"about": BASELINE_ABOUT,
-                                  "version": BASELINE_VERSION,
-                                  "entries": written})
-    return written, removed
+# The baseline's names, spelled here because this command renders them. NOT
+# copies: `_invariants` owns the file, the matching and the write, and
+# `tests/test_verify_invariants.py` pins each to be that module's own object.
+BASELINE_NAME = _invariants.BASELINE_NAME
+REWRITE_RULE = _invariants.REWRITE_RULE
+baseline_key = _invariants.baseline_key
 
 
 # --- rendering ----------------------------------------------------------------
@@ -292,9 +143,9 @@ def render_phase(answer, known=None):
         # never wired up; one who cannot has to trust the word.
         lines.append("      basis: %s" % (check["basis"],))
         baselined = 0
-        for line in check["breaches"]:
-            if known is not None and _key(_entry(answer["phaseId"], check["name"],
-                                                 line)) in known:
+        for line, key in zip(check["breaches"], check["keys"]):
+            if known is not None and (str(answer["phaseId"]), check["name"],
+                                      key["subject"], key["sha"]) in known:
                 baselined += 1
                 continue
             lines.append("      BREACH: %s" % (line,))
@@ -317,9 +168,9 @@ def render_baseline(answer):
     lines.append("BASELINE: %d baselined breach(es) still reported and not "
                  "listed above, from %s (%d entry(ies))"
                  % (answer["matched"], answer["path"], answer["entries"]))
-    if answer["notCompared"]:
-        lines.append("  %d entry(ies) for phases not examined in this run were "
-                     "not compared" % (answer["notCompared"],))
+    for why in sorted(answer["notComparedWhy"]):
+        lines.append("  %d entry(ies) not compared: %s"
+                     % (answer["notComparedWhy"][why], why))
     lines.append("  basis: %s" % (REWRITE_RULE,))
     if answer["unmatched"]:
         lines.append("BASELINE ENTRIES THAT NO LONGER MATCH (%d) - kept in the "
@@ -334,7 +185,7 @@ def render_baseline(answer):
 def render_written(answer):
     """What a --write-baseline run did to the file, removals by name."""
     lines = ["BASELINE WRITTEN: %d fingerprint(s) to %s, %d of them carried "
-             "over for phases not examined in this run"
+             "over uncompared from the previous file"
              % (answer["entries"], answer["path"], answer["kept"])]
     if answer["removed"]:
         lines.append("  removed %d entry(ies) that no longer matched:"
@@ -400,45 +251,32 @@ def build_parser():
     parser.add_argument("--write-baseline", action="store_true",
                         dest="write_baseline",
                         help="record this run's breaches as the baseline; later "
-                             "runs then print only breaches it does not hold")
+                             "runs then print only breaches it does not hold. "
+                             "Refused while a phase it covers is in flight")
     return parser
 
 
-def _baseline_answer(args, result, single, git_root):
+def _baseline_answer(args, result, manifest, git_root):
     """`(key, block, known, error)` - what the baseline adds to `result`.
 
     `key` is the result field the block goes under, or None when no baseline is
-    in use; `known` is the baselined fingerprints the renderer hides, from the
-    same read the block was built from; `error` is a sentence for exit 2.
+    in use; `known` is the baselined keys the renderer hides; `error` is a
+    sentence for exit 2.
     """
-    explicit = args.baseline is not None
-    path = os.path.abspath(args.baseline if explicit
-                           else baseline_path_for(args.manifest))
-    exists = os.path.isfile(path)
-    answers = [result] if single else result["phases"]
-    examined = set(str(a["phaseId"]) for a in answers)
-    current = fingerprints(answers)
-    previous = None
-    if exists:
-        previous, why = read_baseline(path)
-        if why:
-            return None, None, None, why
     if args.write_baseline:
-        written, removed = write_baseline(path, current, examined, previous)
-        block = {"path": path, "entries": len(written), "removed": removed,
-                 "kept": len([e for e in written
-                              if e["phase"] not in examined])}
-        return "baselineWritten", block, None, None
-    if not exists:
-        if explicit:
-            return None, None, None, ("no baseline at %s - write one with "
-                                      "--write-baseline" % (path,))
-        return None, None, None, None
-    split = compare(previous, current, examined)
-    split["unmatched"] = explain_unmatched(split["unmatched"], git_root)
-    split.update({"path": path, "entries": len(previous),
-                  "rewriteRule": REWRITE_RULE})
-    return "baseline", split, set(_key(e) for e in previous), None
+        path = os.path.abspath(args.baseline if args.baseline is not None
+                               else _invariants.baseline_path_for(args.manifest))
+        block, why = _invariants.write_baseline(path, result, manifest, git_root)
+        return ("baselineWritten" if block else None), block, None, why
+    block, why = _invariants.apply_baseline(result, args.manifest, git_root,
+                                            path=args.baseline)
+    if why or not block:
+        return None, None, None, why
+    # What to hide is what matched, and a matched key is one of this run's own:
+    # this run's keys less the new ones, with no second read of the file.
+    new = set(baseline_key(e) for e in block["new"])
+    known = set(baseline_key(e) for e in _invariants.fingerprints(result)) - new
+    return "baseline", block, known, None
 
 
 def main(argv, out=print):
@@ -485,7 +323,8 @@ def main(argv, out=print):
         single = True
 
     try:
-        key, block, known, why = _baseline_answer(args, result, single, git_root)
+        key, block, known, why = _baseline_answer(args, result, manifest,
+                                                  git_root)
     except OSError as exc:
         why = "cannot write the baseline: %s" % (exc,)
     if why:
@@ -500,9 +339,7 @@ def main(argv, out=print):
         out(render(result, single, known))
     if key == "baselineWritten":
         return 0
-    if key == "baseline":
-        return E_BREACH if block["new"] else 0
-    return E_BREACH if result["breaches"] else 0
+    return E_BREACH if _invariants.counted_breaches(result) else 0
 
 
 if __name__ == "__main__":

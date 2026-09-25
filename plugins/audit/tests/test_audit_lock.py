@@ -305,6 +305,32 @@ def _cases(check):
             check("u5 the holder releases it", code == 0
                   and not os.path.exists(os.path.join(M.lock_dir(main_tree),
                                                       "user-e2e.lock")))
+            # THE CASE THE RECIPE IS FOR: parallel subagents of one Claude Code
+            # session share the session id AND the pid, and pass no identity.
+            saved = dict((k, os.environ.get(k))
+                         for k in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID"))
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "one-shared-session"
+            os.environ["CLAUDE_PID"] = str(os.getpid())
+            try:
+                first = M.shell_code(M.main(["acquire", "user-e2e", "--wait", "0",
+                                             "--project", main_tree],
+                                            out=lambda _l: None))
+                lines = []
+                second = M.shell_code(M.main(["acquire", "user-e2e", "--wait", "0",
+                                              "--project", linked],
+                                             out=lines.append))
+                run(["release", "user-e2e"], main_tree)
+            finally:
+                for k, v in saved.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+            check("u6 two acquires of user-e2e from two worktrees under the SAME "
+                  "default session and pid: the first takes it and the second "
+                  "does NOT exit 0 - both runs would otherwise drive one backend: "
+                  "%r" % ((first, second, " ".join(lines)[:100]),),
+                  first == 0 and second == M.E_LIVE)
     finally:
         shutil.rmtree(utmp, ignore_errors=True)
 

@@ -17,8 +17,10 @@ so ids keep reading in the order they were made and the development branch, afte
 a merge, continues from the highest number either side reached.
 
 THE ALPHABET IS `[0-9a-z]`. A phase id becomes a lock name (`_locks.valid_name`
-takes `[A-Za-z0-9._-]`), a shard file name and a lower-cased branch component, so
-the suffix is lower case and survives all three unchanged.
+takes ASCII `[A-Za-z0-9._-]`, and refuses one that differs only in case from a lock
+already held, since the lock directory folds case on macOS and Windows by default),
+a shard file name and a lower-cased branch component, so the suffix is lower case
+and survives all three unchanged.
 
 WHAT IT DOES NOT PREVENT: two clones minting on the development branch itself.
 That collision still reaches the merge, which names it, and

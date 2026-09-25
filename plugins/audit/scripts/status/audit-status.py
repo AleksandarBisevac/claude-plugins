@@ -162,16 +162,31 @@ def invariants_block(manifest, manifest_path):
     An exception comes back as a BLOCK WITH NO `breaches` KEY rather than as an
     empty one. `_status_facts.invariant_breaches` reads that as "nothing was
     verified" and trips the gate; an empty list would have read as a clean bill of
-    health produced by a crash.
+    health produced by a crash. A baseline beside the manifest that cannot be
+    read comes back the same way, for the same reason.
+
+    THE BASELINE IS APPLIED HERE, THROUGH `_invariants`, so the gate and
+    `verify-invariants.py` count the same breaches: `breaches` is what the
+    verdict is taken on - every breach, or only the new ones when a baseline is
+    in use - and `allBreaches` keeps the full list beside it.
     """
     project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     try:
-        return _invariants.check_manifest(
-            manifest, manifest_path,
-            _invariants.git_root_for(manifest, project), project,
+        git_root = _invariants.git_root_for(manifest, project)
+        result = _invariants.check_manifest(
+            manifest, manifest_path, git_root, project,
             ledger_dir=_invariants.ledger_dir_for(manifest, manifest_path))
+        block, why = _invariants.apply_baseline(result, manifest_path, git_root)
     except Exception as exc:                       # defensive; the checks fail soft
         return {"error": "the invariant checks could not run: %s" % (exc,)}
+    if why:
+        return {"error": "the invariant baseline could not be applied: %s"
+                % (why,)}
+    if block:
+        result["baseline"] = block
+    result["allBreaches"] = result["breaches"]
+    result["breaches"] = _invariants.counted_breaches(result)
+    return result
 
 
 def _invariant_detail(summary):

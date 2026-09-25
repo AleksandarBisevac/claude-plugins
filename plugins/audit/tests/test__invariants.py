@@ -1217,6 +1217,37 @@ def _cases(check):
               M.started_phases({"phases": [
                   {"id": "A", "tasks": [{"id": "A.1", "commit": "abc"}]},
                   {"id": "B", "tasks": [{"id": "B.1"}]}]}) == ["A"])
+
+        # --- structured keys ----------------------------------------------------
+        keyed = [c for c in whole["phases"][0]["checks"] if c["breaches"]]
+        check("ik1 every breach carries a structured key beside its sentence, "
+              "one per line, and no key is the sentence itself - a baseline "
+              "matches the key and only ever shows the line: %r"
+              % ([c["keys"] for c in keyed],),
+              keyed and all(len(c["keys"]) == len(c["breaches"]) for c in keyed)
+              and all(k["subject"] and k["subject"] != line
+                      for c in keyed for k, line in zip(c["keys"], c["breaches"])))
+        try:
+            M.result("commit-scope", "b", ["a bare sentence"], [], 1)
+            refused = False
+        except TypeError:
+            refused = True
+        check("ik2 ...and a breach built without found() is refused at once, so "
+              "a check cannot ship a breach no baseline could match", refused)
+
+        # --- the live pairing re-check is the phase's own ------------------------
+        lines = [
+            "task P1.1: file 'src/a.py' %s (fileIndex['src/a.py'] must include "
+            "'P1.1')" % (M._crossrefs.FILEINDEX_PAIRING,),
+            "task P9.3: file 'src/z.py' %s (fileIndex['src/z.py'] must include "
+            "'P9.3')" % (M._crossrefs.FILEINDEX_PAIRING,),
+            "fileIndex['src/a.py']: task 'P1.7' does not exist",
+        ]
+        own = M.own_pairing_findings(lines, {"tasks": [{"id": "P1.1"}]})
+        check("ik3 the pairing re-check keeps only rows naming THIS phase's "
+              "tasks - another phase mid-flight has unpaired rows by "
+              "construction, and they are not this phase's breach: %r" % (own,),
+              own == [lines[0]])
     finally:
         repos.close()
 

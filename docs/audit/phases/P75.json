@@ -19,10 +19,102 @@
   "branch": "audit/p75-verify-invariants-reports-what",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P75-R1",
+        "severity": "high",
+        "file": "plugins/audit/commands/worktree.md",
+        "issue": "The documented recipe does not keep two runs apart in the case this phase was written for. Inside Claude Code the default identity is $CLAUDE_CODE_SESSION_ID/$CLAUDE_PID, and parallel subagents in different worktrees share both: this reviewer, a subagent, reads sid=24c1c300-045e-45b9-beaf-8a9562d9f993 pid=7019, which is the parent session's id (the scratchpad path carries the same id). A second `a",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/verify-invariants.py",
+        "issue": "The fingerprint includes text that changes from run to run. manifest-revalidated emits '%d task commit(s) deferred this pairing, leaving %d row(s) unpaired now' and 'the manifest as it stands STILL does not pair ... - <finding>', and `still` comes from validating the WHOLE current manifest. So a finished phase with deferred commits reports a breach whose text depends on whatever other phase is mid",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/verify-invariants.py",
+        "issue": "The key is (phase, check, full English breach sentence). The task description asked for 'check id + subject + SHA'. Every breach template in _invariants.py is prose that this repo rewords often, so a single wording edit turns every baselined breach of that template into NEW (exit 1 at sign-off) and every old entry into 'no longer matches'. For the 8040-breach history that motivated the phase, one ",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/verify-invariants.py",
+        "issue": "An entry counts as unmatched whenever its breach line is missing, including when the check did not look this run (a gap / no-basis). The reason then says 'the breach is no longer reported - it was repaired, or the check's wording changed'. That misreads a missing basis as a repair. It happens every time for branch-history: close-phase deletes the branch, _invariants.py:787 turns the reflog read in",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R5",
+        "severity": "med",
+        "file": "plugins/audit/reference/phase-signoff.md",
+        "issue": "Implementer point (b) is confirmed, and the sentence meant to soften it is not true. 'the rewritten baseline is a change to a committed file and shows in the diff': a first write creates an UNTRACKED file, which `git diff` does not show. The phase review diff this pipeline hands its reviewer excludes docs/audit (':!docs/audit' in this review's own scope), and that is where the file sits. Also, no ",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R6",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py",
+        "issue": "Implementer point (a) is confirmed. invariants_block calls _invariants.check_manifest directly, so `/audit:status --gate --fail-on invariant-breach` fails on every baselined breach while sign-off (the CLI) exits 0 on the same history. The operator this phase was written for (thousands of frozen breaches) still cannot use that gate. The disagreement is written down only in PLUGIN-BUILD-GUIDE ('The ",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R7",
+        "severity": "low",
+        "file": "verify-invariants.py",
+        "issue": "The baseline is committed so that a clone gets it, but some checks read evidence a clone never has: branch-history reads local reflogs and remote-tracking refs, and high-risk-model reads the gitignored usage ledger. A baseline written on one machine lists entries another clone can never match (printed there as unmatched, and removed by that clone's next write), while that clone's own local breache",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R8",
+        "severity": "low",
+        "file": "verify-invariants.py",
+        "issue": "The baseline write is read-modify-write with no lock. atomic_write_json makes each write whole but does not serialize writers: two --write-baseline runs for different phases (or one --all beside one single-phase run) each read the old file, and the second rename erases the first run's entries even though its output said they were written. The docstring's 'rewriting after one phase cannot erase ano",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R9",
+        "severity": "low",
+        "file": "verify-invariants.py",
+        "issue": "_SHA picks up any 7-40 character hex token that contains a digit, not only commit SHAs. For example, the first segment of a UUID-named journal or evidence file (`24c1c300`) matches. Each extracted token is then resolved as a commit, and the reason reads 'commit 24c1c300 is not in this clone - a rewrite whose old commits were collected', which is a claim about a commit that never existed.",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_locks.py",
+        "issue": "'a refused name prints that sentence' is true for acquire only. release() refuses with '[audit-lock] bad lock name %r' and never prints USER_NAME_RULES, so `release user-E2E` is refused without saying why.",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R11",
+        "severity": "low",
+        "file": "plugins/audit/commands/worktree.md",
+        "issue": "'a release from a different identity is refused' leaves out `--force`, which releases any holder's lock, user- or plugin-owned. The page never gives the answer for a crashed run's lock: exit 4 and `--takeover`. It also sits directly above '## Exit codes', where 4 means 'git could not be asked' for /audit:worktree - the same number with a different meaning on the same page.",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_locks.py",
+        "issue": "Implementer point (d) is confirmed, and it goes further. _audit_lock_held (:99) and _lock_info (:153) key on index.lock / phase-*, so a user lock does not mark the panel's manifest as locked. The behaviour is right, but test__panel_runstate plants only index/phase- files, so no case pins it. The _locks comment 'every reader of this directory keys on index, usage or a phase- prefix' is also false f",
+        "resolution": "fix task P75.2-j5h"
+      },
+      {
+        "id": "P75-R13",
+        "severity": "low",
+        "file": "commit",
+        "issue": "The verification claims give no command, exit code or stamp: 'red on the previous code', 'full selftest sweep, ruff, vermin, validate', 'this repo's own history baselined and re-read with no new breach', 'measured twice minutes apart, identical'. Under the hard rule they are unverified. Claim 7 'no number written into prose' does not hold for the new comment 'on two of the platforms this ships on'",
+        "resolution": "fix task P75.2-j5h"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -81,6 +173,68 @@
         "test__locks u1",
         "test_audit_lock u1"
       ]
+    },
+    {
+      "id": "P75.2-j5h",
+      "title": "Review findings: the baseline matches on structured keys and one verdict serves gate and CLI, and a user lock excludes by holder",
+      "status": "in_progress",
+      "description": "Phase review findings, all to be fixed; pre-existing 1 and 2 as well (pre-existing 3 needs only its SECURITY.md sentence). Orchestrator decisions: the baseline is matched on structured keys the checks return (check, subject, SHA), never on prose; the gate and the CLI give one verdict, so the baseline read/compare lives in a library module both call; --write-baseline is refused while any phase it covers is in flight, and the baseline is a human's commit outside any phase commit - say exactly that; a user- lock excludes by holder, so a second acquire from the same session is refused.\nR1 (high) plugins/audit/commands/worktree.md:91-109 (recipe) against plugins/audit/scripts/governance/_locks.py:370-399 (held_by_us), :826-837 (E_OURS), audit-lock.py shell_code: The documented recipe does not keep two runs apart in the case this phase was written for. Inside Claude Code the default identity is $CLAUDE_CODE_SESSION_ID/$CLAUDE_PID, and parallel subagents in different worktrees share both: this reviewer, a subagent, reads sid=24c1c300-045e-45b9-beaf-8a9562d9f993 pid=7019, which is the parent session's id (the scratchpad path carries the same id). A second `acquire user-e2e` from another worktree therefore matches held_by_us, returns E_OURS, and shell_code turns that into exit 0 with 'already yours - proceed'. Both e2e runs go ahead against one backend, and whichever finishes first releases the lock while the other is still running. The page says to pass --session/--pid only 'Outside Claude Code', which tells the in-session reader the defaults are enough. test_audit_lock u2 passes distinct --session values (sess-A/sess-B), so it never exercises the default path the recipe documents. -> Make user- locks mutually exclusive by holder, not by session. Either (a) have acquire skip the re-entry answer for is_user_name() names, so the same session is refused (exit 3) the same way a stranger is, or (b) require --session and --pid for user- names and make the recipe pass a per-run identity (for example `--session e2e-$$ --pid $$`) in every case, not only outside Claude Code. Add a red-first case: two acquires of user-e2e with the SAME env session and no --session flag; the second must not exit 0.\nR2 (med) plugins/audit/scripts/governance/verify-invariants.py:147-165 (_entry/fingerprints) against plugins/audit/scripts/governance/_invariants.py:1061-1082: The fingerprint includes text that changes from run to run. manifest-revalidated emits '%d task commit(s) deferred this pairing, leaving %d row(s) unpaired now' and 'the manifest as it stands STILL does not pair ... - <finding>', and `still` comes from validating the WHOLE current manifest. So a finished phase with deferred commits reports a breach whose text depends on whatever other phase is mid-flight (step 4c makes unpaired rows unavoidable there) and on how many rows are unpaired right now. Each new count or finding is a NEW breach, so exit 1 fires on frozen history. That breaks 'exits 1 only on a new one', and the docstring's 'Frozen history is SHA-stable, so that is enough to match on' is false for this check. The commit's claim 5 ('fingerprint count measured twice minutes apart, identical') compares counts, not contents, so it could not have caught this. -> Fingerprint on stable fields: the check, the subject and the SHA(s). Have the checks return a structured key beside each prose line, or strip %d counts and live-manifest findings when fingerprinting. Separately, scope the live pairing re-check to the phase's own rows (see preExisting 2). Add a case where the same frozen breach line carries a different count on two runs and the second run still reports NEW BREACHES (0).\nR3 (med) plugins/audit/scripts/governance/verify-invariants.py:143-148 (_key uses the whole breach line): The key is (phase, check, full English breach sentence). The task description asked for 'check id + subject + SHA'. Every breach template in _invariants.py is prose that this repo rewords often, so a single wording edit turns every baselined breach of that template into NEW (exit 1 at sign-off) and every old entry into 'no longer matches'. For the 8040-breach history that motivated the phase, one reword brings the flood back. The output's rule sentence names only rebase/squash/amend as causes; rewording is mentioned only inside an unmatched entry's reason. -> Match on the check plus the subject and SHA pulled out as structured data. Keep the prose line only for display. Until then, add rewording to REWRITE_RULE as a cause of NEW entries, and add a case where a reworded template with the same SHA and subject still matches.\nR4 (med) plugins/audit/scripts/governance/verify-invariants.py:195-211 (compare), :233-251 (explain_unmatched): An entry counts as unmatched whenever its breach line is missing, including when the check did not look this run (a gap / no-basis). The reason then says 'the breach is no longer reported - it was repaired, or the check's wording changed'. That misreads a missing basis as a repair. It happens every time for branch-history: close-phase deletes the branch, _invariants.py:787 turns the reflog read into a gap, and every baselined push/stash/forced-update entry for that phase is printed as repaired. A later --write-baseline then removes those entries as 'no longer matched'. CLAUDE.md's rule is that when the basis is missing, that is the thing to say. -> In compare(), count an entry whose (phase, check) had a non-empty gaps list and no breaches this run as notCompared (or 'no basis this run'), not unmatched. Do not let write_baseline remove such entries. Add a case with a baseline entry for a check that returns only a gap.\nR5 (med) plugins/audit/reference/phase-signoff.md:237-242; CHANGELOG.md:13; verify-invariants.py:131-133 (BASELINE_ABOUT): Implementer point (b) is confirmed, and the sentence meant to soften it is not true. 'the rewritten baseline is a change to a committed file and shows in the diff': a first write creates an UNTRACKED file, which `git diff` does not show. The phase review diff this pipeline hands its reviewer excludes docs/audit (':!docs/audit' in this review's own scope), and that is where the file sits. Also, no plugin commit class can carry the file cleanly: an audit-state commit that stages it is an audit-state-scope breach (_invariants.py:502-508), a manifest-index commit is an index-scope breach (:624-629), and a task commit is a commit-scope breach unless it is in `files`. So 'commit it beside the manifest' / 'to be committed with it' has no path through the plugin's own commits. Separately, --write-baseline exits 0 whatever it found (main: `if key == \"baselineWritten\": return 0`), so an agent at sign-off that writes and re-runs gets exit 0 over the phase's own new breaches. -> Refuse --write-baseline while the named phase (or, under --all, any phase) is in_progress or has tasks not done, with a message pointing to a human-run write on the development branch. Rewrite the phase-signoff sentence to say what really surfaces the change (`git status` shows the file untracked or modified; the review diff scope does not). State in CHANGELOG/BASELINE_ABOUT that the baseline is committed by the human outside any phase commit, or add it to the audit-state allow-list together with a case.\nR6 (med) plugins/audit/scripts/status/audit-status.py:169 against verify-invariants.py:407-441; CHANGELOG.md:9-20; plugins/audit/README.md:437: Implementer point (a) is confirmed. invariants_block calls _invariants.check_manifest directly, so `/audit:status --gate --fail-on invariant-breach` fails on every baselined breach while sign-off (the CLI) exits 0 on the same history. The operator this phase was written for (thousands of frozen breaches) still cannot use that gate. The disagreement is written down only in PLUGIN-BUILD-GUIDE ('The gate ... does not consult the baseline'). It is missing from CHANGELOG, from the status command doc and from plugins/audit/README.md:437, which still says 'a breach exits 1 at sign-off and under --fail-on invariant-breach' - no longer true at sign-off once a baseline exists. -> Move the baseline read/compare out of the entry point into a library module (_invariants or a new _invariants_baseline at L4), and have invariants_block apply it so the gate and the CLI give the same verdict. If the split is deliberate, state it in CHANGELOG and commands/status.md, and correct README.md:437 to say what a baseline changes.\nR7 (low) verify-invariants.py:156-165 (fingerprints over branch-history and high-risk-model); CHANGELOG.md:13: The baseline is committed so that a clone gets it, but some checks read evidence a clone never has: branch-history reads local reflogs and remote-tracking refs, and high-risk-model reads the gitignored usage ledger. A baseline written on one machine lists entries another clone can never match (printed there as unmatched, and removed by that clone's next write), while that clone's own local breaches show as NEW. Two operators' writes then keep removing each other's entries. -> Either leave out of the committed baseline the checks whose evidence is not committed (and say so in BASELINE_ABOUT), or tag each entry with its evidence locality and count out-of-clone entries as notCompared.\nR8 (low) verify-invariants.py:254-272 (write_baseline), :588-599: The baseline write is read-modify-write with no lock. atomic_write_json makes each write whole but does not serialize writers: two --write-baseline runs for different phases (or one --all beside one single-phase run) each read the old file, and the second rename erases the first run's entries even though its output said they were written. The docstring's 'rewriting after one phase cannot erase another's' holds only for runs one after another. -> Take the plugin's `index` lock (or a dedicated name) around read-then-write in write_baseline, or re-read and merge under an exclusive create. Add a case that interleaves two writers.\nR9 (low) verify-invariants.py:123 (_SHA), :214-251: _SHA picks up any 7-40 character hex token that contains a digit, not only commit SHAs. For example, the first segment of a UUID-named journal or evidence file (`24c1c300`) matches. Each extracted token is then resolved as a commit, and the reason reads 'commit 24c1c300 is not in this clone - a rewrite whose old commits were collected', which is a claim about a commit that never existed. -> Take the SHAs from the check's structured data (see finding 3) rather than scanning prose, or only accept a token when `git cat-file -e` agrees and otherwise word it as 'names no commit git knows'.\nR10 (low) plugins/audit/scripts/governance/_locks.py:944-946; plugins/audit/commands/worktree.md:116; CHANGELOG.md:25: 'a refused name prints that sentence' is true for acquire only. release() refuses with '[audit-lock] bad lock name %r' and never prints USER_NAME_RULES, so `release user-E2E` is refused without saying why. -> Build the refusal from one helper used by both acquire and release, and add a case for release of a malformed user name that asserts USER_NAME_RULES is in the output.\nR11 (low) plugins/audit/commands/worktree.md:98-104: 'a release from a different identity is refused' leaves out `--force`, which releases any holder's lock, user- or plugin-owned. The page never gives the answer for a crashed run's lock: exit 4 and `--takeover`. It also sits directly above '## Exit codes', where 4 means 'git could not be asked' for /audit:worktree - the same number with a different meaning on the same page. -> Name --force and the exit-4/--takeover path in this section, and head the following Exit codes block as /audit:worktree's own (or link audit-lock.py's table).\nR12 (low) plugins/audit/scripts/governance/_locks.py:303-307; plugins/audit/scripts/status/_doctor_hygiene.py:248-251; plugins/audit/scripts/panel/_panel_runstate.py:91-101: Implementer point (d) is confirmed, and it goes further. _audit_lock_held (:99) and _lock_info (:153) key on index.lock / phase-*, so a user lock does not mark the panel's manifest as locked. The behaviour is right, but test__panel_runstate plants only index/phase- files, so no case pins it. The _locks comment 'every reader of this directory keys on index, usage or a phase- prefix' is also false for _locks.collect, which lists every .lock (audit-lock status, /audit:status locks, /audit:doctor). For a stale user- row, doctor then advises 'a mutating /audit command will offer to take over', which no /audit command does for a user lock. -> Add a test__panel_runstate case with only user-e2e.lock present, asserting _audit_lock_held is False and _lock_info ignores it. Reword the _locks comment to name collect() as the reader that lists every name. Have _doctor_hygiene word the advice by namespace (for user- rows: the owning tool's `audit-lock.py release --takeover` path).\nR13 (low) commit 6fca6759 message, claims 2, 3, 5, 7; plugins/audit/scripts/governance/_locks.py:315: The verification claims give no command, exit code or stamp: 'red on the previous code', 'full selftest sweep, ruff, vermin, validate', 'this repo's own history baselined and re-read with no new breach', 'measured twice minutes apart, identical'. Under the hard rule they are unverified. Claim 7 'no number written into prose' does not hold for the new comment 'on two of the platforms this ships on', which is a count the author has to keep true by hand. -> Attach the commands and exit codes (and a stamp-verification stamp) to the phase record. Replace the count with the names ('on macOS and Windows by default').\npre-existing 1 (low) plugins/audit/scripts/governance/_locks.py:326-334 (is_plugin_name); plugins/audit/scripts/manifest/_id_shape.py:19: Implementer point (c) is confirmed, but the diff did not introduce it. phase-<id> accepts any c.isalnum(), so `phase-P1` and `phase-p1` are two valid names and one file on a case-folding filesystem. isalnum() also accepts non-ASCII letters, so _id_shape's '[A-Za-z0-9._-]' description is too narrow. The new user- rule is lower-case only and cannot collide with itself or with a plugin name. -> Case-fold (or reject differently-cased duplicates of) phase ids when building a lock name, restrict the alphabet to ASCII, and correct the _id_shape docstring.\npre-existing 2 (low) plugins/audit/scripts/governance/_invariants.py:1061-1082: The 'deferral is paid here' re-check validates the whole current manifest and attributes every FILEINDEX_PAIRING finding to the phase being checked. A finished phase therefore reports another in-flight phase's unpaired rows as its own breach. -> Filter `still` to rows belonging to this phase's tasks.",
+      "files": [
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "plugins/audit/tests/test__panel_runstate.py",
+        "plugins/audit/scripts/manifest/_id_shape.py",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lock.py: repro that FAILS on current code - a second acquire of user-e2e from the same session, with no --session flag, exits 0 as already yours"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T18:32:14Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:39Z"

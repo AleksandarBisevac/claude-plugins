@@ -207,6 +207,52 @@ def _cases(check):
                   % (_u_said,),
                   _u_bad == M.E_USAGE and "user-<name>" in _u_said
                   and M.USER_NAME_RULES in _u_said)
+            _rel_out = []
+            _rel = M.release(_u_proj, "user-E2E", out=_rel_out.append)
+            check("u7 a malformed user name is refused by RELEASE with the same "
+                  "sentence acquire prints, rules included: %r"
+                  % (" ".join(_rel_out),),
+                  _rel == M.E_USAGE and M.USER_NAME_RULES in " ".join(_rel_out))
+            # EXCLUSION BY HOLDER. `u5` holds user-e2e as (s-user, this pid); the
+            # same identity asking again is what parallel subagents of one
+            # session look like, and it must be refused, not told "yours".
+            _again_out = []
+            _again = M.acquire(_u_proj, "user-e2e", out=_again_out.append,
+                               session="s-user", pid=os.getpid(), wait=0)
+            check("u8 a second acquire of a user lock by the SAME session and pid "
+                  "is refused as held, never answered as re-entry: %r"
+                  % (" ".join(_again_out)[:120],),
+                  _again == M.E_LIVE and "already yours" not in " ".join(_again_out))
+            _idx = M.acquire(_u_proj, "index", out=lambda _l: None,
+                             session="s-user", pid=os.getpid())
+            _idx2 = M.acquire(_u_proj, "index", out=lambda _l: None,
+                              session="s-user", pid=os.getpid(), wait=0)
+            check("u9 ...while the plugin's own names keep their re-entry answer "
+                  "- the case that fails if the exclusion is widened to every "
+                  "name: %r" % ((_idx, _idx2),),
+                  _idx == 0 and _idx2 == M.E_OURS)
+            # PHASE IDS: ASCII, and one spelling per folded name.
+            _ascii = [n for n in ("phase-P\u00e91", "phase-\u0661", "phase-P\u212a")
+                      if M.valid_name(n)]
+            check("u10 a phase lock name is ASCII only - `isalnum()` admitted "
+                  "letters and digits of every script: %r" % (_ascii,),
+                  _ascii == [] and M.valid_name("phase-P1-k7m.2"))
+            _p_out = []
+            M.acquire(_u_proj, "phase-P1", out=lambda _l: None, session="s-a",
+                      pid=os.getpid())
+            _p_code = M.acquire(_u_proj, "phase-p1", out=_p_out.append,
+                                session="s-b", pid=os.getppid(), wait=0)
+            _r_out = []
+            _r_code = M.release(_u_proj, "phase-p1", out=_r_out.append,
+                                session="s-a", pid=os.getpid())
+            check("u11 a phase lock that differs only in case from a held one is "
+                  "refused on every platform, and releasing that spelling does "
+                  "not remove the held claim: %r / %r"
+                  % (" ".join(_p_out)[:100], " ".join(_r_out)[:100]),
+                  _p_code == M.E_LIVE and "differ" in " ".join(_p_out)
+                  and _r_code == M.E_USAGE
+                  and os.path.isfile(os.path.join(M.lock_dir(_u_proj),
+                                                  "phase-P1.lock")))
         finally:
             shutil.rmtree(_u_proj, ignore_errors=True)
 
