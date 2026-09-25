@@ -64,9 +64,13 @@ This plugin installs hooks that run on **every tool call**, so whether those fil
 are the ones that were published is the first question a careful operator asks. It
 had no answer until `/audit:doctor`'s `plugin files` row.
 
-What it can ask is what exists: a marketplace install of a `github` source is a git
-clone, and a clone can be asked whether its tracked files still match the commit it
-is on. The verdicts are kept apart on purpose — **modified**, **clean**, the
+What it can ask is what exists. A copy that sits in a git checkout is asked whether
+its tracked files still match the commit it is on. A copy Claude Code installed into
+its plugin cache is not a checkout, but Claude Code records the commit it was made
+from (`installed_plugins.json`) and keeps the marketplace clone that holds it
+(`known_marketplaces.json`), so the cache copy is compared, file by file, with
+`git archive` of that commit. Both records are files Claude Code writes and does not
+document; they are read fail-open, and the row says that is its basis. The verdicts are kept apart on purpose — **modified**, **clean**, the
 development case where the installed copy IS the repository being worked in, and
 **unverifiable**. An installation this cannot verify is reported as unverifiable and
 never as clean, which is the same rule every other basis here follows.

@@ -29,7 +29,7 @@
     {
       "id": "P77.1",
       "title": "One redFirst vocabulary, a sanctioned red-first helper, and a compile failure is not a proved red",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reproduced at HEAD: executor and schema say proved|could-not-prove|not-attempted; the reviewer says proved|not-proved|could-not-prove|not-applicable, misquotes the executor (reviewer.md:67) and has no word for regression mode. The schema enum is the one source; the reviewer echoes the executor's word when its basis holds; not-attempted replaces not-applicable; not-proved stays as a DECLARED reviewer-only grade; a _refs lint checks reviewer words are within schema plus declared reviewer-only. The executor brief sends executors to overwrite shared files to prove red (undo the fix in the shared tree, git show HEAD:f > f), which the host refused beside a sibling's uncommitted work: add stamp-verification.py red --task <id> -- <cmd> that builds a throwaway tree (git worktree add --detach or a git archive scratch) with HEAD's version of the task's implementation files and the working tree's test files, runs the command there, and records the red, never touching the shared tree; the briefs point at it. proved requires at least one test collected and an assertion failure; a compile or collection error is could-not-prove unless the task introduces the symbol.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
@@ -68,19 +68,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cb85483f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_refs.red_first_vocabulary_drift over the schema enum; stamp-verification.py red in a throwaway detached worktree; collection errors are could-not-prove unless --introduces.",
+        "descriptive": "Red-first has one vocabulary across executor, reviewer and schema, and can be proved without touching the shared tree."
       },
       "startedAt": "2026-09-25T18:00:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T18:25:26Z",
+      "verifiedBy": [
+        "test__refs rv1",
+        "test__refs rv9",
+        "test_stamp_verification sr2",
+        "test_stamp_verification sr6",
+        "test_stamp_verification sr7"
+      ]
     },
     {
       "id": "P77.2",
       "title": "Doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reproduced at HEAD (and live on this repo): running_plugin_verdict counts any stamp that is not this copy as drift and never reads the mtime it records, so a dead session's stamp holds the row yellow and 'start a new session' cannot clear it - grade on the newest stamp per copy with its age, report an older copy that a newer one has stamped since as history (named, aged), and offer a prune. plugin_integrity assumes a marketplace install is a clone; the cache is not (installed_plugins.json records installPath and gitCommitSha, and the marketplace clone holds that commit) - compare the cache tree with git archive of that SHA from the marketplace clone, unverifiable only when either is missing (these are undocumented Claude Code files; say so as /audit:version does).",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -88,7 +94,16 @@
         "plugins/audit/scripts/status/_doctor_setup.py",
         "plugins/audit/tests/test__doctor_setup.py",
         "plugins/audit/hooks/_config.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/status/_claude_home.py",
+        "plugins/audit/tests/test__claude_home.py",
+        "plugins/audit/scripts/status/audit-version.py",
+        "plugins/audit/tests/test_audit_version.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/doctor.md",
+        "SECURITY.md",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -115,14 +130,14 @@
       "dependsOn": [
         "P77.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T18:25:26Z",
       "completedAt": null,
       "verifiedBy": []
     }

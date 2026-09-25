@@ -277,15 +277,64 @@ def running_plugin_verdict(here, stamps, drift, unreadable=None):
     reason. Sessions in one checkout can run different copies -- that is the
     situation this whole check is about -- so one session stamping agreement says
     nothing about the one beside it that never stamped at all."""
-    others = [st for st in stamps if not _same_copy(st, here)]
+    live, history = split_history(stamps)
+    others = [st for st in live if not _same_copy(st, here)]
     basis = (["stamp"] if others else []) + (["state shape"] if drift else [])
     if basis:
         return {"verdict": "differ", "basis": basis, "others": others,
-                "drift": drift}
+                "drift": drift, "history": history}
     if stamps and not (unreadable or []):
         return {"verdict": "match", "basis": ["stamp"], "others": [],
-                "drift": []}
-    return {"verdict": "unestablished", "basis": [], "others": [], "drift": []}
+                "drift": [], "history": history}
+    return {"verdict": "unestablished", "basis": [], "others": [], "drift": [],
+            "history": history}
+
+
+def _copy_key(stamp):
+    """One installation, as `_same_copy` reads it. A stamp naming no root is its
+    own copy, because it names nothing another stamp could be the same as."""
+    root = stamp.get("root") or ""
+    if not root:
+        return ("", stamp.get("version") or "", stamp.get("session") or "")
+    return (os.path.realpath(root), stamp.get("version") or "")
+
+
+def split_history(stamps):
+    """`(live, history)` - every stamp, split on the newest stamp per copy.
+
+    A session re-stamps on every prompt and cannot reach a guarded tool call
+    without one, so a copy's NEWEST stamp is when it last ran here. A copy whose
+    newest stamp is older than another copy's newest has been superseded since:
+    its stamps are HISTORY - a session that ended, or one idle since the other
+    stamped, whose next prompt re-stamps it and brings it back. Every other stamp
+    is LIVE, a tie included, because two copies stamping in one instant are both
+    running. Grading the row on every stamp instead held it yellow on one dead
+    session's file, which a new session cannot clear: it stamps beside the dead
+    one rather than replacing it."""
+    newest = {}
+    for st in stamps:
+        key = _copy_key(st)
+        if key not in newest or st.get("mtime", 0) > newest[key]:
+            newest[key] = st.get("mtime", 0)
+    top = max(newest.values()) if newest else 0
+    live = [st for st in stamps if newest[_copy_key(st)] >= top]
+    history = [st for st in stamps if newest[_copy_key(st)] < top]
+    return live, history
+
+
+def _age(seconds):
+    """A stamp's age as a reader says it, in the largest whole unit."""
+    seconds = max(0, int(seconds))
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            n = seconds // size
+            return "%d %s%s" % (n, unit, "" if n == 1 else "s")
+    return "%d second%s" % (seconds, "" if seconds == 1 else "s")
+
+
+def _stamp_file(state_dir, cfg_mod, stamp):
+    return os.path.join(str(state_dir),
+                        cfg_mod.RUNNING_STAMP % (stamp.get("session") or ""))
 
 
 def _copy_name(copy):
@@ -333,7 +382,7 @@ _STALE_FIX = ("start a new Claude Code session to pick the installed copy up - "
               "session cannot be made to reload it")
 
 
-def check_running_plugin(rep, project, cfg, cfg_mod):
+def check_running_plugin(rep, project, cfg, cfg_mod, now=None):
     """Is the plugin protecting this repo the one this command is describing?
 
     ADVISORY, ALWAYS. Every outcome here is OK or WARNING and never a FINDING:
@@ -364,22 +413,41 @@ def check_running_plugin(rep, project, cfg, cfg_mod):
     state = running_plugin_verdict(here, read["stamps"], drift, torn)
     torn_clause = ("; %d stamp(s) here could not be read (%s)"
                    % (len(torn), _output.some_of(torn)) if torn else "")
+    clock = time.time() if now is None else now
+
+    def aged(stamp):
+        return "%s old" % (_age(clock - stamp.get("mtime", clock)),)
+
+    history = state["history"]
+    history_clause = ""
+    if history:
+        history_clause = (
+            "; history, superseded by a newer stamp and not in force: %s - "
+            "prune by deleting %s (session stamps are local scratch, and a "
+            "session still running that copy re-stamps on its next prompt)"
+            % (_output.some_of(["%s naming %s, %s" % (
+                cfg_mod.RUNNING_STAMP % h.get("session"), _copy_name(h), aged(h))
+                for h in history]),
+               _output.some_of([_stamp_file(state_dir, cfg_mod, h)
+                                for h in history])))
 
     if state["verdict"] == "differ":
-        parts = ["the hooks in this project ran from %s" % _copy_name(c)
-                 for c in _distinct(state["others"])]
+        parts = ["the hooks in this project ran from %s (newest stamp %s)"
+                 % (_copy_name(c), aged(c)) for c in _distinct(state["others"])]
         parts.extend(_drift_phrase(d) for d in state["drift"])
         rep.warn("running plugin",
-                 "%s, while this command is running %s (basis: %s)%s"
+                 "%s, while this command is running %s (basis: %s)%s%s"
                  % ("; ".join(parts), _copy_name(here), ", ".join(state["basis"]),
-                    torn_clause),
+                    torn_clause, history_clause),
                  _STALE_FIX)
         return
     if state["verdict"] == "match":
+        live = [st for st in read["stamps"] if st not in history]
         rep.ok("running plugin",
-               "%d session stamp(s) in %s, every one naming %s - the copy this "
-               "command is running from"
-               % (len(read["stamps"]), state_dir, _copy_name(here)))
+               "%d live session stamp(s) in %s, every one naming %s - the copy "
+               "this command is running from - the newest %s%s"
+               % (len(live), state_dir, _copy_name(here),
+                  aged((live or read["stamps"])[0]), history_clause))
         return
     if torn:
         seen = ("%d stamp(s) here could not be read (%s)"

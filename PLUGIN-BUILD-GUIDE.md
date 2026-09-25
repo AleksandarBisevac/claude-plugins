@@ -190,6 +190,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
           audit-lookup.py                 # one question, one pointer: why cancelled, a bug's conclusion, fileIndex's last declarer
           audit-version.py                # /audit:version: the running build, the marketplace and installed copies, the newest release
+          _claude_home.py                 # Claude Code's own install records (installed_plugins.json, known_marketplaces.json), read fail-open
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads the ordered parts under scripts/ui/report{,-css}/, assembles _CSS/_SCRIPT
@@ -277,6 +278,7 @@ L1:
   _ado_tracked -> _output
   _areas -> _output
   _branch -> _output
+  _claude_home -> _output
   _cli_fmt -> _output
   _commit_trail -> _output
   _demo_cast -> _output
@@ -337,7 +339,7 @@ L3:
 L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
-  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
+  _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
@@ -372,7 +374,7 @@ L7:
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _branch, _commit_trail, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
-  audit-version -> _output
+  audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
@@ -2525,6 +2527,17 @@ sharded layout's shards are intact (the assertion that moved out of `ci.yml` so 
 command call one implementation), and whether any `task.files` entry lives inside a submodule
 the parent repo cannot stage. Layer 4, set by `_manifest_rules` at layer 3.
 
+**`plugin_integrity` asks a marketplace-cache install too.** A copy Claude Code installed into
+its plugin cache is a plain directory, not a clone, so the checkout question has no answer
+there — and the row used to warn on every such install that nothing recorded what it should
+contain. Something does: `installed_plugins.json` records the `gitCommitSha` the copy was made
+from and `known_marketplaces.json` names the marketplace clone that holds it (both read through
+`_claude_home`, fail-open, and the row says they are undocumented). `cache_integrity` compares
+every file `git archive` of that commit publishes under the plugin's directory with the cache
+copy, byte for byte, and names each file that differs or is missing; a file the cache holds and
+the commit does not (bytecode, the harness's own markers) is not a published file, the same
+tracked-files-only limit the checkout arm states. Unverifiable only when a side is missing.
+
 **`check_sandbox` (P0-S) is the same question one layer down**, which is why it sits beside
 `check_interpreter` rather than in `_doctor_hygiene`: that one asks whether the guards can run
 at all, this asks whether the layer they LEAN ON is there. The plugin's secret guards match
@@ -2625,6 +2638,17 @@ anything, which is the evidence the original incident was diagnosed by. `running
 folds them into three outcomes: they agree, they differ, or it was NOT ESTABLISHED — and the
 third is not the first, so it warns rather than reading as clean. Every branch is OK or
 WARNING; a stale plugin is a thing to tell somebody, not a thing to fail a run on.
+
+**It grades the newest stamp per copy, not every stamp.** A session that has ended leaves its
+stamp, and state GC keeps it for days, so counting every stamp that is not this copy as drift
+held the row yellow on one dead session's file — and "start a new session" could not clear it,
+because the new session stamps beside the dead one rather than replacing it. `split_history`
+groups stamps by copy (`_same_copy`'s root and version) and takes each copy's newest mtime; a
+copy whose newest stamp is older than another copy's newest has been superseded and is
+HISTORY — named, aged, and offered for pruning by path — while every other stamp, a tie
+included, is live and graded as before. The limit is stated rather than hidden: a session
+still running an older copy but idle since the other stamped reads as history until its next
+prompt, which re-stamps it — and it cannot reach a guarded tool call without one.
 
 **`check_task_restarts`/`check_gate_patterns` answer what KEEPS HAPPENING, not only what is
 true now** — a task started more times than any other (`task.start` rows grouped by
@@ -2732,6 +2756,19 @@ only outbound call, one unauthenticated GET to the GitHub API with a short timeo
 update`, `claude plugin update`, a restart) print only when a newer release is known and the
 marketplace is. Exit 0, 1 when a newer release is published, 2 a usage error. Layer 7 (an
 entry point); its cases are in `plugins/audit/tests/test_audit_version.py`.
+
+### `plugins/audit/scripts/status/_claude_home.py`
+The readers of Claude Code's own install records, moved down from `audit-version.py` so
+`/audit:doctor` can reach them: an entry point is importable by nothing, and a second reader
+of two undocumented files is a second answer about what is installed. `claude_home`,
+`read_json`, `installed_plugins`, `marketplace_of`, `marketplace_facts` and
+`installed_copies` are `/audit:version`'s, unchanged; `install_record` finds the record for
+one exact install path - the marketplace and the `gitCommitSha` it was made from - and
+`marketplace_source` finds the clone `known_marketplaces.json` names and the plugin's directory
+inside it off the clone's own `marketplace.json`. Every reader is fail-open: a missing,
+malformed or differently shaped record is None beside the sentence saying why, and the caller
+says the basis is a file Claude Code does not document. Layer 1; its cases are in
+`plugins/audit/tests/test__claude_home.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the

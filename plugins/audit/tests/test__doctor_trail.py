@@ -858,6 +858,81 @@ def _cases(check):
               "branches above produced a FINDING, so `/audit:doctor` still "
               "exits 0 over a plugin that is merely out of date",
               rep.counts()["FINDING"] == 0)
+
+        # -- the newest stamp per copy, and a dead session's stamp as history
+        # A session that has ended leaves its stamp behind, and state GC keeps it
+        # for days. Counting every stamp that is not this copy as drift held the
+        # row yellow on one dead session's file while every newer stamp named the
+        # running copy, and "start a new session" could not clear it: the new
+        # session stamps beside the dead one, it does not replace it.
+        proj2 = os.path.join(tmp, "rp2-proj")
+        state2 = os.path.join(proj2, ".claude", "state")
+        os.makedirs(state2)
+
+        def _stamp(session, copy, age_s):
+            path = os.path.join(state2, cfgmod.RUNNING_STAMP % session)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(copy, fh)
+            when = time.time() - age_s
+            os.utime(path, (when, when))
+            return path
+
+        _stamp("live-cur", here, 60)
+        dead = _stamp("6fc1a222-dead", {"root": "/nonexistent/cache/audit/2.3.0",
+                                        "version": "2.3.0"}, 6 * 86400)
+        rep = base.Report()
+        M.check_running_plugin(rep, proj2, {}, cfgmod)
+        said = _detail(rep, "running plugin")
+        check("rh1 one SIX-DAY-OLD stamp from a dead session naming an older "
+              "plugin does not hold the row at WARNING while every newer stamp "
+              "names the running copy: it is OK, and the old stamp is reported "
+              "as HISTORY - named, aged, with the file to prune: %r" % (said,),
+              _levels(rep, "running plugin") == ["OK"]
+              and "6fc1a222-dead" in said and "6 days" in said
+              and dead in said and "2.3.0" in said)
+
+        v = M.running_plugin_verdict(
+            here, [dict(here, session="new", mtime=200),
+                   dict(elsewhere, session="old", mtime=100)], [], [])
+        check("rh2 the verdict grades the NEWEST stamp per copy: a copy whose "
+              "newest stamp is older than another copy's newest is history, and "
+              "history is not drift: %r" % ((v["verdict"],
+                                             [h["session"] for h in v["history"]]),),
+              v["verdict"] == "match" and v["others"] == []
+              and [h["session"] for h in v["history"]] == ["old"])
+        v = M.running_plugin_verdict(
+            here, [dict(elsewhere, session="newer", mtime=200),
+                   dict(here, session="older", mtime=100)], [], [])
+        check("rh3 THE OVER-FIRE ARM: the other copy stamping AFTER this one is "
+              "still `differ` - history is only ever the older side, and a rule "
+              "that called every foreign stamp history would hide the stale "
+              "session this row exists to find: %r" % (v,),
+              v["verdict"] == "differ" and len(v["others"]) == 1
+              and [h["session"] for h in v["history"]] == ["older"])
+        v = M.running_plugin_verdict(
+            here, [dict(here, session="a", mtime=100),
+                   dict(elsewhere, session="b", mtime=100)], [], [])
+        check("rh4 ...and a TIE is not history: two copies stamping in one "
+              "instant are both live, so the answer is `differ`: %r"
+              % (v["verdict"],), v["verdict"] == "differ" and v["history"] == [])
+        v = M.running_plugin_verdict(
+            here, [dict(here, session="new", mtime=200),
+                   dict(elsewhere, session="old", mtime=100)], [],
+            ["running-plugin-torn.json"])
+        check("rh5 ...and history does not rescue a TORN stamp: an unreadable "
+              "file is a session this command cannot date or name, so agreement "
+              "stays unestablished: %r" % (v["verdict"],),
+              v["verdict"] == "unestablished")
+
+        _stamp("live-other", elsewhere, 30)
+        rep = base.Report()
+        M.check_running_plugin(rep, proj2, {}, cfgmod)
+        said = _detail(rep, "running plugin")
+        check("rh6 a live foreign stamp is a WARNING that carries its AGE, so a "
+              "reader can tell a session that stamped a minute ago from one "
+              "that stamped last week: %r" % (said,),
+              _levels(rep, "running plugin") == ["WARNING"]
+              and "0.43.0" in said and "second" in said)
     finally:
         _harness.remove_tree(tmp)
 

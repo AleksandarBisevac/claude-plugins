@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **`stamp-verification.py red` proves a red-first without touching the shared tree.** The executor
+  brief used to prove a red by undoing the fix in the working tree for the length of the run, which a
+  host refused beside a sibling's uncommitted work. `red --manifest M --task T -- <cmd>` checks HEAD
+  out with `git worktree add --detach` into a temp directory, copies the task's test files over it,
+  runs the command there, removes the throwaway in a `finally` and checks git no longer lists it, and
+  prints the `redFirst` block the executor returns. `--introduces SYM` is where "the task introduces
+  the symbol" is decided. The executor, reviewer and `execute-task.md` briefs point at it.
 - **The manifest merges by record: `/audit:layout merge-driver install`.** Every writer appends at a
   list tail, so two branches that each add a different phase, task, bug or `fileIndex` row conflicted
   on the same lines — in both layouts, because sharding keeps a phase RUN in its own file while every
@@ -89,6 +96,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   they differ.
 
 ### Changed
+- **One `redFirst` vocabulary.** The reviewer graded with `not-applicable` and `not-proved` while
+  the executor and the schema said `proved|could-not-prove|not-attempted`, and the reviewer brief
+  misquoted what the executor sends. The schema enum is now the one source: the reviewer echoes the
+  executor's word when its basis holds, `not-attempted` replaces `not-applicable`, and `not-proved`
+  stays as a declared reviewer-only grade. `_refs.red_first_vocabulary_drift()` fails the build when
+  either return shape strays from that.
+- **The Claude Code record readers moved to `scripts/status/_claude_home.py`**, so `/audit:version`
+  and `/audit:doctor` read `installed_plugins.json` and `known_marketplaces.json` through one module
+  instead of two.
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
   names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
   the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the
@@ -159,6 +175,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`/audit:doctor`'s `running plugin` row no longer stays yellow over a dead session's stamp.** It
+  counted every stamp not naming this copy as drift and never read the stamp's age, so one ended
+  session's file - which state GC keeps for days - held the row at WARNING while every newer stamp
+  named the running copy, and "start a new session" could not clear it. It now grades the newest
+  stamp per copy: a copy superseded by a newer stamp since is reported as history, named, aged and
+  offered for pruning by path, and a live foreign stamp carries its age.
+- **`/audit:doctor`'s `plugin files` row verifies a marketplace-cache install** instead of warning on
+  every one that it is "not inside a git checkout". Claude Code's `installed_plugins.json` records
+  the commit the cache copy was made from and the marketplace clone holds it, so the copy is
+  compared byte for byte with `git archive` of that commit and each differing or missing file is
+  named. Both records are undocumented Claude Code files, read fail-open, and the row says so; it is
+  unverifiable only when a record, the commit or the clone is missing.
+- **A compile error is no longer credited as a proved red.** The briefs graded any named command
+  with a non-zero exit as `proved`; `proved` now needs at least one test collected and an assertion
+  failing, and a compile, import or collection error is `could-not-prove` unless the task introduces
+  the symbol the run fails on.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,

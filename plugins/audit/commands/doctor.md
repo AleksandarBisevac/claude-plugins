@@ -154,7 +154,7 @@ against a copy too old to have ever stamped anything.
 
 So there are **three** outcomes, not two, and the row says which it is:
 
-- **OK** — every stamp here names the copy this command is running from.
+- **OK** — every live stamp here names the copy this command is running from.
 - **WARNING, they differ** — a stamp names another copy, or a state file's shape proves one
   did. The line names both copies and the basis (`stamp`, `state shape`, or both), and the
   fix is the only one that works: **start a new session**. A running session cannot be made
@@ -163,6 +163,15 @@ So there are **three** outcomes, not two, and the row says which it is:
   and could not be read. This is deliberately not an OK line: the same class as `sandbox`
   and `secret rules` above, a fact this command could not establish rather than one it
   cleared. Relay it as *unknown*, never as *they agree*.
+
+**Live and history.** The row grades the **newest stamp per copy**. A copy whose newest stamp
+is older than another copy's newest has been superseded — a session that ended, whose stamp
+state GC keeps for days — and it is reported as **history**: the file, the copy it names and
+its age, with the path to delete if you want it gone. History never turns the row yellow; a
+new session could not clear it otherwise, because it stamps beside the old file rather than
+replacing it. Relay history as history, not as drift. One limit: a session still running the
+older copy but idle since the newer one stamped reads as history until its next prompt
+re-stamps it. A live foreign stamp carries its age too.
 
 It is a WARNING at worst in every branch. A stale plugin copy is a thing to tell someone,
 not a thing to block on, so a run that exits 0 today still exits 0 with this row present.
