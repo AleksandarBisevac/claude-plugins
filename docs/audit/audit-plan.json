@@ -408,7 +408,7 @@
     {
       "id": "P68",
       "title": "The index is committed only where the committed shards support it",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P68.json"
     }
   ],
