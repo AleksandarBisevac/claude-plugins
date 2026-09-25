@@ -2876,11 +2876,13 @@ def _accepted_verbs(path):
     """Every verb a command accepts as a POSITIONAL choice, as a sorted list.
 
     READ OFF THE PARSER'S OWN SOURCE, so a verb added to a command is inside
-    this question by existing rather than by being remembered. Only a positional
-    whose `choices` is a literal sequence of strings is read: that is the shape
-    every multi-verb entry point here uses, and one built by a call is a
-    question the AST cannot answer - reported by nothing rather than guessed at,
-    because a guess would fail an honest document.
+    this question by existing rather than by being remembered. Two spellings are
+    read: a positional whose `choices` is a literal sequence of strings, and a
+    subparser named by a literal (`add_parser("<verb>")`) - a command moving from
+    the first to the second would otherwise leave this check with every verb at
+    once and nothing going red. One built by a call is a question the AST cannot
+    answer - reported by nothing rather than guessed at, because a guess would
+    fail an honest document.
 
     An unreadable or unparseable file yields nothing. It is not this check's
     business to report one: `layer_violations` and the house-style lints already
@@ -2895,9 +2897,14 @@ def _accepted_verbs(path):
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "add_argument" and node.args):
+                and node.func.attr in ("add_argument", "add_parser")
+                and node.args):
             continue
         first = node.args[0]
+        if node.func.attr == "add_parser":
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                verbs.add(first.value)
+            continue
         if not (isinstance(first, ast.Constant)
                 and isinstance(first.value, str)
                 and not first.value.startswith("-")):
