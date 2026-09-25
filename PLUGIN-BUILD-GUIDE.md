@@ -403,7 +403,7 @@ L7:
   stamp-verification -> _manifest_io, _output, _tree_stamp
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
-  verify-invariants -> _invariants, _manifest_io, _output
+  verify-invariants -> _commit_trail, _invariants, _manifest_io, _output
 ```
 
 ---
@@ -2772,8 +2772,9 @@ index lock by building an argv and calling `main()` through `_panel_write._lockm
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
-`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` — turning the
-library's answers into exit codes —
+`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>`, and for
+tooling that is not the plugin's a namespaced `user-<name>` under `_locks.USER_NAME_RULES`, whose
+own part may never be a lock name itself — turning the library's answers into exit codes —
 a live holder is **waited out** for a bounded window and then refused (exit 3); one that is
 not alive can be seized with `--takeover` (exit 4), because the old "older than 60 minutes =
 crashed" rule was wrong in both directions. `--wait` overrides the window, and zero is the
@@ -2959,7 +2960,15 @@ has started (a branch, a `baseRef` or a recorded commit). `--json` for the whole
 one breach, 2 usage error or unreadable manifest — and a missing basis is deliberately exit 0
 with the word in the output, because sign-off deletes the phase branch and a gate that fired
 on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
-`/audit:status --gate --fail-on invariant-breach`.
+`/audit:status --gate --fail-on invariant-breach`. `--write-baseline` records the current
+breaches as fingerprints — phase, check, and the breach line naming its subject and SHA — in
+`invariants-baseline.json` beside the manifest; once that file exists the CLI prints only the
+breaches it does not hold, counts the ones it does, and exits 1 only on a new one. An entry that
+matches nothing is printed with what git says about its commit (gone from the clone, reachable
+from no ref, still reachable) and stays in the file until the next write, which names what it
+removes. A rewrite changes SHAs, so it surfaces as new breaches beside unmatched entries, and the
+output says so on every run that reads a baseline. The gate reads `_invariants` directly and
+does not consult the baseline.
 
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
 Everything the two **commit-a-narrow-allow-list** commands share, so that neither holds a second

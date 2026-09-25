@@ -267,6 +267,47 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # (u) a user lock is shared across worktrees - the reason tooling takes it
+    utmp = tempfile.mkdtemp(prefix="audit-lock-user-")
+    try:
+        if not shutil.which("git"):
+            print("SKIP u* (git not installed)")
+        else:
+            main_tree = os.path.join(utmp, "main")
+            linked = os.path.join(utmp, "linked")
+            quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+            subprocess.run(["git", "init", "-q", main_tree], check=True, **quiet)
+            subprocess.run(["git", "-C", main_tree, "-c", "user.email=a@b",
+                            "-c", "user.name=a", "-c", "commit.gpgsign=false",
+                            "commit", "-q", "--allow-empty", "-m", "base"],
+                           check=True, **quiet)
+            subprocess.run(["git", "-C", main_tree, "worktree", "add", "-q",
+                            "-b", "wt", linked], check=True, **quiet)
+            code, txt = run(["acquire", "user-e2e", "--session", "sess-A",
+                             "--pid", str(os.getpid()), "--wait", "0"],
+                            main_tree)
+            check("u1 user tooling takes `user-<name>` through the command: %r"
+                  % (txt,), code == 0 and "acquired" in txt)
+            code, txt = run(["acquire", "user-e2e", "--session", "sess-B",
+                             "--pid", str(os.getppid()), "--wait", "0"], linked)
+            check("u2 ...and a second worktree of the same clone is refused by "
+                  "that one claim - the lock is shared, which is what an e2e "
+                  "guard driving one backend from several worktrees needs",
+                  code == M.E_LIVE and "sess-A" in txt)
+            code, txt = run(["status"], linked)
+            check("u3 ...and status from the other worktree lists it under its "
+                  "own namespaced name", "user-e2e" in txt and "LIVE" in txt)
+            code, txt = run(["acquire", "user-index", "--wait", "0"], main_tree)
+            check("u4 a user name that would read as the plugin's own index "
+                  "lock is a usage error: %r" % (txt,), code == M.E_USAGE)
+            code, _txt = run(["release", "user-e2e", "--session", "sess-A",
+                              "--pid", str(os.getpid())], main_tree)
+            check("u5 the holder releases it", code == 0
+                  and not os.path.exists(os.path.join(M.lock_dir(main_tree),
+                                                      "user-e2e.lock")))
+    finally:
+        shutil.rmtree(utmp, ignore_errors=True)
+
     # (p) a lock directory that cannot be written
     # THE CREATE WAS GUARDED AGAINST THE NAME ALREADY EXISTING AND NOTHING ELSE.
     # The directory above it had its own guard, so a lock directory that exists

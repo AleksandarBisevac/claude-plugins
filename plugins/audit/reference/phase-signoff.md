@@ -234,7 +234,12 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/verify-invariants.py" <manifestPath> <phaseId>
    ```
-   Exit 0 = no breach found · 1 = at least one · 2 = it could not be asked. It re-derives, from git
+   Exit 0 = no breach found · 1 = at least one · 2 = it could not be asked. When the project keeps
+   an `invariants-baseline.json` beside the manifest, a breach it holds is counted rather than
+   printed and does not make exit 1; entries that no longer match are printed with a reason. **Never
+   pass `--write-baseline` here**: baselining a breach is accepting it, which is the human decision
+   described below and not a step of sign-off. Nothing refuses the flag; the rewritten baseline is a
+   change to a committed file and shows in the diff. It re-derives, from git
    and the shard and the journal and the usage ledger, the rules **this file states** and nothing
    enforces: a task commit staged only its own `files`, its phase's manifest file and the journal;
    no push, no forced update and no `git stash` touched the phase branch; every manifest state the

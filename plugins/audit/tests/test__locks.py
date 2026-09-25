@@ -153,6 +153,63 @@ def _cases(check):
         finally:
             shutil.rmtree(_nm_proj, ignore_errors=True)
 
+        # --- the user namespace -----------------------------------------------
+        # A name user tooling takes is `user-<name>`. The prefix is what keeps it
+        # out of the plugin's vocabulary, and the rules on the rest are what keep
+        # two spellings from being one file on a case-folding filesystem.
+        _user_ok = ("user-e2e", "user-e2e-backend", "user-db_1", "user-a",
+                    "user-" + "a" * M.USER_NAME_MAX)
+        _user_refused = [n for n in _user_ok if not M.valid_name(n)]
+        check("u1 a namespaced user lock is a name this library accepts, so "
+              "worktree tooling can share the plugin's cross-worktree lock: %r"
+              % (_user_refused,), _user_refused == [])
+        _user_bad = ("user-", "user-E2E", "user-a/b", "user-..", "user-.x",
+                     "user-x.lock", "user--x", "user-x-", "user-_x",
+                     "user-" + "a" * (M.USER_NAME_MAX + 1), "User-e2e",
+                     "user-e 2e")
+        _user_admitted = [n for n in _user_bad if M.valid_name(n)]
+        check("u2 ...and a user name outside the stated rules is refused - an "
+              "upper-case letter, a dot, a separator, an edge punctuation mark "
+              "or an overlong name: %r" % (_user_admitted,),
+              _user_admitted == [])
+        # SPOOFING IS THE SECOND HALF. A user lock can never EQUAL a plugin name
+        # because of its prefix; this is the case for one that would READ as one
+        # in `audit-lock.py status`, and for one nested inside another user name.
+        _spoofs = ["user-index", "user-usage", "user-phase-p1",
+                   "user-user-e2e"] + ["user-" + n for n in M.FIXED_NAMES]
+        _spoofed = [n for n in _spoofs if M.valid_name(n)]
+        check("u3 ...and a user name whose own part is a plugin lock name is "
+              "refused, so no user lock reads as the index, the ledger or a "
+              "phase: %r" % (_spoofed,), _spoofed == [])
+        _crossed = [n for n in _user_ok
+                    if M.is_plugin_name(n) or n in M.FIXED_NAMES
+                    or n.startswith("phase-")]
+        check("u4 ...and no user name is a plugin name under any of the three "
+              "shapes the plugin's own readers key on: %r" % (_crossed,),
+              _crossed == [] and M.is_plugin_name("index")
+              and M.is_plugin_name("phase-P1")
+              and not M.is_plugin_name("user-e2e"))
+        _u_proj = tempfile.mkdtemp(prefix="audit-locks-user-")
+        try:
+            subprocess.call(["git", "init", "-q", _u_proj])
+            _u_out = []
+            _u_code = M.acquire(_u_proj, "user-e2e", out=_u_out.append,
+                                session="s-user", pid=os.getpid())
+            check("u5 acquire takes a user lock in the shared lock directory: "
+                  "%r" % (" ".join(_u_out),),
+                  _u_code == 0 and os.path.isfile(os.path.join(
+                      M.lock_dir(_u_proj), "user-e2e.lock")))
+            _u_bad_out = []
+            _u_bad = M.acquire(_u_proj, "user-E2E", out=_u_bad_out.append)
+            _u_said = " ".join(_u_bad_out)
+            check("u6 ...and a refused user name is a usage error whose message "
+                  "states the user-name rules, not only the plugin's names: %r"
+                  % (_u_said,),
+                  _u_bad == M.E_USAGE and "user-<name>" in _u_said
+                  and M.USER_NAME_RULES in _u_said)
+        finally:
+            shutil.rmtree(_u_proj, ignore_errors=True)
+
         # --- reading ----------------------------------------------------------
         check("r1 read_lock returns the dict it read", M.read_lock(path).get("pid")
               == os.getpid())

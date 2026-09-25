@@ -301,16 +301,61 @@ def lock_dir(project):
 # else can be refused by.
 FIXED_NAMES = ("index", "usage")
 
+# The namespace user tooling takes this directory's locks under -- an e2e guard
+# driving one backend from several worktrees of one clone is the shape it is for.
+# The prefix is what keeps it apart from the plugin's names: every reader of this
+# directory keys on `index`, `usage` or a `phase-` prefix, and none of them can
+# match a name that begins with this one.
+USER_PREFIX = "user-"
+USER_NAME_MAX = 64
+_USER_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 
-def valid_name(name):
-    """A name in `FIXED_NAMES`, or `phase-<id>` with the id restricted so it
-    cannot escape the dir."""
+# The rules, stated once: the refusal prints this and `commands/worktree.md`
+# points at it. LOWER CASE ONLY because the lock directory sits on a
+# case-folding filesystem by default on two of the platforms this ships on, so
+# two spellings differing in case would be two names and one file. NO DOT so a
+# name cannot end in `.lock` and list as something it is not, and so no name
+# reaches a filesystem that strips a trailing one.
+USER_NAME_RULES = (
+    "`user-<name>`, where <name> is 1-%d characters of a-z, 0-9, `-` and `_`, "
+    "begins and ends with a letter or digit, and is not itself a lock name - "
+    "not `index`, `usage`, `phase-<id>` or another `user-` name"
+    % (USER_NAME_MAX,))
+
+
+def is_plugin_name(name):
+    """A name the plugin itself issues: one of `FIXED_NAMES`, or `phase-<id>`
+    with the id restricted so it cannot escape the dir."""
     if name in FIXED_NAMES:
         return True
     if not name.startswith("phase-"):
         return False
     rest = name[len("phase-"):]
     return bool(rest) and all(c.isalnum() or c in "._-" for c in rest)
+
+
+def is_user_name(name):
+    """`user-<name>` under `USER_NAME_RULES`.
+
+    The part after the prefix may not be a lock name in its own right. It could
+    never EQUAL one -- the prefix sees to that -- but `user-index` would list as
+    the index to anyone reading `status`, and that is the spoof this refuses.
+    """
+    if not name.startswith(USER_PREFIX):
+        return False
+    rest = name[len(USER_PREFIX):]
+    if not rest or len(rest) > USER_NAME_MAX:
+        return False
+    if not all(c in _USER_ALPHABET or c in "-_" for c in rest):
+        return False
+    if rest[0] not in _USER_ALPHABET or rest[-1] not in _USER_ALPHABET:
+        return False
+    return not valid_name(rest)
+
+
+def valid_name(name):
+    """A name the plugin issues, or a user tool's `user-<name>`."""
+    return is_plugin_name(name) or is_user_name(name)
 
 
 def read_lock(path):
@@ -730,8 +775,10 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         out("[audit-lock] not a git repository: %s" % project)
         return E_ERR
     if not valid_name(name):
-        out("[audit-lock] bad lock name %r -- expected one of %s, or `phase-<id>`"
-            % (name, ", ".join("`%s`" % (n,) for n in FIXED_NAMES)))
+        out("[audit-lock] bad lock name %r -- expected one of %s, or `phase-<id>`,"
+            " or for user tooling %s"
+            % (name, ", ".join("`%s`" % (n,) for n in FIXED_NAMES),
+               USER_NAME_RULES))
         return E_USAGE
     try:
         os.makedirs(ld, exist_ok=True)

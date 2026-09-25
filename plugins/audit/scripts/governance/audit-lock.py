@@ -22,6 +22,11 @@ This module carries no inline `--selftest` any more; its cases live in
   <name> is `phase-<phaseId>` or one of `_locks.FIXED_NAMES` -- `index` for a
   structural write, `usage` for the ledger backfill. `_locks.valid_name` is what
   decides, so a name listed there is a name this command accepts.
+  `user-<name>` is the namespace for tooling that is not the plugin's -- an e2e
+  guard driving one backend from several worktrees takes `user-e2e` here and is
+  refused from every worktree of the clone while it is held. The name rules are
+  `_locks.USER_NAME_RULES`, which a refused name prints; no user name can equal
+  or read as one of the plugin's own.
   --session / --pid override the identity written into the lock; they default to
   $CLAUDE_CODE_SESSION_ID and $CLAUDE_PID.
   --wait says how long a LIVE holder is waited out before the refusal is printed.

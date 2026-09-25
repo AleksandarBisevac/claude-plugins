@@ -290,8 +290,162 @@ def _cases(check):
                                os.path.join(idle_root, "docs", "audit",
                                             "audit-plan.json"))
               == os.path.join(idle_root, ".claude", "usage"))
+
+        _baseline_cases(check, tmp)
     finally:
         _harness.remove_tree(tmp)
+
+
+def _load(path):
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _baseline_cases(check, tmp):
+    """The committed baseline: only what is new is printed, nothing is dropped."""
+    root = os.path.join(tmp, "base")
+    os.makedirs(root)
+    rogue = repo(root, rogue=True)
+    base_path = os.path.join(os.path.dirname(rogue), "invariants-baseline.json")
+    sha = _load(rogue)["phases"][0]["tasks"][0]["commit"]
+
+    # --- the allow case: no baseline file, no change ------------------------
+    code, out, _err = _run([rogue, "P1", "--project", root])
+    check("vb1 with no baseline file the answer is what it always was - every "
+          "breach printed, exit 1, and no baseline line invented",
+          code == 1 and "BREACHES (1)" in out and "baseline" not in out.lower())
+
+    # --- writing ------------------------------------------------------------
+    code, out, _err = _run([rogue, "P1", "--project", root, "--write-baseline"])
+    body = _load(base_path) if os.path.isfile(base_path) else {}
+    entries = body.get("entries") or []
+    check("vb2 --write-baseline writes one fingerprint per breach BESIDE the "
+          "manifest, carrying the phase, the check, the breach and its commit: "
+          "%r" % (entries,),
+          code == 0 and len(entries) == 1
+          and entries[0].get("phase") == "P1"
+          and entries[0].get("check") == "commit-scope"
+          and "src/rogue.py" in entries[0].get("breach", "")
+          and entries[0].get("commits") == [sha[:12]])
+    with open(base_path, "rb") as fh:
+        first_bytes = fh.read()
+    _run([rogue, "P1", "--project", root, "--write-baseline"])
+    with open(base_path, "rb") as fh:
+        second_bytes = fh.read()
+    check("vb3 ...and writing it twice over the same history is byte-identical, "
+          "so a committed baseline only changes when the breaches do",
+          first_bytes == second_bytes)
+
+    # --- reading ------------------------------------------------------------
+    code, out, _err = _run([rogue, "P1", "--project", root])
+    check("vb4 once the baseline exists a baselined breach is not printed as "
+          "one, the run exits 0, and the baseline count IS printed: %r"
+          % (out.strip()[-160:],),
+          code == 0 and "NEW BREACHES (0)" in out
+          and "      BREACH:" not in out
+          and "1 baselined breach(es)" in out)
+
+    stale = {"phase": "P1", "check": "commit-scope",
+             "breach": "P1.1: commit 0123456789ab staged src/gone.py",
+             "commits": ["0123456789ab"]}
+    _write_json(base_path, {"version": 1, "entries": [stale]})
+    code, out, _err = _run([rogue, "P1", "--project", root])
+    check("vb5 a breach the baseline does not hold is NEW - printed, and exit "
+          "1: %r" % (out.strip()[-200:],),
+          code == 1 and "NEW BREACHES (1)" in out
+          and out.count("src/rogue.py") >= 1)
+    check("vb6 ...and a baseline entry that matches no breach is REPORTED, with "
+          "its commit named as one this clone does not have, never dropped",
+          "NO LONGER MATCH (1)" in out and "src/gone.py" in out
+          and "0123456789ab" in out and "not in this clone" in out)
+    check("vb7 ...and the rewrite rule is stated in the output rather than "
+          "left for a reader to discover: fingerprints carry SHAs",
+          "rebase" in out and "squash" in out and "--write-baseline" in out)
+    check("vb8 ...and the stale entry is still in the file - reading never "
+          "rewrites it",
+          _load(base_path)["entries"] == [stale])
+
+    present = {"phase": "P1", "check": "commit-scope",
+               "breach": "P1.1: commit %s staged src/fixed.py" % (sha[:12],),
+               "commits": [sha[:12]]}
+    _write_json(base_path, {"version": 1, "entries": [present]})
+    code, out, _err = _run([rogue, "P1", "--project", root])
+    check("vb9 an unmatched entry whose commit IS still reachable is told apart "
+          "from a rewritten one - the breach is gone, the commit is not",
+          "NO LONGER MATCH (1)" in out and "still reachable" in out
+          and "not in this clone" not in out)
+
+    other = {"phase": "P9", "check": "base-ref", "breach": "elsewhere",
+             "commits": []}
+    _write_json(base_path, {"version": 1, "entries": [stale, other]})
+    code, out, _err = _run([rogue, "P1", "--project", root, "--write-baseline"])
+    kept = _load(base_path)["entries"]
+    check("vb10 rewriting the baseline for one phase keeps every other phase's "
+          "entries, and SAYS which of this phase's it removed: %r"
+          % (out.strip()[-160:],),
+          other in kept and stale not in kept and len(kept) == 2
+          and "removed 1" in out and "src/gone.py" in out)
+    code, out, _err = _run([rogue, "P1", "--project", root])
+    check("vb11 ...and a single-phase read counts the other phases' entries as "
+          "not compared rather than calling them stale",
+          code == 0 and "NO LONGER MATCH" not in out
+          and "1 entry(ies) for phases not examined" in out)
+
+    code, out, _err = _run([rogue, "P1", "--project", root, "--json"])
+    try:
+        payload = json.loads(out)
+    except ValueError:
+        payload = {}
+    block = payload.get("baseline") or {}
+    check("vb12 --json carries the baseline answer as one block - path, "
+          "counts, new and unmatched - beside the full breach list: %r"
+          % (sorted(block.keys()),),
+          code == 0 and block.get("path") == base_path
+          and block.get("matched") == 1 and block.get("new") == []
+          and block.get("unmatched") == [] and block.get("notCompared") == 1
+          and len(payload.get("breaches") or []) == 1)
+
+    # --- a rewrite: the SHA changes under the same breach --------------------
+    _git(root, "commit", "-q", "--amend", "-m", "chore(P1.1): audit - a (rewritten)")
+    manifest = _load(rogue)
+    manifest["phases"][0]["tasks"][0]["commit"] = _git(
+        root, "rev-parse", "HEAD").strip()
+    _write_json(rogue, manifest)
+    new_sha = manifest["phases"][0]["tasks"][0]["commit"][:12]
+    code, out, _err = _run([rogue, "P1", "--project", root, "--json"])
+    block = (json.loads(out) if code in (0, 1) else {}).get("baseline") or {}
+    rewritten = [e for e in block.get("new") or []
+                 if e["check"] == "commit-scope" and e["commits"] == [new_sha]]
+    stale_old = [e for e in block.get("unmatched") or []
+                 if e["commits"] == [sha[:12]]]
+    check("vb13 after an amend gives the task commit a new SHA the breach is "
+          "NEW under that SHA and the old entry is unmatched with its commit "
+          "named as reachable from no ref - the rewrite is said, not silent: %r"
+          % ([e.get("reason") for e in stale_old],),
+          code == 1 and len(rewritten) == 1 and len(stale_old) == 1
+          and "no branch or tag" in stale_old[0]["reason"])
+
+    # --- refusals -----------------------------------------------------------
+    with open(base_path, "w", encoding="utf-8") as fh:
+        fh.write("{not json")
+    code, out, err = _run([rogue, "P1", "--project", root])
+    check("vb14 a baseline that cannot be read is exit 2 and says so - never a "
+          "run that quietly ignores it and prints every frozen breach as new",
+          code == 2 and out == "" and "baseline" in err)
+    missing = os.path.join(tmp, "nowhere.json")
+    code, out, err = _run([rogue, "P1", "--project", root,
+                           "--baseline", missing])
+    check("vb15 an explicit --baseline that is not there is exit 2 - the caller "
+          "asked for a comparison that cannot be made",
+          code == 2 and out == "" and missing in err)
+    code, out, err = _run([rogue, "P1", "--project", root, "--write-baseline",
+                           "--baseline", missing])
+    check("vb16 ...while --write-baseline to an explicit path creates it",
+          code == 0 and os.path.isfile(missing))
+    help_text = M.build_parser().format_help()
+    check("vb17 --help names both flags, so the mode can be found without "
+          "reading the source",
+          "--write-baseline" in help_text and "--baseline" in help_text)
 
 
 def _selftest():

@@ -87,6 +87,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   count and the `--verbose` pointer; `audit-lookup` answers a
   bug's and a phase's status from the derivation and prints `stored X, derived Y (basis)` where
   they differ.
+- **`verify-invariants.py` can print only what is new.** A long history carries breaches nobody
+  will repair, and printing all of them on every run buried the one made today - an operator was
+  left grepping for the day's SHAs. `--write-baseline` records the current breaches as
+  fingerprints (phase, check, and the breach line naming its subject and commit SHA) in
+  `invariants-baseline.json` beside the manifest, to be committed with it; once that file exists a
+  run prints the new breaches, how many baselined ones are still reported, and exits 1 only on a
+  new one. A baseline entry that no longer matches is printed with what git says about its commit
+  and stays in the file until the next `--write-baseline`, which names each entry it removes and
+  keeps other phases' entries when run for one phase. Fingerprints carry SHAs, so a rebase, squash
+  or amend re-reports its breaches as new and leaves the old entries unmatched as reachable from no
+  branch or tag; the output states that rule on every run that reads a baseline. An unreadable
+  baseline, or an explicit `--baseline` that is not there, is exit 2.
+- **User tooling can share the cross-worktree lock: `audit-lock.py acquire user-<name>`.** The
+  lock under the git common dir spans every worktree of a clone, but it refused every name except
+  `index`, `usage` and `phase-<id>`, so a guard driving one backend from several worktrees had to
+  invent a lockfile each worktree saw only in its own tree. `_locks.valid_name` now admits a
+  namespaced `user-<name>` under rules `_locks.USER_NAME_RULES` states and a refused name prints:
+  lower case, digits, `-` and `_`, bounded length, and never a name whose own part is itself a lock
+  name, so `user-index` or `user-phase-p1` cannot pass for the plugin's. `/audit:worktree`
+  documents it as the lock worktree tooling shares.
 
 ### Changed
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble

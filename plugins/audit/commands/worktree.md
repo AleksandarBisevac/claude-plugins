@@ -88,6 +88,36 @@ Two consequences to say out loud rather than let the human discover:
   not a failure, and the output says so in its own words rather than reporting a clean sheet.
   `remove --path` is how those come down.
 
+## The lock worktree tooling shares
+
+Worktrees of one clone share a single git directory, and the plugin's lock lives there
+(`$(git rev-parse --git-common-dir)/audit-locks`), so a claim taken from any worktree is seen from
+every other. Tooling of your own that must not run twice at once across worktrees — an e2e guard
+driving one backend, a shared dev database — can take that same lock under a namespaced name
+instead of inventing a lockfile per worktree, which each worktree would see only in its own tree:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" \
+    acquire user-e2e --wait 30 --project <worktreeDir>
+# ... the run that must be alone ...
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" \
+    release user-e2e --project <worktreeDir>
+```
+
+`--wait N` is how many seconds a live holder is waited out before the command refuses with exit
+`3`; `0` refuses at once. The holder's identity is the `--session`/`--pid` pair, defaulting to
+`$CLAUDE_CODE_SESSION_ID` and `$CLAUDE_PID`, and a release from a different identity is refused.
+**Outside Claude Code, pass both yourself, the same on acquire and release** — `--session` a name
+of your run, `--pid` a process that lives exactly as long as the hold (the calling script's `$$`).
+The pid is what liveness is judged on: with none recorded the claim falls back to the age rule, so
+a crashed run's lock is not offered for takeover until it is old.
+
+**The name rules are the library's, not this page's.** `_locks.valid_name` decides and
+`_locks.USER_NAME_RULES` states them; a refused name prints that sentence. The `user-` prefix is
+what keeps the namespace apart: the plugin's own names are `index`, `usage` and `phase-<id>`, every
+reader of the directory keys on those, and a user name whose own part would read as one of them
+(`user-index`, `user-phase-p1`) is refused as well, so no user lock can pass for the plugin's.
+
 ## Exit codes
 
 `0` it ran · `1` it could not, and the reason names a path · `2` usage · `4` git could not be
