@@ -71,8 +71,9 @@ grade at all -- nothing in the manifest points at one.
 Exit codes:
   0  it ran - it committed, or there was nothing to commit and it said which
      (the single-file refusal is one of those, and is deliberately not a failure)
-  1  it could not - git refused, or the git index already held work this commit
-     may not carry
+  1  it could not - git refused, the git index already held work this commit
+     may not carry, or the index names a task or phase the shard committed at
+     HEAD does not hold yet (commit that shard first; the refusal names it)
   2  usage error - the manifest will not load, or there is no such phase
   3  the index lock is held by a process that is alive - try again after it
   4  the lock is stale; a human confirms the holder is gone, then --takeover
@@ -220,6 +221,19 @@ def _shard_at_head(git_root, rel):
         return None
 
 
+def _changed_shards(git_root, rels):
+    """The shard paths git reports as differing from HEAD (modified, added or
+    untracked), or None when git would not say - then every shard is read."""
+    if not rels:
+        return set()
+    code, out, _err = _scoped_commit.run_git(
+        git_root, ["status", "--porcelain", "--untracked-files=all", "--"] + rels)
+    if code != 0:
+        return None
+    return set(line[3:].strip().strip('"') for line in out.splitlines()
+               if len(line) > 3)
+
+
 def _task_ids(doc):
     return set(t.get("id") for t in ((doc or {}).get("tasks") or [])
                if isinstance(t, dict) and t.get("id"))
@@ -231,7 +245,7 @@ def ahead_of_shards(git_root, manifest_path, index_doc):
     if not isinstance(index_doc, dict):
         return []
     base = os.path.dirname(os.path.abspath(manifest_path))
-    ahead, now_ids, head_ids = [], {}, {}
+    ahead, now_ids, head_ids, stubs = [], {}, {}, []
     for stub in index_doc.get("phases") or []:
         if not isinstance(stub, dict) or not stub.get("shard"):
             continue
@@ -242,12 +256,22 @@ def ahead_of_shards(git_root, manifest_path, index_doc):
                 now = json.load(fh)
         except (OSError, ValueError):
             continue               # a shard that is not there is the validator's
+        stubs.append((stub, rel, now))
+    # ONE `git status` over every shard, and a `git show` only for the ones it
+    # names. An unchanged shard IS its committed copy, so it needs no second read -
+    # and this runs under the index lock, where a read per phase would make every
+    # index commit wait on the size of the whole plan rather than on the change.
+    changed = _changed_shards(git_root, [rel for _s, rel, _n in stubs])
+    for stub, rel, now in stubs:
+        for tid in _task_ids(now):
+            now_ids[tid] = rel
+        if changed is not None and rel not in changed:
+            head_ids.update((tid, rel) for tid in _task_ids(now))
+            continue
         head = _shard_at_head(git_root, rel)
         if head is None:
             ahead.append(("phase %s" % (stub.get("id"),), rel))
             continue
-        for tid in _task_ids(now):
-            now_ids[tid] = rel
         head_ids.update((tid, rel) for tid in _task_ids(head))
     for path_key, ids in sorted((index_doc.get("fileIndex") or {}).items()):
         for tid in ids if isinstance(ids, list) else []:

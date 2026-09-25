@@ -601,6 +601,32 @@ def _cases(check):
         index["fileIndex"]["src/orphan.py"] = ["P9.9"]
         TI._write_json(fx["manifest"], index)
         code, text = _run(fx)
+        # The check asks git only about shards that CHANGED: a stub whose shard is
+        # the committed one needs no `git show`, and a plan's phase count must not
+        # set the lock-hold time of every index commit.
+        fx = repos.make()
+        index = _mio.read_json(fx["manifest"])
+        index["meta"]["title"] = "only the title moved"
+        TI._write_json(fx["manifest"], index)
+        shows = []
+        real_git = M._scoped_commit.run_git
+
+        def counting(root, argv):
+            if argv[:1] == ["show"]:
+                shows.append(argv)
+            return real_git(root, argv)
+        M._scoped_commit.run_git = counting
+        try:
+            code, text = _run(fx)
+        finally:
+            M._scoped_commit.run_git = real_git
+        # The fixture leaves P1's shard modified and P2's committed as it is.
+        check("cmi26 git is asked to show a shard at HEAD only where that shard "
+              "CHANGED - P1's, which the fixture left modified, and never P2's, whose "
+              "committed copy is the working one: the cost is the change's, not the "
+              "plan's: %r / %r" % (shows, text),
+              code == 0 and shows == [["show", "HEAD:%s" % SHARD_REL]])
+
         check("cmi25 ...and an index naming a task NO shard holds, committed or not, "
               "is not this command's to refuse - it is not ahead of a shard, it is "
               "dangling, and the validator reports that: %r" % (text,),

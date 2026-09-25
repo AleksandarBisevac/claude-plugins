@@ -82,6 +82,49 @@
         "commit": "46bd442",
         "at": "2026-09-25T11:13:41Z"
       }
+    },
+    {
+      "id": "P68.2-v4q",
+      "title": "Sign-off review findings: the shard check asks git only about shards that changed, and the exit-code contract names it",
+      "status": "in_progress",
+      "description": "P68 review: ahead_of_shards ran one git show per phase stub on every call, under the index lock, growing with the plan rather than the change; the module's exit-code contract did not name the new refusal.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_manifest_index.py: an index change that touches no shard asks git to show none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T11:22:12Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T11:07:45Z"
