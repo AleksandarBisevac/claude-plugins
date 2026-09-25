@@ -19,10 +19,25 @@
   "branch": "audit/p68-the-index-is-committed-only-wh",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P68-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "issue": "the module's exit-code contract did not name the new ahead-of-shard refusal",
+        "resolution": "fixed in P68.2-v4q"
+      },
+      {
+        "id": "P68-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "issue": "one git show per phase stub on every call, under the index lock, growing with the plan",
+        "resolution": "fixed in P68.2-v4q: one git status, git show only for changed shards (cmi26)"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -86,7 +101,7 @@
     {
       "id": "P68.2-v4q",
       "title": "Sign-off review findings: the shard check asks git only about shards that changed, and the exit-code contract names it",
-      "status": "in_progress",
+      "status": "done",
       "description": "P68 review: ahead_of_shards ran one git show per phase stub on every call, under the index lock, growing with the plan rather than the change; the module's exit-code contract did not name the new refusal.",
       "files": [
         "plugins/audit/scripts/governance/commit-manifest-index.py",
@@ -117,14 +132,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2eb3568",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - one git status, git show only for changed shards; cmi26 red first; two mutations red",
+        "descriptive": "Committing the plan index stays fast however many phases the plan has, and its documented exit codes include the new refusal."
       },
       "startedAt": "2026-09-25T11:22:12Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T11:24:24Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_commit_manifest_index.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2eb3568",
+        "at": "2026-09-25T11:24:24Z"
+      }
     }
   ],
   "startedAt": "2026-09-25T11:07:45Z"
