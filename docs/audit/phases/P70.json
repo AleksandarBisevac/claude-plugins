@@ -83,7 +83,7 @@
     {
       "id": "P70.2",
       "title": "The validator names a comma-joined gate entry, and a running phase with an empty gate or no desiredOutcome",
-      "status": "in_progress",
+      "status": "done",
       "description": "Additive warnings only (validation stays additive): an entry in testGate or tests.gate that is not a buildCommands key, contains a comma, and whose every comma-part IS a key names the split spelling; a non-terminal phase with a blank or missing desiredOutcome; an in_progress phase (derived) with an empty testGate. The empty gate stays a designed state, so never a refusal.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -117,14 +117,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "08e9e9a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Three additive warnings in _manifest_phases; finished work exempt.",
+        "descriptive": "The validator names a comma-joined gate entry and a running phase with no gate or no outcome."
       },
       "startedAt": "2026-09-25T14:32:07Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T15:37:22Z",
+      "verifiedBy": [
+        "test__manifest_phases gw1",
+        "test__manifest_phases gw4",
+        "test__manifest_phases gw6"
+      ]
     }
   ],
   "startedAt": "2026-09-25T14:32:07Z"
