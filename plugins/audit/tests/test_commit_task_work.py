@@ -177,16 +177,19 @@ def _phase_and_task(fx, tid=TASK):
     raise RuntimeError("fixture lost %s" % (tid,))
 
 
-def _set_task(fx, files=None, gate=None, phase_gate=None):
-    """Rewrite the fixture task's `files` and/or `tests.gate` in its shard, and
-    the phase's `testGate` when `phase_gate` is given. Left uncommitted, which is
-    what a task that widened its scope mid-run looks like."""
+def _set_task(fx, files=None, gate=None, phase_gate=None, basis=None):
+    """Rewrite the fixture task's `files` and/or `tests.gate` (and
+    `tests.gateBasis` when `basis` is given) in its shard, and the phase's
+    `testGate` when `phase_gate` is given. Left uncommitted, which is what a task
+    that widened its scope mid-run looks like."""
     shard = _mio.read_json(fx["shard"])
     task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
     if files is not None:
         task["files"] = list(files)
     if gate is not None:
         task["tests"]["gate"] = list(gate)
+    if basis is not None:
+        task["tests"]["gateBasis"] = basis
     if phase_gate is not None:
         shard["testGate"] = list(phase_gate)
     TI._write_json(fx["shard"], shard)
@@ -906,6 +909,48 @@ def _verdict_cases(check, repos):
           code == 0 and _const('NO_GATE') in text)
     _scope_cases(check, repos)
     _branch_cases(check, repos)
+    _empty_gate_cases(check, repos)
+
+
+# --- the recorded answer for an empty gate ------------------------------------
+def _empty_gate_cases(check, repos):
+    # A TASK GATE CLEARED ON PURPOSE, WHOSE RECORDING WROTE AN EMPTY-GATE ROW.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=[], basis="cleared")
+    _gate(fx)
+    recorded = _newest_row(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw70 a task whose gate was CLEARED, whose newest row is the "
+          "empty-gate record `--record` wrote for it, commits - that row IS the "
+          "recorded answer for a gate that is empty now, and refusing it left "
+          "`--override-verdict` as the only way on: %r / %r"
+          % (recorded.get("status"), text),
+          recorded.get("status") == _const("VERDICT_EMPTY_GATE")
+          and code == 0 and _head(fx) != before
+          and _const("NO_GATE") in text)
+
+    # ...AND THE SAME ROW UNDER A GATE THAT HAS ENTRIES NOW.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=[], basis="cleared")
+    _gate(fx)
+    _set_task(fx, gate=["test"], basis="declared")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw71 SECOND-DIRECTION CASE: an empty-gate row under a gate that "
+          "DECLARES entries now binds nothing - the gate changed after the "
+          "measurement, and the refusal says so in the gate-mismatch words: "
+          "%r / %r" % (code, text),
+          code == 1 and "measured under the gate" in text
+          and _head(fx) == before)
+
+    check("ctw72 the committer's word for an empty-gate row is the recorder's "
+          "own - two spellings of the status would make every such row read as "
+          "an unknown verdict: %r / %r"
+          % (_const("VERDICT_EMPTY_GATE"), RTG.EMPTY_GATE),
+          _const("VERDICT_EMPTY_GATE") == RTG.EMPTY_GATE)
 
 
 # --- helpers for editing a recorded ledger -------------------------------------

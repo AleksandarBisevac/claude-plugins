@@ -423,9 +423,12 @@ not need to.
         out. A verdict the recorder repeated rather than re-measured is graded against the run it
         names. A ledger line that will not parse refuses unless it names another task's id, and
         the refusal names the file and line (`audit-journal.py verify` shows it). A task nothing
-        can measure — its own `tests.gate` and its phase's `testGate` both empty — commits and
-        the output says it is bound to no verdict, unless its newest recorded verdict is a red
-        one: emptying a gate does not retire it.
+        can measure — its task gate cleared on purpose (`gateBasis: cleared`), or its own
+        `tests.gate` and its phase's `testGate` both empty — commits and the output says it is
+        bound to no verdict, unless its newest recorded verdict is a red one: emptying a gate
+        does not retire it. The `empty-gate` row `--record` writes for such a gate is its recorded
+        answer and binds it; the same row under a gate that declares entries now is refused as a
+        gate changed after the measurement, so record the gate again.
         `--override-verdict "<reason>"` commits over a refusal and writes an
         `audit.task.verdict-overridden` journal row naming the commit, the run and the reason; it
         is refused while `journal.enabled` is false. An override is a human's call, like the risk

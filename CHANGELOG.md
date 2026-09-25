@@ -96,9 +96,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   phase's gate counts and a sign-off run does not) is `passed`, was measured under the gate the
   task declares now, and its `testedState.scopeDigest` still matches the declared files being
   committed; the refusal says whether the declared list or the files' contents moved, and a
-  verdict the recorder repeated is graded against the run it names. A task whose own gate and
-  phase gate are both empty commits and says it is bound to no verdict - unless its newest recorded
-  verdict is red. An unparseable evidence line refuses only when it could be this task's row, and
+  verdict the recorder repeated is graded against the run it names. A task whose gate was cleared,
+  or whose own gate and phase gate are both empty, commits and says it is bound to no verdict -
+  unless its newest recorded verdict is red; the `empty-gate` row `--record` writes for such a gate
+  binds it, and the same row under a gate that declares entries now is refused as a changed gate.
+  An unparseable evidence line refuses only when it could be this task's row, and
   names its file and line. `--override-verdict "<reason>"` commits anyway and writes an
   `audit.task.verdict-overridden` journal row naming the commit, the run and the reason, and is
   refused while the journal is off. `reference/execute-task.md` step 4c says so.

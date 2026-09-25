@@ -1021,12 +1021,45 @@ def _drift_cases(check):
           M.derived_disagreements(None) == [] and M.derived_disagreements([]) == [])
 
 
+def _gate_cases(check):
+    """Which gate measures a task - `gate_entries` and its cleared arm."""
+    phase = {"testGate": ["lint", "test"]}
+    cleared = {"tests": {"gate": [], "gateBasis": "cleared"}}
+    check("gc1 a task whose gate was CLEARED on purpose is measured by no gate "
+          "of its own and does NOT fall back to its phase's: the empty list is "
+          "the caller's recorded answer: %r" % (M.gate_entries(phase, cleared),),
+          M.gate_entries(phase, cleared) == ([], "task")
+          and M.gate_cleared(cleared["tests"]) is True)
+    check("gc2 SECOND DIRECTION: an empty task gate WITHOUT that basis - absent, "
+          "empty or all-blank - still falls back to the phase's gate, and "
+          "another basis word is not `cleared`: %r"
+          % (M.gate_entries(phase, {"tests": {"gate": ["  "]}}),),
+          M.gate_entries(phase, {"tests": {"gate": []}}) == (["lint", "test"],
+                                                              "phase")
+          and M.gate_entries(phase, {"tests": {"gate": ["  "]}})
+          == (["lint", "test"], "phase")
+          and M.gate_entries(phase, {}) == (["lint", "test"], "phase")
+          and M.gate_entries(phase, {"tests": {"gate": [],
+                                               "gateBasis": "declared"}})
+          == (["lint", "test"], "phase"))
+    check("gc3 a task's own entries win, cleared basis or not, and only their "
+          "non-blank strings are returned in order",
+          M.gate_entries(phase, {"tests": {"gate": ["b", " ", 3, "a"],
+                                           "gateBasis": "cleared"}})
+          == (["b", "a"], "task"))
+    check("gc4 `gate_cleared` answers False for anything that is not a tests "
+          "block carrying the word - a string, None, a list",
+          not any(M.gate_cleared(v) for v in ("cleared", None, ["cleared"],
+                                              {"gateBasis": "Cleared"})))
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _root_key_cases(check)
         _phase_status_cases(check)
         _drift_cases(check)
+        _gate_cases(check)
     return _harness.run(body)
 
 

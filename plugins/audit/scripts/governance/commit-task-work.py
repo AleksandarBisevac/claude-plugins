@@ -70,9 +70,13 @@ paths left out, so a `:line-range` entry, a directory entry and a task that
 declares its own manifest file are all compared on the bytes they name. HEAD and
 the dirty-path digest are deliberately not compared: a sibling task committing
 between this task's gate and its commit moves both, and that is the ordinary
-parallel run rather than stale work. A task nothing can measure - its own
-`tests.gate` and its phase's `testGate` both empty - commits and says it is
-bound to no verdict, unless its newest recorded verdict is a red one.
+parallel run rather than stale work. A task nothing can measure - a task gate
+cleared on purpose (`gateBasis: cleared`), or its own `tests.gate` and its
+phase's `testGate` both empty (`_manifest_io.gate_entries`) - commits and says
+it is bound to no verdict, unless its newest recorded verdict is a red one; the
+`empty-gate` row `--record` writes for such a gate is its recorded answer and
+binds it, and the same row under a gate that has entries now is a gate changed
+after the measurement and is refused.
 `--override-verdict <reason>` commits anyway and leaves a journal row naming the
 run it went over and the reason; it is refused while the journal is off, because
 an override recorded nowhere is a gate quietly removed.
@@ -216,6 +220,12 @@ ACTION_VERDICT_OVERRIDDEN = "audit.task.verdict-overridden"
 
 # The one status a commit is bound to without an override.
 VERDICT_PASSED = "passed"
+
+# The status `run-test-gate.py --record` writes for a gate that declares no
+# command (its `EMPTY_GATE`; an entry point cannot be imported, and a case pins
+# the two spellings equal). It is the recorded answer for a gate that is empty
+# NOW, and binds nothing under a gate that has entries.
+VERDICT_EMPTY_GATE = "empty-gate"
 
 # A task with nothing to measure it. Said on every such commit, because a silent
 # commit here reads exactly like one a green gate stood behind.
@@ -470,7 +480,8 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
 
     `state` is `"bound"` (a `passed` row measured under the gate declared now,
     whose declared-work digest matches the declared files now), `"no-gate"`
-    (nothing declares a gate, and no red verdict is recorded) or `"refused"`;
+    (nothing declares a gate, and the newest row, if any, is `passed` or the
+    `empty-gate` record of that empty gate) or `"refused"`;
     `sentence` says which, naming the run; `row` is the newest row for the task
     when there is one, so an override can name it; `notes` are ledger lines that
     will not parse and were passed over, said rather than absorbed.
@@ -515,7 +526,11 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
     run = ("run %s at %s" % (newest.get("runId"), newest.get("ts"))
            if newest else "")
     if not entries:
-        if newest is not None and newest.get("status") != VERDICT_PASSED:
+        # An empty-gate row is what the recorder writes for exactly this state,
+        # so it binds here alongside a green; any other word is a verdict the
+        # emptied gate does not retire.
+        if newest is not None and newest.get("status") not in (
+                VERDICT_PASSED, VERDICT_EMPTY_GATE):
             return {"state": "refused", "row": newest, "notes": notes,
                     "sentence": (
                         "%s declares no gate now, and its newest recorded "
@@ -526,13 +541,20 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
         sentence = NO_GATE
         if newest is not None:
             sentence = "%s (the newest verdict recorded for it is %s, `%s`)" % (
-                NO_GATE, run, VERDICT_PASSED)
+                NO_GATE, run, newest.get("status"))
         return {"state": "no-gate", "sentence": sentence, "row": newest,
                 "notes": notes}
     if newest is None:
         return {"state": "refused", "row": None, "notes": notes, "sentence": (
             "no gate verdict is recorded for %s, and its gate declares entries "
             "- %s" % (task_id, record))}
+    if newest.get("status") == VERDICT_EMPTY_GATE:
+        # Recorded while the gate was empty, and the gate declares entries now:
+        # a gate changed after the measurement, which is the mismatch sentence.
+        return {"state": "refused", "row": newest, "notes": notes, "sentence": (
+            "%s's newest verdict is `%s` (%s), but %s; %s"
+            % (task_id, VERDICT_EMPTY_GATE, run,
+               _gate_mismatch(newest, entries, source), record))}
     if newest.get("status") != VERDICT_PASSED:
         return {"state": "refused", "row": newest, "notes": notes, "sentence": (
             "%s's newest gate verdict is `%s` (%s), and a task commit is bound "
