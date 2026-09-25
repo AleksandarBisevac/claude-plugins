@@ -404,6 +404,12 @@
       "title": "/audit:version says which build is running and whether a newer one is published",
       "status": "in_progress",
       "shard": "phases/P67.json"
+    },
+    {
+      "id": "P68",
+      "title": "The index is committed only where the committed shards support it",
+      "status": "pending",
+      "shard": "phases/P68.json"
     }
   ],
   "fileIndex": {
@@ -457,7 +463,8 @@
       "P66.2-x3g",
       "P66.3-x3g",
       "P66.4-x3g",
-      "P67.2"
+      "P67.2",
+      "P68.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -793,7 +800,8 @@
       "P61.10",
       "P61.14",
       "P63.11",
-      "P64.3"
+      "P64.3",
+      "P68.1"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -1763,7 +1771,8 @@
       "P63.4",
       "P63.8",
       "P63.12",
-      "P64.1"
+      "P64.1",
+      "P68.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -1803,7 +1812,8 @@
       "P63.4",
       "P63.8",
       "P64.1",
-      "P64.4-uym"
+      "P64.4-uym",
+      "P68.1"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -2045,7 +2055,8 @@
       "P34.4",
       "P47.5",
       "P53.6",
-      "P54.6"
+      "P54.6",
+      "P68.1"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
@@ -2053,7 +2064,8 @@
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
-      "P34.4"
+      "P34.4",
+      "P68.1"
     ],
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5"
@@ -2503,7 +2515,8 @@
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
-      "P64.3"
+      "P64.3",
+      "P68.1"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2820,7 +2833,7 @@
     {
       "id": "BUG-10",
       "title": "commit-manifest-index commits an index whose fileIndex names tasks their phase's shard has not committed, so the commit records a plan that does not validate",
-      "status": "open",
+      "status": "in_progress",
       "severity": "med",
       "reportedAt": "2026-09-25T06:37:17Z",
       "reportedBy": null,
@@ -2835,7 +2848,7 @@
       "files": [
         "plugins/audit/scripts/governance/commit-manifest-index.py"
       ],
-      "taskId": null,
+      "taskId": "P68.1",
       "fixedIn": null,
       "notes": "found signing off P66, 2026-09-25"
     }
