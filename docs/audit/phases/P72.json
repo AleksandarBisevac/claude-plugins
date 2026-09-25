@@ -272,7 +272,7 @@
     {
       "id": "P72.4-ttl",
       "title": "A session's journal writer is keyed by its worktree too, so parallel worktrees of one session never share a file",
-      "status": "in_progress",
+      "status": "done",
       "description": "Hit merging main into P70: audit-journal merge refused 2026-09.<session>.jsonl because rows written in two linked worktrees of ONE session at the same second said different things (task starts in sibling worktrees), and timestamp order cannot separate them; it was resolved by hand. The per-writer file layout that makes journal merges conflict-free assumes one writer per file, but the writer id is the session id, so every worktree a session drives appends the same basename. Key the writer by session AND worktree (a linked worktree's .claude/state already holds its own writer token) so two worktrees never share a file; keep reading existing session-keyed files; check verify, merge, doctor and the record-key dedup read the new names. Cases: two worktrees of one session write two files; the old name is still read; a merge of both branches has no journal conflict.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -314,14 +314,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "32630b84",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_journal_io.worktree_key keys file_for for the journal and the evidence ledger in a linked worktree; main keeps the session name; readers list the directory.",
+        "descriptive": "Parallel worktrees driven by one session write their own journal and evidence files, so merging them never conflicts."
       },
       "startedAt": "2026-09-25T17:47:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T18:03:26Z",
+      "verifiedBy": [
+        "test__journal_io wk1",
+        "test__journal_io wk6",
+        "test__evidence_io ew1",
+        "test__evidence_io ew3"
+      ]
     }
   ],
   "startedAt": "2026-09-25T14:32:08Z"
