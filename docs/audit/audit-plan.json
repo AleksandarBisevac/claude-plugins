@@ -677,7 +677,8 @@
       "P63.12",
       "P64.3",
       "P66.1",
-      "P67.2"
+      "P67.2",
+      "P72.3-ttl"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -1476,7 +1477,8 @@
       "P58.1",
       "P60.3",
       "P61.14",
-      "P63.11"
+      "P63.11",
+      "P72.4-ttl"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -2137,7 +2139,8 @@
       "P54.6",
       "P55.5",
       "P56.5",
-      "P55.14"
+      "P55.14",
+      "P72.4-ttl"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2248,7 +2251,8 @@
       "P54.6",
       "P55.5",
       "P56.5",
-      "P59.13"
+      "P59.13",
+      "P72.4-ttl"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
