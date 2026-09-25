@@ -420,7 +420,7 @@
     {
       "id": "P70",
       "title": "A gate that could not reach a verdict says so, and names what failed",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P70.json"
     },
     {
@@ -490,9 +490,9 @@
       "P67.2",
       "P68.1",
       "P69.3",
-      "P70.2",
       "P71.1",
-      "P72.1"
+      "P72.1",
+      "P70.2"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -548,7 +548,8 @@
       "P63.4",
       "P63.8",
       "P64.1",
-      "P67.1"
+      "P67.1",
+      "P70.1"
     ],
     "README.md": [
       "P2.3",
@@ -1056,7 +1057,8 @@
       "P49.4",
       "P57.5",
       "P61.1",
-      "P61.8"
+      "P61.8",
+      "P70.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1479,7 +1481,8 @@
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
-      "P32.2"
+      "P32.2",
+      "P70.2"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -1528,7 +1531,8 @@
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
       "P26.1",
-      "P47.2"
+      "P47.2",
+      "P70.2"
     ],
     "tools/prove-gates.py": [
       "P18.6",
@@ -2108,7 +2112,8 @@
       "P54.6",
       "P55.5",
       "P56.5",
-      "P55.14"
+      "P55.14",
+      "P70.1"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
