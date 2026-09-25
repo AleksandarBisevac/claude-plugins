@@ -1857,18 +1857,18 @@ def gate_of(manifest, phase_id, task_id=None):
     # Read beside `buildCommands` because it is the same kind of declaration: what a
     # gate entry becomes before a shell sees it.
     preamble = (manifest.get("meta") or {}).get("nodePreamble")
+    task = None
     if task_id is not None:
         tasks = [t for t in (phases[0].get("tasks") or [])
                  if isinstance(t, dict) and t.get("id") == task_id]
         if not tasks:
             return None, None, "no task %r in phase %r" % (task_id, phase_id)
-        tests = tasks[0].get("tests")
-        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
-        resolved = _resolved(entries, build, preamble)
-        if resolved:
-            return resolved, "task", None
-    return (_resolved(phases[0].get("testGate") or [], build, preamble),
-            "phase", None)
+        task = tasks[0]
+    # WHICH DECLARATION is `_manifest_io.gate_entries`' answer, shared with
+    # `commit-task-work`, which binds a task commit to this gate's verdict and
+    # has to agree about whose gate that is.
+    entries, source = _mio.gate_entries(phases[0], task)
+    return _resolved(entries, build, preamble), source, None
 
 
 # --- a verdict already measured on these bytes --------------------------------

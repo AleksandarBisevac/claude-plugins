@@ -74,6 +74,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   outbound request (`SECURITY.md` -> *Outbound network*); `--offline` skips it.
 
 ### Changed
+- **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the
+  evidence the orchestrator records one step earlier, so a task whose last gate went red, or whose
+  declared files were edited after a green one, committed as if it had passed. It now refuses
+  unless the task's newest evidence row (the rows carrying its task id, so a task measured by its
+  phase's gate counts and a sign-off run does not) is `passed` and its `testedState.scopeDigest`
+  still matches the declared files being committed; a verdict the recorder repeated is graded
+  against the run it names. A task whose own gate and phase gate are both empty gets no row from
+  the recorder, so it commits and says it is bound to no verdict. `--override-verdict "<reason>"`
+  commits anyway and writes an `audit.task.verdict-overridden` journal row naming the commit, the
+  run and the reason, and is refused while the journal is off. `reference/execute-task.md` step 4c
+  says so; which gate measures a task is now one function, `_manifest_io.gate_entries()`, shared
+  with `run-test-gate.py`.
 - **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
   phase branch was prose the orchestrator ran before the verb, so every phase driven through the
   verbs rather than `/audit:run` ran on its parent with no branch - most of this repository's own -
@@ -105,6 +117,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook's `task.complete`.
 
 ### Fixed
+- **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
+  the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
+  only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path
+  only HEAD holds now stays out of the staging call and inside the commit's pathspec, which records
+  the rename or the deletion; and a staged rename whose source a task does not declare is refused by
+  name instead of read as clean, because the shared index read now lists both halves.
+- **`commit-task-work` could not commit a tracked file under a gitignored directory, and its
+  refusal left that file staged.** `git add --` naming such a file exits 1 and stages it anyway.
+  Index entries are now staged with `git add -u --`, and only a path git does not track is subject
+  to the ignore rule - refused by name (`ignored; -f is yours to decide`) before anything is staged,
+  including when it is the only thing uncommitted, where the command used to report "nothing
+  uncommitted". `-f` is never passed. Any refusal after staging now resets the allowed paths to a
+  snapshot of the index taken before it, so a failed staging or a commit a hook refuses leaves the
+  index exactly as it was found.
 - **`commit-manifest-index` committed an index ahead of the shards it names.** `/audit:task add`
   writes a task into its phase's shard and its files into the index, and committing the index
   first recorded a plan whose `fileIndex` named a task no committed shard held - a commit that

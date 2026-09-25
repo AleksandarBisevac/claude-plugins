@@ -377,7 +377,7 @@ L7:
   close-phase -> _branch, _journal_io, _manifest_io, _output, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit
+  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _tree_stamp
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
@@ -3095,12 +3095,29 @@ manifest file, the journal directory and the evidence directory. Nothing else, a
 conflict on merge. `_invariants.commit_scope()` re-derives that same list from git afterwards, so
 these commits are graded by something that did not make them.
 
-**How the exclusion is enforced rather than intended.** Paths are staged explicitly
-(`git add -- <path>…`, never `git add -A`), the git index is read *before* staging so work somebody
-else had already staged cannot ride along, it is read *back* afterwards against the same
-allow-list, and the commit itself carries an explicit pathspec. A path outside the list is **named**
-in the refusal, and a staged index gets a sentence of its own — reporting the expensive mistake in
-the same words as a stray README is what makes a reader skim past it.
+**How the exclusion is enforced rather than intended.** Paths are staged explicitly (never
+`git add -A`), the git index is read *before* staging so work somebody else had already staged
+cannot ride along, it is read *back* afterwards against the same allow-list, and the commit itself
+carries an explicit pathspec. A path outside the list is **named** in the refusal, and a staged
+index gets a sentence of its own — reporting the expensive mistake in the same words as a stray
+README is what makes a reader skim past it.
+
+**Each path is staged by what git holds for it.** An index entry takes `git add -u --` (plain
+`git add --` on a tracked file under a gitignored directory exits 1 *and* stages it); a path only
+on disk takes `git add --`, and one git ignores is refused by name before anything is staged —
+`-f` is never passed; a path only HEAD holds, the source of a staged `git mv` or a staged `git rm`,
+is in neither call and reaches the commit through its pathspec, which is what records the rename or
+the deletion. A refusal after staging resets the allowed paths to a `git write-tree` snapshot taken
+before it, so the index is left exactly as it was found.
+
+**Bound to the verdict it was measured under.** It refuses unless the task's newest evidence row
+(the rows carrying its task id) is `passed` and its `testedState.scopeDigest` — `_tree_stamp`'s
+digest of the declared files — still matches the files being committed. HEAD and the dirty-path
+digest are not compared, because a sibling commit between a task's gate and its commit moves both.
+A task whose own gate and whose phase's gate are both empty gets no row from the recorder, so it
+commits and says it is bound to no verdict. `--override-verdict <reason>` commits anyway and writes
+an `audit.task.verdict-overridden` journal row; it is refused while the journal is off. Which gate
+measures a task is `_manifest_io.gate_entries()`, the same answer `run-test-gate.py` resolves.
 
 **It does not write `task.commit`.** The SHA is only knowable after the commit this makes, and the
 shard is inside that commit, so writing it here would need a second commit or an amend — which

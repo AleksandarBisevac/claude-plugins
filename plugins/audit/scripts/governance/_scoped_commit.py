@@ -117,8 +117,14 @@ def foreign_staged(git_root, allowed):
     `why` is set when git would not describe the index at all, which is NOT an
     empty list: an unreadable index reported as "nothing foreign" is precisely the
     reading that lets a staged implementation file into a commit nobody reviewed.
+
+    `--no-renames` because with rename detection on git lists a staged rename by
+    its NEW name alone: a `git mv` from outside the allow-list into it would read
+    as clean, and the deletion of the source would be neither refused nor
+    committed.
     """
-    code, out, err = run_git(git_root, ["diff", "--cached", "--name-only"])
+    code, out, err = run_git(git_root, ["diff", "--cached", "--name-only",
+                                        "--no-renames"])
     if code is None:
         return [], err
     if code != 0:

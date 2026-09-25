@@ -477,6 +477,42 @@ def recorded_attempt(task):
     return value
 
 
+def gate_entries(phase, task=None):
+    """`(entries, source)` - the gate entries that measure `task`, and WHOSE.
+
+    The task's own `tests.gate` when it declares one, else the phase's
+    `testGate`; `source` is `"task"` or `"phase"` accordingly. ABSENT, EMPTY AND
+    ALL-BLANK ARE ONE ANSWER: a task with no `tests` block, one with
+    `tests.gate: []` and one whose entries are all blank strings declare no gate
+    and fall back, so the three cannot come to disagree about one question. Only
+    non-blank string entries are returned, which is what a gate may run.
+
+    HERE RATHER THAN IN `run-test-gate`, which resolves these entries into the
+    commands it runs, because `commit-task-work` must ask the same question - is
+    there any gate whose verdict this commit can be bound to - and an entry point
+    cannot import another. A second spelling of the fallback is how a task the
+    runner measures by its phase's gate would read to the committer as gateless.
+
+    The entries are returned as declared, unresolved: resolving them through
+    `meta.buildCommands` is the runner's job and the committer needs only to
+    know whether any exist.
+    """
+    if isinstance(task, dict):
+        tests = task.get("tests")
+        own = _declared_gate(tests.get("gate") if isinstance(tests, dict)
+                             else None)
+        if own:
+            return own, "task"
+    phase = phase if isinstance(phase, dict) else {}
+    return _declared_gate(phase.get("testGate")), "phase"
+
+
+def _declared_gate(entries):
+    """The non-blank string entries of one gate declaration, in order."""
+    return [e for e in (entries if isinstance(entries, list) else [])
+            if isinstance(e, str) and e.strip()]
+
+
 # --- readiness ------------------------------------------------------------------
 # The statuses that mean the work will not move again. `cancelled` is the second
 # one and it arrived later, which is exactly how the rule ended up written three
