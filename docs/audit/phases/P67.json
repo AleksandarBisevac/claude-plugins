@@ -82,7 +82,7 @@
     {
       "id": "P67.2",
       "title": "The /audit:version command and the surfaces that list commands",
-      "status": "pending",
+      "status": "done",
       "description": "commands/version.md; the README command table; the handbook's command reference; SECURITY.md states the one outbound call and what it sends; CHANGELOG.",
       "files": [
         "plugins/audit/commands/version.md",
@@ -112,16 +112,23 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ed2abb1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - commands/version.md, README row, handbook entry, SECURITY Outbound network, CHANGELOG",
+        "descriptive": "Users can run /audit:version, find it in the command references, and read in SECURITY.md exactly what its one network request sends."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-25T06:43:36Z",
+      "completedAt": "2026-09-25T06:45:27Z",
+      "verifiedBy": [
+        "python3 tools/sweep-selftests.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ed2abb1",
+        "at": "2026-09-25T06:45:27Z"
+      }
     }
   ],
   "startedAt": "2026-09-25T06:38:09Z"
