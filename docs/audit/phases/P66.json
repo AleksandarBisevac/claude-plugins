@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P66-R1",
@@ -86,9 +86,10 @@
         "issue": "the whole trail was read on every sweep-lane plan write, including writes deriving no completion",
         "resolution": "fixed in P66.5-x3g: read lazily, once per call, only when an event was derived (hm6)"
       }
-    ]
+    ],
+    "outcome": "matches after four review rounds; nine findings, all fixed and recorded"
   },
-  "summary": null,
+  "summary": "The journal-writes hook no longer records a completion a second time when a merge, rebase or pull brings in a branch that already recorded it: a derived row is withheld only when the trail holds the identical record (task.complete by completedAt, task.commit by SHA, phase.signoff by mergedAt, ado.link by id), and a completion made in the call is always recorded. Three git-based rules (reflog wording, then commit dates) were each disproved by review on real git before this one; the git machinery is removed. The trail is read only for a write that derived something, once per call. Desired outcome met, proven on real git across fast-forward, merge commit, conflicted merge, pull --rebase, local, backdated, rebased and unrelated-old-completion shapes. Fixes BUG-9. The invariant check found a manifest-revalidated breach: at three task commits the committed index named tasks whose shard was not yet committed, because commit-audit-state was not run after each task; HEAD validates, and the operator chose to sign off and file the tool gap (commit-manifest-index lets an index be committed ahead of its shards) as its own bug. The phase gate ran green with the tree unchanged.",
   "tasks": [
     {
       "id": "P66.1",
@@ -361,5 +362,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-24T23:11:28Z"
+  "startedAt": "2026-09-24T23:11:28Z",
+  "testEvidence": {
+    "runId": "2026-09-25T00:27:38Z.cf0d97",
+    "status": "passed",
+    "at": "2026-09-25T00:27:38Z"
+  }
 }
