@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P69-R1",
@@ -58,9 +58,10 @@
         "issue": "Both new warnings put every stale record into one line. The docstring justifies this as not burying the verb's own output, but this repository's plan at HEAD carries 34 derived disagreements and 35 stale stubs. I measured that read-only with _mio.derived_disagreements / _mio.stale_stubs on docs/audit/audit-plan.json in the P69 worktree. So every write verb here now prints two multi-kilobyte WARNIN",
         "resolution": "fix task P69.4-j6r"
       }
-    ]
+    ],
+    "outcome": "matches; five findings (two med, three low) and two pre-existing fixed in P69.4-j6r"
   },
-  "summary": null,
+  "summary": "The worktree tool names a phase's branch the same way in every verb (BUG-11, a regression the phase-entry change had introduced under a branch template with initials), and --apply parses only under sweep. Doctor accepts the done verb's own close row as the completion record, matched on completedAt, and keeps its FINDING for a hand edit - it had been accusing every task closed in a linked worktree. The stored status of a phase and a linked bug is now the derived one: signoff, close-phase's merge stamp and done on a fix task store it, settle materialises it for an existing plan, the validator warns where the two disagree, and audit-lookup reads the derivation. Reviewed in phase mode: storing done latched where an input changed afterwards (a hand re-open, a commit repair), which the reopen verb and the repair's fixedIn clearing close, and the stub mirror could raise out of a landed merge, which it no longer can. Phase gate green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P69.1",
@@ -325,5 +326,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-25T14:32:06Z"
+  "startedAt": "2026-09-25T14:32:06Z",
+  "testEvidence": {
+    "runId": "2026-09-25T17:11:10Z.44773f",
+    "status": "passed",
+    "at": "2026-09-25T17:11:10Z"
+  }
 }
