@@ -826,7 +826,12 @@ def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
         return row, []             # nothing this hook tracks moved: not a gap
     row["summary"] = diff["summary"]
     row["details"] = {"changes": diff["changes"]}
-    events = _not_recorded(diff["events"], recorded)
+    # `recorded` may be the READER rather than the keys: the trail is the whole
+    # project history, so it is read only for a write that derived something the
+    # trail could already hold, and then once per call.
+    if diff["events"] and callable(recorded):
+        recorded = recorded()
+    events = _not_recorded(diff["events"], recorded if not callable(recorded) else None)
     held = len(diff["events"]) - len(events)
     if held:
         # SAID ON THE ROW, so the write is still accounted for: the change is
@@ -926,7 +931,14 @@ def swept_entries(data, *, cfg=None, root=None):
     # only because of the flip that turned it off - judged against the pre-image, as
     # on the edit lane. Sweeping the manifest here would be the plugin doing work
     # after being told to stop, and stating a shard directory it must not read.
-    recorded = None                    # read once, only when a plan path moved
+    held = {}
+
+    def recorded():
+        """The trail's record keys, read on first need and kept for the call."""
+        if "keys" not in held:
+            held["keys"] = recorded_keys(root) or set()
+        return held["keys"]
+
     for rel in (_swept_targets(root, cfg) if enabled else [_config.CONFIG_REL]):
         # The journal is never its own subject, on this lane too. guard-edits
         # refuses that write and no default layout puts a journal file behind one
@@ -953,8 +965,6 @@ def swept_entries(data, *, cfg=None, root=None):
                        rel, tool, {}, data, root, cfg)
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
-        if not is_cfg and old_obj is not None and recorded is None:
-            recorded = recorded_keys(root) or set()
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
                             else _manifest_rows(entry, rel, old_obj, new_obj,
                                                 recorded=recorded))

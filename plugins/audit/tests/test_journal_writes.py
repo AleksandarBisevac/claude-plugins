@@ -1063,6 +1063,31 @@ def _cases(check):
               sorted(e.get("action") for e in _f8)
               == ["manifest.edit", "phase.signoff", "task.complete"]
               and all(e["target"] == _f8_rel for e in _f8), repr(_f8))
+        # hm6: the trail is read only when a write DERIVES something it could hold -
+        # a Bash write that moves no completion reads none of it, and one that does
+        # reads it once. The read is the whole history, so where it is paid matters.
+        _reads6 = []
+        _keys6 = M.recorded_keys
+        M.recorded_keys = lambda *a, **k: (_reads6.append(a), _keys6(*a, **k))[1]
+        try:
+            _t6 = manifest_doc(status="in_progress")
+            f_write(_t6)
+            M._write_slot(fproj, cfg, f_bash("f-10"), man_rel)
+            _t6b = json.loads(json.dumps(_t6))
+            _t6b["phases"][0]["title"] = "renamed, nothing completed"
+            f_write(_t6b)
+            _r6a = M.post_entries(f_bash("f-10"), cfg=cfg, root=fproj)
+            _quiet = list(_reads6)
+            f_write(manifest_doc(status="done", completed="2026-08-25T09:00:00Z"))
+            _r6b = M.post_entries(f_bash("f-10"), cfg=cfg, root=fproj)
+        finally:
+            M.recorded_keys = _keys6
+        check("hm6 a Bash write that derives no completion reads NO journal, and one "
+              "that derives one reads it once: reads=%r then %r"
+              % (len(_quiet), len(_reads6) - len(_quiet)),
+              _quiet == [] and len(_reads6) == 1
+              and any(r.get("action") == "manifest.edit" for r in _r6a)
+              and any(r.get("action") == "task.complete" for r in _r6b))
         # f9: the digest is taken at EVERY size, so an over-the-cap manifest that
         # moves is still noticed. The old reader took nothing past the cap, which
         # would have made a large manifest invisible to this lane rather than
