@@ -25,6 +25,7 @@ everything a caller can get wrong, and everything the exit code promises.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -38,6 +39,7 @@ import _loader                                     # noqa: E402
 import _tree_stamp                                 # noqa: E402
 
 M = _loader.load_script("stamp-verification.py", modname="stamp_verification")
+M_PLUGIN = _output.PLUGIN_ROOT
 
 
 def _git(repo, *args):
@@ -259,10 +261,291 @@ def _shape_cases(check):
           and not [d for d in coverage["defects"] if any(n in d for n in mine)])
 
 
+# --- red: a red-first proof in a throwaway tree, never in the shared one -------
+# The test file a fixture task declares. It prints the house tally so the helper
+# reads a count of collected cases; the literal is BUILT, because the tally is the
+# contract CI greps for and a spelled one in a fixture reads as a suite of its own.
+_TALLY = "%s: %d/%d cases " + "passed"
+_RED_TEST = (
+    "import os, sys\n"
+    "sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"
+    " '..', 'src'))\n"
+    "%s\n"
+    "ok = %s\n"
+    "print('%%s a' %% ('PASS' if ok else 'FAIL'))\n"
+    "print(%r %% ('ALL PASS' if ok else 'SELFTEST FAILED', int(ok), 1))\n"
+    "sys.exit(0 if ok else 1)\n")
+
+
+def _red_test(imports, cond):
+    return _RED_TEST % (imports, cond, _TALLY)
+
+
+def _red_repo(prefix, wt_test, extra=None, files=None):
+    """A repository whose HEAD holds `v = 1` and a passing test, and whose working
+    tree holds the fix (`v = 2`), `wt_test` as the task's new test, an untracked
+    sibling file, and a manifest declaring the task."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, "tests", "test_mine.py"),
+           _red_test("import mine", "mine.v >= 1"))
+    _git(root, "add", "tests/test_mine.py")
+    _git(root, "commit", "-q", "-m", "test")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(root, "tests", "test_mine.py"), wt_test)
+    _write(os.path.join(root, "notes.txt"), "a sibling's uncommitted work\n")
+    for rel, text in (extra or {}).items():
+        _write(os.path.join(root, *rel.split("/")), text)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = files or ["src/mine.py", "tests/test_mine.py"]
+    task["tests"] = {"mode": "tdd", "add": ["tests/test_mine.py: v is two"]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _snapshot(root):
+    """Every byte of the working tree outside `.git`, plus what git says about it."""
+    files = {}
+    for base, dirs, names in os.walk(root):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in names:
+            path = os.path.join(base, name)
+            with open(path, "rb") as fh:
+                files[os.path.relpath(path, root)] = hashlib.sha256(
+                    fh.read()).hexdigest()
+    status = subprocess.run(["git", "-C", root, "status", "--porcelain", "-uall"],
+                            stdout=subprocess.PIPE, universal_newlines=True).stdout
+    return files, status, _worktrees(root)
+
+
+def _worktrees(root):
+    return subprocess.run(["git", "-C", root, "worktree", "list", "--porcelain"],
+                          stdout=subprocess.PIPE, universal_newlines=True).stdout
+
+
+def _red(root, man, cmd, *extra):
+    code, text = _run(["red", "--project", root, "--manifest", man,
+                       "--task", "P1.1", "--json"] + list(extra) + ["--"] + cmd)
+    try:
+        return code, json.loads(text)
+    except ValueError:
+        return code, {"unparsed": text}
+
+
+def _red_cases(check):
+    py = sys.executable
+    root, man = _red_repo("stamp-red-", _red_test("import mine", "mine.v == 2"))
+    shared = subprocess.run([py, "tests/test_mine.py"], cwd=root,
+                            stdout=subprocess.DEVNULL).returncode
+    before = _snapshot(root)
+    code, got = _red(root, man, [py, "tests/test_mine.py"])
+    after = _snapshot(root)
+    block = got.get("redFirst") or {}
+    check("sr1 a test that fails on HEAD's implementation is `proved`, in the "
+          "shape the executor's return already carries - status, basis, at - "
+          "and the basis names the command, its exit and the tally it read. The "
+          "same test PASSES in the shared tree (exit %r there), so a helper that "
+          "ran it there would come back green: exit=%r %r"
+          % (shared, code, block),
+          shared == 0 and code == M.E_PROVED and got.get("verdict") == "red"
+          and block.get("status") == "proved"
+          and set(block) == set(("status", "basis", "at"))
+          and "tests/test_mine.py" in block.get("basis", "")
+          and "exited 1" in block.get("basis", "")
+          and "SELFTEST FAILED" in block.get("basis", ""))
+    check("sr2 the SHARED tree is byte-identical after the run - every file "
+          "outside `.git`, the untracked sibling included, git's own status, and "
+          "the worktree list: %r"
+          % (sorted(set(before[0].items()) ^ set(after[0].items())),),
+          before == after and "notes.txt" in after[0])
+    tw = got.get("throwaway") or {}
+    check("sr3 the throwaway tree is REMOVED, and that is proved rather than "
+          "assumed: the path it names is gone from disk and from git's worktree "
+          "list: %r" % (tw,),
+          tw.get("path") and tw.get("removed") is True
+          and not os.path.exists(tw["path"])
+          and tw["path"] not in _worktrees(root))
+    check("sr4 the throwaway held HEAD's implementation and the working tree's "
+          "test, split on what the task declares, and says which was which: %r"
+          % ((got.get("atHead"), got.get("copied")),),
+          got.get("atHead") == ["src/mine.py"]
+          and got.get("copied") == ["tests/test_mine.py"]
+          and len(str(tw.get("head") or "")) >= 7)
+
+    root_g, man_g = _red_repo("stamp-red-green-",
+                              _red_test("import mine", "mine.v >= 1"))
+    code_g, got_g = _red(root_g, man_g, [py, "tests/test_mine.py"])
+    check("sr5 a test that PASSES without the fix is not red: exit %r, no "
+          "`redFirst` block to paste, and a sentence saying the test proves "
+          "nothing yet - never a word the record would take as a proof: %r"
+          % (M.E_NOT_RED, (code_g, got_g.get("verdict"), got_g.get("redFirst"))),
+          code_g == M.E_NOT_RED and got_g.get("verdict") == "green"
+          and got_g.get("redFirst") is None and got_g.get("note")
+          and (got_g.get("throwaway") or {}).get("removed") is True)
+
+    new_files = ["src/mine.py", "src/newmod.py", "tests/test_mine.py"]
+    root_c, man_c = _red_repo(
+        "stamp-red-collect-",
+        _red_test("from newmod import helper_fn", "helper_fn() == 2"),
+        extra={"src/newmod.py": "def helper_fn():\n    return 2\n"},
+        files=new_files)
+    code_c, got_c = _red(root_c, man_c, [py, "tests/test_mine.py"])
+    block_c = got_c.get("redFirst") or {}
+    check("sr6 a compile or collection error - here the module the test imports "
+          "does not exist at HEAD, and no case ran - is `could-not-prove`, not "
+          "`proved`: exit=%r %r" % (code_c, block_c),
+          code_c == M.E_CANNOT_PROVE
+          and got_c.get("verdict") == "collection-error"
+          and block_c.get("status") == "could-not-prove"
+          and "no test" in block_c.get("basis", ""))
+    code_i, got_i = _red(root_c, man_c, [py, "tests/test_mine.py"],
+                         "--introduces", "newmod")
+    block_i = got_i.get("redFirst") or {}
+    check("sr7 ...unless the task INTRODUCES the symbol: named by --introduces, "
+          "absent from every declared implementation file at HEAD, present in the "
+          "working tree's copy, and named by the run's own output. Then the "
+          "error is the absence the test asserts, and it is `proved` with those "
+          "three observations as its basis: exit=%r %r" % (code_i, block_i),
+          code_i == M.E_PROVED and block_i.get("status") == "proved"
+          and "introduces" in block_i.get("basis", "")
+          and "src/newmod.py" in block_i.get("basis", ""))
+    code_h, got_h = _red(root_c, man_c, [py, "tests/test_mine.py"],
+                         "--introduces", "mine")
+    check("sr8 ...and a symbol HEAD already has is not introduced by this task, "
+          "whatever the flag says, so the error stays `could-not-prove` and the "
+          "basis says where HEAD carries it: exit=%r %r"
+          % (code_h, got_h.get("redFirst")),
+          code_h == M.E_CANNOT_PROVE
+          and (got_h.get("redFirst") or {}).get("status") == "could-not-prove"
+          and "src/mine.py" in (got_h.get("redFirst") or {}).get("basis", ""))
+
+    code_t, got_t = _red(root, man, [py, "-c", "import time; time.sleep(30)"],
+                         "--timeout", "1")
+    code_n, got_n = _red(root, man, ["no-such-binary-for-a-red-run"])
+    check("sr9 a run that times out, and a command that cannot start, are "
+          "`could-not-prove` with the reason as basis - and the throwaway is "
+          "removed on both paths, because the removal sits in a `finally`: %r"
+          % ([(c, (g.get("redFirst") or {}).get("status"),
+               (g.get("throwaway") or {}).get("removed"))
+              for c, g in ((code_t, got_t), (code_n, got_n))],),
+          all(c == M.E_CANNOT_PROVE
+              and (g.get("redFirst") or {}).get("status") == "could-not-prove"
+              and (g.get("throwaway") or {}).get("removed") is True
+              and not os.path.exists((g.get("throwaway") or {}).get("path") or "")
+              for c, g in ((code_t, got_t), (code_n, got_n)))
+          and "timed out" in got_t["redFirst"]["basis"])
+
+    held = _worktrees(root)
+    code_s, _t = _run(["red", "--project", root, "--manifest", man, "--task",
+                       "P1.1", "--", py, os.path.join(root, "tests",
+                                                      "test_mine.py")])
+    check("sr10 a command that names the SHARED tree by path is refused before "
+          "anything is built - it would run the shared files and grade the fix, "
+          "not HEAD: exit=%r" % (code_s,),
+          code_s == M.E_USAGE and _worktrees(root) == held)
+
+    no_cmd = _run(["red", "--project", root, "--manifest", man, "--task", "P1.1"])
+    take_cmd = _run(["take", "--project", root, "--", py])
+    no_task = _run(["red", "--project", root, "--", py, "tests/test_mine.py"])
+    root_x, man_x = _red_repo("stamp-red-notest-",
+                              _red_test("import mine", "mine.v == 2"),
+                              files=["src/mine.py"])
+    no_tests = _run(["red", "--project", root_x, "--manifest", man_x, "--task",
+                     "P1.1", "--", py, "tests/test_mine.py"])
+    check("sr11 every way of asking for a red that cannot be graded is a usage "
+          "error: no command, a command given to `take`, no task, and a task "
+          "declaring no test file - a throwaway holding only HEAD would prove "
+          "nothing about this task's test: %r"
+          % ([c for c, _t2 in (no_cmd, take_cmd, no_task, no_tests)],),
+          [c for c, _t2 in (no_cmd, take_cmd, no_task, no_tests)]
+          == [M.E_USAGE] * 4
+          and "test file" in no_tests[1])
+
+    script = os.path.join(M_PLUGIN, "scripts", "governance",
+                          "stamp-verification.py")
+    as_cmd = subprocess.run([py, script, "red", "--project", root, "--manifest",
+                             man, "--task", "P1.1", "--json", "--", py,
+                             "tests/test_mine.py", "--selftest"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            universal_newlines=True)
+    check("sr15 a test command carrying `--selftest` after `--` is the RED RUN'S "
+          "flag, not this command's: run as a command, the helper still builds "
+          "the throwaway and proves the red rather than answering its own "
+          "migrated-suite notice with exit 0: exit=%r %r"
+          % (as_cmd.returncode, as_cmd.stdout[:160]),
+          as_cmd.returncode == M.E_PROVED and '"verdict": "red"' in as_cmd.stdout)
+
+    with open(os.path.join(M_PLUGIN, "schema", "audit-plan.schema.json"),
+              "r", encoding="utf-8") as fh:
+        enum = (json.load(fh)["$defs"]["redFirst"]["properties"]["status"]
+                ["enum"])
+    check("sr12 every word the helper writes is a word the schema declares - the "
+          "enum is the one source, and a helper printing a word the record "
+          "refuses would hand the executor an unrecordable block: %r"
+          % (sorted(M.RED_WORDS),),
+          set(M.RED_WORDS) <= set(enum) and M.RED_WORDS)
+
+
+def _tally_cases(check):
+    def house(body):
+        held = sys.stdout
+        sys.stdout = io.StringIO()
+        held_err = sys.stderr
+        sys.stderr = io.StringIO()
+        try:
+            code = _harness.run(body)
+            return code, sys.stdout.getvalue()
+        finally:
+            sys.stdout = held
+            sys.stderr = held_err
+
+    def failing(chk):
+        chk("x1 asserts", False)
+
+    def escaping(chk):
+        _harness.stage(chk, "x-build", lambda c: {}["missing"])
+
+    shapes = [
+        ("house assertion", house(failing)),
+        ("house escape", house(escaping)),
+        ("pytest failed", (1, "===== 1 failed, 2 passed in 0.12s =====\n")),
+        ("pytest error", (2, "=== 1 error in 0.30s ===\n")),
+        ("pytest none", (5, "collected 0 items\n\n=== no tests ran in 0.01s ===\n")),
+        ("unittest failure", (1, "Ran 3 tests in 0.001s\n\nFAILED (failures=1)\n")),
+        ("unittest error", (1, "Ran 1 test in 0.001s\n\nFAILED (errors=1)\n")),
+        ("bare traceback", (1, "Traceback (most recent call last):\n"
+                               "ModuleNotFoundError: No module named 'x'\n")),
+        ("no tally", (1, "the runner stopped\n")),
+    ]
+    got = dict((name, M.classify_run(code, text)[0]) for name, (code, text) in shapes)
+    want = {"house assertion": "red", "house escape": "collection-error",
+            "pytest failed": "red", "pytest error": "collection-error",
+            "pytest none": "collection-error", "unittest failure": "red",
+            "unittest error": "collection-error",
+            "bare traceback": "collection-error", "no tally": "no-tally"}
+    check("sr13 the verdict reads a TALLY, and `red` needs at least one test "
+          "collected and an assertion failing: a house suite whose only failure "
+          "is a block that raised while being built, a pytest error with nothing "
+          "failed, zero collected and a bare traceback are none of them red. The "
+          "house shapes come from the real harness, so the helper cannot drift "
+          "from what a suite actually prints: %r"
+          % (dict((k, v) for k, v in got.items() if want[k] != v),),
+          got == want)
+    check("sr14 THE ALLOW CASE for sr13: a green run is `green` whatever it "
+          "prints - exit 0 is never read as a red by a tally that happens to "
+          "contain the word failed: %r"
+          % (M.classify_run(0, "== 0 failed, 3 passed in 0.1s ==\n")[0],),
+          M.classify_run(0, "== 0 failed, 3 passed in 0.1s ==\n")[0] == "green")
+
+
 def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
     _harness.stage(check, "sv-shape", _shape_cases)
+    _harness.stage(check, "sr-red", _red_cases)
+    _harness.stage(check, "sr-tally", _tally_cases)
 
 
 def _selftest():

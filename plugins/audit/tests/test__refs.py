@@ -2574,6 +2574,134 @@ def _cases(check):
     finally:
         shutil.rmtree(_tmp_rf, ignore_errors=True)
 
+    # --- (rv) one red-first vocabulary across the executor, reviewer and schema --
+    # The executor returned `proved|could-not-prove|not-attempted`, the schema
+    # declared the same three, and the reviewer graded with
+    # `proved|not-proved|could-not-prove|not-applicable` - two words the schema
+    # rejects, one of them standing in for the executor's `not-attempted`, and a
+    # sentence telling the reviewer the executor sends `not-proved`, which it never
+    # does. Nothing compared the three, so each read as consistent on its own.
+    _rv = M.red_first_vocabulary_drift()
+    check("rv1 the executor's return, the reviewer's return and the schema enum "
+          "carry ONE red-first vocabulary: the executor offers exactly the schema's "
+          "words, and the reviewer offers those plus the grades declared "
+          "reviewer-only and nothing else: %r" % (_rv["problems"],),
+          _rv["problems"] == [] and _rv["schema"]
+          and set(_rv["executor"]) == set(_rv["schema"])
+          and set(_rv["reviewer"]) - set(_rv["schema"])
+          == set(M.RED_FIRST_REVIEWER_ONLY))
+    check("rv2 ...and the schema is the one source: the lint reads the enum off "
+          "`schema/audit-plan.schema.json` rather than a copy of its own, so a word "
+          "added there is a word both briefs owe the day it lands: %r"
+          % (_rv["schema"],),
+          sorted(_rv["schema"]) == sorted(
+              json.loads(_product_doc(M.RED_FIRST_SCHEMA))["$defs"]
+              [M.RED_FIRST_DEF]["properties"]["status"]["enum"]))
+
+    _RV_SCHEMA = json.dumps({"$defs": {"redFirst": {"properties": {
+        "status": {"enum": ["proved", "could-not-prove", "not-attempted"]},
+        "basis": {"type": "string"}}}}})
+    _RV_EXEC_OK = ('Report back a structured outcome:\n\n{"gates": {},\n'
+                   ' "redFirst": {"status": "proved|could-not-prove|not-attempted",'
+                   '\n              "basis": "..."}}\n')
+    _RV_REV_OK = ('## Return format\n\n{"intent": {"redFirst": '
+                  '"proved|not-proved|could-not-prove|not-attempted"}}\n')
+
+    def _rv_tree(executor, reviewer, schema=_RV_SCHEMA):
+        tmp = tempfile.mkdtemp(prefix="qg-rv-")
+        _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_EXECUTOR_BRIEF, executor)
+        _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_REVIEWER_BRIEF, reviewer)
+        if schema is not None:
+            _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_SCHEMA, schema)
+        return tmp
+
+    _rv_cases = (
+        ("allow", _RV_EXEC_OK, _RV_REV_OK, _RV_SCHEMA),
+        ("rev-alien", _RV_EXEC_OK,
+         _RV_REV_OK.replace("not-attempted", "not-applicable"), _RV_SCHEMA),
+        ("exec-short", _RV_EXEC_OK.replace("|not-attempted", ""), _RV_REV_OK,
+         _RV_SCHEMA),
+        ("stale-decl", _RV_EXEC_OK, _RV_REV_OK.replace("not-proved|", ""),
+         _RV_SCHEMA),
+        ("twice", _RV_EXEC_OK, _RV_REV_OK + _RV_REV_OK, _RV_SCHEMA),
+        ("no-schema", _RV_EXEC_OK, _RV_REV_OK, None),
+    )
+    _rv_out = {}
+    for _name, _ex, _re, _sc in _rv_cases:
+        _tmp_rv = _rv_tree(_ex, _re, _sc)
+        try:
+            _rv_out[_name] = M.red_first_vocabulary_drift(_tmp_rv)
+        finally:
+            shutil.rmtree(_tmp_rv, ignore_errors=True)
+    # THE ALLOW CASE: it is what fails when the lint is widened into refusing the
+    # declared reviewer-only grade, which is the direction that gets it deleted.
+    check("rv3 THE ALLOW CASE: an executor offering exactly the schema's words and "
+          "a reviewer offering those plus the declared reviewer-only grade is "
+          "quiet: %r" % (_rv_out["allow"]["problems"],),
+          _rv_out["allow"]["problems"] == [])
+    check("rv4 a reviewer grade the schema rejects and nothing declares "
+          "reviewer-only is reported BY WORD - the shipped defect, "
+          "`not-applicable` standing where `not-attempted` belongs: %r"
+          % (_rv_out["rev-alien"]["problems"],),
+          len(_rv_out["rev-alien"]["problems"]) == 2
+          and any("'not-applicable'" in p
+                  for p in _rv_out["rev-alien"]["problems"])
+          and any("'not-attempted'" in p
+                  for p in _rv_out["rev-alien"]["problems"]))
+    check("rv5 an executor that cannot say a schema word is reported: the record "
+          "then has a word nobody is able to write onto it: %r"
+          % (_rv_out["exec-short"]["problems"],),
+          len(_rv_out["exec-short"]["problems"]) == 1
+          and "'not-attempted'" in _rv_out["exec-short"]["problems"][0])
+    check("rv6 a reviewer-only declaration the reviewer no longer uses is "
+          "reported - a declaration nothing reads is an exemption waiting to "
+          "admit the next alien word: %r" % (_rv_out["stale-decl"]["problems"],),
+          len(_rv_out["stale-decl"]["problems"]) == 1
+          and "'not-proved'" in _rv_out["stale-decl"]["problems"][0])
+    check("rv7 two declared return shapes in one brief is reported rather than "
+          "the first being read - counted, not found, because which one a reader "
+          "honours is the question: %r" % (_rv_out["twice"]["problems"],),
+          len(_rv_out["twice"]["problems"]) == 1
+          and "2" in _rv_out["twice"]["problems"][0])
+    check("rv8 a schema the lint cannot READ is a problem and not a skip: with no "
+          "enum every brief would compare clean against nothing: %r"
+          % (_rv_out["no-schema"]["problems"],),
+          len(_rv_out["no-schema"]["problems"]) == 1
+          and "unreadable" in _rv_out["no-schema"]["problems"][0])
+
+    _rv_exec = _squash(_product_doc("agents/audit-executor.md"))
+    _rv_rev = _squash(_product_doc("agents/audit-reviewer.md"))
+    _rv_ref = _squash(_product_doc("reference/execute-task.md"))
+    _rv_ptr = dict((rel, ("stamp-verification.py red" in text,
+                          "red_first_vocabulary_drift()" in text))
+                   for rel, text in (("executor", _rv_exec),
+                                     ("reviewer", _rv_rev),
+                                     ("execute-task", _rv_ref)))
+    check("rv9 all three documents point at the sanctioned red-first helper and "
+          "name the lint that holds the vocabulary, in the rule's own text rather "
+          "than in a note beside it: %r" % (_rv_ptr,),
+          all(a and b for a, b in _rv_ptr.values()))
+    _rv_undo = [rel for rel, text in (("executor", _rv_exec),
+                                      ("execute-task", _rv_ref))
+                if "undoing the fix for as long" in text
+                or "temporarily undoes the fix" in text]
+    check("rv10 no brief still describes proving red as undoing the fix in the "
+          "shared tree - the instruction a host refused beside a sibling's "
+          "uncommitted work: %r" % (_rv_undo,),
+          _rv_undo == [])
+    _rv_compile = [rel for rel, text in (("executor", _rv_exec),
+                                         ("reviewer", _rv_rev),
+                                         ("execute-task", _rv_ref))
+                   if not re.search(r"zero tests collected.{0,160}"
+                                    r"introduces the symbol", text)]
+    check("rv11 every document that grades a red says a compile or collection "
+          "error is not one unless the task introduces the symbol - in ONE "
+          "sentence, because the executor brief also says `zero tests "
+          "collected` about the gate, and a document-wide pair of substrings "
+          "would pass on that alone: %r"
+          % (_rv_compile,),
+          _rv_compile == [])
+
     # --- (rs) P42: the return shape, and the path that stopped asking for it ----
     # The executor's return is prose an agent writes: nothing parses it, nothing
     # rejects it, and its only reader is the orchestrator - the one actor that
@@ -3172,10 +3300,10 @@ def _cases(check):
     _iq_red = _question_lines(_REV, "RED")
     _iq_words = dict((w, w in _REV) for w in ("`proved`", "`not-proved`",
                                               "`could-not-prove`",
-                                              "`not-applicable`"))
+                                              "`not-attempted`"))
     check("iq5 the brief asks the question this register records more than any "
           "other - was the test ever seen RED - as a QUESTION, and carries the "
-          "whole three-valued vocabulary plus the gate-only case, so a reviewer "
+          "executor's three words plus its own reviewer-only grade, so a reviewer "
           "READS the executor's word instead of re-deriving it: %r"
           % ((_iq_red, _iq_words),),
           _iq_red != [] and all(_iq_words.values())

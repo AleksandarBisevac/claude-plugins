@@ -53,7 +53,7 @@ sides cannot be triaged by anyone.
 
 In `mode: phase` you ask the same question against the phase's `desiredOutcome`. There is
 no single executor claim at sign-off, so `intent.note` says what the phase's diff does and
-`redFirst` is `not-applicable`.
+`redFirst` is `not-attempted`.
 
 ## Can this test fail?
 
@@ -64,16 +64,35 @@ The second question, and it is the one this project's fault register records mos
 A test that has only ever been seen passing may be asserting nothing. What answers the
 question is evidence, not reading the test:
 
-- the executor's `redFirst` word, when it sent one (`proved` / `not-proved` /
-  `could-not-prove`) — READ it and quote the basis it carried; do not re-derive it.
-- otherwise its report: a NAMED command with a non-zero exit, run BEFORE the
-  implementation landed, is `proved`. A green run alone is `not-proved` — a passing test
-  is the thing in question, not evidence about it.
-- `could-not-prove` is for a test whose red run was attempted and could not be made
-  (the runner never started, the bug was not reachable from a test).
-- `not-applicable` is for a `gate-only` task, which adds no test by design.
+- the executor's `redFirst` word, when it sent one — one of `proved` / `could-not-prove` /
+  `not-attempted`, the only words an executor writes. READ it, quote the basis it
+  carried, and **echo the word when its basis holds**; do not re-derive it. `proved`
+  holds when the basis names a command, its non-zero exit, and a tally showing at least
+  one test collected and an assertion failing — the shape `stamp-verification.py red`
+  prints. `could-not-prove` holds when the basis carries the refusal or the reason
+  verbatim. `not-attempted` holds when the basis says why no proof was owed and the
+  task's mode agrees.
+- otherwise — no word, or a word whose basis does not hold — grade its report: a NAMED
+  command run BEFORE the implementation landed, whose output shows at least one test
+  collected and an assertion failing, is `proved`. A non-zero exit is not enough: a
+  compile error, an import error or zero tests collected exits non-zero with no assertion
+  evaluated, so it is `could-not-prove` — unless the task introduces the symbol the run
+  fails on, which the helper's `--introduces` decides and its basis then says. A green
+  run alone is `not-proved` — a passing test is the thing in question, not evidence
+  about it.
+- `not-attempted` is for a `gate-only` task, which adds no test by design, and for a
+  `regression` task that made no red run, because that mode orders none.
+- `not-proved` is **yours alone**: a declared reviewer-only grade for "nothing I was
+  handed shows a red". An executor never sends it and the record never holds it — an
+  executor that watched nothing fail has one of the three words above for why.
 
-You cannot make a test red yourself: you have no edit tools and must not mutate the tree.
+The vocabulary is the schema's `redFirst.status` enum plus that one declared grade, and
+`red_first_vocabulary_drift()` in `plugins/audit/scripts/_refs.py` fails the build when
+the return format below offers any other word or drops one of the schema's. Nothing
+checks the word you actually return — the return is prose no script parses.
+
+You cannot make a test red yourself: you have no edit tools and must not mutate the tree,
+and the helper is the executor's, outside the one invocation **What you may run** allows.
 So `not-proved` is the honest answer when nothing names a red run. Never report `proved`
 because the test looks like it would fail.
 
@@ -198,7 +217,7 @@ Your ENTIRE final message is ONLY this JSON object (no prose):
  "intent": {"answer": "matches|diverges|cannot-tell",
             "note": "what the diff does, said against what the task asked and what was claimed",
             "missing": ["<an input you were not handed>", ...],
-            "redFirst": "proved|not-proved|could-not-prove|not-applicable",
+            "redFirst": "proved|not-proved|could-not-prove|not-attempted",
             "redFirstBasis": "the command and exit code that proves it, or what was absent",
             "inheritedTests": "none-found|flagged|not-asked",
             "inheritedTestsBasis": "the gate commands read and the files they selected, or what stopped you asking"},

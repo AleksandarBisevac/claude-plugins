@@ -1,7 +1,7 @@
 {
   "id": "P77",
   "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "executor, reviewer and schema share one redFirst vocabulary checked by a lint; a sanctioned red-first helper proves red in a throwaway tree without touching the shared one, and a compile or collection failure is not a proved red; and doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
+  "branch": "audit/p77-red-first-has-one-vocabulary-a",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P77.1",
       "title": "One redFirst vocabulary, a sanctioned red-first helper, and a compile failure is not a proved red",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reproduced at HEAD: executor and schema say proved|could-not-prove|not-attempted; the reviewer says proved|not-proved|could-not-prove|not-applicable, misquotes the executor (reviewer.md:67) and has no word for regression mode. The schema enum is the one source; the reviewer echoes the executor's word when its basis holds; not-attempted replaces not-applicable; not-proved stays as a DECLARED reviewer-only grade; a _refs lint checks reviewer words are within schema plus declared reviewer-only. The executor brief sends executors to overwrite shared files to prove red (undo the fix in the shared tree, git show HEAD:f > f), which the host refused beside a sibling's uncommitted work: add stamp-verification.py red --task <id> -- <cmd> that builds a throwaway tree (git worktree add --detach or a git archive scratch) with HEAD's version of the task's implementation files and the working tree's test files, runs the command there, and records the red, never touching the shared tree; the briefs point at it. proved requires at least one test collected and an assertion failure; a compile or collection error is could-not-prove unless the task introduces the symbol.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
@@ -39,7 +39,9 @@
         "plugins/audit/scripts/_refs.py",
         "plugins/audit/tests/test__refs.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -64,14 +66,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T18:00:40Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -124,5 +126,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T18:00:40Z"
 }

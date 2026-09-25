@@ -1111,6 +1111,118 @@ def red_first_drift(repo_root=None):
             "schema": _red_first_schema_gaps(root)}
 
 
+# --- one red-first vocabulary, from the schema outward -------------------------
+# `red_first_drift` above holds that a document OFFERS the third word. This holds
+# which words the two returns that carry a red-first grade may use at all, because
+# they had drifted apart while each read as consistent on its own: the executor
+# and the schema said `proved|could-not-prove|not-attempted`, and the reviewer
+# graded with two words the schema rejects - one of them standing where the
+# executor's `not-attempted` belonged - and told its reader the executor sends
+# a word it never sends.
+#
+# THE SCHEMA ENUM IS THE ONE SOURCE, read here rather than copied. The executor's
+# return writes onto `task.redFirst`, so it offers exactly those words: one fewer
+# is a word nobody can write, one more is a word the record refuses. The
+# reviewer ECHOES the executor's word when its basis holds, so it offers every
+# schema word, plus the grades declared reviewer-only below and nothing else.
+#
+# WHAT IT CANNOT SEE: prose. A backticked word in a sentence of either brief is
+# not read, because the gate words, the inherited-test words and this vocabulary
+# share a spelling shape and no narrowing measured over this tree separated them.
+# The declared return shapes are what an agent fills in, and they are what is
+# compared.
+RED_FIRST_EXECUTOR_BRIEF = "agents/audit-executor.md"
+RED_FIRST_REVIEWER_BRIEF = "agents/audit-reviewer.md"
+
+# Grades only the reviewer gives, each with the reason no executor may use it.
+# `not-proved` is the reviewer's own conclusion that nothing it was handed shows
+# a red - a green run, a run that collected no test, a compile error, no named
+# command at all. An executor that has watched nothing fail has a schema word for
+# each of those cases, so the word is never the executor's to write onto the
+# record, and it is kept apart from `could-not-prove` because the reviewer is
+# grading evidence it was handed, not reporting an attempt of its own.
+RED_FIRST_REVIEWER_ONLY = ("not-proved",)
+
+_RF_EXEC_SHAPE = re.compile(r'"redFirst":\s*\{\s*"status":\s*"([a-z|-]+)"')
+_RF_REV_SHAPE = re.compile(r'"redFirst":\s*"([a-z|-]+)"')
+
+
+def _red_first_enum(root):
+    """`(words, problem)` - the schema's `redFirst.status` enum. Exactly one is None."""
+    path = os.path.join(root, PLUGIN_REL, *RED_FIRST_SCHEMA.split("/"))
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, "%s: unreadable (%s)" % (RED_FIRST_SCHEMA, exc)
+    enum = ((((doc.get("$defs") or {}).get(RED_FIRST_DEF) or {})
+             .get("properties") or {}).get("status") or {}).get("enum") or []
+    if not enum:
+        return None, ("%s: $defs.%s.status declares no enum, so there is nothing "
+                      "to hold either brief to" % (RED_FIRST_SCHEMA, RED_FIRST_DEF))
+    return list(enum), None
+
+
+def _declared_words(root, rel, shape):
+    """`(words, problem)` - the one `a|b|c` list a brief's return shape declares."""
+    path = os.path.join(root, PLUGIN_REL, *rel.split("/"))
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return None, "%s: unreadable (%s)" % (rel, exc)
+    hits = shape.findall(text)
+    if len(hits) != 1:
+        return None, ("%s: its return shape declares a `redFirst` word list %d "
+                      "times, where one is the only count a reader can follow"
+                      % (rel, len(hits)))
+    return hits[0].split("|"), None
+
+
+def red_first_vocabulary_drift(repo_root=None):
+    """{"schema", "executor", "reviewer": [word, ...], "problems": [str, ...]}.
+
+    Empty `problems` is the healthy answer. A list that could not be read is
+    `[]` beside a problem naming why, never a list compared as if it were empty.
+    """
+    root = repo_root or REPO_ROOT
+    schema, problem = _red_first_enum(root)
+    problems = [problem] if problem else []
+    execw, problem = _declared_words(root, RED_FIRST_EXECUTOR_BRIEF, _RF_EXEC_SHAPE)
+    if problem:
+        problems.append(problem)
+    revw, problem = _declared_words(root, RED_FIRST_REVIEWER_BRIEF, _RF_REV_SHAPE)
+    if problem:
+        problems.append(problem)
+    if schema is None:
+        return {"schema": [], "executor": execw or [], "reviewer": revw or [],
+                "problems": problems}
+    allowed = set(schema) | set(RED_FIRST_REVIEWER_ONLY)
+    problems.extend("%s: declared reviewer-only, but the schema declares it too, so "
+                    "an executor may write it after all" % (w,)
+                    for w in RED_FIRST_REVIEWER_ONLY if w in schema)
+    if execw is not None:
+        problems.extend("%s: offers %r, which the schema does not declare"
+                        % (RED_FIRST_EXECUTOR_BRIEF, w)
+                        for w in execw if w not in schema)
+        problems.extend("%s: omits %r, which the schema declares, so no executor "
+                        "can write it" % (RED_FIRST_EXECUTOR_BRIEF, w)
+                        for w in schema if w not in execw)
+    if revw is not None:
+        problems.extend("%s: grades with %r, which is neither a schema word nor a "
+                        "declared reviewer-only grade" % (RED_FIRST_REVIEWER_BRIEF, w)
+                        for w in revw if w not in allowed)
+        problems.extend("%s: omits the schema word %r, so it cannot echo an "
+                        "executor that sent it" % (RED_FIRST_REVIEWER_BRIEF, w)
+                        for w in schema if w not in revw)
+        problems.extend("%s: the declared reviewer-only grade %r is not in its "
+                        "return, so the declaration admits a word nothing uses"
+                        % (RED_FIRST_REVIEWER_BRIEF, w)
+                        for w in RED_FIRST_REVIEWER_ONLY if w not in revw)
+    return {"schema": schema, "executor": execw or [], "reviewer": revw or [],
+            "problems": problems}
+
+
 # --- the shape the executor hands back, and who has to keep asking for it -------
 # THE RETURN IS PROSE AN AGENT WRITES. Nothing parses it, nothing rejects it,
 # and the orchestrator -- the one actor that could quietly fill a gap in -- is also
@@ -1138,7 +1250,7 @@ def red_first_drift(repo_root=None):
 # wider: that the reader asks for a field in the right place, that it does anything
 # with the answer, or that an executor ever filled the field in. A document naming
 # every key in one dead sentence passes.
-RETURN_SHAPE_BRIEF = "agents/audit-executor.md"
+RETURN_SHAPE_BRIEF = RED_FIRST_EXECUTOR_BRIEF
 RETURN_SHAPE_READER = "reference/execute-task.md"
 
 # The sentence the declared block follows. The brief keeps the shape in one place

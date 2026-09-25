@@ -154,7 +154,7 @@ claude-plugins/                           # this repo (personal, public)
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
-          stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished
+          stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -3422,7 +3422,8 @@ records **which** paths were dirty, never their contents, so a rewrite of an alr
 outside the declared scope moves nothing here. `tsl2` exercises that rather than describing it.
 
 ### `plugins/audit/scripts/governance/stamp-verification.py`
-The CLI over it: `take` a stamp, or `compare` one against the tree now.
+The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which
+proves a red-first without touching the tree it is pointed at.
 
 **Why a command and not a helper** — the caller is orchestrator and agent *prose*, which reaches
 Python only through Bash, the same reason `verify-invariants.py` and `check-ado-item.py` are
@@ -3448,6 +3449,29 @@ both `--files` and `--task` is refused rather than resolved.
 this session are an older installed copy, and what an abandoned worktree left behind — questions
 about the *installation*. This asks about the *tree*. A claim taken while the doctor was warning
 about a stale copy is a claim whose stamp belongs beside that warning, not instead of it.
+
+**`red` runs the test against code without the fix somewhere other than the shared tree.** The
+briefs used to prove a red by undoing the fix in the working tree for the length of the run, which
+is a write over ground siblings are editing, and a host refused it beside a sibling's uncommitted
+work. `red --manifest M --task T -- <cmd>` checks HEAD out with `git worktree add --detach` into a
+temp directory (hooks pointed nowhere), copies the task's declared **test** files from the working
+tree over it — a declared file is a test when `tests.add` names it or its path has a test shape;
+the rest stay at HEAD, and the split is printed — runs the command there, and removes the
+throwaway in a `finally`, asking git afterwards whether it still lists it. A throwaway it could
+not remove is exit `4`, never folded into the verdict. A command naming the shared tree by path is
+refused before anything is built, because it would run the shared files and grade the fix.
+
+**`proved` needs a tally, not a non-zero exit.** `classify_run()` reads the house harness's line,
+pytest's summary or unittest's `Ran N tests`, and is `red` only with at least one test collected
+and an assertion failing. A house suite whose every failure is a block that raised while being
+built, a pytest run with errors and nothing failed, zero collected, and a bare traceback ending in
+a compile or import error are `collection-error`, which prints `could-not-prove` — unless the task
+**introduces the symbol**: `--introduces S` holds only when `S` is absent from HEAD's copy of every
+declared implementation file, present in the working tree's copy of one, and named by the run's
+output. A runner whose tally it does not read is `no-tally`, also `could-not-prove`. A green run
+gets no word at all (exit `1`): a test that passes without the fix is work left, not an outcome to
+record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
+every word it can print is one the schema's enum declares.
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'

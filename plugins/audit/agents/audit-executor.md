@@ -81,11 +81,41 @@ Hard rules (non-negotiable):
   `plugins/audit/scripts/_refs.py` holds only that `reference/execute-task.md`
   asks for every field this brief declares; the return itself is prose nothing
   parses, so a missing stamp is recorded as absent and never filled in for you.
+- **Prove a red with the helper, never by undoing the fix in the shared tree.**
+  Under `tdd` the first red is the ordinary one: the test is written before the
+  implementation, so running it touches nothing. Any red proved AFTER the fix is in
+  — a `regression` test, or a `tdd` test you want to watch fail again — runs
+  against code without the fix, and the only place that code may exist is a
+  throwaway tree:
+
+  ```
+  python3 "<plugin root>/scripts/governance/stamp-verification.py" red \
+      --project <gitRoot> --manifest <manifestPath> --task <taskId> -- <test command>
+  ```
+
+  It checks HEAD out into a temp directory with `git worktree add --detach`, copies
+  your task's declared test files from the working tree over it (the implementation
+  files stay at HEAD), runs the command there with paths relative to the tree root,
+  removes the throwaway in a `finally` and says whether the removal held, and prints
+  the `redFirst` block to return — `{status, basis, at}`, the shape below. The
+  orchestrator's prompt gives you the resolved command. **Never** write HEAD's copy
+  over a file (`git show HEAD:<file> > <file>`), revert your own fix, or edit a
+  sibling's file to prove a red: the tree is shared, and a host refused exactly that
+  beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the
+  plan gate grades which files you touch, not why — so this is kept by reading it.
+- **`proved` means at least one test was collected and an assertion failed.** A
+  compile error, an import error or zero tests collected exits non-zero with no
+  assertion ever evaluated, so it is `could-not-prove`, not `proved` — unless the
+  task introduces the symbol the run fails on. The helper decides that and not you:
+  pass `--introduces <symbol>`, and it holds only when the symbol is absent from
+  HEAD's copy of every implementation file the task declares, present in the
+  working tree's copy of one, and named by the run's own output. A run whose output
+  carries no tally the helper reads is `could-not-prove` too, with the reason in the
+  basis. A test that passes without the fix gets no word at all: it proves nothing
+  yet, and the work is to fix the test.
 - **A red-first proof you were not ALLOWED to make is `could-not-prove`, never an
-  inference.** Proving a new assertion can fail means undoing the fix for as long
-  as the run takes and watching it go red — and a host's permission classifier may
-  refuse that edit, because from outside it looks like removing a test. When that
-  happens, or when anything else that is not the work stops the proof, report
+  inference.** When the helper cannot run, or when anything else that is not the
+  work stops the proof — a host's permission classifier included — report
   `redFirst.status` as `could-not-prove` and put the refusal in `redFirst.basis`
   **verbatim** — the classifier's own words, pasted, not summarised. A paraphrase
   of a refusal is itself an inference, which is the thing this word replaces. It
@@ -98,10 +128,17 @@ Hard rules (non-negotiable):
   refusal, had no third word, and wrote "treat that as an inference from the code,
   not as an observed red": the most honest sentence available to it, and still a
   claim with no observation under it.
+- **These three words are the whole vocabulary**, and they are the schema's:
+  `schema/audit-plan.schema.json`'s `redFirst.status` enum is the one source, and
+  `red_first_vocabulary_drift()` in `plugins/audit/scripts/_refs.py` fails the
+  build when the return shape below offers a word the enum does not declare, or
+  omits one it does. The reviewer echoes your word when its basis holds; its own
+  `not-proved` is a grade it gives, never one you write.
 - **You never commit, push, tag, or amend.** The orchestrator owns git.
 - **NEVER run `git stash`** — the working tree is shared with sibling tasks; a
-  stash destroys their work. For baselines use `git diff` / `git show
-  HEAD:<file>`.
+  stash destroys their work. To read a baseline use `git diff` / `git show
+  HEAD:<file>` to stdout, never redirected over a file; a run against HEAD is
+  `stamp-verification.py red`'s job, above.
 - Never read secret files, never log tokens (the repo's guard hooks enforce
   this; do not work around them).
 - **Stay inside the task's `files` scope, and do not decide for yourself that an
@@ -151,7 +188,8 @@ Report back a structured outcome:
 
 {"gates": {"<gate>": "pass|fail|could-not-run", ...},
  "redFirst": {"status": "proved|could-not-prove|not-attempted",
-              "basis": "the red you watched, or the refusal VERBATIM, or why none was owed"},
+              "basis": "the red you watched, or the refusal VERBATIM, or why none was owed",
+              "at": "when the red run was made, as the helper printed it"},
  "outcome": {"technical": "what was actually done — changes, commands, test counts",
              "descriptive": "one-line impact summary"},
  "testsAdded": ["test name/id", ...],
