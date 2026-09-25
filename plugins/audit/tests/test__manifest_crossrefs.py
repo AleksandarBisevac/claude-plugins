@@ -653,6 +653,53 @@ def _cases(check):
           % (M._check_ado_parents(_no_rule, _no_rule["phases"]),),
           M._check_ado_parents(_no_rule, _no_rule["phases"]) == ([], []))
 
+    # --- stored against derived -----------------------------------------------
+    # A phase signed off with nothing storing its status, and a bug whose fix task
+    # is done while it still reads triaged: both are VALID plans, and both answer a
+    # raw reader wrongly. So each is a WARNING - never a finding, which would turn
+    # every plan written before the verbs stored these values red on upgrade - and
+    # each names the one command that settles the plan.
+    _stale = {"meta": {"version": 2},
+              "phases": [{"id": "P1", "title": "One", "status": "in_progress",
+                          "review": {"status": "passed"},
+                          "tasks": [{"id": "P1.1", "title": "t", "status": "done",
+                                     "commit": "abc1234", "bugId": "BUG-1"}]},
+                         {"id": "P2", "title": "Two", "status": "in_progress",
+                          "branch": "feature/p2", "review": {"status": "passed"},
+                          "tasks": [{"id": "P2.1", "title": "t",
+                                     "status": "done"}]}],
+              "bugs": [{"id": "BUG-1", "title": "b", "status": "triaged",
+                        "taskId": "P1.1", "fixedIn": None}],
+              "fileIndex": {}}
+    _sf, _sw = M._check_derived(_stale)
+    check("sd1 a stored status the derivation answers differently is a WARNING "
+          "naming the record, both values, the basis and the settle command - and "
+          "no finding: %r" % (_sw,),
+          _sf == [] and len(_sw) == 1
+          and "P1 status stored in_progress, derived done" in _sw[0]
+          and "BUG-1 status stored triaged, derived fixed" in _sw[0]
+          and "BUG-1 fixedIn stored None, derived abc1234" in _sw[0]
+          and "review.status passed" in _sw[0]
+          and M.SETTLE_COMMAND in _sw[0])
+    check("sd2 ...and a signed-off phase whose branch has not merged is NOT named: "
+          "its derivation still answers in_progress, and the case goes red when "
+          "the check reads a verdict alone as done: %r" % (_sw,),
+          "P2 " not in _sw[0])
+    check("sd3 ...and validate() carries it as a warning, so the plan stays VALID",
+          _rules.validate(_stale)[0] == []
+          and len([w for w in _rules.validate(_stale)[1]
+                   if M.SETTLE_COMMAND in w]) == 1)
+    _settled = {"meta": {"version": 2},
+                "phases": [dict(_stale["phases"][0], status="done"),
+                           _stale["phases"][1]],
+                "bugs": [dict(_stale["bugs"][0], status="fixed",
+                              fixedIn="abc1234")],
+                "fileIndex": {}}
+    check("sd4 SECOND DIRECTION: the same plan with the derived values stored is "
+          "silent - the case that goes red when the warning fires unconditionally: "
+          "%r" % (M._check_derived(_settled),),
+          M._check_derived(_settled) == ([], []))
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -122,6 +122,42 @@ def _cases(check):
           and payload["notes"] == "not reachable in prod"
           and payload["pointer"] == "bugs[0] in the manifest")
 
+    # --- stored against derived ------------------------------------------------
+    # The answer is the DERIVED value, and where the stored one differs both are
+    # printed with the basis - a lookup that echoed the stored field would give the
+    # stale answer the derivation exists to correct.
+    stale = _manifest()
+    stale["phases"].append({"id": "P3", "status": "in_progress",
+                            "review": {"status": "passed"},
+                            "tasks": [{"id": "P3.1", "status": "done",
+                                       "commit": "abc1234", "bugId": "BUG-2"}]})
+    stale["bugs"].append({"id": "BUG-2", "status": "triaged", "notes": None,
+                          "fixedIn": None, "taskId": "P3.1"})
+    found, payload = M.bug_lookup(stale, "BUG-2")
+    lines = M._render_human("bug", "BUG-2", found, payload)
+    check("al30 a bug whose fix task is done reads its DERIVED status and "
+          "fixedIn, and the render says what is stored, what is derived, and on "
+          "what basis: %r / %r" % (payload, lines),
+          found is True and payload["status"] == "fixed"
+          and payload["fixedIn"] == "abc1234"
+          and payload["stored"] == {"status": "triaged", "fixedIn": None}
+          and any("stored triaged, derived fixed" in ln
+                  and "fixedIn stored None, derived abc1234" in ln
+                  and "(fix task P3.1 is done at abc1234)" in ln for ln in lines))
+    found, payload = M.cancel_lookup(stale, [], "P3")
+    lines = M._render_human("cancel", "P3", found, payload)
+    check("al31 a phase's status is the derived one too, with the stored value "
+          "and basis beside it where they differ: %r" % (lines,),
+          payload["status"] == "done" and payload["stored"] == "in_progress"
+          and any("stored in_progress, derived done" in ln
+                  and "review.status passed" in ln for ln in lines))
+    found, payload = M.bug_lookup(man, "BUG-1")
+    lines = M._render_human("bug", "BUG-1", found, payload)
+    check("al32 SECOND DIRECTION: where stored and derived agree nothing about a "
+          "difference is said - the case that goes red when the line is printed "
+          "unconditionally: %r" % (lines,),
+          "stored" not in payload and not any("derived" in ln for ln in lines))
+
     # --- file -------------------------------------------------------------
     found, msg = M.file_lookup(man, "src/c.py")
     check("al9 a path fileIndex never recorded is a miss - no nearest-path "

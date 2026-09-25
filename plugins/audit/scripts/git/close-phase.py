@@ -99,6 +99,7 @@ _output.install_path()
 import _branch                                                       # noqa: E402
 import _journal_io                                                   # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
+import _panel_write  # noqa: E402  (the index lock the stub mirror is written under)
 import _proposals  # noqa: E402  (parked_on_branch: the work this branch deferred)
 import _worktrees as _wt                                             # noqa: E402
 
@@ -572,6 +573,60 @@ def phase_as_landed(git_root, manifest_path, branch, phase_id):
     return None, "the plan on disk (%s is not there to read)" % (branch,)
 
 
+def _store_derived(phase):
+    """Set `phase.status` to what the derivation answers, where it differs."""
+    derived = _mio.effective_phase_status(phase)
+    if derived != phase.get("status"):
+        phase["status"] = derived
+
+
+def _stale_stub(manifest_path, phase_id):
+    """{key: shard value} for the mirrored keys this phase's stub no longer agrees
+    with its shard about, or None when they agree (or the layout has no stub)."""
+    moved = dict((key, now) for pid, key, _was, now in _mio.stale_stubs(manifest_path)
+                 if str(pid) == str(phase_id))
+    return moved or None
+
+
+def mirror_stub(manifest_path, phase_id, project):
+    """(index path written, or "", why) -- re-mirror a phase's index stub from its
+    shard, under the index lock.
+
+    The stub is where the index alone answers a phase's status, and `stamp_merged`
+    writes only the shard, so a stamp that stored `done` leaves the stub behind until
+    this runs. A stub that already agrees is not rewritten: the index is written on a
+    phase's own transitions and nothing else. A lock this cannot take is a sentence,
+    not a failure - the merge happened and the shard records it, and `audit-task.py
+    settle` re-mirrors the stub later.
+    """
+    if not _stale_stub(manifest_path, phase_id):
+        return "", ""
+    lines = []
+    lock = _panel_write.acquire_index_lock(project, _panel_write.read_config(project),
+                                           manifest_path, False, lines.append,
+                                           "[close-phase]", "close-phase stub mirror")
+    if isinstance(lock, int):
+        return "", ("the index lock was not taken (%s), so the stub still differs "
+                    "from its shard; `audit-task.py settle` re-mirrors it"
+                    % ("; ".join(lines) or "exit %d" % (lock,)))
+    try:
+        # RE-READ UNDER THE LOCK: what was stale a moment ago is decided again once
+        # the lock is held, so a writer that got there first is not overwritten.
+        moved = _stale_stub(manifest_path, phase_id)
+        if not moved:
+            return "", ""
+        raw = _mio.read_json(manifest_path)
+        for stub in (raw.get("phases") or []):
+            if isinstance(stub, dict) and str(stub.get("id")) == str(phase_id):
+                stub.update(moved)
+        _mio.atomic_write_json(manifest_path, raw, indent=2)
+        return manifest_path, ""
+    except Exception as exc:
+        return "", "the index stub could not be written: %s" % (exc,)
+    finally:
+        _panel_write.release_index_lock(lock, out=lines.append)
+
+
 def stamp_merged(manifest_path, phase_id, when=None):
     """Write `phase.mergedAt`. Returns the path written, or "" with a reason.
 
@@ -602,13 +657,18 @@ def stamp_merged(manifest_path, phase_id, when=None):
         if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id) \
                 and ph.get(MERGED_FIELD):
             return path, ph[MERGED_FIELD]
+    # THE MERGE IS AN INPUT OF THE DERIVED STATUS, so the status it now derives is
+    # stored in the same write: `done` for a signed-off phase with every task
+    # terminal, and nothing new for one whose sign-off is not recorded.
     if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
         body[MERGED_FIELD] = stamp                      # a shard IS the phase
+        _store_derived(body)
     else:
         found = False
         for ph in ((body or {}).get("phases") or []):
             if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
                 ph[MERGED_FIELD] = stamp
+                _store_derived(ph)
                 found = True
         if not found:
             return "", "phase %s is not in %s" % (phase_id, path)
@@ -758,6 +818,11 @@ def render(answer, out=print):
         if answer.get("stampedElsewhere"):
             out("    (that is the copy in the worktree the merge landed in - the "
                 "one in this tree is about to be removed)")
+        if answer.get("stubMirrored"):
+            out("  index stub re-mirrored from the shard in %s"
+                % (answer["stubMirrored"],))
+        elif answer.get("stubWhy"):
+            out("  index stub NOT re-mirrored: %s" % (answer["stubWhy"],))
     elif answer.get("stampWhy"):
         out("  %s NOT written: %s" % (MERGED_FIELD, answer["stampWhy"]))
     if answer.get("finishFrom"):
@@ -891,7 +956,9 @@ def main(argv, out=print):
         if not path:
             return {"stamped": "", "stampWhy": stamp_at}
         record_row(project_for_row, args.phase, names["branch"], names["parent"])
+        mirrored, mirror_why = mirror_stub(target, args.phase, project_for_row)
         return {"stamped": path, "stampedAt": stamp_at,
+                "stubMirrored": mirrored, "stubWhy": mirror_why,
                 "stampedElsewhere": (os.path.abspath(target)
                                      != os.path.abspath(args.manifest)),
                 "parkedOnBranch": _parked_after_merge(target, names["branch"])}

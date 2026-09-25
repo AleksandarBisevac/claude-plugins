@@ -48,6 +48,8 @@ Usage:
   audit-task.py seed ["<phase title>"] [manifest]
                 [--gate CMD ... | --gate-clear]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py settle [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -1498,12 +1500,48 @@ def _write_paths(project, mpath, raw_index, phase_id, new_phase=None):
     return paths
 
 
-def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
+def _settle(assembled, only=None):
+    """Store what the derivations answer, in `assembled`, and return what moved.
+
+    `_mio.derived_disagreements` is the question; this is the one place a verb applies
+    its answer, so sign-off, a close and `settle` store the same value for the
+    same reason. `only` is a set of `(kind, id)` pairs naming the records this
+    write changed an input of, or None for every record the plan holds - a verb
+    settles what it touched and leaves the rest of a stale plan to `settle`,
+    whose run is the one a reader asked for.
+    """
+    rows = [r for r in _mio.derived_disagreements(assembled)
+            if only is None or (r["kind"], r["id"]) in only]
+    phases = dict((p.get("id"), p) for p in (assembled.get("phases") or [])
+                  if isinstance(p, dict))
+    bugs = dict((b.get("id"), b) for b in (assembled.get("bugs") or [])
+                if isinstance(b, dict))
+    for row in rows:
+        holder = (phases if row["kind"] == "phase" else bugs).get(row["id"])
+        if holder is not None:
+            holder[row["field"]] = row["derived"]
+    return rows
+
+
+def _settled_lines(rows):
+    """One report line per stored value `_settle` moved, with its basis."""
+    return ["  stored %s %s.%s: %s -> %s (%s)"
+            % (r["kind"], r["id"], r["field"], r["stored"], r["derived"], r["basis"])
+            for r in rows]
+
+
+def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed,
+               index_fields=()):
     """Persist the patched manifest into whichever layout it is stored in.
     SINGLE FILE: write the assembled dict; it IS the file. SHARDED: the
     touched phase's shard, and the index only when fileIndex changed --
     _panel_write._write_back's footprint, for its reasons. Returns the
-    project-relative paths written (shard first, index-precedent order)."""
+    project-relative paths written (shard first, index-precedent order).
+
+    `index_fields` names top-level INDEX keys this write changed beside the
+    phase (`bugs`, when a close stores a linked bug's derived status): each is
+    copied from `assembled` and the index is written. `phase_id` None writes no
+    shard, for a write that touched the index alone."""
     if not _mio.is_sharded(raw_index):
         _panel_write._atomic_write_json(mpath, assembled)
         return [_output.posix_rel(mpath, project)]
@@ -1511,7 +1549,13 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
     by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
               if isinstance(p, dict)}
     written = []
-    index_dirty = bool(files_changed)
+    index_dirty = bool(files_changed) or bool(index_fields)
+    if phase_id is None:
+        idx = dict(raw_index)
+        for key in index_fields:
+            idx[key] = assembled.get(key)
+        _panel_write._atomic_write_json(mpath, idx)
+        return [_output.posix_rel(mpath, project)]
     stub = None
     for entry in (raw_index.get("phases") or []):
         if isinstance(entry, dict) and entry.get("id") == phase_id:
@@ -1578,6 +1622,8 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed):
             idx["phases"] = list(raw_index.get("phases") or []) + [new_stub]
         if files_changed:
             idx["fileIndex"] = assembled.get("fileIndex") or {}
+        for key in index_fields:
+            idx[key] = assembled.get(key)
         _panel_write._atomic_write_json(mpath, idx)
         written.append(_output.posix_rel(mpath, project))
     return written
@@ -3395,9 +3441,15 @@ def _locked_done(args, project, config, mpath, tid, out):
     was = _done_task(node, now, sha, args.descriptive, args.technical, verified,
                      args.intent)
     phase_id = phase.get("id")
+    # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
+    # both are stored on the bug - in the index, which is where `bugs[]` lives.
+    settled = _settle(assembled, set(
+        ("bug", b.get("id")) for b in (assembled.get("bugs") or [])
+        if isinstance(b, dict) and b.get("taskId") == tid))
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
-        written = _write_add(project, mpath, raw_index, assembled, phase_id, False)
+        written = _write_add(project, mpath, raw_index, assembled, phase_id, False,
+                             index_fields=("bugs",) if settled else ())
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -3439,6 +3491,7 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
                   "phaseStatus": _mio.effective_phase_status(phase),
+                  "stored": settled,
                   "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
@@ -3487,6 +3540,8 @@ def _locked_done(args, project, config, mpath, tid, out):
             "this verb does not: it reads %r, sign-off due, until the review "
             "(/audit:review %s) is recorded with /audit:phase signoff %s"
             % (phase_id, _mio.effective_phase_status(phase), phase_id, phase_id))
+    for line in _settled_lines(settled):
+        out(line)
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -4849,13 +4904,15 @@ def cmd_add(args, out):
 
 # --- signoff: the record a phase's `done` is derived from --------------------------
 # A PHASE'S STATUS IS DERIVED (`_manifest_io.effective_phase_status`), so what
-# sign-off writes is not `status` but the record the derivation reads: the review's
-# verdict, its outcome, and the summary sign-off owes the reader. It was a hand
-# edit of `status: done`, made on the phase branch before `close-phase` merged it -
-# so a phase worked on its parent branch had nothing to hand `close-phase` and
-# stayed in_progress for ever. With a branch the phase reads done once it merges;
-# without one, now. The verb refuses what sign-off must not do: sign an open phase,
-# re-sign a signed one, or sign one already closed.
+# sign-off writes is the record the derivation reads - the review's verdict, its
+# outcome, and the summary sign-off owes the reader - and then the status that record
+# now derives, stored for the readers that do not derive. It was a hand edit of
+# `status: done`, made on the phase branch before `close-phase` merged it - so a
+# phase worked on its parent branch had nothing to hand `close-phase` and stayed
+# in_progress for ever. With a branch the phase reads done once it merges, and
+# `close-phase.py` stores it then; without one, now, and this verb stores it. The
+# verb refuses what sign-off must not do: sign an open phase, re-sign a signed one,
+# or sign one already closed.
 def cmd_signoff(args, out):
     project = _resolve_project(args)
     pid = (args.title or "").strip()
@@ -4917,6 +4974,10 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     phase["review"] = review
     phase["summary"] = summary
     phase.pop("claim", None)
+    # The verdict is an input of the derived status, so the status it now derives
+    # is stored beside it - `done` for a phase with no branch, nothing yet for one
+    # awaiting its merge, where `close-phase.py`'s stamp is the write that settles it.
+    settled = _settle(assembled, {("phase", pid)})
     snap = _snapshot(_write_paths(project, mpath, raw_index, pid))
     try:
         written = _write_add(project, mpath, raw_index, assembled, pid, False)
@@ -4947,14 +5008,18 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     effective = _mio.effective_phase_status(phase)
     branch = phase.get("branch")
     awaiting = "merge" if effective not in _mio.TERMINAL and branch else None
+    # A stored status moves the index stub's mirror too, so a sharded sign-off can
+    # leave the index dirty beside its shard - which a task commit does not carry.
+    index_note = _index_dirty_note(written, mpath, project, pid)
     if args.as_json:
         result = {"ok": True, "id": pid, "verdict": args.verdict, "summary": summary,
                   "effectiveStatus": effective, "awaiting": awaiting, "branch": branch,
-                  "written": written,
+                  "stored": settled, "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if awaiting:
@@ -4963,10 +5028,139 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     else:
         out("[audit-task] phase %s signed off (%s) -- now %s" % (pid, args.verdict,
                                                                 effective))
+    for line in _settled_lines(settled):
+        out(line)
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the phase.verdict row")
+    out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    return 0
+
+
+# --- settle: store every derived value a plan carries stale ---------------------
+# The verbs store what they change an input of; a plan written before they did, or
+# edited by hand since, still carries the old values, and `validate-manifest` warns
+# about each one and names this verb. It is the ONE writer of a whole plan's derived
+# values, under the index lock with revalidate-or-roll-back and a journal row, the
+# path every mutating verb here takes - and it never runs on its own initiative: the
+# warning names it, and whoever owns the plan decides when.
+def cmd_settle(args, out):
+    project = _resolve_project(args)
+    # `settle` takes no title, so a manifest named in the first free positional is
+    # the manifest - the verb's usage line spells it `settle [manifest]`.
+    if args.title and not args.manifest:
+        args.manifest = args.title
+        args.title = ""
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_settle(
+                           args, project, config, mpath, out))
+
+
+def _locked_settle(args, project, config, mpath, out):
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    rows = _settle(assembled, None)
+    phase_ids = []
+    for pid in ([r["id"] for r in rows if r["kind"] == "phase"]
+                + [row[0] for row in _mio.stale_stubs(mpath)]):
+        if pid not in phase_ids:
+            phase_ids.append(pid)
+    bugs_moved = any(r["kind"] == "bug" for r in rows)
+    n_phases = len([p for p in (assembled.get("phases") or []) if isinstance(p, dict)])
+    n_bugs = len([b for b in (assembled.get("bugs") or []) if isinstance(b, dict)])
+    examined = "%d phase(s) and %d bug(s) examined" % (n_phases, n_bugs)
+    if not phase_ids and not bugs_moved:
+        if args.as_json:
+            result = {"ok": True, "stored": [], "stubs": [], "written": [],
+                      "phases": n_phases, "bugs": n_bugs}
+            result.update(project_basis_key(args))
+            out(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        out("[audit-task] nothing to settle -- %s, and every stored status is the "
+            "derived one" % (examined,))
+        return 0
+    paths = [mpath]
+    for pid in phase_ids:
+        for path in _write_paths(project, mpath, raw_index, pid):
+            if path not in paths:
+                paths.append(path)
+    snap = _snapshot(paths)
+    written = []
+    try:
+        if not _mio.is_sharded(raw_index):
+            written = _write_add(project, mpath, raw_index, assembled, None, False)
+        else:
+            for pid in phase_ids:
+                for rel in _write_add(project, mpath, raw_index, assembled, pid,
+                                      False,
+                                      index_fields=("bugs",) if bugs_moved else ()):
+                    if rel not in written:
+                        written.append(rel)
+            if not phase_ids:
+                written = _write_add(project, mpath, raw_index, assembled, None,
+                                     False, index_fields=("bugs",))
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        written_manifest, findings, warnings = {}, ["cannot re-read the written "
+                                                    "manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: settling would leave the manifest invalid -- "
+            "every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    stubs = [pid for pid in phase_ids
+             if pid not in [r["id"] for r in rows if r["kind"] == "phase"]]
+    changes = [{"id": r["id"], "field": r["field"], "from": r["stored"],
+                "to": r["derived"]} for r in rows]
+    jres = _journal_row(project, config, mpath, "plan.settle",
+                        "settled %d derived value(s)%s: %s"
+                        % (len(rows),
+                           (" and %d stale index stub(s)" % (len(stubs),))
+                           if stubs else "",
+                           ", ".join("%s.%s" % (r["id"], r["field"]) for r in rows)
+                           or ", ".join(stubs)),
+                        {"changes": changes})
+    if args.as_json:
+        result = {"ok": True, "stored": rows, "stubs": stubs, "written": written,
+                  "phases": n_phases, "bugs": n_bugs,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
+        result.update(jres)
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] settled -- %s; %d stored value(s) moved to the derived one"
+        % (examined, len(rows)))
+    for line in _settled_lines(rows):
+        out(line)
+    for pid in stubs:
+        out("  index stub %s re-mirrored from its shard" % (pid,))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the plan.settle row")
     out("  written: %s" % ", ".join(written))
     return 0
 
@@ -5311,6 +5505,9 @@ VERB_FLAGS = {
     # `signoff` writes the one record a phase's `done` is derived from - the
     # review's verdict - and the paragraph sign-off owes the reader.
     "signoff": ("verdict", "summary", "review_outcome"),
+    # `settle` stores what the derivations already answer, over the whole plan, so
+    # there is nothing for a flag to choose - an empty row, for `start`'s reason.
+    "settle": (),
 }
 
 
@@ -5330,7 +5527,7 @@ def build_parser():
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
-                            "signoff"])
+                            "signoff", "settle"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -5569,7 +5766,7 @@ def main(argv, out=print):
              "cancel": cmd_cancel, "scope": cmd_scope,
              "retarget": cmd_retarget, "start": cmd_start,
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
-             "signoff": cmd_signoff}
+             "signoff": cmd_signoff, "settle": cmd_settle}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

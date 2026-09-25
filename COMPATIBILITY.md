@@ -142,10 +142,17 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   carrying `status: done` or `status: cancelled` reads exactly that. Otherwise it reads
   `done` once every task is terminal, `review.status` holds a sign-off verdict (`passed` or
   `skipped`) and, for a phase with a `branch`, `mergedAt` is set - which is what
-  `/audit:phase signoff` and `close-phase.py` write between them, and why neither writes
-  `status`. Reversing that precedence, or ceasing to read a verdict as sign-off, is a major.
-  What is not promised is the wording surfaces use for the state in between ("sign-off due"),
-  under the standing exclusion for a command's wording below.
+  `/audit:phase signoff` and `close-phase.py` write between them. Each then also STORES the
+  status it derives, and `/audit:task done` stores a linked bug's derived `fixed` and `fixedIn`:
+  that is additive - a value the derivation already answered is now also written down, for the
+  readers that do not derive - and it changes nothing about which value wins, because a stored
+  terminal status and a person's `wontfix`/`not_a_bug` still win inside the derivation, so no
+  write moves a value away from what the derivation answered before it. A plan carrying the
+  older, stale values keeps reading correctly through the derivation; `validate-manifest` warns
+  about them (a warning, never a finding) and `audit-task.py settle` stores them. Reversing that
+  precedence, or ceasing to read a verdict as sign-off, is a major. What is not promised is the
+  wording surfaces use for the state in between ("sign-off due"), under the standing exclusion
+  for a command's wording below.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is

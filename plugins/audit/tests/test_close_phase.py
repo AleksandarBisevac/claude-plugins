@@ -32,6 +32,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _manifest_io as _mio                        # noqa: E402  (the layout the stamp writes)
 import _proposals                                  # noqa: E402  (the rule sign-off reports)
 import _worktrees as W                             # noqa: E402
 
@@ -664,6 +665,51 @@ def _cases(check):
               % (body4.get("mergedAt"),),
               path4 == shard and stamp4 == "2026-01-02T03:04:05Z"
               and body4["mergedAt"] == "2026-01-02T03:04:05Z")
+
+        # THE MERGE IS AN INPUT OF THE DERIVED STATUS. A branch phase signed off
+        # with every task terminal reads done once `mergedAt` lands, so the stamp
+        # stores that status beside it - on the shard, and mirrored on the index
+        # stub, which is what a reader of the index alone is answered from.
+        signed = {"id": "P2", "title": "Two", "status": "in_progress",
+                  "branch": "feature/p2", "mergedAt": None,
+                  "review": {"status": "passed"},
+                  "tasks": [{"id": "P2.1", "title": "t", "status": "done"}]}
+        mpath = os.path.join(root, "audit-plan.json")
+        _mio.save_sharded(mpath, {"meta": {"version": 2}, "phases": [signed],
+                                  "bugs": [], "fileIndex": {}})
+        stub_of = lambda: [s for s in _mio.read_json(mpath)["phases"]  # noqa: E731
+                           if s.get("id") == "P2"][0]
+        spath = os.path.join(root, stub_of()["shard"])
+        path5, _st5 = M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        body5 = _mio.read_json(spath)
+        check("s5 the stamp stores the status the merge now derives - done, for a "
+              "signed-off phase with every task terminal - in the same write as "
+              "mergedAt: %r" % (body5.get("status"),),
+              path5 == spath and body5.get("status") == "done"
+              and body5.get("mergedAt") == "2026-01-02T03:04:05Z")
+        mirrored, why = M.mirror_stub(mpath, "P2", root)
+        check("s6 ...and the index stub is re-mirrored from that shard, so the index "
+              "alone reads done too: stub=%r (%s)" % (stub_of().get("status"), why),
+              mirrored == mpath and stub_of().get("status") == "done")
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        again, why2 = M.mirror_stub(mpath, "P2", root)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        check("s7 ...and a stub that already agrees is not rewritten - the index "
+              "is written on a phase's own transitions, not on every run: %r"
+              % (why2,), again == "" and before == after)
+        unsigned = dict(signed, review={"status": "pending"})
+        _mio.save_sharded(mpath, {"meta": {"version": 2}, "phases": [unsigned],
+                                  "bugs": [], "fileIndex": {}})
+        M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        body8 = _mio.read_json(os.path.join(root, stub_of()["shard"]))
+        check("s8 SECOND DIRECTION: a merge of a phase whose sign-off is NOT "
+              "recorded stamps mergedAt and stores no done - the derivation does not "
+              "answer done there, and the case goes red when the stamp writes done "
+              "unconditionally: %r" % (body8.get("status"),),
+              body8.get("mergedAt") == "2026-01-02T03:04:05Z"
+              and body8.get("status") == "in_progress")
     finally:
         _harness.remove_tree(root)
 

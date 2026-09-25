@@ -73,6 +73,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is out it prints the update commands and exits 1. The release check is the plugin's one
   outbound request (`SECURITY.md` -> *Outbound network*); `--offline` skips it.
 
+- **`/audit:phase settle` stores every derived value a plan carries stale.** A phase's status and
+  a linked bug's `fixed`/`fixedIn` are derived, and nothing stored them, so every signed-off phase
+  kept `in_progress` or `pending` on its shard and index stub and every fixed bug kept `triaged` -
+  right for every surface that derives, wrong for an older plugin's hooks, `jq`, an agent or a
+  teammate reading the file. `audit-task.py settle` stores the derived phase `status`, bug `status`
+  and `fixedIn`, and re-mirrors any index stub fallen behind its shard, under the index lock with
+  revalidate-or-roll-back and one `plan.settle` journal row. It only moves a value towards what the
+  derivation already answers: a stored `done`/`cancelled` and a person's `wontfix`/`not_a_bug` are
+  never touched. `validate-manifest` now WARNS - never refuses - about a stored value its
+  derivation disagrees with and about a stale stub, naming the command; `audit-lookup` answers a
+  bug's and a phase's status from the derivation and prints `stored X, derived Y (basis)` where
+  they differ.
+
 ### Changed
 - **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
   phase branch was prose the orchestrator ran before the verb, so every phase driven through the
@@ -104,7 +117,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   was no change at all. The verb's own row is `phase.verdict`, the way `task.done` sits beside the
   hook's `task.complete`.
 
+- **The verbs that change an input of a derived status store the value it derives.** `signoff`
+  stores `done` on a phase with no branch (shard and index stub); `close-phase.py`'s `mergedAt`
+  stamp stores it on a branched one and re-mirrors the stub under the index lock; `/audit:task
+  done` on a bug's fix task stores the bug's `fixed` and `fixedIn` in the index - the one index
+  write a close makes, which the verb reports with the command that lands it. A stored terminal
+  status already won inside the derivation, so no reader's answer changes (`COMPATIBILITY.md`).
+- **`manage-worktrees.py` parses each verb's flags under that verb.** One flat parser accepted
+  `add --apply`, `list --force` and every other flag on every verb and ignored them; `--apply` and
+  the sweep verbs now parse under `sweep` alone, and a misplaced flag is a usage error.
+- **`/audit:doctor` accepts the `done` verb's own `task.done` row as a close's receipt.** The
+  hook derives `task.complete` only for a close it watched, so a task closed in a linked worktree,
+  or added and closed in one Bash call, was reported as edited outside the pipeline. A `task.done`
+  row whose `completedAt` is the task's is now the receipt; a done task with neither row is still a
+  FINDING, and the era starts at the first receipt of either kind.
+
 ### Fixed
+- **`/audit:worktree` named a phase's branch one way in `add` and another everywhere else
+  (BUG-11).** `add` composed the branch with git user.name while `list`, `remove` and `sweep`
+  composed it with no user name, so under a template carrying `{initials}` the worktree `add` had
+  just cut was listed as a stranger and `remove` found no worktree holding the phase's branch.
+  Every verb now names it through one `branch_of`. `commands/worktree.md` also says a new worktree
+  has no installed dependencies, and that a symlinked `node_modules` resolves outside it.
+- **The guide's verb check could not see a subparser.** `_deps.guide_enumeration` read verbs only
+  off a `choices=` positional, so a command spelled with `add_parser` left the check with every verb
+  at once; it now reads both, and the verb it had been missing (`audit-lookup.py brief`) is
+  documented.
 - **`commit-manifest-index` committed an index ahead of the shards it names.** `/audit:task add`
   writes a task into its phase's shard and its files into the index, and committing the index
   first recorded a plan whose `fileIndex` named a task no committed shard held - a commit that

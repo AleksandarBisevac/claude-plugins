@@ -126,6 +126,17 @@ def main(argv):
         "without opening a shard); this copy was ignored"
         % (pid or "?", field)
         for pid, field in _mio.index_only_in_bodies(paths[0])]
+    # ...and its mirror image: a stub whose copy of a shard's key has fallen behind.
+    # The assembled manifest lets the body win, so `validate()` cannot see it either,
+    # and the stub is what a reader of the index alone is answered from.
+    stale = _mio.stale_stubs(paths[0])
+    if stale:
+        warnings.append(
+            "index stub disagrees with its shard: %s - a reader of the index alone "
+            "gets the stub's value. `%s` re-mirrors every stub, under the index lock"
+            % ("; ".join("%s %s stub %s, shard %s" % (pid, key, was, now)
+                         for pid, key, was, now in stale),
+               _manifest_rules.SETTLE_COMMAND))
 
     # `hint` is this command's own spelling of the flag, because on its own
     # output "validate-manifest.py --verbose" would be telling the reader to run

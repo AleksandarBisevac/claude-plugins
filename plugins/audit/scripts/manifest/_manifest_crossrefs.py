@@ -599,6 +599,34 @@ def _check_bugs(manifest, index):
     return (f, w)
 
 
+SETTLE_COMMAND = ('python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" '
+                  'settle')
+
+
+def _check_derived(manifest):
+    """Stored phase and bug values the derivations answer differently.
+    Returns (findings, warnings).
+
+    A WARNING AND NEVER A FINDING, because a stale stored value is a plan every
+    derived reader still reads correctly - and every plan written before the verbs
+    stored these values carries some, so refusing them would turn those plans red on
+    upgrade. What it costs is the reader that does not derive (an older plugin's
+    hooks, `jq`, an agent reading the file), and the warning says so and names the
+    one command that settles the plan. One line for the whole plan: the verbs print
+    this warning after every write, and one line per stale record would bury theirs.
+    """
+    rows = _mio.derived_disagreements(manifest)
+    if not rows:
+        return ([], [])
+    return ([], ["stored status disagrees with its derivation: %s - a reader of the "
+                 "stored field alone (an older plugin's hooks, jq, an agent) gets the "
+                 "stale value. `%s` stores every derived value, under the index lock"
+                 % ("; ".join("%s %s stored %s, derived %s (%s)"
+                              % (r["id"], r["field"], r["stored"], r["derived"],
+                                 r["basis"]) for r in rows),
+                    SETTLE_COMMAND)])
+
+
 def _check_decisions(manifest, index):
     """decisions[] shape and vocabulary, and the two fields a SETTLED decision
     owes a reader. Returns (findings, warnings).

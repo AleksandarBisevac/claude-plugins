@@ -3901,7 +3901,10 @@ def _cases(check):
                    # fires AFTER the misplaced-flag check this grid drives, so
                    # running it against the shared fixture still proves the
                    # thing vf3 asks about (a title placeholder is all it needs).
-                   "seed": ["seed", "T"]}
+                   "seed": ["seed", "T"],
+                   # `settle` takes no id and no flag of its own, so like `start`
+                   # its row is the bare call and every flag must bounce.
+                   "settle": ["settle"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -3972,6 +3975,11 @@ def _cases(check):
         _vf_ok["seed/--gate"] = run(
             ["seed", "Bootstrap ok", "--gate", "true",
              "--project-dir", _vf_seed_proj])[0]
+        # `settle` against its own project, because it writes whatever the plan
+        # carries stale and `vf_proj` is shared by every row above.
+        _vf_settle_proj, _vf_settle_mp = mk("vf-settle", base_manifest())
+        _vf_ok["settle/--json"] = run(
+            ["settle", "--json", "--project-dir", _vf_settle_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -5519,6 +5527,9 @@ def _cases(check):
             # id it prints is only true of that tree's plan and branch.
             ("next-id", ["next-id", "bug"]),
             ("signoff", ["signoff", "P2", "--verdict", "passed", "--summary", "s"]),
+            # `settle` writes nothing on a plan already settled, and still names
+            # the tree it read: "nothing to settle" is only true of that plan.
+            ("settle", ["settle"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -5714,12 +5725,12 @@ def _cases(check):
                          "--review-outcome", "no findings", "--project-dir", projs])
         ph2 = [p for p in _mio.load_manifest(mpaths)["phases"] if p["id"] == "P2"][0]
         check("so3 every task terminal: sign-off records the verdict, the outcome and the "
-              "summary, clears the claim - and writes NO status, which is derived: %s"
-              % (txt,),
+              "summary, clears the claim - and STORES the status the derivation now "
+              "answers, so a reader of the field alone reads done: %s" % (txt,),
               code == 0 and ph2["review"]["status"] == "passed"
               and ph2["review"]["outcome"] == "no findings"
               and ph2["summary"] == "Search sanitised end to end."
-              and "claim" not in ph2 and ph2["status"] == "in_progress")
+              and "claim" not in ph2 and ph2["status"] == "done")
         check("so4 ...and the phase now reads done, which the output says",
               _mio.effective_phase_status(ph2) == "done" and "done" in txt, txt)
         rows = [r for r in _journal_io.read_all(projs) if r.get("action") == "phase.verdict"]
@@ -5756,6 +5767,129 @@ def _cases(check):
               code == 0 and payload.get("effectiveStatus") == "in_progress"
               and payload.get("awaiting") == "merge"
               and "feature/p2" in json.dumps(payload))
+        _so9_ph = [p for p in _mio.load_manifest(mpathb2)["phases"]
+                   if p["id"] == "P2"][0]
+        check("so9b ...and it stores NO done: the derivation still answers "
+              "in_progress until the merge, and a stored done would win over it - "
+              "the case that goes red when sign-off writes done unconditionally: %r"
+              % (_so9_ph.get("status"),),
+              _so9_ph.get("status") == "in_progress")
+        # THE SHARDED LAYOUT, where a phase's status lives twice: in its shard and
+        # mirrored on the index stub. A parent-branch phase reads done the moment
+        # it is signed off, and both copies must say so - the stub is what a reader
+        # of the index alone, an older plugin's hooks included, is answered from.
+        shardsign = base_manifest()
+        shardsign["phases"][1]["tasks"][1]["status"] = "done"
+        projss, mpss = mk("so-sharded", shardsign, sharded=True)
+        code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", projss])
+        _ss_idx = _mio.read_json(mpss)
+        _ss_stub = [s for s in _ss_idx["phases"] if s.get("id") == "P2"][0]
+        _ss_body = _mio.read_json(os.path.join(os.path.dirname(mpss),
+                                               _ss_stub["shard"]))
+        _ss_eff = _mio.effective_phase_status(
+            [p for p in _mio.load_manifest(mpss)["phases"] if p["id"] == "P2"][0])
+        check("so10 a parent-branch phase signed off in the SHARDED layout stores "
+              "done on its shard AND its index stub, agreeing with the derivation: "
+              "stub=%r shard=%r derived=%r (%s)"
+              % (_ss_stub.get("status"), _ss_body.get("status"), _ss_eff, txt),
+              code == 0 and _ss_eff == "done"
+              and _ss_stub.get("status") == "done"
+              and _ss_body.get("status") == "done")
+
+        # ---- (sv) a close stores its bug's derived status; settle stores the rest
+        # A linked bug derives `fixed` and its `fixedIn` from its fix task's close,
+        # and `bugs[]` lives in the INDEX, so the close writes the index here and
+        # nowhere else - `pd12` pins that a close with no bug leaves it untouched.
+        bugfix = pd_fixture()
+        bugfix["phases"][1]["tasks"][-1]["bugId"] = "BUG-1"
+        bugfix["bugs"] = [{"id": "BUG-1", "title": "b", "status": "triaged",
+                           "taskId": "P2.4", "fixedIn": None},
+                          {"id": "BUG-2", "title": "other", "status": "triaged",
+                           "taskId": None, "fixedIn": None}]
+        projbf, mpbf = mk("sv-bugfix", bugfix, sharded=True)
+        code, txt = run(["done", "P2.4", "--commit", _PD_SHA,
+                         "--project-dir", projbf])
+        _bf_idx = _mio.read_json(mpbf)
+        _bf = dict((b["id"], b) for b in _bf_idx.get("bugs") or [])
+        check("sv1 closing a bug's fix task stores the bug's derived `fixed` and "
+              "its `fixedIn` on the index, says so with the basis, and leaves "
+              "the bug it does not fix alone: %r / %s"
+              % (_bf, txt[-300:]),
+              code == 0 and _bf["BUG-1"]["status"] == "fixed"
+              and _bf["BUG-1"]["fixedIn"] == _PD_SHA
+              and _bf["BUG-2"]["status"] == "triaged"
+              and _bf["BUG-2"]["fixedIn"] is None
+              and "stored bug BUG-1.status: triaged -> fixed" in txt
+              and "fix task P2.4 is done" in txt
+              and "commit-manifest-index.py" in txt)
+
+        # A plan carrying stale values from before the verbs stored them: a
+        # parent-branch phase signed off at in_progress, a stub mirroring an old
+        # status, a bug whose fix task is done, a person's `wontfix` beside it, and
+        # a signed-off BRANCH phase that has not merged - the last two are the
+        # values settle must NOT move.
+        stale = base_manifest()
+        stale["phases"][1].update(status="in_progress", review={"status": "passed"})
+        stale["phases"][1]["tasks"][1].update(status="done", commit=_PD_SHA,
+                                              bugId="BUG-1")
+        stale["phases"][2].update(status="in_progress", branch="feature/p3",
+                                  review={"status": "passed"},
+                                  tasks=[{"id": "P3.1", "title": "x",
+                                          "status": "done"}])
+        stale["bugs"] = [{"id": "BUG-1", "title": "b", "status": "in_progress",
+                          "taskId": "P2.3", "fixedIn": None},
+                         {"id": "BUG-2", "title": "w", "status": "wontfix",
+                          "taskId": None, "fixedIn": None}]
+        projst, mpst = mk("sv-settle", stale, sharded=True, git=True)
+        _st_idx = _mio.read_json(mpst)
+        for _stub in _st_idx["phases"]:
+            if _stub.get("id") == "P1":
+                _stub["status"] = "in_progress"      # a stub fallen behind its shard
+        _panel_write._atomic_write_json(mpst, _st_idx)
+        _st_drift = _mio.derived_disagreements(_mio.load_manifest(mpst))
+        code, txt = run(["settle", "--project-dir", projst])
+        _st_after = _mio.load_manifest(mpst)
+        _st_idx2 = _mio.read_json(mpst)
+        _st_stub = dict((s["id"], s.get("status")) for s in _st_idx2["phases"])
+        _st_ph = dict((p["id"], p) for p in _st_after["phases"])
+        _st_bug = dict((b["id"], b) for b in _st_after["bugs"])
+        check("sv2 settle stores every derived value a stale plan carries - the "
+              "phase on its shard AND stub, a stub fallen behind its shard, the "
+              "bug's status and fixedIn - and leaves the derivation with nothing "
+              "to say: %s" % (txt,),
+              code == 0
+              and sorted((r["id"], r["field"]) for r in _st_drift)
+              == [("BUG-1", "fixedIn"), ("BUG-1", "status"), ("P2", "status")]
+              and _st_ph["P2"]["status"] == "done" and _st_stub["P2"] == "done"
+              and _st_stub["P1"] == "done"
+              and _st_bug["BUG-1"]["status"] == "fixed"
+              and _st_bug["BUG-1"]["fixedIn"] == _PD_SHA
+              and _mio.derived_disagreements(_st_after) == [])
+        check("sv3 ...and moves NOTHING the derivation does not answer: a person's "
+              "`wontfix` stays, and a signed-off phase on an unmerged branch stays "
+              "in_progress on shard and stub - the cases that go red when settle "
+              "writes done for every signed-off phase: P3=%r/%r BUG-2=%r"
+              % (_st_ph["P3"]["status"], _st_stub["P3"], _st_bug["BUG-2"]["status"]),
+              _st_ph["P3"]["status"] == "in_progress" and _st_stub["P3"] == "in_progress"
+              and _st_bug["BUG-2"]["status"] == "wontfix")
+        _st_rows = [r for r in _journal_io.read_all(projst)
+                    if r.get("action") == "plan.settle"]
+        check("sv4 ...with ONE plan.settle journal row naming each value it moved: %r"
+              % ([(r.get("details") or {}).get("changes") for r in _st_rows],),
+              len(_st_rows) == 1
+              and sorted((c.get("id"), c.get("field")) for c in
+                         (_st_rows[0].get("details") or {}).get("changes") or [])
+              == [("BUG-1", "fixedIn"), ("BUG-1", "status"), ("P2", "status")])
+        with open(mpst, "rb") as _fh:
+            _st_bytes = _fh.read()
+        code, txt = run(["settle", "--project-dir", projst])
+        check("sv5 a second settle has nothing to do, says what it examined, writes "
+              "not a byte and journals nothing: %s" % (txt,),
+              code == 0 and "nothing to settle" in txt and "examined" in txt
+              and open(mpst, "rb").read() == _st_bytes
+              and len([r for r in _journal_io.read_all(projst)
+                       if r.get("action") == "plan.settle"]) == 1)
 
         # ---- (bs) the branch suffix: ids two branches cannot both mint --------
         def git(proj, *a):

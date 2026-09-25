@@ -85,7 +85,7 @@
     {
       "id": "P69.2",
       "title": "Doctor accepts the verb's task.done row as the completion record and keeps the FINDING for a done task with none",
-      "status": "in_progress",
+      "status": "done",
       "description": "Measured on this repo: doctor prints a FINDING naming ten tasks closed by audit-task.py done in worktree phases. journal-writes derives task.complete only for a task it saw open in its before-snapshot, and it resolves the session's project dir, so a task closed in a linked worktree, or added and closed in one Bash call, gets none. audit-task.py's _journal_done writes task.done and says that row is the record of the close where no hook watches; _doctor_completions reads task.complete alone. Accept a task.done row whose completedAt matches the task's as the receipt; keep the FINDING (and its tier) for a done task with neither - the allow case that must stay red is a hand-flipped status.",
       "files": [
         "plugins/audit/scripts/status/_doctor_completions.py",
@@ -117,14 +117,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4a48af4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "has_receipt accepts a task.done row whose completedAt equals the task's; the era starts at the first receipt of either kind.",
+        "descriptive": "Doctor no longer accuses tasks closed by the done verb of being edited outside the pipeline; a hand-flipped task is still reported."
       },
       "startedAt": "2026-09-25T14:32:07Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T15:29:56Z",
+      "verifiedBy": [
+        "test__doctor_completions dc32",
+        "test__doctor_completions dc33",
+        "test__doctor_completions dc34",
+        "test__doctor_completions dc35"
+      ]
     },
     {
       "id": "P69.3",

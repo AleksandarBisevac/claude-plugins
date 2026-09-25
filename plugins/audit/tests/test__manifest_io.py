@@ -973,11 +973,60 @@ def _phase_status_cases(check):
           == "in_progress")
 
 
+def _drift_cases(check):
+    """Where a stored value differs from its derivation, and on what basis. Every
+    writer that stores a derived value, the validator's warning, `audit-lookup` and
+    `settle` read this one answer, so the cases pin both what it names and what it
+    must leave alone."""
+    def plan(phases=(), bugs=()):
+        return {"phases": list(phases), "bugs": list(bugs)}
+
+    signed = {"id": "P1", "title": "t", "status": "in_progress",
+              "review": {"status": "passed"},
+              "tasks": [{"id": "P1.1", "status": "done", "commit": "abc1234"}]}
+    branched = dict(signed, id="P2", branch="feature/p2",
+                    tasks=[{"id": "P2.1", "status": "done"}])
+    merged = dict(branched, id="P3", mergedAt="2026-01-01T00:00:00Z",
+                  tasks=[{"id": "P3.1", "status": "done"}])
+    rows = M.derived_disagreements(plan([signed, branched, merged]))
+    check("dd1 a signed-off phase with no branch, and a merged one, are named with "
+          "their stored and derived status and the basis; the signed-off phase "
+          "whose branch has not merged is NOT - its derivation still says "
+          "in_progress: %r" % (rows,),
+          [(r["id"], r["stored"], r["derived"]) for r in rows]
+          == [("P1", "in_progress", "done"), ("P3", "in_progress", "done")]
+          and "review.status passed, no branch" in rows[0]["basis"]
+          and "mergedAt 2026-01-01T00:00:00Z" in rows[1]["basis"])
+    bugs = [{"id": "BUG-1", "status": "triaged", "taskId": "P1.1", "fixedIn": None},
+            {"id": "BUG-2", "status": "wontfix", "taskId": "P1.1", "fixedIn": None},
+            {"id": "BUG-3", "status": "in_progress", "taskId": "P1.1",
+             "fixedIn": "def5678"},
+            {"id": "BUG-4", "status": "open", "taskId": None, "fixedIn": None}]
+    rows = [r for r in M.derived_disagreements(plan([dict(signed, status="done")], bugs))]
+    check("dd2 a bug whose fix task is done is named for `status` and, with no "
+          "commit recorded, for `fixedIn` too; a person's `wontfix` is never named, "
+          "a RECORDED fixedIn is never replaced, and a bug with no fix task is "
+          "left alone: %r" % ([(r["id"], r["field"], r["derived"]) for r in rows],),
+          [(r["id"], r["field"], r["derived"]) for r in rows]
+          == [("BUG-1", "status", "fixed"), ("BUG-1", "fixedIn", "abc1234"),
+              ("BUG-3", "status", "fixed")]
+          and rows[0]["basis"] == "fix task P1.1 is done at abc1234")
+    settled = plan([dict(signed, status="done")],
+                   [dict(bugs[0], status="fixed", fixedIn="abc1234"), bugs[1]])
+    check("dd3 SECOND DIRECTION: a plan whose stored values ARE the derived ones is "
+          "empty - the case that goes red when a row is emitted for every record",
+          M.derived_disagreements(settled) == [])
+    check("dd4 a manifest that is not an object answers empty rather than raising: "
+          "the validator runs this over plans it has already faulted",
+          M.derived_disagreements(None) == [] and M.derived_disagreements([]) == [])
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _root_key_cases(check)
         _phase_status_cases(check)
+        _drift_cases(check)
     return _harness.run(body)
 
 
