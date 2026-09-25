@@ -797,7 +797,8 @@
       "P80.12",
       "P81.2",
       "P81.8",
-      "P76.1"
+      "P76.1",
+      "P76.2"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
