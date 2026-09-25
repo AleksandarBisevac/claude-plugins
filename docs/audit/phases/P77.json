@@ -86,7 +86,7 @@
     {
       "id": "P77.2",
       "title": "Doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reproduced at HEAD (and live on this repo): running_plugin_verdict counts any stamp that is not this copy as drift and never reads the mtime it records, so a dead session's stamp holds the row yellow and 'start a new session' cannot clear it - grade on the newest stamp per copy with its age, report an older copy that a newer one has stamped since as history (named, aged), and offer a prune. plugin_integrity assumes a marketplace install is a clone; the cache is not (installed_plugins.json records installPath and gitCommitSha, and the marketplace clone holds that commit) - compare the cache tree with git archive of that SHA from the marketplace clone, unverifiable only when either is missing (these are undocumented Claude Code files; say so as /audit:version does).",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -132,14 +132,19 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a5a92e38",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "split_history grades the newest stamp per copy; cache_integrity compares the cache with git archive of the recorded commit; readers in _claude_home.",
+        "descriptive": "Doctor stops warning about a dead session's old plugin stamp and verifies a marketplace install instead of calling it unverifiable."
       },
       "startedAt": "2026-09-25T18:25:26Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T22:03:37Z",
+      "verifiedBy": [
+        "test__doctor_trail rh1",
+        "test__doctor_trail rh3",
+        "test__doctor_setup pc1",
+        "test__claude_home ch8"
+      ]
     }
   ],
   "startedAt": "2026-09-25T18:00:40Z"
