@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P68-R1",
@@ -37,9 +37,10 @@
         "issue": "one git show per phase stub on every call, under the index lock, growing with the plan",
         "resolution": "fixed in P68.2-v4q: one git status, git show only for changed shards (cmi26)"
       }
-    ]
+    ],
+    "outcome": "matches; two findings (one med, one low) fixed in P68.2-v4q"
   },
-  "summary": null,
+  "summary": "commit-manifest-index no longer records an index ahead of the shards it names: it refuses, before staging anything, an index naming a task or phase the shard committed at HEAD does not hold yet - a fileIndex entry, a bug's fix task, a new phase stub - naming each and the shard to commit first; a widened scope on a committed task and a dangling id still commit. The note audit-task prints states the order (the shard first), and the check asks git only about shards that changed, so its cost follows the change, not the plan. Fixes BUG-10, found signing off P66. This phase was run in that order - each task commit carried its shard, the index followed - and its invariant check found no breach. Reviewed in phase mode (two findings, fixed); the phase gate ran green with the tree unchanged.",
   "tasks": [
     {
       "id": "P68.1",
@@ -149,5 +150,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-25T11:07:45Z"
+  "startedAt": "2026-09-25T11:07:45Z",
+  "testEvidence": {
+    "runId": "2026-09-25T11:29:57Z.741fc1",
+    "status": "passed",
+    "at": "2026-09-25T11:29:57Z"
+  }
 }
