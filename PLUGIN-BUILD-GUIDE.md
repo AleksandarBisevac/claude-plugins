@@ -370,7 +370,7 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -3579,6 +3579,23 @@ with no `fixedIn`, and journals `task.reopen`. It refuses a task that is not don
 phase is signed off - done, or awaiting its merge - because that verdict is not re-decided, and a
 stored `done` over an open task is a finding every later verb refuses on.
 
+`done --no-change --reason TEXT` is the one close without a SHA, for a task whose answer was that
+nothing needed to change: `commit` stays null and `outcome.noChange` records the reason and the HEAD
+it was examined at (`_examined_head`; null, and said, when git cannot name one), which is the block
+`_commit_trail.no_change_close` answers from for the doctor's no-SHA warning as well. `--intent
+not-asked --intent-basis TEXT` records an intent question deliberately not put; `_done_flags_refusal`
+refuses the word without its basis and every combination of the two closes' flags that names both or
+neither, and `_status_facts.intent_unanswered` is what sign-off and `/audit:status` list.
+
+`move <taskId> --to <phaseId>`, `block <taskId> --reason TEXT` and `note <taskId> --text TEXT` are
+the hand edits operators kept making. `move` allocates with `_allocate_id` - what `next-id task`
+prints - rewrites every reference through `_id_refs.rename`, writes `movedFrom`, and writes every
+phase whose body changed plus the index through `_write_plan`, which snapshots all of them before
+the first write so a refusal restores all of them. `block` writes `status` and `blockedReason`
+(cleared by the next `start`, whose row keeps it as the value it moved from); `note` appends one
+`{at, text}` entry to `notes[]`, the one addition a started task takes. Each journals its own row -
+`task.move`, `task.block`, `task.note`.
+
 `settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
 `status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its
 shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled back on findings,
@@ -3599,8 +3616,8 @@ written and read with.
 
 `next-id bug|prop|task --phase <id>` prints the id a hand-written record takes - a bug
 (`commands/bug.md`), a parked proposal (`init.md`, `sync.md`), a bug's fix task or a moved task
-(`bug.md`, `task.md` -> move) are the records the model still writes by hand, and so the ids it used
-to compute by hand as max+1. It reads the same allocator every scripted writer does, suffix and
+(`bug.md`) are the records the model still writes by hand, and so the ids it used to compute by
+hand as max+1; a moved task no longer is one - `move` takes the same allocator's answer in process. It reads the same allocator every scripted writer does, suffix and
 reservations included, and writes nothing. Not `phase`: a phase is minted only by `add-phase`, which
 writes it under the lock, where a task's phase is fixed before its id is asked for.
 ### `plugins/audit/scripts/usage/audit-usage.py`

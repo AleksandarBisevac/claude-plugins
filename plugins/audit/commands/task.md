@@ -1,17 +1,20 @@
 ---
-description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> --commit <sha> [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | cancel <id> --reason "<why>"'
+description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
-# /audit:task — add a task to the manifest, promote one, close one, move one between phases, or cancel one
+# /audit:task — add a task to the manifest, promote one, close one, re-open one, move one between phases, block one, note on one, or cancel one
 
 **`$ARGUMENTS`**: subcommand `add` followed by a quoted title and any of the
 flags in the `argument-hint` above;
 or subcommand `start` followed by a task id;
-or subcommand `done` followed by a task id and `--commit <sha>`;
+or subcommand `done` followed by a task id and `--commit <sha>` (or `--no-change --reason "<why>"`);
+or subcommand `reopen` followed by a done task's id and `--reason "<why>"`;
 or subcommand `scope` followed by a task id and any of its flags;
 or subcommand `move` followed by a task id and `--to <phaseId>`;
+or subcommand `block` followed by a task id and `--reason "<why>"`;
+or subcommand `note` followed by a task id and `--text TEXT`;
 or subcommand `cancel` followed by an id and `--reason "<why>"`;
 or subcommand `priority`, the legacy spelling covered at the end of this file.
 Unknown/empty subcommand → print usage and stop.
@@ -43,14 +46,16 @@ opposite of what an alias is for.
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
-`add` writes through `scripts/manifest/audit-task.py`, which takes and releases the **index lock**
-itself; hold the lock by hand (conventions → Concurrency lock) only around writes YOU make
-with Edit — which is now the `move` subcommand and nothing else. **Creating a phase is
-`/audit:phase add` and is no longer done here by hand** (see step 1).
+Every subcommand here writes through `scripts/manifest/audit-task.py`, which takes and
+releases the **index lock** itself — `move` included, which used to be the one procedure
+done with Edit — so no write in this file is made by hand, and no lock is held by hand.
+**Creating a phase is `/audit:phase add` and is no longer done here by hand** (see step 1).
 
 **In the sharded layout, a write here can leave the shared index sitting dirty beside the
 phase shard it also touched** — `add-phase` always does; `add`/`scope`/`retarget`/`cancel`/
-`start`/`done` do it whenever a mirrored stub key (`status`, `title`, …) or `fileIndex` moves.
+`start`/`done`/`reopen`/`block`/`note` do it whenever a mirrored stub key (`status`, `title`, …)
+or `fileIndex` moves, and `move` whenever it rewrites a `fileIndex` row, a bug's `taskId` or a
+parked proposal.
 A task commit will not carry that index (`orchestrator.md` step 4c refuses it on purpose, so
 two phases can merge without a conflict there), so it needs its own commit —
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" <manifestPath>
@@ -386,7 +391,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" done P3.2 \
   --commit "$(git -C <gitRoot> rev-parse HEAD)" \
   --descriptive "<one-line impact>" --technical "<what was actually done>" \
   --verified-by "<test names this task added>" \
-  [--intent matches|diverges|cannot-tell] [--json]
+  [--intent matches|diverges|cannot-tell|not-asked] [--intent-basis TEXT] [--json]
 ```
 
 **Call it at the END of step 4c, after `git rev-parse HEAD`** — the SHA does not exist
@@ -411,6 +416,13 @@ What it writes — exactly the fields step 4 prescribes, and nothing besides:
   SAME commit this call already names. **Omitted means no answer was recorded, never
   agreement** — a close that received none reads apart from one that received a negative,
   which is the whole reason this is its own field rather than folded into `outcome`.
+  **`--intent not-asked --intent-basis "<why>"`** is the fourth word, and the only one no
+  reviewer gives: the question was deliberately not put (a two-string edit, a close with no
+  diff). It is refused without `--intent-basis`, because a skip with no reason on the record
+  reads exactly like a reviewer call that never came back; `--intent-basis` alone, with no
+  `--intent` beside it, is refused too. `/audit:phase signoff` and `/audit:status` (on a
+  phase whose sign-off is due) name the done tasks that carry **no** answer — `not-asked`
+  is an answer, so it is not among them.
 - **journal** → one `task.done` row carrying the SHA in its summary and `details`.
   It is deliberately **not** `task.complete`: that action and `task.commit` are derived
   by `hooks/journal-writes.py` from the write itself and step 4c forbids appending them
@@ -425,10 +437,27 @@ is terminal here nothing in this command can correct it afterwards. The value mu
 object id (7–40 hex): `HEAD`, a branch and a tag all *resolve*, and writing one into a
 field the schema calls a SHA leaves a row that means something different next month.
 
+**A task whose answer was that nothing needed to change closes with `--no-change
+--reason "<why>"` instead of `--commit`**, and that is the only close without a SHA:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" done P3.2 \
+  --no-change --reason "<why nothing needed to change>" [--json]
+```
+
+It writes `commit: null` and `outcome.noChange = {reason, examinedAt}`, where `examinedAt` is
+the HEAD SHA the task was examined at — the commit the claim was measured against — and is
+written `null`, and **said**, when git cannot name one. The `task.done` row carries the reason
+in its summary and in `details.reason`. `/audit:doctor`'s *done task(s) carry no commit SHA*
+warning leaves such a task out and names it on a line of its own. `--commit` and `--no-change`
+together are refused, as are `--no-change` with no `--reason` and a `--reason` on a close
+that is not a no-change close. Everything else about the verb is unchanged — including the
+refusal of a task that was never started.
+
 **Refusals, all before any write:** an id that resolves to nothing; a **phase** id (a
 phase reaches `done` only through sign-off, which writes a review verdict and a merge
 stamp beside the status); a `done` or `cancelled` task, named as such; a missing or
-non-SHA `--commit`; a SHA git can be asked about and does not have; and a task that was
+non-SHA `--commit` (with no `--no-change`); a SHA git can be asked about and does not have; and a task that was
 **never started** — `pending` with no attempt recorded means no spawn was ever written
 down, so the close would lay a terminal state over a hole, which is also the shape
 `/audit:doctor` grades as positive evidence of an edit outside the pipeline. Run
@@ -450,6 +479,62 @@ on the phase. **Nothing refuses a close that leaves a phase
 complete-but-unsigned**; the line is the whole of it, and the `pd` group in
 `plugins/audit/tests/test_audit_task.py` is what keeps the field untouched in both
 directions.
+
+## Subcommand: `reopen <taskId> --reason "<why>"`
+
+`--reason` goes in unchanged, by the rule stated under `cancel` below: it reaches the hash-chained journal.
+
+Put a **done** task back to `pending`, with the reason recorded. `commands/run.md` → step 1 is
+where a re-open is offered and says what it clears; this is the same verb:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reopen P3.2 \
+  --reason "<why the close is undone>" [--json]
+```
+
+It resets `status`, `attempts`, `commit`, `completedAt`, `verifiedBy`, `outcome` and
+`intentCheck`, puts a linked bug back to `in_progress` with no `fixedIn`, and writes a
+`task.reopen` row carrying the reason. **Refused:** a task that is not done, a phase id, and a
+task whose phase is signed off (done, or signed off and awaiting its merge) — the new work
+there is a new task in an open phase or a bug.
+
+## Subcommand: `block <taskId> --reason "<why>"`
+
+`--reason` goes in unchanged, by the rule stated under `cancel` below: it reaches the hash-chained journal.
+
+Set a task `blocked` and say what it is waiting on. It is the transition the orchestrator makes
+when attempts run out (`reference/execute-task.md` → step 2 and step 4) and the one an operator
+makes for a dependency **no id can name** — another team's endpoint, a reply nobody has sent —
+which `blockedBy` refuses on purpose, because nothing in the plan could ever clear it.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" block P3.2 \
+  --reason "<what it is waiting on>" [--json]
+```
+
+It writes `status: "blocked"` and `blockedReason`, and a `task.block` row carrying the reason.
+**`start` clears `blockedReason`** when the task runs again, and its `task.start` row keeps the
+old reason as the value it moved from. **Refused:** no reason, a phase id, a done or
+cancelled task, and a task already blocked (its reason on record stands — add what changed
+with `note`). **The ADO echo is not sent by this verb**; on a plan with a board it says the
+echo is owed (`reference/orchestrator.md` → *ADO echo*).
+
+## Subcommand: `note <taskId> --text TEXT`
+
+`--text` goes in unchanged, by the rule stated under `cancel` below: it reaches the hash-chained journal.
+
+Append one dated `{at, text}` entry to the task's `notes[]`. **Append-only, which is why it
+reaches a STARTED task**: `scope` refuses to rewrite the `description` of a task that has
+started, because its brief is what its attempts were judged against, so a finding that arrived
+since goes here, beside the brief, rather than in place of it.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" note P3.2 \
+  --text "<what was learned>" [--json]
+```
+
+One `task.note` row per call. **Refused:** empty text, a phase id, and a `notes` value that is
+not a list (an append onto another shape would replace it). A note never changes status.
 
 ## Subcommand: `cancel <id> --reason "<why>"`
 
@@ -636,56 +721,49 @@ resolved against a root these paths are not relative to.
 
 Relocate a pending/blocked task into another open phase. This is the ONLY sanctioned
 way to move a task: a hand-drag keeps the old id, which the validator flags
-(`id does not follow its phase's prefix`) and which breaks the ledger join. This is a
-**structural** mutation — take the **index lock** (conventions → Concurrency lock)
-around every write below and release it before reporting.
+(`id does not follow its phase's prefix`) and which breaks the ledger join. It is a SCRIPT
+call, which takes the index lock itself — it used to be a six-step procedure done with Edit,
+and every step of it is now the verb's:
 
-**Refusals — all BEFORE any write** (check in this order; on refusal print why and stop):
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" move P3.2 --to P5 [--json]
+```
 
-1. `<taskId>` does not resolve to a task, or `<phaseId>` to a phase → refuse, list what exists.
-2. Target phase == the task's current phase → refuse (no-op; nothing to move).
-3. Task `status == "done"` → refuse: done tasks are history. Offer the `/audit:run <taskId>`
-   **re-open** path first (it resets status/commit/outcome under its own guards); move only
-   after that has run.
-4. Task `status == "in_progress"` → refuse: likely a live or interrupted run — point to
-   `/audit:resume`, or to the human-confirmed re-execution path in `run.md`, before any move.
-5. Target phase `status == "done"` → refuse (done phases are immutable history — same rule
-   as `add`).
+**Refusals — all BEFORE any write**, in this order:
+
+1. no `--to`; `<taskId>` does not resolve to a task (the refusal lists the task ids), or
+   `<phaseId>` to a phase (the refusal lists the phases);
+2. the target is the task's current phase (nothing to move);
+3. the task is `done` — done tasks are history; re-open it first (`reopen` above), then move it —
+   or `cancelled`;
+4. the task is `in_progress` — likely a live or interrupted run: finish or `/audit:resume` it first;
+5. the target phase is done, signed off, cancelled, or an id a parked proposal reserves — the
+   same target-phase refusals `/audit:task add` gives.
 
 A `blocked` task MAY move: it moves **with its blockers** — its own `blockedBy`/`dependsOn`
-lists travel unchanged (only references *to its old id* elsewhere are rewritten, step 3).
+lists travel unchanged (only references *to its old id* elsewhere are rewritten).
 
-**Steps** (index lock held throughout; in the sharded layout the task body moves between
-the two phase SHARDS while `fileIndex`/`bugs[]` edits go to the index):
+**What it does** (index lock held throughout; in the sharded layout the task body moves between
+the two phase SHARDS while `fileIndex`/`bugs[]`/`proposals[]` edits go to the index):
 
-1. **Allocate the new id** from the allocator - `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id task --phase <targetPhaseId>
-   <manifestPath>` - never by hand: it counts the whole assembled manifest AND every reserved
-   `proposals[].payload` id, and off the development branch it carries the branch suffix
-   (conventions → ID allocation / Reserved ids).
-2. **Move the task object** into the target phase's `tasks[]` with its new id, adding
-   `movedFrom: {"id": "<oldId>", "phase": "<oldPhaseId>", "at": "<ISO now>"}`. Remove it
-   from the source phase. All other fields travel byte-for-byte.
-3. **Rewrite every reference** to the old id, across the index AND all shards:
-   - every `blockedBy` / `dependsOn` entry equal to `<oldId>` → `<newId>` (phases and tasks);
-   - every `fileIndex` value array: `<oldId>` → `<newId>`;
-   - every `bugs[].taskId` equal to `<oldId>` → `<newId>` (the task's own `bugId` travels with it);
-   - every `blockedBy` / `dependsOn` inside a parked proposal's `payload.phase` and its tasks -
-     a parked phase waiting on the moved task is a reference too, and the one most often missed.
-4. **Record the move** — the explicit mapping row, appended by YOU via the CLI (this is the
-   one journal action a command writes; the completion events stay hook-only):
-   ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-journal.py" append --action task.move \
-           --target <manifest rel> \
-           --summary "<oldId> -> <newId> (<oldPhase> -> <newPhase>)" \
-           --details '{"fromId":"<oldId>","toId":"<newId>","fromPhase":"<oldPhase>","toPhase":"<newPhase>"}'
-   ```
-5. **Revalidate**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` —
-   fix and re-run until clean (the id-prefix warning for the moved task must be gone).
-6. **Release the lock**, then **report**: old id, new id, target phase, whether the task is
-   **ready now** (readiness rule), and this ledger note verbatim in spirit:
-   *historical ledger rows keep the old taskId — history is never rewritten; new spend
-   attributes to the new id; `movedFrom` plus the journal's `task.move` row are what let a
-   reader join the two.*
+1. **Allocates the new id** from the same allocator `next-id task --phase <targetPhaseId>`
+   prints — it counts the whole assembled manifest AND every reserved `proposals[].payload`
+   id, and off the development branch it carries the branch suffix (conventions → ID
+   allocation / Reserved ids).
+2. **Rewrites every reference** to the old id through `_id_refs.rename`, the one list of
+   fields that hold an id: every `blockedBy` / `dependsOn` (phases and tasks, parked proposal
+   payloads included — the reference most often missed), every `fileIndex` value, every
+   `bugs[].taskId`. The task's other fields travel unchanged; `movedFrom` is never rewritten.
+3. **Moves the task object** into the target phase's `tasks[]` with its new id and
+   `movedFrom: {"id": "<oldId>", "phase": "<oldPhaseId>", "at": "<ISO now>"}`.
+4. **Revalidates from disk** and rolls every written file back on findings.
+5. **Journals one `task.move` row** — `fromId`, `toId`, `fromPhase`, `toPhase` — the explicit
+   mapping; the completion events stay hook-only.
+
+It **reports** the old id, the new id, the number of references rewritten, whether the task is
+**ready now**, and the ledger note: *historical ledger rows keep the old taskId — history is
+never rewritten; new spend attributes to the new id; `movedFrom` plus the journal's `task.move`
+row are what let a reader join the two.*
 
 ## Subcommand: `priority <phaseId> <tier|--clear>` — the legacy spelling
 

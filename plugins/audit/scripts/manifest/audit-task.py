@@ -30,9 +30,17 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py start <taskId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py done <taskId> --commit <sha> [manifest]
-                [--descriptive TEXT|-] [--technical TEXT|-]
-                [--verified-by t1,t2] [--intent matches|diverges|cannot-tell]
+  audit-task.py done <taskId> (--commit <sha> | --no-change --reason TEXT|-)
+                [manifest] [--descriptive TEXT|-] [--technical TEXT|-]
+                [--verified-by t1,t2]
+                [--intent matches|diverges|cannot-tell|not-asked]
+                [--intent-basis TEXT|-]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py move <taskId> --to <phaseId> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py block <taskId> --reason "<why>|-" [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py note <taskId> --text "<what>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -91,7 +99,17 @@ Usage:
   `done` closes a task the way `start` opens one, and it is the only verb
   here whose flag is REQUIRED for the record rather than for the field:
   `--commit` is the SHA the work landed in, without which the close is the
-  state `/audit:doctor` already reports (`done`, no commit).
+  state `/audit:doctor` already reports (`done`, no commit). The one close
+  with no commit is `--no-change --reason`, a task whose answer was that
+  nothing needed to change: it records the reason and the HEAD it examined
+  in `outcome.noChange`, which is what the doctor's no-SHA warning reads to
+  leave it out.
+  `move`, `block` and `note` are the hand edits `commands/task.md` and the
+  field reports kept making: a task renumbered into another phase with every
+  reference rewritten, a task set `blocked` with the reason in
+  `blockedReason`, and an append-only `{at, text}` entry on `notes[]` - the
+  one thing a started task still takes, since `scope --description` refuses
+  a task that has started.
   `seed` is the one verb here that WRITES WHERE NOTHING WAS: every other verb
   refuses when the manifest is missing, and this one refuses the opposite way,
   when one is already there -- pointing the caller at `add`/`add-phase` or
@@ -271,6 +289,9 @@ import _journal_io            # noqa: E402  (read_all: the phase.add rows a side
                               # warning is read back from)
 import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
                               # branch suffix that keeps two branches from minting it twice)
+import _id_refs               # noqa: E402  (rename: one id rewritten everywhere the plan
+                              # points at it - `move`'s references, from the one list of
+                              # fields that hold an id)
 import _proposals             # noqa: E402  (the TAKEN SET `/audit:propose materialize`
 #                                            allocates against - live AND parked ids - plus
 #                                            the two rules over it. A second taken set here
@@ -651,8 +672,14 @@ def _marked_excerpt(excerpt, rel_start, rel_end):
 # back to `technical`), and `outcome.technical` is what a retry brief quotes back
 # to the next executor -- a clause a shell ate out of either is a sentence that
 # reads whole and is not.
+#
+# `--intent-basis` and `--text` join for the same reason: the basis of a
+# deliberate `not-asked` and a note's text are both the operator's sentence,
+# written verbatim into the plan. They are the exception to the measurement
+# above - neither field existed before these flags, so there was no corpus of
+# either to measure over.
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
-               "technical", "summary", "review_outcome")
+               "technical", "summary", "review_outcome", "intent_basis", "text")
 
 # THE ONE PLACE `--help` SAYS ANYTHING ABOUT THE STDIN ESCAPE. Before this, none
 # of the flags in PROSE_FLAGS carried a `help=` at all -- `--help` printed the
@@ -2715,10 +2742,14 @@ def _start_task(task, now):
     """
     was = {"status": task.get("status"),
            "attempts": _mio.recorded_attempt(task),
-           "startedAt": task.get("startedAt")}
+           "startedAt": task.get("startedAt"),
+           "blockedReason": task.get("blockedReason")}
     task["status"] = "in_progress"
     task["startedAt"] = now
     task["attempts"] = (was["attempts"] or 0) + 1
+    # A running task is not waiting, so the reason `block` recorded goes with the
+    # status it explained; the task.start row keeps it as the `from` half.
+    task.pop("blockedReason", None)
     return was
 
 
@@ -2733,12 +2764,18 @@ def _start_changes(tid, was, task):
     row list built by filtering equality would make a reader work out which
     fields the verb even touches.
     """
-    return [{"id": tid, "field": "status",
+    rows = [{"id": tid, "field": "status",
              "from": was["status"], "to": task.get("status")},
             {"id": tid, "field": "startedAt",
              "from": was["startedAt"], "to": task.get("startedAt")},
             {"id": tid, "field": "attempts",
              "from": was["attempts"], "to": task.get("attempts")}]
+    # Only when there was one: a row for a field the start never touched would
+    # claim a write that did not happen.
+    if was.get("blockedReason") is not None:
+        rows.append({"id": tid, "field": "blockedReason",
+                     "from": was["blockedReason"], "to": None})
+    return rows
 
 
 def _start_details(task_id, phase_id, was, task):
@@ -3140,6 +3177,11 @@ def _locked_start(args, project, config, mpath, tid, out):
 # also run straight from a terminal.
 _SHA_SHAPE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 
+# The words `intentCheck.answer` may hold, in the schema enum's order. The first
+# three are the reviewer's; `not-asked` is the orchestrator's own - the question
+# deliberately not put - and it is the one the door refuses without a basis.
+INTENT_ANSWERS = ("matches", "diverges", "cannot-tell", "not-asked")
+
 
 def _commit_shape_refusal(sha):
     """The refusal for a `--commit` value that is not a SHA at all, or None.
@@ -3194,7 +3236,19 @@ def _commit_git_note(git_root, sha):
                   "askable)" % (sha[:12],))
 
 
-def _done_task(task, now, commit, descriptive, technical, verified, intent):
+def _examined_head(git_root):
+    """The SHA HEAD names in `git_root`, or None when git cannot say.
+
+    What a no-change close was measured against. None is written and SAID rather
+    than refused: a project outside git runs this plugin (a phase there runs with
+    no branch), and refusing would leave it no way to record the answer at all.
+    """
+    code, head = _git_answer(git_root, "rev-parse", "HEAD")
+    return head if code == 0 and _SHA_SHAPE.match(head or "") else None
+
+
+def _done_task(task, now, commit, descriptive, technical, verified, intent,
+               intent_basis=None, no_change=None):
     """Close one task; returns the values it held before.
 
     THE FIELDS ARE `reference/orchestrator.md`'s STEP 4 VERBATIM -- 4b's *Set
@@ -3225,6 +3279,15 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent):
     the working tree the moment before this same commit and nothing else on the
     record ties the two together.
 
+    `not-asked` IS THE ONE ANSWER NO REVIEWER GAVE, so its `basis` is required
+    by the door and written beside it: a skip with no reason on the record reads
+    exactly like a reviewer call that never came back.
+
+    `no_change` IS THE CLOSE WITH NO COMMIT, `{reason, examinedAt}` into
+    `outcome.noChange`: `commit` stays None because nothing was committed, and
+    the HEAD that was examined is what the claim "nothing needed to change" was
+    measured against.
+
     THE PRIOR VALUES ARE READ BEFORE THE WRITE, for `_locked_cancel`'s reason two
     verbs over: afterwards every one of them says `done`, and the `from` half of
     the journal row is gone from the manifest as well as from the row.
@@ -3235,13 +3298,14 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent):
            "commit": task.get("commit"),
            "descriptive": prior.get("descriptive"),
            "technical": prior.get("technical"),
+           "noChange": prior.get("noChange"),
            "verifiedBy": task.get("verifiedBy"),
            "intentCheck": task.get("intentCheck")
            if isinstance(task.get("intentCheck"), dict) else None}
     task["status"] = "done"
     task["completedAt"] = now
     task["commit"] = commit
-    if descriptive is not None or technical is not None:
+    if descriptive is not None or technical is not None or no_change is not None:
         outcome = task.get("outcome")
         if not isinstance(outcome, dict):
             outcome = {}
@@ -3249,11 +3313,15 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent):
             outcome["descriptive"] = descriptive
         if technical is not None:
             outcome["technical"] = technical
+        if no_change is not None:
+            outcome["noChange"] = no_change
         task["outcome"] = outcome
     if verified is not None:
         task["verifiedBy"] = verified
     if intent is not None:
         task["intentCheck"] = {"answer": intent, "commit": commit, "at": now}
+        if intent_basis is not None:
+            task["intentCheck"]["basis"] = intent_basis
     return was
 
 
@@ -3268,7 +3336,8 @@ def _done_changes(tid, was, task):
     difference is what each row asserts. `start` writes three fields every time, so
     filtering by equality there would hide which fields the verb even touches. Here
     `status`, `completedAt` and `commit` are written every time and the outcome
-    halves, `verifiedBy` and `intentCheck` only when the caller passed them -- so a
+    halves, `outcome.noChange`, `verifiedBy` and `intentCheck` only when the
+    caller passed them -- so a
     row for an untouched one would claim a write that did not happen, which is the
     opposite mistake and the worse one on a trail.
     """
@@ -3279,10 +3348,10 @@ def _done_changes(tid, was, task):
             {"id": tid, "field": "commit",
              "from": was["commit"], "to": task.get("commit")}]
     outcome = task.get("outcome") if isinstance(task.get("outcome"), dict) else {}
-    for half in ("descriptive", "technical"):
-        if outcome.get(half) != was[half]:
+    for half in ("descriptive", "technical", "noChange"):
+        if outcome.get(half) != was.get(half):
             rows.append({"id": tid, "field": "outcome.%s" % half,
-                         "from": was[half], "to": outcome.get(half)})
+                         "from": was.get(half), "to": outcome.get(half)})
     if task.get("verifiedBy") != was["verifiedBy"]:
         rows.append({"id": tid, "field": "verifiedBy",
                      "from": was["verifiedBy"], "to": task.get("verifiedBy")})
@@ -3328,11 +3397,21 @@ def _journal_done(project, config, mpath, task_id, phase_id, was, task):
     commit is the one thing a reader of a finished task is looking for. It exposes
     nothing new -- the same SHA is in the manifest this row is about.
     """
+    no_change = _commit_trail.no_change_close(task)
+    if no_change is not None:
+        # The reason rides the summary and `details.reason`, `_journal_cancel`'s
+        # rule for a why: a close with no commit has nothing else to name.
+        summary = ("%s done in %s with no change, was %s: %s"
+                   % (task_id, phase_id, was["status"], no_change.get("reason")))
+        details = _done_details(task_id, phase_id, was, task)
+        details["reason"] = no_change.get("reason")
+        return _journal_row(project, config, mpath, "task.done", summary, details)
     summary = ("%s done in %s: commit %s, was %s"
                % (task_id, phase_id, str(task.get("commit") or "")[:12],
                   was["status"]))
     return _journal_row(project, config, mpath, "task.done", summary,
                         _done_details(task_id, phase_id, was, task))
+
 
 
 def _still_open(phase):
@@ -3421,11 +3500,6 @@ def _locked_done(args, project, config, mpath, tid, out):
             "afterwards. Record the attempt first (/audit:task start %s), then "
             "close it." % (tid, status, tid))
         return E_USAGE
-    sha = (args.commit or "").strip()
-    shape = _commit_shape_refusal(sha)
-    if shape:
-        out(shape)
-        return E_USAGE
     # Where git runs: `_doctor_setup.check_git`'s spelling, byte for byte -- the
     # project plus the config's `gitRoot`, absolute, for a workspace whose
     # repository is a subdirectory. A third answer here would send this verb to a
@@ -3433,15 +3507,27 @@ def _locked_done(args, project, config, mpath, tid, out):
     # two verdicts would then disagree about one manifest.
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
-    refusal, unverified = _commit_git_note(git_root, sha)
-    if refusal:
-        out(refusal)
-        return E_USAGE
+    no_change, unverified = None, None
+    if args.no_change:
+        sha = None
+        no_change = {"reason": args.reason.strip(),
+                     "examinedAt": _examined_head(git_root)}
+    else:
+        sha = (args.commit or "").strip()
+        shape = _commit_shape_refusal(sha)
+        if shape:
+            out(shape)
+            return E_USAGE
+        refusal, unverified = _commit_git_note(git_root, sha)
+        if refusal:
+            out(refusal)
+            return E_USAGE
 
     now = _utc_now()
     verified = None if args.verified_by is None else _split_csv(args.verified_by)
     was = _done_task(node, now, sha, args.descriptive, args.technical, verified,
-                     args.intent)
+                     args.intent, intent_basis=args.intent_basis,
+                     no_change=no_change)
     phase_id = phase.get("id")
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
@@ -3480,7 +3566,11 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "status": node.get("status"),
                   "completedAt": node.get("completedAt"),
                   "commit": node.get("commit"),
-                  "commitVerified": unverified is None,
+                  # None for a no-change close: there is no commit to have
+                  # verified, and False would read as one git could not find.
+                  "commitVerified": (None if no_change is not None
+                                     else unverified is None),
+                  "noChange": no_change,
                   "was": was["status"],
                   "outcome": {"descriptive": outcome.get("descriptive"),
                               "technical": outcome.get("technical")},
@@ -3505,7 +3595,14 @@ def _locked_done(args, project, config, mpath, tid, out):
         return 0
     out("[audit-task] %s done in %s -- was %s" % (tid, phase_id, was["status"]))
     out("  completedAt %s" % (node.get("completedAt"),))
-    out("  commit %s" % (node.get("commit"),))
+    if no_change is not None:
+        out("  commit none -- closed with NO CHANGE: %s" % (no_change["reason"],))
+        out("  examinedAt: %s" % (no_change["examinedAt"] or
+                                  "NOT RECORDED -- git could not name HEAD here, "
+                                  "so the claim names no commit it was measured "
+                                  "against",))
+    else:
+        out("  commit %s" % (node.get("commit"),))
     if unverified:
         out(unverified)
     # EACH LINE CARRIES ITS BASIS, THE ABSENT ONE INCLUDED. A close that said
@@ -3530,11 +3627,13 @@ def _locked_done(args, project, config, mpath, tid, out):
     # than paraphrased, the same rule `--descriptive`/`--technical` follow.
     intent_check = node.get("intentCheck")
     if isinstance(intent_check, dict) and intent_check.get("answer"):
-        out("  intentCheck: %s (commit %s)"
-            % (intent_check["answer"], intent_check.get("commit")))
+        out("  intentCheck: %s (commit %s)%s"
+            % (intent_check["answer"], intent_check.get("commit") or "none",
+               " -- basis: %s" % intent_check["basis"]
+               if intent_check.get("basis") else ""))
     else:
-        out("  intentCheck: NO ANSWER RECORDED -- pass --intent "
-            "matches|diverges|cannot-tell")
+        out("  intentCheck: NO ANSWER RECORDED -- pass --intent %s"
+            % ("|".join(INTENT_ANSWERS),))
     if open_left:
         out("  %s still has open work: %s" % (phase_id, ", ".join(open_left)))
     else:
@@ -3702,6 +3801,404 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
+    return 0
+
+
+# --- block, note, move: the hand edits operators kept making ---------------------
+# Each of these was a documented or reported hand edit: `blocked` set with the
+# reason living nowhere but a chat, a finding appended to a description `scope`
+# refuses on a started task, and `commands/task.md`'s six-step move procedure run
+# with Edit. They take the path every mutating verb here takes - the index lock,
+# validate before and after, byte-for-byte rollback on findings, a journal row.
+def _read_plan(mpath, out):
+    """`(raw_index, assembled, validator)`, or the exit code after saying why not.
+
+    The read and the refusal of an already-invalid plan that every verb below
+    starts with: a write laid on top of findings would be blamed for them.
+    """
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    return raw_index, assembled, vm
+
+
+def _write_plan(project, mpath, raw_index, assembled, vm, phase_ids, what, out,
+                files_changed=False, index_fields=()):
+    """`(written, written_manifest, warnings)`, or the exit code after a rollback.
+
+    SEVERAL PHASES IN ONE WRITE, which is what `move` needs and `_write_add`
+    alone does not do: the task leaves one shard and joins another, and a
+    reference to it can sit in a third. Every file any of them may touch is
+    snapshotted BEFORE the first write, so a refusal restores all of them.
+    """
+    paths = [mpath]
+    for pid in phase_ids:
+        for path in _write_paths(project, mpath, raw_index, pid):
+            if path not in paths:
+                paths.append(path)
+    snap = _snapshot(paths)
+    written = []
+    try:
+        if not _mio.is_sharded(raw_index) or not phase_ids:
+            written = _write_add(project, mpath, raw_index, assembled,
+                                 phase_ids[0] if phase_ids else None,
+                                 files_changed, index_fields=index_fields)
+        else:
+            for pid in phase_ids:
+                for rel in _write_add(project, mpath, raw_index, assembled, pid,
+                                      files_changed, index_fields=index_fields):
+                    if rel not in written:
+                        written.append(rel)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        written_manifest, findings, warnings = {}, ["cannot re-read the written "
+                                                    "manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: %s would leave the manifest invalid -- every "
+            "written file rolled back, nothing kept:" % (what,))
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    return written, written_manifest, warnings
+
+
+def _task_target(assembled, tid, verb):
+    """`(task, phase, None)` for a task id, or `(None, None, refusal)`.
+
+    A phase id is refused by name for `_locked_done`'s reason: the ids look alike
+    enough that guessing between them guesses wrong.
+    """
+    kind, node, phase = _find_target(assembled, tid)
+    if kind is None:
+        return None, None, "no task with id %r in this plan" % (tid,)
+    if kind != "task":
+        return None, None, ("%s is a PHASE -- `%s` takes one task id"
+                            % (tid, verb))
+    return node, phase, None
+
+
+def _report_tail(out, jres, action, warnings, written_manifest, written,
+                 index_note):
+    """The lines every verb below ends on, in the order the others print them."""
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the %s row" % (action,))
+    out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+
+
+def _json_tail(result, args, jres, warnings, written_manifest, index_note):
+    """The keys every verb's `--json` block carries beside its own."""
+    result["warnings"] = _wg.collapse_machine(warnings, written_manifest)
+    result.update(jres)
+    result.update(stdin_notes_key(args))
+    result.update(project_basis_key(args))
+    result.update(_index_dirty_key(index_note))
+    return json.dumps(result, indent=2, sort_keys=True)
+
+
+# `block`: the status the orchestrator sets on exhausted attempts and on a
+# refused start, and the one an operator sets for a dependency no id can name -
+# another team's endpoint, a reply nobody has sent. `blockedBy` refuses such a
+# dependency on purpose (nothing could clear it), so the reason lives beside the
+# status, and `start` clears it when the task runs again.
+def cmd_block(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to block
+    if not tid:
+        out("[audit-task] block needs a task id")
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if not reason:
+        out("[audit-task] block needs --reason \"<what it is waiting on>\" -- a "
+            "task blocked with no recorded why is the hand edit this verb "
+            "replaces, and nobody can tell when it may run again")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_block(
+                           args, project, config, mpath, tid, reason, out))
+
+
+def _locked_block(args, project, config, mpath, tid, reason, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    node, phase, refusal = _task_target(assembled, tid, "block")
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    status = node.get("status")
+    if status in _mio.TERMINAL:
+        out("[audit-task] %s is already %s -- terminal work is not blocked; the "
+            "follow-up is a new task (/audit:task add)" % (tid, status))
+        return E_USAGE
+    if status == "blocked":
+        out("[audit-task] %s is already blocked: %s -- the reason on record "
+            "stands; add what changed with /audit:task note %s --text \"...\""
+            % (tid, node.get("blockedReason") or "(no reason recorded)", tid))
+        return E_USAGE
+    phase_id = phase.get("id")
+    changes = [{"id": tid, "field": "status", "from": status, "to": "blocked"},
+               {"id": tid, "field": "blockedReason",
+                "from": node.get("blockedReason"), "to": reason}]
+    node["status"] = "blocked"
+    node["blockedReason"] = reason
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
+                        "the block", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "task.block",
+                        "%s blocked in %s, was %s: %s"
+                        % (tid, phase_id, status, reason),
+                        {"taskId": tid, "phaseId": phase_id, "reason": reason,
+                         "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    linked = bool(((assembled.get("meta") or {}).get("ado") or {}))
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": tid, "phase": phase_id,
+                        "status": "blocked", "was": status, "reason": reason,
+                        "changes": changes, "adoEchoOwed": linked,
+                        "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s blocked in %s -- was %s: %s"
+        % (tid, phase_id, status, reason))
+    if linked:
+        out("  ADO: this plan links a board, and a task entering blocked owes the "
+            "ADO echo (reference/orchestrator.md -> ADO echo) - this verb does "
+            "not send it")
+    _report_tail(out, jres, "task.block", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# `note`: append-only, which is what lets it reach a STARTED task. `scope
+# --description` refuses one because its brief is what its attempts were judged
+# against, and a finding that arrived since belongs beside the brief, dated,
+# rather than in place of it.
+def cmd_note(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to note on
+    if not tid:
+        out("[audit-task] note needs a task id")
+        return E_USAGE
+    text = (args.text or "").strip()
+    if not text:
+        out("[audit-task] note needs --text \"<what to record>\" -- an empty note "
+            "records nothing and would still take a journal row")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_note(
+                           args, project, config, mpath, tid, text, out))
+
+
+def _locked_note(args, project, config, mpath, tid, text, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    node, phase, refusal = _task_target(assembled, tid, "note")
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    notes = node.get("notes")
+    if notes is not None and not isinstance(notes, list):
+        out("[audit-task] %s carries `notes` that is not a list (%s) -- nothing "
+            "appended; an append onto a value of another shape would replace it"
+            % (tid, type(notes).__name__))
+        return E_USAGE
+    phase_id = phase.get("id")
+    entry = {"at": _utc_now(), "text": text}
+    node["notes"] = list(notes or []) + [entry]
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
+                        "the note", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    changes = [{"id": tid, "field": "notes", "from": None, "to": entry}]
+    jres = _journal_row(project, config, mpath, "task.note",
+                        "%s note in %s: %s" % (tid, phase_id, text),
+                        {"taskId": tid, "phaseId": phase_id, "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": tid, "phase": phase_id, "note": entry,
+                        "notes": len(node["notes"]), "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s note %d appended in %s at %s: %s"
+        % (tid, len(node["notes"]), phase_id, entry["at"], text))
+    _report_tail(out, jres, "task.note", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# `move`: `commands/task.md`'s procedure, performed rather than described. The
+# new id comes from the allocator `next-id task` prints (so a moved task is
+# numbered exactly as a hand-written one would have been), the references are
+# rewritten by `_id_refs.rename` (the one list of fields that hold an id), and
+# `movedFrom` is what lets a reader join ledger rows written under the old id.
+def cmd_move(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to move
+    if not tid:
+        out("[audit-task] move needs a task id")
+        return E_USAGE
+    target = (args.to or "").strip()
+    if not target:
+        out("[audit-task] move needs --to <phaseId> -- the phase the task moves "
+            "into")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_move(
+                           args, project, config, mpath, tid, target, out))
+
+
+def _move_refusal(node, phase, target_id):
+    """Why this task cannot move to `target_id`, or None - `commands/task.md`'s
+    refusals, in its order, after the id has resolved."""
+    tid = node.get("id")
+    if phase.get("id") == target_id:
+        return "%s is already in %s -- nothing to move" % (tid, target_id)
+    status = node.get("status")
+    if status == "done":
+        return ("%s is done -- done tasks are history. Re-open it first "
+                "(/audit:task reopen %s --reason ...), then move it" % (tid, tid))
+    if status == "cancelled":
+        return ("%s is cancelled -- terminal work is not moved; the follow-up is "
+                "a new task in %s (/audit:task add)" % (tid, target_id))
+    if status == "in_progress":
+        return ("%s is in_progress -- likely a live or interrupted run. Finish it "
+                "or resume it (/audit:resume) before moving it" % (tid,))
+    return None
+
+
+def _changed_phases(before, after):
+    """The ids of the phases whose body differs between two assembled plans."""
+    def bodies(doc):
+        return dict((p.get("id"), json.dumps(p, sort_keys=True))
+                    for p in (doc.get("phases") or []) if isinstance(p, dict))
+    old, new = bodies(before), bodies(after)
+    return [pid for pid in new if old.get(pid) != new[pid]]
+
+
+def _locked_move(args, project, config, mpath, tid, target_id, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    node, phase, refusal = _task_target(assembled, tid, "move")
+    if refusal:
+        out("[audit-task] %s; tasks: %s" % (refusal, ", ".join(
+            sorted(str(k) for k in _mio.tasks_by_id(assembled))) or "(none)"))
+        return E_USAGE
+    refusal = _move_refusal(node, phase, target_id)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    target = _resolve_phase(assembled, target_id, out)
+    if isinstance(target, int):
+        return target
+    if _mio.effective_phase_status(target) == "cancelled":
+        out("[audit-task] phase %s is cancelled -- a task moved into it would be "
+            "open work under a phase that will not run" % (target_id,))
+        return E_USAGE
+    new_id = _allocate_id(assembled, target_id, _mint_suffix(mpath, assembled))
+    clash = _id_refs.collisions(assembled, {tid: new_id})
+    if clash:
+        out("[audit-task] the allocator named %s, which the plan already holds -- "
+            "refused rather than merging two records" % (", ".join(clash),))
+        return E_USAGE
+    from_phase = phase.get("id")
+    renamed, rewritten = _id_refs.rename(assembled, {tid: new_id})
+    moved = None
+    for ph in (renamed.get("phases") or []):
+        if isinstance(ph, dict) and ph.get("id") == from_phase:
+            keep = []
+            for t in (ph.get("tasks") or []):
+                if isinstance(t, dict) and t.get("id") == new_id and moved is None:
+                    moved = t
+                else:
+                    keep.append(t)
+            ph["tasks"] = keep
+    moved["movedFrom"] = {"id": tid, "phase": from_phase, "at": _utc_now()}
+    for ph in (renamed.get("phases") or []):
+        if isinstance(ph, dict) and ph.get("id") == target_id:
+            ph["tasks"] = list(ph.get("tasks") or []) + [moved]
+    index_fields = tuple(key for key in ("bugs", "proposals")
+                         if renamed.get(key) != assembled.get(key))
+    files_changed = renamed.get("fileIndex") != assembled.get("fileIndex")
+    phase_ids = _changed_phases(assembled, renamed)
+    wrote = _write_plan(project, mpath, raw_index, renamed, vm, phase_ids,
+                        "the move", out, files_changed=files_changed,
+                        index_fields=index_fields)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    # One reference is the task's own id, which `rename` counts beside the rest.
+    refs = rewritten - 1
+    jres = _journal_row(project, config, mpath, "task.move",
+                        "%s -> %s (%s -> %s), %d reference(s) rewritten"
+                        % (tid, new_id, from_phase, target_id, refs),
+                        {"fromId": tid, "toId": new_id, "fromPhase": from_phase,
+                         "toPhase": target_id, "taskId": new_id,
+                         "phaseId": target_id})
+    index_note = _index_dirty_note(written, mpath, project, target_id)
+    waiting = _waiting_on(renamed, moved)
+    # A BLOCKED task moves with its status, and readiness over its references
+    # alone would print a copyable `/audit:run` for work that is not runnable.
+    blocked = moved.get("status") == "blocked"
+    if args.as_json:
+        out(_json_tail({"ok": True, "from": tid, "id": new_id,
+                        "fromPhase": from_phase, "phase": target_id,
+                        "status": moved.get("status"),
+                        "referencesRewritten": refs, "waitingOn": waiting,
+                        "ready": not waiting and not blocked, "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s moved to %s as %s -- %d reference(s) to it rewritten"
+        % (tid, target_id, new_id, refs))
+    if blocked:
+        out("  not ready -- it is still blocked: %s"
+            % (moved.get("blockedReason") or "(no reason recorded)",))
+    else:
+        for line in _readiness_lines(waiting, new_id):
+            out(line)
+    out("  ledger: historical rows keep %s - history is never rewritten; new spend "
+        "attributes to %s, and movedFrom plus the task.move row are what join the "
+        "two" % (tid, new_id))
+    _report_tail(out, jres, "task.move", warnings, written_manifest, written,
+                 index_note)
     return 0
 
 
@@ -5003,19 +5500,62 @@ def cmd_done(args, out):
     if not tid:
         out("[audit-task] done needs a task id")
         return E_USAGE
-    if not (args.commit or "").strip():
-        # The whole point of the verb, and `cmd_cancel`'s `--reason` one door
-        # down is the shape: a close with no commit is the state /audit:doctor
-        # already reports, and it cannot be corrected afterwards because `done`
-        # is terminal here.
-        out("[audit-task] done needs --commit <sha> -- the SHA is what fixes "
-            "this close to work git can still be asked about, and a done task "
-            "carrying none is what /audit:doctor reports. Commit first, then "
-            "pass `git rev-parse HEAD`.")
+    refusal = _done_flags_refusal(args)
+    if refusal:
+        out(refusal)
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_done(
                            args, project, config, mpath, tid, out))
+
+
+def _done_flags_refusal(args):
+    """Why this combination of `done` flags cannot close anything, or None.
+
+    TWO CLOSES, AND EACH FLAG BELONGS TO ONE. `--commit` is the close whose work
+    landed; `--no-change --reason` is the close whose answer was that nothing
+    needed to change. Both at once is two claims about one task, and a
+    `--reason` without `--no-change` is a why with no close it explains - the
+    parser accepts it because `done` reads the flag, so the door is what refuses.
+
+    `--intent-basis` IS THE BASIS OF AN ANSWER, so it needs one beside it, and
+    `not-asked` needs one: it is the one answer no reviewer gave, and a skip
+    with no reason on the record reads exactly like a reviewer call that died.
+    """
+    commit = (args.commit or "").strip()
+    reason = (args.reason or "").strip()
+    if args.no_change and commit:
+        return ("[audit-task] done takes --commit OR --no-change, not both -- "
+                "the first records the commit the work landed in, the second "
+                "that nothing needed to change, and one close cannot be both")
+    if args.no_change and not reason:
+        return ("[audit-task] done --no-change needs --reason \"<why nothing "
+                "needed to change>\" -- a close with no commit and no reason is "
+                "the state /audit:doctor reports, with nothing to tell it apart")
+    if not args.no_change and args.reason is not None:
+        return ("[audit-task] done reads --reason only beside --no-change, where "
+                "it is why nothing needed to change; a close with a commit "
+                "records its account in --descriptive/--technical")
+    if not args.no_change and not commit:
+        # The whole point of the verb, and `cmd_cancel`'s `--reason` one door
+        # down is the shape: a close with no commit is the state /audit:doctor
+        # already reports, and it cannot be corrected afterwards because `done`
+        # is terminal here.
+        return ("[audit-task] done needs --commit <sha> -- the SHA is what fixes "
+                "this close to work git can still be asked about, and a done task "
+                "carrying none is what /audit:doctor reports. Commit first, then "
+                "pass `git rev-parse HEAD`. A task whose answer was that nothing "
+                "needed to change closes with --no-change --reason instead.")
+    if args.intent_basis is not None and args.intent is None:
+        return ("[audit-task] --intent-basis is the basis of an --intent answer, "
+                "and none was passed -- pass --intent %s beside it"
+                % ("|".join(INTENT_ANSWERS),))
+    if args.intent == "not-asked" and not (args.intent_basis or "").strip():
+        return ("[audit-task] --intent not-asked needs --intent-basis \"<why the "
+                "question was not put>\" -- it is the one answer no reviewer "
+                "gave, and without its reason it reads exactly like a reviewer "
+                "call that never came back")
+    return None
 
 
 def cmd_cancel(args, out):
@@ -5162,9 +5702,14 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     # A stored status moves the index stub's mirror too, so a sharded sign-off can
     # leave the index dirty beside its shard - which a task commit does not carry.
     index_note = _index_dirty_note(written, mpath, project, pid)
+    # THE ABSENT INTENT ANSWERS, named at the moment a phase is judged. Reported
+    # and never refused: a plan older than `intentCheck` has none on any task, and
+    # a sign-off refused for that would be a gate on history nobody can rewrite.
+    unanswered = _status_facts.intent_unanswered(phase)
     if args.as_json:
         result = {"ok": True, "id": pid, "verdict": args.verdict, "summary": summary,
                   "effectiveStatus": effective, "awaiting": awaiting, "branch": branch,
+                  "intentUnanswered": unanswered,
                   "stored": settled, "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
@@ -5179,6 +5724,10 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     else:
         out("[audit-task] phase %s signed off (%s) -- now %s" % (pid, args.verdict,
                                                                 effective))
+    if unanswered:
+        out("  no intent answer recorded for %d done task(s): %s -- `intentCheck` "
+            "is absent, which reads as no answer and never as agreement"
+            % (len(unanswered), ", ".join(unanswered)))
     for line in _settled_lines(settled):
         out(line)
     for line in _wg.collapse(warnings, written_manifest):
@@ -5317,11 +5866,12 @@ def _locked_settle(args, project, config, mpath, out):
 
 
 # --- next-id: the id a hand-written record takes ---------------------------------
-# A bug, a parked proposal, a bug's fix task and a moved task are the records the
-# model still writes by hand (`commands/bug.md`, `init.md`, `task.md` -> move), so
-# they were also the ids the model computed by hand - `BUG-<max+1>`,
-# `PROP-<max+1>`, `<phaseId>.<next>` - and two branches computing one from the same
-# base wrote the same id. This prints the id the allocator would take, suffix and
+# A bug, a parked proposal and a bug's fix task are the records the model still
+# writes by hand (`commands/bug.md`, `init.md`), so they were also the ids the model
+# computed by hand - `BUG-<max+1>`, `PROP-<max+1>`, `<phaseId>.<next>` - and two
+# branches computing one from the same base wrote the same id. A moved task was one
+# of them until `move` became a verb; it takes this same allocator's answer in
+# process. This prints the id the allocator would take, suffix and
 # reservations included, so the hand-written record carries the same answer every
 # scripted one does. NOT `phase`: a phase is minted only by `add-phase`, which
 # writes it under the lock, and a phase id printed ahead of its write would be one
@@ -5641,7 +6191,8 @@ VERB_FLAGS = {
     # verb worth having rather than an optional extra -- `cmd_done` refuses
     # without it, which is a different check from this one: this table says which
     # flags the verb READS, and the door says which of them it requires.
-    "done": ("commit", "descriptive", "technical", "verified_by", "intent"),
+    "done": ("commit", "descriptive", "technical", "verified_by", "intent",
+             "intent_basis", "no_change", "reason"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "area", "outcome", "description",
@@ -5661,6 +6212,13 @@ VERB_FLAGS = {
     "settle": (),
     # `reopen` undoes one close and records why, so its one flag is `cancel`'s.
     "reopen": ("reason",),
+    # `move` takes the phase the task goes to; the new id is allocated, never
+    # passed, so there is no flag for it.
+    "move": ("to",),
+    # `block` records why, so its one flag is `cancel`'s too.
+    "block": ("reason",),
+    # `note` appends one entry, and its text is its one flag.
+    "note": ("text",),
 }
 
 
@@ -5680,7 +6238,8 @@ def build_parser():
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
-                            "signoff", "settle", "reopen"])
+                            "signoff", "settle", "reopen", "move", "block",
+                            "note"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -5757,8 +6316,20 @@ def build_parser():
     # ABSENT IS ITS OWN ANSWER and is not this flag's default word: a close
     # that never passes `--intent` records no `intentCheck` at all, which is
     # what tells "no answer" apart from an explicit "matches".
-    p.add_argument("--intent", choices=["matches", "diverges", "cannot-tell"],
-                   default=None)
+    p.add_argument("--intent", choices=list(INTENT_ANSWERS), default=None)
+    # ...and the reason beside `not-asked`, which the door requires for that word
+    # alone: it is the one answer no reviewer gave.
+    p.add_argument("--intent-basis", dest="intent_basis", default=None,
+                   metavar="TEXT", help=_PROSE_HELP)
+    # `done` only. The close whose answer was that nothing needed to change: no
+    # commit, and `--reason` says why.
+    p.add_argument("--no-change", dest="no_change", action="store_true",
+                   default=False)
+    # `move` only. The phase the task moves into - `--phase` stays `add`'s, where
+    # it names the phase a new task is born in.
+    p.add_argument("--to", default=None, metavar="PHASE")
+    # `note` only. The note itself, appended to `notes[]` verbatim.
+    p.add_argument("--text", default=None, metavar="TEXT", help=_PROSE_HELP)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p
@@ -5920,7 +6491,8 @@ def main(argv, out=print):
              "retarget": cmd_retarget, "start": cmd_start,
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
              "signoff": cmd_signoff, "settle": cmd_settle,
-             "reopen": cmd_reopen}
+             "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
+             "note": cmd_note}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

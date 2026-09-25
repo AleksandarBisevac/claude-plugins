@@ -394,6 +394,10 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # the durable half of the mapping (the other half is the
               # journal's task.move row):
               "movedFrom",
+              # Why a task is `blocked`, beside the status `/audit:task block`
+              # sets, and the append-only `{at, text}` log `/audit:task note`
+              # writes - the one addition a started task still takes:
+              "blockedReason", "notes",
               # The task-level twin of the phase key above: the same $def, the
               # same pointer-not-truth rule, and the same reason no vocabulary
               # for its contents lives here. See the comment on KNOWN_PHASE.

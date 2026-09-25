@@ -1,7 +1,7 @@
 {
   "id": "P76",
   "title": "The verbs cover what operators were hand-editing",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "audit-task has verbs for what field reports hand-edited - a deliberate no-intent answer with a reader, a no-change close, move, block with a reason, an append-only note - add has a dry run and --json refusals that are JSON, list flags say their separator and repeat, scope reports the index dirty only when bytes changed and keeps fileIndex order, and the argv guard stops refusing a colon-prefixed identifier and names backtick substitution when that is what it saw",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
+  "branch": "audit/p76-the-verbs-cover-what-operators",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P76.1",
       "title": "New verbs and answers for what operators hand-edited: intent not-asked, done --no-change, move, block, note",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reproduced at HEAD: (1) intentCheck has no spelling for 'not asked, on purpose' and nothing reads an absent answer - add enum member not-asked with a required basis (--intent not-asked --intent-basis TEXT), and a reader: sign-off and status list closed tasks with no answer. (2) done demands --commit - add done --no-change --reason TEXT recording outcome.noChange {reason, examinedAt: HEAD sha}; doctor's no-SHA check and verify-invariants' commit-scope skip such tasks. (3) move is a documented sequence of hand edits (commands/task.md) - make it a verb doing exactly those steps under the index lock (next-id task, movedFrom, references rewritten across index, shards and proposals, a task.move row, revalidate, rollback). (4) block <id> --reason (status + blockedReason + row) and note <id> - (append {at, text} to notes[] + row); manifest-conventions stops telling operators to put a dependency in the description, which scope refuses on a started task; orchestrator.md and execute-task.md set blocked through the verb.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -41,7 +41,16 @@
         "plugins/audit/commands/task.md",
         "plugins/audit/reference/manifest-conventions.md",
         "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/reference/execute-task.md"
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/manifest/_commit_trail.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -66,14 +75,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T18:00:40Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -124,5 +133,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T18:00:40Z"
 }
