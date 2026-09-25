@@ -253,6 +253,24 @@ def _cases(check):
                   and _r_code == M.E_USAGE
                   and os.path.isfile(os.path.join(M.lock_dir(_u_proj),
                                                   "phase-P1.lock")))
+            # BOTH SPELLINGS AS TWO FILES - a case-sensitive filesystem holding
+            # legacy state. The exact name is listed, so its release (`force`
+            # included) removes that file and nothing else. The variant is
+            # supplied by hand because a folding filesystem cannot hold both.
+            _ld = M.lock_dir(_u_proj)
+            _real_variant = M.case_variant
+            M.case_variant = lambda _d, _n: "phase-p1"
+            try:
+                _f_out = []
+                _f_code = M.release(_u_proj, "phase-P1", force=True,
+                                    out=_f_out.append)
+            finally:
+                M.case_variant = _real_variant
+            check("u12 an explicit --force release of an exact name that exists "
+                  "is not blocked by another spelling beside it - there the two "
+                  "are two files: %r" % (" ".join(_f_out),),
+                  _f_code == 0 and not os.path.exists(os.path.join(
+                      _ld, "phase-P1.lock")))
         finally:
             shutil.rmtree(_u_proj, ignore_errors=True)
 

@@ -380,6 +380,15 @@ def name_refusal(name):
                USER_NAME_RULES))
 
 
+def _listed(ld, name):
+    """Whether `name`'s own spelling is a file in `ld` - asked of the listing,
+    because `os.path.exists` answers yes for a variant where case folds."""
+    try:
+        return (name + ".lock") in os.listdir(ld)
+    except OSError:
+        return False
+
+
 def case_variant(ld, name):
     """A lock already in `ld` whose name differs from `name` only in case.
 
@@ -990,9 +999,13 @@ def release(project, name, session=None, pid=None, force=False, out=print):
     if not valid_name(name):
         out(name_refusal(name))
         return E_USAGE
+    # REFUSED ONLY WHERE THE UNLINK WOULD HIT THE OTHER SPELLING: the exact name
+    # is not in the directory, a variant is, so the filesystem folds case and
+    # `path` IS that variant's file. With the exact name listed the two are two
+    # files, and this one - `--force` included - is released like any other.
     variant = case_variant(ld, name)
-    if variant:
-        out("[audit-lock] %s differs only in case from the lock %s, which a "
+    if variant and not _listed(ld, name):
+        out("[audit-lock] %s differs only in case from the lock %s, which this "
             "case-folding filesystem stores as the same file -- refused so that "
             "releasing one spelling cannot remove the other" % (name, variant))
         return E_USAGE

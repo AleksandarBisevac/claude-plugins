@@ -2809,21 +2809,25 @@ index and shards reassembled through `git show` and run back through `_manifest_
 `risk: "high"` task ran on neither a declared nor a metered `haiku`; and `phase.baseRef` is
 an ancestor of the parent `_branch.parent_branch` resolves.
 
-Every breach is built with `found(line, subject, sha)`, and `result()` refuses one that was not:
-the sentence is what a reader is shown and the `keys` beside it — the subject that broke the rule
-and the commit it is recorded against, in full — are what a baseline matches, so a reworded
-template or a count that moves between runs changes the output and never the match. The live
+Every breach is built with `found(line, subject, sha, local)`, `result()` refuses one that was not,
+and `test__invariants.py` walks this file's syntax tree so a bare sentence fails CI: the sentence is
+what a reader is shown and the `keys` beside it — the subject that broke the rule and the commit it
+is recorded against, resolved to the full id through git — are what a baseline matches, so a
+reworded template or a count that moves between runs changes the output and never the match. A
+validator finding's subject is `_manifest_rules.finding_subject`: its locus and the ids it quotes,
+with the sentence taken out. The live
 pairing re-check keeps only the rows naming this phase's own tasks (`own_pairing_findings`).
 
 **The baseline** (`invariants-baseline.json` beside the manifest) lives here rather than in the
 command because two surfaces give a verdict over these checks, and `counted_breaches` is the one
 answer both read. `apply_baseline` compares on `(phase, check, subject, sha)` and sets an entry
 aside, with the reason, when this run could not have seen it again — its phase was not examined,
-its check had a gap, or its check reads evidence a clone never receives (`LOCAL_EVIDENCE_CHECKS`:
-the branch reflog and the gitignored ledger); only the rest can be reported as no longer
-matching, each with what git says about its commit. `write_baseline` refuses while a phase it
-covers is in flight, takes the `index` lock around its read-then-write, keeps every set-aside
-entry, and returns what it removed. The baseline is a human's commit outside any phase commit,
+its check had a gap, or it was read from another clone's own evidence (a breach marked `local` — a
+reflog, the stash, a remote-tracking ref, the usage ledger — carries a digest of the clone that
+wrote it, and goes stale only there); only the rest can be reported as no longer matching, each
+with what git says about its commit. `write_baseline` refuses while a phase it covers is in flight,
+takes the `index` lock around its read-then-write and refuses a hold it did not take itself, keeps
+every set-aside entry, and returns what it removed. The baseline is a human's commit outside any phase commit,
 since each of the plugin's commit classes would breach its own scope by carrying it.
 
 `audit-state-scope` and `index-scope` sit next to `commit-scope` rather than at the end

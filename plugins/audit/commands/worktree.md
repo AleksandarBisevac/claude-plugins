@@ -98,15 +98,20 @@ instead of inventing a lockfile per worktree, which each worktree would see only
 Take it, run, and give it back **in one shell**, with an identity that belongs to this run alone:
 
 ```bash
-LOCK="python3 ${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py"
-$LOCK acquire user-e2e --session "e2e-$$" --pid $$ --wait 30 --project <worktreeDir>
+audit_lock() { python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" "$@"; }
+audit_lock acquire user-e2e --session "e2e-$$" --pid $$ --wait 30 --project <worktreeDir>
 taken=$?
-[ "$taken" -eq 0 ] || exit "$taken"      # 3 held, 4 abandoned, 2 bad name
-status=0
-<the run that must be alone> || status=$?
-$LOCK release user-e2e --session "e2e-$$" --pid $$ --project <worktreeDir>
-exit "$status"
+[ "$taken" -eq 0 ] || exit "$taken"      # 3 held, 4 abandoned, 2 bad name, 1 error
+rc=0
+<the run that must be alone> || rc=$?
+audit_lock release user-e2e --session "e2e-$$" --pid $$ --project <worktreeDir>
+exit "$rc"
 ```
+
+It runs unchanged under `sh`, `bash` and `zsh` — zsh is the macOS default and the shell Claude
+Code's Bash tool uses there. That is why the command is a function and not a variable (zsh does not
+split an unquoted variable into words) and why the exit status is `rc` (`status` is read-only in
+zsh). `test__refs.py` runs this block under each of them that is installed.
 
 `--wait 30` waits out a live holder for that many seconds before refusing; `0` refuses at once.
 

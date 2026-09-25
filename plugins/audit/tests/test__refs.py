@@ -35,6 +35,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -3670,6 +3671,95 @@ def _cases(check):
         check("dp2 RED: a --discovery call with no --section discovery within "
               "reach is reported by document and line: %r" % (_dp,),
               _dp == [("commands/init.md", 1)])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    _lock_recipe_cases(check)
+
+
+# --- the worktree lock recipe, run as written ----------------------------------
+_RECIPE_SECTION = "## The lock worktree tooling shares"
+_RECIPE_RUN = "<the run that must be alone>"
+_RECIPE_DIR = "<worktreeDir>"
+_RECIPE_WAIT = "--wait 30"
+
+
+def _lock_recipe():
+    """The fenced shell block of worktree.md's lock section, verbatim."""
+    text = _product_doc("commands/worktree.md")
+    section = text.split(_RECIPE_SECTION, 1)[1].split("\n## ", 1)[0]
+    match = re.search(r"```bash\n(.*?)```", section, re.S)
+    return match.group(1) if match else None
+
+
+def _run_recipe(shell, script, env):
+    return subprocess.Popen([shell, "-c", script], env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def _lock_recipe_cases(check):
+    """THE RECIPE IS A PROGRAM, so it is run, under every shell a reader has.
+
+    A document's shell block is read by a human who pastes it into whatever shell
+    they are in - on macOS, and in Claude Code's Bash tool there, that is zsh -
+    so a recipe that works only in bash is a recipe that does not work.
+    """
+    recipe = _lock_recipe()
+    check("lr1 worktree.md's lock section carries one bash block with both "
+          "placeholders a caller fills in",
+          bool(recipe) and _RECIPE_RUN in recipe and _RECIPE_DIR in recipe
+          and recipe.count(_RECIPE_WAIT) == 1)
+    if not recipe or not shutil.which("git"):
+        return
+    tmp = tempfile.mkdtemp(prefix="lock-recipe-")
+    try:
+        main_tree = os.path.join(tmp, "main")
+        linked = os.path.join(tmp, "linked")
+        quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        subprocess.run(["git", "init", "-q", main_tree], check=True, **quiet)
+        subprocess.run(["git", "-C", main_tree, "-c", "user.email=a@b", "-c",
+                        "user.name=a", "-c", "commit.gpgsign=false", "commit",
+                        "-q", "--allow-empty", "-m", "base"], check=True, **quiet)
+        subprocess.run(["git", "-C", main_tree, "worktree", "add", "-q", "-b",
+                        "wt", linked], check=True, **quiet)
+        common = subprocess.run(["git", "-C", main_tree, "rev-parse",
+                                 "--git-common-dir"], stdout=subprocess.PIPE,
+                                check=True).stdout.decode().strip()
+        lock_file = os.path.join(os.path.realpath(os.path.join(main_tree, common)),
+                                 "audit-locks", "user-e2e.lock")
+        # One shared identity for both runs: the case parallel subagents of one
+        # Claude Code session are in, and the one the recipe must survive.
+        env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(_output.PLUGIN_ROOT),
+                   CLAUDE_CODE_SESSION_ID="one-shared-session",
+                   CLAUDE_PID=str(os.getpid()))
+        for shell in ("sh", "bash", "zsh"):
+            if not shutil.which(shell):
+                print("SKIP lr %s (not installed)" % (shell,))
+                continue
+            first = recipe.replace(_RECIPE_DIR, "'%s'" % (main_tree,)).replace(
+                _RECIPE_RUN, "sleep 3")
+            # `--wait 0` for the second run only: the recipe's own wait would
+            # outlast the holder and take the lock after it, which is correct and
+            # would hide whether the refusal happens at all.
+            second = recipe.replace(_RECIPE_DIR, "'%s'" % (linked,)).replace(
+                _RECIPE_RUN, "true").replace(_RECIPE_WAIT, "--wait 0")
+            holder = _run_recipe(shell, first, env)
+            deadline = time.monotonic() + 15
+            while not os.path.exists(lock_file) and holder.poll() is None \
+                    and time.monotonic() < deadline:
+                time.sleep(0.05)
+            took = os.path.exists(lock_file)
+            other = _run_recipe(shell, second, env)
+            other_out = other.communicate(timeout=60)[0].decode("utf-8", "replace")
+            held_out = holder.communicate(timeout=60)[0].decode("utf-8", "replace")
+            check("lr2 under %s the recipe takes the lock, and a concurrent run "
+                  "from another worktree under the SAME session is refused with "
+                  "exit 3: first=%r second=%r %r"
+                  % (shell, holder.returncode, other.returncode,
+                     (held_out + other_out)[-200:]),
+                  took and holder.returncode == 0 and other.returncode == 3)
+            check("lr3 ...and under %s the lock is gone once the holder finishes, "
+                  "so the release ran" % (shell,), not os.path.exists(lock_file))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

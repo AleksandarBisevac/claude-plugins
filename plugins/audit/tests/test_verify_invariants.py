@@ -439,13 +439,13 @@ def _baseline_cases(check, tmp):
     # --- set aside rather than compared --------------------------------------
     code, payload, _err = _json([rogue, "P1", "--project", root])
     gapped = [c["name"] for c in payload.get("checks") or []
-              if c["gaps"] and not c["breaches"]
-              and c["name"] not in _invariants.LOCAL_EVIDENCE_CHECKS]
+              if c["gaps"] and not c["breaches"]]
     blind = {"phase": "P1", "check": gapped[0] if gapped else "?",
              "subject": "something it could not look at", "sha": None,
              "breach": "x"}
     local = {"phase": "P1", "check": "branch-history",
-             "subject": "stash On audit/p1-demo: x", "sha": None, "breach": "y"}
+             "subject": "stash On audit/p1-demo: x", "sha": None, "breach": "y",
+             "clone": "0123456789abcdef"}
     other = {"phase": "P9", "check": "base-ref", "subject": "parent main",
              "sha": None, "breach": "elsewhere"}
     _write_json(base_path, {"version": 2,
@@ -453,8 +453,8 @@ def _baseline_cases(check, tmp):
     code, payload, _err = _json([rogue, "P1", "--project", root])
     block = payload.get("baseline") or {}
     why = block.get("notComparedWhy") or {}
-    check("vb14 an entry whose check had no full basis this run, one whose "
-          "check reads evidence a clone does not receive, and one for a phase "
+    check("vb14 an entry whose check had no full basis this run, one read from "
+          "ANOTHER clone's own evidence, and one for a phase "
           "not examined are each set aside WITH their reason - never called "
           "repaired: %r" % (why,),
           bool(gapped) and len(block.get("unmatched") or []) == 1
@@ -502,6 +502,72 @@ def _baseline_cases(check, tmp):
           and len(gate_with.get("allBreaches") or []) == 1
           and len(gate_without.get("breaches") or []) == 1)
 
+    status_py = os.path.join(os.path.dirname(os.path.abspath(status.__file__)),
+                             "audit-status.py")
+
+    def _gate():
+        done = subprocess.run(
+            [sys.executable, status_py, rogue, "--gate", "--fail-on",
+             "invariant-breach"], cwd=root,
+            env=dict(os.environ, CLAUDE_PROJECT_DIR=root),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        return done.returncode, done.stdout.decode("utf-8", "replace")
+
+    gate_code, gate_out = _gate()
+    check("vb26 a fully baselined history PASSES the gate and the gate SAYS the "
+          "baseline was applied - path and counts - before the verdict: %r"
+          % (gate_out.strip()[-240:],),
+          gate_code == 0 and "GATE PASSED" in gate_out
+          and "held by the baseline %s" % (base_path,) in gate_out
+          and gate_out.index("held by the baseline") < gate_out.index("GATE"))
+    with open(base_path, "rb") as fh:
+        keep_bytes = fh.read()
+    _write_json(base_path, {"version": 3, "entries": []})
+    gate_code, gate_out = _gate()
+    check("vb27 ...and a FAILED gate over a baseline says what it counted: the "
+          "breaches the baseline does not hold, with the baseline note beside "
+          "it: %r" % (gate_out.strip()[-240:],),
+          gate_code != 0 and "the baseline does not hold" in gate_out
+          and "held by the baseline" in gate_out)
+    with open(base_path, "w", encoding="utf-8") as fh:
+        fh.write("{not json")
+    gate_code, gate_out = _gate()
+    check("vb28 ...and an unreadable baseline's GATE FAILED line carries the "
+          "baseline's own reason, not the sentence for checks that never ran: %r"
+          % (gate_out.strip()[-200:],),
+          gate_code != 0 and "baseline could not be applied" in gate_out
+          and "did not run" not in gate_out)
+    with open(base_path, "wb") as fh:
+        fh.write(keep_bytes)
+
+    manifest = _load(rogue)
+    manifest["phases"][0]["tasks"][0]["commit"] = sha[:8]
+    _write_json(rogue, manifest)
+    code, payload, _err = _json([rogue, "P1", "--project", root])
+    keys = [k for c in payload.get("checks") or [] if c["name"] == "commit-scope"
+            for k in c["keys"]]
+    check("vb29 a commit the manifest recorded ABBREVIATED is keyed on the full "
+          "id git resolves, so re-recording it at another length is not a new "
+          "breach: %r" % (keys,),
+          keys and all(k["sha"] == sha and len(k["sha"]) == 40 for k in keys)
+          and (payload.get("baseline") or {}).get("new") == [])
+    manifest["phases"][0]["tasks"][0]["commit"] = sha
+    _write_json(rogue, manifest)
+
+    real_check = _invariants.check_phase
+
+    def _boom(*_a, **_k):
+        raise TypeError("a breach built without found()")
+    _invariants.check_phase = _boom
+    try:
+        code, out, err = _run([rogue, "P1", "--project", root])
+    finally:
+        _invariants.check_phase = real_check
+    check("vb30 a check that raises is exit 2 with its message - never the 1 "
+          "that means a breach, which sign-off would read as a finding: %r"
+          % (err.strip()[:120],),
+          code == 2 and "could not run" in err and "found()" in err)
+
     # --- the write is serialized --------------------------------------------
     import _locks
     held_path = os.path.join(_locks.lock_dir(root), "index.lock")
@@ -526,6 +592,34 @@ def _baseline_cases(check, tmp):
           "and the file is untouched - two writers that each read the old file "
           "would have the second erase the first: %r" % (err.strip()[:120],),
           code == 2 and "index lock" in err and before == after)
+
+    # HELD IS NOT TAKEN: this session's own hold is what a parallel subagent of
+    # the same session also sees, so the write must not ride it.
+    saved_env = dict((k, os.environ.get(k))
+                     for k in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID"))
+    os.environ["CLAUDE_CODE_SESSION_ID"] = "this-session"
+    os.environ["CLAUDE_PID"] = str(os.getpid())
+    _locks._write_lock(held_path, {"sessionId": "this-session",
+                                   "pid": os.getpid(),
+                                   "hostname": __import__("socket").gethostname(),
+                                   "startedAt": "2099-01-01T00:00:00Z"})
+    try:
+        code, out, err = _run([rogue, "P1", "--project", root,
+                               "--write-baseline"])
+    finally:
+        os.unlink(held_path)
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    with open(base_path, "rb") as fh:
+        after_ours = fh.read()
+    check("vb31 ...and so is a writer whose OWN session already holds the index "
+          "lock - a hold it did not take serializes nothing against a sibling "
+          "of the same session: %r" % (err.strip()[:120],),
+          code == 2 and "already holds the index lock" in err
+          and after_ours == before)
 
     # --- a rewrite: the SHA changes under the same breach --------------------
     _git(root, "commit", "-q", "--amend", "-m", "chore(P1.1): audit - a (rewritten)")

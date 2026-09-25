@@ -44,8 +44,11 @@ None of those is a defect in this module; each is the shape of the evidence, and
 a checker that smoothed them into `clean` would be the exact failure the README
 section exists to stop.
 
-Reads git, the manifest, the journal and the ledger, and never raises for the
-caller: a check that cannot run reports that it could not run. The one write is
+Reads git, the manifest, the journal and the ledger, and does not raise for the
+caller: a check that cannot run reports that it could not run. The one raise is
+`result()`'s TypeError on a breach built without `found()`, which is a
+programming error - `test__invariants.py` walks this file's syntax tree so CI
+finds one before any run does. The one write is
 `write_baseline`, which a caller reaches only by asking for it by name, and it
 takes the `index` lock for its read-then-write.
 
@@ -57,6 +60,7 @@ pass one and fail the other. Both ask `apply_baseline` which breaches count.
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__invariants.py`.
 """
+import hashlib
 import json
 import os
 import re
@@ -157,17 +161,31 @@ def verdict_of(breaches, gaps, examined, applies):
     return CLEAN
 
 
-def found(line, subject, sha=None):
+def found(line, subject, sha=None, local=False):
     """One breach: the sentence a reader is shown, and the key it is known by.
 
-    THE KEY IS WHAT A BASELINE MATCHES, AND IT HOLDS NO PROSE OF THIS MODULE'S.
-    `subject` names the thing that broke the rule - a path, a task and a path, a
-    run id, a ref - and `sha` the commit it is recorded against, in full. A
-    reworded template, or a count in the sentence that moves between runs, then
-    changes what is printed and never what is matched.
+    THE KEY IS WHAT A BASELINE MATCHES, AND IT HOLDS NO PROSE. `subject` names
+    the thing that broke the rule - a path, a task and a path, a run id, a ref,
+    or a validator finding reduced by `_manifest_rules.finding_subject` to its
+    locus and ids - and `sha` the commit it is recorded against, which every
+    caller resolves to the full id through git first, since the manifest records
+    whatever abbreviation a close wrote. A reworded template or validator
+    message, or a count that moves between runs, changes what is printed and
+    never what is matched.
+
+    `local` marks a breach read from evidence a clone does not receive - a
+    reflog, the stash, a remote-tracking ref, the gitignored usage ledger.
     """
     return {"line": line, "subject": str(subject),
-            "sha": str(sha) if sha else None}
+            "sha": str(sha) if sha else None, "local": bool(local)}
+
+
+def full_sha(git_root, sha):
+    """The full commit id `sha` names, or `sha` itself when git cannot say."""
+    code, out = _git(git_root, ["rev-parse", "-q", "--verify",
+                                "%s^{commit}" % (sha,)])
+    full = out.strip() if code == 0 else ""
+    return full or str(sha)
 
 
 def result(name, basis, breaches, gaps, examined, applies=True):
@@ -190,7 +208,8 @@ def result(name, basis, breaches, gaps, examined, applies=True):
         "verdict": verdict_of(breaches, gaps, examined, applies),
         "basis": basis,
         "breaches": [b["line"] for b in breaches],
-        "keys": [{"subject": b["subject"], "sha": b["sha"]} for b in breaches],
+        "keys": [{"subject": b["subject"], "sha": b["sha"], "local": b["local"]}
+                 for b in breaches],
         "gaps": list(gaps),
         "examined": examined,
     }
@@ -347,6 +366,7 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                         "clone, so its file list cannot be read (repair-commits.py "
                         "reports the same SHA)" % (tid, sha[:12]))
             continue
+        sha = parents.split()[0] if parents.split() else sha
         if len(parents.split()) > _MERGE_PARENTS:
             gaps.append("%s: %s is a merge commit, and `git show --name-only` "
                         "prints no files for one - an empty list here would read "
@@ -506,6 +526,7 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                         "this clone, so its file list cannot be read"
                         % (sha[:12],))
             continue
+        sha = parents.split()[0] if parents.split() else sha
         if len(parents.split()) > _MERGE_PARENTS:
             gaps.append("%s is a merge commit, and `git show --name-only` prints "
                         "no files for one - an empty list here would read as a "
@@ -628,6 +649,7 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel, config=None
                         "in this clone, so its file list cannot be read"
                         % (sha[:12],))
             continue
+        sha = parents.split()[0] if parents.split() else sha
         if len(parents.split()) > _MERGE_PARENTS:
             gaps.append("%s is a merge commit, and `git show --name-only` prints "
                         "no files for one - an empty list here would read as a "
@@ -862,7 +884,7 @@ def branch_history(phase, git_root):
                 "the phase branch exists as %s%s. `push` is forbidden in any form "
                 "and the branch is local-only by design"
                 % (ref, " and its reflog records a push" if pushed else ""),
-                "remote %s" % (ref,)))
+                "remote %s" % (ref,), local=True))
 
     # -- forced update ---------------------------------------------------------
     entries, why = _reflog(git_root, branch, "%H %gs")
@@ -885,14 +907,14 @@ def branch_history(phase, git_root):
                     "an ancestor of the second (%r) - a forced update rewrote "
                     "history the manifest's SHAs point into"
                     % (older[:12], newer[:12], message),
-                    "forced update from %s" % (older,), newer))
+                    "forced update from %s" % (older,), newer, local=True))
         for row_sha, message in rows:
             if any(word in message for word in _REWRITE_WORDS):
                 breaches.append(found(
                     "the branch reflog records %r, a history rewrite the "
                     "orchestrator may not run without explicit human "
                     "confirmation" % (message,),
-                    "reflog %s" % (message,), row_sha))
+                    "reflog %s" % (message,), row_sha, local=True))
 
     # -- stash -----------------------------------------------------------------
     # NO `refs/stash` IS AN ANSWER, NOT A GAP - it is the normal state of a
@@ -910,7 +932,7 @@ def branch_history(phase, git_root):
             breaches.append(found(
                 "the stash reflog records %r - the executor must never run `git "
                 "stash` in a shared working tree" % (message,),
-                "stash %s" % (message,)))
+                "stash %s" % (message,), local=True))
     return result("branch-history", BRANCH_HISTORY_BASIS, breaches, gaps, examined)
 
 
@@ -1007,6 +1029,20 @@ def own_pairing_findings(findings, phase):
     return out
 
 
+_VALIDATOR_CRASH = "internal validator error: %s"
+
+
+def _validator_subject(line):
+    """A validator finding's key: its locus and ids, or the crash as one fact.
+
+    An exception's text is not an identity - it would make every run a new
+    breach - so a validator that could not run is keyed on that alone.
+    """
+    if line.startswith(_VALIDATOR_CRASH.split("%", 1)[0]):
+        return "validator could not run"
+    return "validator %s" % (_rules.finding_subject(line),)
+
+
 def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                          phase_file_abs):
     """Every manifest state this phase COMMITTED still validates.
@@ -1051,6 +1087,7 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
     tmp = tempfile.mkdtemp(prefix="audit-invariants-")
     try:
         for sha in commits:
+            full = full_sha(git_root, sha)
             work = os.path.join(tmp, sha[:12])
             os.makedirs(work, exist_ok=True)
             path = _materialize(git_root, sha, index_rel, work)
@@ -1077,7 +1114,7 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
             try:
                 findings, _warnings = _rules.validate(state_manifest)
             except Exception as exc:                       # defensive
-                findings = ["internal validator error: %s" % exc]
+                findings = [_VALIDATOR_CRASH % (exc,)]
             # Counted per COMMIT, not per finding: the crossref emits one line
             # per task-and-file pair still unpaired at this commit, and a task
             # whose scope grew mid-run leaves the SAME pair unpaired in every
@@ -1109,7 +1146,7 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                     continue
                 breaches.append(found(
                     "%s: the manifest this commit recorded does NOT validate - %s"
-                    % (sha[:12], line), line, sha))
+                    % (sha[:12], line), _validator_subject(line), full))
             if commit_deferred_pairing:
                 pairing_deferred_commits += 1
     finally:
@@ -1135,7 +1172,8 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
         if still:
             breaches.extend(
                 [found("the manifest as it stands STILL does not pair task.files "
-                       "with fileIndex - %s" % (x,), "unpaired %s" % (x,))
+                       "with fileIndex - %s" % (x,),
+                       "unpaired %s" % (_rules.finding_subject(x),))
                  for x in still])
             # The counts are for the reader. The key names only the fact, so a
             # frozen phase's entry matches whatever the counts read next time.
@@ -1227,7 +1265,7 @@ def high_risk_model(phase, ledger_dir):
         for model in offenders:
             breaches.append(found(
                 "%s is risk \"high\" and the ledger records %s answering for it"
-                % (tid, model), "%s metered %s" % (tid, model)))
+                % (tid, model), "%s metered %s" % (tid, model), local=True))
     return result("high-risk-model", HIGH_RISK_BASIS, breaches, gaps, examined)
 
 
@@ -1295,7 +1333,7 @@ def base_ref(manifest, phase, git_root):
             "baseRef %s is not an ancestor of %r (%s), so this phase was not cut "
             "from the branch it merges back into"
             % (str(ref)[:12], parent, resolved["basis"]),
-            "parent %s" % (parent,), str(ref)))
+            "parent %s" % (parent,), full_sha(git_root, str(ref))))
     return result("base-ref", basis, breaches, gaps, 1)
 
 
@@ -1409,24 +1447,28 @@ def check_manifest(manifest, manifest_path, git_root, project, ledger_dir=None):
 
 # --- the baseline -------------------------------------------------------------
 BASELINE_NAME = "invariants-baseline.json"
-BASELINE_VERSION = 2
+BASELINE_VERSION = 3
 
-# Checks whose evidence a clone does not receive: the phase branch's reflog and
-# remote-tracking refs are this machine's, and the usage ledger is gitignored. An
-# entry for one of these that matches nothing here says nothing about the breach -
-# another clone wrote it from evidence this one never had - so it is not compared.
-LOCAL_EVIDENCE_CHECKS = ("branch-history", "high-risk-model")
+# LOCALITY IS PER BREACH, NOT PER CHECK. A reflog, the stash, a remote-tracking
+# ref and the gitignored usage ledger are one clone's evidence, so an entry built
+# from one of them (`found(..., local=True)`) records WHICH clone wrote it, as a
+# digest of that clone's git common dir - a path would name a machine in a
+# committed file. On that clone it is compared like any other entry and can go
+# stale; on any other it is set aside, since that clone never had the evidence.
 
 # The three reasons an entry is set aside rather than compared, each a sentence.
 NOT_COMPARED_PHASE = "its phase was not examined in this run"
 NOT_COMPARED_BASIS = ("its check had no full basis in this run (a gap or no "
                       "basis), so a missing breach is not evidence of a repair")
-NOT_COMPARED_LOCAL = ("its check reads evidence a clone does not receive, so "
-                      "this clone cannot say whether it still holds")
+NOT_COMPARED_LOCAL = ("it was read from another clone's own evidence (a reflog, "
+                      "the stash, a remote-tracking ref or the usage ledger), "
+                      "which this clone does not have")
 
 REWRITE_RULE = (
-    "an entry is matched on its phase, check, subject and commit SHA - never on "
-    "the printed sentence, so a reworded message still matches. A rebase, squash "
+    "an entry is matched on its phase, check, subject and full commit SHA - never "
+    "on the printed sentence, so a reworded message still matches; a validator "
+    "finding's subject is its locus and the ids it quotes, so rewording one "
+    "matches too, while renaming its locus or ids does not. A rebase, squash "
     "or amend gives a commit a new SHA, so its breach is listed as NEW and its old "
     "entry as no longer matching - review both, then have a human re-run "
     "--write-baseline")
@@ -1436,9 +1478,21 @@ BASELINE_ABOUT = (
     "known rather than new. Written only by --write-baseline, which refuses while "
     "a phase it covers is in flight; a human commits it on the development "
     "branch, outside any phase commit - a task, audit-state or manifest-index "
-    "commit that staged it would breach its own scope. Entries for %s are kept "
-    "but compared only where their evidence exists. %s."
-    % (", ".join(LOCAL_EVIDENCE_CHECKS), REWRITE_RULE[0].upper() + REWRITE_RULE[1:]))
+    "commit that staged it would breach its own scope. An entry read from one "
+    "clone's own evidence carries that clone's digest and is compared only "
+    "there. %s." % (REWRITE_RULE[0].upper() + REWRITE_RULE[1:],))
+
+
+def clone_id(git_root):
+    """A digest of this clone's git common dir, or None outside a repository.
+
+    Every worktree of one clone shares the common dir, so they share the id; two
+    clones of one repository do not.
+    """
+    ld = _locks.lock_dir(git_root)
+    if not ld:
+        return None
+    return hashlib.sha256(os.path.dirname(ld).encode("utf-8")).hexdigest()[:16]
 
 
 def baseline_path_for(manifest_path):
@@ -1456,19 +1510,23 @@ def baseline_key(entry):
     return (entry["phase"], entry["check"], entry["subject"], entry.get("sha"))
 
 
-def _fingerprint(phase_id, check, line, key):
+def _fingerprint(phase_id, check, line, key, clone):
     return {"phase": str(phase_id), "check": check, "subject": key["subject"],
             "sha": key["sha"], "breach": line,
-            "evidence": "local" if check in LOCAL_EVIDENCE_CHECKS else "committed"}
+            "clone": clone if key.get("local") else None}
 
 
-def fingerprints(result):
-    """One entry per distinct breach in `result`, in a total order."""
+def fingerprints(result, clone=None):
+    """One entry per distinct breach in `result`, in a total order.
+
+    `clone` is stamped on the entries read from local evidence, and only there.
+    """
     seen = {}
     for answer in _answers(result):
         for check in answer.get("checks") or []:
             for line, key in zip(check["breaches"], check["keys"]):
-                entry = _fingerprint(answer["phaseId"], check["name"], line, key)
+                entry = _fingerprint(answer["phaseId"], check["name"], line, key,
+                                     clone)
                 seen[baseline_key(entry)] = entry
     return [seen[k] for k in sorted(seen, key=lambda k: tuple(x or "" for x in k))]
 
@@ -1494,15 +1552,16 @@ def read_baseline(path):
         if not (isinstance(row, dict)
                 and all(isinstance(row.get(k), str)
                         for k in ("phase", "check", "subject"))
-                and (row.get("sha") is None or isinstance(row.get("sha"), str))):
+                and (row.get("sha") is None or isinstance(row.get("sha"), str))
+                and (row.get("clone") is None
+                     or isinstance(row.get("clone"), str))):
             return None, ("the baseline %s holds an entry without a phase, a "
                           "check and a subject (an older baseline matched on the "
                           "printed sentence - write it again): %r" % (path, row))
         entries.append({"phase": row["phase"], "check": row["check"],
                         "subject": row["subject"], "sha": row.get("sha"),
                         "breach": str(row.get("breach") or ""),
-                        "evidence": ("local" if row["check"]
-                                     in LOCAL_EVIDENCE_CHECKS else "committed")})
+                        "clone": row.get("clone")})
     return entries, None
 
 
@@ -1517,7 +1576,7 @@ def _check_bases(result):
     return out
 
 
-def compare_baseline(entries, result):
+def compare_baseline(entries, result, clone=None):
     """Split the baseline and this run's breaches against each other.
 
     Only an entry this run could have seen again is called unmatched. One whose
@@ -1526,7 +1585,7 @@ def compare_baseline(entries, result):
     to say, and reading it as a repair would be a claim about evidence nobody
     read.
     """
-    current = fingerprints(result)
+    current = fingerprints(result, clone)
     examined = set(str(a["phaseId"]) for a in _answers(result))
     bases = _check_bases(result)
     known = set(baseline_key(e) for e in entries)
@@ -1537,7 +1596,7 @@ def compare_baseline(entries, result):
             continue
         if entry["phase"] not in examined:
             why = NOT_COMPARED_PHASE
-        elif entry["check"] in LOCAL_EVIDENCE_CHECKS:
+        elif entry.get("clone") and entry["clone"] != clone:
             why = NOT_COMPARED_LOCAL
         elif not bases.get((entry["phase"], entry["check"])):
             why = NOT_COMPARED_BASIS
@@ -1607,7 +1666,7 @@ def apply_baseline(result, manifest_path, git_root, path=None):
     entries, why = read_baseline(path)
     if why:
         return None, why
-    block = compare_baseline(entries, result)
+    block = compare_baseline(entries, result, clone_id(git_root))
     block["unmatched"] = explain_unmatched(block["unmatched"], git_root)
     block["path"] = path
     block["rewriteRule"] = REWRITE_RULE
@@ -1635,6 +1694,15 @@ def in_flight(manifest, phase_ids):
             and _mio.effective_phase_status(p) not in _mio.TERMINAL]
 
 
+def _stored(entry):
+    """An entry as the file holds it - `clone` only where it says something."""
+    row = dict((k, entry[k]) for k in ("phase", "check", "subject", "sha",
+                                        "breach"))
+    if entry.get("clone"):
+        row["clone"] = entry["clone"]
+    return row
+
+
 def write_baseline(path, result, manifest, git_root):
     """Write the baseline -> `(answer, None)` or `(None, why)`.
 
@@ -1642,9 +1710,11 @@ def write_baseline(path, result, manifest, git_root):
     accepting it, and a run that could baseline its own breaches would sign
     itself off; the file is a human's, written after the work has landed.
 
-    UNDER THE INDEX LOCK, READ AND WRITE BOTH. Each write is whole on its own,
-    but two writers that each read the old file would have the second rename
-    erase the first one's entries while both printed that they wrote them.
+    UNDER AN INDEX LOCK THIS CALL TOOK, READ AND WRITE BOTH. Each write is whole
+    on its own, but two writers that each read the old file would have the
+    second rename erase the first one's entries while both printed that they
+    wrote them. A hold the session already had is refused rather than borrowed:
+    two subagents of one session share that hold, so it keeps neither out.
 
     Entries this run did not compare are carried over unchanged, and what it
     removes is returned, because a rewrite is the one place an entry leaves the
@@ -1664,7 +1734,14 @@ def write_baseline(path, result, manifest, git_root):
                       "lock to serialize it" % (git_root,))
     code = _locks.acquire(git_root, "index", note="invariants baseline write",
                           out=lambda _line: None)
-    if not _locks.held(code):
+    if code == _locks.E_OURS:
+        # HELD IS NOT TAKEN. A hold this session already has is also what a
+        # parallel subagent of the same session sees, so writing under it would
+        # serialize nothing between the two.
+        return None, ("this session already holds the index lock, so the "
+                      "baseline write could not take it for itself - write the "
+                      "baseline outside that hold")
+    if not _locks.took(code):
         return None, ("the index lock is not free (%s), so the baseline was not "
                       "written - `audit-lock.py status` says who holds it"
                       % (_locks.refusal(code, "index"),))
@@ -1674,17 +1751,17 @@ def write_baseline(path, result, manifest, git_root):
             previous, why = read_baseline(path)
             if why:
                 return None, why
-        split = compare_baseline(previous, result)
+        clone = clone_id(git_root)
+        split = compare_baseline(previous, result, clone)
         stale = set(baseline_key(e) for e in split["unmatched"])
         kept = [e for e in previous if baseline_key(e) not in stale]
-        merged = dict((baseline_key(e), e) for e in kept + fingerprints(result))
+        merged = dict((baseline_key(e), e)
+                      for e in kept + fingerprints(result, clone))
         written = [merged[k] for k in sorted(
             merged, key=lambda k: tuple(x or "" for x in k))]
         _mio.atomic_write_json(path, {
             "about": BASELINE_ABOUT, "version": BASELINE_VERSION,
-            "entries": [dict((k, e[k]) for k in ("phase", "check", "subject",
-                                                  "sha", "breach"))
-                        for e in written]})
+            "entries": [_stored(e) for e in written]})
     finally:
         if _locks.took(code):
             _locks.release(git_root, "index", out=lambda _line: None)

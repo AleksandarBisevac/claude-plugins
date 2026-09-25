@@ -315,6 +315,33 @@ def _check_branch(manifest):
 # inspect afterwards, and so no two of them can quietly depend on running order.
 # That contract is also what let the pieces move into five files without any of
 # them growing an argument or losing one.
+# A finding's quoted identifiers: `'...'` (the `%r` of a string, and every id or
+# path the messages quote) and `` `...` `` (field names).
+_QUOTED = re.compile(r"'([^']*)'|`([^`]*)`")
+# An id-shaped bare token - a letter run then a digit (`P1.2`, `BUG-3-k7m`) - for
+# the findings that name their subject unquoted after the locus.
+_BARE_ID = re.compile(r"\b[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9._-]*\b")
+
+
+def finding_subject(line):
+    """A finding's identity with its prose taken out: the locus, then the ids.
+
+    Every finding here opens with the place it is about (`fileIndex['x']`,
+    `task P1.1`, `meta.ado.tag`) before `: `, and names what it is about in
+    quotes. Those two are what a finding IS; the sentence around them is how it
+    is worded today, and a reader matching findings across runs - the invariant
+    baseline - must not treat a reworded message as a different finding. With
+    nothing quoted, the id-shaped tokens after the locus stand in.
+    """
+    locus, sep, rest = str(line).partition(": ")
+    if not sep:
+        locus, rest = "", str(line)
+    ids = [a or b for a, b in _QUOTED.findall(rest)]
+    if not ids:
+        ids = _BARE_ID.findall(rest)
+    return "|".join([locus.strip()] + ids)
+
+
 def validate(manifest):
     """Return (findings, warnings) — two lists of strings; empty findings = valid.
 

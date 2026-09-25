@@ -94,16 +94,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   new breaches and how many baselined ones are still reported, and exits 1 only on a new one.
   `/audit:status --gate --fail-on invariant-breach` reads the same baseline through the same
   `_invariants` functions, so the gate and the CLI give one verdict; its JSON keeps the full list
-  as `allBreaches`. An entry is matched on its phase, check, subject and full commit SHA - keys
-  every check now returns beside its sentence - never on the printed sentence, so a reworded
-  message or a count that moves between runs does not bring the flood back. An entry that no
+  as `allBreaches`, and its text names the baseline and what it counted on both paths. An entry
+  is matched on its phase, check, subject and commit SHA - keys every check now returns beside its
+  sentence, with the SHA resolved to the full id through git and a validator finding reduced to
+  its locus and the ids it quotes - never on the printed sentence, so a reworded message or a
+  count that moves between runs does not bring the flood back. An entry that no
   longer matches is printed with what git says about its commit and stays in the file; one whose
-  check had a gap this run, or reads evidence a clone never receives (the branch reflog, the
-  gitignored usage ledger), or whose phase was not examined is set aside with that reason rather
-  than called repaired. A rebase, squash or amend re-reports its breaches as new beside the old
+  check had a gap this run, or whose phase was not examined, is set aside with that reason rather
+  than called repaired, and one read from a clone's own evidence (a reflog, the stash, a
+  remote-tracking ref, the gitignored usage ledger) carries a digest of that clone and goes stale
+  only there. A rebase, squash or amend re-reports its breaches as new beside the old
   unmatched entries, and the output says so. `--write-baseline` refuses while a phase it covers is
-  in flight, takes the `index` lock around its read-then-write, keeps every set-aside entry and
-  names each one it removes, and exits 0 once written (2 when refused); the baseline is a human's commit on the development branch, outside
+  in flight, takes the `index` lock around its read-then-write and refuses a hold it did not take
+  itself, keeps every set-aside entry and
+  names each one it removes, and exits 0 once written (2 when refused, and 2 when a check raises); the baseline is a human's commit on the development branch, outside
   any phase commit. An unreadable baseline, one in the sentence-keyed shape an earlier build of
   this change wrote, or an explicit `--baseline` that is not there is exit 2 and trips the gate.
 - **User tooling can share the cross-worktree lock: `audit-lock.py acquire user-<name>`.** The
@@ -116,7 +120,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   A user lock excludes by holder: a second acquire from the same session and pid - which is what
   parallel subagents of one Claude Code session look like - is refused rather than answered as
   re-entry. `/audit:worktree` documents it as the lock worktree tooling shares, with a one-shell
-  recipe, and `/audit:doctor` advises an abandoned user lock by its own `--takeover` path.
+  recipe that runs under sh, bash and zsh - a test runs it under each - and `/audit:doctor`
+  advises an abandoned user lock by its own `--takeover` path.
 
 ### Changed
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
@@ -192,8 +197,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **A phase lock name is ASCII, and one spelling per folded name.** `phase-<id>` accepted any
   `str.isalnum()` character, so letters of every script were lock names, and `phase-P1` and
   `phase-p1` were two claims on Linux and one file on macOS and Windows. The id is now ASCII
-  `[A-Za-z0-9._-]`, and acquiring or releasing a spelling that differs only in case from a lock
-  already held is refused on every platform.
+  `[A-Za-z0-9._-]`, acquiring a spelling that differs only in case from a lock already held is
+  refused on every platform, and releasing one is refused only where the filesystem folds case -
+  where both spellings are two files, the exact one is released, `--force` included.
 - **A finished phase no longer carries another phase's unpaired `fileIndex` rows as its own
   breach.** `manifest-revalidated`'s live pairing re-check validated the whole manifest and
   charged every unpaired row to the phase being checked, so a phase in flight elsewhere - which

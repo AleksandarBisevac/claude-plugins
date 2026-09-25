@@ -29,7 +29,8 @@ Exit codes:
      hold. A --write-baseline that succeeded exits 0: what it found is exactly
      what it just baselined, and the count it wrote is printed; a refused write
      is 2
-  2  usage error, an unreadable manifest, or a phase id that is not there
+  2  usage error, an unreadable manifest, a phase id that is not there, a
+     baseline that cannot be read or written, or a check that raised
 
 WHY A GAP EXITS 0 AND A BREACH EXITS 1. They are different claims. A breach is
 evidence that a rule was broken; a gap is the absence of evidence either way - a
@@ -306,27 +307,37 @@ def main(argv, out=print):
     git_root = git_root_for(manifest, project)
     ledger_dir = ledger_dir_for(manifest, args.manifest)
 
-    if args.every:
-        result = _invariants.check_manifest(manifest, args.manifest, git_root,
-                                            project, ledger_dir=ledger_dir)
-        single = False
-    else:
-        result = _invariants.check_phase(manifest, args.phase, args.manifest,
-                                         git_root, project,
-                                         ledger_dir=ledger_dir)
+    try:
+        if args.every:
+            result = _invariants.check_manifest(manifest, args.manifest,
+                                                git_root, project,
+                                                ledger_dir=ledger_dir)
+        else:
+            result = _invariants.check_phase(manifest, args.phase, args.manifest,
+                                             git_root, project,
+                                             ledger_dir=ledger_dir)
+    except Exception as exc:
+        # EXIT 2, NOT THE 1 AN UNCAUGHT RAISE WOULD GIVE. 1 is "at least one
+        # breach", and sign-off would read a crash as a finding about the work
+        # instead of as a question that could not be asked.
+        sys.stderr.write("ERROR: the invariant checks could not run: %s: %s\n"
+                         % (type(exc).__name__, exc))
+        return E_USAGE
+    single = not args.every
+    if single:
         if not result["found"]:
             known = [str(p.get("id")) for p in (manifest.get("phases") or [])
                      if isinstance(p, dict)]
             sys.stderr.write("ERROR: no phase %r in %s (have: %s)\n"
                              % (args.phase, args.manifest, ", ".join(known)))
             return E_USAGE
-        single = True
 
     try:
         key, block, known, why = _baseline_answer(args, result, manifest,
                                                   git_root)
-    except OSError as exc:
-        why = "cannot write the baseline: %s" % (exc,)
+    except Exception as exc:
+        why = "the baseline could not be applied or written: %s: %s" % (
+            type(exc).__name__, exc)
     if why:
         sys.stderr.write("ERROR: %s\n" % (why,))
         return E_USAGE

@@ -26,6 +26,7 @@ NOT `clean` rather than only that a gap line exists.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import copy
 import json
 import os
@@ -1248,8 +1249,78 @@ def _cases(check):
               "tasks - another phase mid-flight has unpaired rows by "
               "construction, and they are not this phase's breach: %r" % (own,),
               own == [lines[0]])
+
+        # --- a validator finding keys on its locus and ids ---------------------
+        said = ("task P1.1: file 'src/a.py' %s (fileIndex['src/a.py'] must include "
+                "'P1.1')" % (M._crossrefs.FILEINDEX_PAIRING,))
+        reworded = ("task P1.1: file 'src/a.py' is not paired in the index "
+                    "(fileIndex['src/a.py'] must list 'P1.1')")
+        elsewhere = said.replace("src/a.py", "src/b.py")
+        check("ik4 a REWORDED validator finding keys the same - its locus and the "
+              "ids it quotes are the finding, the sentence is how it is said "
+              "today - while one about another file does not: %r"
+              % (M._validator_subject(said),),
+              M._validator_subject(said) == M._validator_subject(reworded)
+              and M._validator_subject(said) != M._validator_subject(elsewhere)
+              and "missing" not in M._validator_subject(said))
+        check("ik5 ...and a validator that crashed is keyed on that fact, never on "
+              "the exception's text",
+              M._validator_subject(M._VALIDATOR_CRASH % ("boom 1",))
+              == M._validator_subject(M._VALIDATOR_CRASH % ("other 2",)))
+
+        # --- every breach site builds its breach with found() ------------------
+        tree = ast.parse(open(M.__file__, encoding="utf-8").read())
+        bare = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            if (isinstance(fn, ast.Attribute) and fn.attr in ("append", "extend")
+                    and isinstance(fn.value, ast.Name)
+                    and fn.value.id == "breaches"):
+                arg = node.args[0] if node.args else None
+                items = ([arg.elt] if isinstance(arg, ast.ListComp)
+                         else list(arg.elts) if isinstance(arg, ast.List)
+                         else [arg])
+                bare.extend(node.lineno for x in items if not _is_found(x))
+            if isinstance(fn, ast.Name) and fn.id == "result" and len(node.args) > 2:
+                arg = node.args[2]
+                if isinstance(arg, ast.List):
+                    bare.extend(node.lineno for x in arg.elts if not _is_found(x))
+        check("ik6 every breach this module appends, extends or passes to "
+              "result() is a found() call - read from the syntax tree, so a bare "
+              "sentence on a path only a live repository reaches fails CI rather "
+              "than an operator's run: lines %r" % (bare,), bare == [])
+
+        # --- local evidence goes stale on the clone that wrote it --------------
+        def _history(breaches):
+            return {"found": True, "phaseId": "P7", "branch": "b", "breaches": [],
+                    "gaps": [], "checks": [M.result("branch-history", "b",
+                                                    breaches, [], 1)]}
+        gone = {"phase": "P7", "check": "branch-history", "subject": "stash x",
+                "sha": None, "breach": "y", "clone": "clone-a"}
+        here = M.compare_baseline([gone], _history([]), "clone-a")
+        there = M.compare_baseline([gone], _history([]), "clone-b")
+        check("ik7 an entry read from a clone's own evidence goes stale ON THAT "
+              "CLONE and is set aside on any other: %r / %r"
+              % (len(here["unmatched"]), there["notComparedWhy"]),
+              len(here["unmatched"]) == 1
+              and there["unmatched"] == []
+              and there["notComparedWhy"] == {M.NOT_COMPARED_LOCAL: 1})
+        stamped = M.fingerprints(_history([
+            M.found("stash", "stash x", local=True),
+            M.found("pushed", "remote r")]), "clone-a")
+        check("ik8 ...and the clone is stamped per BREACH, only on the local ones: "
+              "%r" % ([(e["subject"], e["clone"]) for e in stamped],),
+              [(e["subject"], e["clone"]) for e in stamped]
+              == [("remote r", None), ("stash x", "clone-a")])
     finally:
         repos.close()
+
+
+def _is_found(node):
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "found")
 
 
 # --- the in-memory mutations the both-directions cases use --------------------
