@@ -232,7 +232,7 @@
     {
       "id": "P71.3-zso",
       "title": "A cleared task commits on its recorded empty-gate row, and the cleared rule is pinned where it now lives",
-      "status": "in_progress",
+      "status": "done",
       "description": "Merging P70 into this branch put two rules side by side. P70 records an EMPTY gate (a task gate cleared on purpose, or an empty phase gate) as an empty-gate row and pointer under --record, so a done cleared task does not trip no-test-evidence. This branch's commit binding reads the ledger before a no-gate answer and refuses when the newest row is not passed - so a cleared task whose newest row is exactly that empty-gate record is refused, and the only way on is --override-verdict. The empty-gate row IS the recorded answer for a gate that is empty now: accept it there (and only there - an empty-gate row under a gate that has entries now is a gate changed after the measurement, which the gate-mismatch refusal already names). Also pin _manifest_io.gate_cleared / gate_entries' cleared arm with its own cases, since the merge moved it there.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -266,14 +266,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "89f5e24d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "verdict_binding accepts an empty-gate row while the gate is empty and refuses it as a changed gate otherwise.",
+        "descriptive": "A task whose gate was cleared on purpose can be committed on the record of that empty gate."
       },
       "startedAt": "2026-09-25T17:57:40Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T21:57:00Z",
+      "verifiedBy": [
+        "test_commit_task_work ctw70",
+        "test_commit_task_work ctw71",
+        "test__manifest_io gc1"
+      ]
     }
   ],
   "startedAt": "2026-09-25T14:32:08Z"
