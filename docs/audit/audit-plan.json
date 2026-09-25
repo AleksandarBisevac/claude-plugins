@@ -559,7 +559,8 @@
       "P70.3-fos",
       "P72.1",
       "P71.1",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.3-zso"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1190,7 +1191,8 @@
       "P69.3",
       "P70.3-fos",
       "P71.1",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.3-zso"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1545,7 +1547,8 @@
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.3-zso"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6"
@@ -2229,7 +2232,8 @@
       "P63.5",
       "P65.1",
       "P69.3",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P71.3-zso"
     ],
     "plugins/audit/tests/test__manifest_merge.py": [
       "P60.1"
@@ -2528,7 +2532,8 @@
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.3-zso"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1"
