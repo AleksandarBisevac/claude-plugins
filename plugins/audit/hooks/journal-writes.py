@@ -301,16 +301,60 @@ def decide(data, *, cfg=None, root=None):
 
 
 # --- the pre-image cache ------------------------------------------------------
-def _slot_path(root, cfg, data, rel):
-    """<stateDir>/journal-preimage-<sessionId>.<sha256(rel)[:12]>.json — one slot
-    per (session, target), so parallel sessions never clobber each other's
-    pre-image and the same session's retries overwrite their own."""
-    state_rel = str(cfg.get("stateDir") or _config.DEFAULTS["stateDir"])
+def _writer_key(data):
+    """The session, and the subagent when a subagent made the call - the key a
+    pre-image and a pending observation are kept under. Two agents of one
+    session share `session_id`, so a slot keyed by the session alone let one
+    agent's Pre refresh the baseline another agent's running command was about
+    to be diffed against. The main agent's key is the session alone, the name
+    every earlier release wrote."""
     sid = _SAFE_SID.sub("-", str(data.get("session_id") or "")).strip("-.")
     sid = (sid or "no-session")[:40]
+    agent = _SAFE_SID.sub("-", str(data.get("agent_id") or "")).strip("-.")[:40]
+    return "%s-%s" % (sid, agent) if agent else sid
+
+
+def _slot_path(root, cfg, data, rel):
+    """<stateDir>/journal-preimage-<writer key>.<sha256(rel)[:12]>.json - one
+    slot per (session, agent, target), so parallel sessions and parallel agents
+    never clobber each other's pre-image and a writer's retries overwrite their
+    own."""
+    state_rel = str(cfg.get("stateDir") or _config.DEFAULTS["stateDir"])
     digest = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:12]
-    return os.path.join(str(root), state_rel,
-                        "journal-preimage-%s.%s.json" % (sid, digest))
+    return os.path.join(str(root), state_rel, "journal-preimage-%s.%s.json"
+                        % (_writer_key(data), digest))
+
+
+def _pending_path(root, cfg, data):
+    """<stateDir>/journal-pending-<writer key>.json - the between-calls moves a
+    Pre saw, waiting for this writer's Post to settle them."""
+    state_rel = str(cfg.get("stateDir") or _config.DEFAULTS["stateDir"])
+    return os.path.join(str(root), state_rel, "journal-pending-%s.json"
+                        % (_writer_key(data),))
+
+
+def _load_pending(root, cfg, data):
+    try:
+        with open(_pending_path(root, cfg, data), "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_pending(root, cfg, data, pending):
+    """Write the pending map, or remove the file when there is nothing left."""
+    path = _pending_path(root, cfg, data)
+    try:
+        if not pending:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        _config.ensure_local_dir(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(pending, fh)
+    except Exception:
+        pass
 
 
 def _snapshot(path):
@@ -434,43 +478,87 @@ def _pre_seed_sweep(root, cfg, data):
     call ran. A peer writing during that same window is still read as this
     call's write, which is the residual.
 
-    A MOVE NOBODY RECORDED IS NOT ABSORBED IN SILENCE. A peer session's hook
-    leaves a trail row naming the file and the digest it left - that explains
-    the move, and it is refreshed with no row. A writer with no hook (an
-    editor, a terminal, this session's own background job, whose PostToolUse
-    fired before it wrote) leaves nothing, and this hook is the only writer of
-    the completion rows, so it records what it saw: the edit and its derived
-    rows, each marked `OBSERVED_BETWEEN_CALLS` and filed under no session.
+    A MOVE NOBODY RECORDED IS NOT ABSORBED IN SILENCE, and it is not judged
+    here. The writer's own Post may not have landed yet, so a move is kept as
+    PENDING - the old pre-image and the bytes seen now - and settled by this
+    writer's Post (`_settle_pending`), after the trail has had its chance. A
+    move the trail's LATEST row for the file explains is dropped there; one it
+    does not (an editor, a terminal, a background job whose PostToolUse fired
+    before it wrote, a revert to an older recorded state) becomes the edit and
+    its derived rows, each marked `OBSERVED_BETWEEN_CALLS`, naming no writer.
 
-    -> {"slot": the last slot written or None, "rows": [(root, entry)]}
+    -> {"slot": the last slot written or None, "rows": []} - rows stay empty;
+    the shape is `pre_pass`'s.
     """
-    last, rows, trail = None, [], {}
-
-    def explained(rel, sha):
-        """Does a trail row name this file at this digest?"""
-        if "rows" not in trail:
-            mod = _journal_lib()
-            try:
-                trail["rows"] = mod.read_all(str(root)) if mod else []
-            except Exception:
-                trail["rows"] = []
-        return any(r.get("target") == rel and r.get("stateHash") == sha
-                   for r in trail["rows"])
-
+    last = None
+    pending = None
     for rel in _swept_targets(root, cfg):
         if _config.in_journal(root, cfg, rel):
             continue
-        now_sha = _snapshot(os.path.join(str(root), rel))[0]
+        now_sha, now_text = _snapshot(os.path.join(str(root), rel))
         if now_sha is None:
             continue               # nothing readable to be a baseline
         pre = _read_preimage(root, cfg, data, rel)
         if pre is not None and pre.get("sha256") == now_sha:
             continue
-        if pre is not None and not explained(rel, now_sha):
-            rows.extend((root, row) for row in
-                        _observed_rows(root, cfg, data, rel, pre))
+        if pre is not None:
+            if pending is None:
+                pending = _load_pending(root, cfg, data)
+            first = pending.get(rel, {}).get("from") or pre
+            pending[rel] = {"from": first,
+                            "to": {"sha256": now_sha, "content": now_text}}
         last = _write_slot(root, cfg, data, rel) or last
-    return {"slot": last, "rows": rows}
+    if pending is not None:
+        _save_pending(root, cfg, data, pending)
+    return {"slot": last, "rows": []}
+
+
+def _latest_explains(rows, rel, sha):
+    """Does the LATEST trail row naming `rel` record digest `sha`?
+
+    Order is known inside one file - its chain - and across files only to the
+    second a row's `ts` carries. So each file's last row for `rel` is taken, and
+    of those the ones with the newest `ts`: if any of them records `sha`, the
+    move is explained. An older row recording the same bytes - a state the file
+    was later moved away from - is not the latest in its own file and explains
+    nothing. Two files writing `rel` in the same second both count, which is
+    the residual. `rows` are `read_all`'s, each tagged with its `_file`."""
+    last = {}
+    for row in rows:
+        if row.get("target") == rel and row.get("stateHash"):
+            last[row.get("_file")] = row
+    if not last:
+        return False
+    newest = max(str(r.get("ts") or "") for r in last.values())
+    return any(r.get("stateHash") == sha for r in last.values()
+               if str(r.get("ts") or "") == newest)
+
+
+def _settle_pending(root, cfg, data):
+    """The observed rows this writer's pending between-calls moves owe, now
+    that the trail has had its chance: [(root, entry)]. A move whose bytes the
+    trail's LATEST row for the file records is explained and dropped - an older
+    row does not explain a later move back to its state. The pending file is
+    cleared either way."""
+    pending = _load_pending(root, cfg, data)
+    if not pending:
+        return []
+    mod = _journal_lib()
+    try:
+        trail = mod.read_all(str(root)) if mod else []
+    except Exception:
+        trail = []
+    out = []
+    for rel in sorted(pending):
+        move = pending[rel] or {}
+        seen = move.get("to") or {}
+        if _latest_explains(trail, rel, seen.get("sha256")):
+            continue
+        out.extend((root, row) for row in
+                   _observed_rows(root, cfg, data, rel, move.get("from") or {},
+                                  seen))
+    _save_pending(root, cfg, data, {})
+    return out
 
 
 # What a row says when it records a move this hook SAW between two of its
@@ -478,21 +566,23 @@ def _pre_seed_sweep(root, cfg, data):
 # `details.reason`, the allow-listed key a reader can filter on.
 OBSERVED_BETWEEN_CALLS = ("observed between calls, not written by this call - "
                           "no trail row explains the move")
+# Mirrors `_journal_io._OBSERVED_VIA`, which this hook may not import; the (so)
+# cases drive both sides, so a drift in either spelling goes red.
+OBSERVED_VIA = "hook-observed"
 
 
-def _observed_rows(root, cfg, data, rel, pre):
-    """The rows for an unexplained between-calls move of `rel`: the edit row
-    and its derived rows, built as the sweep builds them, marked as observed
-    and attributed to NO session - the writer is unknown."""
+def _observed_rows(root, cfg, data, rel, pre, seen):
+    """The rows for an unexplained between-calls move of `rel` from the
+    pre-image `pre` to the bytes `seen` held: the edit row and its derived
+    rows, built as the sweep builds them, marked as observed and naming NO
+    writer - no session, no agent; `_journal_io` adds no env id to an
+    `OBSERVED_VIA` row either."""
     is_cfg = (rel == _config.CONFIG_REL)
     old_obj = _parse_preimage(pre)
-    new_obj = (_read_json(os.path.join(str(root), rel))
-               if old_obj is not None else None)
+    new_obj = _parse_preimage(seen) if old_obj is not None else None
     entry = _entry("config.edit" if is_cfg else "manifest.edit", rel,
                    "a writer with no hook", {}, data, root, cfg)
-    entry["actor"] = {"author": None, "sessionId": None,
-                      "agent": entry["actor"].get("agent"),
-                      "via": "hook-observed"}
+    entry["actor"] = {"author": None, "sessionId": None, "via": OBSERVED_VIA}
     primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
                         else _manifest_rows(entry, rel, old_obj, new_obj,
                                             recorded=lambda: recorded_keys(root)
@@ -907,6 +997,11 @@ def recorded_keys(root):
         return None
     keys = set()
     for row in rows:
+        # An OBSERVED row never stands in for the writer's own: withheld here,
+        # it would suppress the attributed completion of a writer whose Post
+        # landed after the observer's.
+        if (row.get("actor") or {}).get("via") == OBSERVED_VIA:
+            continue
         key = _record_key(row.get("action"), row.get("details"))
         if key is not None:
             keys.add(key)
@@ -1079,6 +1174,8 @@ def _swept_rows(data, *, cfg=None, root=None):
     rows = [(root, e) for e in unsandboxed_entries(data, cfg=cfg, root=root)]
     enabled = _config.journal_enabled(cfg)
     for troot in _sweep_roots(data, cfg, root):
+        if enabled:
+            rows.extend(_settle_pending(troot, cfg, data))
         rows.extend(_swept_tree(data, cfg, troot, tool, enabled))
     return rows
 

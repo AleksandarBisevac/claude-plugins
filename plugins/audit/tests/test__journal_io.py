@@ -2631,6 +2631,28 @@ def _worktree_writer_cases(check):
           bool(ka) and bool(kb) and ka != kb, repr((ka, kb)))
     check("wk11 SECOND DIRECTION: the main checkout gets no key, whatever the "
           "config says", M.worktree_key(main, shared) is None)
+    # wk12/wk13: the key is asked of git once per git root in a process, and
+    # a caller that hands no config still gets the project's gitRoot honoured.
+    import subprocess as _sp
+    _real_run = _sp.run
+    _git_calls = []
+
+    def _counting_run(argv, *a, **k):
+        if list(argv[:1]) == ["git"] and "rev-parse" in argv:
+            _git_calls.append(tuple(argv))
+        return _real_run(argv, *a, **k)
+    _sp.run = _counting_run
+    try:
+        _keys = [M.worktree_key(wt_b) for _i in range(5)]
+    finally:
+        _sp.run = _real_run
+    check("wk12 five appends' keys for one worktree ask git ONCE - the answer "
+          "is kept per git root for the process",
+          len(set(_keys)) == 1 and _keys[0] and len(_git_calls) <= 1,
+          repr((_keys, len(_git_calls))))
+    check("wk13 a caller that hands NO config gets the project's own - its "
+          "gitRoot subdirectory is honoured", bool(M.worktree_key(nested)),
+          repr(M.worktree_key(nested)))
     check("wk7 ...and the merged trail verifies",
           M.verify(main)["ok"], repr(M.verify(main).get("findings")))
 

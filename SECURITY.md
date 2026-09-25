@@ -227,6 +227,25 @@ text — the conservative direction, which is the only direction a guard may fai
 when it cannot read its input. The general residual is the one this document opens
 with: text inspection is bypassable in principle.
 
+**Open residuals of the history guard, stated rather than left to be found.** None
+of these is below the 036e98e base, and each is recorded for a maintainer to close:
+
+- an interpreter program that starts git from inside its own code (a Python or
+  Node body that runs a subprocess) is read as code, not searched for git — the
+  guard reads shell text, and a program's own calls are the general residual above;
+- the line-continuation join decides whether a `#` starts a comment from the raw
+  character before it, not from the word the shell has assembled, so a `#` that
+  follows an escape can be misjudged as a comment;
+- a here-string's reader is recognised only as the first word of its command, not
+  behind a wrapper that runs its argument, which the heredoc reader already handles;
+- a `case` pattern's `)` inside a double-quoted substitution ends the substitution
+  early, so the rest of its body is read as quoted text;
+- a git command quoted as one phrase and sent to a shell or into a git hook file is
+  one word, and is not read as git;
+- the secret-read arm of `guard-secrets-read` does not join line continuations
+  before reading a path, and a here-string fed to an interpreter is not graded as
+  inline evaluation there.
+
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's
 tree, and the recorded SHAs and the plan-present test are read from those trees'

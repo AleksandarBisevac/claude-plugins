@@ -581,6 +581,11 @@ def month_of(ts):
     return str(ts)[:7] if len(str(ts)) >= 7 else time.strftime("%Y-%m", time.gmtime())
 
 
+# The `via` of a journal-writes row that records a move it saw between two of
+# its session's calls and nothing explained - a row with no known writer.
+_OBSERVED_VIA = "hook-observed"
+
+
 # The part of a writer id that names a LINKED WORKTREE, after the session's.
 WORKTREE_MARK = "wt-"
 
@@ -590,6 +595,16 @@ WORKTREE_MARK = "wt-"
 # the worktree's whatever `stateDir` says - a shared absolute stateDir would
 # otherwise hand every worktree one token.
 WORKTREE_TOKEN_FILE = "audit-journal-writer"
+
+# `worktree_key`'s answer per resolved git root, for the life of the process.
+# Every append asks it, and a manifest edit appends several rows in one hook
+# process; git's answer about which checkout a directory is does not change
+# inside one process, so it is asked once per root. Measured 2026-09-26, 40
+# appends in a linked worktree per run, four runs each at two different times
+# of a loaded machine: before, medians of 11.0, 12.0, 17.2 and 16.8 ms per row
+# (range 10.0-32.9); after, 0.18-0.20 ms (range 0.15-18.9 - the maximum is the
+# first append of a run, which still asks git).
+_WORKTREE_KEYS = {}
 
 
 def worktree_key(project, config=None):
@@ -613,11 +628,23 @@ def worktree_key(project, config=None):
     checkout, so an existing file goes on growing; and, as the stated limit,
     when git cannot be asked or the token cannot be stored, where two
     worktrees of one session do share that name again."""
-    import subprocess
     mod = _config_mod()
+    config = load_config(project) if config is None else config
     try:
         where = (str(mod.git_root_dir(mod.Path(project), config or {}))
                  if mod is not None else str(project))
+        memo = os.path.realpath(where)
+    except Exception:
+        return None
+    if memo not in _WORKTREE_KEYS:
+        _WORKTREE_KEYS[memo] = _worktree_key_uncached(where)
+    return _WORKTREE_KEYS[memo]
+
+
+def _worktree_key_uncached(where):
+    """`worktree_key`'s answer for the git root `where`, asked of git."""
+    import subprocess
+    try:
         out = subprocess.run(["git", "-C", where, "rev-parse", "--git-dir",
                               "--git-common-dir"], capture_output=True,
                              text=True, timeout=5)
@@ -1362,7 +1389,11 @@ def _normalise(entry, project=None):
     # session" -- which is also what every row written before this field means,
     # and `session_index` says so rather than letting silence read as agreement.
     env_sid = env_session_id()
-    if env_sid and env_sid != row["actor"]["sessionId"]:
+    # A row the journal-writes hook OBSERVED between calls names no writer, and
+    # the env id here is the observing call's - stamping it would file another
+    # writer's move under the observer (`session_index` reads it as "mine").
+    if env_sid and env_sid != row["actor"]["sessionId"] \
+            and row["actor"]["via"] != _OBSERVED_VIA:
         row["actor"]["envSessionId"] = env_sid
     # WHICH AGENT OF THAT SESSION, when the writer was an agent at all. One
     # session runs an orchestrator and its subagents and they all share
