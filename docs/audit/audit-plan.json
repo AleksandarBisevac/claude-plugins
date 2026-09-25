@@ -402,7 +402,7 @@
     {
       "id": "P67",
       "title": "/audit:version says which build is running and whether a newer one is published",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P67.json"
     }
   ],
@@ -2074,7 +2074,8 @@
       "P50.9",
       "P60.5",
       "P61.1",
-      "P61.7"
+      "P61.7",
+      "P67.1"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -2612,14 +2613,14 @@
     "plugins/audit/tests/test_resolve_branch.py": [
       "P64.1"
     ],
+    "plugins/audit/commands/version.md": [
+      "P67.2"
+    ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1"
-    ],
-    "plugins/audit/commands/version.md": [
-      "P67.2"
     ]
   },
   "bugs": [
