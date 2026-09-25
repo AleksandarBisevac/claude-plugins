@@ -390,6 +390,11 @@ def _cases(check):
             json.dump({"meta": {"version": 2,
                                 "buildCommands": {"test": "definitely-not-a-real-runner x"}},
                        "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                                   # A running phase states its outcome and its
+                                   # gate, or the validator names both - and
+                                   # this case is about the path, not them.
+                                   "desiredOutcome": "p ships",
+                                   "testGate": ["test"],
                                    "tasks": [{"id": "P1.1", "title": "t",
                                               "status": "pending"}]}]}, fh)
         rep = M.diagnose(tmp)

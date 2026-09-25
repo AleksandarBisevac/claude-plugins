@@ -346,7 +346,9 @@ def validate(manifest):
         f.append("phases: missing or not an array")
         phases = []
 
-    index, walk_f, walk_w = _walk_phases(phases)
+    build = (manifest.get("meta") or {}).get("buildCommands")
+    index, walk_f, walk_w = _walk_phases(
+        phases, frozenset(build) if isinstance(build, dict) else frozenset())
     f.extend(walk_f)
     w.extend(walk_w)
     index.update(_index_bugs(manifest))

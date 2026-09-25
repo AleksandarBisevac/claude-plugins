@@ -74,6 +74,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   outbound request (`SECURITY.md` -> *Outbound network*); `--offline` skips it.
 
 ### Changed
+- **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
+  names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
+  the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the
+  `GATE RED:` / `GATE GREEN:` literals the orchestrator keys on are unchanged. The coverage basis
+  gains one `breadth:` clause when the run named suites the task neither declares nor is named
+  after, with both counts; it refuses nothing. A repeated verdict's first line now carries the
+  `--no-reuse` spelling.
+- **`validate-manifest.py` names three more states, as warnings.** A `testGate` or `tests.gate`
+  entry whose every comma-separated part is a `meta.buildCommands` key - one string the shell
+  runs as a single command it cannot find - with the split spelling; a running phase with no
+  `desiredOutcome`; and a running phase with an EMPTY `testGate`, which stays a designed state.
+  Finished tasks and phases are exempt, and nothing is refused.
 - **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
   phase branch was prose the orchestrator ran before the verb, so every phase driven through the
   verbs rather than `/audit:run` ran on its parent with no branch - most of this repository's own -
@@ -105,6 +117,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook's `task.complete`.
 
 ### Fixed
+- **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
+  shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
+  vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,
+  and the shell's diagnostic was read for paths - `/bin/sh` became a printed path and produced a
+  false `NO OVERLAP`. `run-test-gate.py` now reads each captured diagnostic beside its exit code,
+  only where the output carries no end-of-run report (`reached_a_verdict` stays the guard for a
+  runner whose exit status is a count, and a bare 127 stays a failure), prints the words it read
+  as the basis, and asks the coverage question only of steps that reached a verdict.
+- **A jest suite that failed to run names its suite, its reason and its signal.** `failing` held
+  `Test suite failed to run` with neither the suite nor the cause, so a worker killed by SIGSEGV
+  was graded `failed`, recorded without a trace of the signal, and then repeated as a red on the
+  same tree. Each such heading is now paired with its `FAIL <path>` and first reason line (the
+  signal lifted in front, so the committed row keeps it), and a run whose every failure is a
+  killed worker is `could-not-run` carrying `signal` and a `signalBasis` naming jest's report as
+  the channel - jest reaps its workers, so its exit stays 1. One real assertion failure beside a
+  kill stays `failed` and the list names both.
+- **A task whose gate was cleared is EMPTY at task scope, as `commands/task.md` promises.**
+  `--gate-clear` writes `tests.gateBasis: cleared`, and `run-test-gate.py --task` ignored it and
+  ran the phase's gate against the task anyway. It now answers EMPTY, names the task and says the
+  phase's `testGate` at sign-off still grades it; a task that merely declares no gate keeps the
+  phase fallback.
 - **`commit-manifest-index` committed an index ahead of the shards it names.** `/audit:task add`
   writes a task into its phase's shard and its files into the index, and committing the index
   first recorded a plan whose `fileIndex` named a task no committed shard held - a commit that

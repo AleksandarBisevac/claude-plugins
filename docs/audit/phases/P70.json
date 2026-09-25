@@ -29,7 +29,7 @@
     {
       "id": "P70.1",
       "title": "run-test-gate grades a no-verdict exit as could-not-run, names a jest failed-to-run's suite and signal, and says whose gate ran",
-      "status": "in_progress",
+      "status": "done",
       "description": "Field reports on 3.0.1, reproduced at HEAD: (1) a gate entry that is not a command exits 127 and is graded RED; files_named reads /bin/sh from the shell's diagnostic as a printed path and produces a false NO OVERLAP. (2) a jest worker killed by SIGSEGV records failing ['Test suite failed to run'] with no suite and no signal, is graded failed, and is then REUSED on the same tree with the --no-reuse hint on the fifth line. (3) vitest's 'No test files found' is graded RED. One rule in observed_step: a non-zero exit with no end-of-run report and a recognised could-not-run signature is could-not-run (reached_a_verdict stays the guard for runners whose exit is a count); the jest reader pairs each failed-to-run heading with its FAIL path and first reason line; all-failed-to-run-with-signal is could-not-run with signal and a signalBasis naming jest's report; overlap asked only of steps that reached a verdict; the reuse banner's first line names --no-reuse. (4) a task whose gate was cleared: gateBasis cleared resolves EMPTY at task scope (commands/task.md already promises it; execute-task.md changes with it), an absent gate keeps the phase fallback, and the preamble names both ids and a 'graded by' line follows the banner without changing the GATE RED/GREEN literal. (5) under --task, coverage reports breadth when the run names suite paths the task does not declare - both counts, never a refusal.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -65,14 +65,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2d43197",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "no_verdict_signature and jest_worker_signal grade no-verdict exits could-not-run; the jest reader names suite and signal; cleared task gates are empty; the preamble and graded-by line name whose gate ran.",
+        "descriptive": "A gate that could not run says so and names the cause, instead of reading as a red."
       },
       "startedAt": "2026-09-25T14:32:07Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T15:37:22Z",
+      "verifiedBy": [
+        "test_run_test_gate nv1",
+        "test_run_test_gate jf1",
+        "test_run_test_gate rb1",
+        "test_run_test_gate br1",
+        "test_run_test_gate gb1"
+      ]
     },
     {
       "id": "P70.2",
