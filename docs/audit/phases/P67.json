@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P67-R1",
@@ -37,9 +37,10 @@
         "issue": "parse_version dropped a pre-release suffix, so 3.1.0-beta read as 3.1.0 and up to date",
         "resolution": "fixed in P67.3-2e7: semver ordering (v2b-v2d)"
       }
-    ]
+    ],
+    "outcome": "matches; two findings (one med, one low) fixed in P67.3-2e7"
   },
-  "summary": null,
+  "summary": "A new command, /audit:version, reports which build of the plugin is running, what the marketplace it came from offers and whether that marketplace auto-updates, every installed copy by project, and the newest published GitHub release - each line naming where it was read, a source that could not be read saying why - and prints the documented update commands when a newer release is out. Versions compare as semver; an unanswered release feed is never reported as up to date. The release check is the plugin's one outbound request, stated in SECURITY.md and skipped by --offline. Desired outcome met, driven live against this machine's installed copies. Reviewed in phase mode (two findings, fixed); the phase gate ran green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P67.1",
@@ -196,5 +197,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-25T06:38:09Z"
+  "startedAt": "2026-09-25T06:38:09Z",
+  "testEvidence": {
+    "runId": "2026-09-25T06:58:59Z.3e1046",
+    "status": "passed",
+    "at": "2026-09-25T06:58:59Z"
+  }
 }
