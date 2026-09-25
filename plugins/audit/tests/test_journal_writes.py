@@ -443,11 +443,11 @@ def _cases(check):
         entries = M.post_entries(payload("Edit", man_rel, sid="pp-4"), cfg=cfg,
                                  root=pproj)
         sign = [e for e in entries if e.get("action") == "phase.signoff"]
-        check("h6 a phase flipped to done yields a phase.signoff row carrying "
-              "mergedAt",
-              len(sign) == 1 and sign[0]["details"] == {
-                  "phaseId": "P1", "from": "in_progress", "to": "done",
-                  "mergedAt": "2026-08-11T01:00:00Z"}, repr(sign))
+        check("h6 a phase whose stored status is flipped to done, with no "
+              "verdict recorded, is NOT signed off - the flip is on the edit row, "
+              "and a sign-off comes only from the verdict and the merge (h6b-h6d)",
+              sign == [] and any("status in_progress->done" in e.get("summary", "")
+                                 for e in entries), repr(entries))
 
         # The signoff verb records a verdict and never writes `status`, so the
         # phase reaches done by DERIVATION - and the completion record has to be
@@ -521,10 +521,13 @@ def _cases(check):
                        if e.get("action") == "phase.signoff"])
         _body = M.semantic_diff(manifest_doc(status="done"),
                                 manifest_doc(status="done", phase_status="done"))
-        check("h6h SECOND DIRECTION: the same flip on a phase BODY (it carries its "
-              "tasks) still derives one",
-              len([e for e in (_body or {}).get("events", [])
-                   if e.get("action") == "phase.signoff"]) == 1, repr(_body))
+        check("h6h ...and the same flip on a phase BODY (it carries its tasks) "
+              "derives none either - a stored-status flip is not a sign-off, "
+              "though it is still recorded as the change it is",
+              _body is not None
+              and any(c["field"] == "status" for c in _body["changes"])
+              and not [e for e in _body.get("events", [])
+                       if e.get("action") == "phase.signoff"], repr(_body))
 
         # A completion the journal ALREADY holds - brought in by a merge with the
         # branch's trail - is not recorded again; one it does not hold always is.
@@ -1047,11 +1050,13 @@ def _cases(check):
         _f8_rel = "docs/audit/phases/P4.json"
         _f8_abs = os.path.join(fproj, _f8_rel)
         f_write({"id": "P4", "title": "p", "status": "in_progress",
+                 "branch": "audit/p4", "review": {"status": "passed"},
                  "tasks": [{"id": "P4.1", "title": "t", "status": "in_progress",
                             "commit": None, "completedAt": None}]}, _f8_abs)
         M.pre_cache(f_edit("f-8", _f8_rel), cfg=cfg, root=fproj)
         f_write({"id": "P4", "title": "p", "status": "done",
                  "mergedAt": "2026-08-25T04:00:00Z",
+                 "branch": "audit/p4", "review": {"status": "passed"},
                  "tasks": [{"id": "P4.1", "title": "t", "status": "done",
                             "commit": None,
                             "completedAt": "2026-08-25T04:00:00Z"}]}, _f8_abs)
@@ -1683,6 +1688,83 @@ def _cases(check):
                 os.environ.pop("CLAUDE_PROJECT_DIR", None)
             else:
                 os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
+
+    # (sg) A SIGN-OFF IS RECORDED BY WHAT SIGNS OFF, AND A ROW BY WHO WROTE IT.
+    # Measured: after the orchestrator stored the derived `done` on its phase
+    # bodies, a DIFFERENT session's hook, on an unrelated Bash call, derived 147
+    # rows under its own session - 105 of them phase.signoff. Two defects: a
+    # stored-status flip was read as a sign-off, and the sweep derived rows from
+    # a digest a peer's write had moved.
+    sg = tempfile.mkdtemp(prefix="journal-signoff-")
+    try:
+        sg_rel = "docs/audit/audit-plan.json"
+        sg_abs = os.path.join(sg, sg_rel)
+        os.makedirs(os.path.dirname(sg_abs))
+        sg_cfg = _config._deep_merge(_config.DEFAULTS, {})
+
+        def sg_doc(stored="in_progress", verdict=None, task="done"):
+            ph = {"id": "P1", "title": "p", "status": stored,
+                  "tasks": [{"id": "P1.1", "title": "t", "status": task,
+                             "commit": "a" * 40, "completedAt": "X"}]}
+            if verdict:
+                ph["review"] = {"status": verdict}
+            return {"meta": {"version": 3}, "phases": [ph]}
+
+        def sg_write(doc):
+            with open(sg_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+
+        def sg_bash(sid, command="ls"):
+            return {"tool_name": "Bash", "session_id": sid, "cwd": sg,
+                    "tool_input": {"command": command}}
+
+        def sg_call(sid, write=None):
+            """One whole tool call: Pre, the command's own write, Post."""
+            M.pre_cache(sg_bash(sid), cfg=sg_cfg, root=sg)
+            if write is not None:
+                sg_write(write)
+            return M.post_entries(sg_bash(sid), cfg=sg_cfg, root=sg)
+
+        sg_write(sg_doc(verdict="passed"))
+        sg_call("sg-peer")                       # the observer has looked once
+        # ANOTHER session stores the derived done - the settle - between the
+        # observer's calls, then the observer runs something unrelated.
+        sg_write(sg_doc(stored="done", verdict="passed"))
+        _sg1 = sg_call("sg-peer")
+        check("sg1 a write another session made between this session's calls "
+              "derives NOTHING here - not a manifest.edit and not a sign-off: "
+              "the row belongs to whoever wrote it, under their session",
+              _sg1 == [], repr([(e.get("action"), e.get("summary"))
+                                for e in _sg1]))
+        _sg1b = sg_call("sg-peer", write=sg_doc(stored="done", verdict="passed",
+                                                task="done"))
+        check("sg1b ...and the absorbed write is not re-derived on the call "
+              "after it either", _sg1b == [], repr(_sg1b))
+        # A HAND flip of the stored status, made by this call, is a hand edit.
+        sg_write(sg_doc(stored="in_progress"))
+        sg_call("sg-hand")
+        _sg2 = sg_call("sg-hand", write=sg_doc(stored="done"))
+        check("sg2 a hand flip of `status` to done by this call's own write is "
+              "recorded as the edit it is, and is NOT a sign-off - nothing "
+              "signed the phase off",
+              [e.get("action") for e in _sg2] == ["manifest.edit"]
+              and "status in_progress->done" in _sg2[0].get("summary", ""),
+              repr([(e.get("action"), e.get("summary")) for e in _sg2]))
+        # The signoff verb's write: a verdict on a finished branchless phase.
+        sg_write(sg_doc(verdict="pending"))
+        sg_call("sg-verb")
+        _sg3 = sg_call("sg-verb", write=sg_doc(verdict="passed"))
+        check("sg3 SECOND DIRECTION: the verdict itself, written by this call, "
+              "still yields exactly ONE phase.signoff",
+              [e.get("action") for e in _sg3].count("phase.signoff") == 1,
+              repr([e.get("action") for e in _sg3]))
+        # ...and the settle that follows it, by the same session, adds none.
+        _sg4 = sg_call("sg-verb", write=sg_doc(stored="done", verdict="passed"))
+        check("sg4 storing the derived done after the verdict - the settle - is "
+              "not a second sign-off", "phase.signoff" not in
+              [e.get("action") for e in _sg4], repr(_sg4))
+    finally:
+        shutil.rmtree(sg, ignore_errors=True)
 
     # (p) the sidecar's state dir is self-ignoring
     tmp_i = tempfile.mkdtemp(prefix="jw-ignore-")

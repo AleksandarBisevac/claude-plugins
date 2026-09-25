@@ -62,9 +62,11 @@ REFRESHES the slot:
 
     task.complete   a task's status moved to done
     task.commit     a task's commit moved null -> SHA
-    phase.signoff   a phase reached done - its DERIVED status, so a verdict
-                    recorded by the signoff verb or a merge stamped after one
-                    counts, and a hand-written `done` over it is not a second
+    phase.signoff   a phase reached done - its DERIVED status, moved by its
+                    inputs: a verdict recorded by the signoff verb, or a merge
+                    stamped after one. A stored `status` flipped by hand, or
+                    storing what the derivation already answered, is an edit
+                    and signs nothing off
 
 This HOOK is the only writer of those actions -- a prose instruction to append
 them would be a second writer, and two writers means duplicate rows. Tokens are
@@ -412,12 +414,19 @@ def _pre_seed_sweep(root, cfg, data):
     file, and `audit-journal verify` later reported `an edit the journal never
     saw`. That warning was telling the truth; the window was the defect.
 
-    NOT A HASH PER CALL. A slot that already exists is left alone, so the cost
-    after the session's first call on this lane is one `exists` per watched path —
-    and only the paths this hook already sweeps on Post are touched, so the Pre and
-    Post passes cannot disagree about what is watched. That bound is what lets the
-    MCP matcher share the lane: an MCP call pays the same `exists` per watched path
-    that a Bash call does, and every call after the first pays nothing else.
+    AND A BASELINE AS OF THIS CALL, NOT AS OF THIS SESSION'S LAST ONE. The Post
+    pass derives rows from what moved between the slot and now, and files them
+    under this session. A slot left from the session's previous call made that
+    window span every other writer's work in between: after the orchestrator
+    stored its derived statuses, a different session's next unrelated Bash call
+    derived 147 rows as its own. So a slot whose digest no longer matches the
+    file is refreshed here, silently - that move was made before this call and
+    belongs to whoever made it, under their own session's hook. What is left
+    for Post is what moved while THIS call ran. A peer writing during that same
+    window is still read as this call's write, which is the residual.
+
+    The cost is a digest per watched path per call, the one Post already
+    pays; the bytes are rewritten only for a path somebody else moved.
 
     Returns the last slot written, or None, matching `pre_cache`'s contract.
     """
@@ -425,11 +434,12 @@ def _pre_seed_sweep(root, cfg, data):
     for rel in _swept_targets(root, cfg):
         if _config.in_journal(root, cfg, rel):
             continue
-        slot = _slot_path(root, cfg, data, rel)
-        if os.path.exists(slot):
-            continue
-        if _snapshot(os.path.join(str(root), rel))[0] is None:
+        now_sha = _snapshot(os.path.join(str(root), rel))[0]
+        if now_sha is None:
             continue               # nothing readable to be a baseline
+        pre = _read_preimage(root, cfg, data, rel)
+        if pre is not None and pre.get("sha256") == now_sha:
+            continue
         last = _write_slot(root, cfg, data, rel) or last
     return last
 
@@ -644,7 +654,16 @@ def semantic_diff(old_obj, new_obj):
             # From a phase BODY only - one that carries its tasks. An index stub
             # is a mirror: it derives nothing, and a stored `done` flipped on it
             # beside its shard is the same sign-off the shard's diff records.
-            oe, ne = status_of(old_phase), status_of(new_phase)
+            #
+            # AND FROM THE DERIVATION'S INPUTS, NEVER FROM `status`. A sign-off
+            # is the verdict (and, with a branch, the merge stamp); a stored
+            # `status` moved to done - by hand, or by storing what the
+            # derivation already answered - signs nothing off. So the new side
+            # is derived with the OLD stored status in place: only a change to
+            # the tasks, the verdict or `mergedAt` can move it to done. A hand
+            # flip is still recorded, as the `status` change on the edit row.
+            oe = status_of(old_phase)
+            ne = status_of(dict(new_phase, status=old_phase.get("status")))
             if (ne == "done" and oe != "done"
                     and isinstance(new_phase.get("tasks"), list)):
                 events.append({"action": "phase.signoff",

@@ -218,7 +218,7 @@
     {
       "id": "P72.3-ttl",
       "title": "journal-writes derives no sign-off from a stored status, and no row for a write another session made",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Measured on this repo: after the orchestrator's settle (which stored the derived done on 34 phase bodies and mirrored status onto 69 index stubs), a DIFFERENT session's installed journal-writes hook, on an unrelated Bash call, derived 147 rows under its own session - 105 phase.signoff for 70 phases - from the manifest digest change it saw. Two defects compose. (1) Meaning: a sign-off is recorded by the signoff verb (its own journal row); a stored-status flip is not a sign-off - at HEAD phase.signoff is derived only from phase bodies, but a parent-branch body settle moved to done has mergedAt null, and a null last field is never a dedup key, so HEAD still derives one per such body. Stop deriving phase.signoff from status (or derive it only from a review.status/verdict change the verb did not record), and recognise settle and the stub mirror as the plugin's own materialisation (settle journals plan.settle). (2) Attribution: the sweep lane derives rows from any manifest digest change it sees, whoever wrote it, and files them under the observing session. Derive only from writes this tool call made - its own target, or the command's tree through tree_for - never from a digest a peer's write moved. Cases: settle, then a peer session's unrelated Bash call derives nothing; a hand status flip still yields a hand-edit row; the verb's sign-off row is not duplicated.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -228,7 +228,8 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/reference/orchestrator.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -253,21 +254,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T17:47:05Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P72.4-ttl",
       "title": "A session's journal writer is keyed by its worktree too, so parallel worktrees of one session never share a file",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Hit merging main into P70: audit-journal merge refused 2026-09.<session>.jsonl because rows written in two linked worktrees of ONE session at the same second said different things (task starts in sibling worktrees), and timestamp order cannot separate them; it was resolved by hand. The per-writer file layout that makes journal merges conflict-free assumes one writer per file, but the writer id is the session id, so every worktree a session drives appends the same basename. Key the writer by session AND worktree (a linked worktree's .claude/state already holds its own writer token) so two worktrees never share a file; keep reading existing session-keyed files; check verify, merge, doctor and the record-key dedup read the new names. Cases: two worktrees of one session write two files; the old name is still read; a merge of both branches has no journal conflict.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -279,7 +280,10 @@
         "plugins/audit/scripts/governance/audit-journal.py",
         "plugins/audit/tests/test_audit_journal.py",
         "tools/check-git-pipeline.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -304,14 +308,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-25T17:47:05Z",
       "completedAt": null,
       "verifiedBy": []
     }
