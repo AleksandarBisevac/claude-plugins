@@ -1,0 +1,74 @@
+{
+  "id": "P71",
+  "title": "A task commit carries what the index says and the verdict it was measured under",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "commit-task-work commits both halves of a staged rename or deletion, stages a tracked file under an ignored directory and leaves the index as found on any refusal, names an untracked ignored file instead of passing silently, and refuses a task whose newest gate verdict is not passed on the work being committed unless the operator overrides it on the record",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P71.1",
+      "title": "commit-task-work commits a staged rename's source, stages tracked files under ignored directories, and is bound to the task's newest verdict",
+      "status": "pending",
+      "description": "Field report on 3.0.1, reproduced at HEAD: (1) tracked() asks the index only; after git mv the old path is only in HEAD, so the red-first skip drops it and the commit records a copy. Tracked = index OR HEAD; a HEAD-only path stays out of the git add argv (git add -- old fails 128) and in the git commit -- pathspec (records the rename). Cases for a staged R and a staged D. (2) git add -- <tracked file under an ignored dir> exits 1 AND stages it (git 2.50.1); the script refuses and leaves it staged, breaking 'a refusal leaves the index as found'. Split by ls-files: tracked -> git add -u --, untracked -> git add --; the ignore refusal survives only for untracked paths, named 'ignored; -f is yours to decide'; any failure after staging resets the allowed paths; an untracked declared file under an ignored dir is named, not 'nothing uncommitted'. Never add -f. (3) the commit ignores task.testEvidence: refuse unless the task's newest evidence row is passed and current for the staged work (the declared-work digest run-test-gate records matches what is staged); an explicit override flag writes a journal row. No runtime related-tests step.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: repro that FAILS on current code - a declared path staged as the source of a rename is skipped, so the commit adds the new file and leaves the old one tracked"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
