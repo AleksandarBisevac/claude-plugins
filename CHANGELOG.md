@@ -102,14 +102,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   journal-writes hook diffs the plan whenever a Bash call moves it, and a `git merge` moves it by
   the whole of another branch's history - so every task that branch finished got a second
   `task.complete` and `task.commit`, and the completion count stopped being a count. A derived row
-  is now checked against the commits the call brought in - every commit HEAD landed on since the
-  baseline, their parents, and an open merge or pick's other sides - counting only those git dates
-  before the baseline, and one those already carry is not repeated; the change is still recorded.
-  The reflog's wording is never read, so `pull --rebase -q` and an octopus merge are recognised,
-  and a completion made in the same call - then committed, rebased, cherry-picked, merged over or
-  reset back onto - is still derived. A cherry-pick that finishes without stopping, and a commit
-  dated in the future, are not recognised and cost a repeated row. The baseline's HEAD is read
-  from the repository's files, so an ordinary Edit of the plan forks no git process.
+  is now withheld only when the journal already holds the identical record - the branch's trail
+  arrives with its work - keyed by what makes it that completion (`completedAt`, the commit SHA,
+  `mergedAt`, the work-item id). Git's dates and reflog are never read, so a completion made in
+  the call is always recorded and an unrelated old completion of the same task is not taken for
+  it. The change's own row says how many derived rows it did not repeat.
 - **`close-phase` judged a landing by the phase as it stood before its own merge.** Run from the
   parent's tree - the only tree a linked worktree can be removed from - it read the parent's copy
   of the plan, where the sign-off committed on the phase branch is not yet present, and refused the

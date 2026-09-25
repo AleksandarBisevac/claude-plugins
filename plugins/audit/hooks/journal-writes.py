@@ -332,15 +332,9 @@ def _write_slot(root, cfg, data, rel):
         slot = _slot_path(root, cfg, data, rel)
         sha, text = _snapshot(os.path.join(str(root), rel))
         _config.ensure_local_dir(os.path.dirname(slot))
-        head = _head_sha(root)
         with open(slot, "w", encoding="utf-8") as fh:
             json.dump({"path": rel,
                        "ts": _config.utc_stamp(),
-                       # WHERE HEAD STOOD when this baseline was taken - the
-                       # anchor `brought_in` walks the reflog back to. A time
-                       # has one-second resolution, and a reset made earlier in
-                       # the same second read as this call's.
-                       "head": head,
                        "sha256": sha, "content": text}, fh)
         return slot
     except Exception:
@@ -742,184 +736,75 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
 
 
 # --- the rows a write owes ---------------------------------------------------
-# --- history brought in: what a merge's write did NOT complete ------------------
-# The sweep lane diffs a recorded path whenever a Bash call moved it, and a `git
+# --- a completion already recorded is not recorded again ------------------------
+# The sweep lane diffs a recorded path whenever a Bash call moves it, and a `git
 # merge` moves the plan by the whole of another branch's history - so every task
-# that branch finished was derived as completed a second time, where nothing was
-# completed, and the completion count stopped being a count. The completions came
-# with the history; they were journalled where the work ran.
+# that branch finished was derived as completed a second time, and the completion
+# count stopped being a count.
 #
-# A COMMIT COUNTS AS HISTORY BY WHEN IT WAS MADE, never by how a reflog line spells
-# the operation. Two readings of the reflog's text were each wrong on a shape nobody
-# had tried: a rebase's replayed picks and a reset back onto the call's own commit
-# read as history and silenced a completion made in the call, and `pull --rebase -q`
-# spelled its flags into the line and slipped past a literal table. So the
-# candidates are every commit HEAD landed on since the baseline, their parents, and
-# every line of an open MERGE_HEAD / CHERRY_PICK_HEAD - and one counts only if git
-# dates it BEFORE the baseline. A commit the call made - a plain commit, a replayed
-# pick, a finished cherry-pick, a merge commit, the one a reset returns to - is dated
-# after it. Undatable means not counted: a repeated row, never a lost completion.
-_HISTORY_HEADS = ("MERGE_HEAD", "CHERRY_PICK_HEAD")
-_BROUGHT_MAX = 20                 # commits read per call: a bound on cost, not a rule
+# THE JOURNAL IS WHAT KNOWS, NOT GIT. Three rules read off git were each wrong on a
+# shape nobody had tried - a reflog line's wording, then a commit's date: a
+# rebase's own picks, a reset back onto the call's own commit, a backdated commit
+# all silenced a completion the call had just made, and an unrelated old
+# completion of the same task on a merged branch was taken for this one. Whether a
+# completion was recorded is a question about the RECORD: a derived row is
+# withheld only when the trail already holds the identical one, keyed by what
+# makes it that completion and not another. A merge brings the branch's trail in
+# with its work, so a completion recorded where the work ran is found; one never
+# recorded anywhere, or one this call made, is not.
+#
+# The key's last field must be present: a phase signed off with no branch records
+# `mergedAt: null`, which cannot tell one sign-off from a later one, so that row is
+# never withheld - a repeated row, never a lost one.
+_RECORD_KEYS = {
+    "task.complete": ("taskId", "completedAt"),
+    "task.commit": ("taskId", "commit"),
+    "task.blocked": ("taskId", "attempts"),
+    "phase.signoff": ("phaseId", "mergedAt"),
+    "ado.link": ("taskId", "phaseId", "adoId"),
+}
 
 
-def _head_sha(root):
-    """HEAD's commit, read out of the repository's own files, or None.
-
-    No fork: the slot records it on every baseline, and a baseline is taken on
-    every Edit of the plan. A linked worktree's `.git` is a file naming its git
-    directory, whose `commondir` holds the shared refs; a ref may be loose or in
-    `packed-refs`. Anything unreadable is None - the reflog walk then has no
-    anchor and reads nothing, which costs a repeated row, never a completion."""
-    here = os.path.abspath(str(root))
-    while True:
-        dot = os.path.join(here, ".git")
-        if os.path.exists(dot):
-            break
-        up = os.path.dirname(here)
-        if up == here:
-            return None
-        here = up
-    try:
-        if os.path.isfile(dot):
-            with open(dot, encoding="utf-8") as fh:
-                line = fh.readline().strip()
-            if not line.startswith("gitdir:"):
-                return None
-            gitdir = os.path.join(here, line.split(":", 1)[1].strip())
-        else:
-            gitdir = dot
-        common = gitdir
-        if os.path.isfile(os.path.join(gitdir, "commondir")):
-            with open(os.path.join(gitdir, "commondir"), encoding="utf-8") as fh:
-                common = os.path.join(gitdir, fh.readline().strip())
-        with open(os.path.join(gitdir, "HEAD"), encoding="utf-8") as fh:
-            head = fh.readline().strip()
-        if not head.startswith("ref:"):
-            return head if re.match(r"^[0-9a-f]{40,64}$", head) else None
-        ref = head.split(":", 1)[1].strip()
-        for base in (gitdir, common):
-            loose = os.path.join(base, *ref.split("/"))
-            if os.path.isfile(loose):
-                with open(loose, encoding="utf-8") as fh:
-                    sha = fh.readline().strip()
-                return sha if re.match(r"^[0-9a-f]{40,64}$", sha) else None
-        packed = os.path.join(common, "packed-refs")
-        if os.path.isfile(packed):
-            with open(packed, encoding="utf-8") as fh:
-                for pline in fh:
-                    parts = pline.strip().split(" ", 1)
-                    if len(parts) == 2 and parts[1] == ref:
-                        return parts[0]
-    except OSError:
+def _record_key(action, details):
+    """What makes this derived row THAT record, or None when nothing can say."""
+    fields = _RECORD_KEYS.get(action)
+    if not fields:
         return None
-    return None
+    details = details if isinstance(details, dict) else {}
+    values = tuple(details.get(f) for f in fields)
+    if values[-1] in (None, ""):
+        return None
+    return (action,) + values
 
 
-def _git_out(root, *argv):
-    """(returncode, stdout) of one git call, or (None, "") when git cannot run.
-    Called only from `brought_in`, which only a sweep-lane Post pass that saw a
-    recorded path move reaches - so the import and the fork are paid there."""
-    import subprocess
+def recorded_keys(root):
+    """The record keys of every derived row the journal already holds, or None
+    when the journal cannot be read - which withholds nothing."""
+    mod = _journal_lib()
+    reader = getattr(mod, "read_all", None)
+    if not callable(reader):
+        return None
     try:
-        r = subprocess.run(["git", "-C", str(root)] + list(argv),
-                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                           timeout=10)
-    except Exception:
-        return None, ""
-    return r.returncode, r.stdout.decode("utf-8", "replace")
-
-
-def _epoch(stamp):
-    """An ISO `...Z` stamp as epoch seconds, or None."""
-    import calendar
-    import time
-    try:
-        return calendar.timegm(time.strptime(str(stamp)[:19], "%Y-%m-%dT%H:%M:%S"))
+        rows = reader(str(root))
     except Exception:
         return None
+    keys = set()
+    for row in rows:
+        key = _record_key(row.get("action"), row.get("details"))
+        if key is not None:
+            keys.add(key)
+    return keys
 
 
-def brought_in(root, rel, since_head, since_ts):
-    """`rel` as each commit this call brought in holds it, parsed - the documents a
-    derived row is checked against.
-
-    `since_head` is where HEAD stood at the baseline and `since_ts` when it was
-    taken: the reflog is read back to the first and no further, and a candidate
-    counts only if git dates it before the second. [] when git cannot say, which
-    leaves every derived row standing."""
-    code, gitdir = _git_out(root, "rev-parse", "--git-dir")
-    if code != 0:
-        return []
-    gitdir = gitdir.strip()
-    if not os.path.isabs(gitdir):
-        gitdir = os.path.join(str(root), gitdir)
-    candidates = []
-    for name in _HISTORY_HEADS:          # every other side of an open operation
-        try:
-            with open(os.path.join(gitdir, name), encoding="utf-8") as fh:
-                candidates.extend(ln.strip() for ln in fh if ln.strip())
-        except OSError:
-            continue
-    if since_head:
-        code, log = _git_out(root, "log", "-g", "--format=%H", "-n", "50", "HEAD")
-        for sha in (log.split() if code == 0 else []):
-            if sha == since_head:
-                break              # the baseline's own position: nothing older
-            candidates.append(sha)
-    floor = _epoch(since_ts)
-    if not candidates or floor is None:
-        return []
-    candidates = sorted(set(candidates), key=candidates.index)[:_BROUGHT_MAX]
-    code, dated = _git_out(root, "log", "--no-walk=unsorted", "--format=%H %ct %P",
-                           *candidates)
-    if code != 0:
-        return []
-    when, parents = {}, []
-    for line in dated.splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and parts[1].isdigit():
-            when[parts[0]] = int(parts[1])
-            parents.extend(parts[2:])
-    parents = [p for p in sorted(set(parents), key=parents.index) if p not in when]
-    if parents:
-        code, dated = _git_out(root, "log", "--no-walk=unsorted", "--format=%H %ct",
-                               *parents[:_BROUGHT_MAX])
-        for line in (dated.splitlines() if code == 0 else []):
-            parts = line.split()
-            if len(parts) == 2 and parts[1].isdigit():
-                when[parts[0]] = int(parts[1])
-    existed = [sha for sha, at in when.items() if at < floor]
-    docs = []
-    for sha in existed[:_BROUGHT_MAX]:
-        code, text = _git_out(root, "show", "%s:./%s" % (sha, rel))
-        if code != 0:
-            continue
-        try:
-            docs.append(json.loads(text))
-        except ValueError:
-            continue
-    return docs
-
-
-def _event_key(ev):
-    det = ev.get("details") or {}
-    return (ev.get("action"), det.get("taskId"), det.get("phaseId"))
-
-
-def _not_arrived(events, new_obj, brought):
-    """The derived events that are news against EVERY document the call brought
-    in - one it did not carry. A completion present in an incoming commit's copy is
-    that commit's, and it is not derived again."""
-    if not brought:
+def _not_recorded(events, recorded):
+    """The derived events the journal does not already hold."""
+    if not recorded:
         return list(events)
-    fresh = [set(_event_key(e) for e in ((semantic_diff(doc, new_obj) or {})
-                                         .get("events") or []))
-             for doc in brought]
-    return [ev for ev in events if all(_event_key(ev) in f for f in fresh)]
+    return [ev for ev in events
+            if _record_key(ev.get("action"), ev.get("details")) not in recorded]
 
 
-def _manifest_rows(entry, rel, old_obj, new_obj, brought=None):
+def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
     """(primary, chained) for a write to the manifest: the diff folded into the
     primary row, plus the completion rows derived from the SAME comparison.
 
@@ -941,13 +826,13 @@ def _manifest_rows(entry, rel, old_obj, new_obj, brought=None):
         return row, []             # nothing this hook tracks moved: not a gap
     row["summary"] = diff["summary"]
     row["details"] = {"changes": diff["changes"]}
-    events = _not_arrived(diff["events"], new_obj, brought)
+    events = _not_recorded(diff["events"], recorded)
     held = len(diff["events"]) - len(events)
     if held:
         # SAID ON THE ROW, so the write is still accounted for: the change is
         # recorded, and why its completions are not is readable beside it.
-        note = ("%d derived row(s) not repeated: they arrived with the history "
-                "this call brought in, and were recorded where the work ran" % held)
+        note = ("%d derived row(s) not repeated: the journal already holds the "
+                "same record, written where the work ran" % held)
         row["summary"] = "%s; %s" % (row["summary"], note)
         row["details"]["reason"] = note
     return row, [{"action": ev["action"], "target": rel,
@@ -1041,6 +926,7 @@ def swept_entries(data, *, cfg=None, root=None):
     # only because of the flip that turned it off - judged against the pre-image, as
     # on the edit lane. Sweeping the manifest here would be the plugin doing work
     # after being told to stop, and stating a shard directory it must not read.
+    recorded = None                    # read once, only when a plan path moved
     for rel in (_swept_targets(root, cfg) if enabled else [_config.CONFIG_REL]):
         # The journal is never its own subject, on this lane too. guard-edits
         # refuses that write and no default layout puts a journal file behind one
@@ -1067,11 +953,11 @@ def swept_entries(data, *, cfg=None, root=None):
                        rel, tool, {}, data, root, cfg)
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
-        brought = (brought_in(root, rel, pre.get("head"), pre.get("ts"))
-                   if not is_cfg and old_obj is not None else None)
+        if not is_cfg and old_obj is not None and recorded is None:
+            recorded = recorded_keys(root) or set()
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
                             else _manifest_rows(entry, rel, old_obj, new_obj,
-                                                brought=brought))
+                                                recorded=recorded))
         rows.append(primary)
         rows.extend(chained)
         if enabled:

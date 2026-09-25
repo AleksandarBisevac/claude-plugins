@@ -526,91 +526,70 @@ def _cases(check):
               len([e for e in (_body or {}).get("events", [])
                    if e.get("action") == "phase.signoff"]) == 1, repr(_body))
 
-        # A write that BRINGS IN another commit's history - a merge, a cherry-pick -
-        # derives no completion that commit already records: the completion
-        # happened, and was journalled, where the work ran.
+        # A completion the journal ALREADY holds - brought in by a merge with the
+        # branch's trail - is not recorded again; one it does not hold always is.
         _entry = {"action": "manifest.edit", "target": "m.json", "summary": "x",
                   "actor": {"author": "a"}}
         _old = manifest_doc(status="in_progress")
         _new = manifest_doc(status="done", completed="X", commit="a" * 40)
         _, _plain = M._manifest_rows(dict(_entry), "m.json", _old, _new)
+        # Keys built the way the reader builds them from the rows a journal holds,
+        # never spelled here: a key shape of the case's own would agree with any
+        # key rule at all.
+        _held = {M._record_key("task.complete", {"taskId": "P1.1", "completedAt": "X"}),
+                 M._record_key("task.commit", {"taskId": "P1.1", "commit": "a" * 40})}
         _row, _merged = M._manifest_rows(dict(_entry), "m.json", _old, _new,
-                                         brought=[_new])
-        check("hm1 a completion that ARRIVED with the history a call brought in is not "
-              "derived again - the primary row still records the change: %r %r"
-              % ([e["action"] for e in _merged], _row["summary"]),
+                                         recorded=_held)
+        check("hm1 a completion whose IDENTICAL record the journal already holds is not "
+              "derived again - the primary row still records the change and says why: "
+              "%r %r" % ([e["action"] for e in _merged], _row["summary"]),
               [e["action"] for e in _plain] == ["task.complete", "task.commit"]
               and _merged == [] and "not repeated" in _row["summary"])
-        _, _local = M._manifest_rows(dict(_entry), "m.json", _old, _new,
-                                     brought=[_old])
-        check("hm2 SECOND DIRECTION: history that did NOT carry the completion - the "
-              "call brought in a commit where the task was still open - leaves it "
-              "derived: %r" % ([e["action"] for e in _local],),
-              [e["action"] for e in _local] == ["task.complete", "task.commit"])
+        _, _stale = M._manifest_rows(dict(_entry), "m.json", _old, _new, recorded={
+            M._record_key("task.complete", {"taskId": "P1.1",
+                                            "completedAt": "an earlier completion"}),
+            M._record_key("task.commit", {"taskId": "P1.1", "commit": "b" * 40})})
+        check("hm2 SECOND DIRECTION: a record of the same task with a DIFFERENT "
+              "completedAt and commit is another completion, and this one is derived: "
+              "%r" % ([e["action"] for e in _stale],),
+              [e["action"] for e in _stale] == ["task.complete", "task.commit"])
         _two_old = manifest_doc(status="in_progress")
         _two_old["phases"][0]["tasks"].append({"id": "P1.2", "title": "u",
                                                "status": "in_progress"})
         _two_new = json.loads(json.dumps(_two_old))
         _two_new["phases"][0]["tasks"][0].update(status="done", completedAt="X")
         _two_new["phases"][0]["tasks"][1].update(status="done", completedAt="Y")
-        _incoming = json.loads(json.dumps(_two_old))
-        _incoming["phases"][0]["tasks"][0].update(status="done", completedAt="X")
         _, _mixed = M._manifest_rows(dict(_entry), "m.json", _two_old, _two_new,
-                                     brought=[_incoming])
-        check("hm3 a call that merges AND finishes work of its own keeps its own "
-              "completion and drops only the one that arrived: %r"
+                                     recorded={M._record_key(
+                                         "task.complete",
+                                         {"taskId": "P1.1", "completedAt": "X"})})
+        check("hm3 a write holding one recorded completion and one new keeps the new "
+              "one and withholds only the recorded: %r"
               % ([(e["action"], e["details"].get("taskId")) for e in _mixed],),
               [(e["action"], e["details"].get("taskId")) for e in _mixed]
               == [("task.complete", "P1.2")])
-
-        # The baseline's HEAD is read out of the repository's own files: an
-        # ordinary Edit of the manifest forks no git process, on either pass.
-        _calls = []
-        _real_git_out = M._git_out
-        M._git_out = lambda *a, **k: (_calls.append(a), _real_git_out(*a, **k))[1]
+        check("hm4 a phase signed off with no branch records mergedAt null, which cannot "
+              "tell one sign-off from a later one - its record is never a key, so it is "
+              "never withheld: %r"
+              % (M._record_key("phase.signoff", {"phaseId": "P1", "mergedAt": None}),),
+              M._record_key("phase.signoff", {"phaseId": "P1", "mergedAt": None}) is None
+              and M._record_key("phase.signoff", {"phaseId": "P1", "mergedAt": "T"})
+              == ("phase.signoff", "P1", "T"))
+        _reads = []
+        _real_keys = M.recorded_keys
+        M.recorded_keys = lambda *a, **k: (_reads.append(a), _real_keys(*a, **k))[1]
         try:
             write_manifest(manifest_doc(status="in_progress"))
-            M.pre_cache(payload("Edit", man_rel, sid="fork-count"), cfg=cfg, root=pproj)
+            M.pre_cache(payload("Edit", man_rel, sid="read-count"), cfg=cfg, root=pproj)
             write_manifest(manifest_doc(status="done", completed="Z"))
-            M.post_entries(payload("Edit", man_rel, sid="fork-count"), cfg=cfg,
-                           root=pproj)
+            _edit_rows = M.post_entries(payload("Edit", man_rel, sid="read-count"),
+                                        cfg=cfg, root=pproj)
         finally:
-            M._git_out = _real_git_out
-        check("hm4 an ordinary Edit of the manifest runs no git process on either "
-              "pass - the baseline HEAD is read from the repository's files: %r"
-              % (_calls,), _calls == [])
-        _hroot = _harness.fixture_root("jw-head")
-        try:
-            import subprocess as _sp
-            _genv = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
-                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
-
-            def _g(cwd, *a):
-                return _sp.run(["git", "-C", cwd] + list(a), env=_genv,
-                               stdout=_sp.PIPE, stderr=_sp.PIPE)
-            _main = os.path.join(_hroot, "main")
-            os.makedirs(_main)
-            _g(_main, "init", "-q", "-b", "main")
-            _g(_main, "commit", "-q", "--allow-empty", "-m", "base")
-            _g(_main, "pack-refs", "--all")
-            _g(_main, "commit", "-q", "--allow-empty", "-m", "loose after packing")
-            _linked = os.path.join(_hroot, "linked")
-            _g(_main, "worktree", "add", "-q", "-b", "side", _linked)
-            _g(_linked, "commit", "-q", "--allow-empty", "-m", "on the side")
-            _want_main = _g(_main, "rev-parse", "HEAD").stdout.decode().strip()
-            _want_linked = _g(_linked, "rev-parse", "HEAD").stdout.decode().strip()
-            _g(_main, "pack-refs", "--all")
-            check("hm5 HEAD read from the files matches git's own answer - in the main "
-                  "tree with packed refs, and in a linked worktree whose refs live in "
-                  "the common directory: %r"
-                  % ((M._head_sha(_main), _want_main, M._head_sha(_linked),
-                      _want_linked),),
-                  M._head_sha(_main) == _want_main
-                  and M._head_sha(_linked) == _want_linked and len(_want_main) == 40)
-            check("hm6 ...and outside any repository it is None, never a guess",
-                  M._head_sha(_hroot) is None)
-        finally:
-            _harness.remove_tree(_hroot)
+            M.recorded_keys = _real_keys
+        check("hm5 an Edit of the plan reads no journal to decide its rows - no edit tool "
+              "brings in history, so the check is the sweep lane's alone: %r" % (_reads,),
+              _reads == [] and any(r.get("action") == "task.complete"
+                                   for r in _edit_rows))
 
         # --- i: connector v2 events (task.blocked + ado.link) ------------------
         # Derived from the same diff as everything else, tested on the core

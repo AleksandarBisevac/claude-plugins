@@ -408,17 +408,18 @@ The journal's **completion-record actions**:
 because two writers means duplicate rows and a doctor that can no longer trust the count.
 The `journal-writes` hook emits `manifest.edit`, `config.edit` and the four derived completion
 records (`task.complete`, `task.blocked`, `task.commit`, `phase.signoff`) plus `ado.link`.
-A write that BRINGS IN another commit's history derives none of those that the incoming commit
-already carries: the completion happened, and was recorded, where the work ran. The candidates
-are every commit HEAD landed on since the baseline (the reflog, read back to where HEAD stood
-then), their parents, and every line of an open `MERGE_HEAD` / `CHERRY_PICK_HEAD`; one counts
-only if **git dates it before the baseline**. So a commit the call MADE - a plain commit, a
-rebase's replayed picks, a finished cherry-pick, a merge commit, the commit a reset returns to -
-never counts, and a completion made in the same call is still derived; the reflog's wording is
-never read. The change itself is always recorded, and its row says how many derived rows it did
-not repeat. **Not recognised:** a cherry-pick that finished without stopping (git keeps no record of
-which commit it copied), and a commit dated in the future - another machine's clock - which reads
-as the call's own. Both cost a repeated row, never a lost completion.
+**A derived row the journal already holds is not written again.** A `git merge`, rebase or
+pull moves the plan by another branch's history, and it brings that branch's journal files with
+it - so a completion recorded where the work ran is found in the trail, keyed by what makes it that
+completion: `task.complete` by task and `completedAt`, `task.commit` by task and SHA,
+`task.blocked` by task and attempt, `phase.signoff` by phase and `mergedAt`, `ado.link` by item and
+work-item id. The change itself is always recorded, and its row says how many derived rows it did
+not repeat. Git's dates and the reflog's wording are never read, so a completion this call made -
+whatever it then commits, rebases, cherry-picks or merges, however its commit is dated - is always
+derived, and an old, unrelated completion of the same task is a different record. **Not withheld,
+by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot tell one sign-off
+from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
+a lost one.
 `task.move` is written by `/audit:task move` via the journal CLI. The evidence actions are
 written **in process** by `_evidence_io` and `commit-audit-state.py`, because the hook sees edit
 *tools* and those writers use `os.replace` and `git commit` — the same blindness `audit-task.py`
