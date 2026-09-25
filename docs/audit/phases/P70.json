@@ -1,7 +1,7 @@
 {
   "id": "P70",
   "title": "A gate that could not reach a verdict says so, and names what failed",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "run-test-gate grades a step that never produced a verdict - a shell 127, a jest worker killed by a signal, vitest finding no test files - as could-not-run rather than red; a jest failed-to-run names its suite and signal in failing and in the evidence row; a reused verdict's first line carries how to re-measure; a cleared task gate is empty at task scope as the command docs promise, and a gate borrowed from the phase says so on its verdict; a task gate that runs far more than the task declares is reported; and the validator names a comma-joined gate entry and a running phase with no gate or no outcome",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "036e98e87346dfb55f49ffe233b7dfab1e8a5bbc",
   "branch": "audit/p70-a-gate-that-could-not-reach-a",
-  "mergedAt": null,
+  "mergedAt": "2026-09-25T17:31:56Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
