@@ -479,7 +479,7 @@
     {
       "id": "P74",
       "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P74.json"
     },
     {
@@ -795,7 +795,8 @@
       "P80.10",
       "P80.12",
       "P81.2",
-      "P81.8"
+      "P81.8",
+      "P74.1"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -902,8 +903,8 @@
       "P63.12",
       "P69.3",
       "P70.3-fos",
-      "P74.1",
-      "P78.4"
+      "P78.4",
+      "P74.1"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -1579,8 +1580,8 @@
       "P65.2-iy2",
       "P69.3",
       "P69.4-j6r",
-      "P74.1",
-      "P80.2"
+      "P80.2",
+      "P74.1"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1596,8 +1597,8 @@
       "P65.2-iy2",
       "P69.3",
       "P69.4-j6r",
-      "P74.1",
-      "P80.2"
+      "P80.2",
+      "P74.1"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -2096,7 +2097,6 @@
       "P68.1",
       "P69.3",
       "P69.4-j6r",
-      "P74.1",
       "P76.1",
       "P76.2",
       "P78.1",
@@ -2106,7 +2106,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P74.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -2150,7 +2151,6 @@
       "P68.1",
       "P69.3",
       "P69.4-j6r",
-      "P74.1",
       "P76.1",
       "P76.2",
       "P78.1",
@@ -2160,7 +2160,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P74.1"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -3036,10 +3037,10 @@
       "P63.11",
       "P69.3",
       "P70.3-fos",
-      "P74.1",
       "P78.11",
       "P79.7",
-      "P80.12"
+      "P80.12",
+      "P74.1"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
