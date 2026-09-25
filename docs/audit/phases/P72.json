@@ -1,0 +1,96 @@
+{
+  "id": "P72",
+  "title": "Every hook judges the tree the work is in, and blames only what it can show",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "every hook that reads the manifest or the plugin's state resolves the tree of the path or command it judges through one helper, so an executor in a linked worktree is held to that worktree's plan (and a lint keeps a bare repo_root from coming back); journal-writes derives completions in a worktree; the bash write guard names the plugin's own writers and a merge as what they are, from the rows and the merge refs; and the history guard reads git only in command position",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P72.1",
+      "title": "One tree resolver for every hook, attribution from the rows, and git read only in command position",
+      "status": "pending",
+      "description": "Field report on 3.0.1, reproduced at HEAD: only require-plan re-roots onto a linked worktree (_config.path_tree). guard-secrets-read judges shell writes against CLAUDE_PROJECT_DIR's plan ('Phase P41 is in_progress' for an executor in the P48 worktree) and skips out-of-root worktree targets; guard-capabilities applies main's area policy; remind-tdd is silent; guard-history-rewrite, journal-writes, guard-edits, meter-usage and detect-plan-skip use repo_root. One _config.tree_for(data, target) over path_tree/command_tree, every manifest/state reader calls it, and a lint over hooks/ (hosted where the cross-file lints live, reading source only - hooks may not import scripts) bans a bare repo_root beside a manifest or state read. journal-writes then derives task.complete/task.commit for a worktree's writes. guard-bash-writes blames a shell command for journal rows the plugin's own writers appended (peer session hook rows, CLI rows filed under another --project state dir, a merge): bind the verdict to content - new rows that chain validly onto the committed tail with via hook/cli/panel and a fresh ts are named as the plugin's writer; bytes equal to a version reachable from MERGE_HEAD/ORIG_HEAD are 'brought in by the merge'; otherwise the tamper notice stands; peer sidecar claims stay unread. guard-history-rewrite denies 'echo ... git stash' and a piped heredoc body 'cat <<EOF | python3 x.py -' containing the words: recognise git only in command position (start, ; && || | newline, or after xargs/sudo/env/bash -c), classify a piped heredoc body by the far side of the pipe; 'true && git stash push' stays DENY.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/guard-capabilities.py",
+        "plugins/audit/hooks/remind-tdd.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/guard-edits.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_guard_capabilities.py",
+        "plugins/audit/tests/test_remind_tdd.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/tests/test_guard_edits.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/tests/test_detect_plan_skip.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: repro that FAILS on current code - a shell write into a file of a linked worktree is judged against the main checkout's running phase (or not at all) instead of the worktree's"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
