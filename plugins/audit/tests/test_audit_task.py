@@ -5806,6 +5806,186 @@ def _cases(check):
               and _ss_stub.get("status") == "done"
               and _ss_body.get("status") == "done")
 
+        # ---- (gs) a GROUP of phases built on one branch, signed off together ----
+        # A real repository: the group's review is scoped from its tasks' commits,
+        # and whether each commit is on the branch is git's answer, not a fixture's.
+        def gs_git(proj, *a):
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+            done_ = subprocess.run(["git", "-C", proj] + list(a), env=env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return done_.stdout.decode("utf-8", "replace").strip()
+
+        def gs_fixture(name, gates=(["test"], ["test"]), sharded=False):
+            """(proj, mpath, shas) - P1 and P2, one task each, both finished, no
+            branch recorded, their commits on `combined`; `stray` is a commit on
+            main that the branch does not carry."""
+            plan = base_manifest()
+            plan["phases"] = [
+                {"id": "P1", "title": "One", "status": "in_progress",
+                 "testGate": list(gates[0]), "branch": None, "baseRef": None,
+                 "tasks": [{"id": "P1.1", "title": "a", "status": "done",
+                            "files": ["src/p1.py"]}]},
+                {"id": "P2", "title": "Two", "status": "in_progress",
+                 "testGate": list(gates[1]), "branch": None, "baseRef": None,
+                 "tasks": [{"id": "P2.1", "title": "b", "status": "done",
+                            "files": ["src/p2.py"]},
+                           {"id": "P2.2", "title": "c", "status": "cancelled"}]},
+            ]
+            plan["fileIndex"] = {"src/p1.py": ["P1.1"], "src/p2.py": ["P2.1"]}
+            proj, mpath = mk(name, plan, git=True, sharded=sharded)
+            gs_git(proj, "checkout", "-q", "-b", "main")
+            gs_git(proj, "commit", "-q", "--allow-empty", "-m", "base")
+            gs_git(proj, "checkout", "-q", "-b", "combined")
+            shas = {}
+            for tid in ("P1.1", "P2.1"):
+                gs_git(proj, "commit", "-q", "--allow-empty", "-m", tid)
+                shas[tid] = gs_git(proj, "rev-parse", "HEAD")
+            gs_git(proj, "checkout", "-q", "main")
+            gs_git(proj, "commit", "-q", "--allow-empty", "-m", "stray")
+            shas["stray"] = gs_git(proj, "rev-parse", "HEAD")
+            written = _mio.load_manifest(mpath)
+            for ph in written["phases"]:
+                for t in ph["tasks"]:
+                    if t["id"] in shas:
+                        t["commit"] = shas[t["id"]]
+            if sharded:
+                _mio.save_sharded(mpath, written)
+            else:
+                _panel_write._atomic_write_json(mpath, written)
+            return proj, mpath, shas
+
+        gs_proj, gs_mp, gs_shas = gs_fixture("gs-plan")
+        _gs_before = open(gs_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", gs_proj])
+        _gs_lines = txt.split("\n")
+        _gs_land = [ln.strip() for ln in _gs_lines if "close-phase.py" in ln]
+        check("gs1 --plan over a group names the review scope from the tasks' "
+              "commits - every one, the cancelled task's absence included - and "
+              "writes nothing: exit %r, %s" % (code, txt),
+              code == 0 and open(gs_mp, "rb").read() == _gs_before
+              and all(("git show %s" % gs_shas[t]) in txt
+                      for t in ("P1.1", "P2.1"))
+              and "src/p1.py" in txt and "src/p2.py" in txt)
+        check("gs2 ...ONE gate run over the union and ONE invariants run - counted, "
+              "not found: %r"
+              % ([ln for ln in _gs_lines if "run-test-gate.py" in ln
+                  or "verify-invariants.py" in ln],),
+              len([ln for ln in _gs_lines if "run-test-gate.py" in ln]) == 1
+              and len([ln for ln in _gs_lines if "verify-invariants.py" in ln]) == 1)
+        check("gs3 ...and lands each phase with close-phase --branch, in order, the "
+              "branch and its worktree kept until the LAST one - the first landing "
+              "merges the whole branch, so a deletion there strands the rest: %r"
+              % (_gs_land,),
+              len(_gs_land) == 2
+              and " P1 " in _gs_land[0] and " P2 " in _gs_land[1]
+              and all("--branch combined" in ln for ln in _gs_land)
+              and "--keep-branch" in _gs_land[0]
+              and "--keep-worktree" in _gs_land[0]
+              and "--keep-branch" not in _gs_land[1]
+              and "--keep-worktree" not in _gs_land[1])
+        g2_proj, g2_mp, _g2 = gs_fixture("gs-gate", gates=(["test"],
+                                                           ["test", "lint"]))
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g2_proj])
+        _g2_gate = [ln for ln in txt.split("\n") if "run-test-gate.py" in ln]
+        check("gs4 the one gate run is carried by the member whose testGate covers "
+              "the union - P2's, here: %r" % (_g2_gate,),
+              code == 0 and len(_g2_gate) == 1 and " P2 " in _g2_gate[0])
+        g3_proj, g3_mp, _g3 = gs_fixture("gs-nogate", gates=(["lint"], ["test"]))
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g3_proj])
+        check("gs5 ...and when no member's gate covers the union, it is refused, "
+              "naming the verb that makes one carry it - no single run could "
+              "measure it: exit %r, %s" % (code, txt),
+              code == 2 and "run-test-gate.py" not in txt and "retarget" in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
+                         "--verdict", "passed", "--summary", "both landed",
+                         "--review-outcome", "no findings",
+                         "--project-dir", gs_proj])
+        _gs_after = dict((p["id"], p) for p in _mio.load_manifest(gs_mp)["phases"])
+        _gs_fork = gs_git(gs_proj, "merge-base", "main", "combined")
+        check("gs6 the record signs off EVERY member in one write, records the "
+              "branch they were built on and where it left the parent as baseRef "
+              "(a branch with no baseRef is an invariants breach on every later "
+              "run), and stores no done - each reads done once close-phase lands "
+              "it: %s" % (txt,),
+              code == 0 and len(_gs_fork) == 40
+              and all(_gs_after[p]["review"]["status"] == "passed"
+                      and _gs_after[p]["summary"] == "both landed"
+                      and _gs_after[p]["branch"] == "combined"
+                      and _gs_after[p]["baseRef"] == _gs_fork
+                      and _gs_after[p]["status"] == "in_progress"
+                      and _mio.effective_phase_status(_gs_after[p]) == "in_progress"
+                      for p in ("P1", "P2"))
+              and len([ln for ln in txt.split("\n") if "close-phase.py" in ln]) == 2
+              and "one run is P1's" in txt)
+        _gs_rows = [r for r in _journal_io.read_all(gs_proj)
+                    if r.get("action") == "phase.verdict"]
+        check("gs7 ...with one phase.verdict row per member: %r"
+              % ([(r.get("details") or {}).get("phaseId") for r in _gs_rows],),
+              sorted((r.get("details") or {}).get("phaseId") for r in _gs_rows)
+              == ["P1", "P2"])
+        g4_proj, g4_mp, g4_shas = gs_fixture("gs-stray")
+        _g4 = _mio.load_manifest(g4_mp)
+        _g4["phases"][1]["tasks"][0]["commit"] = g4_shas["stray"]
+        _panel_write._atomic_write_json(g4_mp, _g4)
+        _g4_before = open(g4_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
+                         "--verdict", "passed", "--summary", "s",
+                         "--project-dir", g4_proj])
+        check("gs8 a task commit the branch does not carry refuses the WHOLE group "
+              "and writes nothing - P1 is not signed off beside it: exit %r, %s"
+              % (code, txt),
+              code == 2 and "P2.1" in txt and open(g4_mp, "rb").read() == _g4_before)
+        g5_proj, g5_mp, _g5 = gs_fixture("gs-nocommit")
+        _g5m = _mio.load_manifest(g5_mp)
+        _g5m["phases"][0]["tasks"][0]["commit"] = None
+        _g5m["phases"][1]["branch"] = "elsewhere"
+        _panel_write._atomic_write_json(g5_mp, _g5m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g5_proj])
+        check("gs9 a finished task with no commit, and a member recording ANOTHER "
+              "branch, are both refused and both named: exit %r, %s" % (code, txt),
+              code == 2 and "task P1.1 records no commit" in txt
+              and "records branch 'elsewhere'" in txt)
+        code, txt = run(["signoff", "P1,P2", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", gs_proj])
+        check("gs10 a group without --branch is a usage error naming it: %s" % (txt,),
+              code == 2 and "--branch" in txt)
+        g6_proj, g6_mp, _g6 = gs_fixture("gs-open")
+        _g6m = _mio.load_manifest(g6_mp)
+        _g6m["phases"][1]["tasks"][0]["status"] = "in_progress"
+        _panel_write._atomic_write_json(g6_mp, _g6m)
+        _g6_before = open(g6_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
+                         "--verdict", "passed", "--summary", "s",
+                         "--project-dir", g6_proj])
+        check("gs11 one member with open work refuses the group, all or nothing: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and "P2.1" in txt and open(g6_mp, "rb").read() == _g6_before)
+        g8_proj, g8_mp, _g8 = gs_fixture("gs-parents")
+        _g8m = _mio.load_manifest(g8_mp)
+        _g8m["phases"][1]["parentBranch"] = "develop"
+        _panel_write._atomic_write_json(g8_mp, _g8m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g8_proj])
+        check("gs13 members that land in different parents are refused - one branch "
+              "lands in one: exit %r, %s" % (code, txt),
+              code == 2 and "develop" in txt and "different parents" in txt)
+        g7_proj, g7_mp, _g7 = gs_fixture("gs-sharded", sharded=True)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
+                         "--verdict", "passed", "--summary", "s",
+                         "--project-dir", g7_proj])
+        _g7_ph = dict((p["id"], p) for p in _mio.load_manifest(g7_mp)["phases"])
+        check("gs12 in the SHARDED layout every member's shard takes the record, and "
+              "no index stub is left behind its shard: %s" % (txt,),
+              code == 0 and _mio.stale_stubs(g7_mp) == []
+              and all(_g7_ph[p]["review"]["status"] == "passed"
+                      and _g7_ph[p]["branch"] == "combined" for p in ("P1", "P2"))
+              and "phases/P1.json" in txt and "phases/P2.json" in txt)
+
         # ---- (sv) a close stores its bug's derived status; settle stores the rest
         # A linked bug derives `fixed` and its `fixedIn` from its fix task's close,
         # and `bugs[]` lives in the INDEX, so the close writes the index here and

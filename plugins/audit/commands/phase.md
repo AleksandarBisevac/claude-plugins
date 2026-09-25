@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT] | settle'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--branch NAME] [--plan] | settle'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -432,6 +432,32 @@ operator's and the reviewer's words: pass them verbatim, or `-` to read them off
 
 `--verdict` is the reviewer's call and has no default. `skipped` is honest where no review ran -
 say so in `--summary` - and is never a way to sign off work nobody looked at as if it had passed.
+
+### A group of phases built on one branch — `signoff <P1,P2,...> --branch NAME`
+
+Phases whose work was built on **one combined branch** record no branch and no `baseRef` of their
+own, so the single-phase sign-off has no diff to review and `close-phase.py` has no name to land.
+The same verb signs them off together; it is a flag here rather than a verb of its own because it
+writes the same record, under the same refusals. Preview first — it writes nothing:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
+        --branch <combined-branch> --plan
+```
+
+It prints the whole sign-off with the one command each step runs, and
+`reference/phase-signoff.md` → *Signing off a group* is the procedure: the **review scoped by the
+tasks' `commit`s** (each one asked of git to be on the branch), **one gate run** over the union
+of the members' `testGate`, carried by the member whose gate holds all of it, **one invariants
+run**, the record, and **one `close-phase.py --branch` per phase** — every one but the last keeps
+the branch and its worktree, because the first landing merges the whole branch. The same
+command with `--verdict` and `--summary` in place of `--plan` records it: every member in one
+write, all or nothing, with the branch and the point it left the parent recorded as `branch` and
+`baseRef`, so each member reads `done` once its landing stamps `mergedAt`. It refuses — naming
+every reason — a member with open work or already signed off, a member recording another branch,
+members that resolve to different parents, a finished task with no `commit`, a commit the branch
+does not carry, and a union no member's gate holds (`/audit:phase retarget` gives one member the
+missing entries).
 
 ## Subcommand: `settle`
 

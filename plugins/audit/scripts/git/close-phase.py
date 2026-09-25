@@ -63,7 +63,9 @@ Exit codes:
      orchestrator has a human question for it; folded into 1 it would be
      indistinguishable from "the tree was dirty", which is a different conversation
   4  it could not be ASKED -- git is not on PATH, or would not describe the worktrees
-     or the ancestry. NOT 1, for `verify-invariants.py`'s reason: "git refused" and
+     or the ancestry, or the phase records no branch and the name composed for it
+     is not one, so there is no branch to ask about until `--branch` names it.
+     NOT 1, for `verify-invariants.py`'s reason: "git refused" and
      "git could not be asked" are different states of the world, and a caller that
      cannot tell them apart will retry the wrong one
 """
@@ -426,6 +428,7 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         answer["plannedSteps"] = ([merge["argv"]] if merge["argv"] else []) \
             + [s["argv"] for s in preview["steps"]]
         answer["blocked"] = list(preview["blocked"])
+        answer["followUp"] = preview.get("followUp")
         answer["previewAssumes"] = (
             "the merge lands - the cleanup below is what follows it, not what "
             "this repository would allow right now")
@@ -499,6 +502,9 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         cleanup = cleanup_for(the_plan["cleanupInputs"], branch, parent,
                               verified["answer"], settled=settled_now)
         answer["blocked"] = list(cleanup["blocked"])
+    # The operator's half of a cleanup this command will not do: freeing a branch
+    # the main worktree stands on takes a switch, and no HEAD is moved here.
+    answer["followUp"] = cleanup.get("followUp")
 
     for step in cleanup["steps"]:
         code, out, err = fn(git_root, step["argv"])
@@ -872,6 +878,12 @@ def render(answer, out=print):
     if answer.get("finishFrom"):
         out("  cleanup is not finished. From %s, run:" % (answer["finishFrom"],))
         out("    %s" % (answer["finishCommand"],))
+    follow = answer.get("followUp")
+    if follow:
+        out("  cleanup is not finished, and this never moves a HEAD. From %s, run:"
+            % (follow["from"],))
+        for command in follow["commands"]:
+            out("    %s" % (command,))
     parked = answer.get("parkedOnBranch") or []
     if parked:
         out("  parked on %s, materializable now that it has landed - on %s, run:"
@@ -964,6 +976,17 @@ def main(argv, out=print):
         out("[close-phase] phase %s landed at %s and %s is gone - nothing left "
             "to do" % (args.phase, phase[MERGED_FIELD], names["branch"]))
         return E_OK
+    # ...AND A COMPOSED NAME NOTHING HOLDS IS NOT AN ANCESTRY QUESTION. Asked of git,
+    # it came back as "could not be established", which names the wrong gap: the
+    # plan recorded no branch, and the one predicted from the template is not in
+    # this repository. Phases built on one combined branch are exactly this shape.
+    if names["branchBasis"].startswith("composed") and _wt.ref_exists(
+            git_root, names["branch"])["exists"] is False:
+        out("[close-phase] no branch is recorded for phase %s, so the name asked "
+            "about, %s, was %s - and it is not a branch in this repository. Nothing was "
+            "written. Pass --branch <name>: the branch that carries this phase's "
+            "work" % (args.phase, names["branch"], names["branchBasis"]))
+        return E_NO_BASIS
     observation = observe(git_root, names["branch"], names["parent"])
     if observation["why"]:
         out("[close-phase] %s" % (observation["why"],))

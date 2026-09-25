@@ -28,6 +28,10 @@ Usage:
   audit-task.py signoff <phaseId> --verdict passed|skipped --summary TEXT|-
                 [--review-outcome TEXT|-] [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py signoff <P1,P2,...> --branch NAME
+                (--plan | --verdict passed|skipped --summary TEXT|-
+                 [--review-outcome TEXT|-]) [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py start <taskId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py done <taskId> --commit <sha> [manifest]
@@ -5070,6 +5074,9 @@ def cmd_signoff(args, out):
     if not pid:
         out("[audit-task] signoff needs a phase id")
         return E_USAGE
+    ids = signoff_ids(pid)
+    if len(ids) > 1 or args.branch or args.plan:
+        return _group_door(args, project, ids, out)
     if not args.verdict:
         out("[audit-task] signoff needs --verdict %s: which verdict the review reached "
             "is the reviewer's call" % ("|".join(_mio.SIGNOFF_VERDICTS),))
@@ -5188,6 +5195,299 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
+    return 0
+
+
+# --- group sign-off: phases built on one branch --------------------------------
+# A FLAG ON THIS VERB, NOT A VERB OF ITS OWN. A group writes the record one phase's
+# sign-off writes - the verdict, its outcome, the summary, the status that derives -
+# under the same refusals, and a second writer of the record the derivation reads
+# is where two answers to "is this phase signed off" would start. What a group
+# changes is what the evidence is scoped by: there is no `baseRef` to diff from,
+# so the review is scoped by the tasks' commits; the phases share one tree, so one
+# gate run and one invariants run measure all of them; and the branch is landed
+# once, so every member but the last keeps it for the next. `--plan` prints that;
+# the record re-asks the same planner under the lock, so the two cannot disagree.
+def signoff_ids(text):
+    """The phase ids a `signoff` names: one, or a comma list for a group."""
+    ids = []
+    for part in (text or "").split(","):
+        pid = part.strip()
+        if pid and pid not in ids:
+            ids.append(pid)
+    return ids
+
+
+def _group_gate(members):
+    """(carrier id, union) -- the member whose `testGate` holds every entry any
+    member declares, or (None, union) when none does. One run of the phase gate
+    measures one phase's gate, so the union is runnable only when one carries it."""
+    union = []
+    for ph in members:
+        for entry in (ph.get("testGate") or []):
+            if entry not in union:
+                union.append(entry)
+    for ph in members:
+        if set(union) <= set(ph.get("testGate") or []):
+            return ph.get("id"), union
+    return None, union
+
+
+def group_plan(assembled, ids, branch, git_root, run=None):
+    """{"members", "refusals", "commits", "files", "gate", "union", "fork"} -- what
+    signing `ids` off together on `branch` owes, and every reason it cannot yet.
+    `fork` is `git merge-base <parent> <branch>`, the baseRef a member without one
+    is given.
+
+    `commits` is `(phaseId, taskId, sha)` per task that landed work, in plan order;
+    a cancelled task is skipped, and any other task without a commit is a refusal,
+    because a review scoped by commits cannot see work no commit records. Each sha
+    is asked of git (`merge-base --is-ancestor <sha> <branch>`), since the plan's
+    word for where a commit is does not make it so.
+    """
+    refusals, members, commits, files = [], [], [], []
+    for pid in ids:
+        kind, phase, _owner = _find_target(assembled, pid)
+        if kind != "phase":
+            refusals.append("no phase %r in this plan" % (pid,))
+            continue
+        members.append(phase)
+        why = _signoff_refusal(phase, pid)
+        if why:
+            refusals.append(why)
+        recorded = phase.get("branch")
+        if recorded and recorded != branch:
+            refusals.append("phase %s records branch %r, not %r - a group is phases "
+                            "built on one branch" % (pid, recorded, branch))
+        for task in (phase.get("tasks") or []):
+            if not isinstance(task, dict) or task.get("status") == "cancelled":
+                continue
+            if not task.get("commit"):
+                refusals.append("task %s records no commit, and a group's review is "
+                                "scoped by its tasks' commits" % (task.get("id"),))
+                continue
+            commits.append((pid, task.get("id"), str(task["commit"])))
+            files.extend(f for f in (task.get("files") or []) if f not in files)
+    meta = assembled.get("meta") or {}
+    parents = []
+    for ph in members:
+        parent = _branch.parent_branch(meta, ph)["branch"]
+        if parent not in parents:
+            parents.append(parent)
+    if len(parents) > 1:
+        refusals.append("the members land in different parents (%s), and one branch "
+                        "lands in one" % (", ".join(str(p) for p in parents),))
+    fork = ""
+    found = _worktrees.ref_exists(git_root, branch, run=run)
+    if found["exists"] is not True:
+        refusals.append("%r %s" % (branch, "is not a branch in this repository"
+                                   if found["exists"] is False
+                                   else "could not be resolved (%s)" % (found["basis"],)))
+    else:
+        # WHERE THE BRANCH LEFT ITS PARENT, recorded as the baseRef of a member that
+        # has none: a phase recorded on a branch with no baseRef is what the
+        # invariants' base-ref check reports as a breach, on every run after this.
+        code, said, _err = _worktrees._runner(run)(
+            git_root, ["merge-base", parents[0] if parents else "", branch])
+        fork = (said or "").strip() if code == 0 else ""
+        if not fork:
+            refusals.append("where %r left %r could not be established (`git "
+                            "merge-base %s %s`), so no baseRef can be recorded for "
+                            "it" % (branch, parents[0] if parents else None,
+                                    parents[0] if parents else "<parent>", branch))
+        for pid, tid, sha in commits:
+            held = _worktrees.merged_into(git_root, sha, branch, run=run)
+            if held["answer"] != _worktrees.CONTAINED:
+                refusals.append("task %s's commit %s is not established to be on %r "
+                                "(%s: %s)" % (tid, sha[:12], branch, held["answer"],
+                                              held["basis"]))
+    carrier, union = _group_gate(members)
+    if members and carrier is None:
+        refusals.append(
+            "no member's testGate holds the group's union (%s): %s - one gate run "
+            "measures one phase's gate, so give one member every entry with "
+            "`/audit:phase retarget <phaseId> --gate <entry>`"
+            % (", ".join(union), "; ".join("%s: %s" % (
+                ph.get("id"), ", ".join(ph.get("testGate") or []) or "(empty)")
+                for ph in members)))
+    return {"members": members, "refusals": refusals, "commits": commits,
+            "files": files, "gate": carrier, "union": union, "fork": fork}
+
+
+def _plugin_cmd(rel, *argv):
+    """A plugin script call, spelled the way the command docs spell every one."""
+    return 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/%s" %s' % (rel, " ".join(argv))
+
+
+def landing_commands(mrel, ids, branch):
+    """One `close-phase.py --branch` per member, in order. The first landing merges
+    the whole branch and each later one finds it contained and stamps its own
+    phase, so every member but the last keeps the branch and its worktree - a
+    deletion on the first would leave the rest nothing to land."""
+    last = len(ids) - 1
+    return [_plugin_cmd("git/close-phase.py", mrel, pid, "--project", ".",
+                        "--branch", branch,
+                        *(() if i == last else ("--keep-worktree", "--keep-branch")))
+            for i, pid in enumerate(ids)]
+
+
+def _group_door(args, project, ids, out):
+    if len(ids) > 1 and not args.branch:
+        out("[audit-task] signoff of %s is a group sign-off, which needs --branch "
+            "<name>: the one branch these phases were built on" % (", ".join(ids),))
+        return E_USAGE
+    if not args.branch:
+        out("[audit-task] signoff --plan previews a group sign-off, which needs "
+            "--branch <name>")
+        return E_USAGE
+    if args.plan and (args.verdict or args.summary or args.review_outcome):
+        out("[audit-task] signoff --plan writes nothing, so --verdict, --summary and "
+            "--review-outcome have no reader there - plan first, then record")
+        return E_USAGE
+    summary = (args.summary or "").strip()
+    if not args.plan and (not args.verdict or not summary):
+        out("[audit-task] a group sign-off records --verdict %s and --summary "
+            "\"<what the phases did>\"; `--plan` prints what it owes first"
+            % ("|".join(_mio.SIGNOFF_VERDICTS),))
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_group(
+                           args, project, config, mpath, ids, summary, out))
+
+
+def _locked_group(args, project, config, mpath, ids, summary, out):
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    plan = group_plan(assembled, ids, args.branch, git_root)
+    mrel = _output.posix_rel(mpath, project)
+    if plan["refusals"]:
+        out("[audit-task] REFUSED: %s cannot be signed off together on %s - nothing "
+            "written:" % (", ".join(ids), args.branch))
+        for line in plan["refusals"]:
+            out("  - " + line)
+        return E_USAGE
+    landing = landing_commands(mrel, ids, args.branch)
+    if args.plan:
+        return _print_group_plan(args, plan, ids, mrel, landing, out)
+    for phase in plan["members"]:
+        review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
+        review = dict(review, status=args.verdict)
+        if args.review_outcome:
+            review["outcome"] = args.review_outcome.strip()
+        phase["review"] = review
+        phase["summary"] = summary
+        phase.pop("claim", None)
+        # The branch the work lives on, recorded so the derivation waits for its
+        # merge: without it a member reads done here, before anything has landed.
+        phase["branch"] = args.branch
+        if not phase.get("baseRef"):
+            phase["baseRef"] = plan["fork"]
+    vm = _panel_write._cores()[0]
+    settled = _settle(assembled, set(("phase", pid) for pid in ids))
+    paths = []
+    for pid in ids:
+        paths.extend(p for p in _write_paths(project, mpath, raw_index, pid)
+                     if p not in paths)
+    snap = _snapshot(paths)
+    written = []
+    try:
+        for pid in ids:
+            written.extend(w for w in _write_add(project, mpath, raw_index,
+                                                 assembled, pid, False)
+                           if w not in written)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        written_manifest, findings, warnings = {}, ["cannot re-read the written "
+                                                    "manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the group sign-off would leave the manifest "
+            "invalid -- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    rows = [_journal_row(project, config, mpath, "phase.verdict",
+                         "%s signed off (%s) with %s on %s: %s"
+                         % (pid, args.verdict, ", ".join(ids), args.branch, summary),
+                         {"phaseId": pid}) for pid in ids]
+    effective = dict((ph.get("id"), _mio.effective_phase_status(ph))
+                     for ph in plan["members"])
+    if args.as_json:
+        result = {"ok": True, "ids": ids, "branch": args.branch,
+                  "verdict": args.verdict, "summary": summary,
+                  "effectiveStatus": effective, "stored": settled,
+                  "written": written, "land": landing, "gatePhase": plan["gate"],
+                  "journaled": all(r.get("journaled") for r in rows),
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
+        result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    for pid in ids:
+        out("[audit-task] phase %s signed off (%s) with %s -- %s"
+            % (pid, args.verdict, ", ".join(q for q in ids if q != pid),
+               "now %s" % (effective[pid],) if effective[pid] in _mio.TERMINAL
+               else "done once %s lands" % (args.branch,)))
+    for line in _settled_lines(settled):
+        out(line)
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not all(r.get("journaled") for r in rows) \
+            and any(r.get("journaledWhy") == "failed" for r in rows):
+        out("  journal: the audit trail did NOT take every phase.verdict row")
+    out("  gate: the group's one run is %s's - the others carry no testEvidence of "
+        "their own" % (plan["gate"],))
+    out("  written: %s" % ", ".join(written))
+    out("  land them after the sign-off commit, in this order, from %s:" % (project,))
+    for line in landing:
+        out("    " + line)
+    return 0
+
+
+def _print_group_plan(args, plan, ids, mrel, landing, out):
+    """The group's sign-off, step by step, with the one command each step runs."""
+    if args.as_json:
+        result = {"ok": True, "ids": ids, "branch": args.branch,
+                  "commits": [{"phaseId": p, "taskId": t, "commit": s}
+                              for p, t, s in plan["commits"]],
+                  "files": plan["files"], "gatePhase": plan["gate"],
+                  "gateUnion": plan["union"], "land": landing}
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] group sign-off of %s on %s - the plan; nothing was written"
+        % (", ".join(ids), args.branch))
+    out("  1. review - scoped by the tasks' commits, since a group has no baseRef "
+        "to diff from:")
+    for pid, tid, sha in plan["commits"]:
+        out("       %s  git show %s" % (tid, sha))
+    out("     files: %s" % (", ".join(plan["files"]) or "(none declared)",))
+    out("  2. gate - one run over the union (%s), carried by %s:"
+        % (", ".join(plan["union"]) or "empty", plan["gate"]))
+    out("       " + _plugin_cmd("governance/run-test-gate.py", mrel, plan["gate"],
+                                "--record"))
+    out("  3. invariants - one run; `--all` is its one spelling over more than one "
+        "phase, so read the rows for %s:" % (", ".join(ids),))
+    out("       " + _plugin_cmd("governance/verify-invariants.py", mrel, "--all"))
+    out("  4. record the sign-off:")
+    out("       " + _plugin_cmd("manifest/audit-task.py", "signoff", ",".join(ids),
+                                "--branch", args.branch,
+                                "--verdict passed|skipped --summary \"<...>\""))
+    out("  5. commit it on %s, then land each phase, in this order:" % (args.branch,))
+    for line in landing:
+        out("       " + line)
     return 0
 
 
@@ -5655,7 +5955,9 @@ VERB_FLAGS = {
     "next-id": ("phase",),
     # `signoff` writes the one record a phase's `done` is derived from - the
     # review's verdict - and the paragraph sign-off owes the reader.
-    "signoff": ("verdict", "summary", "review_outcome"),
+    # `--branch` and `--plan` are the group's: the branch several phases were
+    # built on, and the read-only preview of what signing them off together owes.
+    "signoff": ("verdict", "summary", "review_outcome", "branch", "plan"),
     # `settle` stores what the derivations already answer, over the whole plan, so
     # there is nothing for a flag to choose - an empty row, for `start`'s reason.
     "settle": (),
@@ -5726,6 +6028,10 @@ def build_parser():
     p.add_argument("--summary", default=None, metavar="TEXT", help=_PROSE_HELP)
     p.add_argument("--review-outcome", dest="review_outcome", default=None,
                    metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--branch", default=None, metavar="NAME",
+                   help="signoff: the one branch a group of phases was built on")
+    p.add_argument("--plan", action="store_true", default=False,
+                   help="signoff: print what a group sign-off owes, write nothing")
     # add-phase only. `--id` rather than a positional: the title is the
     # positional every verb here already spends, and an OPTIONAL id read off
     # position two would be indistinguishable from the optional `manifest`.

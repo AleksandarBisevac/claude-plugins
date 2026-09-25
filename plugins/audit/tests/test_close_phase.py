@@ -856,11 +856,128 @@ def _landed_cases(check):
         _harness.remove_tree(root)
 
 
+def _fixture_git(root):
+    """`git -C root ...` with a fixed identity, returning the CompletedProcess."""
+    import subprocess
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(*a):
+        return subprocess.run(["git", "-C", root] + list(a), env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return git
+
+
+def _signed_phase(pid, branch):
+    return {"id": pid, "title": "One", "status": "in_progress",
+            "branch": branch, "baseRef": None, "mergedAt": None,
+            "parentBranch": "main" if branch else None,
+            "review": {"status": "passed"},
+            "tasks": [{"id": pid + ".1", "title": "t", "status": "done"}]}
+
+
+def _write_plan(root, meta, phases):
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    if not os.path.isdir(os.path.dirname(mpath)):
+        os.makedirs(os.path.dirname(mpath))
+    with open(mpath, "w") as fh:
+        json.dump({"meta": meta, "phases": phases}, fh)
+    return mpath
+
+
+def _main_tree_cases(check):
+    """Signed off from the MAIN worktree while it stands on the phase branch.
+
+    Against a real repository, because the defect was in the order two real
+    refusals were asked in: the merge lands, and the cleanup then has to hand the
+    operator the switch it will not make itself."""
+    root = _harness.fixture_root("closephase-maintree")
+    try:
+        git = _fixture_git(root)
+        git("init", "-q", "-b", "main")
+        meta = {"developmentBranch": "main"}
+        mpath = _write_plan(root, meta, [_signed_phase("P1", "audit/p1-demo")])
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        git("checkout", "-q", "-b", "audit/p1-demo")
+        with open(os.path.join(root, "work.txt"), "w") as fh:
+            fh.write("work\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "work")
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--delete-branch"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        head = git("branch", "--show-current").stdout.decode().strip()
+        landed = git("merge-base", "--is-ancestor", "audit/p1-demo",
+                     "main").returncode == 0
+        check("mt1 close-phase from the main worktree ON the phase branch lands it, "
+              "moves no HEAD, and prints the two commands that finish the cleanup "
+              "- `git switch main`, then `git branch -d audit/p1-demo` - each on a "
+              "line of its own: exit %r, head %r, %r" % (code, head, text[-400:]),
+              landed and head == "audit/p1-demo"
+              and "\n    git switch main\n    git branch -d audit/p1-demo" in text)
+        check("mt2 ...and never tells the operator to remove the main tree, nor "
+              "that a worktree must go first: %r" % (text[-400:],),
+              "git worktree remove" not in text and "must go first" not in text)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _composed_cases(check):
+    """A phase with no recorded branch: the name close-phase asks git about was
+    composed, and a composed name that is not a branch is a question for the
+    operator, not an unanswerable ancestry."""
+    import _branch
+    root = _harness.fixture_root("closephase-composed")
+    try:
+        git = _fixture_git(root)
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "Zed Quill")
+        meta = {"developmentBranch": "main"}
+        phase = _signed_phase("P1", None)
+        mpath = _write_plan(root, meta, [phase])
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        composed = _branch.phase_answer(meta, phase, "Zed Quill")["branch"]
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("cn1 a phase recording NO branch, whose composed name %r is not a "
+              "branch here, is refused with the reason - the name was composed "
+              "because none is recorded - and asked for --branch, instead of an "
+              "ancestry that 'could not be established': exit %r, %r"
+              % (composed, code, text[:300]),
+              code == M.E_NO_BASIS and "no branch is recorded" in text
+              and composed in text and "--branch" in text
+              and "could not be established" not in text)
+        git("checkout", "-q", "-b", composed)
+        with open(os.path.join(root, "work.txt"), "w") as fh:
+            fh.write("work\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "work")
+        git("checkout", "-q", "main")
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--keep-branch",
+                       "--keep-worktree"], out=lines.append)
+        text = "\n".join(lines)
+        check("cn2 SECOND DIRECTION: when the composed name IS a branch, the phase "
+              "lands on it as before - the refusal is for a name nothing holds, not "
+              "for every composed one: exit %r, %r" % (code, text[:300]),
+              code == M.E_OK and "no branch is recorded" not in text
+              and git("merge-base", "--is-ancestor", composed,
+                      "main").returncode == 0)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _parked_cases(check)
         _landed_cases(check)
+        _main_tree_cases(check)
+        _composed_cases(check)
     return _harness.run(body)
 
 

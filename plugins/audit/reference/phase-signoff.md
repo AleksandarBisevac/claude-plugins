@@ -312,7 +312,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       | 0 | the parent contains the branch — merged now, or already did | continue to (d) |
       | 0 + `NOT MERGED` in the output | `meta.merge.auto` is **false** | the human merges; the phase is signed off and deliberately unlanded. Say so in the report and **do not** stamp `mergedAt` yourself |
       | 3 | **not a fast-forward** — the parent moved during the phase | ask the human (AskUserQuestion): `--no-ff` (recommended — preserves the branch history and keeps every `task.commit` SHA, and the `bug.fixedIn` derived from it, valid), or stop and leave it unmerged. **Never rebase**: that rewrites the SHAs the manifest records |
-      | 4 | git could not be **asked** | report it; it is not a refusal, and retrying the same command will not help |
+      | 4 | git could not be **asked** | report it; it is not a refusal, and retrying the same command will not help. The same exit when the phase records no branch and the name composed for it is not one: the output says so — pass `--branch <name>`, and sign phases built on one combined branch off as a group (below) |
       | 1 | a precondition failed or git refused | the output names the path or ref that has to change |
 
       **When the resolved parent is not the development branch, the sign-off report must say so** —
@@ -348,5 +348,45 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       - A run **standing inside** the worktree it was asked to remove cannot finish its own
         cleanup (git would delete the caller's own directory, silently, exit 0); the output hands
         you the command to finish from the main tree.
+      - A phase branch **checked out in the main worktree** lands, and the main tree is never
+        removed or switched. The output prints the two commands that free the branch, to run
+        there yourself: `git switch <parent>` (or `git switch --detach <parent>` when another
+        worktree holds the parent), then `git branch -d <branch>`.
       - A **dirty** worktree is never removed, because removal also destroys ignored files — a
         `.env`, a `node_modules` — that `git status` never mentioned.
+
+### Signing off a group of phases built on one branch
+
+Phases built on **one combined branch** record no `branch` and no `baseRef` of their own: step 1
+has no `git diff <baseRef>` to review, and step 5c has no name to land (`close-phase.py` refuses
+and asks for `--branch`). Sign them off together, through the same verb with the ids as a comma
+list. Start with the plan — it writes nothing and prints the command each step below runs:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
+    --branch <combined-branch> --plan
+```
+
+It refuses, naming every reason, what the group cannot be signed off with: a member with open
+work or already signed off, a member recording another branch, members resolving to different
+parents, a finished task with no `commit`, a task commit the branch does not carry (asked of git,
+not read off the plan), and a union no member's gate holds. Then, in this order:
+
+1. **Review** from the tasks' `commit` list the plan prints — hand the reviewer those commits and
+   the files union in place of `git diff <baseRef> -- <files>`. Findings become tasks exactly as
+   in step 1, in the member whose files they touch.
+2. **One gate run**: the plan names the member whose `testGate` holds the union of every member's
+   gate, and the `run-test-gate.py … --record` call for it. The members share one tree, so one run
+   measures all of them. The row is recorded against that member; the others carry no
+   `testEvidence` of their own, and the record's output names the member whose run graded them.
+3. **One invariants run**: `verify-invariants.py <manifestPath> --all`, the one spelling that
+   covers more than one phase — read the rows for the group's members. A breach is the human
+   decision it is in step 3.
+4. **Record** with the same command, `--verdict` and `--summary` in place of `--plan`. Every
+   member is written in one write, all or nothing; each gets the branch as `branch` and the point
+   it left the parent (`git merge-base <parent> <branch>`) as `baseRef` when it has none, so the
+   derivation waits for the landing and later invariants runs have a fork point to check.
+5. **Commit** the sign-off on the combined branch, then **land each phase** with the
+   `close-phase.py --branch` lines the record prints, in order. The first merges the whole branch
+   and keeps it (`--keep-worktree --keep-branch`); each later one finds it already contained and
+   stamps its own `mergedAt`; only the last may take the branch and its worktree away.

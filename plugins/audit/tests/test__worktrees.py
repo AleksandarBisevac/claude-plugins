@@ -520,6 +520,61 @@ def _cases(check):
                          want_worktree=False, want_branch=False)["steps"] == [],
           "nothing asked, nothing planned")
 
+    # --- a phase branch checked out in the MAIN worktree ----------------------
+    # Signed off from the main tree while it stands on the phase branch: the main
+    # tree is never removed and never switched, so the branch can only be freed by
+    # the operator. The plan has to say how, in commands they can run.
+    on_main = M.parse_list(
+        "worktree /main\nHEAD abc\nbranch refs/heads/feature/p2\n")
+    foreign_main = M.cleanup_plan(
+        on_main, "feature/p2", "dev", M.CONTAINED, False, cwd_tree=M.CWD_OUTSIDE,
+        want_worktree=True, want_branch=True,
+        owned={"ok": False, "why": "no audit-worktree.json in /main/.git - this "
+                                   "worktree was not created by the plugin"},
+        settled=SETTLED_OK)
+    _fm_first = (foreign_main["blocked"] or [{"why": "", "remedy": ""}])[0]
+    check("mt1 the MAIN worktree is refused for being the main worktree, ahead of "
+          "provenance - a main tree carries no marker, so asking whose it is first "
+          "told the operator to `git worktree remove` it: %r" % (_fm_first,),
+          "MAIN worktree" in _fm_first["why"]
+          and not any("worktree remove" in b["remedy"]
+                      for b in foreign_main["blocked"]))
+    check("mt2 ...and the branch half names the two commands that free it, run "
+          "from the main tree: switch to the parent, then delete the branch - "
+          "nothing is run, so no HEAD moves: %r / %r"
+          % (foreign_main.get("followUp"), [b["remedy"] for b in
+                                            foreign_main["blocked"]]),
+          foreign_main.get("followUp") == {
+              "from": "/main",
+              "commands": ["git switch dev", "git branch -d feature/p2"]}
+          and not foreign_main["steps"]
+          and any("`git switch dev`" in b["remedy"]
+                  and "`git branch -d feature/p2`" in b["remedy"]
+                  for b in foreign_main["blocked"])
+          and not any("must go first" in b["remedy"]
+                      for b in foreign_main["blocked"]))
+    parent_elsewhere = M.parse_list(
+        "worktree /main\nHEAD abc\nbranch refs/heads/feature/p2\n\n"
+        "worktree /wt-dev\nHEAD def\nbranch refs/heads/dev\n")
+    _pe = _cp(parent_elsewhere, "feature/p2", "dev", M.CONTAINED, False,
+              want_worktree=False, want_branch=True)
+    check("mt3 with the parent checked out in another worktree, `git switch dev` "
+          "cannot run in the main tree, so the command detaches at it instead: %r"
+          % (_pe.get("followUp"),),
+          _pe.get("followUp") == {
+              "from": "/main",
+              "commands": ["git switch --detach dev", "git branch -d feature/p2"]})
+    _linked = _cp(open_trees, "feature/p2", "dev", M.CONTAINED, False,
+                  want_worktree=False, want_branch=True)
+    check("mt4 SECOND DIRECTION: a branch held by a LINKED worktree gets no "
+          "switch command - that worktree goes first, and the refusal still says "
+          "so: %r" % (_linked,),
+          _linked.get("followUp") is None
+          and any("must go first" in b["remedy"] for b in _linked["blocked"]))
+    check("mt5 ...and a plan with nothing blocked carries no follow-up either",
+          _cp([], "feature/p2", "dev", M.CONTAINED, False, want_worktree=False,
+              want_branch=True).get("followUp") is None)
+
     # --- provenance and settlement: whose worktree, and are we finished -------
     # THE THREE CLASSES, and only the third may be reaped: somebody else's worktree,
     # ours with the phase still running, ours and finished. Branch name and merge
