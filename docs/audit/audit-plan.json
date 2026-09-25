@@ -455,7 +455,7 @@
     {
       "id": "P70",
       "title": "A gate that could not reach a verdict says so, and names what failed",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P70.json"
     },
     {
