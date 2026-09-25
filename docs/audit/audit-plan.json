@@ -497,7 +497,7 @@
     {
       "id": "P77",
       "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P77.json"
     },
     {
@@ -587,11 +587,11 @@
       "P73.1",
       "P75.1",
       "P76.2",
-      "P77.2",
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P77.2"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -657,7 +657,9 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P77.1",
+      "P77.2"
     ],
     "README.md": [
       "P2.3",
@@ -681,7 +683,8 @@
       "P54.1",
       "P54.3",
       "P67.2",
-      "P80.11"
+      "P80.11",
+      "P77.2"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -810,8 +813,8 @@
       "P56.4",
       "P50.5",
       "P55.18",
-      "P77.1",
-      "P78.11"
+      "P78.11",
+      "P77.1"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -829,8 +832,8 @@
       "P47.4",
       "P49.4",
       "P50.5",
-      "P77.1",
-      "P79.7"
+      "P79.7",
+      "P77.1"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -1218,11 +1221,11 @@
       "P61.8",
       "P70.1",
       "P76.1",
-      "P77.1",
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P77.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1270,7 +1273,8 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P77.2"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1779,7 +1783,8 @@
       "P55.11",
       "P55.13",
       "P50.5",
-      "P50.8"
+      "P50.8",
+      "P77.1"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -1914,11 +1919,11 @@
       "P53.10",
       "P50.8",
       "P59.13",
-      "P77.2",
       "P78.9",
       "P79.6",
       "P80.9",
-      "P81.6"
+      "P81.6",
+      "P77.2"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2475,7 +2480,8 @@
       "P60.5",
       "P61.1",
       "P61.7",
-      "P67.1"
+      "P67.1",
+      "P77.2"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -2484,7 +2490,8 @@
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P77.2"
     ],
     "plugins/audit/commands/logs.md": [
       "P31.2",
@@ -2690,11 +2697,11 @@
       "P48.4",
       "P53.5",
       "P53.10",
-      "P77.2",
       "P78.9",
       "P79.6",
       "P80.9",
-      "P81.6"
+      "P81.6",
+      "P77.2"
     ],
     ".claude/skills/before-you-claim/SKILL.md": [
       "P37.1"
@@ -2961,8 +2968,8 @@
       "P70.3-fos",
       "P73.1",
       "P76.1",
-      "P77.1",
-      "P78.11"
+      "P78.11",
+      "P77.1"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -3090,11 +3097,13 @@
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
-      "P67.3-2e7"
+      "P67.3-2e7",
+      "P77.2"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
-      "P67.3-2e7"
+      "P67.3-2e7",
+      "P77.2"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
@@ -3164,6 +3173,12 @@
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11"
+    ],
+    "plugins/audit/scripts/status/_claude_home.py": [
+      "P77.2"
+    ],
+    "plugins/audit/tests/test__claude_home.py": [
+      "P77.2"
     ]
   },
   "bugs": [
