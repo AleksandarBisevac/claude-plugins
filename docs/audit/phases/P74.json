@@ -29,7 +29,7 @@
     {
       "id": "P74.1",
       "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reproduced at HEAD: from the main worktree standing on the phase branch the merge lands, then the branch deletion says 'the worktree must go first' (impossible for the main tree) and the ownership refusal fires before the isMain check, telling the operator to git worktree remove the main tree. Check isMain before ownership; when the holder is the main tree print git switch <parent> and git branch -d <branch>; never move HEAD. A phase with phase.branch null is refused with 'whether audit/p1-p1 is contained could not be established' - say the name was composed because no branch is recorded and ask for --branch. Phases built on one combined branch: --branch already lands them; add a group sign-off (review from the task.commit lists, one gate, one invariants run over the union) in the signoff verb/command, reusing close-phase --branch per phase.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -67,14 +67,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fa6727f7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "cleanup_plan checks isMain first and main_tree_release prints the follow-ups; composed-name exit 4; signoff P1,P2 --branch --plan/--verdict via group_plan.",
+        "descriptive": "close-phase tells the operator exactly what to run to finish from the main worktree, and phases built on one branch can be signed off together."
       },
       "startedAt": "2026-09-25T18:00:38Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-25T21:37:25Z",
+      "verifiedBy": [
+        "test__worktrees mt1",
+        "test_close_phase mt1",
+        "test_close_phase cn1",
+        "test_audit_task gs1",
+        "test_audit_task gs12"
+      ]
     }
   ],
   "startedAt": "2026-09-25T18:00:38Z"
