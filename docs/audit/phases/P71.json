@@ -29,7 +29,7 @@
     {
       "id": "P71.1",
       "title": "commit-task-work commits a staged rename's source, stages tracked files under ignored directories, and is bound to the task's newest verdict",
-      "status": "in_progress",
+      "status": "done",
       "description": "Field report on 3.0.1, reproduced at HEAD: (1) tracked() asks the index only; after git mv the old path is only in HEAD, so the red-first skip drops it and the commit records a copy. Tracked = index OR HEAD; a HEAD-only path stays out of the git add argv (git add -- old fails 128) and in the git commit -- pathspec (records the rename). Cases for a staged R and a staged D. (2) git add -- <tracked file under an ignored dir> exits 1 AND stages it (git 2.50.1); the script refuses and leaves it staged, breaking 'a refusal leaves the index as found'. Split by ls-files: tracked -> git add -u --, untracked -> git add --; the ignore refusal survives only for untracked paths, named 'ignored; -f is yours to decide'; any failure after staging resets the allowed paths; an untracked declared file under an ignored dir is named, not 'nothing uncommitted'. Never add -f. (3) the commit ignores task.testEvidence: refuse unless the task's newest evidence row is passed and current for the staged work (the declared-work digest run-test-gate records matches what is staged); an explicit override flag writes a journal row. No runtime related-tests step.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -66,14 +66,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "405e64e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Paths only in HEAD stay in the commit pathspec; add -u for index entries with the index restored on failure; the newest evidence row must be passed with a matching declared-work digest, --override-verdict journals the exception.",
+        "descriptive": "A task commit records renames and deletions, stages tracked files under ignored directories, and refuses work whose newest gate verdict is not passed."
       },
       "startedAt": "2026-09-25T14:32:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-25T15:37:23Z",
+      "verifiedBy": [
+        "test_commit_task_work ctw30",
+        "test_commit_task_work ctw33",
+        "test_commit_task_work ctw39"
+      ],
       "testEvidence": {
         "runId": "2026-09-25T15:24:29Z.93eef2",
         "status": "failed",
