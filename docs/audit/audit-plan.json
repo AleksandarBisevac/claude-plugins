@@ -485,7 +485,7 @@
     {
       "id": "P75",
       "title": "verify-invariants reports what is new, and user tooling can share the cross-worktree lock",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P75.json"
     },
     {
@@ -585,13 +585,13 @@
       "P71.1",
       "P72.1",
       "P73.1",
-      "P75.1",
       "P76.2",
       "P77.2",
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P75.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -657,7 +657,8 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P75.1"
     ],
     "README.md": [
       "P2.3",
@@ -2908,8 +2909,8 @@
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
-      "P75.1",
-      "P76.1"
+      "P76.1",
+      "P75.1"
     ],
     "tools/check-report-interactive.mjs": [
       "P55.7",
@@ -3039,7 +3040,8 @@
       "P74.1",
       "P78.11",
       "P79.7",
-      "P80.12"
+      "P80.12",
+      "P75.1"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
@@ -3127,9 +3129,6 @@
     "plugins/audit/scripts/manifest/_commit_trail.py": [
       "P69.4-j6r"
     ],
-    "plugins/audit/tests/test_verify_invariants.py": [
-      "P75.1"
-    ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2"
     ],
@@ -3164,6 +3163,9 @@
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11"
+    ],
+    "plugins/audit/tests/test_verify_invariants.py": [
+      "P75.1"
     ]
   },
   "bugs": [
