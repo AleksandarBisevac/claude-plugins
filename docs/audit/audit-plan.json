@@ -2617,10 +2617,12 @@
       "P67.2"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
-      "P67.1"
+      "P67.1",
+      "P67.3-2e7"
     ],
     "plugins/audit/tests/test_audit_version.py": [
-      "P67.1"
+      "P67.1",
+      "P67.3-2e7"
     ]
   },
   "bugs": [
