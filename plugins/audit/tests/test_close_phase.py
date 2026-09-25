@@ -710,6 +710,66 @@ def _cases(check):
               "unconditionally: %r" % (body8.get("status"),),
               body8.get("mergedAt") == "2026-01-02T03:04:05Z"
               and body8.get("status") == "in_progress")
+
+        # THE MIRROR FAILS AS A SENTENCE, NEVER AS A RAISE. It runs after the merge
+        # has landed, so a lock held elsewhere, or a lock that cannot even be asked
+        # for, must leave the index as it was and say which command catches it up.
+        _mio.save_sharded(mpath, {"meta": {"version": 2}, "phases": [signed],
+                                  "bugs": [], "fileIndex": {}})
+        M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        with open(mpath, "rb") as fh:
+            held_before = fh.read()
+        claim = mpath + ".lock"                  # another run's claim on the index
+        with open(claim, "w") as fh:
+            fh.write("held elsewhere")
+        try:
+            got9, why9 = M.mirror_stub(mpath, "P2", root)
+        finally:
+            os.remove(claim)
+        with open(mpath, "rb") as fh:
+            held_after = fh.read()
+        check("s9 with the index lock held elsewhere the mirror writes nothing and "
+              "answers with a sentence naming settle: %r" % (why9,),
+              got9 == "" and "settle" in why9 and "not taken" in why9
+              and held_before == held_after and stub_of().get("status") != "done")
+        real_read = M._panel_write.read_config
+
+        def _boom(_project):
+            raise RuntimeError("config unreadable")
+        M._panel_write.read_config = _boom
+        try:
+            try:
+                got10, why10 = M.mirror_stub(mpath, "P2", root)
+                raised10 = None
+            except Exception as exc:
+                got10, why10, raised10 = "", "", exc
+        finally:
+            M._panel_write.read_config = real_read
+        check("s10 ...and a lock that cannot even be ASKED for is a sentence too, not "
+              "an exception out of a merge that already landed: %r / %r"
+              % (why10, raised10),
+              raised10 is None and got10 == "" and "config unreadable" in why10
+              and "settle" in why10)
+        # REVALIDATED, and only the write's own findings refuse it: a write making
+        # the plan invalid has its prior bytes restored, while a plan that was
+        # already carrying a finding is not this write's to refuse (s1 stamps a
+        # file that is no plan at all, and lands).
+        broken = _mio.read_json(mpath)
+        broken["fileIndex"] = {"src/x.py": ["P9.9"]}   # names no task
+        with open(mpath, "rb") as fh:
+            rv_before = fh.read()
+        new11 = M._revalidated_write(mpath, mpath, broken)
+        with open(mpath, "rb") as fh:
+            rv_after = fh.read()
+        check("s11 a write that introduces a finding is rolled back byte for byte and "
+              "the finding is returned: %r" % (new11,),
+              new11 != [] and rv_before == rv_after)
+        fine = _mio.read_json(mpath)
+        fine["meta"]["title"] = "Renamed"
+        new12 = M._revalidated_write(mpath, mpath, fine)
+        check("s12 SECOND DIRECTION: a write that validates stands - the case that "
+              "goes red when every write is rolled back: %r" % (new12,),
+              new12 == [] and _mio.read_json(mpath)["meta"]["title"] == "Renamed")
     finally:
         _harness.remove_tree(root)
 

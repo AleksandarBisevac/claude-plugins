@@ -374,7 +374,7 @@ L7:
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _journal_io, _manifest_io, _output, _panel_write, _proposals, _worktrees
+  close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit
@@ -826,7 +826,10 @@ one hard-coded answer each. `parent_branch()` resolves `phase.parentBranch ?? me
 .developmentBranch`, the same chain `_areas` uses for the review skill, so a phase can integrate
 into a story branch, a release line, or another phase's branch instead of always into the
 repository's development branch. `compose()` expands `meta.branch.template` — `{type}`,
-`{initials}`, `{phase}`, `{slug}` — into the name.
+`{initials}`, `{phase}`, `{slug}` — into the name. `branch_of()` is the one answer every
+worktree surface gives to "which branch is this phase's" — the recorded `phase.branch`, else the
+composed name with git user.name — so `manage-worktrees.py` and the panel's sweep cannot name a
+phase two ways; `plan_branches()` is that answer over a whole plan.
 
 **It is Python because a template cannot be followed from prose.** `reference/orchestrator.md`
 could say "compose `<prefix>/<phaseId>-<slug>`" while the shape was fixed, and a reader would get
@@ -973,8 +976,9 @@ Sign-off steps 5c–5e as one command. It merges the phase branch into its resol
 before the first write, and each result read back by asking a *different* question than the write
 answered. The merge is an input of the phase's derived status, so the stamp stores that status in
 the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
-re-mirrors the index stub from the shard under the index lock; a lock it cannot take is a sentence
-naming `audit-task.py settle`, never a failed merge.
+re-mirrors the index stub from the shard under the index lock. Both writes are revalidated, and a
+finding the write introduced restores the prior bytes (`_revalidated_write`). Any failure of the
+mirror, the lock's own included, is a sentence naming `audit-task.py settle`, never a failed merge.
 
 **It never runs `git switch`.** Not as a preference: `git switch <parent>` from inside the worktree
 a phase ran in fails with `fatal: '<parent>' is already used by worktree at '<the main tree>'`, so
@@ -1048,7 +1052,9 @@ sentence, and only one of them describes a repository somebody should feel good 
 ### `plugins/audit/scripts/manifest/_commit_trail.py` + `repair-commits.py`
 Is every recorded `task.commit` still reachable, and what to write when one is not. The manifest
 names a SHA per finished task and derives `bug.fixedIn` from it; that is the audit trail, and it
-is a trail only while git still reaches every commit it names.
+is a trail only while git still reaches every commit it names. `clear()` nulls a lost task commit
+and, with it, a bug's `fixedIn` holding that same commit — the copy `/audit:task done` stores,
+which nothing else would ever move — and `changes_of()` is the journal's spelling of both.
 
 **Existence is not reachability, and the gap between them was a real hole.** `/audit:doctor`
 asked `git rev-parse --verify` alone — which answers *is this object in the store* — so a
@@ -2406,7 +2412,8 @@ ids across the one phase/task/bug namespace, `blockedBy`/`dependsOn` resolution,
 cycles, `fileIndex` integrity in **both** directions, the reciprocal `bug ↔ task` link,
 parked `proposals[]` (reserved ids, staged refs, the `materializedAs`/status pair), and a
 stored phase or bug value its derivation answers differently (`_check_derived`, one warning
-naming `SETTLE_COMMAND`). Each takes the index `_manifest_phases` produced, the manifest,
+per record in the `<kind> <id>: <body>` shape with an id-free body naming `SETTLE_COMMAND`, so
+`_warning_groups.collapse` prints a stale plan as a count per kind of move). Each takes the index `_manifest_phases` produced, the manifest,
 or both, and returns its own `(findings, warnings)` — no accumulator shared, no order depended
 on, so a case can call any of them with a hand-built argument and no file anywhere near it.
 
@@ -2632,10 +2639,10 @@ trail can, and doing so is advice rather than a build failure.
 ### `plugins/audit/scripts/status/_doctor_completions.py`
 The one check that CORRELATES two records rather than inspecting one: the journal's close
 receipts against the manifest's done tasks, the commit SHAs those tasks name against what git
-has, and the usage ledger's coverage of the same ids. A receipt is the hook-emitted
-`task.complete` row for the task, or the `done` verb's own `task.done` row carrying the task's
-`completedAt` — the only record of a close the hook did not watch, such as one run in a linked
-worktree. A done task inside the record era with neither is positive evidence the manifest was
+has, and the usage ledger's coverage of the same ids. A receipt is a row carrying the task's
+current `completedAt`: the hook-emitted `task.complete`, or the `done` verb's own `task.done` —
+the only record of a close the hook did not watch, such as one run in a linked worktree. A
+`task.complete` carrying no `completedAt` still receipts its task id alone. A done task inside the record era with neither is positive evidence the manifest was
 edited outside the pipeline — a FINDING, as is a SHA git has never heard of; everything the
 check merely could not look up is a WARNING. The era is the WATERMARK with no config knob: the
 first receipt's `ts`. `--deep` adds the journal-in-commit cross-check. Layer 4.
@@ -3556,6 +3563,13 @@ stored nothing, which left the same stale value for every reader that does not d
 open work, a task-less phase, a second sign-off and a closed phase. `done` does the same for a bug
 its task fixes: `fixed` and `fixedIn` go onto the bug in the index, the one write a close makes
 there.
+
+`reopen <taskId> --reason TEXT` is `/audit:run`'s re-open, which was a hand edit of the task's
+close and its linked bug. It clears the close (`status` back to pending, `attempts` 0, `commit`,
+`completedAt`, `outcome`, `verifiedBy`, `intentCheck`), puts a linked bug back to `in_progress`
+with no `fixedIn`, and journals `task.reopen`. It refuses a task that is not done, and one whose
+phase is signed off - done, or awaiting its merge - because that verdict is not re-decided, and a
+stored `done` over an open task is a finding every later verb refuses on.
 
 `settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
 `status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its

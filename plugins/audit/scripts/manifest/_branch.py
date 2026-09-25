@@ -315,6 +315,35 @@ def phase_answer(meta, phase, user_name):
     }
 
 
+def branch_of(meta, phase, user_name):
+    """{"name", "parent"} -- the branch one phase runs on, and where it lands.
+
+    THE ONE ANSWER EVERY WORKTREE SURFACE GIVES. `/audit:worktree add` named a
+    branch through `phase_answer` with git user.name while its other verbs, and the
+    panel's sweep, built the name another way, so under a template carrying
+    `{initials}` the worktree `add` had just cut was a stranger to the surfaces that
+    were meant to judge it. Here, below both, so neither can answer differently.
+
+    A phase's RECORDED branch wins over a composed one: a phase that ran has the name
+    git actually got, and re-composing could produce a different string for a
+    manifest whose convention changed mid-flight. Composing is the fallback for a
+    phase that has not started, so a worktree can be named before there is a branch
+    to record. `user_name` is `_worktrees.git_user_name`'s answer; this stays pure.
+    """
+    answer = phase_answer(meta, phase, user_name)
+    recorded = (phase or {}).get("branch")
+    return {"name": str(recorded) if recorded else answer["branch"],
+            "parent": answer["parent"]}
+
+
+def plan_branches(manifest, user_name):
+    """[(phase, branch_of answer)] for every phase dict the plan carries, in order."""
+    meta = (manifest or {}).get("meta") or {}
+    return [(phase, branch_of(meta, phase, user_name))
+            for phase in ((manifest or {}).get("phases") or [])
+            if isinstance(phase, dict)]
+
+
 # --- git ref legality ---------------------------------------------------------
 
 _BAD_CHARS = " ~^:?*[\\"

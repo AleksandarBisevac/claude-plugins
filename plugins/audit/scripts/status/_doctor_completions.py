@@ -204,10 +204,11 @@ def receipts(rows):
     TWO WRITERS, ONE RECEIPT. `task.complete` is derived by `journal-writes.py`
     from a status flip it saw; `task.done` is `audit-task.py done`'s own row, and
     it is the only record of the close when that hook did not watch - a close run
-    in a linked worktree, or a task added and closed in one Bash call. A
-    `task.complete` receipts its task id; a `task.done` receipts the close whose
-    `completedAt` it carries and no other, so a task reopened and re-closed by
-    hand is not covered by the verb's row for the earlier close.
+    in a linked worktree, or a task added and closed in one Bash call. Either row
+    receipts the close whose `completedAt` it carries and no other, so a task
+    reopened and re-closed by hand is not covered by a row for the earlier close.
+    A `task.complete` carrying no `completedAt` - written for a flip that set none
+    - still receipts its task id alone, because it names no close to match.
 
     The watermark is the first receipt of either kind: a plan whose every close
     went through the verb carries no `task.complete` at all, and reading that as
@@ -220,10 +221,10 @@ def receipts(rows):
         tid = det.get("taskId")
         if not tid:
             continue
-        if r.get("action") == "task.complete":
-            tasks.add(tid)
-        elif isinstance(det.get("completedAt"), str):
+        if isinstance(det.get("completedAt"), str):
             done_at.setdefault(tid, set()).add(det["completedAt"])
+        elif r.get("action") == "task.complete":
+            tasks.add(tid)
         else:
             continue
         row_ts.setdefault(tid, str(r.get("ts") or ""))

@@ -82,7 +82,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   revalidate-or-roll-back and one `plan.settle` journal row. It only moves a value towards what the
   derivation already answers: a stored `done`/`cancelled` and a person's `wontfix`/`not_a_bug` are
   never touched. `validate-manifest` now WARNS - never refuses - about a stored value its
-  derivation disagrees with and about a stale stub, naming the command; `audit-lookup` answers a
+  derivation disagrees with and about a stale stub, naming the command - one warning per record
+  with an id-free body, so a plan carrying dozens collapses to a line per kind of move with a
+  count and the `--verbose` pointer; `audit-lookup` answers a
   bug's and a phase's status from the derivation and prints `stored X, derived Y (basis)` where
   they differ.
 
@@ -122,7 +124,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   stamp stores it on a branched one and re-mirrors the stub under the index lock; `/audit:task
   done` on a bug's fix task stores the bug's `fixed` and `fixedIn` in the index - the one index
   write a close makes, which the verb reports with the command that lands it. A stored terminal
-  status already won inside the derivation, so no reader's answer changes (`COMPATIBILITY.md`).
+  status already won inside the derivation, so no reader's answer changes at the moment it is
+  written (`COMPATIBILITY.md`). Because a stored value no longer follows its inputs, the two paths
+  that changed an input afterwards now move it too: `/audit:run`'s re-open is the new
+  `audit-task.py reopen` verb, which refuses a task whose phase is signed off (its verdict is not
+  re-decided, and a stored `done` over an open task is a plan every later verb refuses) and
+  names a new task or `/audit:bug` instead; and `repair-commits.py --apply` clears a bug's
+  `fixedIn` that held the commit its fix task lost. `close-phase.py` revalidates the stamp and the
+  stub mirror and restores the prior bytes on a finding the write introduced, and the mirror
+  answers any failure, the lock's included, with a sentence naming `settle`.
 - **`manage-worktrees.py` parses each verb's flags under that verb.** One flat parser accepted
   `add --apply`, `list --force` and every other flag on every verb and ignored them; `--apply` and
   the sweep verbs now parse under `sweep` alone, and a misplaced flag is a usage error.
@@ -130,14 +140,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook derives `task.complete` only for a close it watched, so a task closed in a linked worktree,
   or added and closed in one Bash call, was reported as edited outside the pipeline. A `task.done`
   row whose `completedAt` is the task's is now the receipt; a done task with neither row is still a
-  FINDING, and the era starts at the first receipt of either kind.
+  FINDING, and the era starts at the first receipt of either kind. The hook's own `task.complete`
+  now receipts only the close whose `completedAt` it carries, so a task re-opened and flipped back
+  to done by hand is found whichever row the original close left.
 
 ### Fixed
 - **`/audit:worktree` named a phase's branch one way in `add` and another everywhere else
   (BUG-11).** `add` composed the branch with git user.name while `list`, `remove` and `sweep`
   composed it with no user name, so under a template carrying `{initials}` the worktree `add` had
   just cut was listed as a stranger and `remove` found no worktree holding the phase's branch.
-  Every verb now names it through one `branch_of`. `commands/worktree.md` also says a new worktree
+  Every verb, and the panel's sweep, now names it through one `_branch.branch_of`. `commands/worktree.md` also says a new worktree
   has no installed dependencies, and that a symlinked `node_modules` resolves outside it.
 - **The guide's verb check could not see a subparser.** `_deps.guide_enumeration` read verbs only
   off a `choices=` positional, so a command spelled with `add_parser` left the check with every verb

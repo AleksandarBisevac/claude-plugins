@@ -19,10 +19,46 @@
   "branch": "audit/p69-what-the-plan-records-about-a",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P69-R1",
+        "severity": "med",
+        "file": "plugins/audit/commands/run.md",
+        "issue": "Storing `done` changes what the documented re-open path leads to. The derivation lets a stored terminal status win (_manifest_io.py:646-648), so once `done` is stored, later changes to the inputs no longer move it. run.md step 1's re-open resets the task to `pending` and reopens the linked bug, but leaves the phase alone. The phase keeps its stored `done` with an open task, and _manifest_phases.py",
+        "resolution": "fix task P69.4-j6r"
+      },
+      {
+        "id": "P69-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_commit_trail.py",
+        "issue": "`done` now stores bug.fixedIn = task.commit. repair-commits sets an unreachable task.commit to null but never touches bug.fixedIn. derived_disagreements only ever fills fixedIn and never replaces it, so no warning appears either. _bug_view prints the recorded fixedIn ahead of the task's commit, so after a history rewrite the bug keeps naming the dead SHA. Before this change, fixedIn was normally e",
+        "resolution": "fix task P69.4-j6r"
+      },
+      {
+        "id": "P69-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py",
+        "issue": "(a) `_panel_write.acquire_index_lock(...)` and `_panel_write.read_config(...)` are called before the try block. acquire only catches around `_locks.acquire`, so an exception from `_locks.available`, `_legacy_claim` or read_config would propagate out of `_stamp()` inside `close()` after the merge landed. That contradicts the promise in PLUGIN-BUILD-GUIDE and phase-signoff.md that a failure here is ",
+        "resolution": "fix task P69.4-j6r"
+      },
+      {
+        "id": "P69-R4",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_close_phase.py",
+        "issue": "Two behaviours the phase promises have no test that could fail. (a) mirror_stub's handling of a lock held elsewhere, which should degrade to the settle sentence while the landing continues: s6/s7 run only with the lock free. (b) settle on the single-file layout: every sv case uses sharded=True, so the `_write_add(..., None, False)` single-file branch and its no-op 'nothing to settle' answer are ne",
+        "resolution": "fix task P69.4-j6r"
+      },
+      {
+        "id": "P69-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "issue": "Both new warnings put every stale record into one line. The docstring justifies this as not burying the verb's own output, but this repository's plan at HEAD carries 34 derived disagreements and 35 stale stubs. I measured that read-only with _mio.derived_disagreements / _mio.stale_stubs on docs/audit/audit-plan.json in the P69 worktree. So every write verb here now prints two multi-kilobyte WARNIN",
+        "resolution": "fix task P69.4-j6r"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -209,6 +245,77 @@
         "test_audit_lookup al30",
         "test_validate_manifest c24"
       ]
+    },
+    {
+      "id": "P69.4-j6r",
+      "title": "Sign-off review findings: a stored done survives re-open and repair, the stub mirror fails closed, settle is tested on both layouts, and the stale-status warning stays short",
+      "status": "in_progress",
+      "description": "Findings of the phase review, every one to be fixed (or answered with a measured reason) in this task:\nR1 (med) plugins/audit/commands/run.md:21-25 (not in the diff) against plugins/audit/scripts/manifest/audit-task.py _locked_signoff/_settle and plugins/audit/scripts/git/close-phase.py:576-580 _store_derived: Storing `done` changes what the documented re-open path leads to. The derivation lets a stored terminal status win (_manifest_io.py:646-648), so once `done` is stored, later changes to the inputs no longer move it. run.md step 1's re-open resets the task to `pending` and reopens the linked bug, but leaves the phase alone. The phase keeps its stored `done` with an open task, and _manifest_phases.py:571-584 reports that as a FINDING (\"status 'done' but N task(s) are not finished\"). After that, every verb that validates before writing (settle does, at _locked_settle; start/done are the same kind of write) refuses with 'already invalid', so the re-opened task can no longer be closed through the verb. Before P69.3 the stored in_progress let the derivation follow the reopen. CHANGELOG's 'no reader's answer changes' and COMPATIBILITY's 'no write moves a value away' are true when the value is written, not afterwards. -> Change run.md step 1 so that re-open refuses a task whose phase's effective status is `done`, and points to a new task or /audit:bug instead. The alternative is for re-open to also reset the phase's stored status, but review.status stays recorded and signoff refuses a second sign-off, so that phase could never be signed again. Add a case that re-opens a task in a signed-off parent-branch phase and asserts the answer.\nR2 (med) plugins/audit/scripts/manifest/_commit_trail.py:324 (repair-commits.py --apply) against plugins/audit/scripts/manifest/_manifest_io.py derived_disagreements (fixedIn arm) and plugins/audit/scripts/report/_report_html.py:238-240: `done` now stores bug.fixedIn = task.commit. repair-commits sets an unreachable task.commit to null but never touches bug.fixedIn. derived_disagreements only ever fills fixedIn and never replaces it, so no warning appears either. _bug_view prints the recorded fixedIn ahead of the task's commit, so after a history rewrite the bug keeps naming the dead SHA. Before this change, fixedIn was normally empty and would have read '—'. Changing task.commit changes an input of the derived fixedIn, and it is the one path left that leaves the stored copy behind with nothing reporting it. -> Two options: (a) repair-commits clears (and journals) a bug.fixedIn equal to a commit it clears; or (b) derived_disagreements reports a fixedIn that differs from its done fix task's commit when the stored value is the plugin's own copy. Add a case where repair-commits clears the fix task's commit and asserts the bug's fixedIn.\nR3 (low) plugins/audit/scripts/git/close-phase.py:590-627 (mirror_stub) and 657-671 (stamp_merged): (a) `_panel_write.acquire_index_lock(...)` and `_panel_write.read_config(...)` are called before the try block. acquire only catches around `_locks.acquire`, so an exception from `_locks.available`, `_legacy_claim` or read_config would propagate out of `_stamp()` inside `close()` after the merge landed. That contradicts the promise in PLUGIN-BUILD-GUIDE and phase-signoff.md that a failure here is 'a sentence ..., never a failed merge'. (b) mirror_stub writes the index (and stamp_merged now writes `status`) with no revalidation, against CLAUDE.md's 'Every command that mutates the manifest revalidates'. The stamp's lockless, unvalidated write was already there; the stub write and the status are new. -> Move the config read and lock acquire inside the try block and return the settle sentence on any exception. After writing the stub, revalidate the index and restore the prior bytes if it produces a finding.\nR4 (low) plugins/audit/tests/test_close_phase.py s5-s8; plugins/audit/tests/test_audit_task.py sv2-sv5: Two behaviours the phase promises have no test that could fail. (a) mirror_stub's handling of a lock held elsewhere, which should degrade to the settle sentence while the landing continues: s6/s7 run only with the lock free. (b) settle on the single-file layout: every sv case uses sharded=True, so the `_write_add(..., None, False)` single-file branch and its no-op 'nothing to settle' answer are never exercised. -> Add a case that holds the index lock from another identity, calls mirror_stub, and asserts ('', sentence naming settle) with the index bytes unchanged. Add a single-file settle case with a stale phase and bug, asserting stored values, one plan.settle row, and that a second run writes nothing.\nR5 (low) plugins/audit/scripts/manifest/_manifest_crossrefs.py _check_derived; plugins/audit/scripts/manifest/validate-manifest.py:129-139: Both new warnings put every stale record into one line. The docstring justifies this as not burying the verb's own output, but this repository's plan at HEAD carries 34 derived disagreements and 35 stale stubs. I measured that read-only with _mio.derived_disagreements / _mio.stale_stubs on docs/audit/audit-plan.json in the P69 worktree. So every write verb here now prints two multi-kilobyte WARNING lines until settle runs. I did not check whether _warning_groups.collapse elides them. -> Print the count, the first few ids and a --verbose pointer, as the other collapsed warnings do. Or confirm that collapse already shortens them, and say so in the docstring.\npre-existing 1 (low) plugins/audit/scripts/status/_doctor_completions.py has_receipt: `task.complete` still counts as a receipt for a task id alone. When the original close produced both rows (the main-checkout case), a task re-opened and then flipped back to done by hand stays hidden, so dc34's 'must still be found' holds only when no task.complete exists for that id. On the forgery question (P69.2): the new task.done receipt is strictly harder to forge than the old one. It needs a row for that taskId carrying the task's exact completedAt, and a hand edit that copies completedAt hides only a hand re-close after a re-open, which the id-only task.complete already hid. It hides no hand edit that was visible before. -> Make task.complete receipt a close only when no later re-open is recorded, or match on completedAt as task.done does.\npre-existing 2 (low) plugins/audit/scripts/panel/_panel_write.py:748-757: The panel's sweep builds its wanted/parents maps from recorded phase.branch only, not through manage-worktrees' branch_of, so it answers 'which branch is this phase's' differently from the CLI sweep. It is outside this diff and narrower rather than wrong. -> Share branch_of (or its answer) with the panel sweep, or document why the panel is deliberately narrower.\npre-existing 3 (low) plugins/audit/scripts/panel/_panel_state.py: _deps.layer_violations() reports 'runtime-loads render-report (layer 7) from layer 5'. Neither file is in the diff. close-phase (L7) importing _panel_write (L6) is downward and clean. -> Out of scope for P69; track separately if it is not already exempted.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/scripts/manifest/_commit_trail.py",
+        "plugins/audit/tests/test__commit_trail.py",
+        "plugins/audit/tests/test_repair_commits.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/scripts/manifest/repair-commits.py",
+        "plugins/audit/scripts/manifest/_branch.py",
+        "plugins/audit/tests/test__branch.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - re-opening a task in a signed-off parent-branch phase leaves a stored done over an open task and the next verb refuses the plan as invalid"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T16:35:15Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T14:32:06Z"

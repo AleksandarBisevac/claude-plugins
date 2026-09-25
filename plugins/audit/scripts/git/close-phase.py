@@ -99,6 +99,7 @@ _output.install_path()
 import _branch                                                       # noqa: E402
 import _journal_io                                                   # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
+import _manifest_rules as _rules  # noqa: E402  (revalidate what the stamp writes)
 import _panel_write  # noqa: E402  (the index lock the stub mirror is written under)
 import _proposals  # noqa: E402  (parked_on_branch: the work this branch deferred)
 import _worktrees as _wt                                             # noqa: E402
@@ -602,13 +603,18 @@ def mirror_stub(manifest_path, phase_id, project):
     if not _stale_stub(manifest_path, phase_id):
         return "", ""
     lines = []
-    lock = _panel_write.acquire_index_lock(project, _panel_write.read_config(project),
-                                           manifest_path, False, lines.append,
-                                           "[close-phase]", "close-phase stub mirror")
+    # EVERY STEP UNDER A `try`, the lock's own included: this runs inside `close()`
+    # after the merge has landed, so a raise from reading the config or asking for
+    # the lock would report a merge that happened as one that failed.
+    try:
+        lock = _panel_write.acquire_index_lock(
+            project, _panel_write.read_config(project), manifest_path, False,
+            lines.append, "[close-phase]", "close-phase stub mirror")
+    except Exception as exc:
+        return "", _unmirrored("the index lock could not be asked for: %s" % (exc,))
     if isinstance(lock, int):
-        return "", ("the index lock was not taken (%s), so the stub still differs "
-                    "from its shard; `audit-task.py settle` re-mirrors it"
-                    % ("; ".join(lines) or "exit %d" % (lock,)))
+        return "", _unmirrored("the index lock was not taken (%s)"
+                               % ("; ".join(lines) or "exit %d" % (lock,)))
     try:
         # RE-READ UNDER THE LOCK: what was stale a moment ago is decided again once
         # the lock is held, so a writer that got there first is not overwritten.
@@ -619,12 +625,47 @@ def mirror_stub(manifest_path, phase_id, project):
         for stub in (raw.get("phases") or []):
             if isinstance(stub, dict) and str(stub.get("id")) == str(phase_id):
                 stub.update(moved)
-        _mio.atomic_write_json(manifest_path, raw, indent=2)
+        new = _revalidated_write(manifest_path, manifest_path, raw)
+        if new:
+            return "", _unmirrored("the re-mirrored index would not validate (%s), "
+                                   "so its prior bytes were restored"
+                                   % ("; ".join(new[:3]),))
         return manifest_path, ""
     except Exception as exc:
-        return "", "the index stub could not be written: %s" % (exc,)
+        return "", _unmirrored("the index stub could not be written: %s" % (exc,))
     finally:
         _panel_write.release_index_lock(lock, out=lines.append)
+
+
+def _unmirrored(why):
+    """The sentence a stub left behind owes: why, and the command that fixes it."""
+    return ("%s, so the stub still differs from its shard; `audit-task.py settle` "
+            "re-mirrors it" % (why,))
+
+
+def _findings_of(manifest_path):
+    """The validator's findings over the plan at `manifest_path`, as a set - one
+    naming the read itself when the plan cannot be assembled."""
+    try:
+        return set(_rules.validate(_mio.load_manifest(manifest_path))[0])
+    except Exception as exc:
+        return set(["the plan could not be assembled: %s" % (exc,)])
+
+
+def _revalidated_write(manifest_path, path, obj):
+    """Write `obj` to `path`, then revalidate the plan at `manifest_path`: a finding
+    the write introduced restores `path`'s prior bytes. Returns those new findings,
+    sorted - [] when the write stands. A finding the plan already carried is not
+    this write's to refuse on, which is why the two sets are compared."""
+    with open(path, "rb") as fh:
+        before = fh.read()
+    pre = _findings_of(manifest_path)
+    _mio.atomic_write_json(path, obj, indent=2)
+    new = sorted(_findings_of(manifest_path) - pre)
+    if new:
+        with open(path, "wb") as fh:
+            fh.write(before)
+    return new
 
 
 def stamp_merged(manifest_path, phase_id, when=None):
@@ -673,9 +714,12 @@ def stamp_merged(manifest_path, phase_id, when=None):
         if not found:
             return "", "phase %s is not in %s" % (phase_id, path)
     try:
-        _mio.atomic_write_json(path, body, indent=2)
+        new = _revalidated_write(manifest_path, path, body)
     except Exception as exc:
         return "", "%s could not be written: %s" % (path, exc)
+    if new:
+        return "", ("%s would leave the plan invalid (%s), so its prior bytes were "
+                    "restored" % (path, "; ".join(new[:3])))
     return path, stamp
 
 

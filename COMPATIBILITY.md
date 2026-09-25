@@ -147,7 +147,10 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   that is additive - a value the derivation already answered is now also written down, for the
   readers that do not derive - and it changes nothing about which value wins, because a stored
   terminal status and a person's `wontfix`/`not_a_bug` still win inside the derivation, so no
-  write moves a value away from what the derivation answered before it. A plan carrying the
+  write moves a value away from what the derivation answered before it. A stored value then no
+  longer follows a later change to its inputs, so the paths that make one move it too:
+  `audit-task.py reopen` refuses a task whose phase is signed off, and `repair-commits.py --apply`
+  clears a `fixedIn` holding the commit it clears. A plan carrying the
   older, stale values keeps reading correctly through the derivation; `validate-manifest` warns
   about them (a warning, never a finding) and `audit-task.py settle` stores them. Reversing that
   precedence, or ceasing to read a verdict as sign-off, is a major. What is not promised is the

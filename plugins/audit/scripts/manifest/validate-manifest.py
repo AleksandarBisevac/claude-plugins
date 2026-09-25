@@ -128,15 +128,17 @@ def main(argv):
         for pid, field in _mio.index_only_in_bodies(paths[0])]
     # ...and its mirror image: a stub whose copy of a shard's key has fallen behind.
     # The assembled manifest lets the body win, so `validate()` cannot see it either,
-    # and the stub is what a reader of the index alone is answered from.
+    # and the stub is what a reader of the index alone is answered from. One warning
+    # per phase in the `phase <id>: <body>` shape with an id-free body, so the
+    # collapse below prints a count and the first ids rather than every stub.
     stale = _mio.stale_stubs(paths[0])
-    if stale:
-        warnings.append(
-            "index stub disagrees with its shard: %s - a reader of the index alone "
-            "gets the stub's value. `%s` re-mirrors every stub, under the index lock"
-            % ("; ".join("%s %s stub %s, shard %s" % (pid, key, was, now)
-                         for pid, key, was, now in stale),
-               _manifest_rules.SETTLE_COMMAND))
+    warnings = warnings + [
+        "phase %s: index stub mirrors %s as %s while its shard holds %s - a reader "
+        "of the index alone gets the stub's value; `%s` re-mirrors every stub, "
+        "under the index lock"
+        % (pid, key, "nothing" if was is None else was, now,
+           _manifest_rules.SETTLE_COMMAND)
+        for pid, key, was, now in stale]
 
     # `hint` is this command's own spelling of the flag, because on its own
     # output "validate-manifest.py --verbose" would be telling the reader to run

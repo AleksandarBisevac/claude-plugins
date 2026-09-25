@@ -455,6 +455,29 @@ def _cases(check):
               % (_detail(rep, "completions"),),
               "FINDING" in _levels(rep, "completions")
               and "P1.1" in _detail(rep, "completions"))
+
+        # THE HOOK'S ROW HONOURS A LATER RE-OPEN TOO. `task.complete` carries the
+        # `completedAt` of the close it saw, so it is a receipt for that close and
+        # no other - read by task id alone it hid a task re-opened and flipped back
+        # to done by hand, which is the one case dc34 exists for.
+        _journal_io.append(tmp, {"action": "task.complete", "actor": "p",
+                                 "ts": "2026-05-04T00:00:01Z",
+                                 "details": {"taskId": "P1.4", "phaseId": "P1",
+                                             "completedAt": "2026-05-04T00:00:00Z"}})
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, _manifest(
+            [_task("P1.4", completedAt="2026-07-01T00:00:00Z")]), mrel, None)
+        check("dc36 a hook `task.complete` row for an EARLIER close is no receipt "
+              "for a task re-closed by hand since: %r" % (_detail(rep, "completions"),),
+              "FINDING" in _levels(rep, "completions")
+              and "P1.4" in _detail(rep, "completions"))
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, _manifest(
+            [_task("P1.4", completedAt="2026-05-04T00:00:00Z")]), mrel, None)
+        check("dc37 ...while the same row IS the receipt for the close it records - "
+              "the case that goes red when a task.complete stops counting at all: %r"
+              % (_detail(rep, "completions"),),
+              "FINDING" not in _levels(rep, "completions"))
     finally:
         _harness.remove_tree(tmp)
 

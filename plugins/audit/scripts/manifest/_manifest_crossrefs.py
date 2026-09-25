@@ -612,19 +612,39 @@ def _check_derived(manifest):
     stored these values carries some, so refusing them would turn those plans red on
     upgrade. What it costs is the reader that does not derive (an older plugin's
     hooks, `jq`, an agent reading the file), and the warning says so and names the
-    one command that settles the plan. One line for the whole plan: the verbs print
-    this warning after every write, and one line per stale record would bury theirs.
+    one command that settles the plan.
+
+    ONE WARNING PER RECORD, IN THE `<kind> <id>: <body>` SHAPE, with a body that
+    names no id and so is byte-equal across records moving the same way. That is
+    what `_warning_groups.collapse` groups: the verbs print these after every write,
+    and a plan carrying dozens of stale values reads as one line per kind of move -
+    a count, the first ids and the `--verbose` pointer - instead of burying the
+    verb's own output. The basis is the rule's, true of every record it names;
+    `audit-lookup` prints one record's own.
     """
     rows = _mio.derived_disagreements(manifest)
     if not rows:
         return ([], [])
-    return ([], ["stored status disagrees with its derivation: %s - a reader of the "
-                 "stored field alone (an older plugin's hooks, jq, an agent) gets the "
-                 "stale value. `%s` stores every derived value, under the index lock"
-                 % ("; ".join("%s %s stored %s, derived %s (%s)"
-                              % (r["id"], r["field"], r["stored"], r["derived"],
-                                 r["basis"]) for r in rows),
-                    SETTLE_COMMAND)])
+    return ([], ["%s %s: %s" % (r["kind"], r["id"], _derived_body(r)) for r in rows])
+
+
+_DERIVED_BASIS = {
+    ("phase", "status"): "every task is terminal, a sign-off verdict is recorded "
+                         "and any branch has merged",
+    ("bug", "status"): "its fix task is done",
+    ("bug", "fixedIn"): "its fix task is done at a recorded commit",
+}
+
+
+def _derived_body(row):
+    """The id-free body of one stored-against-derived warning."""
+    derived = ("that commit" if row["field"] == "fixedIn" else row["derived"])
+    return ("stored %s is %s while %s, so it derives %s - a reader of the stored "
+            "field alone (an older plugin's hooks, jq, an agent) gets the stale "
+            "value; `%s` stores every derived value, under the index lock"
+            % (row["field"], row["stored"] if row["stored"] is not None else "empty",
+               _DERIVED_BASIS.get((row["kind"], row["field"]), row["basis"]),
+               derived, SETTLE_COMMAND))
 
 
 def _check_decisions(manifest, index):

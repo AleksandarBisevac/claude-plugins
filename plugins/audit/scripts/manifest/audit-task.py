@@ -50,6 +50,8 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py settle [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py reopen <taskId> --reason "<why>|-" [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -3554,6 +3556,155 @@ def _locked_done(args, project, config, mpath, tid, out):
     return 0
 
 
+# --- reopen: a done task back to pending, or a refusal naming the way forward ---
+# `commands/run.md`'s re-open was a hand edit of six task fields and the linked
+# bug's two, which is why it had no refusal: nothing asked what the phase around the
+# task said. A SIGNED-OFF PHASE REFUSES, closed or awaiting its merge. Its verdict
+# reviewed the work as it stands and sign-off is not re-decided, so a task re-opened
+# under it could never be signed off again - and once the phase's `done` is stored,
+# a stored done winning inside the derivation leaves `done` over open work, a
+# finding every verb after it refuses on, the one that would close the task
+# included. New work under a signed-off phase is a new task in an open phase, or a
+# bug.
+def cmd_reopen(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to re-open
+    if not tid:
+        out("[audit-task] reopen needs a task id")
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if not reason:
+        out("[audit-task] reopen needs --reason \"<why>\" -- undoing a close with "
+            "no recorded why is the hand edit this verb replaces")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_reopen(
+                           args, project, config, mpath, tid, reason, out))
+
+
+def _reopen_refusal(kind, node, phase, tid):
+    """Why `tid` cannot be re-opened, or None."""
+    if kind is None:
+        return "no task with id %r in this plan" % (tid,)
+    if kind != "task":
+        return ("%s is a PHASE -- `reopen` takes one task id, and a phase is "
+                "closed by sign-off, which is not re-decided" % (tid,))
+    if node.get("status") != "done":
+        return ("%s is %s, not done -- there is no close to undo"
+                % (tid, node.get("status")))
+    pid = phase.get("id")
+    if _mio.effective_phase_status(phase) in _mio.TERMINAL \
+            or _mio.signoff_recorded(phase):
+        return ("%s's phase %s is signed off (%s) -- its verdict reviewed the work "
+                "as it stands and is not re-decided, so a task re-opened under it "
+                "could never be signed off again. Put the new work in an open "
+                "phase (/audit:task add \"<title>\" --phase <open phase>), or "
+                "report it as a bug (/audit:bug add)"
+                % (tid, pid, _mio.effective_phase_status(phase)
+                   if _mio.effective_phase_status(phase) in _mio.TERMINAL
+                   else "review.status %s" % ((phase.get("review") or {})
+                                              .get("status"),)))
+    return None
+
+
+def _locked_reopen(args, project, config, mpath, tid, reason, out):
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _panel_write._cores()[0]
+    pre_findings, _w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing written; "
+            "fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    kind, node, phase = _find_target(assembled, tid)
+    refusal = _reopen_refusal(kind, node, phase, tid)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    phase_id = phase.get("id")
+    changes = []
+
+    def put(holder, rid, field, value):
+        if holder.get(field) != value:
+            changes.append({"id": rid, "field": field, "from": holder.get(field),
+                            "to": value})
+        holder[field] = value
+
+    put(node, tid, "status", "pending")
+    put(node, tid, "attempts", 0)
+    put(node, tid, "commit", None)
+    put(node, tid, "completedAt", None)
+    put(node, tid, "verifiedBy", [])
+    put(node, tid, "outcome", {"technical": None, "descriptive": None})
+    if "intentCheck" in node:
+        changes.append({"id": tid, "field": "intentCheck",
+                        "from": node.pop("intentCheck"), "to": None})
+    bugs = [b for b in (assembled.get("bugs") or [])
+            if isinstance(b, dict) and b.get("taskId") == tid
+            and b.get("status") not in _mio.HUMAN_BUG_VERDICT]
+    for bug in bugs:
+        put(bug, bug.get("id"), "status", "in_progress")
+        put(bug, bug.get("id"), "fixedIn", None)
+    snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, phase_id, False,
+                             index_fields=("bugs",) if bugs else ())
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        written_manifest, findings, warnings = {}, ["cannot re-read the written "
+                                                    "manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the re-open would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    jres = _journal_row(project, config, mpath, "task.reopen",
+                        "%s re-opened in %s: %s" % (tid, phase_id, reason),
+                        {"taskId": tid, "phaseId": phase_id, "reason": reason,
+                         "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    if args.as_json:
+        result = {"ok": True, "id": tid, "phase": phase_id, "status": "pending",
+                  "reason": reason, "changes": changes,
+                  "bugs": [b.get("id") for b in bugs], "written": written,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
+        result.update(jres)
+        result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s re-opened in %s -- pending, its close cleared: %s"
+        % (tid, phase_id, reason))
+    for bug in bugs:
+        out("  bug %s back to in_progress, fixedIn cleared" % (bug.get("id"),))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
+        out("  journal: the audit trail did NOT take the task.reopen row")
+    out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    return 0
+
+
 # --- add-phase: one more phase in a plan that already exists ---------------------
 # Everything that WROTE a phase before this verb wrote a whole plan or moved
 # one that had already been written somewhere else, so "I have a live plan and a
@@ -5508,6 +5659,8 @@ VERB_FLAGS = {
     # `settle` stores what the derivations already answer, over the whole plan, so
     # there is nothing for a flag to choose - an empty row, for `start`'s reason.
     "settle": (),
+    # `reopen` undoes one close and records why, so its one flag is `cancel`'s.
+    "reopen": ("reason",),
 }
 
 
@@ -5527,7 +5680,7 @@ def build_parser():
     p.add_argument("command",
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
-                            "signoff", "settle"])
+                            "signoff", "settle", "reopen"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -5766,7 +5919,8 @@ def main(argv, out=print):
              "cancel": cmd_cancel, "scope": cmd_scope,
              "retarget": cmd_retarget, "start": cmd_start,
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
-             "signoff": cmd_signoff, "settle": cmd_settle}
+             "signoff": cmd_signoff, "settle": cmd_settle,
+             "reopen": cmd_reopen}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

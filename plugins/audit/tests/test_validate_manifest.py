@@ -171,12 +171,13 @@ def _cases(record):
             json.dump(idx, fh)
         code_st, out_st = _run([spath])
         stub_lines = [ln for ln in out_st.splitlines()
-                      if "index stub disagrees with its shard" in ln]
+                      if "index stub mirrors" in ln]
         record("c24 a stub mirroring a status its shard no longer holds is ONE "
                "warning naming the phase, both values and the settle command, and "
                "the plan stays valid: %r" % (stub_lines,),
                code_st == 0 and len(stub_lines) == 1
-               and "P0 status stub done, shard pending" in stub_lines[0]
+               and "phase P0: index stub mirrors status as done while its "
+               "shard holds pending" in stub_lines[0]
                and _mio.stale_stubs(spath) == [("P0", "status", "done", "pending")]
                and "audit-task.py\" settle" in stub_lines[0])
         record("c25 SECOND DIRECTION: the same plan before the stub was touched says "

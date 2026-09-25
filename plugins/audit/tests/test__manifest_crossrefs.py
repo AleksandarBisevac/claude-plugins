@@ -672,23 +672,42 @@ def _cases(check):
                         "taskId": "P1.1", "fixedIn": None}],
               "fileIndex": {}}
     _sf, _sw = M._check_derived(_stale)
-    check("sd1 a stored status the derivation answers differently is a WARNING "
-          "naming the record, both values, the basis and the settle command - and "
-          "no finding: %r" % (_sw,),
-          _sf == [] and len(_sw) == 1
-          and "P1 status stored in_progress, derived done" in _sw[0]
-          and "BUG-1 status stored triaged, derived fixed" in _sw[0]
-          and "BUG-1 fixedIn stored None, derived abc1234" in _sw[0]
-          and "review.status passed" in _sw[0]
-          and M.SETTLE_COMMAND in _sw[0])
+    check("sd1 a stored status the derivation answers differently is a WARNING, "
+          "one per record in the `<kind> <id>: <body>` shape, naming the field, the "
+          "stored value, what it derives, the basis and the settle command - and no "
+          "finding: %r" % (_sw,),
+          _sf == [] and len(_sw) == 3
+          and _sw[0].startswith("phase P1: stored status is in_progress while "
+                                "every task is terminal")
+          and "so it derives done" in _sw[0]
+          and _sw[1].startswith("bug BUG-1: stored status is triaged while its fix "
+                                "task is done, so it derives fixed")
+          and _sw[2].startswith("bug BUG-1: stored fixedIn is empty")
+          and all(M.SETTLE_COMMAND in w for w in _sw))
     check("sd2 ...and a signed-off phase whose branch has not merged is NOT named: "
           "its derivation still answers in_progress, and the case goes red when "
           "the check reads a verdict alone as done: %r" % (_sw,),
-          "P2 " not in _sw[0])
-    check("sd3 ...and validate() carries it as a warning, so the plan stays VALID",
+          not any(w.startswith("phase P2") for w in _sw))
+    check("sd3 ...and validate() carries them as warnings, so the plan stays VALID",
           _rules.validate(_stale)[0] == []
           and len([w for w in _rules.validate(_stale)[1]
-                   if M.SETTLE_COMMAND in w]) == 1)
+                   if M.SETTLE_COMMAND in w]) == 3)
+    # THE SHAPE IS WHAT KEEPS A STALE PLAN'S OUTPUT SHORT: many records moving the
+    # same way share one body, and the renderer every verb prints through collapses
+    # them to one line with a count, the first ids and the --verbose pointer.
+    import _warning_groups as _wg                  # noqa: E402
+    _many = {"meta": {"version": 2}, "fileIndex": {}, "bugs": [],
+             "phases": [{"id": "P%d" % n, "title": "t", "status": "in_progress",
+                         "review": {"status": "passed"},
+                         "tasks": [{"id": "P%d.1" % n, "title": "t",
+                                    "status": "done"}]} for n in range(1, 11)]}
+    _mw = M._check_derived(_many)[1]
+    _mc = _wg.collapse(_mw, _many)
+    check("sd5 a plan with many stale phases prints ONE collapsed line - a count, the "
+          "first ids, the --verbose pointer - rather than a line or a list per "
+          "record: %r" % (_mc,),
+          len(_mw) == 10 and len(_mc) == 1 and "more" in _mc[0]
+          and "--verbose" in _mc[0] and "P10" not in _mc[0])
     _settled = {"meta": {"version": 2},
                 "phases": [dict(_stale["phases"][0], status="done"),
                            _stale["phases"][1]],

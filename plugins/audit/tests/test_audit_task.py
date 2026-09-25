@@ -3904,7 +3904,10 @@ def _cases(check):
                    "seed": ["seed", "T"],
                    # `settle` takes no id and no flag of its own, so like `start`
                    # its row is the bare call and every flag must bounce.
-                   "settle": ["settle"]}
+                   "settle": ["settle"],
+                   # `reopen` on the done task the fixture carries, in its open
+                   # phase, with the one flag it requires.
+                   "reopen": ["reopen", "P2.1", "--reason", "r"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -3980,6 +3983,10 @@ def _cases(check):
         _vf_settle_proj, _vf_settle_mp = mk("vf-settle", base_manifest())
         _vf_ok["settle/--json"] = run(
             ["settle", "--json", "--project-dir", _vf_settle_proj])[0]
+        _vf_reopen_proj, _vf_reopen_mp = mk("vf-reopen", base_manifest())
+        _vf_ok["reopen/--reason"] = run(
+            ["reopen", "P2.1", "--reason", "r", "--json",
+             "--project-dir", _vf_reopen_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -5530,6 +5537,8 @@ def _cases(check):
             # `settle` writes nothing on a plan already settled, and still names
             # the tree it read: "nothing to settle" is only true of that plan.
             ("settle", ["settle"]),
+            # `reopen` on the task `done` above just closed, in its open phase.
+            ("reopen", ["reopen", "P2.3", "--reason", "r"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -5890,6 +5899,113 @@ def _cases(check):
               and open(mpst, "rb").read() == _st_bytes
               and len([r for r in _journal_io.read_all(projst)
                        if r.get("action") == "plan.settle"]) == 1)
+        # THE SINGLE-FILE LAYOUT, which writes the whole plan in one file and has
+        # no stub to re-mirror: the same stale plan, the same answers.
+        projsf, mpsf = mk("sv-settle-single", stale, git=True)
+        code, txt = run(["settle", "--project-dir", projsf])
+        _sf_after = _mio.load_manifest(mpsf)
+        _sf_ph = dict((p["id"], p) for p in _sf_after["phases"])
+        _sf_bug = dict((b["id"], b) for b in _sf_after["bugs"])
+        check("sv6 settle on the SINGLE-FILE layout stores the phase's and the bug's "
+              "derived values, leaves the unmerged branch phase and the wontfix "
+              "alone, and journals one plan.settle row: %s" % (txt,),
+              code == 0 and not _mio.is_sharded(_mio.read_json(mpsf))
+              and _sf_ph["P2"]["status"] == "done"
+              and _sf_ph["P3"]["status"] == "in_progress"
+              and _sf_bug["BUG-1"]["status"] == "fixed"
+              and _sf_bug["BUG-1"]["fixedIn"] == _PD_SHA
+              and _sf_bug["BUG-2"]["status"] == "wontfix"
+              and _mio.derived_disagreements(_sf_after) == []
+              and len([r for r in _journal_io.read_all(projsf)
+                       if r.get("action") == "plan.settle"]) == 1)
+        with open(mpsf, "rb") as _fh:
+            _sf_bytes = _fh.read()
+        code, txt = run(["settle", "--project-dir", projsf])
+        check("sv7 ...and a second settle there writes nothing and journals nothing: "
+              "%s" % (txt,),
+              code == 0 and "nothing to settle" in txt
+              and open(mpsf, "rb").read() == _sf_bytes
+              and len([r for r in _journal_io.read_all(projsf)
+                       if r.get("action") == "plan.settle"]) == 1)
+
+        # ---- (ro) re-open: a done task goes back to pending, or is refused -----
+        # A SIGNED-OFF PHASE IS NOT RE-OPENED THROUGH ONE OF ITS TASKS. Its done is
+        # stored now, and a stored done wins inside the derivation, so re-opening a
+        # task under it leaves a phase marked done over open work - a FINDING that
+        # makes every verb after it refuse the plan as already invalid, the verb
+        # that would close the re-opened task included. And the phase could never
+        # be signed again: its verdict is on record and sign-off is not re-decided.
+        # The hand re-open `commands/run.md` prescribed is the path this repro
+        # walks, so the case first shows what it led to.
+        rosigned = base_manifest()
+        rosigned["phases"][1]["tasks"][1].update(status="done", commit=_PD_SHA,
+                                                 completedAt="2026-01-02T00:00:00Z")
+        projro, mpro = mk("ro-signed", rosigned)
+        run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+             "--project-dir", projro])
+        _ro_hand = _mio.load_manifest(mpro)
+        for _t in _ro_hand["phases"][1]["tasks"]:
+            if _t["id"] == "P2.3":
+                _t.update(status="pending", attempts=0, commit=None,
+                          completedAt=None)
+        _ro_hand_proj, _ro_hand_mp = mk("ro-hand", _ro_hand)
+        code_h, txt_h = run(["start", "P2.3", "--project-dir", _ro_hand_proj])
+        check("ro0 the hand re-open under a signed-off phase leaves a stored done "
+              "over open work, and the next verb refuses the plan as already "
+              "invalid - the dead end the verb below refuses to walk into: %r"
+              % (txt_h[-160:],),
+              code_h == M.E_INVALID and "already invalid" in txt_h)
+        with open(mpro, "rb") as _fh:
+            _ro_before = _fh.read()
+        code, txt = run(["reopen", "P2.3", "--reason", "regressed",
+                         "--project-dir", projro])
+        check("ro1 `reopen` REFUSES a task whose phase is signed off, writes not a "
+              "byte, and names the two ways forward - a new task in an open "
+              "phase, or /audit:bug: %s" % (txt,),
+              code == 2 and "signed off" in txt
+              and "/audit:task add" in txt and "/audit:bug" in txt
+              and open(mpro, "rb").read() == _ro_before)
+        robranch = base_manifest()
+        robranch["phases"][1]["tasks"][1].update(status="done", commit=_PD_SHA)
+        robranch["phases"][1].update(branch="feature/p2",
+                                     review={"status": "passed"})
+        projrb, _mprb = mk("ro-awaiting-merge", robranch)
+        code, txt = run(["reopen", "P2.3", "--reason", "r", "--project-dir", projrb])
+        check("ro2 ...and so is a phase signed off and only awaiting its merge: it "
+              "still reads in_progress, but the verdict on record reviewed the work "
+              "as it stands: %s" % (txt,),
+              code == 2 and "signed off" in txt)
+        roopen = base_manifest()
+        roopen["phases"][1]["tasks"][0].update(
+            commit=_PD_SHA, completedAt="2026-01-02T00:00:00Z", attempts=1,
+            outcome={"technical": "t", "descriptive": "d"}, verifiedBy=["t1"],
+            bugId="BUG-1")
+        roopen["bugs"] = [{"id": "BUG-1", "title": "b", "status": "fixed",
+                           "taskId": "P2.1", "fixedIn": _PD_SHA}]
+        projrop, mprop = mk("ro-open", roopen)
+        code, txt = run(["reopen", "P2.1", "--reason", "regressed in prod",
+                         "--project-dir", projrop])
+        _ro_m = _mio.load_manifest(mprop)
+        _ro_t = [t for t in _ro_m["phases"][1]["tasks"] if t["id"] == "P2.1"][0]
+        _ro_b = _ro_m["bugs"][0]
+        _ro_rows = [r for r in _journal_io.read_all(projrop)
+                    if r.get("action") == "task.reopen"]
+        check("ro3 the ALLOW case: a done task in an open phase goes back to "
+              "pending with its close cleared, its bug goes back to in_progress "
+              "with no fixedIn, one task.reopen row carries the reason, and the "
+              "plan still validates: %s" % (txt,),
+              code == 0 and _ro_t["status"] == "pending" and _ro_t["attempts"] == 0
+              and _ro_t["commit"] is None and _ro_t["completedAt"] is None
+              and _ro_t["outcome"] == {"technical": None, "descriptive": None}
+              and _ro_t["verifiedBy"] == []
+              and _ro_b["status"] == "in_progress" and _ro_b["fixedIn"] is None
+              and len(_ro_rows) == 1
+              and (_ro_rows[0].get("details") or {}).get("reason")
+              == "regressed in prod"
+              and _panel_write._cores()[0].validate(_ro_m)[0] == [])
+        code, txt = run(["reopen", "P2.3", "--reason", "r", "--project-dir", projrop])
+        check("ro4 ...and a task that is not done is refused: there is no close to "
+              "undo: %s" % (txt,), code == 2 and "not done" in txt)
 
         # ---- (bs) the branch suffix: ids two branches cannot both mint --------
         def git(proj, *a):

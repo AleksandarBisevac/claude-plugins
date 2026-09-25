@@ -115,33 +115,11 @@ NONE_ARE_OURS = ("linked worktrees exist and NONE of them belongs to this plan, 
 
 # --- the plan's own branches -----------------------------------------------------
 
-def branch_of(meta, phase, user_name):
-    """{"name", "parent"} -- the branch one phase runs on, and where it lands.
-
-    ONE ANSWER FOR EVERY VERB. When `add` named a branch through
-    `_branch.phase_answer` with git user.name and the other verbs composed it with
-    no user name, a template carrying `{initials}` made `list` call the worktree
-    `add` had just cut a stranger and `remove` find no worktree holding it.
-    `user_name` is `_wt.git_user_name`'s answer; each verb reads it once.
-
-    A phase's RECORDED branch wins over a composed one: a phase that ran has the name
-    git actually got, and re-composing could produce a different string for a
-    manifest whose convention changed mid-flight. Composing is the fallback for a
-    phase that has not started, so `add` can be told about a worktree before there is
-    a branch to record.
-    """
-    answer = _branch.phase_answer(meta, phase, user_name)
-    recorded = (phase or {}).get("branch")
-    return {"name": str(recorded) if recorded else answer["branch"],
-            "parent": answer["parent"]}
-
-
-def _branches(manifest, user_name):
-    """[(phase, branch_of answer)] for every phase dict the plan carries."""
-    meta = (manifest or {}).get("meta") or {}
-    return [(phase, branch_of(meta, phase, user_name))
-            for phase in ((manifest or {}).get("phases") or [])
-            if isinstance(phase, dict)]
+# ONE ANSWER FOR EVERY VERB, AND FOR THE PANEL'S SWEEP TOO: `_branch.branch_of`
+# is below both, so neither can name a phase's branch differently. Each verb reads
+# `user_name` once, off `_wt.git_user_name`.
+branch_of = _branch.branch_of
+_branches = _branch.plan_branches
 
 
 def wanted_branches(manifest, user_name):
