@@ -66,6 +66,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   task-less phase, a second sign-off and a closed phase. `reference/phase-signoff.md` runs it where
   it used to say "set `phase.status = done`".
 
+- **`/audit:version`** says which build is running and whether a newer one is published: the
+  running copy's version, what its marketplace offers and whether that marketplace auto-updates,
+  every installed copy by project (older ones marked), and the newest GitHub release - each line
+  naming where it was read, and a source that could not be read saying why. When a newer release
+  is out it prints the update commands and exits 1. The release check is the plugin's one
+  outbound request (`SECURITY.md` -> *Outbound network*); `--offline` skips it.
+
 ### Changed
 - **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
   phase branch was prose the orchestrator ran before the verb, so every phase driven through the

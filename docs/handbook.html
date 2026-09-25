@@ -666,6 +666,26 @@
       </div>
     </div>
 
+    <div class="cmd">
+      <div class="cmd-line">
+        <span class="c">/audit:version [--offline] [--json]</span>
+        <span class="badge b-read">read-only</span>
+      </div>
+      <div class="cmd-body">
+        <p>Which build is running, and whether a newer one is published: the running copy's version,
+          what the marketplace it came from offers and whether that marketplace
+          <strong>auto-updates</strong>, every installed copy by project, and the newest release on
+          the plugin's repository &mdash; each line naming where it was read. When a newer release is
+          out it prints the update commands and exits 1; when the release feed cannot be reached it
+          says so rather than calling you up to date. The feed is the plugin's one outbound request,
+          and <code>--offline</code> skips it.</p>
+        <p><strong>Auto-update is Claude Code's, not the plugin's.</strong> For a third-party
+          marketplace it is off until you turn it on in <code>/plugin</code> &rarr;
+          <em>Marketplaces</em>, or declare <code>"autoUpdate": true</code> for the marketplace in
+          settings; <code>/audit:version</code> tells you which it is.</p>
+      </div>
+    </div>
+
     <h3>A gate that cannot run is not a gate that passed</h3>
 
     <p><code>meta.buildCommands</code> names the commands a phase's sign-off runs, and
