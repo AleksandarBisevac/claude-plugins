@@ -491,7 +491,7 @@
     {
       "id": "P76",
       "title": "The verbs cover what operators were hand-editing",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P76.json"
     },
     {
@@ -657,7 +657,8 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P76.1"
     ],
     "README.md": [
       "P2.3",
@@ -795,7 +796,8 @@
       "P80.10",
       "P80.12",
       "P81.2",
-      "P81.8"
+      "P81.8",
+      "P76.1"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -971,14 +973,14 @@
       "P68.1",
       "P70.1",
       "P69.4-j6r",
-      "P76.1",
       "P76.2",
       "P78.4",
       "P78.8",
       "P78.11",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P76.1"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -1138,9 +1140,9 @@
       "P66.4-x3g",
       "P69.3",
       "P69.4-j6r",
-      "P76.1",
       "P79.7",
-      "P81.8"
+      "P81.8",
+      "P76.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1192,9 +1194,9 @@
       "P64.3",
       "P69.3",
       "P69.4-j6r",
-      "P76.1",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P76.1"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -1217,12 +1219,12 @@
       "P61.1",
       "P61.8",
       "P70.1",
-      "P76.1",
       "P77.1",
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P76.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1418,7 +1420,8 @@
       "P59.10",
       "P63.5",
       "P63.8",
-      "P80.6"
+      "P80.6",
+      "P76.1"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -1443,7 +1446,8 @@
       "P79.1",
       "P80.1",
       "P80.7",
-      "P81.1"
+      "P81.1",
+      "P76.1"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1685,7 +1689,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P76.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -2097,7 +2102,6 @@
       "P69.3",
       "P69.4-j6r",
       "P74.1",
-      "P76.1",
       "P76.2",
       "P78.1",
       "P78.3",
@@ -2106,7 +2110,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P76.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -2151,7 +2156,6 @@
       "P69.3",
       "P69.4-j6r",
       "P74.1",
-      "P76.1",
       "P76.2",
       "P78.1",
       "P78.3",
@@ -2160,7 +2164,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P76.1"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -2300,7 +2305,8 @@
       "P53.2",
       "P57.1",
       "P57.3",
-      "P77.1"
+      "P77.1",
+      "P76.1"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -2338,7 +2344,8 @@
       "P63.5",
       "P63.8",
       "P69.3",
-      "P80.6"
+      "P80.6",
+      "P76.1"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2570,7 +2577,8 @@
       "P63.5",
       "P63.8",
       "P70.3-fos",
-      "P80.6"
+      "P80.6",
+      "P76.1"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2960,9 +2968,9 @@
       "P69.3",
       "P70.3-fos",
       "P73.1",
-      "P76.1",
       "P77.1",
-      "P78.11"
+      "P78.11",
+      "P76.1"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -3125,7 +3133,8 @@
       "P69.3"
     ],
     "plugins/audit/scripts/manifest/_commit_trail.py": [
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P76.1"
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1"
