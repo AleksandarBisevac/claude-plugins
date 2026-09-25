@@ -433,6 +433,11 @@ not need to.
           not carry. `/audit:task add`, `add-phase`, `scope`, `retarget`, `cancel`, `start` and
           `done` each print this same pointer themselves, the moment a write of theirs leaves the
           index dirty, so the tool is discoverable before that mistake and not only after it.
+          **The order is the shard first.** The script itself committed an index ahead of its
+          shard until it learned not to: it now refuses an index that names a task or phase the
+          shard committed at HEAD does not hold yet, names each reference and the shard, and asks
+          for the shard to be committed first - the task commit, which carries it, or
+          `commit-audit-state.py`.
         - **The journal and the evidence travel in this commit, and the script stages both** —
           `journal.dir` (default `<manifest dir>/journal`) and `evidence.dir` (default
           `<manifest dir>/evidence`), each only if it exists inside `<gitRoot>`, and each reported

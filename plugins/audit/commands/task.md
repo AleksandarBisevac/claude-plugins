@@ -54,7 +54,9 @@ phase shard it also touched** — `add-phase` always does; `add`/`scope`/`retarg
 A task commit will not carry that index (`orchestrator.md` step 4c refuses it on purpose, so
 two phases can merge without a conflict there), so it needs its own commit —
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" <manifestPath>
-<phaseId>` lands it alone, under the same lock. **The script prints this itself, naming that
+<phaseId>` lands it alone, under the same lock, **after** the shard it names is committed - it
+refuses an index that names a task or phase the committed shard does not hold yet, because
+that commit would record a plan that does not validate. **The script prints this itself, naming that
 exact command, the moment its own write leaves the index dirty** — read it off the output
 rather than remembering the rule here.
 

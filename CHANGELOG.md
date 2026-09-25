@@ -105,6 +105,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook's `task.complete`.
 
 ### Fixed
+- **`commit-manifest-index` committed an index ahead of the shards it names.** `/audit:task add`
+  writes a task into its phase's shard and its files into the index, and committing the index
+  first recorded a plan whose `fileIndex` named a task no committed shard held - a commit that
+  failed validation, reported by `verify-invariants` against every commit after it. It now
+  refuses such an index before staging anything, naming each reference and the shard to commit
+  first; a widened scope on a committed task still commits. The dirty-index note `audit-task`
+  prints says the order, where it used to say "before or beside the next commit".
 - **A merge's write derived completions the merged branch had already recorded.** The
   journal-writes hook diffs the plan whenever a Bash call moves it, and a `git merge` moves it by
   the whole of another branch's history - so every task that branch finished got a second

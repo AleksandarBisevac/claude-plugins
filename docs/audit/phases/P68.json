@@ -1,7 +1,7 @@
 {
   "id": "P68",
   "title": "The index is committed only where the committed shards support it",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "commit-manifest-index never records an index that names tasks or phases its committed shards do not hold - it refuses and names the shard to commit first - and the notes that point at it state the order",
   "testGate": [
@@ -15,21 +15,37 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "d498013c38d01a61d6c5ff5dd54072726855a319",
+  "branch": "audit/p68-the-index-is-committed-only-wh",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P68-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "issue": "the module's exit-code contract did not name the new ahead-of-shard refusal",
+        "resolution": "fixed in P68.2-v4q"
+      },
+      {
+        "id": "P68-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "issue": "one git show per phase stub on every call, under the index lock, growing with the plan",
+        "resolution": "fixed in P68.2-v4q: one git status, git show only for changed shards (cmi26)"
+      }
+    ],
+    "outcome": "matches; two findings (one med, one low) fixed in P68.2-v4q"
   },
-  "summary": null,
+  "summary": "commit-manifest-index no longer records an index ahead of the shards it names: it refuses, before staging anything, an index naming a task or phase the shard committed at HEAD does not hold yet - a fileIndex entry, a bug's fix task, a new phase stub - naming each and the shard to commit first; a widened scope on a committed task and a dangling id still commit. The note audit-task prints states the order (the shard first), and the check asks git only about shards that changed, so its cost follows the change, not the plan. Fixes BUG-10, found signing off P66. This phase was run in that order - each task commit carried its shard, the index followed - and its invariant check found no breach. Reviewed in phase mode (two findings, fixed); the phase gate ran green with the tree unchanged.",
   "tasks": [
     {
       "id": "P68.1",
       "title": "Fix BUG-10: commit-manifest-index commits an index ahead of the shards it names",
-      "status": "pending",
+      "status": "done",
       "description": "Repro: audit-task add on a sharded plan, then commit-manifest-index before the shard is committed; git show HEAD's index plus HEAD's shard fails validation (fileIndex names a task that does not exist). Expected: the index is committed only in a state the committed shards support, or the command names the shard to commit first. Actual: the index commit lands and the plan as that commit records it fails validation; audit-task's own note says to land it before or beside the next commit.",
       "files": [
         "plugins/audit/scripts/governance/commit-manifest-index.py",
@@ -63,17 +79,81 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "46bd442",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "met - ahead_of_shards refusal before staging; note gives the order; cmi21-cmi25, ix1b; four mutations red",
+        "descriptive": "Committing the shared plan index can no longer record a plan that fails validation: it refuses until the phase file it names is committed, and says which."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "bugId": "BUG-10"
+      "startedAt": "2026-09-25T11:07:45Z",
+      "completedAt": "2026-09-25T11:13:41Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "python3 tools/sweep-selftests.py"
+      ],
+      "bugId": "BUG-10",
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "46bd442",
+        "at": "2026-09-25T11:13:41Z"
+      }
+    },
+    {
+      "id": "P68.2-v4q",
+      "title": "Sign-off review findings: the shard check asks git only about shards that changed, and the exit-code contract names it",
+      "status": "done",
+      "description": "P68 review: ahead_of_shards ran one git show per phase stub on every call, under the index lock, growing with the plan rather than the change; the module's exit-code contract did not name the new refusal.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_manifest_index.py: an index change that touches no shard asks git to show none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "2eb3568",
+      "outcome": {
+        "technical": "met - one git status, git show only for changed shards; cmi26 red first; two mutations red",
+        "descriptive": "Committing the plan index stays fast however many phases the plan has, and its documented exit codes include the new refusal."
+      },
+      "startedAt": "2026-09-25T11:22:12Z",
+      "completedAt": "2026-09-25T11:24:24Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_commit_manifest_index.py"
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2eb3568",
+        "at": "2026-09-25T11:24:24Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T11:07:45Z",
+  "testEvidence": {
+    "runId": "2026-09-25T11:29:57Z.741fc1",
+    "status": "passed",
+    "at": "2026-09-25T11:29:57Z"
+  }
 }

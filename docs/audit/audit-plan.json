@@ -408,7 +408,7 @@
     {
       "id": "P68",
       "title": "The index is committed only where the committed shards support it",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P68.json"
     }
   ],
@@ -2056,7 +2056,8 @@
       "P47.5",
       "P53.6",
       "P54.6",
-      "P68.1"
+      "P68.1",
+      "P68.2-v4q"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
@@ -2065,7 +2066,8 @@
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
       "P34.4",
-      "P68.1"
+      "P68.1",
+      "P68.2-v4q"
     ],
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5"
@@ -2833,7 +2835,7 @@
     {
       "id": "BUG-10",
       "title": "commit-manifest-index commits an index whose fileIndex names tasks their phase's shard has not committed, so the commit records a plan that does not validate",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-09-25T06:37:17Z",
       "reportedBy": null,
@@ -2849,7 +2851,7 @@
         "plugins/audit/scripts/governance/commit-manifest-index.py"
       ],
       "taskId": "P68.1",
-      "fixedIn": null,
+      "fixedIn": "46bd442",
       "notes": "found signing off P66, 2026-09-25"
     }
   ],

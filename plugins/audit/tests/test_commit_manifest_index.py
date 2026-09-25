@@ -545,6 +545,92 @@ def _cases(check):
               % (lone_writers, lone_token),
               lone_code == 0 and bool(lone_token)
               and lone_writers == [lone_token])
+
+        # --- the index is committed only where the committed shards support it --
+        # `/audit:task add` writes a task into the shard and its files into the
+        # index. Committing the index first records a plan whose fileIndex names a
+        # task no committed shard holds - a commit that fails validation.
+        fx = repos.make()
+        shard = _mio.read_json(fx["shard"])
+        shard["tasks"].append(dict(shard["tasks"][0], id="P1.3", status="pending",
+                                   files=["src/new.py"]))
+        TI._write_json(fx["shard"], shard)
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/new.py"] = ["P1.3"]
+        TI._write_json(fx["manifest"], index)
+        before = _head(fx)
+        code, text = _run(fx)
+        check("cmi21 an index naming a task its COMMITTED shard does not hold yet is "
+              "refused, nothing is committed, and the refusal names the task and the "
+              "shard to commit first: %r / %r" % (code, text),
+              code != 0 and _head(fx) == before and "P1.3" in text
+              and SHARD_REL in text and _staged(fx) == [])
+        TI._git(fx["root"], "add", "--", SHARD_REL)
+        TI._git(fx["root"], "commit", "-q", "-m", "the shard first")
+        code, text = _run(fx)
+        check("cmi22 SECOND DIRECTION: once the shard is committed the same index "
+              "commits, alone: %r / %r" % (code, text),
+              code == 0 and _carried(fx, _head(fx)) == [INDEX_REL])
+
+        fx = repos.make()
+        index = _mio.read_json(fx["manifest"])
+        index["phases"].append({"id": "P3", "title": "new phase",
+                                "shard": "phases/P3.json"})
+        TI._write_json(fx["manifest"], index)
+        TI._write_json(os.path.join(os.path.dirname(fx["manifest"]), "phases",
+                                    "P3.json"),
+                       {"id": "P3", "title": "new phase", "status": "pending",
+                        "tasks": []})
+        before = _head(fx)
+        code, text = _run(fx)
+        check("cmi23 ...and so is an index whose new phase stub points at a shard "
+              "that is not committed: %r / %r" % (code, text),
+              code != 0 and _head(fx) == before and "P3" in text
+              and "phases/P3.json" in text)
+
+        fx = repos.make()
+        _widen(fx)
+        code, text = _run(fx)
+        check("cmi24 CONTROL: widening an EXISTING task's scope still commits the "
+              "index alone - the task is in the committed shard, only its files "
+              "are not, which is the pairing sign-off settles: %r" % (text,),
+              code == 0)
+
+        fx = repos.make()
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/orphan.py"] = ["P9.9"]
+        TI._write_json(fx["manifest"], index)
+        code, text = _run(fx)
+        # The check asks git only about shards that CHANGED: a stub whose shard is
+        # the committed one needs no `git show`, and a plan's phase count must not
+        # set the lock-hold time of every index commit.
+        fx = repos.make()
+        index = _mio.read_json(fx["manifest"])
+        index["meta"]["title"] = "only the title moved"
+        TI._write_json(fx["manifest"], index)
+        shows = []
+        real_git = M._scoped_commit.run_git
+
+        def counting(root, argv):
+            if argv[:1] == ["show"]:
+                shows.append(argv)
+            return real_git(root, argv)
+        M._scoped_commit.run_git = counting
+        try:
+            code, text = _run(fx)
+        finally:
+            M._scoped_commit.run_git = real_git
+        # The fixture leaves P1's shard modified and P2's committed as it is.
+        check("cmi26 git is asked to show a shard at HEAD only where that shard "
+              "CHANGED - P1's, which the fixture left modified, and never P2's, whose "
+              "committed copy is the working one: the cost is the change's, not the "
+              "plan's: %r / %r" % (shows, text),
+              code == 0 and shows == [["show", "HEAD:%s" % SHARD_REL]])
+
+        check("cmi25 ...and an index naming a task NO shard holds, committed or not, "
+              "is not this command's to refuse - it is not ahead of a shard, it is "
+              "dangling, and the validator reports that: %r" % (text,),
+              code == 0 and "P9.9" not in text)
     finally:
         repos.close()
 

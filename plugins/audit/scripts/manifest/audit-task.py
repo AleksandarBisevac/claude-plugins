@@ -1617,7 +1617,9 @@ def _index_dirty_note(written, mpath, project, phase_id):
         "wrote, and a task commit will not carry it -- orchestrator.md step "
         "4c refuses to stage the index in a task commit on purpose, which is "
         "what lets two phases merge with no conflict there. Land it on its "
-        "own, before or beside the next commit:\n"
+        "own, AFTER the shard it names is committed (the task commit carries "
+        "the shard) - committed first, it records a plan that does not "
+        "validate, and the command below refuses that:\n"
         "    python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py\" "
         "%s %s" % (index_rel, mpath, phase_id))
 
