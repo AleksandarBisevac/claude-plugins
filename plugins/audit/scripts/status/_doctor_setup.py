@@ -342,15 +342,36 @@ def _archive_files(clone, sha, sub):
     return files, None
 
 
+# Where the code that runs lives: an unpublished file here is named in the row.
+_CODE_DIRS = ("hooks", "scripts")
+
+
+def _unpublished(plugin_root, published):
+    """Every file under `_CODE_DIRS` that `published` does not hold, sorted."""
+    extras = []
+    for sub in _CODE_DIRS:
+        for base, dirs, names in os.walk(os.path.join(plugin_root, sub)):
+            dirs.sort()
+            for name in names:
+                rel = os.path.relpath(os.path.join(base, name),
+                                      plugin_root).replace(os.sep, "/")
+                if rel not in published:
+                    extras.append(rel)
+    return sorted(extras)
+
+
 def cache_integrity(plugin_root, home):
     """The same question as `plugin_integrity`, for a copy that is not a checkout.
 
     -> the same shape, plus `basis`. Every file the recorded commit publishes under
-    the plugin's directory is compared byte for byte; a file the cache holds and
-    the commit does not (bytecode, the harness's own markers) is not a published
-    file, the same tracked-files-only limit the checkout arm states. Unverifiable
-    only when a side is missing: no install record, no recorded commit, no clone,
-    or a clone that does not hold the commit."""
+    the plugin's directory is compared byte for byte. A file the cache holds and
+    the commit does not is not COMPARED - it has nothing to be compared with -
+    and it is not harmless either: `__pycache__/*.pyc` beside a published `.py`
+    is what Python executes when its recorded source size and mtime match. So
+    every such file under `hooks/` and `scripts/`, where the code that runs
+    lives, is NAMED in `extras`; the verdict stays about the published files.
+    Unverifiable only when a side is missing: no install record, no recorded
+    commit, no clone, or a clone that does not hold the commit."""
     out = {"verdict": "unverifiable", "detail": "", "modified": [], "commit": None}
     record, why = _claude_home.install_record(plugin_root, home)
     if record is None:
@@ -384,6 +405,7 @@ def cache_integrity(plugin_root, home):
             same = False
         if not same:
             changed.append(rel)
+    out["extras"] = _unpublished(plugin_root, files)
     out["commit"] = sha[:12]
     out["basis"] = ("git archive of %s from the marketplace clone at %s, the "
                     "commit installed_plugins.json records for this copy - %s, "
@@ -476,6 +498,9 @@ def check_plugin_files(rep, project, plugin_root=None, integrity=None):
     against = ("the commit its checkout is on" if not state.get("basis")
                else "the commit it was installed from")
     basis = (" (basis: %s)" % state["basis"]) if state.get("basis") else ""
+    if state.get("extras"):
+        basis += ("; not compared, because the commit does not publish them - and "
+                  "bytecode executes: %s" % (_output.some_of(state["extras"]),))
     if state["verdict"] == "modified":
         rep.warn("plugin files",
                  "the installed plugin's tracked files do NOT match %s (%s): %s. "

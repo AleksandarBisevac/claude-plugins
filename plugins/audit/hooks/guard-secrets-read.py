@@ -1960,6 +1960,11 @@ def decide(data, *, cfg=None):
     root = _config.repo_root(data)
     if cfg is None:
         cfg = _config.load(root)
+    # This guard runs on Read, Grep, Bash and MCP calls, so it is where a
+    # session's running-plugin stamp learns the session is still working: the
+    # doctor grades liveness on that mtime. Throttled and never raising.
+    _config.refresh_running_stamp(_config.state_dir(root, cfg),
+                                  str((data or {}).get("session_id") or ""))
     verdict, msg = _decide_core(data, root, cfg)
     if verdict in ("block", "ask"):
         _append_verdict_event(root, cfg, data, verdict, msg)

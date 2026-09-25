@@ -90,7 +90,8 @@ Hard rules (non-negotiable):
 
   ```
   python3 "<plugin root>/scripts/governance/stamp-verification.py" red \
-      --project <gitRoot> --manifest <manifestPath> --task <taskId> -- <test command>
+      --project <gitRoot> --manifest <manifestPath> --task <taskId> \
+      [--case <id of the case you added>] -- <test command>
   ```
 
   It checks HEAD out into a temp directory with `git worktree add --detach`, copies
@@ -98,18 +99,29 @@ Hard rules (non-negotiable):
   files stay at HEAD), runs the command there with paths relative to the tree root,
   removes the throwaway in a `finally` and says whether the removal held, and prints
   the `redFirst` block to return — `{status, basis, at}`, the shape below. The
-  orchestrator's prompt gives you the resolved command. **Never** write HEAD's copy
+  orchestrator's prompt gives you the resolved command. The throwaway holds only
+  TRACKED files, and the run's environment is scrubbed of what points at the shared
+  tree (the output names what it dropped): a suite that needs an untracked
+  dependency — `node_modules`, an in-repo `.venv`, generated files — cannot run there
+  and comes back `could-not-prove`, which is the honest word for it, not a reason to
+  run the proof in the shared tree instead. **Never** write HEAD's copy
   over a file (`git show HEAD:<file> > <file>`), revert your own fix, or edit a
   sibling's file to prove a red: the tree is shared, and a host refused exactly that
   beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the
   plan gate grades which files you touch, not why — so this is kept by reading it.
-- **`proved` means at least one test was collected and an assertion failed.** A
-  compile error, an import error or zero tests collected exits non-zero with no
-  assertion ever evaluated, so it is `could-not-prove`, not `proved` — unless the
-  task introduces the symbol the run fails on. The helper decides that and not you:
-  pass `--introduces <symbol>`, and it holds only when the symbol is absent from
-  HEAD's copy of every implementation file the task declares, present in the
-  working tree's copy of one, and named by the run's own output. A run whose output
+- **`proved` means one of YOUR cases failed an assertion.** The helper names the
+  failing cases, and a red counts only when one of them is the task's own — the id
+  you pass as `--case`, or else a case present in the working tree's test file and
+  absent from HEAD's. An existing case going red, or a test body raising an
+  exception, is not a proof about your test. A compile error, an import error or
+  zero tests collected exits non-zero with no assertion ever evaluated, so it is
+  `could-not-prove`, not `proved` — unless the task introduces the symbol the run
+  fails on. The helper decides that and not you: pass `--introduces <symbol>` (an
+  identifier), and it holds only when the symbol is absent from HEAD's copy of every
+  implementation file the task declares and present in the working tree's, the run's
+  final error is an import, attribute or name error naming it — never a syntax
+  error — and a second run with the working tree's implementation copied in no
+  longer ends on that error and reaches its assertions. A run whose output
   carries no tally the helper reads is `could-not-prove` too, with the reason in the
   basis. A test that passes without the fix gets no word at all: it proves nothing
   yet, and the work is to fix the test.

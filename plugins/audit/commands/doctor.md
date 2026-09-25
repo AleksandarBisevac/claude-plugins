@@ -164,14 +164,17 @@ So there are **three** outcomes, not two, and the row says which it is:
   and `secret rules` above, a fact this command could not establish rather than one it
   cleared. Relay it as *unknown*, never as *they agree*.
 
-**Live and history.** The row grades the **newest stamp per copy**. A copy whose newest stamp
-is older than another copy's newest has been superseded — a session that ended, whose stamp
-state GC keeps for days — and it is reported as **history**: the file, the copy it names and
-its age, with the path to delete if you want it gone. History never turns the row yellow; a
-new session could not clear it otherwise, because it stamps beside the old file rather than
-replacing it. Relay history as history, not as drift. One limit: a session still running the
-older copy but idle since the newer one stamped reads as history until its next prompt
-re-stamps it. A live foreign stamp carries its age too.
+**Live and history.** A stamp's age is the last prompt or guarded tool call of the session
+that wrote it: every prompt re-stamps, and `guard-secrets-read` refreshes the stamp on Read,
+Grep, Bash and MCP calls. A copy other than the one this command runs from is **history** only
+when its newest stamp is older than the idle bound, which the row prints with its number — a
+session that ended, whose stamp state GC keeps for days. History is reported as the file, the
+copy it names and its age, with the path to delete if you want it gone, and it never turns the
+row yellow. A foreign copy inside the bound is **live**: a WARNING that says when it was last
+active and that it may still be running. The session asking is never the measure — it has
+always just prompted — so relay a live foreign copy as a possible stale session, and history as
+history. One limit: Edit, Write, Glob and agent calls do not refresh the stamp, so a session
+doing only those for longer than the bound reads as history until its next prompt.
 
 It is a WARNING at worst in every branch. A stale plugin copy is a thing to tell someone,
 not a thing to block on, so a run that exits 0 today still exits 0 with this row present.

@@ -160,6 +160,12 @@ LAYERS = (
      # would be a second answer about what is installed. It reaches nothing but
      # `_output`.
      "_claude_home",
+     # `_proc_group` runs one child tree so it can be stopped WHOLE, and turns a
+     # stop signal into an exception so a caller's `finally` runs. L1 because two
+     # entry points - `run-test-gate` and `stamp-verification` - need the same
+     # teardown, and a second copy is a second answer to "is it stopped". It
+     # reaches nothing but `_output`.
+     "_proc_group",
      # `_worktrees` answers "which worktrees exist, whose phase is each, and what
      # may be reaped". At L1 for `_commit_trail`'s reason word for word: FOUR
      # surfaces need the SAME answer - `_doctor_hygiene` and `_doctor_policy` (both

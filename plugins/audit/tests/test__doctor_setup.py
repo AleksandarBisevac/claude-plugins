@@ -944,6 +944,26 @@ def _cache_install_cases(check):
           and "installed_plugins.json" in said and "does not document" in said
           and sha[:12] in said)
 
+    os.makedirs(os.path.join(cache, "scripts"))
+    with open(os.path.join(cache, "scripts", "stray.py"), "w",
+              encoding="utf-8") as fh:
+        fh.write("print('not published')\n")
+    got_x = M.plugin_integrity(cache, project=project, home=home)
+    rep = base.Report()
+    M.check_plugin_files(rep, project, plugin_root=cache, integrity=got_x)
+    said_x = _detail(rep, "plugin files")
+    check("pc5 files the commit does not publish under hooks/ and scripts/ are "
+          "NAMED as extras - bytecode beside a published .py is what Python "
+          "executes, so a clean verdict over them says so rather than calling "
+          "them harmless; the harness's own marker outside those directories is "
+          "not listed: %r %r" % (got_x.get("extras"), said_x),
+          got_x["verdict"] == "clean"
+          and got_x.get("extras") == ["hooks/__pycache__/guard.pyc",
+                                      "scripts/stray.py"]
+          and "hooks/__pycache__/guard.pyc" in said_x
+          and "bytecode executes" in said_x)
+    os.remove(os.path.join(cache, "scripts", "stray.py"))
+
     with open(os.path.join(cache, "hooks", "guard.py"), "w",
               encoding="utf-8") as fh:
         fh.write("x = 2\n")

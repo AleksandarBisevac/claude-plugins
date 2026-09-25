@@ -697,8 +697,9 @@ def _cases(check):
               "not `match`. This is the case the whole item is about: a check "
               "that cleared nothing must not read as clean: %r" % (v,),
               v["verdict"] == "unestablished" and v["basis"] == [])
+        fresh = time.time()
         v = M.running_plugin_verdict(
-            here, [dict(elsewhere, session="old", mtime=1)], [], [])
+            here, [dict(elsewhere, session="old", mtime=fresh)], [], [])
         check("dt26 a stamp naming another copy is `differ`, on the stamp: %r"
               % (v,),
               v["verdict"] == "differ" and v["basis"] == ["stamp"]
@@ -727,7 +728,7 @@ def _cases(check):
               "names this one' has stopped being true of what is on disk: %r"
               % (v["verdict"],), v["verdict"] == "unestablished")
         v = M.running_plugin_verdict(
-            here, [dict(elsewhere, session="old", mtime=1)], [],
+            here, [dict(elsewhere, session="old", mtime=fresh)], [],
             ["running-plugin-torn.json"])
         check("dt30 ...but it does NOT block refutation. The asymmetry is the "
               "point: a copy already named by another stamp stays named "
@@ -891,34 +892,41 @@ def _cases(check):
               and "6fc1a222-dead" in said and "6 days" in said
               and dead in said and "2.3.0" in said)
 
+        # Liveness is a copy's OWN age against a stated idle bound; the stamp of
+        # the session asking is never the yardstick, because that session has
+        # always just prompted and would make every other session look old.
+        bound = M.IDLE_BOUND_SECONDS
+        now = 10 * bound
         v = M.running_plugin_verdict(
-            here, [dict(here, session="new", mtime=200),
-                   dict(elsewhere, session="old", mtime=100)], [], [])
-        check("rh2 the verdict grades the NEWEST stamp per copy: a copy whose "
-              "newest stamp is older than another copy's newest is history, and "
-              "history is not drift: %r" % ((v["verdict"],
-                                             [h["session"] for h in v["history"]]),),
+            here, [dict(here, session="asker", mtime=now - 1),
+                   dict(elsewhere, session="busy", mtime=now - 30)], [], [],
+            now=now)
+        check("rh2 THE REVIEW'S CASE: a foreign stamp 30 s old beside the asking "
+              "session's 1 s old is LIVE - a session mid-turn on an older copy is "
+              "exactly what the row exists to find - so the verdict is `differ`, "
+              "not history: %r" % ((v["verdict"],
+                                    [h["session"] for h in v["history"]]),),
+              v["verdict"] == "differ" and v["history"] == []
+              and [o["session"] for o in v["others"]] == ["busy"])
+        v = M.running_plugin_verdict(
+            here, [dict(here, session="asker", mtime=now - 1),
+                   dict(elsewhere, session="gone", mtime=now - bound - 1)], [], [],
+            now=now)
+        check("rh3 a foreign copy is history only PAST the idle bound, measured "
+              "from now: %r" % ((v["verdict"],
+                                 [h["session"] for h in v["history"]]),),
               v["verdict"] == "match" and v["others"] == []
-              and [h["session"] for h in v["history"]] == ["old"])
+              and [h["session"] for h in v["history"]] == ["gone"])
         v = M.running_plugin_verdict(
-            here, [dict(elsewhere, session="newer", mtime=200),
-                   dict(here, session="older", mtime=100)], [], [])
-        check("rh3 THE OVER-FIRE ARM: the other copy stamping AFTER this one is "
-              "still `differ` - history is only ever the older side, and a rule "
-              "that called every foreign stamp history would hide the stale "
-              "session this row exists to find: %r" % (v,),
-              v["verdict"] == "differ" and len(v["others"]) == 1
-              and [h["session"] for h in v["history"]] == ["older"])
+            here, [dict(elsewhere, session="edge", mtime=now - bound)], [], [],
+            now=now)
+        check("rh4 ...and a stamp exactly AT the bound is still live - the bound "
+              "is how long a live session may go without a guarded tool call: %r"
+              % (v["verdict"],), v["verdict"] == "differ")
         v = M.running_plugin_verdict(
-            here, [dict(here, session="a", mtime=100),
-                   dict(elsewhere, session="b", mtime=100)], [], [])
-        check("rh4 ...and a TIE is not history: two copies stamping in one "
-              "instant are both live, so the answer is `differ`: %r"
-              % (v["verdict"],), v["verdict"] == "differ" and v["history"] == [])
-        v = M.running_plugin_verdict(
-            here, [dict(here, session="new", mtime=200),
-                   dict(elsewhere, session="old", mtime=100)], [],
-            ["running-plugin-torn.json"])
+            here, [dict(here, session="asker", mtime=now - 1),
+                   dict(elsewhere, session="gone", mtime=now - bound - 1)], [],
+            ["running-plugin-torn.json"], now=now)
         check("rh5 ...and history does not rescue a TORN stamp: an unreadable "
               "file is a session this command cannot date or name, so agreement "
               "stays unestablished: %r" % (v["verdict"],),
@@ -928,11 +936,14 @@ def _cases(check):
         rep = base.Report()
         M.check_running_plugin(rep, proj2, {}, cfgmod)
         said = _detail(rep, "running plugin")
-        check("rh6 a live foreign stamp is a WARNING that carries its AGE, so a "
-              "reader can tell a session that stamped a minute ago from one "
-              "that stamped last week: %r" % (said,),
+        check("rh6 a live foreign stamp is a WARNING that carries its AGE and "
+              "says it may still be running - never 'not in force': %r" % (said,),
               _levels(rep, "running plugin") == ["WARNING"]
-              and "0.43.0" in said and "second" in said)
+              and "0.43.0" in said and "second" in said
+              and "may still be running" in said and "not in force" not in said)
+        check("rh7 ...and the history clause states the idle bound WITH its "
+              "number, so a reader can argue with it: %r" % (said,),
+              "%d-minute" % (M.IDLE_BOUND_SECONDS // 60,) in said)
     finally:
         _harness.remove_tree(tmp)
 

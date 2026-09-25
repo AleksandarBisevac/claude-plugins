@@ -153,6 +153,7 @@ claude-plugins/                           # this repo (personal, public)
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
+          _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
@@ -294,6 +295,7 @@ L1:
   _merge_install -> _output
   _policy -> _output
   _priority -> _output
+  _proc_group -> _output
   _refs -> _output
   _task_outputs -> _output
   _ui_theme -> _output
@@ -400,9 +402,9 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _proc_group, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _manifest_io, _output, _tree_stamp
+  stamp-verification -> _manifest_io, _output, _proc_group, _tree_stamp
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
@@ -2534,9 +2536,12 @@ contain. Something does: `installed_plugins.json` records the `gitCommitSha` the
 from and `known_marketplaces.json` names the marketplace clone that holds it (both read through
 `_claude_home`, fail-open, and the row says they are undocumented). `cache_integrity` compares
 every file `git archive` of that commit publishes under the plugin's directory with the cache
-copy, byte for byte, and names each file that differs or is missing; a file the cache holds and
-the commit does not (bytecode, the harness's own markers) is not a published file, the same
-tracked-files-only limit the checkout arm states. Unverifiable only when a side is missing.
+copy, byte for byte, and names each file that differs or is missing. A file the cache holds and
+the commit does not publish is not compared - there is nothing to compare it with - and it is not
+harmless: `__pycache__/*.pyc` beside a published `.py` is what Python executes when its recorded
+source size and mtime match. So every such file under `hooks/` and `scripts/` is named in the row
+as an extra, beside a verdict that stays about the published files. Unverifiable only when a side
+is missing.
 
 **`check_sandbox` (P0-S) is the same question one layer down**, which is why it sits beside
 `check_interpreter` rather than in `_doctor_hygiene`: that one asks whether the guards can run
@@ -2639,16 +2644,20 @@ folds them into three outcomes: they agree, they differ, or it was NOT ESTABLISH
 third is not the first, so it warns rather than reading as clean. Every branch is OK or
 WARNING; a stale plugin is a thing to tell somebody, not a thing to fail a run on.
 
-**It grades the newest stamp per copy, not every stamp.** A session that has ended leaves its
-stamp, and state GC keeps it for days, so counting every stamp that is not this copy as drift
-held the row yellow on one dead session's file — and "start a new session" could not clear it,
-because the new session stamps beside the dead one rather than replacing it. `split_history`
-groups stamps by copy (`_same_copy`'s root and version) and takes each copy's newest mtime; a
-copy whose newest stamp is older than another copy's newest has been superseded and is
-HISTORY — named, aged, and offered for pruning by path — while every other stamp, a tie
-included, is live and graded as before. The limit is stated rather than hidden: a session
-still running an older copy but idle since the other stamped reads as history until its next
-prompt, which re-stamps it — and it cannot reach a guarded tool call without one.
+**It grades each copy's own age against a stated idle bound, never against the session
+asking.** A session that has ended leaves its stamp, and state GC keeps it for days, so counting
+every stamp that is not this copy as drift held the row yellow on one dead session's file. The
+first repair graded copies against the newest stamp, and that was wrong: the session asking for
+the row has always just prompted, so every other session - one mid-turn on an older copy
+included - looked superseded. So the stamp's mtime now means the last GUARDED TOOL CALL:
+`guard-secrets-read` (Read, Grep, Bash and MCP calls) refreshes it through
+`_config.refresh_running_stamp`, throttled to one write per `RUNNING_STAMP_REFRESH_SECONDS`, and a
+call inside the throttle pays one `stat`. `split_history` then files a copy other than this one
+as HISTORY only when its newest stamp is older than `IDLE_BOUND_SECONDS`, and the row prints the
+bound with its number; a foreign copy inside it is live, a WARNING that says when it was last
+active and that it may still be running. The limit is stated rather than hidden: Edit, Write,
+Glob and agent calls do not refresh the stamp, so a session doing only those for longer than the
+bound reads as history until its next prompt or refreshing call.
 
 **`check_task_restarts`/`check_gate_patterns` answer what KEEPS HAPPENING, not only what is
 true now** — a task started more times than any other (`task.start` rows grouped by
@@ -3458,6 +3467,20 @@ from the one a reader sees. `DIRTY_LIMIT` is inherited from `dirty_digest()` uns
 records **which** paths were dirty, never their contents, so a rewrite of an already-dirty file
 outside the declared scope moves nothing here. `tsl2` exercises that rather than describing it.
 
+### `plugins/audit/scripts/governance/_proc_group.py`
+One child process tree run so that it can be stopped whole, and a stop signal turned into an
+exception so a caller's `finally` runs. `run-test-gate.py` solved both first - a timed-out
+`subprocess.run` kills only the direct child, so a runner's grandchildren kept writing, and
+SIGTERM with no handler ends the interpreter without running a `finally` - and
+`stamp-verification.py red` met the same two failures, so the answer moved here rather than
+being written twice. `group_kwargs` gives the child a session of its own, `tear_down` sends the
+group SIGTERM then SIGKILL and says whether that could be confirmed (`shares_our_group` keeps it
+from aiming at its own caller), `drain` reads what was written after the group is gone, and
+`arm_interrupt`/`disarm_interrupt` install and restore handlers that raise `KeyboardInterrupt`
+naming the signal. What it cannot cover is SIGKILL, which no handler sees. Layer 1; its cases are
+in `plugins/audit/tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
+objects.
+
 ### `plugins/audit/scripts/governance/stamp-verification.py`
 The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which
 proves a red-first without touching the tree it is pointed at.
@@ -3498,14 +3521,35 @@ throwaway in a `finally`, asking git afterwards whether it still lists it. A thr
 not remove is exit `4`, never folded into the verdict. A command naming the shared tree by path is
 refused before anything is built, because it would run the shared files and grade the fix.
 
-**`proved` needs a tally, not a non-zero exit.** `classify_run()` reads the house harness's line,
-pytest's summary or unittest's `Ran N tests`, and is `red` only with at least one test collected
-and an assertion failing. A house suite whose every failure is a block that raised while being
-built, a pytest run with errors and nothing failed, zero collected, and a bare traceback ending in
-a compile or import error are `collection-error`, which prints `could-not-prove` — unless the task
-**introduces the symbol**: `--introduces S` holds only when `S` is absent from HEAD's copy of every
-declared implementation file, present in the working tree's copy of one, and named by the run's
-output. A runner whose tally it does not read is `no-tally`, also `could-not-prove`. A green run
+**The run is one process group, and a stop signal is an exception.** `_proc_group` is the module
+`run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
+interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
+`DEFAULT_TIMEOUT` stays under `HOST_BASH_LIMIT`, so the helper's own timeout fires before the host
+kills it. SIGKILL cannot be caught; a throwaway left that way is reported by name the next time -
+`leftover_throwaways` reads `git worktree list` for `THROWAWAY_PREFIX` - and never pruned, because
+it may be another run's, still going. The child runs with its environment scrubbed of
+`SCRUBBED_ENV` and of any variable whose value names the shared root, and the output names what
+was dropped. The throwaway holds only tracked files, so a suite that needs an untracked dependency
+(`node_modules`, an in-repo `.venv`, generated files) cannot run there and comes back
+`could-not-prove`; and it shares the repository's git directory, so a test that runs git in its
+own cwd writes shared refs.
+
+**`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
+reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's
+`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion:
+a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
+`assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
+assertions. `proved` needs one of those failures to be the TASK'S OWN - named by `--case`, or else
+a case id present in the working tree's copy of a declared test file and absent from HEAD's - and
+the basis names it. A house suite whose every failure is a block that raised while being built, a
+run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
+import error are `collection-error`, which prints `could-not-prove` — unless the task
+**introduces the symbol**: `--introduces S` needs an identifier, absent from HEAD's copy of every
+declared implementation file and present in the working tree's; a final error of the
+import/attribute/name class naming `S` whole, never a syntax error; and a SECOND run in the
+throwaway, with the working tree's implementation copied in, that no longer ends on that error and
+reaches its assertions. A runner whose tally it does not read is `no-tally`, also
+`could-not-prove`. A green run
 gets no word at all (exit `1`): a test that passes without the fix is work left, not an outcome to
 record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
 every word it can print is one the schema's enum declares.

@@ -1126,11 +1126,12 @@ def red_first_drift(repo_root=None):
 # reviewer ECHOES the executor's word when its basis holds, so it offers every
 # schema word, plus the grades declared reviewer-only below and nothing else.
 #
-# WHAT IT CANNOT SEE: prose. A backticked word in a sentence of either brief is
-# not read, because the gate words, the inherited-test words and this vocabulary
-# share a spelling shape and no narrowing measured over this tree separated them.
-# The declared return shapes are what an agent fills in, and they are what is
-# compared.
+# PROSE IS READ FOR THE RETIRED WORDS ONLY. A word the vocabulary gave up is
+# refused anywhere in either brief, as a backticked value, because a sentence
+# telling an agent to write it is the drift the shape check cannot see. Other
+# backticked words in prose are not graded: the gate words and the
+# inherited-test words share this vocabulary's spelling shape, and a word being
+# CURRENT is what the return shapes decide.
 RED_FIRST_EXECUTOR_BRIEF = "agents/audit-executor.md"
 RED_FIRST_REVIEWER_BRIEF = "agents/audit-reviewer.md"
 
@@ -1142,6 +1143,11 @@ RED_FIRST_REVIEWER_BRIEF = "agents/audit-reviewer.md"
 # record, and it is kept apart from `could-not-prove` because the reviewer is
 # grading evidence it was handed, not reporting an attempt of its own.
 RED_FIRST_REVIEWER_ONLY = ("not-proved",)
+
+# Words this vocabulary retired, refused anywhere in either brief. `not-applicable`
+# was the reviewer's word for a proof nobody owed, which the schema spells
+# `not-attempted`.
+RED_FIRST_RETIRED = ("not-applicable",)
 
 _RF_EXEC_SHAPE = re.compile(r'"redFirst":\s*\{\s*"status":\s*"([a-z|-]+)"')
 _RF_REV_SHAPE = re.compile(r'"redFirst":\s*"([a-z|-]+)"')
@@ -1208,6 +1214,20 @@ def red_first_vocabulary_drift(repo_root=None):
         problems.extend("%s: omits %r, which the schema declares, so no executor "
                         "can write it" % (RED_FIRST_EXECUTOR_BRIEF, w)
                         for w in schema if w not in execw)
+    for rel in (RED_FIRST_EXECUTOR_BRIEF, RED_FIRST_REVIEWER_BRIEF):
+        try:
+            with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                      encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        problems.extend("%s: carries the retired word %r %d time(s) - the "
+                        "vocabulary gave it up, so no sentence may ask for it"
+                        % (rel, w, text.count("`%s`" % (w,)) + text.count(
+                            '"%s"' % (w,)) + text.count("|%s" % (w,)))
+                        for w in RED_FIRST_RETIRED
+                        if ("`%s`" % (w,)) in text or ("|%s" % (w,)) in text
+                        or ('"%s"' % (w,)) in text)
     if revw is not None:
         problems.extend("%s: grades with %r, which is neither a schema word nor a "
                         "declared reviewer-only grade" % (RED_FIRST_REVIEWER_BRIEF, w)

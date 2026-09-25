@@ -113,9 +113,14 @@ not need to.
      It checks HEAD out with `git worktree add --detach` into a temp directory, copies the
      task's declared test files from the working tree over it, runs the command there,
      removes the throwaway in a `finally` and reports whether the removal held, and prints
-     the `redFirst` block. Its `--introduces <symbol>` is where "the task introduces the
-     symbol" is decided: absent from HEAD's copy of every declared implementation file,
-     present in the working tree's, and named by the run's output. The executor used to be
+     the `redFirst` block, naming the failing case it rests on — which must be one of the
+     task's own (`--case`, or a case the working tree's test file adds). Its
+     `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
+     identifier absent from HEAD's copy of every declared implementation file and present
+     in the working tree's, a final import/attribute/name error naming it, and a second run
+     with the working tree's implementation copied in that loses that error and reaches its
+     assertions. The throwaway holds tracked files only and runs with a scrubbed
+     environment, so a suite needing an untracked dependency comes back `could-not-prove`. The executor used to be
      told to undo its fix in the shared tree for the length of the run, which is a write
      over ground siblings are editing; a host refused it beside a sibling's uncommitted
      work. Nothing stops an executor overwriting a file anyway — the plan gate grades which

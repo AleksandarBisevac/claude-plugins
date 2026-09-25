@@ -36,8 +36,8 @@ Usage:
   stamp-verification.py compare [--project DIR] [--stamp TEXT | --stamp-file F]
                                 [--json]
   stamp-verification.py red     [--project DIR] --manifest M --task T
-                                [--introduces SYMBOL ...] [--timeout S] [--json]
-                                -- <test command>
+                                [--case ID ...] [--introduces SYMBOL ...]
+                                [--timeout S] [--json] -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
   given, so a report or a commit message can be piped straight in.
@@ -49,10 +49,11 @@ Exit codes:
   3  compare: unestablished - git could not answer, so nothing was graded
   2  usage error, an unreadable manifest, a task id that is not there, or a stamp
      this code cannot read
-  red: 0 proved - 1 not red (the test passes without the fix) - 3 could not
-     prove (the run reached no assertion, or could not run) - 4 the throwaway
-     tree could not be removed - 2 as above, and for a task with no test file or
-     a command that names the shared tree
+  red: 0 proved - 1 not red (the test passed in the throwaway) - 3 could not
+     prove (no case of the task's own failed an assertion, the run could not run,
+     or it was interrupted) - 4 the throwaway tree could not be removed - 2 as
+     above, and for a task with no test file, a symbol that is not an
+     identifier, or a command that names the shared tree
 
 RED IS THE THIRD ACTION, AND THE ONE THAT BUILDS SOMETHING. It proves a new test
 can fail by running it in a throwaway tree - HEAD, with the task's test files
@@ -68,7 +69,9 @@ current. A caller that only wants a pass/fail gets it by testing for 0.
 
 `take` and `compare` mutate nothing: no lock is taken, no file is written, and
 git is only read. `red` never writes the working tree it is pointed at; it writes a
-temp directory and the worktree registration for it, and removes both.
+temp directory and the worktree registration for it, and removes both on every
+path but SIGKILL, which no process can catch - the `red` section says what is
+reported instead.
 """
 import argparse
 import datetime
@@ -104,6 +107,7 @@ _output.install_path()
 
 import _tree_stamp  # noqa: E402  (the ONE tree identity, shared with run-test-gate)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
+import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 
 USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
 
@@ -187,13 +191,21 @@ def read_stamp_text(args, stdin=None):
 # ground, and a host refused it beside a sibling's uncommitted work. So the proof
 # is made somewhere else: a `git worktree add --detach` of HEAD in a temp
 # directory, with the working tree's copy of the task's TEST files laid over it
-# and its implementation files left at HEAD. The shared working tree is only read.
+# and its implementation files left at HEAD.
 #
-# WHAT IT DOES WRITE, so nobody has to discover it: `git worktree add` registers
-# the throwaway in the repository's administrative directory, and the `finally`
-# below removes that registration with the directory and then asks git whether
-# either is still there. A registration it could not remove is its own exit code,
-# never folded into the verdict.
+# WHAT IT WRITES, AND WHAT IT CANNOT PROMISE, so nobody has to discover it.
+# `git worktree add` registers the throwaway in the repository's administrative
+# directory; the `finally` below removes that registration with the directory and
+# then asks git whether either is still there, and a registration it could not
+# remove is its own exit code. SIGINT and SIGTERM are turned into an exception so
+# that `finally` runs, and the run's whole process group is torn down on a timeout
+# or an interrupt, so no grandchild writes into a directory being removed.
+# SIGKILL cannot be caught: a run killed that way leaves its throwaway, and the
+# next `red` REPORTS it by name, never prunes it - it may be another run's, still
+# going. The throwaway also shares the repository's git directory, so a test that
+# runs git in its own cwd (a stash, a config write, a branch) writes shared refs;
+# the environment is scrubbed of what points at the shared tree, but a test's own
+# git commands are its own.
 E_PROVED, E_NOT_RED, E_CANNOT_PROVE, E_LEFT_BEHIND = 0, 1, 3, 4
 
 # The words this command writes, each one the schema's `redFirst.status` enum
@@ -206,7 +218,20 @@ RED_WORDS = (RED_PROVED, RED_CANNOT)
 V_RED, V_GREEN = "red", "green"
 V_COLLECT, V_NO_TALLY, V_NOT_RUN = "collection-error", "no-tally", "could-not-run"
 
-DEFAULT_TIMEOUT = 900
+# The host's Bash tool gives a command at most this many seconds, and a helper it
+# kills never reaches its own `finally`. The default stays under it with room for
+# the teardown, so the helper's own timeout is the one that fires.
+HOST_BASH_LIMIT = 600
+DEFAULT_TIMEOUT = 480
+
+# Every throwaway's temp directory starts with this, which is how a leftover from
+# a run nobody could clean up is recognised in `git worktree list`.
+THROWAWAY_PREFIX = "audit-red-"
+
+# What the child's environment loses: the variables that point a test, or git,
+# back at the shared tree, and any variable whose value names the shared root.
+SCRUBBED_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                "GIT_OBJECT_DIRECTORY", "PYTHONPATH", "CLAUDE_PROJECT_DIR")
 
 # A task's declared file is a TEST file when `tests.add` names it or its path has
 # the conventional test shape; everything else it declares is implementation and
@@ -216,29 +241,65 @@ _TEST_DIRS = ("tests", "test", "__tests__", "spec")
 _TEST_NAME = re.compile(r"^(test_.+|.+_test\.[^.]+|.+\.(test|spec)\.[^.]+)$")
 
 # --- the tally a verdict is read from ---
-# `red` needs a COUNT: at least one test collected and at least one assertion
-# failing. A non-zero exit alone is not that - a compile error, an import error
-# and a runner that collected nothing all exit non-zero with no assertion ever
-# evaluated, and reading them as red is how a test that asserts nothing gets
-# credited with a proof. A runner whose tally this does not read is `no-tally`
-# and never promoted to `red`.
+# `red` needs a COUNT and a NAME: at least one test collected, and at least one
+# named case failing an ASSERTION. A non-zero exit alone is not that - a compile
+# error, an import error and a runner that collected nothing all exit non-zero
+# with no assertion ever evaluated - and neither is an exception raised in a test
+# body, which pytest counts as `failed` and unittest as an error. A runner whose
+# tally this does not read is `no-tally` and never promoted to `red`.
 #
 # The house harness marks a block that raised while being BUILT with one of
-# these labels, so a house suite whose every failure is one of them collected
-# nothing that asserted.
+# these labels, and a duplicated case id with the third; none of them is an
+# assertion about the code.
 HOUSE_ESCAPES = ("RAISED WHILE ITS CASES WERE BEING BUILT",
-                 "selftest body raised before reaching the end")
+                 "selftest body raised before reaching the end",
+                 "DUPLICATE CASE ID")
 _HOUSE_TALLY = re.compile(r"^(?:ALL PASS|SELFTEST FAILED): (\d+)/(\d+) "
                           + "cases " + "passed", re.M)
-_PYTEST_SUMMARY = re.compile(r"^=+ (.*?) in [\d.]+s.*=+\s*$", re.M)
+# pytest frames its summary with `=` by default and prints it bare under -q.
+_PYTEST_SUMMARY = re.compile(
+    r"^(?:=+ )?((?:\d+ (?:failed|passed|errors?|skipped|xfailed|xpassed|"
+    r"warnings?|deselected)(?:, )?)+|no tests ran) in [\d.]+s\b.*$", re.M)
 _PYTEST_COUNT = re.compile(r"(\d+) (failed|passed|errors?|skipped|xfailed|xpassed)")
+_PYTEST_FAILED = re.compile(r"^(FAILED|ERROR) (\S+)(?: - (.*))?$", re.M)
 _UNITTEST_RAN = re.compile(r"^Ran (\d+) tests? in ", re.M)
 _UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
+_UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)", re.M)
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
 _COMPILE_ERROR = re.compile(r"^\s*(SyntaxError|IndentationError|TabError|ImportError|"
                             r"ModuleNotFoundError|NameError)\b", re.M)
 _ERROR_LINE = re.compile(r"^\s*(\w*(?:Error|Exception)\b.*)$", re.M)
+_FINAL_ERROR = re.compile(r"^\s*([A-Za-z_][\w.]*(?:Error|Exception)):\s?(.*)$", re.M)
+
+# The error classes a missing symbol produces. A syntax error never qualifies: it
+# is the test's own text failing to parse, and it survives any fix.
+INTRODUCES_CLASSES = ("ImportError", "ModuleNotFoundError", "AttributeError",
+                      "NameError")
+_SYMBOL_SHAPE = re.compile(r"^[A-Za-z_][\w.]*$")
+
+
+def failing_cases(text):
+    """`[{"id", "assertion", "why"}]` - every failing case a runner named.
+
+    `assertion` is True only where the runner says the case failed an assertion:
+    a house `FAIL` line that is not an escape, a pytest `FAILED` whose reason is
+    an `assert` or an `AssertionError`, a unittest `FAIL:`. A pytest `ERROR`, a
+    pytest body exception and a unittest `ERROR:` are named with it False."""
+    out = []
+    for ln in text.splitlines():
+        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
+            label = ln[len("FAIL "):].strip()
+            out.append({"id": label.split()[0] if label else "", "assertion": True,
+                        "why": "house FAIL"})
+    for kind, node, why in _PYTEST_FAILED.findall(text):
+        why = (why or "").strip()
+        out.append({"id": node.split("::")[-1], "assertion": kind == "FAILED"
+                    and (why.startswith("assert") or why.startswith("AssertionError")),
+                    "why": why or kind})
+    for kind, name in _UNITTEST_CASE.findall(text):
+        out.append({"id": name, "assertion": kind == "FAIL", "why": kind})
+    return out
 
 
 def _house_tally(text):
@@ -246,8 +307,7 @@ def _house_tally(text):
     if not hits:
         return None
     passed, total = int(hits[-1][0]), int(hits[-1][1])
-    fails = [ln for ln in text.splitlines() if ln.startswith("FAIL ")]
-    asserting = [ln for ln in fails if not any(m in ln for m in HOUSE_ESCAPES)]
+    asserting = [c for c in failing_cases(text) if c["why"] == "house FAIL"]
     return {"runner": "house", "collected": total, "failed": total - passed,
             "assertions": len(asserting)}
 
@@ -258,10 +318,11 @@ def _pytest_tally(text):
         return None
     counts = dict((kind.rstrip("s") if kind.startswith("error") else kind, int(n))
                   for n, kind in _PYTEST_COUNT.findall(hits[-1]))
-    failed = counts.get("failed", 0)
     ran = sum(counts.get(k, 0) for k in ("failed", "passed", "xfailed", "xpassed"))
-    return {"runner": "pytest", "collected": ran, "failed": failed + counts.get("error", 0),
-            "assertions": failed}
+    asserting = [c for c in failing_cases(text) if c["assertion"]]
+    return {"runner": "pytest", "collected": ran,
+            "failed": counts.get("failed", 0) + counts.get("error", 0),
+            "assertions": len(asserting)}
 
 
 def _unittest_tally(text):
@@ -301,6 +362,25 @@ def classify_run(code, text):
     return V_COLLECT, tally
 
 
+def final_error(text):
+    """`(class, message, line)` of the last exception line a run printed, or None."""
+    hits = _FINAL_ERROR.findall(text)
+    if not hits:
+        return None
+    cls, message = hits[-1]
+    return cls.split(".")[-1], message.strip(), "%s: %s" % (cls, message.strip())
+
+
+def qualifying_error(text, symbol):
+    """The final error line when it is a missing-symbol error NAMING `symbol` whole
+    - the runtime quotes the name it could not find - else None."""
+    err = final_error(text)
+    if err is None or err[0] not in INTRODUCES_CLASSES:
+        return None
+    quoted = ("'%s'" % (symbol,), '"%s"' % (symbol,))
+    return err[2] if any(q in err[1] for q in quoted) else None
+
+
 # --- which files the throwaway takes from where ---
 def find_task(manifest, task_id):
     """`(task, problem)` - one task by id. Exactly one is None."""
@@ -325,6 +405,21 @@ def split_scope(task):
     return [f for f in files if f not in tests], tests
 
 
+def child_env(root):
+    """`(env, dropped)` - this process's environment without what reaches the
+    shared tree: `SCRUBBED_ENV`, and any variable whose value names its root."""
+    spellings = set(p for p in (root, os.path.realpath(root)) if p)
+    dropped = sorted(k for k, v in os.environ.items()
+                     if k in SCRUBBED_ENV or any(s in v for s in spellings))
+    return dict((k, v) for k, v in os.environ.items() if k not in dropped), dropped
+
+
+def _git_env():
+    """This process's environment without git's own redirections, so the helper's
+    git reads the repository `-C` names and nothing an environment points at."""
+    return dict((k, v) for k, v in os.environ.items() if not k.startswith("GIT_"))
+
+
 def _git(root, args, timeout=120):
     """`(code, text)` for one git call; the hooks path points nowhere, so no hook
     the repository carries runs on the throwaway's behalf."""
@@ -332,7 +427,7 @@ def _git(root, args, timeout=120):
         out = subprocess.run(["git", "-C", root, "-c",
                               "core.hooksPath=%s" % os.devnull] + list(args),
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             timeout=timeout)
+                             timeout=timeout, env=_git_env())
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "%s" % (exc,)
     return out.returncode, out.stdout.decode("utf-8", "replace").strip()
@@ -353,35 +448,53 @@ def _wt_text(root, rel):
         return None
 
 
-def introduced(root, implementation, symbol, output):
-    """`(holds, basis)` - whether this task INTRODUCES `symbol`.
+def _names(text, word):
+    """Whether `text` carries `word` as a whole name, not inside a longer one."""
+    return bool(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(word), text or ""))
 
-    THE DEFINITION, because "the task introduces the symbol" is otherwise a
-    judgement the executor makes about its own proof. It holds when all three
-    observations do: the symbol is absent from HEAD's copy of every declared
-    implementation file (content and path both, so a new module counts), it is
-    present in the working tree's copy of at least one, and the failed run's own
-    output names it. Then the compile or collection error is the absence the
-    test asserts, not a test that never got to assert."""
+
+def introduced(root, implementation, symbol):
+    """`(holds, basis)` - the STATIC half of whether this task introduces `symbol`:
+    absent, as a whole name, from HEAD's copy of every declared implementation
+    file (content and path, so a new module counts), and present in the working
+    tree's copy of at least one. The half that decides is the second run, in
+    `run_red`: with the working tree's implementation copied in, the error the
+    first run ended on must be gone."""
     heads = dict((rel, _head_text(root, rel)) for rel in implementation)
     at_head = [rel for rel, text in heads.items()
-               if text is not None and (symbol in rel or symbol in text)]
+               if text is not None and (_names(rel, symbol) or _names(text, symbol))]
     if at_head:
         return False, ("%r is not introduced by this task: HEAD already carries it "
                        "in %s" % (symbol, ", ".join(at_head)))
     in_wt = [rel for rel in implementation
-             if (symbol in rel and _wt_text(root, rel) is not None)
-             or symbol in (_wt_text(root, rel) or "")]
+             if (_names(rel, symbol) and _wt_text(root, rel) is not None)
+             or _names(_wt_text(root, rel), symbol)]
     if not in_wt:
         return False, ("%r is not introduced by this task: no declared "
                        "implementation file in the working tree carries it" % (symbol,))
-    if symbol not in output:
-        return False, ("%r is absent at HEAD and present in %s, but the run's "
-                       "output never names it, so the error is about something "
-                       "else" % (symbol, ", ".join(in_wt)))
-    return True, ("the task introduces %r: absent from HEAD's %s, present in the "
-                  "working tree's %s, and named by the run's output"
-                  % (symbol, ", ".join(implementation), ", ".join(in_wt)))
+    return True, ("absent from HEAD's %s and present in the working tree's %s"
+                  % (", ".join(implementation), ", ".join(in_wt)))
+
+
+def own_failures(root, tests, failing, cases):
+    """The failing cases that are the TASK'S OWN and failed an assertion.
+
+    Own means named by `--case` when any is given; otherwise a case whose id is a
+    whole name in the working tree's copy of a declared test file and absent from
+    HEAD's copy of that file - a case the task added. An existing case going red
+    because the working tree's test file was edited to match other work is not a
+    proof about this task's test."""
+    asserting = [f for f in failing if f["assertion"] and f["id"]]
+    if cases:
+        return [f for f in asserting if f["id"] in cases]
+    added = []
+    for f in asserting:
+        for rel in tests:
+            if (_names(_wt_text(root, rel), f["id"])
+                    and not _names(_head_text(root, rel) or "", f["id"])):
+                added.append(f)
+                break
+    return added
 
 
 def _names_shared_tree(cmd, root, project):
@@ -396,22 +509,43 @@ def _names_shared_tree(cmd, root, project):
 
 
 # --- the throwaway tree itself ---
+def leftover_throwaways(root):
+    """Registered worktrees whose path carries `THROWAWAY_PREFIX`: throwaways an
+    earlier run could not remove. Reported, never pruned."""
+    code, listing = _git(root, ["worktree", "list", "--porcelain"])
+    if code != 0:
+        return []
+    paths = [ln[len("worktree "):] for ln in listing.splitlines()
+             if ln.startswith("worktree ")]
+    return [p for p in paths
+            if any(part.startswith(THROWAWAY_PREFIX) for part in
+                   p.replace("\\", "/").split("/"))]
+
+
 def _build_throwaway(root, path, tests):
     """`(copied, problem)`: HEAD checked out at `path`, the tests laid over it."""
     code, text = _git(root, ["worktree", "add", "--detach", "--quiet", path, "HEAD"])
     if code != 0:
         return [], "git could not build the throwaway tree: %s" % (text,)
+    return _lay_over(root, path, tests), None
+
+
+def _lay_over(root, path, rels):
+    """Copy each of `rels` from the working tree into the throwaway; one the
+    working tree no longer has is removed there. Returns what was copied."""
     copied = []
-    for rel in tests:
+    for rel in rels:
         src = os.path.join(root, *rel.split("/"))
-        if not os.path.isfile(src):
-            continue
         dst = os.path.join(path, *rel.split("/"))
+        if not os.path.isfile(src):
+            if os.path.isfile(dst):
+                os.remove(dst)
+            continue
         if not os.path.isdir(os.path.dirname(dst)):
             os.makedirs(os.path.dirname(dst))
         shutil.copyfile(src, dst)
         copied.append(rel)
-    return copied, None
+    return copied
 
 
 def _remove_throwaway(root, holder, path):
@@ -427,16 +561,28 @@ def _remove_throwaway(root, holder, path):
     return not os.path.exists(holder) and not listed
 
 
-def _run_in(path, cmd, timeout):
-    """`(code, text, problem)` for the command, run in the throwaway."""
+def _run_in(path, cmd, timeout, env):
+    """`(code, text, problem)` for the command, run in the throwaway as a process
+    group, so a timeout or an interrupt stops everything it started."""
     try:
-        out = subprocess.run(cmd, cwd=path, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return None, "", "the run timed out after %s s" % (timeout,)
+        proc = subprocess.Popen(cmd, cwd=path, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, env=env,
+                                **_proc_group.group_kwargs())
     except OSError as exc:
         return None, "", "the command could not start: %s" % (exc,)
-    return out.returncode, out.stdout.decode("utf-8", "replace"), None
+    try:
+        out, _err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        confirmed = _proc_group.tear_down(proc)
+        text = _proc_group.drain(proc)
+        return None, text, ("the run timed out after %s s and its process group "
+                            "was torn down%s" % (timeout, "" if confirmed else
+                                                 " (not confirmed)"))
+    except BaseException:
+        _proc_group.tear_down(proc)
+        _proc_group.drain(proc)
+        raise
+    return proc.returncode, (out or b"").decode("utf-8", "replace"), None
 
 
 def _decisive_line(text, tally):
@@ -453,118 +599,213 @@ def _decisive_line(text, tally):
     return lines[-1] if lines else "(no output)"
 
 
-def red_verdict(cmd, code, text, problem, symbols, root, implementation):
-    """`(exit, verdict, block, note)` - what one run in the throwaway proved."""
+def _ids(cases):
+    return _output.some_of(["%s (%s)" % (c["id"] or "?", c["why"]) for c in cases])
+
+
+def red_verdict(run, ctx):
+    """`(exit, verdict, block, note)` - what the run in the throwaway proved.
+
+    `run` is `{"cmd", "code", "text", "problem", "second"}`; `second` is the
+    re-run with the working tree's implementation copied in, when one was made.
+    `ctx` is `{"root", "implementation", "tests", "cases", "symbols",
+    "dropped"}`."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    shown = " ".join(cmd)
-    if problem is not None:
+    shown = " ".join(run["cmd"])
+    if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
             "status": RED_CANNOT, "at": at,
-            "basis": "`%s` in a throwaway tree at HEAD: %s" % (shown, problem)}, None
+            "basis": "`%s` in a throwaway tree at HEAD: %s"
+                     % (shown, run["problem"])}, None
+    code, text = run["code"], run["text"]
     verdict, tally = classify_run(code, text)
     line = _decisive_line(text, tally)
     where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, code)
     if verdict == V_GREEN:
         return E_NOT_RED, verdict, None, (
-            "%s (%s): the test passes WITHOUT the fix, so it proves nothing yet - "
-            "fix the test; there is no redFirst word to record for this" % (where, line))
+            "%s (%s): the test PASSED in the throwaway - HEAD's implementation with "
+            "this task's test files, run with %s removed from its environment - so "
+            "it proves nothing yet; fix the test, there is no redFirst word to "
+            "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
+    failing = failing_cases(text)
     if verdict == V_RED:
-        return E_PROVED, verdict, {
-            "status": RED_PROVED, "at": at,
-            "basis": "%s with %d of %d collected tests failing an assertion: %s"
-                     % (where, tally["assertions"], tally["collected"], line)}, None
-    for symbol in (symbols if verdict == V_COLLECT else ()):
-        holds, why = introduced(root, implementation, symbol, text)
-        if holds:
+        own = own_failures(ctx["root"], ctx["tests"], failing, ctx["cases"])
+        if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
-                "basis": "%s on a compile or collection error, and %s: %s"
-                         % (where, why, line)}, None
+                "basis": "%s with %d of %d collected tests failing an assertion, "
+                         "the task's own among them - %s: %s"
+                         % (where, tally["assertions"], tally["collected"],
+                            _ids(own), line)}, None
+        return E_CANNOT_PROVE, verdict, {
+            "status": RED_CANNOT, "at": at,
+            "basis": "%s, but none of the failing cases is the task's own (%s): %s "
+                     "- %s" % (where, "named by --case" if ctx["cases"] else
+                               "added by the task, absent from HEAD's test files",
+                               _ids(failing), line)}, None
+    why_not = []
+    for symbol in (ctx["symbols"] if verdict == V_COLLECT else ()):
+        holds, why = introduced(ctx["root"], ctx["implementation"], symbol)
+        error = qualifying_error(text, symbol)
+        second = run.get("second")
+        if not holds:
+            why_not.append(why)
+        elif error is None:
+            why_not.append("the run's final error is not an %s naming %r: %s"
+                           % ("/".join(INTRODUCES_CLASSES), symbol,
+                              (final_error(text) or ("", "", "none"))[2]))
+        elif second is None or second.get("problem"):
+            why_not.append("the second run could not be made: %s"
+                           % ((second or {}).get("problem") or "not attempted",))
+        elif error in second["text"]:
+            why_not.append("with the working tree's implementation copied in, a "
+                           "second run still ends on %r, so the error is not the "
+                           "absence this task fills" % (error,))
+        elif classify_run(second["code"], second["text"])[0] not in (V_GREEN, V_RED):
+            why_not.append("with the working tree's implementation copied in, a "
+                           "second run lost %r but still reached no assertion "
+                           "(%s), so the test is broken with the fix too"
+                           % (error, _decisive_line(second["text"], None)))
+        else:
+            return E_PROVED, verdict, {
+                "status": RED_PROVED, "at": at,
+                "basis": "%s on %r, and the task introduces %r: %s; a second run "
+                         "with the working tree's implementation copied in exited "
+                         "%s without that error, its tests reaching their "
+                         "assertions" % (where, error, symbol, why,
+                                         second["code"])}, None
     reason = ("no test was collected or none reached an assertion"
               if verdict == V_COLLECT else
               "its output carries no test tally this command reads, so an "
               "assertion failure cannot be told from a crash - no test is known "
               "to have been collected")
-    why_not = "; ".join(introduced(root, implementation, s, text)[1]
-                        for s in (symbols if verdict == V_COLLECT else ()))
+    if failing:
+        reason += "; failing without an assertion: %s" % (_ids(failing),)
     return E_CANNOT_PROVE, verdict, {
         "status": RED_CANNOT, "at": at,
         "basis": "%s, but %s: %s%s" % (where, reason, line,
-                                       ("; " + why_not) if why_not else "")}, None
+                                       ("; " + "; ".join(why_not)) if why_not
+                                       else "")}, None
+
+
+def _wants_second(code, text, symbols):
+    """Whether a second run is owed: a collection error some named symbol's
+    missing-symbol error could explain."""
+    verdict, _t = classify_run(code, text) if code is not None else (None, None)
+    return verdict == V_COLLECT and any(qualifying_error(text, s) for s in symbols)
+
+
+def _red_scope(args, cmd):
+    """`(scope, problem)` - everything `red` needs before it builds anything."""
+    if not cmd:
+        return None, "red needs the test command after `--`"
+    if not (args.task and args.manifest) or args.files:
+        return None, ("red takes its scope off the plan: pass --manifest and "
+                      "--task, and no --files")
+    bad = [s for s in args.introduces if not _SYMBOL_SHAPE.match(s)]
+    if bad:
+        return None, ("--introduces takes an identifier (letters, digits, `_`, "
+                      "`.`), and %r is not one - a fragment is a substring of "
+                      "outputs it has nothing to do with" % (bad[0],))
+    try:
+        manifest = _mio.load_manifest(args.manifest)
+    except Exception as exc:
+        return None, "cannot read/parse %s: %s" % (args.manifest, exc)
+    task, problem = find_task(manifest if isinstance(manifest, dict) else {},
+                              args.task)
+    if problem is not None:
+        return None, problem
+    implementation, tests = split_scope(task)
+    if not tests:
+        return None, ("task %s declares no test file, so a throwaway at HEAD "
+                      "would prove nothing about this task's test" % (args.task,))
+    code, root = _git(os.path.abspath(args.project), ["rev-parse", "--show-toplevel"])
+    if code != 0:
+        return None, "%s is not inside a git repository: %s" % (args.project, root)
+    named = _names_shared_tree(cmd, root, os.path.abspath(args.project))
+    if named:
+        return None, ("the command names the shared tree (%s); give its paths "
+                      "relative to the tree root so they resolve inside the "
+                      "throwaway - an interpreter inside the tree (.venv) is "
+                      "untracked and absent there too" % (", ".join(named),))
+    present = [t for t in tests if os.path.isfile(os.path.join(root, *t.split("/")))]
+    if not present:
+        return None, ("none of task %s's test files (%s) is in the working tree, "
+                      "so a throwaway would hold HEAD alone"
+                      % (args.task, ", ".join(tests)))
+    return {"root": root, "implementation": implementation, "tests": present}, None
+
+
+def _arm():
+    """Arm the interrupt handlers where Python allows it (the main thread)."""
+    try:
+        return _proc_group.arm_interrupt()
+    except ValueError:
+        return None
 
 
 def run_red(args, cmd, out):
     """`red`: prove a red in a throwaway tree and print the `redFirst` block."""
-    if not cmd:
-        sys.stderr.write("ERROR: red needs the test command after `--`\n")
-        return E_USAGE
-    if not (args.task and args.manifest) or args.files:
-        sys.stderr.write("ERROR: red takes its scope off the plan: pass --manifest "
-                         "and --task, and no --files\n")
-        return E_USAGE
-    try:
-        manifest = _mio.load_manifest(args.manifest)
-    except Exception as exc:
-        sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (args.manifest, exc))
-        return E_USAGE
-    task, problem = find_task(manifest if isinstance(manifest, dict) else {},
-                              args.task)
+    scope, problem = _red_scope(args, cmd)
     if problem is not None:
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
-    implementation, tests = split_scope(task)
-    if not tests:
-        sys.stderr.write("ERROR: task %s declares no test file, so a throwaway at "
-                         "HEAD would prove nothing about this task's test\n"
-                         % (args.task,))
-        return E_USAGE
-    code, root = _git(os.path.abspath(args.project), ["rev-parse", "--show-toplevel"])
-    if code != 0:
-        sys.stderr.write("ERROR: %s is not inside a git repository: %s\n"
-                         % (args.project, root))
-        return E_USAGE
-    named = _names_shared_tree(cmd, root, os.path.abspath(args.project))
-    if named:
-        sys.stderr.write("ERROR: the command names the shared tree (%s); give its "
-                         "paths relative to the tree root so they resolve inside "
-                         "the throwaway\n" % (", ".join(named),))
-        return E_USAGE
-    present = [t for t in tests if os.path.isfile(os.path.join(root, *t.split("/")))]
-    if not present:
-        sys.stderr.write("ERROR: none of task %s's test files (%s) is in the working "
-                         "tree, so a throwaway would hold HEAD alone\n"
-                         % (args.task, ", ".join(tests)))
-        return E_USAGE
+    root = scope["root"]
+    leftovers = leftover_throwaways(root)
+    env, dropped = child_env(root)
     _c, head = _git(root, ["rev-parse", "HEAD"])
-    holder = tempfile.mkdtemp(prefix="audit-red-")
+    holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX)
     path = os.path.join(holder, "tree")
-    rcode, text, copied = None, "", []
+    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None}
+    copied = []
+    previous = _arm()
     try:
-        copied, problem = _build_throwaway(root, path, present)
-        if problem is None:
-            rcode, text, problem = _run_in(path, cmd, args.timeout)
-        exit_code, verdict, block, note = red_verdict(
-            cmd, rcode, text, problem, args.introduces, root, implementation)
+        try:
+            copied, run["problem"] = _build_throwaway(root, path, scope["tests"])
+            if run["problem"] is None:
+                run["code"], run["text"], run["problem"] = _run_in(
+                    path, cmd, args.timeout, env)
+            if run["problem"] is None and _wants_second(run["code"], run["text"],
+                                                        args.introduces):
+                _lay_over(root, path, scope["implementation"])
+                code2, text2, problem2 = _run_in(path, cmd, args.timeout, env)
+                run["second"] = {"code": code2, "text": text2, "problem": problem2}
+        except KeyboardInterrupt as exc:
+            run["problem"] = ("interrupted by %s before the run finished; the "
+                              "run's process group was torn down"
+                              % (exc or "an interrupt",))
+        exit_code, verdict, block, note = red_verdict(run, {
+            "root": root, "implementation": scope["implementation"],
+            "tests": scope["tests"], "cases": args.case,
+            "symbols": args.introduces, "dropped": dropped})
     finally:
         removed = _remove_throwaway(root, holder, path)
+        if previous is not None:
+            _proc_group.disarm_interrupt(previous)
     payload = {"verdict": verdict, "redFirst": block, "note": note,
-               "atHead": implementation, "copied": copied,
-               "throwaway": {"path": path, "head": head,
-                             "removed": removed},
-               "run": {"argv": cmd, "exit": rcode,
-                       "outputTail": text.splitlines()[-20:]}}
+               "atHead": scope["implementation"], "copied": copied,
+               "leftovers": leftovers,
+               "environment": {"dropped": dropped},
+               "throwaway": {"path": path, "head": head, "removed": removed},
+               "run": {"argv": cmd, "exit": run["code"],
+                       "outputTail": run["text"].splitlines()[-20:],
+                       "second": None if run["second"] is None else
+                       {"exit": run["second"]["code"],
+                        "outputTail": run["second"]["text"].splitlines()[-20:]}}}
     if args.as_json:
         out(json.dumps(payload, indent=2, sort_keys=True))
     else:
         out("red-first: %s (throwaway at HEAD %s, removed: %s)"
             % (verdict, (head or "?")[:12], "yes" if removed else "NO"))
-        out("  at HEAD: %s" % (", ".join(implementation) or "(none declared)"))
+        out("  at HEAD: %s" % (", ".join(scope["implementation"]) or "(none declared)"))
         out("  from the working tree: %s" % (", ".join(copied) or "(none)"))
+        out("  environment: inherited, without %s" % (", ".join(dropped) or "nothing"))
+        for left in leftovers:
+            out("  LEFT BEHIND by an earlier run (not pruned): %s" % (left,))
         out(note if block is None else "redFirst: %s" % (json.dumps(block),))
     if not removed:
         sys.stderr.write("ERROR: the throwaway tree at %s could not be removed; "
-                         "`git worktree list` names what is left\n"
-                         % (path,))
+                         "`git worktree list` names what is left\n" % (path,))
         return E_LEFT_BEHIND
     return exit_code
 
@@ -595,6 +836,10 @@ def build_parser():
                              "task introduces a symbol the run names")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
                         help="seconds the red run may take; `red` only")
+    parser.add_argument("--case", action="append", default=[],
+                        help="a case id the task added; `red` only - a red "
+                             "counts only when one of the task's own cases "
+                             "fails an assertion")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 

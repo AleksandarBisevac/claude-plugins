@@ -2498,6 +2498,34 @@ def stamp_running_plugin(state_dir, session_id):
         return None
 
 
+# How far apart two refreshes of one session's stamp may be. A tool call inside
+# this window pays one `stat` and writes nothing.
+RUNNING_STAMP_REFRESH_SECONDS = 60
+
+
+def refresh_running_stamp(state_dir, session_id, now=None):
+    """Move this session's stamp's mtime to now, so it records the last guarded
+    TOOL CALL and not only the last prompt. True when it moved.
+
+    One prompt can drive hours of tool calls, subagents included, so a stamp
+    written only on a prompt made every session mid-turn look idle beside the
+    one asking `/audit:doctor`. Called from a guard on the per-tool-call path,
+    which is why it is throttled to one write per `RUNNING_STAMP_REFRESH_SECONDS`
+    and creates nothing: a session with no stamp has not prompted under this
+    copy, and the payload is the prompt hook's to write. Never raises."""
+    if not session_id:
+        return False
+    path = os.path.join(str(state_dir), RUNNING_STAMP % session_id)
+    try:
+        clock = time.time() if now is None else now
+        if clock - os.stat(path).st_mtime < RUNNING_STAMP_REFRESH_SECONDS:
+            return False
+        os.utime(path, None)
+        return True
+    except Exception:
+        return False
+
+
 def running_plugin_stamps(state_dir):
     """Every copy that has stamped itself in `state_dir`.
 

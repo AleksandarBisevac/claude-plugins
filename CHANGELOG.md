@@ -180,7 +180,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   session's file - which state GC keeps for days - held the row at WARNING while every newer stamp
   named the running copy, and "start a new session" could not clear it. It now grades the newest
   stamp per copy: a copy superseded by a newer stamp since is reported as history, named, aged and
-  offered for pruning by path, and a live foreign stamp carries its age.
+  offered for pruning by path, and a live foreign stamp carries its age. Liveness is each copy's
+  own age against an idle bound the row prints, never the asking session's stamp - that session
+  has always just prompted - and `guard-secrets-read` now refreshes the calling session's stamp on
+  Read, Grep, Bash and MCP calls, throttled, so a session mid-turn on an older copy stays a
+  WARNING.
 - **`/audit:doctor`'s `plugin files` row verifies a marketplace-cache install** instead of warning on
   every one that it is "not inside a git checkout". Claude Code's `installed_plugins.json` records
   the commit the cache copy was made from and the marketplace clone holds it, so the copy is
@@ -189,8 +193,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   unverifiable only when a record, the commit or the clone is missing.
 - **A compile error is no longer credited as a proved red.** The briefs graded any named command
   with a non-zero exit as `proved`; `proved` now needs at least one test collected and an assertion
-  failing, and a compile, import or collection error is `could-not-prove` unless the task introduces
-  the symbol the run fails on.
+  failing - a named case of the task's own - and a compile, import or collection error is
+  `could-not-prove` unless the task introduces the symbol the run fails on: an identifier, a final
+  import/attribute/name error naming it (never a syntax error), and a second run with the working
+  tree's implementation copied in that loses the error.
+- **`stamp-verification.py red` always accounts for its throwaway.** A SIGTERM left the throwaway
+  registered in git and a timeout left a test runner's grandchildren writing into it. The run is
+  now one process group torn down whole, SIGINT/SIGTERM raise so the cleanup runs, the default
+  timeout stays under the host's Bash limit, a throwaway left by SIGKILL is reported by name on the
+  next run, and the child's environment is scrubbed of what points at the shared tree. The
+  teardown and the interrupt handling moved to `scripts/governance/_proc_group.py`, shared with
+  `run-test-gate.py`. `pytest -q`'s unframed summary is now read as a tally.
+- **The `plugin files` row names unpublished files under `hooks/` and `scripts/`**, bytecode
+  included - bytecode beside a published `.py` is what Python executes - instead of calling them
+  harmless. The `redFirst` lint now also refuses a retired word anywhere in the two briefs.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,

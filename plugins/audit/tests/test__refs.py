@@ -111,6 +111,13 @@ def _tool_src(name):
         return fh.read()
 
 
+def _tool_src_refs():
+    """`_refs.py`'s own source, the file under test."""
+    with open(os.path.join(M.REPO_ROOT, M.PLUGIN_REL, "scripts", "_refs.py"),
+              "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
 def _write(root, rel, text):
     path = os.path.join(root, rel.replace("/", os.sep))
     parent = os.path.dirname(path)
@@ -2625,6 +2632,9 @@ def _cases(check):
          _RV_SCHEMA),
         ("twice", _RV_EXEC_OK, _RV_REV_OK + _RV_REV_OK, _RV_SCHEMA),
         ("no-schema", _RV_EXEC_OK, _RV_REV_OK, None),
+        ("prose-retired", _RV_EXEC_OK,
+         _RV_REV_OK + "\nIn phase mode `redFirst` is `not-applicable`.\n",
+         _RV_SCHEMA),
     )
     _rv_out = {}
     for _name, _ex, _re, _sc in _rv_cases:
@@ -2643,7 +2653,7 @@ def _cases(check):
           "reviewer-only is reported BY WORD - the shipped defect, "
           "`not-applicable` standing where `not-attempted` belongs: %r"
           % (_rv_out["rev-alien"]["problems"],),
-          len(_rv_out["rev-alien"]["problems"]) == 2
+          len(_rv_out["rev-alien"]["problems"]) == 3
           and any("'not-applicable'" in p
                   for p in _rv_out["rev-alien"]["problems"])
           and any("'not-attempted'" in p
@@ -2669,6 +2679,23 @@ def _cases(check):
           len(_rv_out["no-schema"]["problems"]) == 1
           and "unreadable" in _rv_out["no-schema"]["problems"][0])
 
+    check("rv12 a RETIRED word in a brief's PROSE is reported too - the return "
+          "shapes were the only thing read, so the phase-mode sentence could "
+          "revert to `not-applicable` and nothing would fail: %r"
+          % (_rv_out["prose-retired"]["problems"],),
+          len(_rv_out["prose-retired"]["problems"]) == 1
+          and "not-applicable" in _rv_out["prose-retired"]["problems"][0])
+    check("rv13 ...and the lint's source states no measurement it cannot "
+          "re-derive: the retired words are a named tuple, not a sentence about "
+          "what a narrowing would have cost",
+          "no narrowing measured over this tree" not in _tool_src_refs()
+          and "not-applicable" in M.RED_FIRST_RETIRED)
+    _rv_rev_text = _squash(_product_doc("agents/audit-reviewer.md"))
+    check("rv14 the reviewer's echo rule for `proved` accepts the helper's own "
+          "`--introduces` basis, which carries no assertion tally - a rule that "
+          "demanded one refused the block the sanctioned helper prints",
+          "`--introduces` basis" in _rv_rev_text
+          and "a second run with the working tree's implementation" in _rv_rev_text)
     _rv_exec = _squash(_product_doc("agents/audit-executor.md"))
     _rv_rev = _squash(_product_doc("agents/audit-reviewer.md"))
     _rv_ref = _squash(_product_doc("reference/execute-task.md"))

@@ -29,8 +29,10 @@ import hashlib
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402
@@ -266,19 +268,25 @@ def _shape_cases(check):
 # reads a count of collected cases; the literal is BUILT, because the tally is the
 # contract CI greps for and a spelled one in a fixture reads as a suite of its own.
 _TALLY = "%s: %d/%d cases " + "passed"
-_RED_TEST = (
-    "import os, sys\n"
-    "sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"
-    " '..', 'src'))\n"
-    "%s\n"
-    "ok = %s\n"
-    "print('%%s a' %% ('PASS' if ok else 'FAIL'))\n"
-    "print(%r %% ('ALL PASS' if ok else 'SELFTEST FAILED', int(ok), 1))\n"
-    "sys.exit(0 if ok else 1)\n")
+_PATH_LINE = ("sys.path.insert(0, os.path.join(os.path.dirname("
+              "os.path.abspath(__file__)), '..', 'src'))")
 
 
-def _red_test(imports, cond):
-    return _RED_TEST % (imports, cond, _TALLY)
+def _house_test(imports, cases):
+    """A house-style suite: one PASS/FAIL line per `(label, cond)` and the tally."""
+    body = ["import os, sys", _PATH_LINE, imports, "results = []"]
+    for label, cond in cases:
+        body += ["ok = bool(%s)" % (cond,), "results.append(ok)",
+                 "print('%%s %s' %% ('PASS' if ok else 'FAIL'))" % (label,)]
+    body += ["n = sum(results)",
+             "print(%r %% ('ALL PASS' if n == len(results) else 'SELFTEST FAILED',"
+             " n, len(results)))" % (_TALLY,),
+             "sys.exit(0 if n == len(results) else 1)"]
+    return "\n".join(body) + "\n"
+
+
+def _red_test(imports, cond, label="new1"):
+    return _house_test(imports, [(label, cond)])
 
 
 def _red_repo(prefix, wt_test, extra=None, files=None):
@@ -288,7 +296,7 @@ def _red_repo(prefix, wt_test, extra=None, files=None):
     root = _seeded_repo(prefix)
     os.makedirs(os.path.join(root, "tests"))
     _write(os.path.join(root, "tests", "test_mine.py"),
-           _red_test("import mine", "mine.v >= 1"))
+           _red_test("import mine", "mine.v >= 1", label="old1"))
     _git(root, "add", "tests/test_mine.py")
     _git(root, "commit", "-q", "-m", "test")
     _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
@@ -510,7 +518,8 @@ def _tally_cases(check):
     shapes = [
         ("house assertion", house(failing)),
         ("house escape", house(escaping)),
-        ("pytest failed", (1, "===== 1 failed, 2 passed in 0.12s =====\n")),
+        ("pytest failed", (1, "FAILED t.py::test_x - assert 1 == 2\n"
+                                  "===== 1 failed, 2 passed in 0.12s =====\n")),
         ("pytest error", (2, "=== 1 error in 0.30s ===\n")),
         ("pytest none", (5, "collected 0 items\n\n=== no tests ran in 0.01s ===\n")),
         ("unittest failure", (1, "Ran 3 tests in 0.001s\n\nFAILED (failures=1)\n")),
@@ -540,12 +549,239 @@ def _tally_cases(check):
           M.classify_run(0, "== 0 failed, 3 passed in 0.1s ==\n")[0] == "green")
 
 
+# --- the review's findings, each as the case that went red --------------------
+# Real pytest output, captured from `pytest -q` and `pytest` over one file holding
+# a passing test, an assertion and a body TypeError - a hand-written shape is the
+# parser's own assumption, so the shapes come from the runner.
+_PYTEST_Q = (
+    "..F.F\n"
+    "=========================== short test summary info ============================\n"
+    "FAILED test_a.py::test_assert - assert 1 == 2\n"
+    "FAILED test_a.py::test_type - TypeError: unsupported operand type(s) for +: '...\n"
+    "2 failed, 1 passed in 0.01s\n")
+_PYTEST_FULL = _PYTEST_Q.replace(
+    "2 failed, 1 passed in 0.01s\n",
+    "========================= 2 failed, 1 passed in 0.01s ==========================\n")
+_PYTEST_TYPE_ONLY = (
+    "=========================== short test summary info ============================\n"
+    "FAILED test_a.py::test_type - TypeError: unsupported operand type(s) for +: '...\n"
+    "1 failed in 0.01s\n")
+
+
+def _introduces_cases(check):
+    py = sys.executable
+    files = ["src/mine.py", "src/newmod.py", "tests/test_mine.py"]
+    newmod = {"src/newmod.py": "def helper_fn():\n    return 2\n"}
+    root, man = _red_repo(
+        "stamp-red-syntax-",
+        _red_test("from newmod import helper_fn", "helper_fn() == 2 )"),
+        extra=newmod, files=files)
+    code, got = _red(root, man, [py, "tests/test_mine.py"],
+                     "--introduces", "helper_fn")
+    block = got.get("redFirst") or {}
+    check("sr16 a test broken by a SyntaxError WITH the fix present is not a "
+          "proved red under --introduces: the error is the test's, it survives "
+          "the fix, and syntax errors never qualify: exit=%r %r" % (code, block),
+          code != M.E_PROVED and block.get("status") != "proved")
+
+    root_i, man_i = _red_repo(
+        "stamp-red-intro-",
+        _red_test("from newmod import helper_fn", "helper_fn() == 2"),
+        extra=newmod, files=files)
+    empty = _run(["red", "--project", root_i, "--manifest", man_i, "--task",
+                  "P1.1", "--introduces", "", "--", py, "tests/test_mine.py"])
+    dotted = _run(["red", "--project", root_i, "--manifest", man_i, "--task",
+                   "P1.1", "--introduces", "new mod", "--", py,
+                   "tests/test_mine.py"])
+    check("sr17 a symbol that is not identifier-shaped is refused before anything "
+          "runs - the empty string is a substring of every output: %r"
+          % ([empty[0], dotted[0]],),
+          [empty[0], dotted[0]] == [M.E_USAGE, M.E_USAGE])
+    code_s, got_s = _red(root_i, man_i, [py, "tests/test_mine.py"],
+                         "--introduces", "newm")
+    code_o, got_o = _red(root_i, man_i, [py, "tests/test_mine.py"],
+                         "--introduces", "helper_fn")
+    check("sr18 the final error must name THE symbol, whole, as the runtime "
+          "quotes it: a substring of the missing name is not it, and neither is "
+          "another symbol the task adds when the error names its module: "
+          "exit=%r/%r %r"
+          % (code_s, code_o, (got_o.get("redFirst") or {}).get("basis", "")[-120:]),
+          [code_s, code_o] == [M.E_CANNOT_PROVE, M.E_CANNOT_PROVE]
+          and (got_s.get("redFirst") or {}).get("status") == "could-not-prove"
+          and (got_o.get("redFirst") or {}).get("status") == "could-not-prove")
+    code_p, got_p = _red(root_i, man_i, [py, "tests/test_mine.py"],
+                         "--introduces", "newmod")
+    basis = (got_p.get("redFirst") or {}).get("basis", "")
+    check("sr19 ...and the qualifying case is decided by a SECOND run with the "
+          "working tree's implementation copied in, in which the error is gone - "
+          "the basis says both runs: exit=%r %r" % (code_p, basis),
+          code_p == M.E_PROVED and "second run" in basis
+          and "ModuleNotFoundError" in basis)
+
+    root_k, man_k = _red_repo(
+        "stamp-red-stays-",
+        _red_test("from newmod import helper_fn\nimport nothere_mod",
+                  "helper_fn() == 2"),
+        extra=newmod, files=files)
+    code_k, got_k = _red(root_k, man_k, [py, "tests/test_mine.py"],
+                         "--introduces", "newmod")
+    check("sr20 an import error that the fix does NOT remove is not the task's: "
+          "with the working tree's implementation copied in the run still fails "
+          "to import, so it stays could-not-prove: exit=%r %r"
+          % (code_k, (got_k.get("redFirst") or {}).get("basis", "")[-160:]),
+          code_k == M.E_CANNOT_PROVE)
+
+
+def _process_cases(check):
+    py = sys.executable
+    root, man = _red_repo("stamp-red-proc-", _red_test("import mine", "mine.v == 2"))
+    check("sr21 the default timeout stays under the host's Bash limit, so the "
+          "helper's own timeout fires - and its `finally` runs - before the host "
+          "kills it: %r < %r" % (M.DEFAULT_TIMEOUT, M.HOST_BASH_LIMIT),
+          M.DEFAULT_TIMEOUT < M.HOST_BASH_LIMIT)
+
+    marks = _harness.fixture_root("stamp-red-marks-")
+    late = os.path.join(marks, "grandchild-wrote")
+    began = os.path.join(marks, "grandchild-began")
+    inner = ("import time; open(%r, 'w').close(); time.sleep(3); "
+             "open(%r, 'w').close()" % (began, late))
+    spawn = ("import subprocess, sys, time\n"
+             "subprocess.Popen([sys.executable, '-c', %r])\n"
+             "time.sleep(30)\n" % (inner,))
+    code_t, got_t = _red(root, man, [py, "-c", spawn], "--timeout", "1")
+    time.sleep(4)
+    check("sr22 a timeout kills the run's whole process GROUP: a grandchild the "
+          "test runner started - seen running - does not outlive the throwaway "
+          "and write after it: exit=%r began=%r wrote=%r"
+          % (code_t, os.path.exists(began), os.path.exists(late)),
+          code_t == M.E_CANNOT_PROVE and os.path.exists(began)
+          and not os.path.exists(late)
+          and (got_t.get("throwaway") or {}).get("removed") is True)
+
+    script = os.path.join(_output.PLUGIN_ROOT, "scripts", "governance",
+                          "stamp-verification.py")
+    if not hasattr(signal, "SIGTERM") or os.name == "nt":
+        _harness.skip(check, "sr23 SIGTERM removes the throwaway", "posix",
+                      "no POSIX SIGTERM delivery on this platform")
+    else:
+        started = os.path.join(marks, "started")
+        wait = ("import time\nopen(%r, 'w').close()\ntime.sleep(60)\n" % (started,))
+        proc = subprocess.Popen([py, script, "red", "--project", root, "--manifest",
+                                 man, "--task", "P1.1", "--json", "--", py, "-c",
+                                 wait], stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, universal_newlines=True)
+        for _i in range(200):
+            if os.path.exists(started):
+                break
+            time.sleep(0.05)
+        proc.send_signal(signal.SIGTERM)
+        out, _e = proc.communicate(timeout=60)
+        left = [ln for ln in _worktrees(root).splitlines()
+                if ln.startswith("worktree ") and M.THROWAWAY_PREFIX in ln]
+        check("sr23 SIGTERM mid-run still removes the throwaway: the signal is "
+              "turned into an exception, so the `finally` runs, and nothing is "
+              "left in git's worktree list: exit=%r left=%r %r"
+              % (proc.returncode, left, out[-200:]),
+              os.path.exists(started) and left == []
+              and proc.returncode == M.E_CANNOT_PROVE)
+
+    leftover = os.path.join(_harness.fixture_root("stamp-red-left-"),
+                            M.THROWAWAY_PREFIX + "stale", "tree")
+    _git(root, "worktree", "add", "--detach", "--quiet", leftover, "HEAD")
+    code_l, got_l = _red(root, man, [py, "tests/test_mine.py"])
+    check("sr24 a throwaway an earlier run could not remove (SIGKILL cannot be "
+          "caught) is REPORTED by name, and never pruned - it may be another "
+          "run's, still going: %r" % (got_l.get("leftovers"),),
+          [os.path.realpath(x) for x in got_l.get("leftovers") or []]
+          == [os.path.realpath(leftover)]
+          and os.path.realpath(leftover) in _worktrees(root)
+          and code_l == M.E_PROVED)
+    _git(root, "worktree", "remove", "--force", leftover)
+
+
+def _own_case_cases(check):
+    py = sys.executable
+    two = _house_test("import mine", [("old1", "mine.v == 2"), ("new1", "True")])
+    root, man = _red_repo("stamp-red-own-", two)
+    code, got = _red(root, man, [py, "tests/test_mine.py"])
+    said = json.dumps(got.get("redFirst") or got.get("note"))
+    check("sr25 a red that is only an EXISTING case failing, while the task's new "
+          "case passes, is not proved: the failing case is named, and it is not "
+          "one the task added: exit=%r %s" % (code, said[:240]),
+          code != M.E_PROVED and "old1" in said)
+    code_c, got_c = _red(root, man, [py, "tests/test_mine.py"], "--case", "zz9")
+    check("sr26 --case names the task's own case, and a red whose failing cases "
+          "do not include it is not proved: exit=%r" % (code_c,),
+          code_c != M.E_PROVED)
+    root_n, man_n = _red_repo("stamp-red-named-",
+                              _red_test("import mine", "mine.v == 2"))
+    code_n, got_n = _red(root_n, man_n, [py, "tests/test_mine.py"])
+    check("sr27 a proved red NAMES the failing case it rests on: %r"
+          % ((got_n.get("redFirst") or {}).get("basis"),),
+          code_n == M.E_PROVED
+          and "new1" in (got_n.get("redFirst") or {}).get("basis", ""))
+
+    got = dict((name, M.classify_run(1, text)[0]) for name, text in (
+        ("pytest -q", _PYTEST_Q), ("pytest", _PYTEST_FULL),
+        ("pytest body TypeError", _PYTEST_TYPE_ONLY)))
+    fails = M.failing_cases(_PYTEST_Q)
+    check("sr28 pytest -q's unframed summary is a tally (it read as no-tally), a "
+          "body TypeError is not an assertion failure, and each failing node is "
+          "named with whether it asserted: %r %r" % (got, fails),
+          got == {"pytest -q": "red", "pytest": "red",
+                  "pytest body TypeError": "collection-error"}
+          and [(f["id"], f["assertion"]) for f in fails]
+          == [("test_assert", True), ("test_type", False)])
+
+
+def _env_cases(check):
+    py = sys.executable
+    root, man = _red_repo("stamp-red-env-", _red_test("import mine", "mine.v >= 1"))
+    mark = os.path.join(_harness.fixture_root("stamp-red-envmark-"), "env.json")
+    probe = ("import json, os\njson.dump(sorted(os.environ), open(%r, 'w'))\n"
+             % (mark,))
+    planted = {"PYTHONPATH": root, "CLAUDE_PROJECT_DIR": root,
+               "GIT_DIR": os.path.join(root, "nope"), "GIT_WORK_TREE": root,
+               "GIT_INDEX_FILE": os.path.join(root, "nope-index")}
+    held = dict((k, os.environ.get(k)) for k in planted)
+    os.environ.update(planted)
+    try:
+        code, got = _red(root, man, [py, "-c", probe])
+    finally:
+        for k, v in held.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    seen = []
+    if os.path.exists(mark):
+        with open(mark, "r", encoding="utf-8") as fh:
+            seen = [k for k in json.load(fh) if k in planted]
+    check("sr29 the red run's environment is SCRUBBED of what reaches the shared "
+          "tree - PYTHONPATH, CLAUDE_PROJECT_DIR and git's own GIT_DIR/"
+          "GIT_WORK_TREE/GIT_INDEX_FILE, which also would have pointed the "
+          "helper's own git elsewhere - and the output names what it dropped: "
+          "exit=%r child saw %r dropped %r"
+          % (code, seen, (got.get("environment") or {}).get("dropped")),
+          code == M.E_NOT_RED and os.path.exists(mark) and seen == []
+          and set(planted) <= set((got.get("environment") or {}).get("dropped")
+                                  or []))
+    check("sr30 ...and a green run says it passed IN THE THROWAWAY, which is what "
+          "was observed, not that the test passes without the fix everywhere: %r"
+          % (got.get("note"),),
+          "in the throwaway" in (got.get("note") or ""))
+
+
 def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
     _harness.stage(check, "sv-shape", _shape_cases)
     _harness.stage(check, "sr-red", _red_cases)
     _harness.stage(check, "sr-tally", _tally_cases)
+    _harness.stage(check, "sr-introduces", _introduces_cases)
+    _harness.stage(check, "sr-process", _process_cases)
+    _harness.stage(check, "sr-own", _own_case_cases)
+    _harness.stage(check, "sr-env", _env_cases)
 
 
 def _selftest():

@@ -67,9 +67,12 @@ question is evidence, not reading the test:
 - the executor's `redFirst` word, when it sent one — one of `proved` / `could-not-prove` /
   `not-attempted`, the only words an executor writes. READ it, quote the basis it
   carried, and **echo the word when its basis holds**; do not re-derive it. `proved`
-  holds when the basis names a command, its non-zero exit, and a tally showing at least
-  one test collected and an assertion failing — the shape `stamp-verification.py red`
-  prints. `could-not-prove` holds when the basis carries the refusal or the reason
+  holds when the basis names a command, its non-zero exit, a tally showing at least one
+  test collected, and a named case of the task's own failing an assertion — the shape
+  `stamp-verification.py red` prints. It holds too for the helper's `--introduces` basis,
+  which carries no such tally: a missing-symbol error naming the symbol the task adds,
+  and a second run with the working tree's implementation copied in that no longer ends
+  on that error and reaches its assertions. `could-not-prove` holds when the basis carries the refusal or the reason
   verbatim. `not-attempted` holds when the basis says why no proof was owed and the
   task's mode agrees.
 - otherwise — no word, or a word whose basis does not hold — grade its report: a NAMED
