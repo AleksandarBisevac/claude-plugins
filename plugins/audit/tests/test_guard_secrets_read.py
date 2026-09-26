@@ -158,6 +158,52 @@ def _cases(check):
           bash("node -e \"console.log(require('fs').readFileSync('.env','utf8'))\""))
     _expect("b5 ruby -e File.read(.env) blocked", "block",
           bash("ruby -e 'puts File.read(\".env\")'"))
+    # A line continuation is removed before the shell reads a word, so a secret
+    # path split by one is still that path.
+    _bsnl = "\\" + "\n"
+    _expect("b5j1 a secret path split by a line continuation is the path", "block",
+          bash("cat .e" + _bsnl + "nv"))
+    _expect("b5j2 ...and so is a read verb split by one", "block",
+          bash("ca" + _bsnl + "t .env"))
+    _expect("b5j3 ...while a continuation in an ordinary listing is nothing",
+          "allow", bash("ls " + _bsnl + " -la"))
+    # A here-string fed to an interpreter is its program, the same capability as
+    # -c/-e; fed to a program that only reads it, it is data.
+    _expect("b5h1 python3 reading a secret through a here-string blocked", "block",
+          bash("python3 <<< \"print(open('.env').read())\""))
+    _expect("b5h2 ...node, the same way", "block",
+          bash("node <<<\"console.log(require('fs').readFileSync('.env','utf8'))\""))
+    _expect("b5h3 ...an interpreter behind a wrapper, the same way", "block",
+          bash("env python3 <<< \"print(open('.env').read())\""))
+    _expect("b5h4 an innocent here-string to an interpreter allowed", "allow",
+          bash("python3 <<< \"print(2+2)\""))
+    _expect("b5h6 a here-string to an interpreter already running a script is "
+          "that script's input", "allow",
+          bash("python3 tools/redact.py <<< \"print(open('.env').read())\""))
+    _expect("b5h7 ...and so is one to node running a script file", "allow",
+          bash("node tools/redact.mjs <<< \"require('fs').readFileSync('.env')\""))
+    # Perl's own open() shapes are reads the eval arm names.
+    _expect("b5p1 perl two-argument open of a secret is a read", "block",
+          bash("perl -e \"open(F, '.env'); print <F>\""))
+    _expect("b5p2 ...and the explicit read mode, the same", "block",
+          bash("perl -e \"open(F, '<.env'); print <F>\""))
+    _expect("b5p3 ...and three-argument open with '<'", "block",
+          bash("perl -e \"open(my \\$f, '<', '.env'); print <\\$f>\""))
+    _expect("b5p4 ...while perl opening an ordinary file is nothing", "allow",
+          bash("perl -e \"open(F, 'README.md'); print <F>\""))
+    _expect("b5h9 ruby running a script reads a here-string as input", "allow",
+          bash("ruby tools/redact.rb <<< \"File.read('.env')\""))
+    _expect("b5h10 node with an option before its script, the same", "allow",
+          bash("node --no-warnings tools/redact.mjs <<< \"require('fs').readFileSync('.env')\""))
+    _expect("b5h11 perl -c compiles its stdin, so the here-string is its program",
+          "block", bash("perl -c <<< \"open(F, '.env'); print <F>\""))
+    _expect("b5h12 python -E is not a program flag, so the here-string is the program",
+          "block", bash("python3 -E <<< \"print(open('.env').read())\""))
+    _expect("b5h8 a here-string glued to the interpreter's name is read", "block",
+          bash("python3<<<\"print(open('.env').read())\""))
+    _expect("b5h5 ...and code-shaped text in a here-string to a program that only "
+          "transforms it is data", "allow",
+          bash("tr a-z A-Z <<< \"print(open('.env').read())\""))
     _expect("b7 python3 -c read p12 blocked", "block",
           bash("python3 -c \"open('cert.p12','rb').read()\""))
     _expect("b8 python3 -c innocent allowed", "allow", bash("python3 -c \"print(2+2)\""))

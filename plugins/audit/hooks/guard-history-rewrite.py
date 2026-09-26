@@ -387,32 +387,437 @@ def _quoted_substitutions(text):
     return out
 
 
+# The names git runs as hooks. A file with one of these names is run by git
+# itself on the next matching operation, wherever `core.hooksPath` points, so
+# writing a command into one is running it with no second command at all.
+_GIT_HOOK_NAMES = frozenset((
+    "applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit",
+    "pre-merge-commit", "prepare-commit-msg", "commit-msg", "post-commit",
+    "pre-rebase", "post-checkout", "post-merge", "pre-push", "pre-receive",
+    "update", "proc-receive", "post-receive", "post-update",
+    "reference-transaction", "push-to-checkout", "pre-auto-gc", "post-rewrite",
+    "sendemail-validate", "fsmonitor-watchman", "p4-changelist",
+    "p4-prepare-changelist", "p4-post-changelist", "p4-pre-submit",
+    "post-index-change"))
+# The one kind of program whose arguments ARE what it prints. For any other
+# program an argument naming a git phrase is a search term, a message or a
+# path, and what reaches the far side is the program's own output.
+_TEXT_EMITTERS = ("echo", "printf")
+# Programs that print what arrives on their stdin, so a here-string fed to one
+# is what it prints.
+_STDIN_PRINTERS = ("cat",)
+# Programs that run what arrives on their stdin, beside the shells.
+_STDIN_RUNNERS = ("eval", "source", ".")
+# Programs that run a file named as their argument.
+_FILE_RUNNERS = ("source", ".", "make")
+# Reserved words that may lead a simple command without being its program.
+_RESERVED_LEAD = ("then", "do", "else", "elif", "if", "while", "until", "!",
+                  "time", "{")
+# Compound commands: the word that opens one and the word that closes it.
+_COMPOUND = {"if": "fi", "while": "done", "until": "done", "for": "done",
+             "select": "done", "case": "esac", "{": "}"}
+# Longest first, so `>>` is not read as two `>`.
+_OPERATORS = ("<<<", "&&", "||", ";;", ">>", ">|", ">&", "&>", "|&", "<<", "<&",
+              ";", "|", "&", ">", "<", "(", ")", "\n")
+_REDIRECTS = (">", ">>", ">|", "&>", ">&")
+_GLOB = re.compile(r"[*?\[]")
+
+
+def _op_tokens(text):
+    """[(text, is_operator)] for `text`, or None when a quote never closes.
+
+    OPERATORS COUNT ONLY OUTSIDE QUOTES, and a COMMENT is not text at all. The
+    lexer `git_calls` shares splits a separator out of a token wherever it
+    sits, which is the conservative reading for finding a git word - and the
+    wrong one for deciding where a stage's output goes, because a `>` inside a
+    commit message, or after a `#`, is text. A substitution or a backquote is
+    kept whole inside its word."""
+    out, cur, quote, i, n, has = [], [], None, 0, len(text), False
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            else:
+                cur.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            if text[i + 1] != "\n":
+                cur.append(text[i + 1])
+                has = True
+            i += 2
+            continue
+        if text.startswith("$(", i):
+            j = _substitution_end(text, i + 2)
+            if j is None:
+                return None
+            cur.append(text[i:j + 1])
+            has = True
+            i = j + 1
+            continue
+        if ch == "`":
+            j = text.find("`", i + 1)
+            if j < 0:
+                return None
+            cur.append(text[i:j + 1])
+            has = True
+            i = j + 1
+            continue
+        if quote == '"':
+            if ch == '"':
+                quote = None
+            else:
+                cur.append(ch)
+            i += 1
+            continue
+        if ch == "#" and not has:
+            end = text.find("\n", i)
+            i = n if end < 0 else end
+            continue
+        if ch in "'\"":
+            quote = ch
+            has = True
+            i += 1
+            continue
+        if ch in " \t\r":
+            if has:
+                out.append(("".join(cur), False))
+                cur, has = [], False
+            i += 1
+            continue
+        op = next((o for o in _OPERATORS if text.startswith(o, i)), None)
+        if op:
+            if has:
+                out.append(("".join(cur), False))
+                cur, has = [], False
+            out.append((op, True))
+            i += len(op)
+            continue
+        cur.append(ch)
+        has = True
+        i += 1
+    if quote:
+        return None
+    if has:
+        out.append(("".join(cur), False))
+    return out
+
+
+def _new_stage():
+    return {"words": [], "targets": [], "to": None, "here": []}
+
+
+def _stages(tokens):
+    """(stages, groups) for a command's tokens.
+
+    Each stage is one simple command: its `words`, the files its output is
+    redirected into (`targets`), the here-strings fed to it (`here`), and `to`,
+    the index of the stage its output is piped into. `groups` are the
+    [start, end] stage ranges of each compound command - `( )`, `{ }`,
+    `if ... fi`, a loop, `case ... esac` - whose pipe or redirect reaches every
+    stage inside it. A `case` pattern's `(` and `)` are not a group."""
+    out, groups, opened = [_new_stage()], [], []
+    closed, pattern = None, False
+    at = 0
+    while at < len(tokens):
+        text, is_op = tokens[at]
+        at += 1
+        cur = out[-1]
+        top = opened[-1][1] if opened else None
+        if not is_op:
+            if not cur["words"] and text in _COMPOUND:
+                opened.append((len(out) - 1, text))
+                pattern = False
+                if text == "{":
+                    continue
+            elif not cur["words"] and opened \
+                    and text == _COMPOUND.get(top) and text != "{":
+                closed = (opened.pop()[0], len(out) - 1)
+                continue
+            elif top == "case" and text == "in":
+                pattern = True
+            cur["words"].append(text)
+            closed = None
+            continue
+        if top == "case" and pattern and text in ("(", ")"):
+            if text == ")":
+                pattern = False
+                out.append(_new_stage())
+            continue
+        if text == "(":
+            if cur["words"] or cur["targets"]:
+                out.append(_new_stage())
+            opened.append((len(out) - 1, "("))
+            continue
+        if text == ")":
+            if opened and top == "(":
+                closed = (opened.pop()[0], len(out) - 1)
+            continue
+        members = range(closed[0], closed[1] + 1) if closed \
+            else [len(out) - 1]
+        if closed:
+            groups.append(list(closed))
+        if text in _REDIRECTS:
+            target = _redirect_target(tokens, at)
+            at = target[1]
+            if target[0] is None or (text == ">&" and target[0].isdigit()):
+                continue
+            for m in members:
+                out[m]["targets"].append(target[0])
+            continue
+        if text in ("<", "<<", "<&"):
+            if at < len(tokens) and not tokens[at][1]:
+                at += 1
+            continue
+        if text == "<<<":
+            if at < len(tokens) and not tokens[at][1]:
+                cur["here"].append(tokens[at][0])
+                at += 1
+            continue
+        if text in ("|", "|&"):
+            for m in members:
+                out[m]["to"] = len(out)
+        if text == ";;" and top == "case":
+            pattern = True
+        out.append(_new_stage())
+        closed = None
+    if closed:
+        groups.append(list(closed))
+    return (out, groups)
+
+
+def _redirect_target(tokens, at):
+    """(target or None, next index) for the redirect operator ending at `at`.
+
+    A process substitution is followed rather than named: `>(sh)` runs what
+    it is given, so it is recorded as the target `>(`; `>(cat)` only prints it,
+    so it is no target at all."""
+    if at >= len(tokens):
+        return (None, at)
+    if tokens[at] == ("(", True):
+        depth, end = 1, at + 1
+        while end < len(tokens) and depth:
+            if tokens[end] == ("(", True):
+                depth += 1
+            elif tokens[end] == (")", True):
+                depth -= 1
+            end += 1
+        inner, _groups = _stages(tokens[at + 1:end - 1])
+        return (">(" if any(_runs_input(s) for s in inner) else None, end)
+    if tokens[at][1]:
+        return (None, at)
+    return (tokens[at][0], at + 1)
+
+
+def _program_words(stage):
+    """The stage's words with the reserved words that lead it stepped over."""
+    words = list(stage["words"])
+    while words and words[0] in _RESERVED_LEAD:
+        words = words[1:]
+    return words
+
+
+def _printed(stage, depth=0):
+    """What a text-emitter stage prints, as one line, or "" for any other.
+
+    `echo` prints its words joined by blanks, so a phrase split across
+    arguments is one line on the far side. A `cat` fed a here-string prints it.
+    A substitution inside a printed word contributes what an emitter inside it
+    prints."""
+    rest, candidates = _config.program_candidates(_program_words(stage))
+    for word in candidates:
+        name = program_name(word)
+        if name in _STDIN_PRINTERS and stage["here"]:
+            return " ".join(stage["here"])
+        if name in _TEXT_EMITTERS and word in rest:
+            words = rest[rest.index(word) + 1:]
+            return " ".join(_expand_printed(w, depth) for w in words)
+    return ""
+
+
+def _expand_printed(word, depth):
+    """`word` with each `$(...)` in it replaced by what its body prints."""
+    if depth >= _MAX_NEST or "$(" not in word:
+        return word
+    out, i = [], 0
+    while True:
+        at = word.find("$(", i)
+        if at < 0:
+            out.append(word[i:])
+            return "".join(out)
+        end = _substitution_end(word, at + 2)
+        if end is None:
+            out.append(word[i:])
+            return "".join(out)
+        out.append(word[i:at])
+        tokens = _op_tokens(word[at + 2:end]) or []
+        inner, _groups = _stages(tokens)
+        out.append(" ".join(p for p in (_printed(s, depth + 1) for s in inner)
+                            if p))
+        i = end + 1
+
+
+def _runs_input(stage):
+    """Whether the stage runs what arrives on its stdin."""
+    rest, candidates = _config.program_candidates(_program_words(stage))
+    if rest and ("$" in rest[0] or "`" in rest[0]):
+        return True
+    for word in candidates:
+        if _config.is_shell(word):
+            return True
+        if program_name(word) in _STDIN_RUNNERS:
+            args = rest[rest.index(word) + 1:] if word in rest else []
+            return not args or args[0] in ("/dev/stdin", "-")
+    return False
+
+
+def _tee_targets(stage):
+    """The files a `tee` stage writes its input into."""
+    rest, candidates = _config.program_candidates(_program_words(stage))
+    for word in candidates:
+        if program_name(word) == "tee" and word in rest:
+            return [w for w in rest[rest.index(word) + 1:]
+                    if not w.startswith("-")]
+    return []
+
+
+def _runs_file(stage, target):
+    """Whether `stage` runs the file `target` names."""
+    words = _program_words(stage)
+    if not words:
+        return False
+    plain = target[2:] if target.startswith("./") else target
+    if words[0] in (target, "./" + plain):
+        return True
+    rest, candidates = _config.program_candidates(words)
+    programs = [program_name(w) for w in candidates]
+    if "make" in programs and os.path.basename(plain).lower() in (
+            "makefile", "gnumakefile"):
+        return True
+    return any(_config.is_shell(w) or program_name(w) in _FILE_RUNNERS
+               for w in candidates) and any(
+        w in (target, plain, "./" + plain) for w in rest[1:])
+
+
+def _is_hook_path(target):
+    """Whether git runs `target` as a hook: anything under `.git/hooks/` or a
+    `.husky/` directory, or a file named as a hook in a directory whose own
+    name says it holds hooks (`core.hooksPath` may name any). Case is folded:
+    the default filesystems of two supported platforms fold it too."""
+    norm = "/" + target.replace("\\", "/").lower()
+    if "/.git/hooks/" in norm or "/.husky/" in norm:
+        return True
+    parent, name = os.path.split(norm)
+    return name in _GIT_HOOK_NAMES and "hook" in os.path.basename(parent)
+
+
+def _target_runs(target, stages, after):
+    """Whether writing into `target` is running what was written."""
+    if target == ">(" or "$" in target or "`" in target or _GLOB.search(target):
+        return True
+    if _is_hook_path(target):
+        return True
+    return any(_runs_file(later, target) for later in stages[after + 1:])
+
+
+def _receivers(stages, groups, to):
+    """The stages a pipe into stage `to` feeds: the whole compound command
+    that begins there, or that one stage."""
+    spans = [g for g in groups if g[0] == to]
+    if not spans:
+        return [stages[to]]
+    end = max(g[1] for g in spans)
+    return stages[to:end + 1]
+
+
+def _output_runs(stages, groups, at):
+    """Whether what stage `at` prints is then RUN: piped into a program that
+    runs its stdin, written (by a redirect or through `tee`) into a git hook,
+    into a target the reading cannot resolve, or into a file a later stage of
+    the same command runs."""
+    stage = stages[at]
+    targets = list(stage["targets"])
+    to = stage["to"]
+    while to is not None and to < len(stages):
+        receivers = _receivers(stages, groups, to)
+        if any(_runs_input(r) for r in receivers):
+            return True
+        tees = [t for r in receivers for t in _tee_targets(r)]
+        if not tees:
+            break
+        targets += tees + [t for r in receivers for t in r["targets"]]
+        to = receivers[-1]["to"]
+    return any(_target_runs(t, stages, at) for t in targets)
+
+
 def _substitution_end(text, start):
     """The index of the `)` that closes a `$(` whose body starts at `start`, or
     None when it never closes. Parentheses count only outside quotes, and a
     backslash escapes the character after it, which is how the shell reads the
-    body too."""
+    body too.
+
+    A `case` PATTERN'S `)` IS NOT A CLOSE. The depths at which a `case`
+    opened in command position has not yet met its `esac` are kept as a stack;
+    a `)` at the depth of the innermost open one ends a pattern, so the body
+    is read to its real end rather than cut at the first arm - at any nesting,
+    and after a parenthesised pattern too. A `case` that is an ordinary word (`echo worst case`) is not the
+    keyword: only a word in command position counts."""
     depth, quote, j, n = 1, None, start, len(text)
+    open_at, word, word_cmd, cmd_pos = [], [], False, True
     while j < n:
         ch = text[j]
         if quote == "'":
             if ch == "'":
                 quote = None
         elif ch == "\\":
+            if not word:
+                word_cmd = cmd_pos
+            word.append(ch)
             j += 1
         elif quote == '"':
             if ch == '"':
                 quote = None
         elif ch in ("'", '"'):
+            if not word:
+                word_cmd = cmd_pos
+            word.append(ch)
             quote = ch
-        elif ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                return j
+        elif ch in " \t\n;&|()":
+            if word:
+                done = "".join(word)
+                if word_cmd and done == "case":
+                    open_at.append(depth)
+                elif word_cmd and done == "esac" and open_at \
+                        and open_at[-1] == depth:
+                    open_at.pop()
+                cmd_pos = done in _OPENS_COMMAND
+                word = []
+            if ch in "\n;&|(":
+                cmd_pos = True
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                if open_at and open_at[-1] == depth:
+                    cmd_pos = True
+                else:
+                    depth -= 1
+                    cmd_pos = False
+                    if depth == 0:
+                        return j
+                    if open_at and open_at[-1] == depth:
+                        cmd_pos = True
+        else:
+            if not word:
+                word_cmd = cmd_pos
+            word.append(ch)
         j += 1
     return None
+
+
+# Reserved words after which the next word is again in command position.
+_OPENS_COMMAND = ("then", "do", "else", "elif", "if", "while", "until", "!",
+                  "{", "time")
 
 
 def git_invocations(command, depth=0):
@@ -453,7 +858,9 @@ def git_calls(command, depth=0):
     words = [None if sep else piece for piece, sep in pieces]
     out = []
     # A here-string's word fed to a shell or an interpreter is the program it
-    # runs: `sh <<<'git stash'` is a stash spelled as one quoted word.
+    # runs: `sh <<<'git stash'` is a stash spelled as one quoted word. The
+    # reader is found past a wrapper that runs its argument (`env sh <<<...`),
+    # by the same step the heredoc head is read with.
     for at, (piece, sep) in enumerate(pieces):
         if not (sep and piece == "<<<") or depth >= _MAX_NEST:
             continue
@@ -462,8 +869,28 @@ def git_calls(command, depth=0):
         start = at
         while start > 0 and not pieces[start - 1][1]:
             start -= 1
-        if start < at and program_name(pieces[start][0]) in HERESTRING_READERS:
+        _rest, readers = _config.program_candidates(
+            piece for piece, _sep in pieces[start:at])
+        if any(program_name(word) in HERESTRING_READERS for word in readers):
             nested = git_calls(pieces[at + 1][0], depth + 1)
+            if nested is None:
+                return None
+            out.extend(nested)
+    # A git command QUOTED AS ONE PHRASE is one word to the lexer, and it is a
+    # command wherever a text emitter's output is run: the line the emitter
+    # prints is read as a command line of its own, the way a shell's -c
+    # argument is. The stages are read by their own lexer, which sees an
+    # operator only outside quotes.
+    if depth < _MAX_NEST:
+        tokens = _op_tokens(_config.join_continuations(text))
+        if tokens is None:
+            return None
+        stages, groups = _stages(tokens)
+        for at, stage in enumerate(stages):
+            line = _printed(stage)
+            if not line or not _output_runs(stages, groups, at):
+                continue
+            nested = git_calls(line, depth + 1)
             if nested is None:
                 return None
             out.extend(nested)

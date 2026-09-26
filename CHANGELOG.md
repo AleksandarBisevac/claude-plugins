@@ -390,6 +390,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **The history guard reads the shapes SECURITY.md listed as open the way the shell does.**
+  The line-continuation join decided whether `#` opens a comment from the raw character before it,
+  so a `#` that a removed continuation or an escaped blank had made mid-word was read as a comment
+  and the command after it went unread; it now follows the word the shell assembles, in both
+  guards that share the join. A here-string's reader is found past a wrapper that runs its argument
+  (`env sh <<<...`), by the step the heredoc head already used, now one shared function. A `case`
+  pattern's `)` inside a double-quoted substitution no longer closes it: a `case` in command
+  position carries the read past its patterns to its `esac`. A git command quoted as one phrase is
+  read as a command where a text emitter prints it and that output is run - piped into a program
+  that runs its stdin, written by a redirect or `tee` into a git hook, into a target the reading
+  cannot resolve, or into a file the same command runs. Operators for that reading are recognised
+  only outside quotes and outside comments, so a `>` inside a commit message stays text; what an
+  emitter prints is read as one line; and a group, a loop, `if` or `case` carries its pipe or
+  redirect to every stage inside it, on the sending side and the receiving one. A `case` is
+  tracked at every nesting level. `builtin` is a wrapper.
+- **`guard-secrets-read` reads a secret path split by a line continuation, and a here-string fed to
+  an interpreter.** Its shell-read arm now joins continuations before it reads a verb and a path, as
+  the shell does, and a here-string handed to python or node - behind a wrapper too - is graded by
+  the inline-eval arm, the same capability as `-c`, with a refusal that names the here-string; one
+  fed to an interpreter already running a script file, or its own inline program, is that
+  script's input, decided per interpreter (`perl -c` compiles stdin and `python -E` names no
+  program, so neither exempts it). Perl's own `open` shapes - two-argument, with or without a
+  `<` mode, and three-argument with `'<'` - are reads the inline-eval arm names.
 - **A squash merge of a phase branch no longer reads as a scope breach.** A `git merge --squash`
   keeps the squashed messages, `Audit-Row` trailers included, so the row naming an index or
   audit-state commit resolved to the squash commit, and `index-scope` / `audit-state-scope` graded
