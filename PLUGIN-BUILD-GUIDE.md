@@ -147,7 +147,7 @@ claude-plugins/                           # this repo (personal, public)
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
           _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
           commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
-          commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
+          commit-manifest-index.py        # commits the manifest INDEX and the row naming the commit, NOTHING else, under the index lock; refuses in the single-file layout
           commit-task-work.py             # commits ONE task's declared files + the phase file + the records, naming any staged path outside that list
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
@@ -360,7 +360,7 @@ L5:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
-  _scoped_commit -> _evidence_io, _invariants, _output
+  _scoped_commit -> _evidence_io, _invariants, _journal_io, _output
 
 L6:
   _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
@@ -1668,7 +1668,7 @@ the `journal.merge` marker row is required for the benign reading — so no chec
 either, and the warning's job is to send a human to read the extra rows. `_doctor_trail`'s
 `journal_warning_advice` is where that is worded for an operator.
 
-**`merge` is the verb a journal conflict needs and did not have.** One writer on two
+**`merge` is the verb a journal conflict needs and did not have** (and an evidence ledger's, since it is chained the same way). One writer on two
 BRANCHES is ordinary while a phase is paused, and the per-writer file split does not separate
 them — so a landing phase produces one file with a shared prefix and two tails, which cannot
 be resolved by editing, because each divergent row's hash covers a `prev` only its own side
@@ -2864,8 +2864,10 @@ check — `CHECK_NAMES` is the list and `verify-invariants.py --all` prints it: 
 staged only its own `files`, its phase's manifest file and the two records beside it
 (`git show --name-only`); an **audit-state** commit staged those records and *not* the task's
 `files`, found through the journal's `audit.state.committed` rows because nothing in the
-manifest names such a commit; a **manifest-index** commit staged the shared index and nothing
-at all beside it, found the same way through `audit.index.committed` rows; no push, no forced
+manifest names such a commit; a **manifest-index** commit staged the shared index and the
+journal holding its own row and nothing else, found the same way through `audit.index.committed`
+rows — each row naming its commit by `details.commit` or, when the row is inside that commit, by
+the `Audit-Row` trailer its `commitNonce` matches (`_invariants.commits_carrying`); no push, no forced
 update and no stash touched the phase
 branch (the remote-tracking refs, the branch's own reflog compared pairwise for ancestry,
 and `refs/stash`); every manifest state the phase COMMITTED still validates (each commit's
@@ -3103,9 +3105,10 @@ checker both have to give.
 
 **What is deliberately not here: the allow-lists.** Each command derives its own, and they differ
 in exactly the entries that matter — one may stage the phase's shard and the records beside it and
-never the shared index, the other may stage only the shared index and never a phase's file. A
-shared builder taking a flag would be one function holding two safety properties, which is the
-shape in which a widened list stops being noticed.
+never the shared index, another may stage only the shared index and the journal file holding
+the row that names its commit, and never a phase's file. A shared builder taking a flag would be
+one function holding several safety properties, which is the shape in which a widened list stops
+being noticed.
 
 ### `plugins/audit/scripts/governance/commit-audit-state.py`
 `commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say
@@ -3155,14 +3158,24 @@ was. The shape is unconditional and deliberately **not** read from `meta.commit`
 a default type and a trailer, records nothing about which commitlint rules a repository
 configures, and a fixed spelling no manifest can move is exactly what this buys.
 
-**It anchors itself in the trail.** After committing it appends an `audit.state.committed`
-journal row whose `details` carry `commit` and `phaseId` — the only handle anything has on such
-a commit, since it is not a `task.commit` and the manifest does not name it. That is what
-`_invariants.audit_state_scope()` reads to find these commits and grade them; the row's target
-is the **evidence directory** and deliberately not the phase's manifest file, because
-`_recorded_states()` reads every row naming that file as a *write* to it and a commit is not an
-edit. The append is fail-soft (`_journal_io.append`'s contract) and the failure is printed: a
-commit that happened must not be reported as not having happened.
+**It anchors itself in the trail, from inside the commit.** Before committing it appends an
+`audit.state.committed` journal row whose `details` carry `commitNonce` and `phaseId`, ends the
+commit message with an `Audit-Row: <nonce>` trailer, and stages the row with the rest — so the
+row is in the commit it names and the run leaves no trail behind (`_scoped_commit.commit_with_rows`,
+shared by every scoped commit). A row inside a commit cannot hold that commit's SHA, which is
+why it holds the nonce; `_invariants.audit_state_scope()` resolves it with `git log --grep`, which a
+rebase does not break. A commit carrying the trailer is graded only when its subject opens with the
+class header (`_invariants.STATE_HEADER`, `INDEX_HEADER`) and the trailer is in its last paragraph;
+any other carrier - a squash merge, or a commit that gained a paragraph after its trailer - is
+reported as a gap naming it and the test it failed, and is never graded. A commit refused after the row was written — a hook, git itself — leaves an
+`audit.commit.withdrawn` row naming the nonce, and a reader drops a withdrawn nonce instead of
+reporting a commit that does not exist. Because the row is inside its commit, a journal holding
+only other writers' rows is committed like the other two records; a second run finds nothing
+uncommitted. The row's target is the **evidence directory** and deliberately not the phase's
+manifest file, because `_recorded_states()` reads every row naming that file as a *write* to it
+and a commit is not an edit. The append is fail-soft (`_journal_io.append`'s contract) and a row
+that could not be written is printed: a commit that happened must not be reported as not having
+happened.
 
 ### `plugins/audit/scripts/governance/commit-manifest-index.py`
 `commit-manifest-index.py <manifest> <phaseId>` — **commit the manifest INDEX on its own, or say
@@ -3187,9 +3200,10 @@ it carries. Widening `commit-audit-state.py`'s list would have satisfied that sc
 verification — its allow-list and its staged set are one list, so nothing there could notice —
 while destroying the property both scope checks exist to defend.
 
-**What it stages: the index, and nothing else.** Not the shard, not the journal, not the evidence,
-not the task's `files`. The allow-list is one entry long and nothing downstream widens it. The
-path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
+**What it stages: the index, and the one journal file holding the row that names the commit, and
+nothing else.** Not the shard, not the rest of the journal, not the evidence, not the task's
+`files`. The allow-list is the index; `commit_with_rows` adds the row's file to it, and nothing
+else widens it. Each path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
 with `git diff --cached --name-only` and compared against the same list **before** the commit —
 and read **before** staging too, so work somebody else had already staged is refused while the git
 index is still exactly as it was found. Both reads are `_scoped_commit`'s, shared with its sibling.
@@ -3220,10 +3234,13 @@ refuses along with start-case, pascal-case and upper-case. The reasoning is spel
 the word names the phase **without** claiming to be scoped to it — the conventional scope says
 `audit-index`, and that is what the commit is scoped to, while the subject's phase is attribution.
 
-**It anchors itself in the trail.** After committing it appends an `audit.index.committed` journal
-row whose `details` carry `commit` and `phaseId` — both on `_journal_io.DETAILS_KEYS`, checked by a
-case rather than assumed, because that allow-list drops an unknown key in silence. The row is the
-only handle anything has on such a commit, and it is what `_invariants.index_scope()` reads to find
+**It anchors itself in the trail, from inside the commit.** Before committing it appends an
+`audit.index.committed` journal row whose `details` carry `commitNonce` and `phaseId` — both on
+`_journal_io.DETAILS_KEYS`, checked by a case rather than assumed, because that allow-list drops an
+unknown key in silence — and adds the ONE journal file that row landed in to its allow-list, so the
+commit carries the index and the row naming it. A journal file is named for one writer and one
+worktree, so it is not a file two phases meet on. The row is the only handle anything has on such a
+commit, and it is what `_invariants.index_scope()` resolves through the `Audit-Row` trailer to find
 these commits and grade them. `<phaseId>` throughout is **attribution and not scope**: the index is
 shared, and the phase id says which run made the structural change.
 
@@ -3286,7 +3303,10 @@ gate badge, the report and the demo generator all read.
 shard is inside that commit, so writing it here would need a second commit or an amend — which
 step 4c forbids. The SHA is printed and `/audit:task done <taskId> --commit <sha>` records it,
 riding along with the next commit exactly as step 4c already says. It anchors itself in the trail
-with an `audit.task.committed` row in the meantime, which is redundant the moment that verb runs.
+with an `audit.task.committed` row in the meantime, which is redundant the moment that verb runs;
+the row — and an override's row — is written before the commit and carried by it, keyed by the
+commit's `Audit-Row` trailer, and an override whose row cannot be written is refused before
+anything is staged.
 
 **It takes no lock**, and that is the asymmetry with `commit-manifest-index.py` rather than an
 omission: this commit touches the phase's own shard, which only that phase's run writes, and the

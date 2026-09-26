@@ -839,6 +839,120 @@ def verify_rows(rows, basename):
     return out
 
 
+# --- merging a ledger file that diverged ----------------------------------------
+# ONE MERGE FOR BOTH CHAINED RECORDS. A ledger file appended on two branches under
+# one name - which every file was before the per-worktree writer key - conflicts
+# exactly as a journal file does, and is resolved by `_journal_io.merge_rows`
+# with the same refusals and the same re-chain: this chain IS the journal's.
+#
+# NO MARKER ROW IN THE LEDGER, and the reason is the readers. Every row in this
+# directory is read as a RECORDED RUN - `read_rows`, `latest_by_subject`, the gate
+# tallies, `earliest_recorded`, the verdict a task commit is bound to - so a row
+# recording a merge would be counted as a run with no status by each of them. The
+# merge is recorded in the JOURNAL instead (`ACTION_MERGED`), in a row whose
+# target is the merged file: its `stateHash` is the file's new bytes, which is
+# also what keeps the journal's anchor from reporting the re-chained file as an
+# edit it never saw.
+ACTION_MERGED = _journal_io.EVIDENCE_MERGE_ACTION
+
+
+def merge_targets(row, aliases):
+    """Every subject a reader of the ledger could file `row` under, as strings.
+
+    The targets a same-second tie is ordered by, and they are the READERS' keys
+    rather than a rule of the merge's own: two rows are disjoint only when no
+    reader could put them on one subject, because for rows on one subject the
+    order IS which verdict is newest. So a row's targets are
+      * `subject_key(row, aliases)` - the `(scope, id)` key `latest_by_subject`
+        writes a pointer under, moved task ids mapped onto the id held now; a
+        `--task` run measured under its phase's gate is `scope: phase` and so
+        shares its phase sign-off's key; and
+      * the `taskId`/`phaseId` pair `_same_subject` compares a verdict by, with
+        a moved task id mapped the same way and an absent id kept distinct.
+    `aliases` is `subject_aliases(plan)`; None means the plan was not read, so
+    how old ids map is unknown and the row has NO target - a tie is then refused,
+    never ordered.
+    """
+    if not isinstance(row, dict) or aliases is None:
+        return ()
+    out = []
+    key = subject_key(row, aliases)
+    if key is not None:
+        out.append("key %s %s" % key)
+    task = row.get("taskId")
+    if task is not None:
+        task = aliases.get(("task", str(task)), ("task", str(task)))[1]
+    out.append("pair task=%s phase=%s" % (
+        "-" if task is None else task,
+        "-" if row.get("phaseId") is None else str(row.get("phaseId"))))
+    return tuple(out)
+
+
+def merge_rows(ours, theirs, name, torn=(), aliases=None):
+    """`_journal_io.merge_rows` for one ledger file: the readers' subject keys as
+    each run's targets (`merge_targets`, under the plan's `aliases`), and no
+    marker row (the section above says why)."""
+    return _journal_io.merge_rows(
+        ours, theirs, name, torn=torn,
+        target_of=lambda row: merge_targets(row, aliases), marker=False)
+
+
+def plan_aliases(project, config=None):
+    """`(aliases, why)` - `subject_aliases` of the plan this project keeps, or
+    `(None, why)` when it could not be read, which a merge reads as "no two runs
+    are provably disjoint"."""
+    config = _journal_io.load_config(project) if config is None else config
+    rel = (config or {}).get("manifestPath") or _journal_io.DEFAULT_MANIFEST
+    path = os.path.join(project, str(rel))
+    try:
+        return subject_aliases(_mio.load_manifest(path)), ""
+    except Exception as exc:
+        where, why = _unreadable_plan_file(project, path, rel, exc)
+        return None, ("the plan could not be read - %s (%s) - so which task ids "
+                      "were moved onto which is unknown and no same-second tie "
+                      "in the ledger can be ordered" % (where, why))
+
+
+def _unreadable_plan_file(project, path, rel, exc):
+    """`(file, reason)` - the FILE of the plan that would not load, and why.
+
+    The loader reads the index and then every shard it names, and its error
+    carries a parser offset with no file name - so an unreadable shard would be
+    reported against the index, which parses. Each is read on its own here to
+    name the one that failed; when none does, the loader's own reason stands.
+    """
+    try:
+        index = _mio.read_json(path)
+    except Exception as first:
+        return rel, first
+    base = os.path.dirname(path)
+    for stub in (index.get("phases") or []) if isinstance(index, dict) else []:
+        shard = stub.get("shard") if isinstance(stub, dict) else None
+        if not shard:
+            continue
+        try:
+            _mio.read_json(os.path.join(base, str(shard)))
+        except Exception as bad:
+            return (_output.posix_rel(os.path.join(base, str(shard)), project),
+                    bad)
+    return rel, exc
+
+
+def record_merge(project, path, result, actor=None, config=None):
+    """The journal row recording a ledger merge. Returns the file, or False.
+
+    Written AFTER the merged file, so its `stateHash` is the merged bytes.
+    Fail-soft like every append; the caller says when it could not be written.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    return _journal_io.append_from_cli(project, {
+        "action": ACTION_MERGED,
+        "actor": actor if isinstance(actor, dict) else {"via": "merge"},
+        "target": repo_relative_or_token(project, path),
+        "summary": result.get("summary") or "",
+    }, config=config)
+
+
 # --- writing and reading ------------------------------------------------------
 def append_row(project, row, session_id=None, config=None):
     """Append one row, chained onto the file's tail; return the file it landed in.
@@ -1608,6 +1722,25 @@ def subject_aliases(manifest):
                 if len(owners) == 1 and old not in live)
 
 
+def subject_key(row, aliases=None):
+    """The `(scope, id)` a pointer for `row` is written under, or None.
+
+    ONE KEY FUNCTION, read by `latest_by_subject` and by the ledger merge's
+    `merge_targets`: whether two runs' order decides a pointer is a question
+    about this key, so it has exactly one spelling. A task-scope row is keyed by
+    its task, anything else by its phase, and a moved task's old id by the id it
+    holds now (`aliases`). None for a row missing the id its scope needs.
+    """
+    if not isinstance(row, dict):
+        return None
+    scope = row.get("scope")
+    subject = row.get("taskId") if scope == "task" else row.get("phaseId")
+    if not scope or not subject:
+        return None
+    key = (scope, str(subject))
+    return (aliases or {}).get(key, key)
+
+
 def latest_by_subject(rows, aliases=None):
     """The newest recorded run per `(scope, id)`, keyed for a pointer write.
 
@@ -1625,14 +1758,9 @@ def latest_by_subject(rows, aliases=None):
     """
     best = {}
     for row in rows or []:
-        if not isinstance(row, dict):
+        key = subject_key(row, aliases)
+        if key is None or not row.get("runId"):
             continue
-        scope = row.get("scope")
-        subject = row.get("taskId") if scope == "task" else row.get("phaseId")
-        if not scope or not subject or not row.get("runId"):
-            continue
-        key = (scope, str(subject))
-        key = (aliases or {}).get(key, key)
         current = best.get(key)
         if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
             best[key] = row

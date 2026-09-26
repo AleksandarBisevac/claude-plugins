@@ -2,12 +2,13 @@
 """
 What a commit-a-narrow-allow-list command is made of, in one place.
 
-WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMAND. Three entry points
+WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMAND. The entry points that
 stage a fixed set of paths and commit them -- `commit-audit-state.py` (the
 phase's manifest file, the journal and the evidence), `commit-manifest-index.py`
-(the manifest INDEX, and nothing at all beside it) and `commit-task-work.py` (a
+(the manifest INDEX and the one journal file holding the row that names the
+commit, and nothing else) and `commit-task-work.py` (a
 task's declared files and the records beside them) -- and everything except the
-list itself is the same in all three: stage EXPLICITLY, each path by what git
+list itself is the same in each of them: stage EXPLICITLY, each path by what git
 holds for it (`classify`, `stage`), never `git add -A`; read the index back;
 refuse when anything outside the allow-list is in it; commit with the list as
 the pathspec; put the index back as it was found on any refusal after staging
@@ -19,7 +20,8 @@ a refusal rule is how one commit comes to carry what the other forbids.
 WHAT IS DELIBERATELY NOT HERE: THE ALLOW-LIST ITSELF. Each command derives its
 own, and they differ in exactly the entries that matter -- one may stage the
 phase's shard and the records beside it and never the shared index, another may
-stage only the shared index and never a phase's file. A shared builder taking a
+stage only the shared index and the row naming its commit, and never a phase's
+file. A shared builder taking a
 flag would be one function holding several safety properties, which is the
 shape in which a widened list stops being noticed.
 
@@ -32,9 +34,20 @@ may be staged and the checker decides what was allowed, and two spellings of
 Reads git, and through `stage_and_commit` stages and commits the paths a caller
 hands it and nothing else; which paths those are is always the caller's answer.
 
+THE JOURNAL ROW NAMING A COMMIT IS INSIDE IT (`commit_with_rows`). A row
+written after its commit is never in it, so every scoped commit used to leave
+the trail dirty on the tree it had just reported as committed, and no phase
+could end clean. The row is now written first, keyed by a nonce the commit
+message carries as a trailer, and staged into the same commit; a reader
+resolves the SHA from the trailer (`_invariants.commits_carrying`). A commit
+refused after the row was written leaves a second row withdrawing the nonce,
+because the first cannot be taken back and must not be read as a commit that
+exists.
+
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__scoped_commit.py`.
 """
+import binascii
 import os
 import shutil
 import subprocess
@@ -64,7 +77,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _evidence_io  # noqa: E402  (the one reader of a porcelain line's path)
-import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside")
+import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside"; the trailer)
+import _journal_io  # noqa: E402  (the withdrawing row's append)
 
 
 # --- asking git ---------------------------------------------------------------
@@ -637,6 +651,139 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
     return out
 
 
+# --- the row inside the commit -----------------------------------------------
+def new_nonce():
+    """A fresh nonce joining a row to the commit that will carry it.
+
+    Random rather than derived from anything the commit holds: the commit does
+    not exist yet, and a value computed from the paths or the time could repeat
+    across two commits and join a row to the wrong one.
+    """
+    return binascii.hexlify(os.urandom(8)).decode("ascii")
+
+
+def row_trailer(nonce):
+    """The message line that says which rows this commit carries."""
+    return "%s: %s" % (_invariants.ROW_TRAILER, nonce)
+
+
+def with_row_trailer(paragraphs, nonce):
+    """`paragraphs` with the row trailer as a line of the LAST paragraph.
+
+    The last paragraph and not a new one after it: git reads trailers from the
+    final paragraph only, so a co-author trailer followed by a paragraph of its
+    own would stop being one. With only a subject there is no such paragraph,
+    and the trailer becomes it.
+    """
+    paragraphs = list(paragraphs)
+    if len(paragraphs) > 1:
+        return paragraphs[:-1] + ["%s\n%s" % (paragraphs[-1],
+                                              row_trailer(nonce))]
+    return paragraphs + [row_trailer(nonce)]
+
+
+def carry(git_root, paths, kinds, files):
+    """`(paths, kinds, outside)` - the allow-list widened by each row file.
+
+    A row file already under an allowed entry changes nothing; the journal
+    directory is on the audit-state and task lists and holds it. One that is
+    not - the index commit's list begins as the index by itself, and a journal
+    directory that did not
+    exist until this row created it is on no list - is added by name and
+    classified the way every allowed path is. `outside` names the row files that
+    cannot be carried at all (outside the git root, or ignored), which the caller
+    reports rather than letting a row read as inside a commit it is not in.
+    """
+    paths, kinds, outside, fresh = list(paths), dict(kinds), [], []
+    for path in files:
+        rel = _invariants._rel(path, git_root)
+        if rel is None:
+            outside.append(path)
+        elif not under_any(rel, paths) and rel not in fresh:
+            fresh.append(rel)
+    more = classify(git_root, [(rel, True) for rel in fresh]) if fresh else {}
+    for rel in fresh:
+        kind = more.get(rel)
+        if kind in (None, IGNORED):
+            outside.append(rel)
+            continue
+        paths.append(rel)
+        kinds[rel] = kind
+    return paths, kinds, outside
+
+
+def withdraw(project, config, nonce, via, ids, reason):
+    """Append the row withdrawing `nonce`. Returns the file, or False.
+
+    `ids` are the `taskId`/`phaseId` the withdrawn rows carried, so a reader
+    following one task finds the withdrawal beside the claim it cancels.
+    Fail-soft like every append: a refusal already happened and is reported
+    whether or not this row lands, and a row that could not be withdrawn is
+    still resolved to nothing by a reader, which reports it as a gap.
+    """
+    details = dict(ids or {})
+    details[_invariants.NONCE_KEY] = nonce
+    details["reason"] = reason
+    return _journal_io.append_from_cli(project, {
+        "action": _invariants.ACTION_COMMIT_WITHDRAWN,
+        "actor": {"sessionId": _journal_io.env_session_id(), "via": via},
+        "target": str(details.get("taskId") or details.get("phaseId") or ""),
+        "summary": "the commit announced by the rows keyed %s was not made, so "
+                   "those rows name no commit: %s" % (nonce, reason),
+        "details": details,
+    }, config=config)
+
+
+def commit_with_rows(git_root, paths, kinds, paragraphs, refuse_foreign,
+                     write_rows, withdraw_rows):
+    """`stage_and_commit`, carrying the journal rows that name the commit.
+
+    `write_rows(nonce)` appends the rows keyed by `nonce` and returns
+    `(files, refusal)`: the files they landed in, the anchoring row's first (an
+    empty list is a journal that took no row, and the commit goes ahead without
+    a trailer, as every append is fail-soft), and a sentence when a row the
+    commit REQUIRES could not be written, which refuses before anything is
+    staged. `withdraw_rows(nonce, reason)` appends the withdrawal.
+
+    Returns `stage_and_commit`'s dict plus `nonce`, `journalled` (the anchoring
+    row was written), `carried` (every row file is among the paths the commit
+    staged, read back from git rather than intended) and `withdrawn` (None when
+    nothing needed withdrawing, else whether the withdrawal landed).
+
+    THE ORDER IS THE DESIGN. Every do-nothing answer is the caller's and is
+    reached before this is called, so a row is written only for a commit that is
+    about to be attempted. The row lands before `stage_and_commit` snapshots the
+    index, so a refusal after staging puts the index back as it was found and
+    leaves the row where it was written: in the working tree, claiming a nonce no
+    commit carries, and followed by the row withdrawing it. A commit made on a
+    HEAD that moved underneath is still a commit carrying the row, so nothing is
+    withdrawn there.
+    """
+    nonce = new_nonce()
+    files, refusal = write_rows(nonce)
+    files = [f for f in (files or []) if f]
+    if refusal:
+        out = {"committed": False, "sha": "", "staged": [], "foreign": [],
+               "refused": "%s. Nothing was staged" % (refusal,)}
+        out.update({"nonce": nonce if files else "", "journalled": bool(files),
+                    "carried": False,
+                    "withdrawn": (bool(withdraw_rows(nonce, refusal))
+                                  if files else None)})
+        return out
+    paths, kinds, outside = carry(git_root, paths, kinds, files)
+    message = with_row_trailer(paragraphs, nonce) if files else list(paragraphs)
+    done = stage_and_commit(git_root, paths, kinds, message, refuse_foreign)
+    rels = [_invariants._rel(f, git_root) for f in files]
+    done["nonce"] = nonce if files else ""
+    done["journalled"] = bool(files)
+    done["carried"] = bool(files and done["committed"] and not outside
+                           and all(rel in done["staged"] for rel in rels))
+    done["withdrawn"] = None
+    if files and not done["committed"]:
+        done["withdrawn"] = bool(withdraw_rows(nonce, done["refused"]))
+    return done
+
+
 # --- the header a commitlint repository will take -----------------------------
 # The bound `@commitlint/config-conventional` puts on a header, transcribed where
 # the header is BUILT rather than only where it is graded. Both commands here open
@@ -681,7 +828,7 @@ def fitted_header(fixed, subject, limit=HEADER_MAX_CHARS):
 
 # --- what happened ------------------------------------------------------------
 def answer(skipped, committed=False, commit=None, staged=None, refused="",
-           foreign=None, journalled=False, quiet=""):
+           foreign=None, journalled=False, quiet="", done=None):
     """One shape for every outcome, so a caller never has to infer one from another.
 
     `committed` is its own field rather than being read off an empty `staged`
@@ -692,44 +839,41 @@ def answer(skipped, committed=False, commit=None, staged=None, refused="",
     ONE SHAPE ACROSS BOTH COMMANDS, which is what makes `--json` worth reading: a
     caller that has to branch on which verb produced a payload has been handed two
     formats wearing one name.
+
+    `done` is `commit_with_rows`' answer when a commit was attempted, and the
+    source of `nonce`, `carried` and `withdrawn` - what became of the rows that
+    name the commit - so they are read off the attempt and never defaulted to a
+    claim. Without it they say no row was written for a commit.
     """
+    done = done or {}
     return {"committed": committed, "commit": commit,
             "staged": list(staged or []), "skipped": list(skipped or []),
             "refused": refused, "foreign": list(foreign or []),
-            "journalled": journalled, "quiet": quiet}
+            "journalled": journalled, "quiet": quiet,
+            "nonce": done.get("nonce") or "",
+            "carried": bool(done.get("carried")),
+            "withdrawn": done.get("withdrawn")}
 
 
-# WHAT A JOURNAL ROW DOES, SPELLED ONCE. Both commands here append a row that
-# NAMES the commit's SHA, so the row is written after the commit and can never be
-# inside it; this clause is what becomes of it afterwards.
-# `commit-audit-state.ONLY_THE_TRAIL` composes this same constant into its
-# refusal, because that refusal and the notice below are two different runs'
-# answers to ONE fact - and two spellings of that fact is how the run that
-# refuses and the run that commits come to disagree about where a row goes.
-RIDES_ALONG = ("a journal row rides along with the next commit rather than "
-               "earning one")
-
-# SAID ON THE RUN THAT CREATES THE CONDITION, not on the next one. The row
-# lands after the commit, so a successful run leaves the trail uncommitted in a
-# tree it has just reported as committed - and an operator who has not read this
-# module meets the dirty file first and the explanation second, on a second run.
-# Reported from a live project, which took two runs on a clean tree to work it
-# out.
-#
-# IT IS SHARED BECAUSE BOTH VERBS HAVE THE PROPERTY, checked rather than assumed:
-# `commit-manifest-index.py` never stages the journal at all - its allow-list is
-# the index and nothing else - so its row is outside its commit too, and this
-# line is a lie in neither. A line that were true of only one of them would
-# belong in that command, not here.
-#
-# BOTH DIRECTIONS ARE PINNED IN `tests/test_commit_audit_state.py` (cas27, cas29)
-# rather than beside this module's own cases, because the claim is only worth
-# anything end to end: that it prints on a run that really committed AND really
-# appended a row, and that it does not print on a run whose row could not be
-# written at all.
-TRAIL_ROW_WRITTEN = ("the journal row naming this commit was written AFTER it "
-                     "and is therefore not in it, so the trail is left "
-                     "uncommitted: %s" % (RIDES_ALONG,))
+# WHAT BECAME OF THE ROW NAMING THE COMMIT, one sentence per state, said on the
+# run that made it. `carried` is read back from what git staged, so the first
+# sentence is printed only for a row that really is inside the commit.
+ROW_CARRIED = ("the journal row naming this commit is inside it, keyed by its "
+               "`%s: %s` trailer - `git log --grep` finds the commit from the "
+               "row, after a rebase too")
+ROW_NOT_CARRIED = ("the journal row naming this commit was written and is NOT "
+                   "inside it - the journal is outside the git root or ignored "
+                   "- so the trail is left uncommitted; its `%s: %s` trailer "
+                   "still joins the two")
+ROW_NOT_WRITTEN = ("the commit was made and the journal row could NOT be "
+                   "written, so nothing in the trail points at it")
+ROW_WITHDRAWN = ("the journal row written for this commit was withdrawn by a row "
+                 "naming its nonce %s, so the trail claims no commit that does "
+                 "not exist")
+ROW_NOT_WITHDRAWN = ("the journal row written for this commit could NOT be "
+                     "withdrawn, so it keys nonce %s to a commit that does not "
+                     "exist - a reader finds no commit carrying it and reports "
+                     "the gap")
 
 
 def render(result, prefix, out=print):
@@ -740,10 +884,11 @@ def render(result, prefix, out=print):
     themselves must not diverge: two verbs that report a refusal in two shapes
     teach a reader that the shape means something, and here it does not.
 
-    THE LAST LINE IS A PAIR AND NEVER A DEFAULT. A row that was written and a row
-    that could not be are different states of the world, so each gets its own
-    sentence; `journalled` is what decides, because a line claiming the trail
-    holds a row when it does not is worse than saying nothing at all.
+    THE LAST LINE IS NEVER A DEFAULT. A row inside the commit, a row outside
+    it, no row, and a withdrawn row are different states of the world, so each
+    gets its own sentence; `journalled`, `carried` and `withdrawn` decide, because
+    a line claiming the trail holds a row when it does not is worse than saying
+    nothing at all.
     """
     for line in result["skipped"]:
         out("  degraded: %s" % (line,))
@@ -751,6 +896,10 @@ def render(result, prefix, out=print):
         out("%s REFUSED: %s" % (prefix, result["refused"]))
         for path in result["foreign"]:
             out("    already staged: %s" % (path,))
+        withdrawn = result.get("withdrawn")
+        if withdrawn is not None and not result["committed"]:
+            out("  %s" % ((ROW_WITHDRAWN if withdrawn else ROW_NOT_WITHDRAWN)
+                          % (result.get("nonce"),),))
         return
     if not result["committed"]:
         out("%s %s" % (prefix, result["quiet"]))
@@ -758,11 +907,14 @@ def render(result, prefix, out=print):
     out("%s committed %s" % (prefix, result["commit"][:12]))
     for path in result["staged"]:
         out("    %s" % (path,))
-    if result["journalled"]:
-        out("  %s" % (TRAIL_ROW_WRITTEN,))
+    if not result["journalled"]:
+        out("  %s" % (ROW_NOT_WRITTEN,))
+    elif result.get("carried"):
+        out("  %s" % (ROW_CARRIED % (_invariants.ROW_TRAILER,
+                                     result.get("nonce")),))
     else:
-        out("  the commit was made and the journal row could NOT be written, so "
-            "nothing in the trail points at it")
+        out("  %s" % (ROW_NOT_CARRIED % (_invariants.ROW_TRAILER,
+                                         result.get("nonce")),))
 
 
 if __name__ == "__main__":

@@ -337,6 +337,73 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A squash merge of a phase branch no longer reads as a scope breach.** A `git merge --squash`
+  keeps the squashed messages, `Audit-Row` trailers included, so the row naming an index or
+  audit-state commit resolved to the squash commit, and `index-scope` / `audit-state-scope` graded
+  that commit's whole file list - work included - as the scoped commit's, a breach nothing made. A
+  commit carrying a row's trailer is now graded as the scoped commit only when its subject opens
+  with the class's header (`_invariants.INDEX_HEADER` / `STATE_HEADER`, pinned equal to each
+  writer's own type and scope) and the trailer is a line of its last paragraph, indented or not.
+  Any other carrier is a gap naming it and the test it failed - the header, or the trailer's
+  place - never graded, and never a pass. A carrier without the header is read as a commit that
+  absorbed the scoped one (a squash), and the named commit is then not in this history as a commit
+  of its own unless another carrier was graded, which the gap names; a carrier with the header
+  whose trailer is not last is a copy of the scoped commit (a cherry-pick or a rebase) when that
+  commit was graded, and otherwise may be the scoped commit with a paragraph added after its
+  trailer or a squash that kept its subject - no absence is claimed for it either way. This
+  holds for a squash whose message ends with the index commit's trailer (the index commit made
+  before the work), where only the subject header tells the two apart. The
+  index commit's breach sentence and the docs now say it carries the index and the journal file
+  holding its row; the ledger merge names the shard that would not parse, when it is a shard.
+- **`audit-journal.py merge` resolves the evidence ledger too.** The ledger is hash-chained with
+  the journal's own chain and, before the per-worktree writer key, was appended on two branches
+  under one name, but `merge --file` accepted only a journal file, so every ledger conflict was
+  resolved by hand - interleaved by timestamp and re-chained with the journal's `row_hash`. A
+  `--file` in the evidence directory is now merged by the same `_journal_io.merge_rows`, with the
+  same refusals (a same-second tie that disagrees, a torn tail, a row that no longer hashes to
+  its contents, no shared prefix) and the same re-chain. No marker row is written into the
+  ledger, whose every row is read as a recorded run; the merge is recorded by an `evidence.merge`
+  journal row naming the file, whose `stateHash` also anchors the re-chained bytes. For both
+  records, a same-second tie whose rows touch disjoint targets is now ordered by content instead of
+  refused, and the order is written in the merge's record; a tie on one target, or on a row that
+  names none, is still refused. A journal row's target is its `target`; a run's targets are the
+  keys every ledger reader files it under - `latest_by_subject`'s `(scope, id)` key, now one
+  function (`_evidence_io.subject_key`), and the `taskId`/`phaseId` pair a verdict is matched by -
+  with the plan's moved task ids mapped onto the ids held now, so a `--task` run measured under
+  its phase's gate ties with that phase's sign-off run, and a moved task's old-id run ties with
+  its new-id run; a plan that cannot be read orders no ledger tie at all. The rule does not depend
+  on which side is ours, and an identical tie is ordered by content too, so both branches
+  resolving a conflict get the same order of rows - byte for byte the same file for the ledger,
+  which takes no marker row; a journal file's marker row still records its own time, actor and
+  inputs. The merge output names the journal file holding the `evidence.merge` row, which has to
+  be committed with the ledger it anchors.
+- **`audit-journal.py verify` chose between same-second anchor rows by file read order.** The row
+  that anchors a file was whichever row naming it was read last among those at the newest second,
+  so an `evidence.merge` row and a `record()` row written in one second reported the merged
+  ledger as drift or not depending on how the journal directory was listed. The choice is now
+  `_journal_io.newest_anchor`: the later row within one file, then an `evidence.merge` row over any
+  other (its hash covers bytes that already include the runs), then the greatest row content - a
+  total order the rows define. The winner is still graded, so a merge row whose hash does not
+  match the file is drift as before.
+- **A scoped commit carries the journal row that names it, so a phase can end with a clean tree.**
+  `commit-task-work`, `commit-audit-state` and `commit-manifest-index` each appended the row naming
+  their commit AFTER making it, so the row was never inside it: every run left the trail dirty on a
+  tree it had just reported as committed, and the last commit of every phase left one for somebody
+  to commit by hand. The row is now written first, keyed by a random nonce in a new `commitNonce`
+  detail, the commit message ends with an `Audit-Row: <nonce>` trailer, and the row's file is
+  staged into the same commit (`_scoped_commit.commit_with_rows`) - for the index commit, the one
+  journal file the row landed in joins the index on its allow-list, and `index-scope` allows the
+  journal beside the index. Readers resolve the SHA from the trailer with `git log --grep`
+  (`_invariants.commits_carrying`), which an amend, a rebase, a cherry-pick (both copies are read)
+  or a squash merge (whose indented bodies are read too) does not break - a fixup or reword that
+  drops the trailer leaves the row naming no commit, which is a gap, never a pass; a row still
+  carrying `commit` is read as before. A commit refused after its row was written - a hook, or git -
+  leaves an `audit.commit.withdrawn` row naming the nonce, so no row claims a commit that does not
+  exist; one whose nonce no commit carries and nobody withdrew is a gap in `audit-state-scope` and
+  `index-scope`, never a pass. `commit-audit-state` now commits a journal holding only other
+  writers' rows instead of declining it, since a row inside its commit ends the loop that declining
+  existed to prevent. An `--override-verdict` whose row cannot be written is refused before
+  anything is staged, where it used to commit and then report the missing row.
 - **A correction to the `1.4.1` entry below: `/audit:phase retarget --gate` has always REPLACED
   a phase's gate, never appended to it.** That released entry said `--gate` appends; it did not,
   then or now — `--gate-clear` is the load-bearing half precisely because `--gate` replaces, so an
