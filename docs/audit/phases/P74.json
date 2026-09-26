@@ -239,6 +239,48 @@
         "file": "plugins/audit/scripts/governance/run-test-gate.py",
         "issue": "R9's second half is still open. The group row now records `groupWith`, but its coverage basis still lists other members' files as 'declared but not named by the run', with no word that they are the group's members' files and not the carrier's declaration.",
         "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-U1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "When git cannot answer, the refusal gives a false reason. `_clean_merge` returns False for every non-zero exit from `git merge-tree --write-tree`. That covers git older than 2.38, which has no --write-tree: git 2.37 parses it as a base rev and dies with 'unknown rev --write-tree', exit 128. It also covers a missing object in a shallow clone. False is then reported as 'its tree is not the automatic",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The detection works, but the review command it prints does not show what it detected. I RAN r4c.py: during a clean merge of side2 I ran `git rm -f src/p2.py`, which silently dropped side2's change. `--plan` correctly refused merge a1afcbc0700e. But both `git show --cc <sha>`, which the refusal names, and `git show --format= <sha>`, which the plan lists for an accepted commit, print NOTHING. A dens",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "Every octopus merge is refused with the edit/conflict sentence, including a clean one. I RAN `git merge --no-ff side1 side2` (octopus, no hand edits): `--plan` exited 2 with 'its tree is not the automatic merge of its parents, so it is a conflict resolution or an edit'. That was never established. The docstring itself says only that it was not asked.",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "A clean merge above a refused merge is reported as a commit 'that no member records'. Its parent is not in `ok`, so it falls through to the plain-stray branch. I saw this in the old-git run: m2 was listed as a generic stray beside m1's refusal. The operator is told to account for a commit that becomes accounted by itself once the merge below it is accepted.",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "--accept takes any revision expression, not only a SHA. I RAN `--accept combined --reason r`: the branch tip was taken in and dropped from the stray list. `--accept HEAD` resolved to the checked-out branch. Both the docs and the refusal say 'name the commit by its full SHA, or a prefix only it has'. A ref is re-resolved on each invocation, so the commit a `--plan` listed and the commit a later rec",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/panel/composition.js",
+        "issue": "The only vitest case for accepted commits uses an in-flight phase. The branch that shows them on a landed (done) phase is the one a later reader meets, and no case covers it. Deleting line 903 would leave every test green.",
+        "resolution": "fix task P74.5-qq5"
       }
     ]
   },
@@ -514,6 +556,66 @@
         "test_run_test_gate gg6",
         "test__evidence_view gv5"
       ]
+    },
+    {
+      "id": "P74.5-qq5",
+      "title": "Round-4 review findings: a merge the tool cannot recompute is said so, the printed review command shows what was refused, and --accept takes a SHA only",
+      "status": "in_progress",
+      "description": "Round-4 phase review findings, all to be fixed. Orchestrator decisions: (U1) _clean_merge answers three states - clean (merge-tree exit 0 and equal tree), own content (merge-tree exit 1, or a differing tree), and could-not-ask (any other exit, carrying git's own error line and naming the git 2.38 requirement); could-not-ask is a refusal with that honest reason, never 'an edit', and --accept still takes the commit in; a case under a PATH shim that behaves like old git. (U2) the review command printed for a refused merge is the comparison the check made: git diff <tree of git merge-tree --write-tree p1 p2> <sha>, which shows a dropped change that git show --cc hides; ga8b is renamed to what it asserts and a case proves the printed command shows the dropped change. (U3) an octopus merge is could-not-ask with the reason that merge-tree recomputes two parents only. (U4) an accepted commit counts as accounted when the merges above it are judged, and a merge whose only unaccounted parent is a refused merge is listed as waiting on that SHA, not as 'no member records'. (U5) --accept takes a hex SHA or unique hex prefix only (a ref name or revision expression is refused by name), resolved to the full SHA recorded. (U6) a vitest case for the done-phase accepted-commits note.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:6252-6268 (_clean_merge), :6212-6218 (the 'carries content of its own' refusal): When git cannot answer, the refusal gives a false reason. `_clean_merge` returns False for every non-zero exit from `git merge-tree --write-tree`. That covers git older than 2.38, which has no --write-tree: git 2.37 parses it as a base rev and dies with 'unknown rev --write-tree', exit 128. It also covers a missing object in a shallow clone. False is then reported as 'its tree is not the automatic merge of its parents, so it is a conflict resolution or an edit no task records'. I RAN this through a PATH shim that reproduces the old-git failure (scratchpad/p74r3/oldgit/git, r4b.py). A branch built from two clean --no-ff merges, which gets `--plan` exit 0 on git 2.50.1, got exit 2 under the shim. The refusal called merge m1 an edit, and listed the clean merge m2 above it as a commit 'no member records'. The repo already knows about this floor: `_merge_install.py:225-241` says '`merge-tree --write-tree` needs git 2.38+', and `test__worktrees.py:192` names Ubuntu 22.04, whose git (2.34) is older than that. CLAUDE.md's rule applies: when the basis is missing, say that. -> Make `_clean_merge` answer one of three states: clean; own (exit 1 means conflicted, or the tree differs); could-not-ask (any other exit, carrying stderr's first line). A could-not-ask merge gets its own refusal, e.g. 'whether merge X carries content of its own could not be asked (`git merge-tree --write-tree`: <stderr>; needs git 2.38+)'. Take the version wording from `_merge_install`. Add a case that injects a run fn returning exit 128 for merge-tree, and check the sentence is the could-not-ask one.\nR2 (med) plugins/audit/scripts/manifest/audit-task.py:6212-6218 (refusal names `git show --cc <sha>`), :6667 (plan lists `accepted  git show <sha>`); plugins/audit/reference/phase-signoff.md:402-405; plugins/audit/tests/test_audit_task.py ga8b: The detection works, but the review command it prints does not show what it detected. I RAN r4c.py: during a clean merge of side2 I ran `git rm -f src/p2.py`, which silently dropped side2's change. `--plan` correctly refused merge a1afcbc0700e. But both `git show --cc <sha>`, which the refusal names, and `git show --format= <sha>`, which the plan lists for an accepted commit, print NOTHING. A dense combined diff hides any path whose result equals one parent. `git show --remerge-diff <sha>` shows the deletion. So a reviewer who follows the printed step sees an empty diff and passes --accept. Separately, ga8b's name says 'listed with `git show --cc`', but it asserts that plain `git show <sha>` is in the output. -> For a merge, name `git show --remerge-diff <sha>` (git 2.36+), or `git diff <merge-tree tree> <sha>` from the tree `_clean_merge` already computed. Do this in the refusal, in the plan's accepted line when the accepted commit is a merge, and in phase-signoff.md. Extend ga8 with a drop-a-side merge, and assert on the command that is printed.\nR3 (low) plugins/audit/scripts/manifest/audit-task.py:6259-6260 (`if len(parents) != 2: return False`), :6212-6218: Every octopus merge is refused with the edit/conflict sentence, including a clean one. I RAN `git merge --no-ff side1 side2` (octopus, no hand edits): `--plan` exited 2 with 'its tree is not the automatic merge of its parents, so it is a conflict resolution or an edit'. That was never established. The docstring itself says only that it was not asked. -> For more than two parents, give a separate refusal: 'an octopus merge cannot be replayed with merge-tree, so whether it carries its own content was not established - review it and --accept it'. Or replay it pairwise, one parent after another.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:6297-6302 (_account: an `own` merge is never added to `ok`), :6227-6235: A clean merge above a refused merge is reported as a commit 'that no member records'. Its parent is not in `ok`, so it falls through to the plain-stray branch. I saw this in the old-git run: m2 was listed as a generic stray beside m1's refusal. The operator is told to account for a commit that becomes accounted by itself once the merge below it is accepted. -> Keep a set of the `own` merges, and report a merge whose only unaccounted parents are in it as 'a merge over X, accounted once X is'. Or leave it out of the stray list until X is resolved.\nR5 (low) plugins/audit/scripts/manifest/audit-task.py:6194-6204 (--accept via `rev-parse --verify <name>^{commit}`): --accept takes any revision expression, not only a SHA. I RAN `--accept combined --reason r`: the branch tip was taken in and dropped from the stray list. `--accept HEAD` resolved to the checked-out branch. Both the docs and the refusal say 'name the commit by its full SHA, or a prefix only it has'. A ref is re-resolved on each invocation, so the commit a `--plan` listed and the commit a later record accepts can differ if the branch moves in between. A hex prefix that is also a ref name resolves to the ref. -> Require `name` to match ^[0-9a-f]{4,40}$ and `full.startswith(name.lower())`. Otherwise refuse by name. Add a case for `--accept <branch>`.\nR6 (low) plugins/audit/scripts/ui/panel/composition.js:903 (`if(accepted&&ph.signoffVerdict)` for a done phase); tools/ui-tests/phase-signoff-note.test.mjs: The only vitest case for accepted commits uses an in-flight phase. The branch that shows them on a landed (done) phase is the one a later reader meets, and no case covers it. Deleting line 903 would leave every test green. -> Add a case: status 'done', signoffVerdict 'passed', acceptedCommits [...]. The note must contain the short SHA and the reason, and the existing done-without-accepted case must stay null.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - under a pre-2.38 git a clean merge is refused as carrying an edit"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T09:55:43Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:38Z"

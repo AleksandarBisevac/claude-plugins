@@ -470,9 +470,11 @@ because the first landing merges the whole branch. It refuses — naming every r
 open work or already signed off, a member recording another branch, members that resolve to
 different parents, a `--branch` that is that parent, a finished task with no `commit`, a commit
 the branch does not carry (naming `repair-commits.py` for a rebase), a commit it carries that no
-member records - a merge counts only when its tree is the automatic merge of its parents -
-and `--accept <sha> --reason "<why>"`, which must name exactly one commit on the branch, takes
-one into the review, recorded on every member and shown beside the sign-off — and a union no member's gate holds (`/audit:phase
+member records - a merge counts only when its tree is the automatic merge of its parents,
+recomputed with `git merge-tree` (git 2.38+; a merge it cannot recompute is refused as not
+asked, never as an edit) - and `--accept <sha> --reason "<why>"`, which takes a hex SHA naming
+exactly one commit on the branch, takes one into the review, recorded on every member and shown
+beside the sign-off — and a union no member's gate holds (`/audit:phase
 retarget` gives one member the missing entries).
 
 ## Subcommand: `settle`

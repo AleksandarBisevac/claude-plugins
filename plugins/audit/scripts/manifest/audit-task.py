@@ -6179,7 +6179,7 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
                                 "that now carries its work"
                                 % (tid, sha[:12], branch, held["answer"],
                                    held["basis"]))
-    taken = []
+    taken, review = [], {}
     if fork:
         code, said, err = fn(git_root, ["rev-list", "--reverse", "--topo-order",
                                         "--parents", "%s..%s" % (fork, branch)])
@@ -6193,30 +6193,43 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
                 | _accounted_commits(ids, journal_rows)
             resolved = {}
             for name in (accepted or []):
+                if not _HEX_SHA.match(name or ""):
+                    refusals.append(
+                        "--accept %s is not a commit SHA - it takes a hex SHA, or a "
+                        "unique hex prefix of at least 4 digits, resolved to exactly "
+                        "one commit; a ref or a revision expression would be "
+                        "re-resolved on every call" % (name,))
+                    continue
                 code, full, _e = fn(git_root, ["rev-parse", "--verify", "--quiet",
                                                "%s^{commit}" % (name,)])
-                if code == 0 and (full or "").strip():
-                    resolved[(full or "").strip()] = name
+                full = (full or "").strip()
+                if code == 0 and full.startswith(name.lower()):
+                    resolved[full] = name
                 else:
                     refusals.append("--accept %s does not resolve to exactly one "
                                     "commit (`git rev-parse --verify %s^{commit}`) "
                                     "- name the commit by its full SHA, or a prefix "
                                     "only it has" % (name, name))
-            stray, taken, used, own = _account(
-                said, known, list(resolved),
-                lambda sha, parents: _clean_merge(fn, git_root, sha, parents))
+            verdicts = {}
+
+            def judge(sha, parents):
+                verdicts[sha] = _clean_merge(fn, git_root, sha, parents)
+                return verdicts[sha]
+            stray, taken, used, blocked, waiting = _account(
+                said, known, list(resolved), judge)
             unused = [resolved[a] for a in resolved if a not in used]
             if unused:
                 refusals.append("--accept %s names no commit %r carries past its "
                                 "fork %s" % (", ".join(unused), branch, fork[:12]))
-            for sha in own:
+            for sha in blocked:
+                refusals.append(_merge_refusal(sha, verdicts[sha]))
+            for sha, over in waiting:
                 refusals.append(
-                    "merge %s carries content of its own - its tree is not the "
-                    "automatic merge of its parents, so it is a conflict resolution "
-                    "or an edit no task records (`git show --cc %s`). Review it, and "
-                    "pass --accept %s --reason \"<why>\" to take it into the group"
-                    % (sha[:12], sha, sha))
-            stray = [c for c in stray if c not in own]
+                    "%s is a merge over %s, refused above - it is accounted once "
+                    "%s is" % (sha[:12], ", ".join(o[:12] for o in over),
+                               "that one" if len(over) == 1 else "those are"))
+            review = dict((sha, _review_command(sha, verdicts.get(sha)))
+                          for sha in taken)
             if stray and journal_error:
                 refusals.append(
                     "%r carries %s no task records, and the journal could not be "
@@ -6244,60 +6257,122 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
                 for ph in members)))
     return {"members": members, "refusals": refusals, "commits": commits,
             "files": files, "gate": carrier, "union": union, "fork": fork,
-            "accepted": taken}
+            "accepted": taken, "acceptedReview": review}
+
+
+# `--accept` takes a commit SHA - never a ref, which re-resolves on every call and
+# can name a different commit at the record than at the plan.
+_HEX_SHA = re.compile(r"^[0-9a-fA-F]{4,40}$")
+
+MERGE_CLEAN, MERGE_OWN, MERGE_UNASKED = "clean", "own", "could-not-ask"
 
 
 def _clean_merge(fn, git_root, sha, parents):
-    """Is merge `sha`'s tree exactly the automatic merge of its parents?
+    """`{"state", "tree", "why"}` - does merge `sha` carry content of its own?
 
-    `git merge-tree --write-tree` computes that merge without touching a work
-    tree; a merge commit whose tree differs - or whose parents conflict, which
-    needs a hand resolution - carries content no parent does. Only a two-parent
-    merge can be asked this way, so any other answers no: nothing established
-    that it carries nothing of its own."""
+    `git merge-tree --write-tree` recomputes the automatic merge of two parents
+    without touching a work tree. THREE ANSWERS, because two would lie: `clean`
+    (exit 0 and the same tree), `own` (the parents conflict - exit 1, a hand
+    resolution - or the trees differ: an edit made inside the merge commit), and
+    `could-not-ask` - an octopus merge, which merge-tree cannot recompute, or any
+    other exit (a git before 2.38 has no `--write-tree`; a shallow clone may lack
+    an object). The last is said as a question not asked, never as an edit.
+    `tree` is the recomputed tree when there is one, which is what a reviewer
+    diffs the merge against."""
     if len(parents) != 2:
-        return False
-    code, tree, _err = fn(git_root, ["merge-tree", "--write-tree", parents[0],
-                                     parents[1]])
-    if code != 0:
-        return False
-    code2, own, _err2 = fn(git_root, ["rev-parse", "%s^{tree}" % (sha,)])
+        return {"state": MERGE_UNASKED, "tree": None,
+                "why": "an octopus merge of %d parents cannot be recomputed - `git "
+                       "merge-tree --write-tree` takes two parents only"
+                       % (len(parents),)}
+    code, tree, err = fn(git_root, ["merge-tree", "--write-tree", parents[0],
+                                    parents[1]])
     first = (tree or "").strip().split("\n")[0].strip()
-    return code2 == 0 and bool(first) and first == (own or "").strip()
+    if code not in (0, 1) or not first:
+        return {"state": MERGE_UNASKED, "tree": None,
+                "why": "`git merge-tree --write-tree` answered %s: %s - replaying a "
+                       "merge without writing it needs git 2.38+"
+                       % (code, (err or "").strip().split("\n")[0]
+                          or "no output")}
+    if code == 1:
+        return {"state": MERGE_OWN, "tree": first,
+                "why": "its parents conflict, so its tree is a hand resolution"}
+    code2, own, _err2 = fn(git_root, ["rev-parse", "%s^{tree}" % (sha,)])
+    if code2 != 0:
+        return {"state": MERGE_UNASKED, "tree": first,
+                "why": "the merge's own tree could not be read"}
+    if first == (own or "").strip():
+        return {"state": MERGE_CLEAN, "tree": first, "why": ""}
+    return {"state": MERGE_OWN, "tree": first,
+            "why": "its tree is not the automatic merge of its parents - an edit "
+                   "made inside the merge commit, or a change of a side it dropped"}
 
 
-def _account(listing, known, accepted, clean_merge):
-    """`(stray, taken, used, own)` over `git rev-list --parents` output: the commits
-    nothing accounts for, the ones `accepted` (full SHAs) took in, which of those
-    matched, and the merges that carry content of their own.
+def _review_command(sha, verdict):
+    """What a reviewer runs to see what a commit carries. For a merge, the
+    comparison the check made - the automatic merge's tree against the merge -
+    because a combined diff hides a path whose result equals one parent, which
+    is exactly how a dropped change looks."""
+    if verdict and verdict.get("tree"):
+        return "git diff %s %s" % (verdict["tree"], sha)
+    return "git show %s" % (sha,)
 
-    A merge is accounted when every parent is - or lies outside the listed range,
-    which is the parent side of the fork - AND `clean_merge` says its tree is the
-    automatic merge of its parents. Accounted parents are not enough: an edit made
-    inside a merge commit belongs to no parent, and the first landing would carry
-    it unreviewed."""
+
+def _merge_refusal(sha, verdict):
+    """The refusal a merge the accounting could not take in earns."""
+    if verdict["state"] == MERGE_UNASKED:
+        return ("whether merge %s carries content of its own could not be asked "
+                "(%s). Review it (`git show %s`) and pass --accept %s --reason "
+                "\"<why>\" to take it into the group"
+                % (sha[:12], verdict["why"], sha, sha))
+    return ("merge %s carries content of its own - %s. Review what it adds or drops "
+            "with `%s`, and pass --accept %s --reason \"<why>\" to take it into "
+            "the group" % (sha[:12], verdict["why"], _review_command(sha, verdict),
+                           sha))
+
+
+def _account(listing, known, accepted, judge):
+    """`(stray, taken, used, blocked, waiting)` over `git rev-list --parents`
+    output: the commits nothing accounts for, the ones `accepted` (full SHAs) took
+    in, which of those matched, the merges `judge` could not take in, and the
+    merges held up only by those - `(sha, [the blocked merges below it])`.
+
+    A merge is accounted when every parent is accounted - an accepted commit
+    included - or lies outside the listed range, which is the parent side of the
+    fork, AND `judge` answers `clean`. Accounted parents are not enough: an edit
+    made inside a merge commit belongs to no parent, and the first landing would
+    carry it unreviewed."""
     lines = [ln.split() for ln in (listing or "").splitlines() if ln.strip()]
     in_range = set(parts[0] for parts in lines)
-    ok, stray, taken, used, own = set(), [], [], [], []
+    ok, stray, taken, used, blocked, waiting = set(), [], [], [], [], []
+    held = set()
     for parts in lines:
         sha, parents = parts[0], parts[1:]
         named = [a for a in accepted if a == sha]
         if _is_accounted(sha, known):
             ok.add(sha)
-        elif named:
+            continue
+        if named:
             ok.add(sha)
             taken.append(sha)
             used.extend(named)
-        elif len(parents) > 1 and all(p in ok or p not in in_range
-                                      for p in parents):
-            if clean_merge(sha, parents):
-                ok.add(sha)
-            else:
-                own.append(sha)
-                stray.append(sha)
-        else:
-            stray.append(sha)
-    return stray, taken, used, own
+            if len(parents) > 1:
+                judge(sha, parents)
+            continue
+        if len(parents) > 1:
+            pending = [p for p in parents if p in in_range and p not in ok]
+            if not pending:
+                if judge(sha, parents)["state"] == MERGE_CLEAN:
+                    ok.add(sha)
+                else:
+                    blocked.append(sha)
+                    held.add(sha)
+                continue
+            if all(p in held for p in pending):
+                waiting.append((sha, pending))
+                held.add(sha)
+                continue
+        stray.append(sha)
+    return stray, taken, used, blocked, waiting
 
 
 def _plugin_cmd(rel, *argv):
@@ -6664,7 +6739,9 @@ def _print_group_plan(args, plan, ids, mrel, landing, sharded, out):
     for pid, tid, sha in plan["commits"]:
         out("       %s  git show %s" % (tid, sha))
     for sha in plan["accepted"]:
-        out("       accepted  git show %s  (%s)" % (sha, (args.reason or "").strip()))
+        out("       accepted  %s  (%s)" % (
+            (plan.get("acceptedReview") or {}).get(sha) or "git show %s" % (sha,),
+            (args.reason or "").strip()))
     out("     files: %s" % (", ".join(plan["files"]) or "(none declared)",))
     out("  3. gate - one run over the union (%s), carried by %s and owning every "
         "member's files:" % (", ".join(plan["union"]) or "empty", plan["gate"]))

@@ -44,6 +44,13 @@ describe('the sign-off note on a phase row', () => {
     expect(note).toContain('the multi-phase plan');
   });
 
+  it('a LANDED phase still names the commits its group accepted into review', () => {
+    const note = P.phaseSignoffNote(phase({ status: 'done', signoffVerdict: 'passed',
+      acceptedCommits: [{ commit: 'fedcba9876543210fedcba', reason: 'the plan' }] }));
+    expect(note).toContain('fedcba987654');
+    expect(note).toContain('the plan');
+  });
+
   it('a phase that is done, cancelled or still running carries no note', () => {
     expect(P.phaseSignoffNote(phase({ status: 'done', signoffVerdict: 'passed' })))
       .toBeNull();

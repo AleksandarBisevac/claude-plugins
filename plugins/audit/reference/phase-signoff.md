@@ -400,12 +400,20 @@ the plan accepts the record re-checks under the lock.
 `commit`, an audit-state or index commit the journal records for a member, or a MERGE whose every
 parent is one of those or lies on the parent side of the fork AND whose tree is exactly the
 automatic merge of its parents (`git merge-tree --write-tree`). That last check is what makes a
-merge accounted: a merge whose tree differs — a conflict resolution, or an edit made inside the
-merge commit — carries content no parent does, and it is refused by SHA with `git show --cc
-<sha>` to review it. Any other commit — a hand-made planning commit, a journal-only commit
-nobody recorded — is refused by SHA too, and `--accept <sha> --reason "<why>"` takes it into the
-review instead. Each `--accept` must resolve (`git rev-parse --verify <sha>^{commit}`) to exactly
-one commit on the branch; a prefix that is ambiguous, or names nothing, is refused by name. The
+merge accounted, and it has three answers. A merge whose tree differs — a conflict resolution,
+an edit made inside the merge commit, or a change of one side it dropped — carries content no
+parent does: it is refused by SHA, naming `git diff <recomputed tree> <sha>`, the comparison the
+check made (`git show --cc` hides a path whose result equals one parent, which is exactly how a
+dropped change looks). A merge the check could not recompute — an octopus merge, which
+merge-tree takes two parents at a time for, or a git before 2.38, which has no `--write-tree` —
+is refused as a question not asked, with git's own line, and never called an edit. A clean merge
+above a refused one is named as waiting on it, and is accounted once that one is. Any other
+commit — a hand-made planning commit, a journal-only commit nobody recorded — is refused by SHA
+too, and `--accept <sha> --reason "<why>"` takes any of these into the review instead; an
+accepted commit counts as accounted for the merges above it. `--accept` takes a hex SHA or a
+unique hex prefix of at least 4 digits, resolved (`git rev-parse --verify <sha>^{commit}`) to
+exactly one commit on the branch and recorded in full; a ref or a revision expression, which
+would re-resolve on every call, and an ambiguous or unknown prefix are refused by name. The
 plan lists an accepted commit beside the task commits, the record writes it and the reason on
 every member's `review.acceptedCommits`, and the report and the panel show it beside the
 sign-off. A journal that cannot be read is said as that, never as a commit nobody records.

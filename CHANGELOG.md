@@ -179,9 +179,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `review.noEvidenceReason` and shown on the evidence badge. `--verdict skipped` needs neither.
 - **A group sign-off accounts for merges and takes an accepted commit.** A merge commit is
   accounted when its parents are all accounted for, or on the parent side, and its tree is exactly
-  the automatic merge of those parents; a merge carrying content of its own is refused for review.
+  the automatic merge of those parents; a merge carrying content of its own is refused, naming
+  `git diff <recomputed tree> <sha>`, which shows a dropped change `git show --cc` hides. A merge
+  that cannot be recomputed (an octopus merge, or a git before 2.38) is refused as not asked, never
+  as an edit, and a clean merge above a refused one is named as waiting on it.
   Any other unrecorded commit can be taken into the review with `--accept <sha> --reason "<why>"`,
-  which must resolve to exactly one commit, is recorded on every member and is shown beside the
+  which takes a hex SHA or unique hex prefix (never a ref) resolving to exactly one commit, is recorded on every member and is shown beside the
   sign-off in the report and the panel. The group-only flags are refused on a single phase's
   sign-off, a group gate run never repeats a solo run over the same files, a carrier whose gate
   declares no entry copies no run onto the members, and a group run's coverage basis names the

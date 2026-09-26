@@ -6390,9 +6390,117 @@ def _cases(check):
         code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
                          "--accept", _e_evil, "--reason", "the conflict resolution",
                          "--project-dir", e_proj])
-        check("ga8b ...and --accept takes it into the review, listed with `git show "
-              "--cc`: exit %r, %s" % (code, txt),
-              code == 0 and ("git show %s" % (_e_evil,)) in txt)
+        _e_tree = gs_git(e_proj, "merge-tree", "--write-tree", _e_evil + "^1",
+                         _e_evil + "^2").split("\n")[0].strip()
+        check("ga8b ...and --accept takes it into the review, listed with the "
+              "comparison the check made - the automatic merge's tree against the "
+              "merge (`git diff <tree> <sha>`): exit %r, %s" % (code, txt),
+              code == 0 and ("git diff %s %s" % (_e_tree, _e_evil)) in txt)
+
+        def ga_merged(name, how, extra=None):
+            """(proj, mpath, shas) - side1 (P1.1) and side2 (P2.1), each adding one
+            file, merged into `combined` from main. `how` is "two" for two --no-ff
+            merges, "octopus" for one merge of both, "drop" for a second merge that
+            leaves side2's file out, "evil-then-clean" for an edited first merge and
+            a clean second."""
+            proj, mpath = mk(name, m_plan, git=True)
+            gs_git(proj, "checkout", "-q", "-b", "main")
+            gs_git(proj, "commit", "-q", "--allow-empty", "-m", "base")
+            shas = {}
+            for tid, side in (("P1.1", "side1"), ("P2.1", "side2")):
+                gs_git(proj, "checkout", "-q", "-b", side, "main")
+                with open(os.path.join(proj, "%s.txt" % side), "w") as fh:
+                    fh.write(tid + "\n")
+                gs_git(proj, "add", "%s.txt" % side)
+                gs_git(proj, "commit", "-q", "-m", tid)
+                shas[tid] = gs_git(proj, "rev-parse", "HEAD")
+            gs_git(proj, "checkout", "-q", "-b", "combined", "main")
+            if how == "octopus":
+                gs_git(proj, "merge", "-q", "--no-ff", "-m", "octopus", "side1",
+                       "side2")
+            elif how == "evil-then-clean":
+                gs_git(proj, "merge", "-q", "--no-ff", "--no-commit", "side1")
+                with open(os.path.join(proj, "edit.txt"), "w") as fh:
+                    fh.write("an edit inside the merge\n")
+                gs_git(proj, "add", "edit.txt")
+                gs_git(proj, "commit", "-q", "-m", "merge side1")
+                shas["m1"] = gs_git(proj, "rev-parse", "HEAD")
+                gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side2", "side2")
+                shas["m2"] = gs_git(proj, "rev-parse", "HEAD")
+            else:
+                gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side1", "side1")
+                shas["m1"] = gs_git(proj, "rev-parse", "HEAD")
+                if how == "drop":
+                    gs_git(proj, "merge", "-q", "--no-ff", "--no-commit", "side2")
+                    gs_git(proj, "rm", "-q", "-f", "side2.txt")
+                    gs_git(proj, "commit", "-q", "-m", "merge side2")
+                else:
+                    gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side2",
+                           "side2")
+                shas["m2"] = gs_git(proj, "rev-parse", "HEAD")
+            gs_git(proj, "checkout", "-q", "main")
+            plan_now = _mio.load_manifest(mpath)
+            for ph in plan_now["phases"]:
+                for t in ph["tasks"]:
+                    t["commit"] = shas[t["id"]]
+            _panel_write._atomic_write_json(mpath, plan_now)
+            return proj, mpath, shas
+
+        # A git that cannot recompute a merge (before 2.38, or a missing object)
+        # is a question not asked - never an edit.
+        o_proj, o_mp, o_shas = ga_merged("ga-oldgit", "two")
+        _real = M._worktrees._runner(None)
+
+        def _old_git(git_root, argv, timeout=60):
+            if argv[:2] == ["merge-tree", "--write-tree"]:
+                return 128, "", "fatal: unknown rev --write-tree\n"
+            return _real(git_root, argv)
+        _o_plan = M.group_plan(_mio.load_manifest(o_mp), ["P1", "P2"], "combined",
+                               o_proj, run=_old_git, journal_rows=[])
+        _o_text = "\n".join(_o_plan["refusals"])
+        check("ga11 under a git that cannot recompute a merge, each clean merge is "
+              "refused as a question that could not be asked - git's own line and the "
+              "2.38 floor named - and never as an edit: %s" % (_o_text,),
+              "could not be asked" in _o_text and "2.38" in _o_text
+              and "unknown rev --write-tree" in _o_text
+              and "an edit" not in _o_text and o_shas["m1"][:12] in _o_text)
+        check("ga11b ...and the merge above it is named as WAITING on it, not as a "
+              "commit no member records: %s" % (_o_text,),
+              ("%s is a merge over %s" % (o_shas["m2"][:12], o_shas["m1"][:12]))
+              in _o_text and "no member records" not in _o_text)
+        oc_proj, oc_mp, oc_shas = ga_merged("ga-octopus", "octopus")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", oc_proj])
+        check("ga12 a clean OCTOPUS merge is refused as not established - merge-tree "
+              "recomputes two parents only - and not as an edit: exit %r, %s"
+              % (code, txt),
+              code == 2 and "octopus" in txt and "an edit" not in txt)
+        d_proj, d_mp, d_shas = ga_merged("ga-drop", "drop")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", d_proj])
+        _d_cmd = [ln for ln in txt.split("`") if ln.startswith("git diff ")]
+        _d_out = (subprocess.run(_d_cmd[0].split(), cwd=d_proj,
+                                 stdout=subprocess.PIPE).stdout.decode()
+                  if _d_cmd else "")
+        check("ga13 a merge that silently DROPS a side's change is refused, and the "
+              "review command it prints shows the dropped change - where `git show "
+              "--cc` shows nothing: exit %r, command %r, shows %r"
+              % (code, _d_cmd, _d_out[:120]),
+              code == 2 and len(_d_cmd) == 1 and "side2.txt" in _d_out
+              and "git show --cc" not in txt)
+        w_proj, w_mp, w_shas = ga_merged("ga-waiting", "evil-then-clean")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", w_proj])
+        check("ga14 a clean merge over a refused merge is named as waiting on it: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and ("%s is a merge over %s" % (w_shas["m2"][:12],
+                                                        w_shas["m1"][:12])) in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", w_shas["m1"], "--reason", "the edit is reviewed",
+                         "--project-dir", w_proj])
+        check("ga14b ...and once the refused merge is accepted, the clean merge over "
+              "it is accounted and the plan stands: exit %r, %s" % (code, txt),
+              code == 0)
         # One --accept names ONE commit.
         p_proj, p_mp, _p = gs_fixture("ga-prefix")
         gs_git(p_proj, "checkout", "-q", "combined")
@@ -6426,6 +6534,14 @@ def _cases(check):
         check("ga9c SECOND DIRECTION: a unique short SHA resolves to its one commit, "
               "listed in full: exit %r, %s" % (code, txt),
               code == 0 and ("git show %s" % (_q_extra,)) in txt)
+        for _ref in ("combined", "HEAD", "combined~0"):
+            code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                             "--accept", _ref, "--reason", "r",
+                             "--project-dir", q_proj])
+            check("ga10 --accept %s - a ref or a revision expression, re-resolved on "
+                  "every call - is refused by name: it takes a hex SHA: exit %r, %s"
+                  % (_ref, code, txt),
+                  code == 2 and ("--accept %s is not a commit SHA" % (_ref,)) in txt)
         # The group-only flags on ONE phase are refused, not ignored.
         f_proj, f_mp, _f = gs_fixture("gs-single-flags")
         _f_before = open(f_mp, "rb").read()
