@@ -22,6 +22,7 @@ differ in what they are for, not in where they belong.
 
 FILE LAYOUT
     <evidence dir>/<YYYY-MM>.<writerId>.jsonl     (default <manifest dir>/evidence)
+    <evidence dir>/<YYYY-MM>.<writerId>.wt-<key>.jsonl   (in a linked worktree)
 
 One file per writer per month, which is the journal's argument and not a
 decoration: two sessions in two git worktrees append at the same time, and a
@@ -808,10 +809,14 @@ def append_row(project, row, session_id=None, config=None):
     directory = evidence_dir(project, config)
     os.makedirs(directory, exist_ok=True)
     actor = {"sessionId": session_id} if session_id else {}
+    # The trail's own key, for the trail's reason: one writer per file, and one
+    # session driving two linked worktrees is two writers - their branches would
+    # otherwise each append the same basename and meet as a conflict on merge.
     path = _journal_io.file_for(
         directory, row.get("ts") or _now(), actor,
         fallback=None if _journal_io.has_session(actor)
-        else _journal_io.writer_token(project, config))
+        else _journal_io.writer_token(project, config),
+        worktree=_journal_io.worktree_key(project, config))
     lock = _journal_io._acquire(path, record="the evidence ledger")
     try:
         rows, _torn = _journal_io.read_file(path)

@@ -211,6 +211,67 @@ def fixture_root(prefix):
     return root
 
 
+def running_plan(running, files, other):
+    """A manifest running phase `running` (its one task declares `files`), with
+    phase `other` pending beside it - so the two trees of `worktree_pair` hold
+    the SAME phase ids with opposite statuses, and a verdict that names the
+    wrong tree's phase is visible in its text."""
+    return {"meta": {"version": 3, "developmentBranch": "main"},
+            "phases": [{"id": other, "title": "o", "status": "pending",
+                        "tasks": [{"id": other + ".1", "title": "o",
+                                   "status": "pending", "files": []}]},
+                       {"id": running, "title": "r", "status": "in_progress",
+                        "tasks": [{"id": running + ".1", "title": "r",
+                                   "status": "in_progress", "files": files}]}]}
+
+
+def worktree_pair(prefix):
+    """A git repository and a REAL linked worktree of it beside it, each running
+    a different phase of one plan - the fixture every hook's "which tree's plan
+    governs this" case needs.
+
+    -> {"root", "main", "wt", "manifest_rel", "sources"}
+       main   runs P41, whose task declares `src/other.ts`
+       wt     runs P48, whose task declares `src/app.ts`; its manifest is an
+              UNCOMMITTED edit, which is the ordinary state of a phase worktree
+              and the reason the main tree's copy cannot stand in for it
+       both carry `src/app.ts`, `src/other.ts` and `src/undeclared.ts`
+
+    The worktree is a SIBLING of the main checkout, where `git worktree add`
+    puts one by default, so no path-containment test can call them one tree.
+    Paths are realpath'd: git answers `--show-toplevel` resolved, and a fixture
+    under a symlinked temp root would otherwise compare two spellings of one
+    directory. Removed at exit through `fixture_root`. Raises when git cannot
+    build it - a caller that cannot run without git says so through `skip`.
+    """
+    import subprocess
+    root = os.path.realpath(fixture_root(prefix))
+    main = os.path.join(root, "main")
+    wt = os.path.join(root, "main-P48")
+    rel = os.path.join("docs", "audit", "audit-plan.json")
+    sources = ("app.ts", "other.ts", "undeclared.ts")
+    os.makedirs(os.path.join(main, "src"))
+    os.makedirs(os.path.join(main, "docs", "audit"))
+    for name in sources:
+        with open(os.path.join(main, "src", name), "w", encoding="utf-8") as fh:
+            fh.write("export const a = 1;\n")
+    with open(os.path.join(main, ".gitignore"), "w", encoding="utf-8") as fh:
+        fh.write(".claude/\n")
+    with open(os.path.join(main, rel), "w", encoding="utf-8") as fh:
+        json.dump(running_plan("P41", ["src/other.ts"], "P48"), fh, indent=2)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"],
+                 ["worktree", "add", "-q", wt, "-b", "chore/p48"]):
+        subprocess.run(git + argv, cwd=main, check=True, capture_output=True,
+                       timeout=30)
+    with open(os.path.join(wt, rel), "w", encoding="utf-8") as fh:
+        json.dump(running_plan("P48", ["src/app.ts"], "P41"), fh, indent=2)
+    return {"root": root, "main": main, "wt": wt,
+            "manifest_rel": rel.replace(os.sep, "/"),
+            "sources": ["src/" + n for n in sources]}
+
+
 # --- the shared runner --------------------------------------------------------
 def attempt(fn, *args, **kwargs):
     """`(True, value)` from `fn(*args, **kwargs)`, or `(False, "TypeError: boom")`.
@@ -1045,6 +1106,37 @@ def _cases(check):
               not os.path.exists(_ok_root) and _ok_chmods == [])
     finally:
         shutil.rmtree(_fr_work, ignore_errors=True)
+
+    # -- worktree_pair ---------------------------------------------------------
+    # The fixture is only worth its cases if the two trees really are one
+    # repository and really do disagree: a pair of unrelated repos, or a
+    # worktree whose manifest is the committed copy, would leave every case
+    # built on it green for the wrong reason.
+    import subprocess as _wp_sp
+    _wp_ok, _wp = attempt(worktree_pair, "harness-wp-")
+    if _wp_ok:
+        def _wp_common(d):
+            out = _wp_sp.run(["git", "-C", d, "rev-parse", "--git-common-dir"],
+                             capture_output=True, text=True, timeout=10)
+            return os.path.realpath(os.path.join(d, out.stdout.strip()))
+
+        def _wp_running(d):
+            with open(os.path.join(d, _wp["manifest_rel"]), "r",
+                      encoding="utf-8") as fh:
+                return [p["id"] for p in json.load(fh)["phases"]
+                        if p["status"] == "in_progress"]
+        check("wp1 worktree_pair builds ONE repository with a linked worktree "
+              "beside it - the same git common dir, two different toplevels",
+              _wp_common(_wp["main"]) == _wp_common(_wp["wt"])
+              and _wp["main"] != _wp["wt"]
+              and not _wp["wt"].startswith(_wp["main"] + os.sep))
+        check("wp2 ...and the two trees run DIFFERENT phases, so a verdict "
+              "read off the wrong tree names the wrong phase: %r"
+              % ((_wp_running(_wp["main"]), _wp_running(_wp["wt"])),),
+              _wp_running(_wp["main"]) == ["P41"]
+              and _wp_running(_wp["wt"]) == ["P48"])
+    else:
+        check("wp1 worktree_pair builds its fixture (%s)" % (_wp,), False)
 
 
 def _selftest():

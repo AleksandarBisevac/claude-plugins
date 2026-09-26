@@ -153,6 +153,127 @@ def _cases(check):
         finally:
             shutil.rmtree(_nm_proj, ignore_errors=True)
 
+        # --- the user namespace -----------------------------------------------
+        # A name user tooling takes is `user-<name>`. The prefix is what keeps it
+        # out of the plugin's vocabulary, and the rules on the rest are what keep
+        # two spellings from being one file on a case-folding filesystem.
+        _user_ok = ("user-e2e", "user-e2e-backend", "user-db_1", "user-a",
+                    "user-" + "a" * M.USER_NAME_MAX)
+        _user_refused = [n for n in _user_ok if not M.valid_name(n)]
+        check("u1 a namespaced user lock is a name this library accepts, so "
+              "worktree tooling can share the plugin's cross-worktree lock: %r"
+              % (_user_refused,), _user_refused == [])
+        _user_bad = ("user-", "user-E2E", "user-a/b", "user-..", "user-.x",
+                     "user-x.lock", "user--x", "user-x-", "user-_x",
+                     "user-" + "a" * (M.USER_NAME_MAX + 1), "User-e2e",
+                     "user-e 2e")
+        _user_admitted = [n for n in _user_bad if M.valid_name(n)]
+        check("u2 ...and a user name outside the stated rules is refused - an "
+              "upper-case letter, a dot, a separator, an edge punctuation mark "
+              "or an overlong name: %r" % (_user_admitted,),
+              _user_admitted == [])
+        # SPOOFING IS THE SECOND HALF. A user lock can never EQUAL a plugin name
+        # because of its prefix; this is the case for one that would READ as one
+        # in `audit-lock.py status`, and for one nested inside another user name.
+        _spoofs = ["user-index", "user-usage", "user-phase-p1",
+                   "user-user-e2e"] + ["user-" + n for n in M.FIXED_NAMES]
+        _spoofed = [n for n in _spoofs if M.valid_name(n)]
+        check("u3 ...and a user name whose own part is a plugin lock name is "
+              "refused, so no user lock reads as the index, the ledger or a "
+              "phase: %r" % (_spoofed,), _spoofed == [])
+        _crossed = [n for n in _user_ok
+                    if M.is_plugin_name(n) or n in M.FIXED_NAMES
+                    or n.startswith("phase-")]
+        check("u4 ...and no user name is a plugin name under any of the three "
+              "shapes the plugin's own readers key on: %r" % (_crossed,),
+              _crossed == [] and M.is_plugin_name("index")
+              and M.is_plugin_name("phase-P1")
+              and not M.is_plugin_name("user-e2e"))
+        _u_proj = tempfile.mkdtemp(prefix="audit-locks-user-")
+        try:
+            subprocess.call(["git", "init", "-q", _u_proj])
+            _u_out = []
+            _u_code = M.acquire(_u_proj, "user-e2e", out=_u_out.append,
+                                session="s-user", pid=os.getpid())
+            check("u5 acquire takes a user lock in the shared lock directory: "
+                  "%r" % (" ".join(_u_out),),
+                  _u_code == 0 and os.path.isfile(os.path.join(
+                      M.lock_dir(_u_proj), "user-e2e.lock")))
+            _u_bad_out = []
+            _u_bad = M.acquire(_u_proj, "user-E2E", out=_u_bad_out.append)
+            _u_said = " ".join(_u_bad_out)
+            check("u6 ...and a refused user name is a usage error whose message "
+                  "states the user-name rules, not only the plugin's names: %r"
+                  % (_u_said,),
+                  _u_bad == M.E_USAGE and "user-<name>" in _u_said
+                  and M.USER_NAME_RULES in _u_said)
+            _rel_out = []
+            _rel = M.release(_u_proj, "user-E2E", out=_rel_out.append)
+            check("u7 a malformed user name is refused by RELEASE with the same "
+                  "sentence acquire prints, rules included: %r"
+                  % (" ".join(_rel_out),),
+                  _rel == M.E_USAGE and M.USER_NAME_RULES in " ".join(_rel_out))
+            # EXCLUSION BY HOLDER. `u5` holds user-e2e as (s-user, this pid); the
+            # same identity asking again is what parallel subagents of one
+            # session look like, and it must be refused, not told "yours".
+            _again_out = []
+            _again = M.acquire(_u_proj, "user-e2e", out=_again_out.append,
+                               session="s-user", pid=os.getpid(), wait=0)
+            check("u8 a second acquire of a user lock by the SAME session and pid "
+                  "is refused as held, never answered as re-entry: %r"
+                  % (" ".join(_again_out)[:120],),
+                  _again == M.E_LIVE and "already yours" not in " ".join(_again_out))
+            _idx = M.acquire(_u_proj, "index", out=lambda _l: None,
+                             session="s-user", pid=os.getpid())
+            _idx2 = M.acquire(_u_proj, "index", out=lambda _l: None,
+                              session="s-user", pid=os.getpid(), wait=0)
+            check("u9 ...while the plugin's own names keep their re-entry answer "
+                  "- the case that fails if the exclusion is widened to every "
+                  "name: %r" % ((_idx, _idx2),),
+                  _idx == 0 and _idx2 == M.E_OURS)
+            # PHASE IDS: ASCII, and one spelling per folded name.
+            _ascii = [n for n in ("phase-P\u00e91", "phase-\u0661", "phase-P\u212a")
+                      if M.valid_name(n)]
+            check("u10 a phase lock name is ASCII only - `isalnum()` admitted "
+                  "letters and digits of every script: %r" % (_ascii,),
+                  _ascii == [] and M.valid_name("phase-P1-k7m.2"))
+            _p_out = []
+            M.acquire(_u_proj, "phase-P1", out=lambda _l: None, session="s-a",
+                      pid=os.getpid())
+            _p_code = M.acquire(_u_proj, "phase-p1", out=_p_out.append,
+                                session="s-b", pid=os.getppid(), wait=0)
+            _r_out = []
+            _r_code = M.release(_u_proj, "phase-p1", out=_r_out.append,
+                                session="s-a", pid=os.getpid())
+            check("u11 a phase lock that differs only in case from a held one is "
+                  "refused on every platform, and releasing that spelling does "
+                  "not remove the held claim: %r / %r"
+                  % (" ".join(_p_out)[:100], " ".join(_r_out)[:100]),
+                  _p_code == M.E_LIVE and "differ" in " ".join(_p_out)
+                  and _r_code == M.E_USAGE
+                  and os.path.isfile(os.path.join(M.lock_dir(_u_proj),
+                                                  "phase-P1.lock")))
+            # BOTH SPELLINGS AS TWO FILES - a case-sensitive filesystem holding
+            # legacy state. The exact name is listed, so its release (`force`
+            # included) removes that file and nothing else. The variant is
+            # supplied by hand because a folding filesystem cannot hold both.
+            _ld = M.lock_dir(_u_proj)
+            _real_variant = M.case_variant
+            M.case_variant = lambda _d, _n: "phase-p1"
+            try:
+                _f_out = []
+                _f_code = M.release(_u_proj, "phase-P1", force=True,
+                                    out=_f_out.append)
+            finally:
+                M.case_variant = _real_variant
+            check("u12 an explicit --force release of an exact name that exists "
+                  "is not blocked by another spelling beside it - there the two "
+                  "are two files: %r" % (" ".join(_f_out),),
+                  _f_code == 0 and not os.path.exists(os.path.join(
+                      _ld, "phase-P1.lock")))
+        finally:
+            shutil.rmtree(_u_proj, ignore_errors=True)
+
         # --- reading ----------------------------------------------------------
         check("r1 read_lock returns the dict it read", M.read_lock(path).get("pid")
               == os.getpid())

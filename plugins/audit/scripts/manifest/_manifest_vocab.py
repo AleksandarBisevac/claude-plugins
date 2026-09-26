@@ -745,7 +745,7 @@ def _require_fields(obj, where, findings):
     ok = True
     for key in ("id", "title", "status"):
         if not obj.get(key):
-            findings.append("%s: missing required '%s'" % (where, key))
+            findings.append(_output.finding("vocab.require_fields.missing-required", "%s: missing required '%s'" % (where, key)))
             ok = False
     return ok
 
@@ -758,26 +758,26 @@ def _check_ado(obj, where, findings):
     if ado is None:
         return
     if not isinstance(ado, dict):
-        findings.append("%s: ado must be an object or null, got %s"
-                        % (where, type(ado).__name__))
+        findings.append(_output.finding("vocab.ado.ado-object-null", "%s: ado must be an object or null, got %s"
+                        % (where, type(ado).__name__)))
         return
     # `isinstance(x, bool)` first, because `bool` subclasses `int` and `true`
     # would otherwise be accepted as a work-item id. `meta.version` already
     # excluded it by name, so the tree disagreed with itself about one question.
     if "id" in ado and (isinstance(ado.get("id"), bool)
                         or not isinstance(ado.get("id"), int)):
-        findings.append("%s: ado.id must be an integer work-item id, got %r"
-                        % (where, ado.get("id")))
+        findings.append(_output.finding("vocab.ado.ado-id-integer", "%s: ado.id must be an integer work-item id, got %r"
+                        % (where, ado.get("id"))))
     # A FINDING rather than a warning, and not for symmetry: a misspelled origin
     # reads as "unrecorded" everywhere downstream, which is the same silence a
     # pre-0.44 link produces. So the one wrong value here is indistinguishable
     # from the honest absence unless the validator refuses it. `null` and absent
     # both mean unrecorded and are left alone.
     if ado.get("origin") is not None and ado.get("origin") not in ADO_ORIGIN:
-        findings.append("%s: ado.origin must be one of %s (or absent/null for "
+        findings.append(_output.finding("vocab.ado.ado-origin-one", "%s: ado.origin must be one of %s (or absent/null for "
                         "unrecorded), got %r"
                         % (where, ", ".join(repr(v) for v in ADO_ORIGIN),
-                           ado.get("origin")))
+                           ado.get("origin"))))
 
 
 def _unknown_keys(obj, known, where, warnings):

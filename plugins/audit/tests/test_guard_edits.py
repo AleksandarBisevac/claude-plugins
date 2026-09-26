@@ -315,6 +315,42 @@ def _cases(check):
          "allow", "mcp__fs__write_file",
          {"path": "src/api.ts", "content": "console.log(%s)\n" % tok})
 
+    # (tf) A LINKED WORKTREE'S JOURNAL IS A JOURNAL. The trail and the bypass
+    # state were located under CLAUDE_PROJECT_DIR only, so from a session
+    # started in the main checkout, an edit into a phase worktree's journal was
+    # nobody's business - the one file the plugin promises is append-only,
+    # rewritable by hand one tree over.
+    _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "guard-edits-wt-")
+    if not _tf_ok:
+        check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
+    else:
+        _prev_tf = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
+        try:
+            _tf_j = os.path.join(_tf["wt"], "docs", "audit", "journal",
+                                 "2026-09.abc.jsonl")
+            _expect("tf1 an Edit into a linked worktree's journal is refused as "
+                    "the append-only trail it is", "block", "Edit", _tf_j,
+                    '{"v":1}', cwd=_tf["main"])
+            _expect("tf2 ...and a plan-first bypass forged into the worktree's "
+                    "state directory is refused as forgery", "block", "Write",
+                    os.path.join(_tf["wt"], ".claude", "state",
+                                 "plan-bypass-x.json"), "{}", cwd=_tf["main"])
+            _mcp("tf3 ...and an MCP write into it is refused on the same "
+                 "evidence, not skipped as a path outside the project",
+                 "block", "mcp__fs__write_file",
+                 {"path": _tf_j, "content": '{"v": 1, "hash": "x"}\n' * 3})
+            _expect("tf4 ...while an ordinary source file in the worktree is "
+                    "nothing these rules hold - the re-root found the journal, "
+                    "it did not widen the journal to the worktree", "allow",
+                    "Write", os.path.join(_tf["wt"], "src", "app.ts"), "x",
+                    cwd=_tf["main"])
+        finally:
+            if _prev_tf is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -35,6 +35,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -3673,6 +3674,140 @@ def _cases(check):
               "reach is reported by document and line: %r" % (_dp,),
               _dp == [("commands/init.md", 1)])
     finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    _lock_recipe_cases(check)
+
+
+# --- the worktree lock recipe, run as written ----------------------------------
+_RECIPE_SECTION = "## The lock worktree tooling shares"
+_RECIPE_RUN = "<the run that must be alone>"
+_RECIPE_DIR = "<worktreeDir>"
+_RECIPE_WAIT = "--wait 30"
+# How long a holder waits for its sentinel before giving up: 0.05 s a tick.
+_HOLD_TICKS = 1200
+
+
+def _lock_recipe():
+    """The fenced shell block of worktree.md's lock section, verbatim."""
+    text = _product_doc("commands/worktree.md")
+    section = text.split(_RECIPE_SECTION, 1)[1].split("\n## ", 1)[0]
+    match = re.search(r"```bash\n(.*?)```", section, re.S)
+    return match.group(1) if match else None
+
+
+def _run_recipe(shell, script, env):
+    return subprocess.Popen([shell, "-c", script], env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def _msys_pid(shell):
+    """True when `shell`'s `$$` is an MSYS pid rather than an OS pid.
+
+    Git for Windows' shells publish the Windows pid beside their own at
+    `/proc/$$/winpid`; the recipe records `$$`, which the lock then probes as an
+    OS pid, so there the recipe's liveness is not what it says.
+    """
+    done = subprocess.run([shell, "-c", "[ -r /proc/$$/winpid ]"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return done.returncode == 0
+
+
+def _lock_recipe_cases(check):
+    """THE RECIPE IS A PROGRAM, so it is run, under every POSIX shell a reader has.
+
+    A document's shell block is read by a human who pastes it into whatever shell
+    they are in - on macOS, and in Claude Code's Bash tool there, that is zsh -
+    so a recipe that works only in bash is a recipe that does not work. Each shell
+    missing here is a graded skip, never a silent one.
+    """
+    recipe = _lock_recipe()
+    check("lr1 worktree.md's lock section carries one bash block with both "
+          "placeholders a caller fills in",
+          bool(recipe) and _RECIPE_RUN in recipe and _RECIPE_DIR in recipe
+          and recipe.count(_RECIPE_WAIT) == 1)
+    if not recipe:
+        return
+    if shutil.which("git") is None:
+        _harness.skip(check, "lr2", "git is not on PATH", True)
+        return
+    tmp = tempfile.mkdtemp(prefix="lock-recipe-")
+    holders = []
+    try:
+        main_tree = os.path.join(tmp, "main")
+        linked = os.path.join(tmp, "linked")
+        quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        subprocess.run(["git", "init", "-q", main_tree], check=True, **quiet)
+        subprocess.run(["git", "-C", main_tree, "-c", "user.email=a@b", "-c",
+                        "user.name=a", "-c", "commit.gpgsign=false", "commit",
+                        "-q", "--allow-empty", "-m", "base"], check=True, **quiet)
+        subprocess.run(["git", "-C", main_tree, "worktree", "add", "-q", "-b",
+                        "wt", linked], check=True, **quiet)
+        common = subprocess.run(["git", "-C", main_tree, "rev-parse",
+                                 "--git-common-dir"], stdout=subprocess.PIPE,
+                                check=True).stdout.decode().strip()
+        lock_file = os.path.join(os.path.realpath(os.path.join(main_tree, common)),
+                                 "audit-locks", "user-e2e.lock")
+        # One shared identity for both runs: the case parallel subagents of one
+        # Claude Code session are in, and the one the recipe must survive. No
+        # startup file of the operator's may run: `zsh -c` reads $ZDOTDIR/.zshenv
+        # and `bash -c` reads $BASH_ENV, and either can change which python runs.
+        env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(_output.PLUGIN_ROOT),
+                   CLAUDE_CODE_SESSION_ID="one-shared-session",
+                   CLAUDE_PID=str(os.getpid()), ZDOTDIR=tmp)
+        for name in ("BASH_ENV", "ENV"):
+            env.pop(name, None)
+        go = os.path.join(tmp, "go")
+        # The holder waits on a SENTINEL, not a clock: it holds until this test
+        # has seen the second run's answer, however long a loaded sweep takes.
+        # BOUNDED, so a holder whose test died can never spin on after it: the
+        # loop gives up by itself, and `finally` below also kills it.
+        hold = ("i=0; while [ ! -e '%s' ] && [ \"$i\" -lt %d ]; do sleep 0.05; "
+                "i=$((i+1)); done" % (go, _HOLD_TICKS))
+        for shell in ("sh", "bash", "zsh"):
+            label = "lr2 %s" % (shell,)
+            if shutil.which(shell) is None:
+                _harness.skip(check, label, "%s is not on PATH" % (shell,), True)
+                continue
+            if _msys_pid(shell):
+                _harness.skip(check, label, "%s's $$ is an MSYS pid, not the OS "
+                              "pid the lock probes - the recipe is POSIX-shell "
+                              "only" % (shell,), True)
+                continue
+            if os.path.exists(go):
+                os.unlink(go)
+            first = recipe.replace(_RECIPE_DIR, "'%s'" % (main_tree,)).replace(
+                _RECIPE_RUN, hold)
+            # `--wait 0` for the second run only: the recipe's own wait would
+            # outlast the holder and take the lock after it, which is correct and
+            # would hide whether the refusal happens at all.
+            second = recipe.replace(_RECIPE_DIR, "'%s'" % (linked,)).replace(
+                _RECIPE_RUN, "true").replace(_RECIPE_WAIT, "--wait 0")
+            holder = _run_recipe(shell, first, env)
+            holders.append(holder)
+            deadline = time.monotonic() + 30
+            while not os.path.exists(lock_file) and holder.poll() is None \
+                    and time.monotonic() < deadline:
+                time.sleep(0.05)
+            took = os.path.exists(lock_file)
+            other = _run_recipe(shell, second, env)
+            other_out = other.communicate(timeout=60)[0].decode("utf-8", "replace")
+            with open(go, "w", encoding="utf-8") as fh:
+                fh.write("go\n")
+            held_out = holder.communicate(timeout=60)[0].decode("utf-8", "replace")
+            check("%s: the recipe takes the lock, and a concurrent run from "
+                  "another worktree under the SAME session is refused with exit "
+                  "3: first=%r second=%r %r"
+                  % (label, holder.returncode, other.returncode,
+                     (held_out + other_out)[-200:]),
+                  took and holder.returncode == 0 and other.returncode == 3)
+            check("lr3 %s: the lock is gone once the holder finishes, so the "
+                  "release ran" % (shell,), not os.path.exists(lock_file))
+    finally:
+        for holder in holders:
+            if holder.poll() is None:
+                holder.kill()
+                holder.wait()
         shutil.rmtree(tmp, ignore_errors=True)
 
 

@@ -435,7 +435,8 @@ evidence already exists in git, the shard, the journal and the ledger, and what 
 missing is the checker that reads it. The rows that carried that mark for a commit's file
 list, a plain `push`, a stash, a high-risk task's model and `phase.baseRef` have moved —
 `verify-invariants.py` reads them now, and a breach exits 1 at sign-off and under
-`--fail-on invariant-breach`. The ones left here still say `post-hoc` because nothing
+`--fail-on invariant-breach` — once an `invariants-baseline.json` sits beside the manifest,
+a breach it does not hold, for both alike, since both read it through `_invariants`. The ones left here still say `post-hoc` because nothing
 reads them yet, and until something does they are policy, not guarantee.
 
 The rows marked **nothing** cannot move at all without recording something that is not
@@ -1300,8 +1301,10 @@ committed* warning is for. It is a smoke detector wired to three alarms, not a v
 
 The **completion records** are journal rows the `journal-writes` hook derives from the
 manifest diff — `task.complete` (a task's status moved to done), `task.commit` (its commit
-moved null → SHA), `phase.signoff` (a phase reached done — its derived status, so a verdict
-recorded by `/audit:phase signoff` or the merge stamped after one counts) — plus `task.move`, written by
+moved null → SHA), `phase.signoff` (a phase reached done — its derived status, moved by its
+inputs: a verdict recorded by `/audit:phase signoff`, or the merge stamped after one; a stored
+`status` flipped by hand, or storing what the derivation already answered, is recorded as an
+edit and signs nothing off) — plus `task.move`, written by
 `/audit:task move` when a task is renumbered into another phase. The hook derives them from
 a pre-image it refreshes after every row it writes, so **which tool wrote the manifest is
 not part of the answer** - and a merge that brings a finished task in from another branch

@@ -241,6 +241,10 @@ _WRITER_SHAPES = (
 # describing the code as it was before the recorder shipped.
 _WRITER_NAMED = ("journal", "evidence")
 
+# The `.wt-<8 hex>` key a linked worktree's writer id carries after the minted
+# shape (`_journal_io.WORKTREE_MARK` plus half a random token).
+_WORKTREE_SUFFIX = re.compile(r"\.wt-[0-9a-f]{8}$")
+
 
 def writer_id_problem(basename):
     """Why a record file's writer id is not one of the shapes this plugin mints.
@@ -258,6 +262,9 @@ def writer_id_problem(basename):
     _month, _dot, wid = stem.partition(".")
     if not wid:
         return "carries no writer id at all"
+    # A linked worktree's writer is the minted shape plus `_journal_io`'s
+    # worktree key - a random token too, so the shape below still decides.
+    wid = _WORKTREE_SUFFIX.sub("", wid)
     if any(shape.match(wid) for shape in _WRITER_SHAPES):
         return None
     return ("names its writer with something that is neither a session id, a "
@@ -864,6 +871,16 @@ def _cases(check):
           and writer_id_problem("2026-08.MacBook-Pro.local-48645.jsonl")
           is not None
           and writer_id_problem("2026-08.jsonl") is not None)
+    check("q11b ...and a LINKED WORKTREE's writer id - a minted shape followed by "
+          "the `.wt-<8 hex>` key `_journal_io.worktree_key` appends - is one of "
+          "those shapes, while the suffix alone, or a name in its place, is not",
+          writer_id_problem("2026-09.24c1c300-045e-45b9-beaf.wt-09806857.jsonl")
+          is None
+          and writer_id_problem("2026-09.a1b2c3d4e5f60718.wt-09806857.jsonl")
+          is None
+          and writer_id_problem("2026-09.wt-09806857.jsonl") is not None
+          and writer_id_problem("2026-09.3f33caa7-c0c9-4a4e-9c3b.wt-laptop.jsonl")
+          is not None)
 
     _torn = scan_text("f.jsonl", '{"actor":{"via":"hook"}}\n{"half', "journal")
     _mid = scan_text("f.jsonl", '{"half\n{"actor":{"via":"hook"}}\n', "journal")

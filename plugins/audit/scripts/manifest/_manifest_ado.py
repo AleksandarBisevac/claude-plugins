@@ -99,21 +99,21 @@ def _check_identity_map(meta, findings, warnings):
     if imap is None:
         return
     if not isinstance(imap, dict):
-        findings.append("meta.ado.identityMap: must be an object mapping "
+        findings.append(_output.finding("ado.identity_map.object-mapping-ledger", "meta.ado.identityMap: must be an object mapping "
                         "ledger identity -> ADO identity (email/UPN), got %s"
-                        % type(imap).__name__)
+                        % type(imap).__name__))
         return
     targets = {}   # lowercased ADO identity -> [ledger key, ...] in map order
     shown = {}     # lowercased ADO identity -> first spelling seen
     for k, v in imap.items():
         if not isinstance(k, str) or not str(k).strip():
-            findings.append("meta.ado.identityMap: keys must be non-empty "
+            findings.append(_output.finding("ado.identity_map.keys-non-empty", "meta.ado.identityMap: keys must be non-empty "
                             "ledger identity strings (the form usage."
-                            "authorMode records), got %r" % (k,))
+                            "authorMode records), got %r" % (k,)))
         if not isinstance(v, str) or not v.strip():
-            findings.append("meta.ado.identityMap[%r]: value must be a "
+            findings.append(_output.finding("ado.identity_map.value-non-empty", "meta.ado.identityMap[%r]: value must be a "
                             "non-empty ADO identity string (email/UPN), "
-                            "got %r" % (k, v))
+                            "got %r" % (k, v)))
             continue
         low = v.strip().lower()
         targets.setdefault(low, []).append(k)
@@ -143,8 +143,8 @@ def _check_evidence_stamp(block, where, findings):
     for key in ("fetchedAt", "basis"):
         val = block.get(key)
         if key in block and val is not None and not isinstance(val, str):
-            findings.append("%s.%s: must be a string or null, got %s"
-                            % (where, key, type(val).__name__))
+            findings.append(_output.finding("ado.evidence_stamp.string-null", "%s.%s: must be a string or null, got %s"
+                            % (where, key, type(val).__name__)))
 
 
 def _check_hierarchy(ado, findings, warnings):
@@ -162,10 +162,10 @@ def _check_hierarchy(ado, findings, warnings):
     if block is None:
         return
     if not isinstance(block, dict):
-        findings.append("meta.ado.hierarchy: must be an object {levels, "
+        findings.append(_output.finding("ado.hierarchy.object-levels-fetchedat", "meta.ado.hierarchy: must be an object {levels, "
                         "fetchedAt, basis} or null (absent = the type ranks "
                         "were never fetched, which is an answer), got %s"
-                        % type(block).__name__)
+                        % type(block).__name__))
         return
     _unknown_keys(block, {"levels", "fetchedAt", "basis"},
                   "meta.ado.hierarchy", warnings)
@@ -173,17 +173,17 @@ def _check_hierarchy(ado, findings, warnings):
     levels = block.get("levels")
     if "levels" in block and levels is not None:
         if not isinstance(levels, dict):
-            findings.append("meta.ado.hierarchy.levels: must be an object of "
+            findings.append(_output.finding("ado.hierarchy.object-work-item", "meta.ado.hierarchy.levels: must be an object of "
                             "work item type -> backlog rank, got %s"
-                            % type(levels).__name__)
+                            % type(levels).__name__))
         else:
             bad = [k for k, v in levels.items()
                    if isinstance(v, bool) or not isinstance(v, int)]
             if bad:
-                findings.append("meta.ado.hierarchy.levels: every rank must be "
+                findings.append(_output.finding("ado.hierarchy.every-rank-integer", "meta.ado.hierarchy.levels: every rank must be "
                                 "an integer (%d bad: %s)"
                                 % (len(bad),
-                                   _output.some_of(sorted(bad), render=repr)))
+                                   _output.some_of(sorted(bad), render=repr))))
             if not levels:
                 # An empty ladder ranks nothing, so every link reports `not
                 # verified` while the block LOOKS like a fetched answer. That
@@ -210,9 +210,9 @@ def _check_parent_candidates(ado, findings, warnings):
     if block is None:
         return
     if not isinstance(block, dict):
-        findings.append("meta.ado.parentCandidates: must be an object {items, "
+        findings.append(_output.finding("ado.parent_candidates.object-items-fetchedat", "meta.ado.parentCandidates: must be an object {items, "
                         "fetchedAt, basis} or null, got %s"
-                        % type(block).__name__)
+                        % type(block).__name__))
         return
     _unknown_keys(block, {"items", "fetchedAt", "basis"},
                   "meta.ado.parentCandidates", warnings)
@@ -220,19 +220,19 @@ def _check_parent_candidates(ado, findings, warnings):
     items = block.get("items")
     if "items" in block and items is not None:
         if not isinstance(items, list):
-            findings.append("meta.ado.parentCandidates.items: must be an array "
+            findings.append(_output.finding("ado.parent_candidates.array-id-type", "meta.ado.parentCandidates.items: must be an array "
                             "of {id, type, title, state, areaPath, url}, got %s"
-                            % type(items).__name__)
+                            % type(items).__name__))
         else:
             bad = [x for x in items
                    if not isinstance(x, dict)
                    or isinstance(x.get("id"), bool)
                    or not isinstance(x.get("id"), int)]
             if bad:
-                findings.append("meta.ado.parentCandidates.items: every "
+                findings.append(_output.finding("ado.parent_candidates.every-candidate-needs", "meta.ado.parentCandidates.items: every "
                                 "candidate needs an integer work item id "
                                 "(%d bad: %s)"
-                                % (len(bad), _output.some_of(bad, render=repr)))
+                                % (len(bad), _output.some_of(bad, render=repr))))
 
 
 def _check_connection(ado, findings, warnings):
@@ -262,10 +262,10 @@ def _check_connection(ado, findings, warnings):
     if block is None:
         return
     if not isinstance(block, dict):
-        findings.append("meta.ado.connection: must be an object {process, "
+        findings.append(_output.finding("ado.connection.object-process-pbitype", "meta.ado.connection: must be an object {process, "
                         "pbiType, stateMapNeeded, authPath, fetchedAt, basis} "
                         "or null (absent = connect never ran, which is an "
-                        "answer), got %s" % type(block).__name__)
+                        "answer), got %s" % type(block).__name__))
         return
     _unknown_keys(block, {"process", "pbiType", "stateMapNeeded", "authPath",
                           "fetchedAt", "basis"}, "meta.ado.connection",
@@ -274,15 +274,15 @@ def _check_connection(ado, findings, warnings):
     for key in ("process", "pbiType", "authPath"):
         val = block.get(key)
         if key in block and val is not None and not isinstance(val, str):
-            findings.append("meta.ado.connection.%s: must be a string or null "
+            findings.append(_output.finding("ado.connection.string-null-null", "meta.ado.connection.%s: must be a string or null "
                             "(null = the probe could not tell, which is a "
                             "recorded answer), got %s"
-                            % (key, type(val).__name__))
+                            % (key, type(val).__name__)))
     smn = block.get("stateMapNeeded")
     if "stateMapNeeded" in block and smn is not None and not isinstance(smn, bool):
-        findings.append("meta.ado.connection.stateMapNeeded: must be true, "
+        findings.append(_output.finding("ado.connection.true-false-null", "meta.ado.connection.stateMapNeeded: must be true, "
                         "false or null (null = the process was not detected, "
-                        "so the question has no answer yet), got %r" % (smn,))
+                        "so the question has no answer yet), got %r" % (smn,)))
     # A recorded REQUIREMENT the config then does not meet is the one thing
     # this block can contradict, and it is a warning rather than a finding for
     # the file's standing reason: the real states live in ADO, so a stateMap
@@ -380,8 +380,8 @@ def check_ado_meta(ado):
     if ado is None:
         return f, w
     if not isinstance(ado, dict):
-        f.append("meta: ado must be an object or null, got %s"
-                 % type(ado).__name__)
+        f.append(_output.finding("ado.ado_meta.ado-object-null", "meta: ado must be an object or null, got %s"
+                 % type(ado).__name__))
         return f, w
     _unknown_keys(ado, KNOWN_ADO, "meta.ado", w)
     _check_identity_map({"ado": ado}, f, w)
@@ -389,43 +389,43 @@ def check_ado_meta(ado):
     for key in ("organization", "project"):
         val = ado.get(key)
         if key in ado and (not isinstance(val, str) or not val.strip()):
-            f.append("meta.ado.%s: must be a non-empty string, got %r"
-                     % (key, val))
+            f.append(_output.finding("ado.ado_meta.non-empty-string-2", "meta.ado.%s: must be a non-empty string, got %r"
+                     % (key, val)))
     for key in ("areaPath", "iterationPath"):
         val = ado.get(key)
         if key in ado and val is not None and not isinstance(val, str):
-            f.append("meta.ado.%s: must be a string or null, got %s"
-                     % (key, type(val).__name__))
+            f.append(_output.finding("ado.ado_meta.string-null", "meta.ado.%s: must be a string or null, got %s"
+                     % (key, type(val).__name__)))
     for key in ("enabled", "echo", "phaseWorkItems"):
         val = ado.get(key)
         if key in ado and not isinstance(val, bool):
-            f.append("meta.ado.%s: must be true or false, got %r" % (key, val))
+            f.append(_output.finding("ado.ado_meta.true-false", "meta.ado.%s: must be true or false, got %r" % (key, val)))
     tag = ado.get("tag")
     if "tag" in ado and tag is not None and (
             not isinstance(tag, str) or not tag.strip()):
-        f.append("meta.ado.tag: must be a non-empty string or null (null = "
+        f.append(_output.finding("ado.ado_meta.non-empty-string", "meta.ado.tag: must be a non-empty string or null (null = "
                  "no provenance tag; absent = %r), got %r"
-                 % (DEFAULT_ADO_TAG, tag))
+                 % (DEFAULT_ADO_TAG, tag)))
 
     types = ado.get("types")
     if "types" in ado and types is not None:
         if not isinstance(types, dict):
-            f.append("meta.ado.types: must be an object, got %s"
-                     % type(types).__name__)
+            f.append(_output.finding("ado.ado_meta.object", "meta.ado.types: must be an object, got %s"
+                     % type(types).__name__))
         else:
             for k, v in types.items():
                 if k == "pbi" and v is None:
                     continue  # null pbi = auto-detect at first phase push
                 if not isinstance(v, str) or not v.strip():
-                    f.append("meta.ado.types: every value must be a work-item "
+                    f.append(_output.finding("ado.ado_meta.every-value-work", "meta.ado.types: every value must be a work-item "
                              "type name (non-empty string%s), got %s=%r"
-                             % ("; pbi may be null = auto-detect", k, v))
+                             % ("; pbi may be null = auto-detect", k, v)))
 
     sm = ado.get("stateMap")
     if "stateMap" in ado and sm is not None:
         if not isinstance(sm, dict):
-            f.append("meta.ado.stateMap: must be an object {task, bug, phase} "
-                     "or null, got %s" % type(sm).__name__)
+            f.append(_output.finding("ado.ado_meta.object-task-bug", "meta.ado.stateMap: must be an object {task, bug, phase} "
+                     "or null, got %s" % type(sm).__name__))
         else:
             # Phase work items have their OWN state vocabulary
             # in ADO (a Scrum PBI knows no "In Progress"), so the map carries a
@@ -437,9 +437,9 @@ def check_ado_meta(ado):
                 if kind not in sm or block is None:
                     continue
                 if not isinstance(block, dict):
-                    f.append("meta.ado.stateMap.%s: must be an object of "
+                    f.append(_output.finding("ado.ado_meta.object-status-ado", "meta.ado.stateMap.%s: must be an object of "
                              "status -> ADO state, got %s"
-                             % (kind, type(block).__name__))
+                             % (kind, type(block).__name__)))
                     continue
                 _unknown_keys(block, set(statuses),
                               "meta.ado.stateMap.%s" % kind, w)
@@ -447,81 +447,81 @@ def check_ado_meta(ado):
                     if st not in statuses or val is None:
                         continue  # unknown key already warned; null = never move
                     if not isinstance(val, str) or not val.strip():
-                        f.append("meta.ado.stateMap.%s.%s: must be an ADO "
+                        f.append(_output.finding("ado.ado_meta.ado-state-name", "meta.ado.stateMap.%s.%s: must be an ADO "
                                  "state name or null (null = never move this "
-                                 "transition), got %r" % (kind, st, val))
+                                 "transition), got %r" % (kind, st, val)))
 
     oc = ado.get("onComplete")
     if "onComplete" in ado and oc is not None:
         if not isinstance(oc, dict):
-            f.append("meta.ado.onComplete: must be an object or null, got %s"
-                     % type(oc).__name__)
+            f.append(_output.finding("ado.ado_meta.object-null", "meta.ado.onComplete: must be an object or null, got %s"
+                     % type(oc).__name__))
         else:
             _unknown_keys(oc, {"remainingWork"}, "meta.ado.onComplete", w)
             rw = oc.get("remainingWork")
             if "remainingWork" in oc and rw is not None:
                 if (isinstance(rw, bool) or not isinstance(rw, (int, float))
                         or rw < 0):
-                    f.append("meta.ado.onComplete.remainingWork: must be a "
+                    f.append(_output.finding("ado.ado_meta.number-null-null", "meta.ado.onComplete.remainingWork: must be a "
                              "number >= 0 or null (null = never touch the "
-                             "field), got %r" % (rw,))
+                             "field), got %r" % (rw,)))
 
     cm = ado.get("comments")
     if "comments" in ado and cm is not None:
         if not isinstance(cm, dict):
-            f.append("meta.ado.comments: must be an object or null, got %s"
-                     % type(cm).__name__)
+            f.append(_output.finding("ado.ado_meta.object-null-2", "meta.ado.comments: must be an object or null, got %s"
+                     % type(cm).__name__))
         else:
             _unknown_keys(cm, {"onBlocked", "onComplete"},
                           "meta.ado.comments", w)
             for key in ("onBlocked", "onComplete"):
                 val = cm.get(key)
                 if key in cm and not isinstance(val, bool):
-                    f.append("meta.ado.comments.%s: must be true or false, "
-                             "got %r" % (key, val))
+                    f.append(_output.finding("ado.ado_meta.true-false-2", "meta.ado.comments.%s: must be true or false, "
+                             "got %r" % (key, val)))
 
     sp = ado.get("sprint")
     if "sprint" in ado and sp is not None:
         if not isinstance(sp, dict):
-            f.append("meta.ado.sprint: must be an object {team, mode} or "
-                     "null, got %s" % type(sp).__name__)
+            f.append(_output.finding("ado.ado_meta.object-team-mode", "meta.ado.sprint: must be an object {team, mode} or "
+                     "null, got %s" % type(sp).__name__))
         else:
             _unknown_keys(sp, {"team", "mode"}, "meta.ado.sprint", w)
             team = sp.get("team")
             if not isinstance(team, str) or not team.strip():
-                f.append("meta.ado.sprint: requires a non-empty 'team' -- "
+                f.append(_output.finding("ado.ado_meta.requires-non-empty", "meta.ado.sprint: requires a non-empty 'team' -- "
                          "the team whose iteration calendar defines "
-                         "'current', got %r" % (team,))
+                         "'current', got %r" % (team,)))
             mode = sp.get("mode")
             if "mode" in sp and mode != "current":
-                f.append("meta.ado.sprint.mode: must be 'current' (the only "
+                f.append(_output.finding("ado.ado_meta.current-only-mode", "meta.ado.sprint.mode: must be 'current' (the only "
                          "mode today; static paths belong in "
-                         "meta.ado.iterationPath), got %r" % (mode,))
+                         "meta.ado.iterationPath), got %r" % (mode,)))
 
     pl = ado.get("pull")
     if "pull" in ado and pl is not None:
         if not isinstance(pl, dict):
-            f.append("meta.ado.pull: must be an object {areaPath, tags} or "
-                     "null, got %s" % type(pl).__name__)
+            f.append(_output.finding("ado.ado_meta.object-areapath-tags", "meta.ado.pull: must be an object {areaPath, tags} or "
+                     "null, got %s" % type(pl).__name__))
         else:
             _unknown_keys(pl, {"areaPath", "tags"}, "meta.ado.pull", w)
             ap = pl.get("areaPath")
             if "areaPath" in pl and ap is not None and not isinstance(ap, str):
-                f.append("meta.ado.pull.areaPath: must be a string or null, "
-                         "got %s" % type(ap).__name__)
+                f.append(_output.finding("ado.ado_meta.string-null-2", "meta.ado.pull.areaPath: must be a string or null, "
+                         "got %s" % type(ap).__name__))
             tags = pl.get("tags")
             if "tags" in pl:
                 if not isinstance(tags, list):
-                    f.append("meta.ado.pull.tags: must be an array of tags, "
-                             "got %s" % type(tags).__name__)
+                    f.append(_output.finding("ado.ado_meta.array-tags", "meta.ado.pull.tags: must be an array of tags, "
+                             "got %s" % type(tags).__name__))
                 else:
                     bad = [t for t in tags
                            if not isinstance(t, str) or not t.strip()]
                     if bad:
-                        f.append("meta.ado.pull.tags: every tag must be a "
+                        f.append(_output.finding("ado.ado_meta.every-tag-non", "meta.ado.pull.tags: every tag must be a "
                                  "non-empty string (%d bad: %s)"
                                  % (len(bad),
-                                    _output.some_of(bad, render=repr)))
+                                    _output.some_of(bad, render=repr))))
 
     # `parentWorkItem`: the EXISTING item audit work hangs under. Without it the
     # connector always builds its own branch, which on a board that already has a
@@ -532,11 +532,11 @@ def check_ado_meta(ado):
     if "parentWorkItem" in ado:
         pwi = ado.get("parentWorkItem")
         if pwi is not None and (isinstance(pwi, bool) or not isinstance(pwi, int)):
-            f.append("meta.ado.parentWorkItem must be a work item id (integer) "
-                     "or null, got %s" % type(pwi).__name__)
+            f.append(_output.finding("ado.ado_meta.meta-ado-parentworkitem", "meta.ado.parentWorkItem must be a work item id (integer) "
+                     "or null, got %s" % type(pwi).__name__))
         elif isinstance(pwi, int) and not isinstance(pwi, bool) and pwi <= 0:
-            f.append("meta.ado.parentWorkItem must be a positive work item id, "
-                     "got %r" % (pwi,))
+            f.append(_output.finding("ado.ado_meta.meta-ado-parentworkitem-2", "meta.ado.parentWorkItem must be a positive work item id, "
+                     "got %r" % (pwi,)))
 
     _check_hierarchy(ado, f, w)
     _check_parent_candidates(ado, f, w)

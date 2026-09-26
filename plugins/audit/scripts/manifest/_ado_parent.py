@@ -234,22 +234,22 @@ def _basis_findings(block, where):
     for key in ("type", "title", "url"):
         val = block.get(key)
         if key in block and val is not None and not isinstance(val, str):
-            out.append("%s.%s.%s: must be a string or null, got %s"
-                       % (where, FIELD, key, type(val).__name__))
+            out.append(_output.finding("parent.basis_findings.string-null", "%s.%s.%s: must be a string or null, got %s"
+                       % (where, FIELD, key, type(val).__name__)))
     src = block.get("source")
     # A FINDING and not a warning, for `adoLink.origin`'s reason exactly: a
     # misspelled source reads as "unrecorded" on every surface downstream, which
     # is indistinguishable from the honest absence unless the validator refuses
     # it. `null` and absent both mean unrecorded and are left alone.
     if src is not None and src not in DECLARED_SOURCE:
-        out.append("%s.%s.source: must be one of %s (or absent/null for "
+        out.append(_output.finding("parent.basis_findings.one-absent-null", "%s.%s.source: must be one of %s (or absent/null for "
                    "unrecorded), got %r"
                    % (where, FIELD, ", ".join(repr(v) for v in DECLARED_SOURCE),
-                      src))
+                      src)))
     seen = block.get("observedAt")
     if "observedAt" in block and seen is not None and not isinstance(seen, str):
-        out.append("%s.%s.observedAt: must be an ISO timestamp string or null, "
-                   "got %s" % (where, FIELD, type(seen).__name__))
+        out.append(_output.finding("parent.basis_findings.iso-timestamp-string", "%s.%s.observedAt: must be an ISO timestamp string or null, "
+                   "got %s" % (where, FIELD, type(seen).__name__)))
     return out
 
 
@@ -271,21 +271,21 @@ def declaration_findings(item, where):
     if block is None:
         return (findings, warnings)
     if not isinstance(block, dict):
-        findings.append("%s: %s must be an object {id, ...} or null (null = "
+        findings.append(_output.finding("parent.declaration_findings.object-id-null", "%s: %s must be an object {id, ...} or null (null = "
                         "hangs under nothing, even when "
                         "meta.ado.parentWorkItem is set), got %s"
-                        % (where, FIELD, type(block).__name__))
+                        % (where, FIELD, type(block).__name__)))
         return (findings, warnings)
     warnings.extend(unknown_declaration_keys(block, where))
     if "id" not in block:
-        findings.append("%s: %s requires an 'id' — the work item this hangs "
+        findings.append(_output.finding("parent.declaration_findings.requires-id-work", "%s: %s requires an 'id' — the work item this hangs "
                         "under. Write null instead to declare that it hangs "
-                        "under nothing." % (where, FIELD))
+                        "under nothing." % (where, FIELD)))
     elif _positive_id(block.get("id")) is None:
-        findings.append("%s: %s.id must be a positive work item id (integer), "
+        findings.append(_output.finding("parent.declaration_findings.id-positive-work", "%s: %s.id must be a positive work item id (integer), "
                         "got %r — a config carrying \"103205\" as a string is a "
                         "typo worth naming rather than coercing, because "
-                        "coercing hides it" % (where, FIELD, block.get("id")))
+                        "coercing hides it" % (where, FIELD, block.get("id"))))
     findings.extend(_basis_findings(block, where))
     return (findings, warnings)
 

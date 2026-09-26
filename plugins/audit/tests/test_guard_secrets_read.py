@@ -2523,6 +2523,157 @@ def _cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = _prev_t
         _sh_t.rmtree(tmp_t, ignore_errors=True)
 
+    # (hp) A PIPED HEREDOC IS GRADED BY ITS FAR SIDE - the classification the
+    # history guard shares through `_config.split_heredocs`. A script given a
+    # file operand reads the body as data; a shell runs it; and an unquoted
+    # delimiter lets the shell run a substitution in the body first.
+    _hp_read = "cat " + ".env"
+    # hp1 pinned the piped-body-as-data allow, which was REMOVED: it now pins
+    # the base, where a piped body is shell whatever the far side.
+    _expect("hp1 a body piped to a script is still read as shell, and a secret "
+            "read in it is a read", "block",
+            {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "cat <<'EOF' | python3 x.py -\n%s\nEOF" % _hp_read}})
+    _expect("hp2 ...the same body piped to a SHELL is a read", "block",
+            {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "cat <<'EOF' | bash\n%s\nEOF" % _hp_read}})
+    _expect("hp3 ...and so is a substitution in an UNQUOTED body headed for a "
+            "script - the shell performs it before the script reads a byte",
+            "block",
+            {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "cat <<EOF | python3 x.py -\n$(%s)\nEOF" % _hp_read}})
+
+    _expect("hp10 ...and a substitution in an UNQUOTED body on its way into a "
+            "FILE, where no pipe is read at all - only the live-substitution "
+            "rule keeps it", "block",
+            {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "cat > notes.md <<EOF\n$(%s)\nEOF" % _hp_read}})
+
+    _hp_py = "print(open('.env').read())"
+    for _hid, _hcmd in (
+            ("hp4", "cat <<'EOF' | python3 -W ignore -\n%s\nEOF" % _hp_py),
+            ("hp5", "cat <<'EOF' && %s\nx\nEOF" % _hp_read),
+            ("hp6", "env python3 -W ignore - <<'EOF'\n%s\nEOF" % _hp_py),
+            ("hp7", "cat <<'EOF' | xargs python3 x.py\n%s\nEOF" % _hp_read)):
+        _expect("%s a body or a line this guard used to drop as data, in a "
+                "spelling that RUNS it, is read again" % _hid, "block",
+                {"tool_name": "Bash", "cwd": str(tmp),
+                 "tool_input": {"command": _hcmd}})
+    _hp_dump = "print" + "env"
+    _expect("hp8 an emitter's words piped to a shell across a line "
+            "continuation are a command - the continuation is joined first",
+            "block", {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "echo %s \\\n  | sh" % _hp_dump}})
+    _expect("hp9 ...while the same emitter writing a file is still prose",
+            "allow", {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "echo %s \\\n  > notes.md" % _hp_dump}})
+
+    _expect("hp11 a body echoed by a script into a LATER stage's shell is read",
+            "block", {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "cat <<'EOF' | python3 echo.py | sh\n%s\nEOF"
+                % _hp_read}})
+    _expect("hp12 ...and so is one run by an interpreter option set in the "
+            "environment", "block", {"tool_name": "Bash", "cwd": str(tmp),
+                                     "tool_input": {"command":
+            "export NODE_OPTIONS='-r /dev/stdin'; cat <<'EOF' | node e.js\n%s\nEOF"
+            % _hp_read}})
+    _expect("hp13 ...while a body fed straight to a script's stdin is its data - "
+            "the shape the field report needed", "allow",
+            {"tool_name": "Bash", "cwd": str(tmp), "tool_input": {
+                "command": "python3 x.py --technical - <<'EOF'\n%s\nEOF"
+                % _hp_read}})
+
+    # (lw) A SHELL WRITE INTO A LINKED WORKTREE IS JUDGED AGAINST THAT
+    # WORKTREE'S PLAN. The Edit arm (require-plan) re-rooted onto the worktree
+    # while this arm skipped every target outside CLAUDE_PROJECT_DIR - so an
+    # executor in the P48 worktree was allowed `sed -i` into a file its own
+    # plan does not declare, and one standing in the main checkout was refused
+    # with the main tree's phase named. One file, one verdict, from whichever
+    # tree actually holds it.
+    _lw_ok, _lw = _harness.attempt(_harness.worktree_pair, "gsr-worktree-")
+    if not _lw_ok:
+        check("lw0 the worktree fixture builds (%s)" % (_lw,), False)
+    else:
+        _prev_lw = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = _lw["main"]
+        try:
+            def _lw_bash(cwd, command):
+                ok, got = _harness.attempt(
+                    M.decide, {"tool_name": "Bash", "session_id": "lw",
+                               "cwd": cwd, "tool_input": {"command": command}},
+                    cfg=cfg)
+                return got if ok else ("EXC", got)
+
+            _lw_sed = "sed -i.bak 's/a/b/' "
+            _lw_wt_file = os.path.join(_lw["wt"], "src", "undeclared.ts")
+            _lw_cases = [
+                ("lw1 standing in the worktree", _lw["wt"],
+                 _lw_sed + "src/undeclared.ts"),
+                ("lw2 walking into it with `cd`", _lw["main"],
+                 "cd %s && %ssrc/undeclared.ts" % (_lw["wt"], _lw_sed)),
+                ("lw3 naming it by absolute path", _lw["main"],
+                 _lw_sed + _lw_wt_file),
+                ("lw4 through an interpreter write", _lw["wt"],
+                 "python3 -c \"open('src/undeclared.ts','w').write('x')\""),
+            ]
+            for _lw_label, _lw_cwd, _lw_cmd in _lw_cases:
+                _v, _why = _lw_bash(_lw_cwd, _lw_cmd)
+                check("%s: a shell write into a worktree file its plan does not "
+                      "declare is refused, naming the WORKTREE's running phase "
+                      "and never the main checkout's" % _lw_label,
+                      _v == "block" and "P48" in _why and "P41" not in _why,
+                      repr((_v, _why[:200])))
+            # THE OTHER DIRECTION, and the one that fails if the fix only ever
+            # adds refusals: the file the worktree's plan DOES declare is
+            # allowed there, although the main tree's plan does not declare it.
+            _v, _why = _lw_bash(_lw["wt"], _lw_sed + "src/app.ts")
+            check("lw5 ...while the file the WORKTREE's task declares is allowed "
+                  "there - the main tree's plan does not declare it, so an allow "
+                  "here can only have come from the worktree's", _v == "allow",
+                  repr((_v, _why[:200])))
+            _v, _why = _lw_bash(_lw["main"], _lw_sed + "src/app.ts")
+            check("lw6 ...and the same relative path in the MAIN checkout is "
+                  "still refused under the main tree's own phase - the re-root is "
+                  "per target, not a switch that moved every write",
+                  _v == "block" and "P41" in _why and "P48" not in _why,
+                  repr((_v, _why[:200])))
+            _lw_else = os.path.join(_lw["root"], "elsewhere")
+            os.makedirs(_lw_else, exist_ok=True)
+            _v, _why = _lw_bash(_lw["main"],
+                                "cd %s && %sprobe.ts" % (_lw_else, _lw_sed))
+            check("lw7 a write outside EVERY tree, reached by `cd`, is still "
+                  "nobody's plan - the re-root widens to a worktree of this "
+                  "repository and to nothing else", _v == "allow",
+                  repr((_v, _why[:200])))
+            # The manifest arm places its targets the same way: relative to the
+            # project a worktree's manifest was `../main-P48/docs/...`, which
+            # matched no literal, so a subagent reached its own plan by `sed`.
+            _lw_man = os.path.join(_lw["wt"], _lw["manifest_rel"])
+            _ok8, _got8 = _harness.attempt(
+                M.decide, {"tool_name": "Bash", "session_id": "lw",
+                           "agent_id": "agent-lw", "cwd": _lw["main"],
+                           "tool_input": {"command": "sed -i 's/a/b/' %s"
+                                          % _lw_man}}, cfg=cfg)
+            check("lw8 a SUBAGENT's shell write into a linked worktree's "
+                  "manifest is refused as the plan it is, not skipped as a "
+                  "path outside the project", _ok8 and _got8[0] == "block"
+                  and "audit plan" in _got8[1], repr(_got8)[:300])
+            _ok9, _got9 = _harness.attempt(
+                M.decide, {"tool_name": "Bash", "session_id": "lw",
+                           "agent_id": "agent-lw", "cwd": _lw["main"],
+                           "tool_input": {"command": "sed -i 's/a/b/' %s"
+                                          % os.path.join(_lw["wt"], "notes.md")}},
+                cfg=cfg)
+            check("lw9 ...while the same subagent's write into a worktree file "
+                  "that is NOT the plan is not refused as one - the arm keys on "
+                  "the manifest path in the worktree, not on the worktree",
+                  _ok9 and _got9[0] == "allow", repr(_got9)[:300])
+        finally:
+            if _prev_lw is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _prev_lw
+
     if _prev_project_dir is None:
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
     else:

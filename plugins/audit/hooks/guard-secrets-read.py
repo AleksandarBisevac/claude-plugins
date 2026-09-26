@@ -73,8 +73,9 @@ place a tier is read, and no Rule #1 or Rule #2 branch calls it.
     `cat > file <<EOF` heredocs). The block message steers to the Edit/Write
     tools, which the plan gate governs.
   Both arms ask `_ungoverned_write_target` the same questions — can the
-  destination be established at all, source extension, inside the repository,
-  not exempt, not covered by an in_progress
+  destination be established at all, source extension, inside the repository
+  or a linked worktree of it (judged against THAT tree's plan,
+  `_config.tree_for`), not exempt, not covered by an in_progress
   task. They asked different ones for a long time, and the interpreter arm consulted
   no plan at all while its refusal blamed the plan-first gate: a `.ts` file a
   running task declared was denied through the interpreter and allowed through
@@ -1154,80 +1155,19 @@ def _executed_text(cmd):
     same heredoc rule without the emitter half.
     """
     text, code, shell = _config.split_heredocs(cmd)
-    text = _TEXT_EMITTER_ARGS.sub(_strip_emitter_args, text)
+    # A continuation joins the emitter's line to the pipe on the next one, which
+    # the pattern's `|` exclusion must see: `echo printenv \<newline> | sh`.
+    text = _TEXT_EMITTER_ARGS.sub(_strip_emitter_args,
+                                  _config.join_continuations(text))
     return "\n".join([text] + shell + code)
 
 
 def _clauses(cmd):
-    """Split a shell command into clauses on `;`, `|`, `&`, NEWLINE, outside quotes.
-
-    The newline was added as a separator, matching how a multi-line Bash block is
-    actually written -- and its absence was this function's own documented
-    defect surviving in the one spelling nobody had tried. Measured: the two
-    lines below deny together and neither denies alone, while the same two joined
-    with `;` are allowed. The evidence was being taken from two different
-    commands and applied to the block as a whole.
-
-    The inline-eval heuristics must judge each clause on its own facts:
-    `x.py --selftest >/tmp/out; python3 -c "json.load(open('a.json'))"` is a
-    redirect in one clause and an eval in another, and reading them as one
-    command manufactured a deny neither clause earns (reproduced live).
-
-    Deliberately simple, and FAIL-SAFE about its own limits: quote tracking
-    covers '...', "..." and backslash escapes; when the quoting cannot be
-    tracked (unbalanced at end of string) the WHOLE command is returned as one
-    clause, so an unparseable command is judged exactly as strictly as before
-    the split existed. A single-clause command comes back unchanged either way
-    — the split can only narrow multi-clause false positives, never widen what
-    one clause may do. Separators inside `$( )` are an accepted imprecision:
-    full shell parsing is out of scope here (see the header's trade-off note),
-    and each fragment is still judged by the same regexes.
-
-    A LINE CONTINUATION IS NOT A SEPARATOR and needs no special case: the
-    backslash branch above already consumes the character after it, so one
-    ending a line eats its own newline and the two lines stay one clause.
-    (Spelled without the character itself: in a non-raw docstring it would
-    open an invalid escape sequence, which is a SyntaxWarning -- and the
-    warning machinery pulls `warnings`, `linecache` and `tokenize` into a
-    hook that must import fast, which is how `bench-hooks --gate` found it.)
-    A newline inside quotes is likewise held together by the quote tracking, which
-    is why the transport shape -- an interpreter invocation and a repo path both
-    inside ONE quoted argument handed to another program -- is still refused.
-    That one cannot be fixed by splitting: it needs knowing the text is an
-    argument rather than a program, which is real shell parsing. Stated here
-    rather than left to be rediscovered."""
-    parts, buf, quote = [], [], None
-    i, n = 0, len(cmd)
-    while i < n:
-        ch = cmd[i]
-        if quote:
-            buf.append(ch)
-            if ch == "\\" and quote == '"' and i + 1 < n:
-                buf.append(cmd[i + 1])
-                i += 2
-                continue
-            if ch == quote:
-                quote = None
-        elif ch == "\\" and i + 1 < n:
-            buf.append(ch)
-            buf.append(cmd[i + 1])
-            i += 2
-            continue
-        elif ch in ("'", '"'):
-            quote = ch
-            buf.append(ch)
-        elif ch in (";", "|", "&", "\n", "\r"):
-            if "".join(buf).strip():
-                parts.append("".join(buf))
-            buf = []
-        else:
-            buf.append(ch)
-        i += 1
-    if quote is not None:
-        return [cmd]  # unbalanced quoting: unsure, so judge it as ONE clause
-    if "".join(buf).strip():
-        parts.append("".join(buf))
-    return parts or [cmd]
+    """This file's name for `_config.command_clauses`, which holds the split
+    and its reasoning: the journal recorder and the history guard place a
+    command by the same clauses, and a second splitter would disagree with this
+    one about where a `cd` ends."""
+    return _config.command_clauses(cmd)
 
 
 # --- the in-place editors' operands: the files, never the script ---------------------
@@ -1416,86 +1356,12 @@ _source_exts = _config.source_exts
 
 
 # --- the working directory this hook never used to read ------------------------
-_DIR_CHANGE_CLAUSE = re.compile(
-    r"^\s*(cd|pushd|popd)(?:\s+(.*))?$", re.IGNORECASE)
-
-
 def _effective_cwd(cmd, payload_cwd):
-    """Where this command's shell is standing when its writes actually run.
-
-    -> an absolute directory, or None when this cannot be said at all
-
-    A RELATIVE WRITE TARGET IS A WORD ABOUT SOMEWHERE, AND "SOMEWHERE" WAS
-    ALWAYS THE REPOSITORY ROOT HERE - never read from the payload and never
-    read from the command. `sed -i 's/a/b/' notes.py` run from a directory
-    outside the repository, or reached through `cd <elsewhere> &&`, named a
-    repository-relative path that does not exist and was refused for plan
-    coverage under that name, while the identical write spelled from inside
-    the tree was refused correctly - one file, one command shape, two
-    verdicts decided by where the shell happened to be standing. The payload
-    already carries the shell's own starting point: `cwd`, the SESSION's
-    directory and the same field `guard-bash-writes.directory_change_basis`
-    reads for the same reason (a hook may not import a hook, so this is a
-    second reading of the same field rather than a second field). A leading
-    `cd`/`pushd` in the command text is the one thing that moves it before a
-    write runs.
-
-    NO PAYLOAD `cwd` AT ALL IS UNRESOLVABLE - not a silent fallback to this
-    process's own directory or to the repository root. Either guess answers a
-    question about the SHELL with an answer about something else, which is
-    the same invented-target class `_resolve_write_expr` already refuses to
-    commit for a bound name it cannot read.
-
-    A DIRECTORY CHANGE THIS CANNOT READ ENDS THE WALK, for every write that
-    follows it in the command. `cd`/`pushd` with anything but exactly one
-    plain argument - no expansion, substitution, glob or home shorthand, the
-    same marks `resolvable_destination` already will not guess through - and
-    `popd` (which needs a push stack this process never saw a matching
-    `pushd` build) both leave the rest of the command standing somewhere this
-    cannot name. That is not a second mechanism: it is the withdrawal
-    `resolvable_destination` already makes for a mark in the target's OWN
-    text, extended to the one case it was one short of - a plain word with
-    nothing to resolve it against.
-
-    ONE PASS, ACCUMULATING, over every clause in the command in the order it
-    is written - not the directory change nearest a particular write's own
-    clause. That is coarser than a real shell, and coarser on purpose: this
-    file already reasons about the whole command for the shell-write grammars
-    and clause-by-clause only for the eval heuristics, and a write's position
-    relative to a `cd` is evidence read nowhere else in it. What this may not
-    be is finer than it can prove, which is why one unreadable change stops
-    the walk rather than being skipped past.
-
-    NEVER REALPATH HERE. `_placed_target` joins this answer onto a relative
-    write target and hands the join straight to `_config.rel_path`, which
-    compares it against `root` WITHOUT resolving either side - on purpose, so
-    a relative target stays comparable to a relative task-file entry. A
-    working directory quietly resolved through a symlink (`/tmp` ->
-    `/private/tmp` on macOS, which is where a test fixture and a real
-    session scratchpad both commonly live) would then compare a resolved
-    path against an unresolved `root` and manufacture a `../../..` mismatch
-    for a file that never left the tree. `_config.within_root` is the one
-    place symlinks get resolved, on both sides at once, and it is asked
-    separately - this only normalises the arithmetic of `..` and `.`."""
-    if not payload_cwd:
-        return None
-    current = str(payload_cwd)
-    for clause in _clauses(cmd):
-        m = _DIR_CHANGE_CLAUSE.match(clause)
-        if not m:
-            continue
-        verb = m.group(1).lower()
-        if verb == "popd":
-            return None
-        args = [w.strip("'\"") for w in (m.group(2) or "").split()
-                if not w.startswith("-")]
-        if len(args) != 1 or not _config.resolvable_destination(args[0]):
-            return None
-        try:
-            current = os.path.normpath(os.path.join(current, args[0]))
-        except Exception:
-            return None
-    return current
+    """This file's name for `_config.effective_cwd`: where this command's shell
+    is standing when its writes actually run, or None when that cannot be said.
+    It lives in `_config` because every hook that places a Bash command in a
+    working tree asks it, and two readings of one `cd` are two answers."""
+    return _config.effective_cwd(cmd, payload_cwd)
 
 
 def _looks_absolute(t):
@@ -1581,7 +1447,11 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
         deliberately excludes `.json`, which is why no consumer's package.json,
         tsconfig.json or fixture is gated here — and why the manifest needs the
         separate, RESOLVED target set `_manifest_write_hit` holds.
-      * INSIDE the repository. A target outside it is skipped, not reported:
+      * INSIDE the repository - or inside a LINKED WORKTREE of it, which is
+        judged against that worktree's own plan (`_config.tree_for`). The
+        worktree's manifest is the one its executor is held to; skipping its
+        files, as this arm once did while require-plan re-rooted onto them,
+        gave one file two verdicts by tool. A target outside it is skipped, not reported:
         SECURITY.md promises "the same file gets the same verdict whether it is
         edited through a tool or through `sed -i`", so require-plan's
         containment check is one these arms owe identically. Without it a write
@@ -1602,14 +1472,19 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
       * NOT COVERED by an in_progress task, exactly or by directory prefix.
 
     A `continue` rather than a `return` at each: a command writing one file out
-    of scope and one in it still has an in-repo finding to report."""
-    graded = {"hit": None, "unresolved": []}
+    of scope and one in it still has an in-repo finding to report.
+
+    `root` in the answer is the tree the hit was judged in, so the verdict reads
+    THAT tree's running phase; `hit` names the worktree beside the path when
+    the two differ, because "src/app.ts" alone says which file and not which
+    checkout of it."""
+    graded = {"hit": None, "unresolved": [], "root": root}
     if not targets:
         return graded
     exts = _source_exts(cfg)
     exempt = cfg.get("exemptGlobs") or _config.DEFAULTS["exemptGlobs"]
     manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
-    in_prog = None
+    in_prog = {}
     for t in targets:
         if not _config.resolvable_destination(t):
             if t not in graded["unresolved"]:
@@ -1623,19 +1498,27 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
         low = t.lower()
         if not any(low.endswith(e) for e in exts):
             continue
-        if not _config.within_root(root, placed):
+        tree = _config.tree_for(None, placed, cfg, project=root)
+        if not tree["placed"]:
+            if t not in graded["unresolved"]:
+                graded["unresolved"].append(t)
             continue
-        rel = _config.rel_path(root, placed)
+        if not tree["inside"]:
+            continue
+        rel = tree["rel"]
         if _config.matches_exempt(rel, exempt):
             continue
-        if in_prog is None:
-            in_prog = _config.in_progress_files(root, manifest_rel)
-        if rel in in_prog or any(
-            rel.startswith(f) for f in in_prog if f.endswith("/")
+        key = str(tree["root"])
+        if key not in in_prog:
+            in_prog[key] = _config.in_progress_files(tree["root"], manifest_rel)
+        if rel in in_prog[key] or any(
+            rel.startswith(f) for f in in_prog[key] if f.endswith("/")
         ):
             continue
         if graded["hit"] is None:
-            graded["hit"] = rel
+            graded["hit"] = (rel if not tree["moved"] else
+                             "%s (in the linked worktree %s)" % (rel, key))
+            graded["root"] = tree["root"]
     return graded
 
 
@@ -1650,7 +1533,8 @@ def _source_write_hit(cmd, root, cfg, cwd):
 
 def _eval_write_hit(graded, root, cfg, cwd):
     """(the ungoverned source file an interpreter clause WRITES, how that clause
-    was spelled, the destinations none of them could establish).
+    was spelled, the destinations none of them could establish, the tree the
+    file was judged in).
 
     The interpreter half of the same arm, and it is the same question asked of a
     different grammar: `_eval_write_targets` resolves what a write CALL names,
@@ -1669,7 +1553,7 @@ def _eval_write_hit(graded, root, cfg, cwd):
     verdict, so one lost to an early return is a silence with nothing behind
     it."""
     unresolved = []
-    first = (None, None)
+    first = (None, None, root)
     for cl, is_eval, how in graded:
         if not is_eval:
             continue
@@ -1678,8 +1562,8 @@ def _eval_write_hit(graded, root, cfg, cwd):
             if spelling not in unresolved:
                 unresolved.append(spelling)
         if seen["hit"] and first[0] is None:
-            first = (seen["hit"], how)
-    return (first[0], first[1], unresolved)
+            first = (seen["hit"], how, seen["root"])
+    return (first[0], first[1], unresolved, first[2])
 
 
 _PLAN_WRITE_DENY = (
@@ -1820,7 +1704,23 @@ def _manifest_write_hit(cmd, root, cfg, cwd):
     `> "$X/../docs/audit/audit-plan.json"` came back as the manifest path, and
     the refusal that followed was about a spelling rather than about a file.
     `resolvable_destination` is the same question the source arm asks one
-    function up, so the two arms cannot disagree about what `${X}` names."""
+    function up, so the two arms cannot disagree about what `${X}` names.
+
+    The rel alone; `_manifest_write_placed` is the same search with the tree
+    that holds the file beside it."""
+    placed = _manifest_write_placed(cmd, root, cfg, cwd)
+    return placed[0] if placed else None
+
+
+def _manifest_write_placed(cmd, root, cfg, cwd):
+    """(rel, the tree whose plan it is) for the first manifest path `cmd`
+    writes, or None - `_manifest_write_hit`'s search, placed.
+
+    A LINKED WORKTREE'S MANIFEST IS A MANIFEST. Relative to the project it was
+    spelled `../<worktree>/docs/...`, matched no literal, and a subagent's
+    `sed -i` into its own worktree's shard walked past the one refusal this arm
+    exists to make. `_config.tree_for` places the target first, and only a
+    target outside the project pays for the git call that asks."""
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])
     for t in _shell_write_targets(cmd):
@@ -1829,10 +1729,13 @@ def _manifest_write_hit(cmd, root, cfg, cwd):
         placed = _placed_target(t, cwd)
         if placed is None:
             continue
-        rel = _config.rel_path(root, placed)
+        tree = _config.tree_for(None, placed, cfg, project=root)
+        if not tree["inside"]:
+            continue
+        rel = tree["rel"]
         if (rel == manifest_rel or rel == manifest_rel + ".lock"
                 or _config.governing_lock(manifest_rel, rel)):
-            return rel
+            return (rel, tree["root"])
     return None
 
 
@@ -1957,9 +1860,10 @@ def decide(data, *, cfg=None):
     The decision itself lives in _decide_core; this wrapper is the ONE choke
     point every verdict passes through, so no deny branch — present or future —
     can miss the events feed."""
-    root = _config.repo_root(data)
-    if cfg is None:
-        cfg = _config.load(root)
+    # Each write target is placed in its own tree further down; the project is
+    # the config's home and the tree a relative target starts from.
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg)
+    root, cfg = home["project"], home["cfg"]
     verdict, msg = _decide_core(data, root, cfg)
     if verdict in ("block", "ask"):
         _append_verdict_event(root, cfg, data, verdict, msg)
@@ -2144,10 +2048,10 @@ def _decide_core(data, root, cfg):
         # an in_progress task declared was refused through `python3 -c` and
         # allowed through `echo >`, by a message that blamed the plan-first gate
         # while consulting no plan at all.
-        ehit, ehow, eunplaced = _eval_write_hit(graded, root, cfg, cwd)
+        ehit, ehow, eunplaced, eroot = _eval_write_hit(graded, root, cfg, cwd)
         if ehit:
             return _plan_gate_write_verdict(
-                root, cfg, ehit,
+                eroot, cfg, ehit,
                 "A source-file write from %s" % (_EVAL_SHAPE[ehow],))
         # BEFORE the source-write gate, and before any exempt glob is consulted,
         # because the manifest is not a source file and is not this gate's subject
@@ -2168,9 +2072,9 @@ def _decide_core(data, root, cfg):
         # the shell spellings deny and the interpreter one allows. The two write
         # arms agree about the PLAN GATE now; they do not yet agree about who
         # owns the plan.
-        mhit = _manifest_write_hit(runnable, root, cfg, cwd)
+        mhit = _manifest_write_placed(runnable, root, cfg, cwd)
         if mhit:
-            refusal = _manifest_write_verdict(data, root, cfg, mhit)
+            refusal = _manifest_write_verdict(data, mhit[1], cfg, mhit[0])
             if refusal is not None:
                 return refusal
         # Over what runs, not over the raw text - a `>` inside prose being
@@ -2183,7 +2087,8 @@ def _decide_core(data, root, cfg):
             # `sed -i src/x.ts` still denied — same file, same rule, opposite
             # verdict, decided by which tool the agent happened to reach for.
             return _plan_gate_write_verdict(
-                root, cfg, shell_write["hit"], "Shell write into a source file")
+                shell_write["root"], cfg, shell_write["hit"],
+                "Shell write into a source file")
         # WHAT COULD NOT BE ESTABLISHED IS SAID, and it is said as an allow
         # rather than swallowed into the line below. A destination only the
         # shell can resolve is not a file the plan could have named, so there is

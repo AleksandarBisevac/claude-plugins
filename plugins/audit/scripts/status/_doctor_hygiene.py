@@ -243,16 +243,37 @@ def check_locks(rep, git_root, project, manifest_rel):
     if not rows:
         rep.ok("locks", "no audit locks held")
         return
-    abandoned = ["%s (%s)" % (r["name"], r["basis"]) for r in rows if not r["live"]]
+    dead = [r for r in rows if not r["live"]]
+    abandoned = ["%s (%s)" % (r["name"], r["basis"]) for r in dead]
     if abandoned:
         rep.warn("locks",
                  "lock(s) with no live holder: %s" % "; ".join(abandoned),
-                 "a mutating /audit command will offer to take over; if no run is "
-                 "live you can delete the file")
+                 abandoned_advice([r["name"] for r in dead]))
     else:
         rep.ok("locks", "%d lock(s) held by a live run: %s"
                % (len(rows), "; ".join("%s (%s)" % (r["name"], r["basis"])
                                        for r in rows)))
+
+
+def abandoned_advice(names):
+    """What to do about abandoned locks, by whose namespace each name is in.
+
+    Only the plugin's own names are ever offered for takeover by an /audit
+    command. A `user-` lock belongs to the tool that took it, and advice to wait
+    for an /audit command would wait for something that never comes.
+    """
+    user = [n for n in names if _locks.is_user_name(n)]
+    ours = [n for n in names if n not in user]
+    parts = []
+    if ours:
+        parts.append("%s: a mutating /audit command will offer to take over; if "
+                     "no run is live you can delete the file" % (", ".join(ours),))
+    if user:
+        parts.append("%s: user tooling's, which no /audit command takes over - "
+                     "the tool that owns it retakes it with `audit-lock.py "
+                     "acquire <name> --takeover`, or releases it with `release "
+                     "<name> --force` once no run is live" % (", ".join(user),))
+    return "; ".join(parts)
 
 
 def check_worktrees(rep, git_root, manifest):

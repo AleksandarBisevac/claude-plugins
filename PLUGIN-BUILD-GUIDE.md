@@ -339,7 +339,7 @@ L4:
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
-  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
+  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -2772,8 +2772,12 @@ index lock by building an argv and calling `main()` through `_panel_write._lockm
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
-`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` — turning the
-library's answers into exit codes —
+`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` with an ASCII
+id (a spelling that differs only in case from a held lock is refused, so the answer does not
+depend on whether the filesystem folds case), and for tooling that is not the plugin's a
+namespaced `user-<name>` under `_locks.USER_NAME_RULES`, whose own part may never be a lock name
+itself and which excludes by holder, never answering re-entry — turning the library's answers
+into exit codes —
 a live holder is **waited out** for a bounded window and then refused (exit 3); one that is
 not alive can be seized with `--takeover` (exit 4), because the old "older than 60 minutes =
 crashed" rule was wrong in both directions. `--wait` overrides the window, and zero is the
@@ -2804,6 +2808,37 @@ and `refs/stash`); every manifest state the phase COMMITTED still validates (eac
 index and shards reassembled through `git show` and run back through `_manifest_rules`); a
 `risk: "high"` task ran on neither a declared nor a metered `haiku`; and `phase.baseRef` is
 an ancestor of the parent `_branch.parent_branch` resolves.
+
+Every breach is built with `found(line, subject, sha, local)`, `result()` refuses one that was not,
+and `test__invariants.py` walks this file's syntax tree so a bare sentence fails CI: the sentence is
+what a reader is shown and the `keys` beside it — the subject that broke the rule and the commit it
+is recorded against, resolved to the full id through git — are what a baseline matches, so a
+reworded template or a count that moves between runs changes the output and never the match. A
+validator finding's subject is `_manifest_rules.finding_subject`: the CODE of the rule that raised
+it, its locus and the ids it quotes, with the sentence and any quoted allowed-values list taken
+out. Every validator finding is built with `_output.finding(code, text)` — a `str` subclass, so
+every caller that prints, joins or compares findings reads it unchanged and only this reader asks
+for `.code` — and `test__output.py`'s `fc` cases follow every call `validate()` reaches, across
+modules, and fail a finding site built without a code (an append, an extend or `+=` of a list or
+comprehension, an assignment of one, or a list returned in place), or two sites sharing one. The
+ADO hierarchy findings carry `_ado_parent`'s own rule code (`crossrefs.ado_parents.A1`...). An
+allowed-values list leaves the key bracketed or spelled `one of 'a', 'b'`, and a finding with no
+`: ` keys on the dotted path it opens with. The clone id is published by linking a finished
+sibling onto its name, and a baseline write with a local breach and no readable id is refused. The live
+pairing re-check keeps only the rows naming this phase's own tasks (`own_pairing_findings`).
+
+**The baseline** (`invariants-baseline.json` beside the manifest) lives here rather than in the
+command because two surfaces give a verdict over these checks, and `counted_breaches` is the one
+answer both read. `apply_baseline` compares on `(phase, check, subject, sha, clone)` — `clone`
+set only on a local entry — and sets an entry
+aside, with the reason, when this run could not have seen it again — its phase was not examined,
+its check had a gap, or it was read from another clone's own evidence (a breach marked `local` — a
+reflog, the stash, a remote-tracking ref, the usage ledger — carries the id of the clone that
+wrote it, and goes stale only there); only the rest can be reported as no longer matching, each
+with what git says about its commit. `write_baseline` refuses while a phase it covers is in flight,
+takes the `index` lock around its read-then-write and refuses a hold it did not take itself, keeps
+every set-aside entry, and returns what it removed. The baseline is a human's commit outside any phase commit,
+since each of the plugin's commit classes would breach its own scope by carrying it.
 
 `audit-state-scope` and `index-scope` sit next to `commit-scope` rather than at the end
 because each asks that check's question about a different commit, and the three allow-lists
@@ -2959,7 +2994,12 @@ has started (a branch, a `baseRef` or a recorded commit). `--json` for the whole
 one breach, 2 usage error or unreadable manifest — and a missing basis is deliberately exit 0
 with the word in the output, because sign-off deletes the phase branch and a gate that fired
 on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
-`/audit:status --gate --fail-on invariant-breach`.
+`/audit:status --gate --fail-on invariant-breach`. `--write-baseline` records the current
+breaches in `invariants-baseline.json` beside the manifest, and `--baseline FILE` names another
+file; once one exists the CLI prints only the breaches it does not hold, counts the ones it does,
+and exits 1 only on a new one. Everything about the baseline itself — its keys, what is set aside,
+the in-flight refusal, the lock — is `_invariants`', which is what lets the gate give the same
+verdict.
 
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
 Everything the two **commit-a-narrow-allow-list** commands share, so that neither holds a second
