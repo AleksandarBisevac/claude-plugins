@@ -3650,12 +3650,15 @@ own cwd writes shared refs.
 
 **`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
 reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's
-`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion:
+`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion,
+reading each runner's lines only in output that carries that runner's tally (a passing house case
+may print `ERROR: <path>` as the message it asserts on):
 a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
 `assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
-assertions. `proved` needs one of those failures to be the TASK'S OWN - a case id present in the
-working tree's copy of a declared test file and absent from HEAD's. `--case` narrows to the ids it
-names and is held to the same test, because the flag is chosen by the party being checked; the
+assertions. `proved` needs one of those failures to be the TASK'S OWN - a case present in the
+working tree's copy of a declared test file and absent from HEAD's, known by its id when its label
+leads with an id-shaped token and otherwise by the whole label, which some string literal in the
+file must render. `--case` narrows to the ids or labels it names and is held to the same test, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task

@@ -111,8 +111,9 @@ Hard rules (non-negotiable):
   plan gate grades which files you touch, not why — so this is kept by reading it.
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
   failing cases, and a red counts only when one of them is the task's own: a case
-  present in the working tree's test file and absent from HEAD's. `--case` narrows to
-  the ids you name and is held to that same test, so naming a case HEAD already
+  present in the working tree's test file and absent from HEAD's (by its id, or by its
+  whole label when the label does not lead with one). `--case` narrows to the ids or
+  labels you name and is held to that same test, so naming a case HEAD already
   carries proves nothing. An existing case going red, or a test body raising an
   exception, is not a proof about your test. A compile error, an import error or
   zero tests collected exits non-zero with no assertion ever evaluated, so it is

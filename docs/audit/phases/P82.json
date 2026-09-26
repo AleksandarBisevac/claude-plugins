@@ -1,7 +1,7 @@
 {
   "id": "P82",
   "title": "red-first names the task's own case by its label, and reads only the runner that ran",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "stamp-verification red recognises a house case whose label starts with an ordinary word as the task's own, and an expected ERROR: line from a passing house case is no longer counted as a failing unittest case, so a genuine red-first reads proved.",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "2dc352428f96e8115fc30cbcdbb4efac1c7a2591",
+  "branch": "audit/p82-red-first-names-the-task-s-own",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,12 +29,15 @@
     {
       "id": "P82.1",
       "title": "red-first reads a house case by its full label and the unittest reader only on unittest output",
-      "status": "pending",
+      "status": "in_progress",
       "description": "stamp-verification.failing_cases takes label.split()[0] as a house case's id, so a label that is a sentence starting with an ordinary word ('the', 'a') gets an id that also exists in HEAD's test file and the task's own case is never recognised; and _UNITTEST_CASE (^(FAIL|ERROR): ) is applied to every output, so a house suite whose PASSING case prints 'ERROR: <path> is not a directory' as expected stdout gets a phantom failing case. Reported on P78.9 (a new house case 'the gate-economy row is wired into diagnose() ...' read could-not-prove, exit 3, while the raw run had exactly that one FAIL line). Fix: a house case is identified by its FULL label, with a leading id-shaped token (letters then digits, e.g. me1, ga9b) used as its id only when present; the task's own case is matched by either; the unittest FAIL:/ERROR: reader applies only when the output is unittest-shaped (a 'Ran N tests' line). Cases both ways: a sentence label proves red, an id-led label is still named by its id, a house run with an expected ERROR: line counts no phantom, a real unittest ERROR: is still counted and not credited as an assertion.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/tests/test_stamp_verification.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -59,16 +62,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T09:47:10Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-26T09:47:10Z"
 }

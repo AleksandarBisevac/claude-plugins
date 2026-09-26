@@ -291,14 +291,15 @@ def _red_test(imports, cond, label="new1"):
     return _house_test(imports, [(label, cond)])
 
 
-def _red_repo(prefix, wt_test, extra=None, files=None):
-    """A repository whose HEAD holds `v = 1` and a passing test, and whose working
-    tree holds the fix (`v = 2`), `wt_test` as the task's new test, an untracked
-    sibling file, and a manifest declaring the task."""
+def _red_repo(prefix, wt_test, extra=None, files=None, head_test=None):
+    """A repository whose HEAD holds `v = 1` and a passing test (`head_test`, or
+    one case `old1`), and whose working tree holds the fix (`v = 2`), `wt_test` as
+    the task's new test, an untracked sibling file, and a manifest declaring the
+    task."""
     root = _seeded_repo(prefix)
     os.makedirs(os.path.join(root, "tests"))
     _write(os.path.join(root, "tests", "test_mine.py"),
-           _red_test("import mine", "mine.v >= 1", label="old1"))
+           head_test or _red_test("import mine", "mine.v >= 1", label="old1"))
     _git(root, "add", "tests/test_mine.py")
     _git(root, "commit", "-q", "-m", "test")
     _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
@@ -991,6 +992,167 @@ def _budget_cases(check):
           and "`--case` narrows" in ref and "held to that same test" in ref)
 
 
+# --- a house case is its label; a runner's lines count only in its own output --
+# A house label is usually a sentence, so its first word is an ordinary one that
+# HEAD's test file carries too; and a passing house case may print an error line
+# on purpose, because the case asserts on that message.
+_OLD_LABEL = "the old value is at least one"
+_NEW_LABEL = "the new value is two, as the fix sets it, read as 1"
+_NEW_LABEL_SRC = ('("the new value is two, as the fix sets it, "\n'
+                  '       "read as %r" % (mine.v,))')
+_EXPECTED_ERRORS = ("print('ERROR: /tmp/nope is not a directory')",
+                    "print('ERROR tests/data.json - the path is missing')")
+
+
+def _label_suite(cases, extra=()):
+    """A suite in the house harness's own shape: `check(label, cond, detail)`,
+    the detail in parentheses on a FAIL line, and a label written as a literal
+    that may wrap across source lines and interpolate a value."""
+    body = ["import os, sys", _PATH_LINE, "import mine", "results = []",
+            "def check(label, ok, detail=''):",
+            "    results.append(bool(ok))",
+            "    print('%s %s%s' % ('PASS' if ok else 'FAIL', label,",
+            "          (' (%s)' % detail) if detail and not ok else ''))"]
+    body += list(extra)
+    for src, cond in cases:
+        body.append("check(%s, %s, 'saw %%r' %% (mine.v,))" % (src, cond))
+    body += ["n = sum(results)",
+             "print(%r %% ('ALL PASS' if n == len(results) else 'SELFTEST FAILED',"
+             " n, len(results)))" % (_TALLY,),
+             "sys.exit(0 if n == len(results) else 1)"]
+    return "\n".join(body) + "\n"
+
+
+def _real_unittest():
+    """`(code, text)` from a real `python -m unittest` over one assertion, one
+    body exception and a test that prints a house-shaped line - captured from the
+    runner, so the reader is not tested against its own assumption."""
+    where = _harness.fixture_root("stamp-unittest-")
+    _write(os.path.join(where, "test_u.py"), "\n".join([
+        "import unittest", "", "", "class T(unittest.TestCase):",
+        "    def test_assert(self):",
+        "        print('FAIL printed by a test, not a case the house harness ran')",
+        "        self.assertEqual(1, 2)", "",
+        "    def test_pass(self):", "        pass", "",
+        "    def test_raise(self):", "        raise TypeError('a body that raised')",
+        ""]))
+    proc = subprocess.run([sys.executable, "-m", "unittest", "test_u"], cwd=where,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          universal_newlines=True)
+    return proc.returncode, proc.stdout
+
+
+def _shape(cases):
+    return [(c.get("id"), c.get("label"), c["assertion"]) for c in cases]
+
+
+def _label_cases(check):
+    py = sys.executable
+    reported = ("FAIL the gate-economy row is wired: [1]\n"
+                "ERROR: /tmp/nope is not a directory\n"
+                + _TALLY % ("SELFTEST FAILED", 155, 156) + "\n")
+    check("sr46 a house FAIL whose label is a sentence is named by its FULL "
+          "label with no id - its first word is an ordinary one - and an "
+          "`ERROR:` line in house output is not a unittest case: %r"
+          % (_shape(M.failing_cases(reported)),),
+          _shape(M.failing_cases(reported))
+          == [(None, "the gate-economy row is wired: [1]", True)])
+    led = ("FAIL me1 the value is read (saw 1)\nFAIL ga9b a suffix\n"
+           "FAIL pc-sd0 a hyphen\n" + _TALLY % ("SELFTEST FAILED", 0, 3) + "\n")
+    check("sr47 a label led by an id-shaped token is still named by that id, and "
+          "carries its full label beside it: %r" % (_shape(M.failing_cases(led)),),
+          _shape(M.failing_cases(led))
+          == [("me1", "me1 the value is read (saw 1)", True),
+              ("ga9b", "ga9b a suffix", True), ("pc-sd0", "pc-sd0 a hyphen", True)])
+    code_u, text_u = _real_unittest()
+    got_u = sorted(((c["id"], c["assertion"]) for c in M.failing_cases(text_u)),
+                   key=repr)
+    verdict_u, tally_u = M.classify_run(code_u, text_u)
+    check("sr48 real unittest output still counts its cases - `FAIL:` as an "
+          "assertion, `ERROR:` named but NOT credited as one - and a house-shaped "
+          "line a unittest test printed is not a house case: %r %r"
+          % (got_u, verdict_u),
+          got_u == [("test_assert", True), ("test_raise", False)]
+          and verdict_u == "red" and (tally_u or {}).get("assertions") == 1,
+          text_u[-400:])
+    quiet = ("ERROR: /tmp/nope is not a directory\n"
+             "ERROR tests/data.json - the path is missing\n"
+             "PASS the path is refused\n"
+             + _TALLY % ("ALL PASS", 1, 1) + "\n")
+    check("sr49 a passing house run that PRINTS error lines on purpose names no "
+          "failing case at all - neither the unittest nor the pytest reader "
+          "applies to output neither runner printed: %r"
+          % (M.failing_cases(quiet),),
+          M.failing_cases(quiet) == [])
+
+    head = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")])
+    wt = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1"),
+                       (_NEW_LABEL_SRC, "mine.v == 2")], extra=_EXPECTED_ERRORS)
+    root, man = _red_repo("stamp-red-label-", wt, head_test=head)
+    code, got = _red(root, man, [py, "tests/test_mine.py"])
+    basis = (got.get("redFirst") or {}).get("basis", "")
+    check("sr50 a house suite whose new case has a SENTENCE label proves red - "
+          "HEAD's test file carries the label's first word in a case of its own, "
+          "so a first word read as an id was refused - and an error line a "
+          "passing case printed is no phantom case: exit=%r %s"
+          % (code, json.dumps(got.get("redFirst") or got.get("note"))[:400]),
+          code == M.E_PROVED and _NEW_LABEL in basis and "/tmp/nope" not in basis
+          and "data.json" not in basis)
+    runs = dict((flag, _red(root, man, [py, "tests/test_mine.py"], "--case", flag))
+                for flag in (_NEW_LABEL, "the", _OLD_LABEL))
+    check("sr51 --case names a sentence-labelled case by its full label; its "
+          "first word alone is not a name, and HEAD's own sentence label is "
+          "refused: %r" % (dict((k, v[0]) for k, v in runs.items()),),
+          runs[_NEW_LABEL][0] == M.E_PROVED
+          and runs["the"][0] == M.E_CANNOT_PROVE
+          and runs[_OLD_LABEL][0] == M.E_CANNOT_PROVE
+          and "HEAD's test file already carries" in json.dumps(runs[_OLD_LABEL][1]))
+
+    wt_id = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1"),
+                          ("'nv2 the new value is two'", "mine.v == 2")])
+    root_i, man_i = _red_repo("stamp-red-idlabel-", wt_id, head_test=head)
+    by = dict((flag, _red(root_i, man_i, [py, "tests/test_mine.py"], *flag))
+              for flag in ((), ("--case", "nv2"),
+                           ("--case", "nv2 the new value is two")))
+    check("sr52 an id-led label proves red and the basis names it by its id; "
+          "--case takes the id or the full label: %r"
+          % (dict((k, (v[0], (v[1].get("redFirst") or {}).get("basis", "")[:160]))
+                  for k, v in by.items()),),
+          all(v[0] == M.E_PROVED for v in by.values())
+          and "nv2 (house FAIL)" in by[()][1]["redFirst"]["basis"])
+
+
+def _label_id_cases(check):
+    labels = ["me1 x", "ga9b y", "pc-sd0 z", "bw1-a q", "h2b", "the thing",
+              "viewer: x", "x-build", "", "a", "utf8 bytes", "9lives"]
+    check("sr53 the id a house label is named by is the id the harness hands "
+          "out and prove-gates attributes by - one shape, pinned by agreement "
+          "rather than by a comment: %r"
+          % ([(lb, M.house_case_id(lb), _harness.case_id(lb)) for lb in labels
+              if M.house_case_id(lb) != _harness.case_id(lb)],),
+          all(M.house_case_id(lb) == _harness.case_id(lb) for lb in labels))
+
+    label = "the value is read as 3 (saw 3)"
+    sources = {
+        "joined": "check('the value ' + 'is read as %r' % (x,), ok)\n",
+        "wrapped": "check('the value is '\n      'read as %d' % (x,), ok)\n",
+        "a prefix only": "check('the value', ok)\n",
+        "no fixed words": "print('%s %s (%s)' % (a, b, c))\n",
+        "a loop's label": "check('%s is read as %r' % (name, x), ok)\n",
+        "another label": "check('the value is kept as %r' % (x,), ok)\n",
+        "not python": "the value is read as 3\n(",
+    }
+    got = dict((k, M._carries_label(v, label)) for k, v in sources.items())
+    check("sr54 a label is carried by a literal that renders it WHOLE - joined "
+          "with `+`, wrapped, placeholders read as any text, the FAIL line's "
+          "detail set aside, a loop's leading value included - and not by a "
+          "literal that renders only its start, nor by one with no fixed word, "
+          "which renders any label: %r" % (got,),
+          got == {"joined": True, "wrapped": True, "a prefix only": False,
+                  "no fixed words": False, "a loop's label": True,
+                  "another label": False, "not python": True})
+
+
 def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
@@ -1000,6 +1162,8 @@ def _cases(check):
     _harness.stage(check, "sr-introduces", _introduces_cases)
     _harness.stage(check, "sr-process", _process_cases)
     _harness.stage(check, "sr-own", _own_case_cases)
+    _harness.stage(check, "sr-label", _label_cases)
+    _harness.stage(check, "sr-label-id", _label_id_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

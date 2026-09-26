@@ -118,8 +118,9 @@ not need to.
      task's declared test files from the working tree over it, runs the command there,
      removes the throwaway in a `finally` and reports whether the removal held, and prints
      the `redFirst` block, naming the failing case it rests on — which must be one of the
-     task's own: a case present in the working tree's test file and absent from HEAD's.
-     `--case` narrows to the ids it names, held to that same test, so naming a case HEAD
+     task's own: a case present in the working tree's test file and absent from HEAD's,
+     by its id or, for a label that leads with none, by the whole label.
+     `--case` narrows to the ids or labels it names, held to that same test, so naming a case HEAD
      already carries proves nothing. Its
      `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
      identifier absent from HEAD's copy of every declared implementation file and present

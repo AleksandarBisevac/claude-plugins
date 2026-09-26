@@ -298,6 +298,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`stamp-verification.py red` refused a task's own case when its label was a sentence, and
+  invented cases out of lines a passing suite printed.** A house `FAIL` line was keyed by its first
+  word, so a new case labelled `the ...` shared its "id" with every sentence-labelled case HEAD's
+  test file already held, was refused as not the task's own, and the red read `could-not-prove`
+  while the run held exactly that one failing case. A house case is now named by its full label,
+  with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
+  hands out) as its id only when present; it is the task's own when a string literal in the working
+  tree's test file renders that label (wrapped and `%`-formatted literals included) and none in
+  HEAD's does, and `--case` takes the id or the full label. Each runner's case lines are now read
+  only when that runner's tally is in the output, so an `ERROR: <path> is not a directory` a passing
+  house case printed on purpose is no longer a unittest case, and a line opening with `FAIL ` inside
+  a unittest or pytest run is no longer a house one. A real unittest `ERROR:` is still named and
+  still not credited as an assertion.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path

@@ -74,6 +74,7 @@ path but SIGKILL, which no process can catch - the `red` section says what is
 reported instead.
 """
 import argparse
+import ast
 import datetime
 import json
 import os
@@ -283,6 +284,15 @@ _PYTEST_FAILED = re.compile(r"^(FAILED|ERROR) (\S+)(?: - (.*))?$", re.M)
 _UNITTEST_RAN = re.compile(r"^Ran (\d+) tests? in ", re.M)
 _UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
 _UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)", re.M)
+# A house case's id is its label's leading token when that token carries a digit
+# (`me1`, `ga9b`, `pc-sd0`) - the key the harness's `case_id()` hands out and
+# prove-gates attributes a mutation by. A label led by an ordinary word has no id
+# and is named by the whole label: its first word is one HEAD's test file almost
+# always carries too, so reading it as an id refuses the task's own case.
+_HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
+# A %-placeholder inside a label literal; `%%` is the one that stands for itself.
+_PLACEHOLDER = re.compile(r"%(?:\([^)]*\))?[#0 +-]*(?:\*|\d+)?(?:\.(?:\*|\d+))?"
+                          r"[A-Za-z%]")
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
 _COMPILE_ERROR = re.compile(r"^\s*(?:E\s+)?(SyntaxError|IndentationError|TabError|"
@@ -300,26 +310,46 @@ INTRODUCES_CLASSES = ("ImportError", "ModuleNotFoundError", "AttributeError",
 _SYMBOL_SHAPE = re.compile(r"^[A-Za-z_][\w.]*$")
 
 
+def house_case_id(label):
+    """The label's leading token when it is id-shaped, else None."""
+    head = label.split(None, 1)
+    if not head or not _HOUSE_CASE_ID.match(head[0]):
+        return None
+    return head[0]
+
+
 def failing_cases(text):
-    """`[{"id", "assertion", "why"}]` - every failing case a runner named.
+    """`[{"id", "label", "assertion", "why"}]` - every failing case a runner named.
+
+    Each runner's lines are read only when that runner's tally is in the output:
+    a passing house case may print `ERROR: <path> is not a directory` because it
+    asserts on that message, and a test under another runner may print a line
+    that opens with `FAIL `. `label` is the whole name as printed; `id` is the
+    part a case is keyed by, None for a house label with no id-shaped lead.
 
     `assertion` is True only where the runner says the case failed an assertion:
     a house `FAIL` line that is not an escape, a pytest `FAILED` whose reason is
     an `assert` or an `AssertionError`, a unittest `FAIL:`. A pytest `ERROR`, a
     pytest body exception and a unittest `ERROR:` are named with it False."""
     out = []
-    for ln in text.splitlines():
-        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
-            label = ln[len("FAIL "):].strip()
-            out.append({"id": label.split()[0] if label else "", "assertion": True,
-                        "why": "house FAIL"})
-    for kind, node, why in _PYTEST_FAILED.findall(text):
-        why = (why or "").strip()
-        out.append({"id": node.split("::")[-1], "assertion": kind == "FAILED"
-                    and (why.startswith("assert") or why.startswith("AssertionError")),
-                    "why": why or kind})
-    for kind, name in _UNITTEST_CASE.findall(text):
-        out.append({"id": name, "assertion": kind == "FAIL", "why": kind})
+    if _HOUSE_TALLY.search(text):
+        for ln in text.splitlines():
+            if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
+                label = ln[len("FAIL "):].strip()
+                out.append({"id": house_case_id(label), "label": label,
+                            "assertion": True, "why": "house FAIL"})
+    if _PYTEST_SUMMARY.search(text):
+        for kind, node, why in _PYTEST_FAILED.findall(text):
+            why = (why or "").strip()
+            out.append({"id": node.split("::")[-1], "label": node,
+                        "assertion": kind == "FAILED"
+                        and (why.startswith("assert")
+                             or why.startswith("AssertionError")),
+                        "why": why or kind})
+    if _UNITTEST_RAN.search(text):
+        for kind, name in _UNITTEST_CASE.findall(text):
+            out.append({"id": name, "label": name, "assertion": kind == "FAIL",
+                        "why": kind})
     return out
 
 
@@ -537,29 +567,105 @@ def introduced(root, implementation, symbol):
                   % (", ".join(implementation), ", ".join(in_wt)))
 
 
-def _added_by_task(root, tests, cid):
-    """Whether case id `cid` is a whole name in the working tree's copy of a
-    declared test file and absent from HEAD's copy of that same file."""
-    return any(_names(_wt_text(root, rel), cid)
-               and not _names(_head_text(root, rel) or "", cid) for rel in tests)
+def _fold(node):
+    """The template a literal expression spells - adjacent literals are one node
+    already, `+` between literals is joined here, and `template % values` is its
+    template, placeholders kept - or None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        return _fold(node.left)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _fold(node.left), _fold(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
+def _label_pattern(literal):
+    """A pattern a label rendered from `literal` matches whole, each placeholder
+    standing for any text - or None when the text between its placeholders holds
+    no word character, because such a literal (`'%s %s'`, `' (%s)'`) renders
+    any label at all. A label a loop builds (`'%r validates clean' % v`) keeps
+    its fixed words, so it is still matched."""
+    parts, fixed, at = [], [], 0
+    for hit in _PLACEHOLDER.finditer(literal):
+        fixed.append(literal[at:hit.start()])
+        parts.append(re.escape(literal[at:hit.start()]))
+        parts.append("%" if hit.group() == "%%" else ".*?")
+        at = hit.end()
+    fixed.append(literal[at:])
+    parts.append(re.escape(literal[at:]))
+    if not re.search(r"\w", "".join(fixed)):
+        return None
+    return re.compile("".join(parts), re.S)
+
+
+def _label_forms(label):
+    """The label as printed and, where it ends in `)`, the label before each
+    ` (` it holds - a house FAIL line appends its detail that way."""
+    forms = [label]
+    if label.endswith(")"):
+        forms += [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
+    return forms
+
+
+def _carries_label(text, label):
+    """Whether a test file's source spells `label` - some string literal in it,
+    placeholders read as any text, renders the whole label. A file that does not
+    parse as Python carries it when it holds the label's text verbatim."""
+    if not text or not label:
+        return False
+    forms = _label_forms(label)
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return any(form in text for form in forms)
+    patterns = [p for p in (_label_pattern(s) for s in
+                            (_fold(n) for n in ast.walk(tree)) if s) if p]
+    return any(p.fullmatch(form) for p in patterns for form in forms)
+
+
+def _carries(text, name):
+    """Whether `text` carries a case name: a single token as a whole name, a
+    label as a literal that renders it."""
+    if len(name.split()) > 1:
+        return _carries_label(text, name)
+    return _names(text, name)
+
+
+def _added_by_task(root, tests, name):
+    """Whether case `name` - an id, or a house label with no id - is carried by
+    the working tree's copy of a declared test file and not by HEAD's copy of
+    that same file."""
+    return any(_carries(_wt_text(root, rel), name)
+               and not _carries(_head_text(root, rel) or "", name) for rel in tests)
+
+
+def _is_named(failure, name):
+    """Whether `--case NAME` names this failing case: its id, or its label as
+    printed, with or without the detail a house FAIL line appends."""
+    label = failure.get("label") or ""
+    return name == failure.get("id") or name in _label_forms(label)
 
 
 def own_failures(root, tests, failing, cases):
     """`(own, refused)` - the failing cases that are the TASK'S OWN and failed an
-    assertion, and the `--case` ids refused because HEAD already carries them.
+    assertion, and the `--case` names refused because HEAD already carries them.
 
-    Own means a case the task ADDED: its id is a whole name in the working
-    tree's copy of a declared test file and absent from HEAD's copy of it.
-    `--case` narrows to the ids it names and is held to the same test, because
-    the flag is chosen by the party whose proof is being checked - an existing
-    case going red because its test file was edited to match other work is not
-    a proof about this task's test, whoever names it."""
-    asserting = [f for f in failing if f["assertion"] and f["id"]]
+    Own means a case the task ADDED: its id - or, for a house label with no
+    id-shaped lead, its whole label - is carried by the working tree's copy of a
+    declared test file and not by HEAD's copy of it. `--case` narrows to the
+    cases it names, by id or by full label, and is held to the same test,
+    because the flag is chosen by the party whose proof is being checked - an
+    existing case going red because its test file was edited to match other work
+    is not a proof about this task's test, whoever names it."""
+    asserting = [f for f in failing if f["assertion"] and (f["id"] or f["label"])]
     refused = [c for c in cases if not _added_by_task(root, tests, c)]
     if cases:
-        asserting = [f for f in asserting if f["id"] in cases]
-    return ([f for f in asserting if _added_by_task(root, tests, f["id"])],
-            refused)
+        asserting = [f for f in asserting if any(_is_named(f, c) for c in cases)]
+    return ([f for f in asserting
+             if _added_by_task(root, tests, f["id"] or f["label"])], refused)
 
 
 def _names_shared_tree(cmd, root, project):
@@ -711,7 +817,8 @@ def _decisive_line(text, tally):
 
 
 def _ids(cases):
-    return _output.some_of(["%s (%s)" % (c["id"] or "?", c["why"]) for c in cases])
+    return _output.some_of(["%s (%s)" % (c["id"] or c["label"] or "?", c["why"])
+                            for c in cases])
 
 
 def red_verdict(run, ctx):
