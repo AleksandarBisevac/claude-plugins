@@ -290,10 +290,10 @@ depending on an implementation:
 - the rendered report's HTML, its DOM and its Markdown twin,
 - the audit trail's row shape, the usage ledger's NDJSON fields, and the evidence
   record's — all three are files this plugin writes and re-derives; the manifest's
-  `testEvidence` block is the interface, and an evidence row is not. The block gained
-  one additive key, `gradedBy` (a group member's copy of its carrier's pointer), and a
-  phase's `review` gained two, `noEvidenceReason` and `acceptedCommits`; a manifest
-  without them validates and reads exactly as before,
+  `testEvidence` block is the interface, and an evidence row is not. The block's
+  `gradedBy` (a group member's copy of its carrier's pointer) and a phase review's
+  `noEvidenceReason` and `acceptedCommits` are additive keys; a manifest without them
+  validates and reads exactly as before,
 - **the audit trail's file names.** A journal or evidence file is named by its month
   and its writer, and the writer has already been refined once: a linked worktree
   (git's answer, asked where `gitRoot` points) writes `<month>.<session>.wt-<key>.jsonl`

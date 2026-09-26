@@ -1111,6 +1111,13 @@ def _signoff_cases(check):
           "the reason, so the badge can say it: %r" % (reasoned.get("noEvidenceReason"),),
           reasoned.get("noEvidenceReason") == "by hand"
           and row().get("noEvidenceReason") is None)
+    accepted = row(review={"status": "passed", "acceptedCommits": [
+        {"commit": "abcdef0123456789", "reason": "plan"}]})
+    check("pc-sd0b a group member's accepted commits ride its row, so the sign-off "
+          "note can show them: %r" % (accepted.get("acceptedCommits"),),
+          accepted.get("acceptedCommits") == [{"commit": "abcdef0123456789",
+                                               "reason": "plan"}]
+          and row().get("acceptedCommits") == [])
     signed = row(review={"status": "passed"})
     check("pc-sd2 signed off with no branch, the row reads DONE, so the view files it "
           "with the closed phases and freezes its controls: %r" % (signed["status"],),

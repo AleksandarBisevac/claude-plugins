@@ -155,6 +155,12 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None):
     # ...and a phase signed off with a recorded reason and no run says the reason
     # where the badge's basis goes, rather than only that no run was recorded.
     review = holder.get("review") if isinstance(holder.get("review"), dict) else {}
+    # The commits a group took into its review outside every task, with the
+    # reason: the one place a later reader can see what the sign-off accepted.
+    accepted = [a for a in (review.get("acceptedCommits") or [])
+                if isinstance(a, dict) and a.get("commit")]
+    if scope == "phase" and accepted:
+        view["acceptedCommits"] = accepted
     if scope == "phase" and not pointer and review.get("noEvidenceReason"):
         view["why"] = "signed off with no gate run, and the reason recorded: %s. %s" % (
             review["noEvidenceReason"], view.get("why") or "")

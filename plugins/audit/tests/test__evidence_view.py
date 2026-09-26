@@ -791,6 +791,9 @@ def _graded_cases(check):
                                       "at": "2026-08-01T10:00:00Z"}, "tasks": []},
                     {"id": "P2", "title": "member", "status": "done",
                      "testGate": ["make test"],
+                     "review": {"status": "passed", "acceptedCommits": [
+                         {"commit": "abcdef0123456789abcdef0123456789abcdef01",
+                          "reason": "the multi-phase plan"}]},
                      "testEvidence": {"runId": "R-G", "status": "passed",
                                       "at": "2026-08-01T10:00:00Z",
                                       "gradedBy": "P1"}, "tasks": []},
@@ -823,6 +826,12 @@ def _graded_cases(check):
               "sign-off (graded by P1's run)" in marks.replace("&#x27;", "'")
               .replace("&#39;", "'")
               and "graded by" not in _report_html._tev_phase_marks(
+                  ev["phases"]["P1"]))
+        check("gv5 a commit a group took into its review outside every task is shown "
+              "beside the sign-off, with its reason - the one reader the record had "
+              "none of: %r" % (marks,),
+              "abcdef012345" in marks and "the multi-phase plan" in marks
+              and "accepted" not in _report_html._tev_phase_marks(
                   ev["phases"]["P1"]))
     finally:
         _harness.remove_tree(root)

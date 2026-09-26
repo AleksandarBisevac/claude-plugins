@@ -5855,7 +5855,11 @@ def cmd_signoff(args, out):
         out("[audit-task] signoff needs a phase id")
         return E_USAGE
     ids = signoff_ids(pid)
-    if len(ids) > 1 or args.branch or args.plan:
+    # EVERY GROUP-ONLY FLAG ROUTES TO THE GROUP DOOR, which refuses it without
+    # --branch: on the single path they were read by nothing, so a `--bind` or an
+    # `--accept` beside a verdict signed off and recorded nothing of either.
+    if len(ids) > 1 or args.branch or args.plan or args.bind or args.accept \
+            or (args.reason or "").strip():
         return _group_door(args, project, ids, out)
     if not args.verdict:
         out("[audit-task] signoff needs --verdict %s: which verdict the review reached "
@@ -6100,9 +6104,10 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
     landing merges the whole branch, so a commit that is neither lands unreviewed.
 
     Two more are accounted, and neither hides anything. A MERGE commit whose every
-    parent is accounted, or lies on the parent side of the fork, carries no work
-    of its own - a combined branch built by merging the members' branches is made
-    of them. And a commit named in `accepted` (`--accept <sha> --reason`) is taken
+    parent is accounted, or lies on the parent side of the fork, AND whose tree is
+    the automatic merge of those parents (`_clean_merge`) - a merge carrying content
+    of its own is refused by SHA for review. And a commit named in `accepted`
+    (`--accept <sha> --reason`, each resolved to one full commit) is taken
     into the group and listed in `accepted`, so it is reviewed with the members'
     commits rather than refused or passed over. `journal_error` is the journal
     read that failed: a commit only the journal could account for is then said as
@@ -6186,11 +6191,32 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
         else:
             known = set(sha for _p, _t, sha in commits) \
                 | _accounted_commits(ids, journal_rows)
-            stray, taken, used = _account(said, known, accepted or [])
-            unused = [a for a in (accepted or []) if a not in used]
+            resolved = {}
+            for name in (accepted or []):
+                code, full, _e = fn(git_root, ["rev-parse", "--verify", "--quiet",
+                                               "%s^{commit}" % (name,)])
+                if code == 0 and (full or "").strip():
+                    resolved[(full or "").strip()] = name
+                else:
+                    refusals.append("--accept %s does not resolve to exactly one "
+                                    "commit (`git rev-parse --verify %s^{commit}`) "
+                                    "- name the commit by its full SHA, or a prefix "
+                                    "only it has" % (name, name))
+            stray, taken, used, own = _account(
+                said, known, list(resolved),
+                lambda sha, parents: _clean_merge(fn, git_root, sha, parents))
+            unused = [resolved[a] for a in resolved if a not in used]
             if unused:
                 refusals.append("--accept %s names no commit %r carries past its "
                                 "fork %s" % (", ".join(unused), branch, fork[:12]))
+            for sha in own:
+                refusals.append(
+                    "merge %s carries content of its own - its tree is not the "
+                    "automatic merge of its parents, so it is a conflict resolution "
+                    "or an edit no task records (`git show --cc %s`). Review it, and "
+                    "pass --accept %s --reason \"<why>\" to take it into the group"
+                    % (sha[:12], sha, sha))
+            stray = [c for c in stray if c not in own]
             if stray and journal_error:
                 refusals.append(
                     "%r carries %s no task records, and the journal could not be "
@@ -6221,17 +6247,41 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
             "accepted": taken}
 
 
-def _account(listing, known, accepted):
-    """`(stray, taken, used)` over `git rev-list --parents` output: the commits
-    nothing accounts for, the ones `accepted` took in, and which accepted names
-    matched. A merge is accounted when every parent is - or lies outside the
-    listed range, which is the parent side of the fork."""
+def _clean_merge(fn, git_root, sha, parents):
+    """Is merge `sha`'s tree exactly the automatic merge of its parents?
+
+    `git merge-tree --write-tree` computes that merge without touching a work
+    tree; a merge commit whose tree differs - or whose parents conflict, which
+    needs a hand resolution - carries content no parent does. Only a two-parent
+    merge can be asked this way, so any other answers no: nothing established
+    that it carries nothing of its own."""
+    if len(parents) != 2:
+        return False
+    code, tree, _err = fn(git_root, ["merge-tree", "--write-tree", parents[0],
+                                     parents[1]])
+    if code != 0:
+        return False
+    code2, own, _err2 = fn(git_root, ["rev-parse", "%s^{tree}" % (sha,)])
+    first = (tree or "").strip().split("\n")[0].strip()
+    return code2 == 0 and bool(first) and first == (own or "").strip()
+
+
+def _account(listing, known, accepted, clean_merge):
+    """`(stray, taken, used, own)` over `git rev-list --parents` output: the commits
+    nothing accounts for, the ones `accepted` (full SHAs) took in, which of those
+    matched, and the merges that carry content of their own.
+
+    A merge is accounted when every parent is - or lies outside the listed range,
+    which is the parent side of the fork - AND `clean_merge` says its tree is the
+    automatic merge of its parents. Accounted parents are not enough: an edit made
+    inside a merge commit belongs to no parent, and the first landing would carry
+    it unreviewed."""
     lines = [ln.split() for ln in (listing or "").splitlines() if ln.strip()]
     in_range = set(parts[0] for parts in lines)
-    ok, stray, taken, used = set(), [], [], []
+    ok, stray, taken, used, own = set(), [], [], [], []
     for parts in lines:
         sha, parents = parts[0], parts[1:]
-        named = [a for a in accepted if _is_accounted(sha, [a])]
+        named = [a for a in accepted if a == sha]
         if _is_accounted(sha, known):
             ok.add(sha)
         elif named:
@@ -6240,10 +6290,14 @@ def _account(listing, known, accepted):
             used.extend(named)
         elif len(parents) > 1 and all(p in ok or p not in in_range
                                       for p in parents):
-            ok.add(sha)
+            if clean_merge(sha, parents):
+                ok.add(sha)
+            else:
+                own.append(sha)
+                stray.append(sha)
         else:
             stray.append(sha)
-    return stray, taken, used
+    return stray, taken, used, own
 
 
 def _plugin_cmd(rel, *argv):
@@ -6290,8 +6344,9 @@ def _group_door(args, project, ids, out):
             "<name>: the one branch these phases were built on" % (", ".join(ids),))
         return E_USAGE
     if not args.branch:
-        out("[audit-task] signoff --plan and --bind are a group sign-off's, which "
-            "needs --branch <name>")
+        out("[audit-task] --plan, --bind, --accept and --reason belong to a group "
+            "sign-off - `signoff <P1,P2,...> --branch <name>` - and one phase's "
+            "sign-off reads none of them. Nothing was written.")
         return E_USAGE
     if args.plan and args.bind:
         out("[audit-task] signoff --plan writes nothing and --bind writes the "
@@ -6374,6 +6429,11 @@ def _group_binding(project, mpath, assembled, carrier, plan, ids, gate):
                           "run `%s` over every member's files, then record" % (gate,))
     if bound["state"] == "refused":
         return bound["sentence"], None
+    if bound["state"] == "no-gate":
+        # A GATE THAT DECLARES NO ENTRY GRADES NOTHING, so no run is copied: the
+        # carrier's newest row may be any older run, under a gate that is gone,
+        # that never owned the other members.
+        return None, None
     measured = bound.get("measured") or {}
     others = [pid for pid in ids if pid != carrier.get("id")]
     owned = [str(p) for p in (measured.get("groupWith") or [])]

@@ -2198,7 +2198,7 @@ def grades_left_out(gate, excluded):
     return named
 
 
-def reuse_identity(project, manifest_path, manifest, commands, owns):
+def reuse_identity(project, manifest_path, manifest, commands, owns, group=None):
     """`{key, basis, limit, grading, unexcluded}` - what this run would have to
     match to be a repeat, and the entries that stop it being one.
 
@@ -2216,6 +2216,11 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     reason `grading` does: the caller printing this dict is the one place an
     operator meets the run, and a narrowing that silently failed to apply is not
     this function's to swallow.
+
+    `group` is a group run's other members (`--also`), and it is part of the key
+    when there are any: a group run and a solo run over the same files are two
+    claims - the group's row says it owned each member - so neither may repeat
+    the other. A solo run's key is exactly what it was before.
     """
     excluded, unexcluded = _ev.recorded_paths(project, manifest_path)
     content, cbasis = _tree_stamp.content_digest(project, excluded=excluded)
@@ -2229,7 +2234,10 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
                 "grading": grading, "unexcluded": unexcluded}
-    return {"key": _tree_stamp.identity_of([content, gate, scope]),
+    parts = [content, gate, scope]
+    if group:
+        parts.append(["group", sorted(str(g) for g in group)])
+    return {"key": _tree_stamp.identity_of(parts),
             "basis": "%s; over that, the %d gate command(s) this manifest "
                      "declares and the %d file(s) the work under test declares"
                      % (cbasis, len(gate), len(scope)),
@@ -3484,7 +3492,8 @@ def main(argv, out=print):
     # a forced measurement that recorded no identity would leave the next run
     # nothing to match, which turns one operator's override into everybody's.
     started = time.monotonic()
-    identity = reuse_identity(project, args.manifest, manifest, commands, owns)
+    identity = reuse_identity(project, args.manifest, manifest, commands, owns,
+                              group=also)
     if identity.get("unexcluded"):
         # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
         # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
@@ -3549,6 +3558,20 @@ def main(argv, out=print):
         # pointer is checked against it, and the carrier's row alone could not
         # say whose files its coverage and its tree bracket covered.
         res["groupWith"] = list(also)
+        # ...and in the coverage basis, by member, so the files another member
+        # declares are not read as the carrier's own declaration.
+        mine = set(owned_files(manifest, args.phase)[0] or [])
+        theirs = []
+        for member in also:
+            files = [f for f in (owned_files(manifest, member)[0] or [])
+                     if f not in mine]
+            if files:
+                theirs.append("%s declared by %s (group member)"
+                              % (", ".join(files), member))
+        if theirs:
+            res["coverageBasis"] = "%s; one run for the group: %s" % (
+                res.get("coverageBasis") or "no coverage basis was recorded",
+                "; ".join(theirs))
     # The resolved gate, as a digest the row carries: what `commit-task-work`
     # compares so a `meta.buildCommands` edit after a green is a changed gate.
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(

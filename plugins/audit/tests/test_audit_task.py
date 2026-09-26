@@ -6263,6 +6263,28 @@ def _cases(check):
         check("ve7 even over the SAME files, a carrier run that did not own the other "
               "member (no `groupWith` on its row) backs no group verdict: exit %r, %s"
               % (code, txt), code == 2 and "owned P1 alone, not P2" in txt)
+        _v7_again = gs_gate(v7_proj, v7_mp, "P1", "P2", reuse=True)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v7_proj])
+        check("ve8 ...and the command that refusal prints, run as printed - WITH the "
+              "gate's default reuse - reaches sign-off: a group run never repeats a "
+              "solo one: gate %r, exit %r, %s" % (_v7_again, code, txt),
+              _v7_again == 0 and code == 0)
+        n1_proj, n1_mp, _n1 = gs_fixture("ve-nogate-old", gates=(["test"], []))
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", n1_proj])
+        gs_gate(n1_proj, n1_mp, "P1")
+        _n1m = _mio.load_manifest(n1_mp)
+        _n1m["phases"][0]["testGate"] = []
+        _panel_write._atomic_write_json(n1_mp, _n1m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", n1_proj])
+        _n1_p2 = [p for p in _mio.load_manifest(n1_mp)["phases"] if p["id"] == "P2"][0]
+        check("ve9 a carrier whose gate declares no entry copies NO old run onto the "
+              "members - the sign-off rests on review alone, and says so: exit %r, "
+              "P2 evidence %r, %s" % (code, _n1_p2.get("testEvidence"), txt),
+              code == 0 and not _n1_p2.get("testEvidence")
+              and "rests on review alone" in txt)
 
         # ---- (ga) what a group branch may carry that no member records --------
         a1_proj, a1_mp, _a1 = gs_fixture("ga-accept")
@@ -6332,6 +6354,93 @@ def _cases(check):
         check("ga4 a combined branch built by merging the members' branches is "
               "accounted for: each merge commit's parents are member commits or the "
               "parent side: exit %r, %s" % (code, txt[:400]), code == 0)
+        # A merge that CARRIES CONTENT OF ITS OWN - an evil merge or a conflict
+        # resolution - is not made of its parents and is refused unless accepted.
+        e_proj, e_mp = mk("ga-evil", m_plan, git=True)
+        gs_git(e_proj, "checkout", "-q", "-b", "main")
+        gs_git(e_proj, "commit", "-q", "--allow-empty", "-m", "base")
+        _e_sha = {}
+        for tid, side in (("P1.1", "side1"), ("P2.1", "side2")):
+            gs_git(e_proj, "checkout", "-q", "-b", side, "main")
+            with open(os.path.join(e_proj, "%s.txt" % side), "w") as fh:
+                fh.write(tid + "\n")
+            gs_git(e_proj, "add", "%s.txt" % side)
+            gs_git(e_proj, "commit", "-q", "-m", tid)
+            _e_sha[tid] = gs_git(e_proj, "rev-parse", "HEAD")
+        gs_git(e_proj, "checkout", "-q", "-b", "combined", "main")
+        gs_git(e_proj, "merge", "-q", "--no-ff", "-m", "merge side1", "side1")
+        gs_git(e_proj, "merge", "-q", "--no-ff", "--no-commit", "side2")
+        with open(os.path.join(e_proj, "backdoor.txt"), "w") as fh:
+            fh.write("nobody reviewed this\n")
+        gs_git(e_proj, "add", "backdoor.txt")
+        gs_git(e_proj, "commit", "-q", "-m", "merge side2")
+        _e_evil = gs_git(e_proj, "rev-parse", "HEAD")
+        gs_git(e_proj, "checkout", "-q", "main")
+        _e_m = _mio.load_manifest(e_mp)
+        for _ph in _e_m["phases"]:
+            for _t in _ph["tasks"]:
+                _t["commit"] = _e_sha[_t["id"]]
+        _panel_write._atomic_write_json(e_mp, _e_m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", e_proj])
+        check("ga8 a merge whose tree is not the automatic merge of its parents "
+              "carries content of its own, and is refused by name for review: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and _e_evil[:12] in txt and "of its own" in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _e_evil, "--reason", "the conflict resolution",
+                         "--project-dir", e_proj])
+        check("ga8b ...and --accept takes it into the review, listed with `git show "
+              "--cc`: exit %r, %s" % (code, txt),
+              code == 0 and ("git show %s" % (_e_evil,)) in txt)
+        # One --accept names ONE commit.
+        p_proj, p_mp, _p = gs_fixture("ga-prefix")
+        gs_git(p_proj, "checkout", "-q", "combined")
+        _p_extra = []
+        for i in range(24):
+            gs_git(p_proj, "commit", "-q", "--allow-empty", "-m", "stray%d" % i)
+            _p_extra.append(gs_git(p_proj, "rev-parse", "HEAD"))
+        gs_git(p_proj, "checkout", "-q", "main")
+        _p_short = _p_extra[0][:1]
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _p_short, "--reason", "r",
+                         "--project-dir", p_proj])
+        check("ga9 an --accept value that does not resolve to exactly one commit - a "
+              "one-character prefix - is refused by name, and takes nothing in: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and ("--accept %s" % (_p_short,)) in txt
+              and "exactly one commit" in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", "0" * 40, "--reason", "r",
+                         "--project-dir", p_proj])
+        check("ga9b ...and so is a full SHA that names no commit",
+              code == 2 and "exactly one commit" in txt, txt)
+        q_proj, q_mp, _q = gs_fixture("ga-unique")
+        gs_git(q_proj, "checkout", "-q", "combined")
+        gs_git(q_proj, "commit", "-q", "--allow-empty", "-m", "planning")
+        _q_extra = gs_git(q_proj, "rev-parse", "HEAD")
+        gs_git(q_proj, "checkout", "-q", "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _q_extra[:12], "--reason", "r",
+                         "--project-dir", q_proj])
+        check("ga9c SECOND DIRECTION: a unique short SHA resolves to its one commit, "
+              "listed in full: exit %r, %s" % (code, txt),
+              code == 0 and ("git show %s" % (_q_extra,)) in txt)
+        # The group-only flags on ONE phase are refused, not ignored.
+        f_proj, f_mp, _f = gs_fixture("gs-single-flags")
+        _f_before = open(f_mp, "rb").read()
+        code, txt = run(["signoff", "P1", "--bind", "--project-dir", f_proj])
+        check("gs19 `signoff P1 --bind` is refused, naming the group form - it used "
+              "to ask for a verdict: exit %r, %s" % (code, txt),
+              code == 2 and "--branch" in txt and "--verdict" not in txt
+              and open(f_mp, "rb").read() == _f_before)
+        code, txt = run(["signoff", "P1", "--accept", "abc123", "--reason", "r",
+                         "--verdict", "skipped", "--summary", "s",
+                         "--project-dir", f_proj])
+        check("gs19b ...and so is --accept on one phase, with nothing written - it "
+              "used to sign off and record nothing of the accept: exit %r, %s"
+              % (code, txt),
+              code == 2 and "--branch" in txt and open(f_mp, "rb").read() == _f_before)
         g8b_proj, g8b_mp, g8b_shas = gs_fixture("ga-rebased")
         _g8b = _mio.load_manifest(g8b_mp)
         _g8b["phases"][1]["tasks"][0]["commit"] = g8b_shas["stray"]

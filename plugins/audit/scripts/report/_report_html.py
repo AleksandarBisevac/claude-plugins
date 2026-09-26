@@ -983,6 +983,10 @@ def _tev_phase_marks(entry):
         out += ('<span class="ptev" title="the run the gate this phase signs '
                 'off with last recorded">sign-off %s%s</span>'
                 % (_tev_badge(own), _tev_marks(own)))
+    for item in (own or {}).get("acceptedCommits") or []:
+        out += ('<span class="ptev" title="a commit on the group\'s branch no task '
+                'records, taken into its review at sign-off">accepted %s: %s</span>'
+                % (e(str(item.get("commit"))[:12]), e(str(item.get("reason") or ""))))
     rollup = entry.get("rollup") or []
     if rollup:
         out += ('<span class="ptev" title="the tasks in this phase, by what '

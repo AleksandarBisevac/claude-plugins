@@ -5579,6 +5579,35 @@ def _group_cases(check):
               "copied pointer is checked against: %r" % (_gg_with,),
               len(_gg_rows) == 2 and _gg_rows[0].get("groupWith") == ["P2"]
               and "groupWith" not in _gg_rows[1])
+        _gg_basis = str((_gg_rows[0].get("observations") or {}).get("coverageBasis"))
+        check("gg6 the group run's coverage basis names the files it owned for the "
+              "OTHER members by member, so a reader of the carrier's row does not take "
+              "them for the carrier's declaration: %r" % (_gg_basis,),
+              "src/p2.txt declared by P2 (group member)" in _gg_basis
+              and "group member" not in str((_gg_rows[1].get("observations") or {})
+                                            .get("coverageBasis")))
+        # A group whose other member declares only the carrier's own files has the
+        # same owned set as the carrier alone, and still never repeats its solo run.
+        with open(mpath) as fh:
+            _gg = json.load(fh)
+        _gg["phases"][1]["tasks"][0]["files"] = ["src/p1.txt"]
+        with open(mpath, "w") as fh:
+            json.dump(_gg, fh)
+        reset()
+        _ev_dir = os.path.join(root, "docs", "audit", "evidence")
+        for _name in os.listdir(_ev_dir):
+            os.remove(os.path.join(_ev_dir, _name))
+        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
+               out=lambda *_a: None)
+        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record"],
+               out=lambda *_a: None)
+        _gg7 = sorted(_recorded_rows(_ev_dir), key=lambda r: str(r.get("ts") or ""))
+        check("gg7 a group run over the same files as a solo run is MEASURED, not a "
+              "repeat of it - the members a run owns are part of what it would have "
+              "to match: %r" % ([(r.get("groupWith"), r.get(_ev_io.VERDICT_SOURCE))
+                                 for r in _gg7],),
+              len(_gg7) == 2 and _gg7[-1].get("groupWith") == ["P2"]
+              and _gg7[-1].get(_ev_io.VERDICT_SOURCE) != _ev_io.REUSED)
     finally:
         _harness.remove_tree(root)
 

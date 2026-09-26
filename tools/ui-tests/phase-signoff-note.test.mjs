@@ -36,6 +36,14 @@ describe('the sign-off note on a phase row', () => {
     expect(note).not.toContain('sign-off due');
   });
 
+  it('a commit a group accepted into its review is named beside the verdict', () => {
+    const note = P.phaseSignoffNote(phase({ signoffVerdict: 'passed',
+      branch: 'combined', acceptedCommits: [
+        { commit: 'abcdef0123456789abcdef', reason: 'the multi-phase plan' }] }));
+    expect(note).toContain('abcdef012345');
+    expect(note).toContain('the multi-phase plan');
+  });
+
   it('a phase that is done, cancelled or still running carries no note', () => {
     expect(P.phaseSignoffNote(phase({ status: 'done', signoffVerdict: 'passed' })))
       .toBeNull();

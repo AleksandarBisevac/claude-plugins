@@ -183,6 +183,62 @@
         "file": "commit",
         "issue": "The claims name exit codes but carry no stamp. 'The group run end to end on a real repo, every step exit 0' names no command. Line 2's red-first evidence cannot cover the reuse arm, because every evidence case forces `--no-reuse`. Line 7 again says 'no number written into prose' while CHANGELOG.md adds 'prints the two commands that free the branch'. That figure is true by construction, but the cla",
         "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-T1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group gate can loop on reuse, the same class as R1. `groupWith` is not part of the reuse identity, which is content + gate + declared_scope(owns). When a member's files are a subset of the carrier's, the union equals the carrier's own files. A solo carrier run (`run-test-gate P1 --record`) is then reused by the group run the refusal prints (`run-test-gate P1 --also P2 --record`, with no --no-r",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "A merge commit is accounted whenever its parents are accounted, and nothing checks the merge's OWN content. The docstring says such a merge 'carries no work of its own', but that is never checked. An evil merge, or a conflict resolution, lands unreviewed. It is not listed in the step-2 review scope (only task commits and accepted ones are), yet the first landing merges it. I RAN this: side1 (P1.1)",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group-only flags are accepted and ignored on the single-phase path. The dispatch sends only `len(ids)>1 or --branch or --plan` to `_group_door`, so its own refusals ('--plan and --bind are a group sign-off's, which needs --branch'; '--accept needs --reason') are unreachable for `--bind`, `--accept` and `--reason` on one phase. I RAN these: `signoff P1 --bind` exits 2 with 'needs --verdict', wh",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "One --accept value takes in every commit whose SHA starts with it, with no length floor and no uniqueness check. I RAN this: 12 stray commits, `--accept 1 --reason r`, and 3 of them (every SHA starting with '1') were taken into the group, leaving 9 refused. Each accepted SHA is listed in full in the plan, so nothing is hidden, but one flag the operator meant for one commit can accept several, each",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "When the carrier's gate declares no entry (state `no-gate`), the carrier's newest row is still copied onto every member as `gradedBy`, and that row may be any older run. I RAN this: P1 was measured solo under [test], then P1's testGate was cleared, then `signoff P1,P2 --branch combined --verdict passed` exited 0. It printed 'gate: the group's one run is P1's; P2 records it as its own, gradedBy P1'",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`review.acceptedCommits` is written on every member and read by nothing: grep finds only the writer, the schema, the demo exemption and ga3. R8 raised the same class for noEvidenceReason. A commit taken into a group's review outside every task is exactly what a later reader of the report needs to see, and it is visible only in the --plan output of the session that ran it.",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T7",
+        "severity": "low",
+        "file": "commit",
+        "issue": "R12 asked for stamp-verification stamps. The message carries `audit-stamp: head dcb72589, scopeDigest sha256:211cfee...`, which is not the tool's JSON. `stamp-verification.py compare --stamp-file <message>` refuses it with 'the text after audit-stamp: is not JSON', so the claim cannot be graded. The JSON stamp in the executor's scratch (p74c/stamp.txt) has a different scopeDigest (ba8e239e...) and",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "R9's second half is still open. The group row now records `groupWith`, but its coverage basis still lists other members' files as 'declared but not named by the run', with no word that they are the group's members' files and not the carrier's declaration.",
+        "resolution": "fix task P74.4-qq5"
       }
     ]
   },
@@ -391,6 +447,67 @@
         "test__evidence_view gv4",
         "test__panel_composition pc-sd0"
       ]
+    },
+    {
+      "id": "P74.4-qq5",
+      "title": "Round-3 review findings: a group run is never a reused solo run, a merge carrying its own content is reviewed, and group-only flags are refused on one phase",
+      "status": "in_progress",
+      "description": "Round-3 phase review findings, all to be fixed. Orchestrator decisions: (R1) the members a run covers (groupWith) are part of the reuse identity, so a group run never reuses a solo run; the refusal names the exact command that satisfies it; ve7 runs that command and reaches sign-off. (R2) a merge commit is accounted only when its tree equals the automatic merge of its parents (git merge-tree --write-tree); a merge carrying its own content is listed for review and refused unless --accept names it; the docs stop asserting it carries no work and say what is checked. (R3) the group-only flags (--bind, --accept, --reason with --accept) on a single-phase sign-off are refused with a usage error that names the group form, before anything is written. (R4) --accept resolves through git rev-parse to one full commit on the branch and refuses an ambiguous or unknown prefix. (R5) an empty carrier gate refuses the group binding instead of copying an old run. (R6) review.acceptedCommits is shown in the report's sign-off note and the panel's. (R7) the commit message is history and stays; the prose counts it points at (COMPATIBILITY 'gained two', the schema's 'ONE exception') are reworded to carry no count. (R8) the coverage basis of a group run names the members whose files it covers.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:6369-6388 (_group_binding); plugins/audit/scripts/governance/run-test-gate.py:2200-2238 (reuse_identity), :3547-3551: The group gate can loop on reuse, the same class as R1. `groupWith` is not part of the reuse identity, which is content + gate + declared_scope(owns). When a member's files are a subset of the carrier's, the union equals the carrier's own files. A solo carrier run (`run-test-gate P1 --record`) is then reused by the group run the refusal prints (`run-test-gate P1 --also P2 --record`, with no --no-reuse). `_group_binding` grades the reused row through `reusedFrom` to the solo origin, which has no `groupWith`, so it refuses again with 'owned P1 alone, not P2 - run `...--also P2 --record`'. Re-running that command reuses again, and the refusal never names --no-reuse. I RAN this with the real scripts: P2.files=[src/p1.py], solo gate --no-reuse exit 0, group gate exit 0 printing 'GATE VERDICT REUSED ... from run 020b9c', then `signoff P1,P2 --branch combined --verdict passed` exited 2 with 'the run that measured it (...020b9c) owned P1 alone, not P2'. Case ve7 stops at the first refusal and never runs the printed remedy. -> Put the owned member set (`also`, sorted) into the reuse identity key, so a group run never repeats a solo run or the reverse. Alternatively, grade `groupWith` on the repeating row when its origin's owned file set is identical, and name --no-reuse in the refusal. Add a case continuing ve7: run the printed command WITHOUT --no-reuse, then signoff must exit 0 (red today).\nR2 (med) plugins/audit/scripts/manifest/audit-task.py:6224-6246 (_account), :6100-6104 (group_plan docstring); plugins/audit/reference/phase-signoff.md ('a branch built by merging the members' own branches is made of them'): A merge commit is accounted whenever its parents are accounted, and nothing checks the merge's OWN content. The docstring says such a merge 'carries no work of its own', but that is never checked. An evil merge, or a conflict resolution, lands unreviewed. It is not listed in the step-2 review scope (only task commits and accepted ones are), yet the first landing merges it. I RAN this: side1 (P1.1) and side2 (P2.1) were merged --no-ff into combined, and the second merge added backdoor.py (`git show --cc --stat` shows 'backdoor.py | 1 +'). `signoff P1,P2 --branch combined --plan` exited 0 and listed only the two task commits for review. -> Account a merge only when `git diff-tree --cc -p <merge>` (or `git show --cc --format= <merge>`) is empty, meaning a clean merge carries nothing of its own. Otherwise treat it as stray, or list every merge in the review scope as `git show --cc <sha>`. Add a case: a merge with its own hunk is refused (or listed), and ga4's clean merges stay accounted.\nR3 (med) plugins/audit/scripts/manifest/audit-task.py:5858-5860 (cmd_signoff dispatch), :6282-6314 (_group_door): The group-only flags are accepted and ignored on the single-phase path. The dispatch sends only `len(ids)>1 or --branch or --plan` to `_group_door`, so its own refusals ('--plan and --bind are a group sign-off's, which needs --branch'; '--accept needs --reason') are unreachable for `--bind`, `--accept` and `--reason` on one phase. I RAN these: `signoff P1 --bind` exits 2 with 'needs --verdict', which steers the operator toward a verdict. `signoff P1 --bind --verdict skipped --summary s` exits 0 and writes an irreversible sign-off. `signoff P1 --verdict passed ... --accept deadbeef --reason r` exits 0 and records nothing of the accept. This is the 'flag accepted and ignored' class this file's own flag table warns about. -> Add `args.bind or args.accept or (args.reason or '').strip()` to the dispatch condition, so `_group_door` refuses them without --branch. Or refuse them explicitly on the single path. Add cases for `signoff P1 --bind` and `signoff P1 --accept x --reason r --verdict skipped`, both exit 2 with nothing written.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:6224-6246 (_account, `named = [a for a in accepted if _is_accounted(sha, [a])]`), :6218-6219 (_is_accounted): One --accept value takes in every commit whose SHA starts with it, with no length floor and no uniqueness check. I RAN this: 12 stray commits, `--accept 1 --reason r`, and 3 of them (every SHA starting with '1') were taken into the group, leaving 9 refused. Each accepted SHA is listed in full in the plan, so nothing is hidden, but one flag the operator meant for one commit can accept several, each recorded with that one reason. -> Resolve each --accept with `git rev-parse --verify <sha>^{commit}`, or require it to match exactly one commit in fork..branch. Refuse an ambiguous or short value by name.\nR5 (low) plugins/audit/scripts/manifest/audit-task.py:6383-6388 (_group_binding no-gate return), :6420-6421, :6462: When the carrier's gate declares no entry (state `no-gate`), the carrier's newest row is still copied onto every member as `gradedBy`, and that row may be any older run. I RAN this: P1 was measured solo under [test], then P1's testGate was cleared, then `signoff P1,P2 --branch combined --verdict passed` exited 0. It printed 'gate: the group's one run is P1's; P2 records it as its own, gradedBy P1', and P2.testEvidence became P1's old solo run. That run never owned P2 (no groupWith) and was taken under a gate that no longer exists. -> In the `no-gate` state, copy no pointer and print the existing 'declares no entry, so the sign-off rests on review alone' line. Alternatively, copy only an `empty-gate` row that carries `groupWith` for every member.\nR6 (low) plugins/audit/scripts/manifest/audit-task.py:6452-6454 (review.acceptedCommits); report/_evidence_view.py; ui/panel/overview.js: `review.acceptedCommits` is written on every member and read by nothing: grep finds only the writer, the schema, the demo exemption and ga3. R8 raised the same class for noEvidenceReason. A commit taken into a group's review outside every task is exactly what a later reader of the report needs to see, and it is visible only in the --plan output of the session that ran it. -> Render acceptedCommits (sha and reason) beside the sign-off verdict in the report and the panel. Or state in phase-signoff.md that it is a record without a reader.\nR7 (low) commit afd72d91 message (audit-stamp line, claim 7): R12 asked for stamp-verification stamps. The message carries `audit-stamp: head dcb72589, scopeDigest sha256:211cfee...`, which is not the tool's JSON. `stamp-verification.py compare --stamp-file <message>` refuses it with 'the text after audit-stamp: is not JSON', so the claim cannot be graded. The JSON stamp in the executor's scratch (p74c/stamp.txt) has a different scopeDigest (ba8e239e...) and grades `stale` against this worktree now. Claim 7, 'no count written into prose by this change', sits beside COMPATIBILITY.md's 'gained one additive key ... gained two' and the schema's 'with ONE exception'. Those are enumerated and arguably historical, but the claim as written is not true. -> Paste the JSON line `stamp-verification.py take` prints, taken on the committed tree. Reword claim 7 to 'no count without its enumeration or command beside it'.\nR8 (low) plugins/audit/scripts/governance/run-test-gate.py:1925-1930 (coverage basis): R9's second half is still open. The group row now records `groupWith`, but its coverage basis still lists other members' files as 'declared but not named by the run', with no word that they are the group's members' files and not the carrier's declaration. -> When `also` is set, label those files by their owning member in the coverage basis, e.g. 'declared by P2 (group member)'.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/ui/panel/composition.js"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - a merge commit adding its own file passes signoff --plan with nothing listed for review"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T08:13:04Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:38Z"

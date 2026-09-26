@@ -177,9 +177,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   run it repeats, so a re-run on an unchanged tree signs off. Otherwise the verb refuses naming
   the run and the gate call, or takes `--no-evidence-reason "<why>"`, recorded on
   `review.noEvidenceReason` and shown on the evidence badge. `--verdict skipped` needs neither.
-- **A group sign-off accounts for merges and takes an accepted commit.** A merge commit whose
-  parents are all accounted for, or on the parent side, is accounted; any other unrecorded commit
-  can be taken into the review with `--accept <sha> --reason "<why>"`, recorded on every member.
+- **A group sign-off accounts for merges and takes an accepted commit.** A merge commit is
+  accounted when its parents are all accounted for, or on the parent side, and its tree is exactly
+  the automatic merge of those parents; a merge carrying content of its own is refused for review.
+  Any other unrecorded commit can be taken into the review with `--accept <sha> --reason "<why>"`,
+  which must resolve to exactly one commit, is recorded on every member and is shown beside the
+  sign-off in the report and the panel. The group-only flags are refused on a single phase's
+  sign-off, a group gate run never repeats a solo run over the same files, a carrier whose gate
+  declares no entry copies no run onto the members, and a group run's coverage basis names the
+  files it owned for each other member.
   A journal that cannot be read is said as that; a task commit missing from the branch names
   `repair-commits.py`. `--bind` and the copied pointer each leave a journal row, the group run's
   ledger row names the members it owned (`groupWith`), and the report and panel render a copied

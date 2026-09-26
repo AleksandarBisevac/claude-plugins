@@ -398,12 +398,19 @@ the plan accepts the record re-checks under the lock.
 
 **What the branch may carry.** Every commit in `git rev-list <fork>..<branch>` is a member task's
 `commit`, an audit-state or index commit the journal records for a member, or a MERGE whose every
-parent is one of those or lies on the parent side of the fork — a branch built by merging the
-members' own branches is made of them. Any other commit — a hand-made planning commit, a
-journal-only commit nobody recorded — is refused by SHA, and `--accept <sha> --reason "<why>"`
-takes it into the review instead: the plan lists it beside the task commits, and the record
-writes it and the reason on every member's `review.acceptedCommits`. A journal that cannot be
-read is said as that, never as a commit nobody records. Then, in this order:
+parent is one of those or lies on the parent side of the fork AND whose tree is exactly the
+automatic merge of its parents (`git merge-tree --write-tree`). That last check is what makes a
+merge accounted: a merge whose tree differs — a conflict resolution, or an edit made inside the
+merge commit — carries content no parent does, and it is refused by SHA with `git show --cc
+<sha>` to review it. Any other commit — a hand-made planning commit, a journal-only commit
+nobody recorded — is refused by SHA too, and `--accept <sha> --reason "<why>"` takes it into the
+review instead. Each `--accept` must resolve (`git rev-parse --verify <sha>^{commit}`) to exactly
+one commit on the branch; a prefix that is ambiguous, or names nothing, is refused by name. The
+plan lists an accepted commit beside the task commits, the record writes it and the reason on
+every member's `review.acceptedCommits`, and the report and the panel show it beside the
+sign-off. A journal that cannot be read is said as that, never as a commit nobody records.
+`--plan`, `--bind`, `--accept` and `--reason` belong to the group form alone: on one phase's
+sign-off they are refused, naming it, with nothing written. Then, in this order:
 
 1. **Bind** with `--bind` in place of `--plan`: each member gets the branch as `branch` and the
    point it left the parent (`git merge-base <parent> <branch>`) as `baseRef`, nothing of a
