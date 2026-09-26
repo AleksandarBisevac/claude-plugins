@@ -307,7 +307,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hands out) as its id only when present. Whether a failing case is the task's own is now MEASURED
   rather than read off the test file's source: when the run is red, HEAD's own copies of the test
   files are put back in the same throwaway and the same command runs again, and a failing case is
-  the task's own exactly when that run of HEAD did not name it. A label built by a wrapper, looked up
+  the task's own exactly when that run of HEAD did not name it, and any case the two runs cannot
+  match one to one is refused rather than credited: a case HEAD printed that the task's run does not
+  print again under any label it may carry (a rename, a removal, a label carrying a per-run value), a
+  declared test file HEAD has and the working tree does not, a HEAD run that collected no case or is
+  red and may have stopped early (a pytest stop or interrupt line, `-x`, `--maxfail`, `-f`,
+  `--failfast` and their kin), and an edited case beside a new passing case of the same label. A
+  failing house line one reading of which HEAD printed is credited only by a fix run - the task's
+  test files with the working tree's implementation - that pairs it one to one to a label HEAD never
+  printed. unittest names are qualified by class, HEAD's files are put back byte for byte, every git
+  call runs under the one deadline, and every run is made with `PYTHONDONTWRITEBYTECODE=1` so a
+  swapped file cannot be shadowed by stale cached bytecode. The limits
+  that remain, all in the could-not-prove direction, are listed in the guide. A label built by a wrapper, looked up
   in a dict, or spelled again by an unrelated literal - each a shape some reading of the source got
   wrong - is therefore decided the same way as any other. The command must name every case it runs,
   passing ones included: the house harness does, pytest does under `-rA` or `-v`, unittest under

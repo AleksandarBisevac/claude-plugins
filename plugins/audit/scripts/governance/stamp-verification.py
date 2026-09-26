@@ -299,7 +299,13 @@ _HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
 _PYTEST_VERBOSE = re.compile(r"^(\S+::\S+) (?:PASSED|FAILED|ERROR|SKIPPED|XFAIL|"
                              r"XPASS)\b", re.M)
 _PYTEST_REPORTED = re.compile(r"^(?:PASSED|SKIPPED|XFAIL|XPASS) (\S+::\S+)", re.M)
-_UNITTEST_VERBOSE = re.compile(r"^(\w+) \([\w.]+\)(?: \.\.\.|\n)", re.M)
+_UNITTEST_VERBOSE = re.compile(r"^(\w+) \(([\w.]+)\)(?: \.\.\.|\n)", re.M)
+_UNITTEST_QUALIFIED = re.compile(r"^(FAIL|ERROR): (\w+) \(([\w.]+)\)", re.M)
+# A red run that may have stopped before running every case: pytest's stop and
+# interrupt lines, and the flags that ask a runner to stop at a failure.
+_STOPPED_EARLY = re.compile(r"stopping after \d+ failures?|Interrupted: .*", re.M)
+_STOP_FIRST_FLAGS = ("-x", "--exitfirst", "--maxfail", "--sw", "--stepwise", "-f",
+                     "--failfast")
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
 _COMPILE_ERROR = re.compile(r"^\s*(?:E\s+)?(SyntaxError|IndentationError|TabError|"
@@ -347,7 +353,10 @@ def _pytest_cases(text):
 
 
 def _unittest_cases(text):
-    return [{"id": name, "label": name, "assertion": kind == "FAIL", "why": kind}
+    qualified = dict(((kind, name), _unittest_qualified(name, where))
+                     for kind, name, where in _UNITTEST_QUALIFIED.findall(text))
+    return [{"id": name, "label": qualified.get((kind, name), name),
+             "assertion": kind == "FAIL", "why": kind}
             for kind, name in _UNITTEST_CASE.findall(text)]
 
 
@@ -573,9 +582,10 @@ def _git_env():
     return dict((k, v) for k, v in os.environ.items() if not k.startswith("GIT_"))
 
 
-def _git(root, args, timeout=120):
+def _git(root, args, timeout=120, strip=True):
     """`(code, text)` for one git call; the hooks path points nowhere, so no hook
-    the repository carries runs on the throwaway's behalf."""
+    the repository carries runs on the throwaway's behalf. `strip=False` keeps
+    the output as git wrote it, for a file's contents."""
     try:
         out = subprocess.run(["git", "-C", root, "-c",
                               "core.hooksPath=%s" % os.devnull] + list(args),
@@ -583,12 +593,13 @@ def _git(root, args, timeout=120):
                              timeout=timeout, env=_git_env())
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "%s" % (exc,)
-    return out.returncode, out.stdout.decode("utf-8", "replace").strip()
+    text = out.stdout.decode("utf-8", "replace")
+    return out.returncode, text.strip() if strip else text
 
 
 def _head_text(root, rel):
     """HEAD's bytes of `rel` as text, or None when HEAD has no such file."""
-    code, text = _git(root, ["show", "HEAD:%s" % (rel,)])
+    code, text = _git(root, ["show", "HEAD:%s" % (rel,)], strip=False)
     return text if code == 0 else None
 
 
@@ -635,19 +646,17 @@ def introduced(root, implementation, symbol):
 # literal, and every reading of the source met a shape it got wrong. So HEAD's own
 # test files are run with the same command in the same throwaway, and a failing
 # case is the task's own exactly when that run did not name it.
-def _label_forms(label):
-    """The label as printed and the label before each ` (` it holds - a house
-    FAIL line appends its detail that way, and a detail spanning lines leaves
-    the line with no closing paren."""
-    return [label] + [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
-
-
-def _house_names(text):
-    return [ln[len("PASS "):].strip() if ln.startswith("PASS ")
-            else ln[len("FAIL "):].strip()
+def _house_lines(text):
+    """`[(label, failed)]` for every house PASS/FAIL line, escapes left out."""
+    return [(ln[len("PASS "):].strip(), False) if ln.startswith("PASS ")
+            else (ln[len("FAIL "):].strip(), True)
             for ln in text.splitlines()
             if (ln.startswith("PASS ") or ln.startswith("FAIL "))
             and not any(m in ln for m in HOUSE_ESCAPES)]
+
+
+def _house_names(text):
+    return [label for label, _failed in _house_lines(text)]
 
 
 def _pytest_names(text):
@@ -655,9 +664,19 @@ def _pytest_names(text):
                       + [node for _k, node, _w in _PYTEST_FAILED.findall(text)]))
 
 
+def _unittest_qualified(name, where):
+    """`Class.test` from a unittest line: `where` is `mod.Class` or, from 3.11,
+    `mod.Class.test`; two classes sharing a method name are two cases."""
+    parts = where.split(".")
+    if len(parts) > 1 and parts[-1] == name:
+        parts = parts[:-1]
+    return "%s.%s" % (parts[-1], name) if parts and parts[-1] else name
+
+
 def _unittest_names(text):
-    return sorted(set(_UNITTEST_VERBOSE.findall(text)
-                      + [name for _k, name in _UNITTEST_CASE.findall(text)]))
+    return sorted(set([_unittest_qualified(n, w) for n, w in _UNITTEST_VERBOSE.findall(text)]
+                      + [_unittest_qualified(n, w)
+                         for _k, n, w in _UNITTEST_QUALIFIED.findall(text)]))
 
 
 NAME_READERS = {"house": _house_names, "pytest": _pytest_names,
@@ -667,36 +686,60 @@ NAME_READERS = {"house": _house_names, "pytest": _pytest_names,
 def run_names(text, runner):
     """Every case a run of `runner` names, passing or failing, as printed: a
     house PASS/FAIL label (a FAIL line's detail still on it), a pytest node id
-    from `-v` or `-rA` lines, a unittest test name from `-v` lines. The FAIL
+    from `-v` or `-rA` lines, a unittest `Class.test` from `-v` lines. The FAIL
     lines alone name only what failed, which is why completeness is checked."""
     reader = NAME_READERS.get(runner)
     return reader(text) if reader is not None else []
+
+
+def _stops_early(head, cmd):
+    """Why a red HEAD run may not have run every case, or None."""
+    if head.get("code") in (0, None):
+        return None
+    marker = _STOPPED_EARLY.search(head["text"])
+    if marker:
+        return "it printed %r" % (marker.group(0).strip(),)
+    flags = [a for a in (str(c) for c in (cmd or ())) if a in _STOP_FIRST_FLAGS
+             or any(a.startswith(f + "=") for f in ("--maxfail",))]
+    if flags:
+        return "the command asks it to stop at a failure (%s)" % (", ".join(flags),)
+    return None
 
 
 def head_names(head, cmd, runner, new_files):
     """`(names, problem)` - every case HEAD's own run named, or why that run
     cannot say. Exactly one is None.
 
-    `head` is `{"code", "text", "problem"}`. A run naming FEWER cases than its
-    tally collected - `pytest -q`, unittest without `-v` print only failures -
-    cannot tell an existing case from a new one, so it fails closed. A run with
-    no tally at all is read as naming nothing only when every declared test
-    file is new at HEAD, so there was nothing there to run."""
+    `head` is `{"code", "text", "problem"}`. Refused, each with its reason: a
+    run that could not be made; one with no tally, or a tally of no case,
+    while a declared test file exists at HEAD; one read as another runner; one
+    naming FEWER cases than it collected (`pytest -q`, unittest without `-v`
+    print only failures); and a red one that may have stopped early - a pytest
+    stop or interrupt line, or a stop-first flag - since a case it never ran
+    would read as new. When every declared test file is new at HEAD there was
+    nothing there to run, and HEAD names nothing."""
     if head is None:
         return None, "HEAD's own run was not made"
     if head.get("problem"):
         return None, "HEAD's own run could not be made: %s" % (head["problem"],)
+    if new_files:
+        return [], None
     tally = read_tally(head["text"], cmd)
-    if tally is None:
-        if new_files:
-            return [], None
-        return None, ("HEAD's own run printed no tally this command reads, so what "
-                      "it holds cannot be listed: %s"
-                      % (_decisive_line(head["text"], None),))
+    if tally is None or tally["collected"] == 0:
+        return None, ("HEAD's own run %s while a declared test file exists at "
+                      "HEAD, so what it holds cannot be listed: %s"
+                      % ("printed no tally this command reads" if tally is None
+                         else "collected no case",
+                         _decisive_line(head["text"], tally)))
     if tally["runner"] != runner:
         return None, ("HEAD's own run was read as %s and the task's as %s, so their "
                       "cases cannot be compared" % (tally["runner"] or "mixed",
                                                      runner))
+    early = _stops_early(head, cmd)
+    if early is not None:
+        return None, ("HEAD's own run is red and may have stopped before running "
+                      "every case - %s - so a case it never ran would read as new"
+                      % (early,))
     names = run_names(head["text"], runner)
     if len(names) < tally["collected"]:
         return None, ("HEAD's own run named %d case(s) and collected %d, so an "
@@ -706,24 +749,147 @@ def head_names(head, cmd, runner, new_files):
     return names, None
 
 
-def _held_by_head(case, heads, runs):
-    """Whether HEAD's own run named `case`, a failing case of the task's run.
+def _label_forms(label):
+    """The label as printed and the label before each ` (` it holds - a house
+    FAIL line appends its detail that way, and a detail spanning lines leaves
+    the line with no closing paren."""
+    return [label] + [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
 
-    A name printed identically by both runs is HEAD's. A house FAIL line
-    carries its detail, so a case failing now that passed at HEAD appears with
-    text HEAD never printed; it is HEAD's when it shares a label form with a
-    name HEAD printed that the task's run did not print again - a name the
-    task's run repeats is accounted for by that repeat, which is what keeps a
-    new label beside an older, shorter one (`the value (as read)` beside `the
-    value`) new. An id-led house label is HEAD's when HEAD printed that id."""
-    label = case.get("label") or ""
-    if label in heads:
-        return True
-    if case.get("id") and case.get("why") == "house FAIL":
-        if any(house_case_id(h) == case["id"] for h in heads):
-            return True
-    forms = set(_label_forms(label))
-    return any(forms & set(_label_forms(h)) for h in heads if h not in runs)
+
+def _labels_of(label, failed):
+    """The labels a printed house line may carry: a PASS line is its label; a
+    FAIL line's label is itself or any text before a ` (` (`_label_forms`) -
+    the detail's start cannot be read off the line, so every reading counts."""
+    return set(_label_forms(label)) if failed else set([label])
+
+
+def _matching(lefts, rights):
+    """Whether every entry of `lefts` (a list of label sets) can be paired with
+    a DIFFERENT entry of `rights` sharing a label - Kuhn's augmenting paths."""
+    owner = [None] * len(rights)
+    by_label = {}
+    for j, labels in enumerate(rights):
+        for label in labels:
+            by_label.setdefault(label, []).append(j)
+
+    def place(i, seen):
+        for j in sorted(set(k for label in lefts[i] for k in by_label.get(label, ()))):
+            if j in seen:
+                continue
+            seen.add(j)
+            if owner[j] is None or place(owner[j], seen):
+                owner[j] = i
+                return True
+        return False
+    return all(place(i, set()) for i in range(len(lefts)))
+
+
+def _forced_label(index, task_lines, fix_lines):
+    """The one label task line `index` carries, read off the fix run - the same
+    test files with the working tree's implementation, where a case that now
+    passes prints its label bare - or None when the lines cannot be paired one
+    to one, or the pairing leaves the line more than one label."""
+    lefts = [_labels_of(label, failed) for label, failed in task_lines]
+    rights = [_labels_of(label, failed) for label, failed in fix_lines]
+    if len(lefts) != len(rights) or not _matching(lefts, rights):
+        return None
+    possible = set()
+    for j, labels in enumerate(rights):
+        if not (lefts[index] & labels):
+            continue
+        rest_l = lefts[:index] + lefts[index + 1:]
+        rest_r = rights[:j] + rights[j + 1:]
+        if _matching(rest_l, rest_r):
+            possible |= lefts[index] & labels
+    return possible.pop() if len(possible) == 1 else None
+
+
+def compare_runs(head_text, task_text, runner, failing, fix_text=None):
+    """`{"held", "problem", "ambiguous"}` - which failing cases of the task's
+    run HEAD's own run already named, or why the two runs cannot be compared.
+
+    A FALSE PROVED MUST BE IMPOSSIBLE, so any case the two runs cannot match
+    one to one is refused, never credited:
+
+    - every case HEAD's run named must be printed by the task's run under a
+      label it may carry (pytest and unittest: the same node id or
+      `Class.test`; house: a shared label reading, or for an id-led label the
+      same id) - a label carrying a per-run value (a temp path, an object's
+      address) no longer lines up, and the whole comparison is refused;
+    - a failing house line is HEAD's when any label it may carry is one HEAD's
+      run printed (an id-led one: when HEAD printed its id). Where one reading
+      is HEAD's and another is not - an edited case, a new label holding a
+      parenthesis beside an older, shorter one - the line is `ambiguous`, and
+      only the fix run (`fix_text`) can credit it: it is paired one to one
+      with the fix run's lines (`_forced_label`), and is new only when that
+      pairing leaves it exactly one label, which HEAD never printed. The same
+      label printed more often by the task's run than by HEAD's, one of them
+      failing, pairs to a label HEAD printed, and is refused.
+
+    WHAT THIS CANNOT SEE, every limit in the could-not-prove direction: a new
+    case whose label shares a reading with one HEAD printed is refused unless
+    the fix run tells them apart, which needs the case to pass with the fix; a
+    new case given an id an existing family already uses is refused; a task
+    that renames or removes any case HEAD's run printed is refused whole, as is
+    one whose labels carry per-run values without an id to key them. The
+    refusals `head_names` makes before this is reached - a HEAD file that
+    genuinely holds no case, a red HEAD run under a stop-first flag that did
+    run every case, a runner told to name only failures - are in the same
+    direction."""
+    if runner != "house":
+        heads = set(run_names(head_text, runner))
+        runs = set(run_names(task_text, runner))
+        gone = sorted(heads - runs)
+        if gone:
+            return {"held": [], "ambiguous": [], "problem": (
+                "HEAD's own run named %s, which the task's run did not, so the two "
+                "runs' cases cannot be matched one to one"
+                % (_output.some_of(gone),))}
+        return {"held": [f for f in failing if f["label"] in heads],
+                "ambiguous": [], "problem": None}
+    head_lines, task_lines = _house_lines(head_text), _house_lines(task_text)
+    task_sets = [_labels_of(label, failed) for label, failed in task_lines]
+    task_ids = set(house_case_id(label) for label, _f in task_lines) - set([None])
+    head_ids, head_labels, gone = set(), set(), []
+    for label, failed in head_lines:
+        lid = house_case_id(label)
+        if lid is not None:
+            head_ids.add(lid)
+            if lid not in task_ids:
+                gone.append(label)
+            continue
+        labels = _labels_of(label, failed)
+        head_labels |= labels
+        if not any(labels & t for t in task_sets):
+            gone.append(label)
+    if gone:
+        return {"held": [], "ambiguous": [], "problem": (
+            "HEAD's own run printed %s, which the task's run printed under no "
+            "label it may carry - a renamed or removed case, or a label carrying "
+            "a value that differs per run - so the two runs' cases cannot be "
+            "matched one to one" % (_output.some_of(gone),))}
+    fix_lines = _house_lines(fix_text) if fix_text is not None else None
+    held, ambiguous = [], []
+    for f in failing:
+        if f.get("id"):
+            if f["id"] in head_ids:
+                held.append(f)
+            continue
+        readings = _labels_of(f["label"], True)
+        if not readings & head_labels:
+            continue
+        if readings <= head_labels or fix_lines is None:
+            held.append(f)
+            if not readings <= head_labels:
+                ambiguous.append(f)
+            continue
+        index = next((i for i, (label, failed) in enumerate(task_lines)
+                      if failed and label == f["label"]), None)
+        label = (_forced_label(index, task_lines, fix_lines)
+                 if index is not None else None)
+        if label is None or label in head_labels:
+            held.append(f)
+    return {"held": held, "ambiguous": ambiguous, "problem": None}
 
 
 def _is_named(failure, name):
@@ -733,18 +899,15 @@ def _is_named(failure, name):
     return name == failure.get("id") or name in _label_forms(label)
 
 
-def own_failures(heads, runs, failing, cases):
+def own_failures(heads, held, failing, cases):
     """`(own, refused)` - the failing cases that are the TASK'S OWN and failed an
     assertion, and `[(name, "at-head"|"absent")]` for each `--case` name that
     is not one of them.
 
-    `heads` is every case HEAD's own run named and `runs` every case the
-    task's run named. Own means a case HEAD's run did not name
-    (`_held_by_head`). `--case` narrows to the failing cases it names, by id
-    or by full label, and each is held to the same measurement, because the
-    flag is chosen by the party whose proof is being checked."""
-    heads, runs = set(heads), set(runs)
-    held = [f for f in failing if _held_by_head(f, heads, runs)]
+    `heads` is every case HEAD's own run named and `held` the failing cases
+    `compare_runs` found HEAD's. `--case` narrows to the failing cases it
+    names, by id or by full label, and each is held to the same measurement,
+    because the flag is chosen by the party whose proof is being checked."""
     refused = []
     for name in cases:
         named = [f for f in failing if _is_named(f, name)]
@@ -966,6 +1129,17 @@ def red_verdict(run, ctx):
     if verdict == V_RED:
         heads, head_problem = head_names(run.get("head"), run["cmd"],
                                          tally["runner"], ctx.get("new_files"))
+        compared = None
+        if ctx.get("deleted"):
+            heads, head_problem = [], (
+                "the task removes or renames %s, which HEAD has, so the two runs "
+                "hold different test files" % (", ".join(ctx["deleted"]),))
+        if head_problem is None:
+            fix = run.get("fix")
+            compared = compare_runs(run["head"]["text"], text, tally["runner"],
+                                    failing, fix["text"] if fix and not
+                                    fix.get("problem") else None)
+            head_problem = compared["problem"]
         if head_problem is not None:
             return E_CANNOT_PROVE, verdict, {
                 "status": RED_CANNOT, "at": at,
@@ -973,8 +1147,7 @@ def red_verdict(run, ctx):
                          "own cannot be measured: %s - %s%s"
                          % (where, _ids(failing), head_problem, line,
                             env_clause)}, None
-        own, refused = own_failures(heads, run_names(text, tally["runner"]),
-                                    failing, ctx["cases"])
+        own, refused = own_failures(heads, compared["held"], failing, ctx["cases"])
         refused_clause = _refused_clause(refused)
         if own:
             return E_PROVED, verdict, {
@@ -1041,24 +1214,38 @@ def red_verdict(run, ctx):
                                          else "", env_clause)}, None
 
 
-def _put_back_head(root, path, rels):
-    """Put HEAD's copy of each of `rels` back in the throwaway, removing one
-    HEAD does not have."""
+def _at_head(root, rels, deadline):
+    """`(present, problem)` - which of `rels` HEAD holds, asked of git under
+    the one deadline."""
+    code, text = _git(root, ["ls-tree", "--name-only", "HEAD", "--"] + list(rels),
+                      timeout=max(1, _left(deadline)))
+    if code != 0:
+        return None, "git could not list HEAD's files: %s" % (text,)
+    return set(text.splitlines()) & set(rels), None
+
+
+def _put_back_head(root, path, rels, deadline):
+    """Put HEAD's copy of each of `rels` back in the throwaway at `path`, byte
+    for byte (`git checkout HEAD --`), removing one HEAD does not have. Every
+    git call runs under the one deadline. Returns the problem, or None."""
+    present, problem = _at_head(root, rels, deadline)
+    if problem is not None:
+        return problem
     for rel in rels:
         dst = os.path.join(path, *rel.split("/"))
-        text = _head_text(root, rel)
-        if text is None:
-            if os.path.isfile(dst):
-                os.remove(dst)
-            continue
-        with open(dst, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        if rel not in present and os.path.isfile(dst):
+            os.remove(dst)
+    if present:
+        code, text = _git(path, ["checkout", "HEAD", "--"] + sorted(present),
+                          timeout=max(1, _left(deadline)))
+        if code != 0:
+            return "git could not put HEAD's test files back: %s" % (text,)
+    return None
 
 
-def _head_run(root, path, tests, cmd, deadline, timeout, env):
-    """`{"code", "text", "problem", "seconds"}` - the same command over HEAD's
-    own test files, in the same throwaway, within what is left of the deadline."""
-    _put_back_head(root, path, tests)
+def _timed_run(path, cmd, deadline, timeout, env):
+    """`{"code", "text", "problem", "seconds"}` for one more run in the
+    throwaway, within what is left of the deadline."""
     left = _left(deadline)
     started = time.time()
     if left < 1:
@@ -1068,6 +1255,22 @@ def _head_run(root, path, tests, cmd, deadline, timeout, env):
         code, text, problem = _run_in(path, cmd, left, env)
     return {"code": code, "text": text, "problem": problem,
             "seconds": round(time.time() - started, 2)}
+
+
+def _head_run(root, path, tests, cmd, deadline, timeout, env):
+    """The same command over HEAD's own test files, in the same throwaway."""
+    problem = _put_back_head(root, path, tests, deadline)
+    if problem is not None:
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}
+    return _timed_run(path, cmd, deadline, timeout, env)
+
+
+def _fix_run(root, path, rels, cmd, deadline, timeout, env):
+    """The task's test files with the working tree's implementation - where a
+    case that now passes prints its label bare, so an ambiguous FAIL line can
+    be paired to the one label it carries."""
+    _lay_over(root, path, rels)
+    return _timed_run(path, cmd, deadline, timeout, env)
 
 
 def _wants_second(code, text, symbols, cmd=None):
@@ -1126,7 +1329,8 @@ def _red_scope(args, cmd, deadline):
         return None, ("none of task %s's test files (%s) is in the working tree, "
                       "so a throwaway would hold HEAD alone"
                       % (args.task, ", ".join(tests)))
-    return {"root": root, "implementation": implementation, "tests": present}, None
+    return {"root": root, "implementation": implementation, "tests": present,
+            "declared": tests}, None
 
 
 def _arm():
@@ -1147,6 +1351,11 @@ def run_red(args, cmd, out):
     root = scope["root"]
     leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
     env, dropped, naming = child_env(root)
+    # The runs swap files in place, and a copy of the same size written in the
+    # same second as the one it replaces leaves a cached bytecode file Python
+    # still trusts - in the tree or under PYTHONPYCACHEPREFIX alike. So no run
+    # writes one, and none is there to be read.
+    env = dict(env, PYTHONDONTWRITEBYTECODE="1")
     _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
     base = holder_base(root)
     if base is None:
@@ -1162,13 +1371,18 @@ def run_red(args, cmd, out):
     except OSError:
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
-           "head": None}
+           "head": None, "fix": None}
+    state = {"new_files": False, "deleted": []}
     copied = []
     previous = _arm()
     try:
         try:
-            copied, run["problem"] = _build_throwaway(
-                root, path, scope["tests"], timeout=max(1, _left(deadline)))
+            present, run["problem"] = _at_head(root, scope["declared"], deadline)
+            if run["problem"] is None:
+                state["new_files"] = not present
+                state["deleted"] = sorted(present - set(scope["tests"]))
+                copied, run["problem"] = _build_throwaway(
+                    root, path, scope["declared"], timeout=max(1, _left(deadline)))
             if run["problem"] is None and _left(deadline) < 1:
                 run["problem"] = ("the run timed out: building the throwaway spent "
                                   "the %s-second deadline" % (args.timeout,))
@@ -1186,10 +1400,25 @@ def run_red(args, cmd, out):
                 else:
                     code2, text2, problem2 = _run_in(path, cmd, left, env)
                 run["second"] = {"code": code2, "text": text2, "problem": problem2}
-            if (run["problem"] is None and run["code"] is not None
-                    and classify_run(run["code"], run["text"], cmd)[0] == V_RED):
-                run["head"] = _head_run(root, path, scope["tests"], cmd, deadline,
+            verdict1, tally1 = (classify_run(run["code"], run["text"], cmd)
+                                if run["problem"] is None and run["code"] is not None
+                                else (None, None))
+            if verdict1 == V_RED:
+                run["head"] = _head_run(root, path, scope["declared"], cmd, deadline,
                                         args.timeout, env)
+                heads, problem = head_names(run["head"], cmd, tally1["runner"],
+                                            state["new_files"])
+                failing1 = failing_cases(run["text"], tally1["runner"])
+                first = (compare_runs(run["head"]["text"], run["text"],
+                                      tally1["runner"], failing1)
+                         if problem is None and not state["deleted"] else None)
+                if (first is not None and first["problem"] is None
+                        and first["ambiguous"]
+                        and not own_failures(heads, first["held"], failing1,
+                                             args.case)[0]):
+                    run["fix"] = _fix_run(root, path, scope["declared"]
+                                          + scope["implementation"], cmd, deadline,
+                                          args.timeout, env)
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -1198,7 +1427,7 @@ def run_red(args, cmd, out):
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
-            "new_files": all(_head_text(root, rel) is None for rel in scope["tests"])})
+            "new_files": state["new_files"], "deleted": state["deleted"]})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
@@ -1206,18 +1435,16 @@ def run_red(args, cmd, out):
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
-               "environment": {"dropped": dropped, "naming": naming},
+               "environment": {"dropped": dropped, "naming": naming,
+                               "set": ["PYTHONDONTWRITEBYTECODE=1"]},
                "throwaway": {"path": path, "head": head, "removed": removed},
                "run": {"argv": cmd, "exit": run["code"],
                        "outputTail": run["text"].splitlines()[-20:],
                        "second": None if run["second"] is None else
                        {"exit": run["second"]["code"],
                         "outputTail": run["second"]["text"].splitlines()[-20:]},
-                       "head": None if run["head"] is None else
-                       {"exit": run["head"]["code"],
-                        "seconds": run["head"]["seconds"],
-                        "problem": run["head"]["problem"],
-                        "outputTail": run["head"]["text"].splitlines()[-20:]}}}
+                       "head": _run_record(run["head"]),
+                       "fix": _run_record(run["fix"])}}
     if args.as_json:
         out(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -1236,6 +1463,15 @@ def run_red(args, cmd, out):
                          "`git worktree list` names what is left\n" % (path,))
         return E_LEFT_BEHIND
     return exit_code
+
+
+def _run_record(extra):
+    """What the payload keeps of one of `red`'s extra runs, or None."""
+    if extra is None:
+        return None
+    return {"exit": extra["code"], "seconds": extra["seconds"],
+            "problem": extra["problem"],
+            "outputTail": extra["text"].splitlines()[-20:]}
 
 
 def build_parser():

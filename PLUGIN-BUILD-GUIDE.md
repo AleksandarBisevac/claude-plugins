@@ -3661,16 +3661,40 @@ a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` 
 assertions. `proved` needs one of those failures to be the TASK'S OWN, and that is MEASURED, not
 read off the source: when the run is red, HEAD's own copies of the test files are put back in the
 same throwaway and the SAME command runs again, and a failing case is the task's own exactly when
-that run of HEAD did not name it (`head_names()`, `own_failures()`). A house run names every case
-by its PASS/FAIL label; a FAIL line carries its detail, so a case failing now that passed at HEAD is
-HEAD's when it shares a label form with a name HEAD printed that the task's run did not print again,
-and an id-led label is HEAD's when HEAD printed that id. pytest names its passing cases only under
-`-rA` or `-v`, unittest only under `-v`: a HEAD run naming fewer cases than it collected, one with
-no tally while a declared test file exists at HEAD, and one that could not be made are all
-`could-not-prove` with that reason; a test file new at HEAD names nothing, so every case in it is
-new. The extra run is paid only when the first one is red, and the payload records its exit and
-seconds. Four review rounds each found a shape a reading of the source got wrong - a label built
-by a wrapper, looked up in a dict, spelled again by an unrelated literal - and the measurement has
+that run of HEAD did not name it (`head_names()`, `compare_runs()`, `own_failures()`). A FALSE
+PROVED MUST BE IMPOSSIBLE, so any case the two runs cannot match one to one is refused, never
+credited. Every case HEAD's run named must be printed again by the task's run under a label it may
+carry (pytest node ids and unittest `Class.test` names exactly; a house FAIL line may carry its own
+text or the text before any ` (`, since where its detail starts cannot be read off the line; an
+id-led house label by its id), or the whole comparison is refused - a renamed or removed case, a
+label carrying a per-run value. A failing house line is HEAD's when any label it may carry is one
+HEAD printed; where one reading is HEAD's and another is not, only a FIX RUN - the task's test
+files with the working tree's implementation, where a case that now passes prints its label bare -
+can credit it, by pairing every line one to one and finding the line left exactly one label HEAD
+never printed (an edited case beside a new passing case of the same label pairs to HEAD's label and
+is refused). HEAD's run itself is refused when it could not be made, when it printed no tally or a
+tally of no case while a declared test file exists at HEAD, when it names fewer cases than it
+collected (pytest names passing cases only under `-rA` or `-v`, unittest only under `-v`), and when
+it is red and may have stopped early (a pytest stop or interrupt line, or a stop-first flag:
+`-x`, `--exitfirst`, `--maxfail`, `--sw`, `--stepwise`, `-f`, `--failfast`). A declared test file
+HEAD has and the working tree does not - a rename or a delete - refuses the comparison. HEAD's
+copies are put back byte for byte (`git checkout HEAD --`), every git call under the one deadline,
+and every run is made with `PYTHONDONTWRITEBYTECODE=1`, so a swapped file of the same size
+written in the same second cannot be shadowed by a stale cached bytecode file. A test file new at HEAD
+names nothing, so every case in it is new. The extra runs are paid only when the first run is red
+(the fix run only when nothing else would be credited), and the payload records each one's exit
+and seconds.
+
+**What the measurement still cannot see, every limit in the could-not-prove direction.** A new case
+whose label shares a reading with one HEAD printed is refused unless the fix run tells them apart,
+which needs the case to pass with the fix; a new case given an id an existing family already uses
+is refused; a task that renames or removes any case or declared test file HEAD's run printed is
+refused whole, as is one whose labels carry per-run values without an id to key them; a HEAD test
+file that genuinely holds no case refuses, because a run collecting none cannot be told from one
+that failed before collecting; a red HEAD run under a stop-first flag refuses even when every case
+did run; and a runner told to name only failures (`pytest -q`, unittest without `-v`) refuses.
+Four review rounds each found a shape a reading of the source got wrong - a label built by a
+wrapper, looked up in a dict, spelled again by an unrelated literal - and the measurement has
 none of them to get wrong. `--case` narrows to the ids or labels it names and is held to the same
 measurement, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
