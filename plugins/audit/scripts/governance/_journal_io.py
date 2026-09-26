@@ -581,11 +581,6 @@ def month_of(ts):
     return str(ts)[:7] if len(str(ts)) >= 7 else time.strftime("%Y-%m", time.gmtime())
 
 
-# The `via` of a journal-writes row that records a move it saw between two of
-# its session's calls and nothing explained - a row with no known writer.
-_OBSERVED_VIA = "hook-observed"
-
-
 # The part of a writer id that names a LINKED WORKTREE, after the session's.
 WORKTREE_MARK = "wt-"
 
@@ -596,10 +591,13 @@ WORKTREE_MARK = "wt-"
 # otherwise hand every worktree one token.
 WORKTREE_TOKEN_FILE = "audit-journal-writer"
 
-# `worktree_key`'s answer per resolved git root, for the life of the process.
-# Every append asks it, and a manifest edit appends several rows in one hook
-# process; git's answer about which checkout a directory is does not change
-# inside one process, so it is asked once per root. Measured 2026-09-26, 40
+# `worktree_key`'s POSITIVE answers per resolved git root, each with the stat
+# of the worktree's `.git` file it was read under. Every append asks, and a
+# manifest edit appends several rows in one hook process, so a key is kept -
+# but only while that `.git` file is the same file: a worktree removed and
+# added back at the same path gets a new `.git` file and a fresh git dir with
+# no token, and a long-lived process (the panel server) must see that. A None
+# is never kept, so a transient failure is asked again. Measured 2026-09-26, 40
 # appends in a linked worktree per run, four runs each at two different times
 # of a loaded machine: before, medians of 11.0, 12.0, 17.2 and 16.8 ms per row
 # (range 10.0-32.9); after, 0.18-0.20 ms (range 0.15-18.9 - the maximum is the
@@ -636,9 +634,23 @@ def worktree_key(project, config=None):
         memo = os.path.realpath(where)
     except Exception:
         return None
-    if memo not in _WORKTREE_KEYS:
-        _WORKTREE_KEYS[memo] = _worktree_key_uncached(where)
-    return _WORKTREE_KEYS[memo]
+    dotgit = os.path.join(where, ".git")
+    if os.path.isdir(dotgit):
+        return None                # a main checkout: git's own directory
+    try:
+        st = os.stat(dotgit)
+        stamp = (st.st_ino, st.st_mtime_ns, st.st_size)
+    except OSError:
+        stamp = None               # no `.git` here: ask git, keep nothing
+    held = _WORKTREE_KEYS.get(memo)
+    if stamp is not None and held is not None and held[0] == stamp:
+        return held[1]
+    key = _worktree_key_uncached(where)
+    if key and stamp is not None:
+        _WORKTREE_KEYS[memo] = (stamp, key)
+    else:
+        _WORKTREE_KEYS.pop(memo, None)
+    return key
 
 
 def _worktree_key_uncached(where):
@@ -1389,11 +1401,7 @@ def _normalise(entry, project=None):
     # session" -- which is also what every row written before this field means,
     # and `session_index` says so rather than letting silence read as agreement.
     env_sid = env_session_id()
-    # A row the journal-writes hook OBSERVED between calls names no writer, and
-    # the env id here is the observing call's - stamping it would file another
-    # writer's move under the observer (`session_index` reads it as "mine").
-    if env_sid and env_sid != row["actor"]["sessionId"] \
-            and row["actor"]["via"] != _OBSERVED_VIA:
+    if env_sid and env_sid != row["actor"]["sessionId"]:
         row["actor"]["envSessionId"] = env_sid
     # WHICH AGENT OF THAT SESSION, when the writer was an agent at all. One
     # session runs an orchestrator and its subagents and they all share

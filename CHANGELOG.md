@@ -197,12 +197,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `phase.signoff` is derived from the derivation's inputs on both sides of a write (the verdict,
   and with a branch the merge stamp), never from a `status` flipped by hand or stored to match the
   derivation - so a hand flip made before the verdict no longer swallows it. Such a flip is still
-  recorded, as the edit it is. A move between calls that no trail row explains (an editor, a
-  terminal, a background job, a revert to an older recorded state) is recorded as observed
-  between calls, naming no session, agent or environment session id. It is settled on the
-  observing writer's own Post, so a writer whose Post lands late still writes its attributed
-  rows - an observed row never stands in for them - and each agent of a session keeps its own
-  baseline.
+  recorded, as the edit it is. A move made between calls is absorbed, whoever made it: the hook
+  records only what its own call wrote, and each agent of a session keeps its own baseline, so
+  one agent's Pre cannot swallow another's write. A move no row explains (an editor, a terminal,
+  a background job) is not lost: `audit-journal verify` warns that the file "has changed since the
+  last row that recorded it", and `/audit:doctor` reports that warning as out-of-band drift; a task
+  closed from the CLI records its own `task.done` row, which the doctor accepts as the receipt.
 - **One session's worktrees shared a journal file.** The writer id was the session alone, so
   every linked worktree a session drove appended the same `<month>.<session>.jsonl`, and merging
   two of those branches met a file whose same-second rows disagreed. A linked worktree now writes
@@ -213,8 +213,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is git's answer, asked where `gitRoot` points, and the key is kept in the worktree's own git
   dir, so a `gitRoot` subdirectory or a shared absolute `stateDir` no longer collapses it.
   **Limit:** when git cannot be asked, or the key cannot be stored there, the session-keyed name
-  is used. The key is asked of git once per git root in a process, and a caller that passes no
-  config gets the project's own.
+  is used. A main checkout is answered from its `.git` directory with no git process; a
+  worktree's key is kept in the process only while its `.git` file is the same file, so one
+  removed and added back at the same path gets a new key; a caller that passes no config gets
+  the project's own.
 
 ## [3.0.1] - 2026-09-18
 

@@ -2653,6 +2653,55 @@ def _worktree_writer_cases(check):
     check("wk13 a caller that hands NO config gets the project's own - its "
           "gitRoot subdirectory is honoured", bool(M.worktree_key(nested)),
           repr(M.worktree_key(nested)))
+    # wk14/wk15: only a positive answer is kept, and it is revalidated against
+    # the worktree's `.git` file, so a worktree removed and added back at the
+    # same path - a fresh git dir with no token - gets a fresh key.
+    _before = M.worktree_key(wt_b)
+    subprocess.run(git + ["worktree", "remove", "--force", wt_b], cwd=main,
+                   check=True, capture_output=True, timeout=30)
+    subprocess.run(git + ["worktree", "add", "-q", wt_b, "-b", "chore/b-again"],
+                   cwd=main, check=True, capture_output=True, timeout=30)
+    _after = M.worktree_key(wt_b)
+    check("wk14 a worktree removed and added back at the same path gets a NEW "
+          "key - the kept answer is checked against its `.git` file",
+          bool(_before) and bool(_after) and _before != _after,
+          repr((_before, _after)))
+    _real_run2 = _sp.run
+    _calls2 = []
+
+    def _count2(argv, *a, **k):
+        if list(argv[:1]) == ["git"]:
+            _calls2.append(tuple(argv))
+        return _real_run2(argv, *a, **k)
+    _sp.run = _count2
+    try:
+        _main_keys = [M.worktree_key(main) for _i in range(3)]
+    finally:
+        _sp.run = _real_run2
+    check("wk15 a main checkout - a `.git` DIRECTORY - is answered None with no "
+          "git process at all", _main_keys == [None] * 3
+          and _calls2 == [], repr((_main_keys, _calls2)))
+    _later = os.path.join(pair["root"], "later-wt")
+    os.makedirs(_later)
+    _none_first = M.worktree_key(_later)
+    os.rmdir(_later)
+    subprocess.run(git + ["worktree", "add", "-q", _later, "-b", "chore/later"],
+                   cwd=main, check=True, capture_output=True, timeout=30)
+    _then = M.worktree_key(_later)
+    _real_uncached = M._worktree_key_uncached
+    M._WORKTREE_KEYS.clear()
+    M._worktree_key_uncached = lambda where: None       # git failed, once
+    try:
+        _failed = M.worktree_key(wt_a)
+    finally:
+        M._worktree_key_uncached = _real_uncached
+    _recovered = M.worktree_key(wt_a)
+    check("wk17 a failed answer for a real worktree is not kept either: the "
+          "next call asks again and gets the key",
+          _failed is None and bool(_recovered), repr((_failed, _recovered)))
+    check("wk16 a None is never kept: a path that was not a worktree when first "
+          "asked, and is one now, gets its key",
+          _none_first is None and bool(_then), repr((_none_first, _then)))
     check("wk7 ...and the merged trail verifies",
           M.verify(main)["ok"], repr(M.verify(main).get("findings")))
 

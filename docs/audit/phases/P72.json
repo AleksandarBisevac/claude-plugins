@@ -610,6 +610,58 @@
         "test_journal_writes so4",
         "test__journal_io wk12"
       ]
+    },
+    {
+      "id": "P72.8-ttl",
+      "title": "Final-review findings: journal-writes records only its own call, the unexplained move is left to verify, and the worktree key memo revalidates",
+      "status": "in_progress",
+      "description": "Final-pass review of P72.7 (review-P72d.json) found the observed-between-calls mechanism still racy after four rounds: a pending move whose Post never comes is never settled, duplicates depend on Post arrival order, the pending file has no lock, and doctor counts an observed task.complete as a receipt. Orchestrator decision, structural: REMOVE the observed-row mechanism and the pending files. journal-writes records only what the call it runs for wrote (the P72.3 absorb-between-calls rule). A move no row explains is already detected where it belongs - audit-journal verify warns that a tracked file 'has changed since the last row that recorded it - an edit the journal never saw' - and a CLI close is recorded by the verb's own task.done row, which doctor accepts; name both in the docstring and the CHANGELOG, and make doctor surface that verify warning if it does not already. Also: the worktree-key memo caches only a positive answer and revalidates it against the worktree's .git file, so a removed and re-added worktree is seen; SECURITY.md's paragraph above the residual list is made consistent with it, the list is headed for both guards, and it claims only that the residuals are open. Red first: a case where a move by a writer with no hook is reported by verify, and the removed rows never appear.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: repro that FAILS on current code - a move whose writer never runs a Post leaves a pending file and no row"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T22:55:25Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T14:32:08Z"

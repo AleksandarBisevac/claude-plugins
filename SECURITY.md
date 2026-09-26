@@ -190,15 +190,16 @@ so `echo attempt used git stash` and `grep git stash notes.md` are refused as a 
 An exemption for the arguments of text emitters was tried and removed — each fix of it
 opened another way through (a later pipe, a comment ending in a backslash, a file run
 by name or by git itself), and a fail-loud guard keeps only what it can prove. Write
-the rule into a file with an editor, or quote the whole phrase as one word. A shell's
-`-c` argument, `eval`'s argument, a here-string fed to a shell or an interpreter
-(`sh <<<'…'`), and every `$(…)` or backquote — including one inside double quotes,
-which the lexer returns as a single word, with quotes tracked inside it — are read as
+the rule into a file with an editor. A shell's `-c` argument, `eval`'s argument, a
+here-string fed to a shell or an interpreter as the first word of its command
+(`sh <<<'…'`), and a `$(…)` or backquote — including one inside double quotes, which
+the lexer returns as a single word, with quotes tracked inside it — are read as
 commands of their own; a substitution this cannot read makes the whole command
 unreadable, which sends it to the raw-text patterns rather than to a reading that
-contributes nothing. A backslash-newline is joined before the command is read, as the
-shell joins it, except inside a comment: an unquoted `#` starting a word runs to the
-end of its line, and the next line is a command of its own. `xargs git` with no verb
+contributes nothing. A backslash-newline is joined before the command is read, except
+inside a comment: an unquoted `#` starting a word runs to the end of its line, and the
+next line is a command of its own. Each of these readings has limits, and the list
+of open residuals below says where. `xargs git` with no verb
 on its own command line takes the verb from stdin, which this guard cannot read, and
 is refused while a plan exists. Every `git reset --hard` in a command is graded, not
 the first.
@@ -227,15 +228,17 @@ text — the conservative direction, which is the only direction a guard may fai
 when it cannot read its input. The general residual is the one this document opens
 with: text inspection is bypassable in principle.
 
-**Open residuals of the history guard, stated rather than left to be found.** None
-of these is below the 036e98e base, and each is recorded for a maintainer to close:
+**Open residuals of the history guard and `guard-secrets-read`, stated rather than
+left to be found.** Each is open; none of them lets through a command the 036e98e
+base refused:
 
 - an interpreter program that starts git from inside its own code (a Python or
   Node body that runs a subprocess) is read as code, not searched for git — the
   guard reads shell text, and a program's own calls are the general residual above;
 - the line-continuation join decides whether a `#` starts a comment from the raw
   character before it, not from the word the shell has assembled, so a `#` that
-  follows an escape can be misjudged as a comment;
+  follows an escape can be misjudged as a comment - in the history guard, and in
+  `guard-secrets-read`'s text-emitter reading, which uses the same join;
 - a here-string's reader is recognised only as the first word of its command, not
   behind a wrapper that runs its argument, which the heredoc reader already handles;
 - a `case` pattern's `)` inside a double-quoted substitution ends the substitution

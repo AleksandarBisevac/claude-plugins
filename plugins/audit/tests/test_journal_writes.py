@@ -1721,9 +1721,8 @@ def _cases(check):
         def sg_whole(sid, write=None):
             """One whole call's rows, Pre's and Post's, in that order - the
             answer does not depend on which pass a row is written in."""
-            pre = getattr(M, "pre_pass", None)
-            rows = [e for _r, e in (pre(sg_bash(sid), cfg=sg_cfg, root=sg)[1]
-                                    if pre else [])]
+            M.pre_cache(sg_bash(sid), cfg=sg_cfg, root=sg)
+            rows = []
             if write is not None:
                 sg_write(write)
             return rows + M.post_entries(sg_bash(sid), cfg=sg_cfg, root=sg)
@@ -1755,28 +1754,22 @@ def _cases(check):
                                                 task="done"))
         check("sg1b ...and the absorbed write is not re-derived on the call "
               "after it either", _sg1b == [], repr(_sg1b))
-        # ...but a write between calls that NO trail row explains - an editor,
-        # a terminal, this session's own background job - is not absorbed in
-        # silence: the hook is the only writer of the completion rows, so it
-        # records what it saw, as observed between calls and unattributed.
+        # ...and a write between calls that NO trail row explains - an editor,
+        # a terminal, a background job - is absorbed too: this hook records only
+        # what its own call wrote. That move is not lost: `audit-journal verify`
+        # warns that the file "has changed since the last row that recorded it",
+        # and the doctor reports that warning as out-of-band drift.
         sg_write(sg_doc(stored="in_progress", verdict="pending", task="in_progress"))
         sg_call("sg-bg")
         sg_write(sg_doc(stored="in_progress", verdict="pending", task="done"))
         _rows5 = sg_whole("sg-bg")
-        _got5 = _rows5
-        check("sg5 an unexplained move between calls yields rows - the edit and "
-              "its completion - each marked as observed, not written by this "
-              "call, and filed under no session",
-              [e.get("action") for e in _rows5] == ["manifest.edit",
-                                                    "task.complete"]
-              and all(getattr(M, "OBSERVED_BETWEEN_CALLS", "\0") in e.get("summary", "")
-                      and (e.get("details") or {}).get("reason")
-                      == getattr(M, "OBSERVED_BETWEEN_CALLS", "\0")
-                      and not (e.get("actor") or {}).get("sessionId")
-                      for e in _rows5), repr(_got5))
-        _sg5b = sg_whole("sg-bg")
-        check("sg5b ...and the call after it derives nothing more from it",
-              _sg5b == [], repr(_sg5b))
+        check("sg5 a move between calls with no trail row derives nothing here - "
+              "it is not this call's write", _rows5 == [], repr(_rows5))
+        _v5 = _journal_io.verify(sg)
+        check("sg5b ...and verify is what reports it: the tracked file changed "
+              "since the last row that recorded it",
+              any("has changed since the last row that recorded it" in w
+                  for w in _v5.get("warnings", [])), repr(_v5.get("warnings")))
         # A HAND flip of the stored status, made by this call, is a hand edit.
         sg_write(sg_doc(stored="in_progress"))
         sg_call("sg-hand")
@@ -1823,172 +1816,125 @@ def _cases(check):
     finally:
         shutil.rmtree(sg, ignore_errors=True)
 
-    # (so) AN OBSERVED ROW NAMES NOBODY, IS EXPLAINED ONLY BY THE LATEST ROW,
-    # AND NEVER STANDS IN FOR A WRITER'S OWN. Driven through whole calls - each
-    # pass's rows appended as `main` appends them - so the trail is what a
-    # reader would find, in both orders a peer's Post can land in.
-    so = tempfile.mkdtemp(prefix="journal-observed-")
+    # (so) EACH CALL RECORDS ONLY WHAT IT WROTE, in every arrival order of the
+    # Posts, and leaves no pending state behind a call whose Post never comes.
+    so = tempfile.mkdtemp(prefix="journal-own-writes-")
     so_prev = {k: os.environ.get(k)
                for k in ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID")}
     os.environ["CLAUDE_PROJECT_DIR"] = so
-    os.environ["CLAUDE_CODE_SESSION_ID"] = "OBSERVER-ENV-ID"
+    os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
     try:
         so_rel = "docs/audit/audit-plan.json"
         so_abs = os.path.join(so, so_rel)
         os.makedirs(os.path.dirname(so_abs))
         so_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        so_state = os.path.join(so, str(so_cfg["stateDir"]))
 
-        def so_doc(task="in_progress", phase="in_progress", tag="0"):
-            """A plan whose bytes and completion stamp differ per `tag`, so one
-            scenario's rows can never explain or dedup another's."""
+        def so_doc(task="in_progress", tag="0"):
+            """A plan whose bytes and completion stamp differ per `tag`."""
             return {"meta": {"version": 3}, "phases": [
-                {"id": "P1", "title": "p-" + tag, "status": phase,
+                {"id": "P1", "title": "p-" + tag, "status": "in_progress",
                  "tasks": [{"id": "P1.1", "title": "t", "status": task,
                             "commit": None, "completedAt":
-                            "2026-09-26T10:0%s:00Z" % tag if task == "done"
+                            "2026-09-26T11:0%s:00Z" % tag if task == "done"
                             else None}]}]}
 
         def so_write(doc):
             with open(so_abs, "w", encoding="utf-8") as fh:
                 json.dump(doc, fh)
 
-        def so_data(sid, agent=None):
+        def so_data(sid, agent=None, event="PostToolUse"):
             d = {"tool_name": "Bash", "session_id": sid, "cwd": so,
-                 "tool_input": {"command": "ls"}}
-            if agent:
+                 "hook_event_name": event, "tool_input": {"command": "ls"}}
+            if agent is not None:
                 d["agent_id"] = agent
             return d
 
         def so_pre(sid, agent=None):
-            d = dict(so_data(sid, agent), hook_event_name="PreToolUse")
-            _slot, rows = M.pre_pass(d, cfg=so_cfg, root=so)
-            M._append_rows(d, rows)
+            M.pre_cache(so_data(sid, agent, "PreToolUse"), cfg=so_cfg, root=so)
 
         def so_post(sid, agent=None):
-            d = dict(so_data(sid, agent), hook_event_name="PostToolUse")
+            d = so_data(sid, agent)
             M._append_rows(d, M.post_rows(d, cfg=so_cfg, root=so))
 
-        def so_trail():
-            return _journal_io.read_all(so)
+        def so_mark():
+            return set(r.get("hash") for r in _journal_io.read_all(so))
 
         def so_since(mark):
-            """Rows the trail gained since `mark` (a set of hashes) - read_all
-            sorts by time across files, so a slice would not do."""
-            return [r for r in so_trail() if r.get("hash") not in mark]
+            return [r for r in _journal_io.read_all(so)
+                    if r.get("hash") not in mark]
 
-        def so_mark():
-            return set(r.get("hash") for r in so_trail())
+        def so_completions(rows, stamp):
+            return [r for r in rows if r.get("action") == "task.complete"
+                    and (r.get("details") or {}).get("completedAt") == stamp]
 
-        def so_actions(rows, action):
-            return [r for r in rows if r.get("action") == action]
+        # so1: a Pre whose Post never comes leaves no state and no row.
+        so_write(so_doc(tag="1"))
+        so_pre("nopost")
+        so_post("nopost")
+        so_write(so_doc(task="done", tag="1"))  # moved by a writer with no hook
+        _m1 = so_mark()
+        so_pre("nopost")                        # ...and this call never Posts
+        _left = [n for n in os.listdir(so_state) if n.startswith("journal-pending-")]
+        check("so1 a move whose writer never runs a Post leaves NO pending "
+              "file and no row - nothing waits on a Post that may never come",
+              _left == [] and so_since(_m1) == [], repr((_left, so_since(_m1))))
 
-        # so1: the observed rows name no session, no agent and no env id.
-        so_write(so_doc())
-        so_pre("obs", "a1")
-        so_post("obs", "a1")
-        so_write(so_doc(task="done"))           # a writer with no hook
-        so_pre("obs", "a1")
-        so_post("obs", "a1")
-        _obs = [r for r in so_trail() if (r.get("actor") or {}).get("via")
-                == "hook-observed"]
-        check("so1 an observed row names nobody - no session, no agent, and no "
-              "env session id of the call that saw it",
-              _obs and all(not (r.get("actor") or {}).get(k) for r in _obs
-                           for k in ("sessionId", "agent", "envSessionId")),
-              repr([r.get("actor") for r in _obs]))
-        check("so1b ...while the env id is still stamped on an ordinary row, so "
-              "the omission is the observed row's alone",
-              _journal_io.append(so, {"action": "manifest.edit", "target": "",
-                                      "summary": "x",
-                                      "actor": {"via": "hook"}}, so_cfg)
-              and so_trail()[-1]["actor"].get("envSessionId") == "OBSERVER-ENV-ID")
+        # so2/so3: the writer's Post before, and after, the observer's call.
+        for _cid, _tag, _late in (("so2", "2", False), ("so3", "3", True)):
+            so_write(so_doc(tag=_tag))
+            so_pre("obs" + _tag)
+            so_post("obs" + _tag)
+            _mark = so_mark()
+            so_pre("peer" + _tag)
+            so_write(so_doc(task="done", tag=_tag))     # the peer's command
+            so_pre("obs" + _tag)
+            if not _late:
+                so_post("peer" + _tag)
+            so_post("obs" + _tag)
+            if _late:
+                so_post("peer" + _tag)
+            _tc = so_completions(so_since(_mark), "2026-09-26T11:0%s:00Z" % _tag)
+            check("%s the writer's own task.complete is written exactly once, "
+                  "under its session, whether its Post lands %s the observer's "
+                  "call - the observer records nothing" % (
+                      _cid, "after" if _late else "before"),
+                  [r["actor"].get("sessionId") for r in _tc] == ["peer" + _tag]
+                  and not [r for r in so_since(_mark)
+                           if r["actor"].get("sessionId") == "obs" + _tag],
+                  repr([(r.get("action"), r["actor"]) for r in so_since(_mark)]))
 
-        # so2: a row from BEFORE the last recorded state explains nothing.
-        so_write(so_doc(task="done", tag="2"))           # B
-        _journal_io.append(so, {"action": "manifest.edit", "target": so_rel,
-                                "summary": "B", "actor": {"sessionId": "w",
-                                                          "via": "hook"}}, so_cfg)
-        so_write(so_doc(task="done", phase="done", tag="2"))   # C
-        _journal_io.append(so, {"action": "manifest.edit", "target": so_rel,
-                                "summary": "C", "actor": {"sessionId": "w",
-                                                          "via": "hook"}}, so_cfg)
-        so_pre("rev")
-        so_post("rev")                          # rev's baseline is C
-        so_write(so_doc(task="done", tag="2"))           # back to B, no hook
-        _before = so_mark()
-        so_pre("rev")
-        so_post("rev")
-        _rev = [r for r in so_since(_before)
-                if r.get("action") == "manifest.edit"]
-        check("so2 a revert to a state an OLDER row recorded is observed: only "
-              "the latest row for the target explains a move",
-              len(_rev) == 1 and any(
-                  c.get("id") == "P1" and c.get("from") == "done"
-                  and c.get("to") == "in_progress"
-                  for c in (_rev[0].get("details") or {}).get("changes", [])),
-              repr([r.get("summary") for r in _rev]))
+        # so4/so5: two agents of ONE session, in both orders.
+        for _cid, _tag, _late in (("so4", "4", False), ("so5", "5", True)):
+            so_write(so_doc(tag=_tag))
+            for _ag in ("agent-a", "agent-b"):
+                so_pre("sess" + _tag, _ag)
+                so_post("sess" + _tag, _ag)
+            _mark = so_mark()
+            so_pre("sess" + _tag, "agent-a")
+            so_write(so_doc(task="done", tag=_tag))     # agent A's command
+            so_pre("sess" + _tag, "agent-b")
+            if not _late:
+                so_post("sess" + _tag, "agent-a")
+            so_post("sess" + _tag, "agent-b")
+            if _late:
+                so_post("sess" + _tag, "agent-a")
+            _new = so_since(_mark)
+            _tc = so_completions(_new, "2026-09-26T11:0%s:00Z" % _tag)
+            check("%s two agents of one session: the writing agent's "
+                  "task.complete is written once, under it, whether its Post "
+                  "lands %s the other agent's" % (_cid, "after" if _late
+                                                  else "before"),
+                  [r["actor"].get("agent") for r in _tc] == ["agent-a"]
+                  and not [r for r in _new if r["actor"].get("agent") == "agent-b"],
+                  repr([(r.get("action"), r["actor"]) for r in _new]))
 
-        # so3: the peer's Post lands AFTER the observer's Pre.
-        so_write(so_doc(tag="3"))
-        so_pre("obs3")
-        so_post("obs3")
-        _mark3 = so_mark()
-        so_pre("peer")
-        so_write(so_doc(task="done", tag="3"))  # the peer's command writes
-        so_pre("obs3")                          # the observer's Pre sees it
-        so_post("peer")                         # ...then the peer's Post lands
-        so_post("obs3")
-        _new3 = so_since(_mark3)
-        _done = [r for r in so_actions(_new3, "task.complete")
-                 if (r.get("details") or {}).get("completedAt")
-                 == "2026-09-26T10:03:00Z"]
-        _peer_rows = [r for r in _done if r["actor"].get("sessionId") == "peer"]
-        check("so3 when the writer's own Post lands after the observer's Pre, "
-              "its attributed task.complete is written, and no observed row "
-              "stands in for it", len(_peer_rows) == 1 and not [
-                  r for r in _new3 if r["actor"].get("via")
-                  == "hook-observed"], repr([(r["actor"], r.get("summary"))
-                                             for r in _new3]))
-
-        # so5: the writer's Post lands AFTER the observer's whole call, so the
-        # observer records the move as observed first - and the writer's own
-        # attributed completion is still written, not withheld as a repeat.
-        so_write(so_doc(tag="5"))
-        so_pre("obs5")
-        so_post("obs5")
-        _mark5 = so_mark()
-        so_pre("late")
-        so_write(so_doc(task="done", tag="5"))  # the late writer's command
-        so_pre("obs5")
-        so_post("obs5")                         # observed, unexplained yet
-        so_post("late")                         # ...then the writer's Post
-        _tc5 = so_actions(so_since(_mark5), "task.complete")
-        check("so5 an observed row never stands in for the writer's own: the "
-              "late writer's attributed task.complete is written beside it",
-              [r["actor"].get("sessionId") for r in _tc5
-               if r["actor"].get("via") != "hook-observed"] == ["late"],
-              repr([(r["actor"], r.get("summary")) for r in _tc5]))
-
-        # so4: two agents of ONE session, one writing while the other looks.
-        so_write(so_doc(tag="4"))
-        so_pre("sess", "agent-a")
-        so_post("sess", "agent-a")
-        so_pre("sess", "agent-b")
-        so_post("sess", "agent-b")
-        _mark = so_mark()
-        so_pre("sess", "agent-a")
-        so_write(so_doc(task="done", tag="4"))  # agent A's command writes
-        so_pre("sess", "agent-b")               # agent B looks meanwhile
-        so_post("sess", "agent-a")
-        so_post("sess", "agent-b")
-        _new = so_since(_mark)
-        _tc = so_actions(_new, "task.complete")
-        check("so4 two agents of one session: the writing agent's task.complete "
-              "is written once, under that agent, and the other agent observes "
-              "nothing", len(_tc) == 1 and _tc[0]["actor"].get("agent") == "agent-a"
-              and not [r for r in _new if r["actor"].get("via")
-                       == "hook-observed"],
-              repr([(r.get("action"), r.get("actor")) for r in _new]))
+        # so6: a subagent whose id sanitises to nothing is still its own writer.
+        check("so6 a subagent whose agent_id is only punctuation keeps a "
+              "baseline of its own, apart from the orchestrator's",
+              M._slot_path(so, so_cfg, so_data("s6", "!!!"), so_rel)
+              != M._slot_path(so, so_cfg, so_data("s6"), so_rel),
+              repr(M._slot_path(so, so_cfg, so_data("s6", "!!!"), so_rel)))
     finally:
         for k, v in so_prev.items():
             if v is None:
