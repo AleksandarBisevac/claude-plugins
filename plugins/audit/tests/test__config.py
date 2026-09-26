@@ -1908,6 +1908,15 @@ def _cases(check):
           "leaving the reader to trust a copy of the digit: wanted %r"
           % (_bound_needle,),
           _bound_needle in _exec_task_doc)
+    # ONLY A TRAILING `:<digit range>` IS A LINE SUFFIX. Split on the first
+    # colon, an absolute Windows entry (`C:\\repo\\a.py`) stripped to `C`.
+    _ls = [("a\\b.tsx:291-294,308", "a/b.tsx"), ("a.py:12", "a.py"),
+           ("C:\\repo\\a.py", "C:/repo/a.py"), ("C:/repo/a.py:5-9", "C:/repo/a.py"),
+           ("docs/x:y.md", "docs/x:y.md")]
+    _ls_got = [(e, M.strip_line_suffix(e)) for e, _w in _ls]
+    check("ls1 `strip_line_suffix` drops only a trailing `:<digit range>` - a drive "
+          "letter and a colon inside a name are part of the path: %r" % (_ls_got,),
+          [g for _e, g in _ls_got] == [w for _e, w in _ls])
 
 
 def _selftest():

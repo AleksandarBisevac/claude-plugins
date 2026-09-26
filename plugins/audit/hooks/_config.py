@@ -1532,9 +1532,11 @@ def matches_exempt(rel, globs):
 
 
 def strip_line_suffix(entry):
-    """`a/b.tsx:291-294,308` -> `a/b.tsx`."""
-    s = str(entry).replace("\\", "/")
-    return s.split(":", 1)[0]
+    """`a/b.tsx:291-294,308` -> `a/b.tsx` - only a TRAILING `:<digit range>`,
+    so a drive letter (`C:/repo/a.py`) or a colon inside a name survives. The
+    scripts' copy (`_manifest_vocab._strip_line_suffix`) is pinned equal to this
+    one by `test__manifest_vocab.py` `mv6b`."""
+    return re.sub(r":[0-9][0-9,-]*\Z", "", str(entry).replace("\\", "/"))
 
 
 # --- manifest state -----------------------------------------------------------

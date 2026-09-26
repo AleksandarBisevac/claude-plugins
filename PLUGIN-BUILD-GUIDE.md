@@ -368,7 +368,7 @@ L7:
   audit-journal -> _evidence_io, _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
+  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme

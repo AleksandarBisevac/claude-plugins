@@ -1176,6 +1176,17 @@ def _cases(check):
                             ("task", "P0.9"): ("task", "P1.2")}
               and dict((k, v["runId"]) for k, v in _mv_best.items())
               == {("task", "P1.2"): "RM"})
+        _mv_bad = {"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1"},
+            {"id": "P1.2", "movedFrom": {"id": "P1.1", "phase": "P1"}},
+            {"id": "P1.3", "movedFrom": {"id": "P0.5", "phase": "P0"}},
+            {"id": "P1.4", "movedFrom": {"id": "P0.5", "phase": "P0"}},
+            {"id": "P1.5", "movedFrom": {"id": "P0.6", "phase": "P0"}}]}]}
+        _mv_bad_alias = M.subject_aliases(_mv_bad)
+        check("mvr3 an old id a LIVE task holds is never aliased away from it, and "
+              "one two chains both claim is aliased to neither - only the clean "
+              "link is kept: %r" % (_mv_bad_alias,),
+              _mv_bad_alias == {("task", "P0.6"): ("task", "P1.5")})
         mvproj, mvpath = _manifest_project("recon-moved")
         with open(os.path.join(mvproj, "docs", "audit", "phases", "P1.json"),
                   "w") as fh:

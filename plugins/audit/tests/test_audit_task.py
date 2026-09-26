@@ -6890,6 +6890,11 @@ def _cases(check):
               code == 2 and "/audit:bug close BUG-1" in txt
               and "not_a_bug" in txt and _rv1_after == _rv1_before
               and _rv1_bug.get("status") == "in_progress")
+        check("nc6 ...and the route it names runs CANCEL FIRST: `/audit:bug close` "
+              "refuses while the bug's task is in progress, so the other order "
+              "fails at its first step: %s" % (txt,),
+              "/audit:task cancel P2.4" in txt
+              and txt.index("/audit:task cancel P2.4") < txt.index("/audit:bug close"))
         # R2: the moved-away id is never minted again.
         projrv2, mprv2 = mk("rv-move-reissue", base_manifest())
         run(["move", "P2.3", "--to", "P3", "--project-dir", projrv2])
@@ -6918,11 +6923,41 @@ def _cases(check):
         _evidence_io.append_row(projrv3, {
             "v": 1, "runId": "RV1", "ts": "2026-08-26T10:00:00Z", "scope": "task",
             "taskId": "P2.3", "phaseId": "P2", "status": "failed", "steps": []})
-        code, txt = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv3])
-        check("mv5 a move over recorded runs SAYS they stay keyed to the old id in "
-              "the ledger and that readers join them through movedFrom: %s" % (txt,),
-              code == 0 and "evidence:" in txt and "P2.3" in txt
-              and "movedFrom" in txt)
+        code, txt = run(["move", "P2.3", "--to", "P3", "--json",
+                         "--project-dir", projrv3])
+        try:
+            _rv3_js = json.loads(txt)
+        except ValueError:
+            _rv3_js = {}
+        projrv3b, _mprv3b = mk("rv-move-evidence-human", base_manifest())
+        _evidence_io.append_row(projrv3b, {
+            "v": 1, "runId": "RV2", "ts": "2026-08-26T10:00:00Z", "scope": "task",
+            "taskId": "P2.3", "phaseId": "P2", "status": "failed", "steps": []})
+        code2, txt2 = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv3b])
+        _rv3_line = [ln.strip() for ln in txt2.splitlines()
+                     if ln.strip().startswith("evidence:")]
+        check("mv5 a move over ONE recorded run counts it exactly - `--json` "
+              "carries evidenceRunsLeft 1 and the line names the count and the "
+              "two readers that join it: %r" % ((_rv3_js.get("evidenceRunsLeft"),
+                                                  _rv3_line),),
+              code == 0 and _rv3_js.get("evidenceRunsLeft") == 1 and code2 == 0
+              and len(_rv3_line) == 1
+              and _rv3_line[0].startswith("evidence: 1 recorded run(s) stay keyed "
+                                          "to P2.3")
+              and "/audit:doctor and --reconcile join them" in _rv3_line[0])
+        projrv3c, _mprv3c = mk("rv-move-no-evidence", base_manifest())
+        code3, txt3 = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv3c])
+        check("mv5b SECOND DIRECTION: a move over NO recorded run prints no evidence "
+              "line at all: %s" % (txt3,),
+              code3 == 0 and not [ln for ln in txt3.splitlines()
+                                  if ln.strip().startswith("evidence:")])
+        with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                               "audit-plan.schema.json"), encoding="utf-8") as _fh:
+            _rv_mf = (json.load(_fh)["$defs"]["task"]["properties"]["movedFrom"])
+        check("mv5c the schema documents `movedFrom.previous`, the link a second "
+              "move nests: %r" % (sorted(_rv_mf.get("properties") or {}),),
+              "previous" in (_rv_mf.get("properties") or {})
+              and "previous" in _rv_mf.get("description", ""))
         # R6: the target resolves before the task's own status is judged, and a
         # signed-off target's refusal speaks of the move.
         projrv6, _mprv6 = mk("rv-move-order", base_manifest())
@@ -6930,6 +6965,11 @@ def _cases(check):
         check("mv6 `move <done task> --to <no such phase>` names the missing phase - "
               "item 1 of the documented order - before the task's status: %s"
               % (txt,), code == 2 and "no phase P99" in txt)
+        code, txt = run(["move", "P2.1", "--to", "P1", "--project-dir", projrv6])
+        check("mv6b `move <done task> --to <done phase>` answers with the TASK's "
+              "refusal (item 3), not the target's state (item 5) - the phase is "
+              "checked for existence first and judged after the task: %s" % (txt,),
+              code == 2 and "P2.1 is done" in txt and "phase P1 is done" not in txt)
         rvso = base_manifest()
         rvso["phases"][2].update(status="in_progress", branch="audit/p3",
                                  review={"status": "passed"})

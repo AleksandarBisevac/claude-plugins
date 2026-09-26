@@ -720,9 +720,17 @@ INLINE_ANCHORS = (
 
 
 # --- the shape checks every level shares -----------------------------------------
+_LINE_SUFFIX = re.compile(r":[0-9][0-9,-]*\Z")
+
+
 def _strip_line_suffix(entry):
-    """`a/b.tsx:291-294,308` -> `a/b.tsx` (same rule as hooks/_config.py)."""
-    return str(entry).replace("\\", "/").split(":", 1)[0]
+    """`a/b.tsx:291-294,308` -> `a/b.tsx` (same rule as hooks/_config.py).
+
+    ONLY A TRAILING `:<digit range>` IS A SUFFIX. Splitting on the first colon
+    turned an absolute Windows entry (`C:\\repo\\a.py`) into `C`, and a colon
+    inside a name into a cut; the digit range is the one shape the schema's
+    `files` suffix takes. The hooks' copy is pinned equal by `mv6b`."""
+    return _LINE_SUFFIX.sub("", str(entry).replace("\\", "/"))
 
 
 def _safe_list(val):

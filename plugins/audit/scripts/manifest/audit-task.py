@@ -3676,11 +3676,14 @@ def _locked_done(args, project, config, mpath, tid, out):
             str(b.get("id")) for b in (assembled.get("bugs") or [])
             if isinstance(b, dict) and b.get("taskId") == tid and b.get("id")))
         if bugs:
+            # CANCEL FIRST: `/audit:bug close` refuses while the bug's task is
+            # in progress, and this task has started, so the other order fails
+            # at its first step.
             out("[audit-task] %s is the fix task of %s -- a no-change close would "
                 "mark the bug fixed with no fix commit. If nothing needed to "
-                "change, that is a verdict on the bug: /audit:bug close %s "
-                "not_a_bug|wontfix, then cancel this task (/audit:task cancel %s "
-                "--reason ...)" % (tid, ", ".join(bugs), bugs[0], tid))
+                "change, cancel this task first (/audit:task cancel %s --reason "
+                "...), then record the verdict on the bug: /audit:bug close %s "
+                "not_a_bug|wontfix" % (tid, ", ".join(bugs), tid, bugs[0]))
             return E_USAGE
         sha = None
         no_change = {"reason": args.reason.strip(),
@@ -4306,16 +4309,18 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
         out("[audit-task] %s; tasks: %s" % (refusal, ", ".join(
             sorted(str(k) for k in _mio.tasks_by_id(assembled))) or "(none)"))
         return E_USAGE
-    # THE TARGET RESOLVES FIRST, in `commands/task.md`'s documented order: a phase
-    # that does not exist is item 1, and naming a task's status instead would send
-    # the caller to fix the wrong half of the call.
-    target = _resolve_phase(assembled, target_id, out, what="a task moved into it now")
-    if isinstance(target, int):
-        return target
+    # `commands/task.md`'s DOCUMENTED ORDER: that the target EXISTS is item 1,
+    # the task's own status items 2-4, and the target's STATE item 5 - so the
+    # phase is looked up first and judged only after the task has been.
+    if _find_target(assembled, target_id)[0] != "phase":
+        return _resolve_phase(assembled, target_id, out)
     refusal = _move_refusal(node, phase, target_id)
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
+    target = _resolve_phase(assembled, target_id, out, what="a task moved into it now")
+    if isinstance(target, int):
+        return target
     if _mio.effective_phase_status(target) == "cancelled":
         out("[audit-task] phase %s is cancelled -- a task moved into it would be "
             "open work under a phase that will not run" % (target_id,))
@@ -4397,8 +4402,9 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
             "is unknown" % (tid,))
     elif left_runs:
         out("  evidence: %d recorded run(s) stay keyed to %s in the append-only "
-            "ledger; the evidence readers and --reconcile join them to %s through "
-            "movedFrom" % (left_runs, tid, new_id))
+            "ledger; /audit:doctor and --reconcile join them to %s through "
+            "movedFrom, and the report's run history lists them under %s"
+            % (left_runs, tid, new_id, tid))
     out("  other branches: a blockedBy/dependsOn on %s written there is not "
         "rewritten here, and surfaces as a validator finding at the merge"
         % (tid,))

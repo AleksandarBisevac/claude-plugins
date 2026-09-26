@@ -494,8 +494,9 @@ warning leaves such a task out and names it on a line of its own. `--commit` and
 together are refused, as are `--no-change` with no `--reason` and a `--reason` on a close
 that is not a no-change close. **A bug's fix task is refused a no-change close**: a done fix
 task derives its bug `fixed`, and a bug is never fixed without a fix commit — if nothing
-needed to change, that is a verdict on the bug (`/audit:bug close <bugId> not_a_bug|wontfix`),
-and the task is then cancelled. Everything else about the verb is unchanged — including the
+needed to change, cancel the task first (`/audit:task cancel <taskId> --reason ...` - `/audit:bug
+close` refuses while the bug's task is in progress), then record the verdict on the bug
+(`/audit:bug close <bugId> not_a_bug|wontfix`). Everything else about the verb is unchanged — including the
 refusal of a task that was never started.
 
 **Refusals, all before any write:** an id that resolves to nothing; a **phase** id (a
@@ -776,13 +777,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" move P3.2 --to P5
 **Refusals — all BEFORE any write**, in this order:
 
 1. no `--to`; `<taskId>` does not resolve to a task (the refusal lists the task ids), or
-   `<phaseId>` to a phase (the refusal lists the phases);
+   `<phaseId>` to a live phase (the refusal lists the phases, or names the parked proposal
+   that reserves the id);
 2. the target is the task's current phase (nothing to move);
 3. the task is `done` — done tasks are history; re-open it first (`reopen` above), then move it —
    or `cancelled`;
 4. the task is `in_progress` — likely a live or interrupted run: finish or `/audit:resume` it first;
-5. the target phase is done, signed off, cancelled, or an id a parked proposal reserves — the
-   same target-phase refusals `/audit:task add` gives.
+5. the target phase is done, signed off or cancelled — the same target-phase refusals
+   `/audit:task add` gives, judged only after the task's own status.
 
 A `blocked` task MAY move: it moves **with its blockers** — its own `blockedBy`/`dependsOn`
 lists travel unchanged (only references *to its old id* elsewhere are rewritten).
@@ -808,9 +810,11 @@ the two phase SHARDS while `fileIndex`/`bugs[]`/`proposals[]` edits go to the in
    mapping; the completion events stay hook-only.
 
 **What it leaves behind, and says.** The evidence ledger is append-only, so runs recorded
-under the old id keep that id; the report counts them, and the evidence readers
-(`/audit:doctor`, `run-test-gate.py --reconcile`) join them to the live task through the
-`movedFrom` chain. A `blockedBy`/`dependsOn` on the old id written on **another branch** is not
+under the old id keep that id; the report counts them, and `/audit:doctor` and
+`run-test-gate.py --reconcile` join them to the live task through the `movedFrom` chain. The
+report's per-task run history does not: it still lists those runs under the old id. A chain
+naming an id a live task holds, or one two chains both claim, is joined by neither reader and
+drawn as a validator warning - a verb-made plan reaches neither shape. A `blockedBy`/`dependsOn` on the old id written on **another branch** is not
 rewritten here, and surfaces as a validator finding at the merge.
 
 It **reports** the old id, the new id, the number of references rewritten, whether the task is

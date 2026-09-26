@@ -1173,7 +1173,7 @@
             "object",
             "null"
           ],
-          "description": "Written by /audit:task move when a task is renumbered into another phase: the id and phase it held before, and when it moved. The journal's chained task.move row is the other half of the mapping; historical ledger rows keep the OLD taskId, and this field is what lets a reader join them.",
+          "description": "Written by /audit:task move when a task is renumbered into another phase: the id and phase it held before, and when it moved. The journal's chained task.move row is the other half of the mapping; historical ledger rows keep the OLD taskId, and this field is what lets a reader join them. A task moved again keeps its earlier record nested as `previous`, one link per move, so every id it ever held is on the task: the allocator never mints one of them again, and the evidence readers join runs recorded under any of them.",
           "additionalProperties": true,
           "properties": {
             "id": {
@@ -1187,6 +1187,13 @@
             "at": {
               "type": "string",
               "description": "ISO timestamp of the move."
+            },
+            "previous": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "The `movedFrom` record this task carried before its latest move - the same {id, phase, at} shape, with a `previous` of its own when it moved more than twice."
             }
           }
         },

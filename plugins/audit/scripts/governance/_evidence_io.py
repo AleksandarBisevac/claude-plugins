@@ -1497,15 +1497,24 @@ def subject_aliases(manifest):
     task a new id. Rewriting append-only rows is not on offer, so the readers
     map through the plan instead: `movedFrom` and the `previous` links inside it
     are exactly the ids this task used to answer to.
+
+    AN ALIAS ONLY WHERE IT IS UNAMBIGUOUS. An old id a live task holds now is
+    that task's, and aliasing it away would move its own runs onto another; an
+    old id two chains both claim has no single owner. Verb-made plans reach
+    neither (the allocator never mints a chain's id), so both are skipped here
+    rather than guessed at, and `_manifest_phases` warns about each by name.
     """
-    out = {}
-    for phase in ((manifest or {}).get("phases") or []):
-        for task in ((phase or {}).get("tasks") or []):
-            if not isinstance(task, dict) or not task.get("id"):
-                continue
-            for old in _mio.moved_from_ids(task):
-                out[("task", old)] = ("task", str(task.get("id")))
-    return out
+    live = set(str(t.get("id")) for _ph, t in _mio.iter_tasks(manifest or {})
+               if t.get("id"))
+    claims = {}
+    for _ph, task in _mio.iter_tasks(manifest or {}):
+        if not task.get("id"):
+            continue
+        for old in _mio.moved_from_ids(task):
+            claims.setdefault(old, set()).add(str(task.get("id")))
+    return dict((("task", old), ("task", next(iter(owners))))
+                for old, owners in claims.items()
+                if len(owners) == 1 and old not in live)
 
 
 def latest_by_subject(rows, aliases=None):

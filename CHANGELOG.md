@@ -200,15 +200,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   exactly what a substituted "`path`:line" citation leaves, so a line reference after a space goes
   in on stdin.
 - **A no-change close could mark a bug fixed with no fix commit.** `done --no-change` on a bug's fix
-  task is refused and names `/audit:bug close <id> not_a_bug|wontfix`.
+  task is refused, and names the route that works: cancel the task first, then
+  `/audit:bug close <id> not_a_bug|wontfix` (which refuses while the task is in progress).
 - **A moved task's old id could be minted again.** Every id in a live task's `movedFrom` chain
-  (a second move keeps the first as `movedFrom.previous`) now counts as taken, and the evidence
-  readers - `/audit:doctor` and `--reconcile` - join runs recorded under an old id to the live task.
-  `move` reports the runs it leaves keyed to the old id.
-- **`move` checked the task's status before the target phase**, against its documented order, and a
-  signed-off target's refusal spoke of adding a task; both follow the move now. `scope`/`retarget`
-  no-ops under `--json` print an object, `start`'s ceiling refusal names `audit-task.py block`, and
-  `scope`/`add` key a `:line-range` entry's `fileIndex` row by its path.
+  (a second move keeps the first as `movedFrom.previous`, now in the schema) counts as taken, and
+  `/audit:doctor` and `--reconcile` join runs recorded under an old id to the live task; the
+  report's run history still lists them under the old id. A chain naming a live task's id, or an
+  id two chains claim, is joined by neither and drawn as a validator warning. `move` reports the
+  exact number of runs it leaves keyed to the old id.
+- **`move` judged the target phase in the wrong place**: it now checks that the phase exists
+  first, then the task's own status, then the phase's state, as documented, and a signed-off
+  target's refusal speaks of the move. `scope`/`retarget` no-ops under `--json` print an object,
+  and `start`'s ceiling refusal names `audit-task.py block`.
+- **One spelling of a `fileIndex` key.** `scope`, `add` and `/audit:propose materialize` key a
+  `:line-range` entry's row by its path, and `audit-lookup` looks an entry up by that path - it
+  reported a ranged declaration as "not in fileIndex yet". And only a trailing `:<digit range>`
+  is a line suffix now, in both copies of the rule (`_manifest_vocab`, `hooks/_config`): an
+  absolute Windows entry used to strip to its drive letter.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,
