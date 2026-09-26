@@ -29,7 +29,7 @@
     {
       "id": "P83.1",
       "title": "the history guard reads a comment, a here-string, a case body and an emitted hook the way the shell does",
-      "status": "in_progress",
+      "status": "done",
       "description": "Close four residuals of the history guard and the shared line-continuation join. (1) join_continuations decides whether `#` starts a comment from the raw previous character; carry a word-start flag instead (an unescaped blank, newline or operator sets it; any other character or an escaped pair clears it; a removed backslash-newline leaves it) and treat `#` as a comment only while it is set. (2) A here-string's reader is recognised only as the first word of its command; find it past the same wrapper list the heredoc reader uses. (3) A `case` pattern's `)` inside a double-quoted substitution closes it early; a body holding a `case` with no `esac` before the close is unreadable (the command goes to the raw-text reading). (4) An emitter whose output is written to a redirect target that carries a quote or expansion, lies under a git hooks directory (.git/hooks/, .husky/, core.hooksPath), or is run later in the same command (sh/bash/source/./path/make) stays graded as the git it spells. Each with a deny case red first and an allow case beside it; SECURITY.md's residual list and CHANGELOG updated.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -64,14 +64,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9bc082a4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Word-start flag in join_continuations; shared program_candidates for here-strings; unbalanced case makes a substitution unreadable; quoted phrases re-read where their output runs.",
+        "descriptive": "The history guard now reads four command spellings the way the shell does, so a history rewrite hidden in them is refused."
       },
       "startedAt": "2026-09-26T10:59:58Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T11:10:31Z",
+      "verifiedBy": [
+        "test__config jc5",
+        "test__config jc8",
+        "test_guard_history_rewrite gc9",
+        "test_guard_history_rewrite gs10",
+        "test_guard_history_rewrite gs16",
+        "test_guard_history_rewrite gp31",
+        "test_guard_history_rewrite gp33"
+      ]
     },
     {
       "id": "P83.2",
