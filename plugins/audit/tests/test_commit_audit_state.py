@@ -300,18 +300,22 @@ def _cases(check):
         # --- the trail ---------------------------------------------------------
         rows = _state_rows(fx)
         details = rows[0].get("details") if rows else {}
+        nonce = details.get(_invariants.NONCE_KEY)
+        resolved, _why = _invariants.commits_carrying(fx["root"], [nonce])
         check("cas6 the commit anchors itself with exactly one journal row "
-              "carrying the SHA and the phase - the only handle anything has on "
+              "carrying a nonce and the phase, and the nonce resolves to THIS "
+              "commit through its trailer - the only handle anything has on "
               "such a commit, since it is not a `task.commit` and the manifest "
-              "does not name it: %r" % (details,),
-              len(rows) == 1 and details.get("commit") == after
+              "does not name it: %r -> %r" % (details, resolved),
+              len(rows) == 1 and (resolved or {}).get(nonce) == [after]
+              and _trailer_of(fx, after) == [nonce]
               and details.get("phaseId") == PHASE)
 
         check("cas7 ...and both keys are on `_journal_io.DETAILS_KEYS`, checked "
               "rather than assumed: the allow-list silently DROPS a key it does "
               "not know, so a row could carry neither and this suite would still "
               "see an `audit.state.committed` action go by",
-              "commit" in _journal_io.DETAILS_KEYS
+              _invariants.NONCE_KEY in _journal_io.DETAILS_KEYS
               and "phaseId" in _journal_io.DETAILS_KEYS)
 
         subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
@@ -437,12 +441,14 @@ def _cases(check):
 
         # --- called again ------------------------------------------------------
         code, text = _run(fx)
-        check("cas9 called again it makes NO commit and says which do-nothing "
-              "state it is in: the only thing left uncommitted is the row that "
-              "anchored the last commit, and committing that would need a row of "
-              "its own and never stop: %r / %r" % (code, _head(fx) == after),
-              code == 0 and _head(fx) == after and M.ONLY_THE_TRAIL in text
-              and M.NOTHING_UNCOMMITTED not in text)
+        check("cas9 called again it makes NO commit and says nothing is "
+              "uncommitted - the row that anchored the last commit is inside it, "
+              "so there is no trail left for a second run to find: %r / %r"
+              % (code, text),
+              code == 0 and _head(fx) == after
+              and M.NOTHING_UNCOMMITTED in text
+              and [ln for ln in _porcelain(fx) if "docs/audit/journal" in ln]
+              == [])
 
         # --- a red sign-off gate ----------------------------------------------
         red = repos.make(leave_dirty=True)
@@ -467,7 +473,7 @@ def _cases(check):
               "rather than exiting quietly: an empty commit records nothing and "
               "buries the ones that do: %r / %r" % (code, text),
               code == 0 and _head(quiet) == settled
-              and M.NOTHING_UNCOMMITTED in text and M.ONLY_THE_TRAIL not in text)
+              and M.NOTHING_UNCOMMITTED in text)
 
         check("cas12 ...and it wrote no journal row either, because there is "
               "nothing to anchor. The pair for cas6: a row per invocation would "
@@ -559,13 +565,15 @@ def _cases(check):
                                          _mio.load_manifest(fx["manifest"]),
                                          PHASE),
                                      fx["manifest"], fx["root"], fx["root"])
-        check("cas19 the journal is on the list AND named apart on it, "
-              "because it is the one entry that may be carried and may not "
-              "trigger a commit. cas9 is what the separation buys; this is the "
-              "field it rests on: %r" % (with_trail,),
-              with_trail["journal"] == "docs/audit/journal"
-              and "docs/audit/journal" in with_trail["paths"]
-              and targets["journal"] is None)
+        check("cas19 the journal is on the list once it exists, and a journal "
+              "that does not exist yet is NOT reported as skipped while the "
+              "journal is on - the row this commit writes creates it, and the "
+              "line would be false on the one run that makes it true: %r / %r"
+              % (with_trail["paths"], targets["skipped"]),
+              "docs/audit/journal" in with_trail["paths"]
+              and "docs/audit/journal" not in targets["paths"]
+              and not any(M.JOURNAL_LABEL in line
+                          for line in targets["skipped"]))
 
         # --- git cannot answer -------------------------------------------------
         nowhere = os.path.dirname(listed["root"])
@@ -648,39 +656,43 @@ def _cases(check):
 
         # --- the row is explained on the run that WROTE it ---------------------
         # A FRESH REPOSITORY RATHER THAN `fx`. The claim is about the run that
-        # CREATES the condition, and `fx` has been run twice by now - the second
-        # run committed nothing, so reading its output would be asking whether a
-        # line appeared on a run where it was never due.
+        # made the commit, and `fx` has been run twice by now - the second run
+        # committed nothing, so reading its output would be asking whether a line
+        # appeared on a run where it was never due.
         fresh = repos.make(leave_dirty=True)
         _exhaust(fresh)
         code, text = _run(fresh)
         trail_dirty = [ln for ln in _porcelain(fresh)
                        if "docs/audit/journal" in ln]
-        check("cas27 the run that CREATES the dirty trail is the run that "
-              "explains it. The row names the SHA, so it is appended AFTER the "
-              "commit and can never be inside it - and an operator who is not "
-              "told meets a modified journal on a tree just reported as "
-              "committed and works it out on a second run, which is one run too "
-              "late. The working tree is read as well, so this asserts a TRUE "
-              "sentence and not merely a printed one: %r / %r"
-              % (text, trail_dirty),
-              code == 0
-              and "written AFTER it and is therefore not in it" in text
-              and "rides along with the next commit" in text
-              and trail_dirty)
+        nonce = _trailer_of(fresh, _head(fresh))
+        check("cas27 the run that commits says the row naming the commit is "
+              "INSIDE it and by which trailer, and the working tree is read as "
+              "well, so this asserts a TRUE sentence and not merely a printed "
+              "one: %r / %r" % (text, trail_dirty),
+              code == 0 and len(nonce) == 1
+              and _scoped_commit.ROW_CARRIED % (_invariants.ROW_TRAILER,
+                                                nonce[0]) in text
+              and trail_dirty == [])
 
-        check("cas28 ...and the refusal and this notice rest on ONE spelling of "
-              "what a journal row does, so the run that declines and the run "
-              "that commits cannot come to describe the trail differently. They "
-              "are NOT the same sentence and neither contains the other - "
-              "`ONLY_THE_TRAIL` also argues that committing the row would never "
-              "terminate, which is a claim about a state this line is never "
-              "printed in - so the CLAUSE is shared and the rest is not: %r"
-              % (_scoped_commit.RIDES_ALONG,),
-              _scoped_commit.RIDES_ALONG in M.ONLY_THE_TRAIL
-              and _scoped_commit.RIDES_ALONG in _scoped_commit.TRAIL_ROW_WRITTEN
-              and M.ONLY_THE_TRAIL not in _scoped_commit.TRAIL_ROW_WRITTEN
-              and _scoped_commit.TRAIL_ROW_WRITTEN not in M.ONLY_THE_TRAIL)
+        # A JOURNAL-ONLY CHANGE IS WORK NOW. Another writer's row - a hook, an
+        # `/audit:task` verb - is a record like the other two, and committing it
+        # terminates because the row naming that commit is inside it too.
+        _journal_io.append(fresh["root"], {
+            "action": "task.note", "actor": {"via": "fixture"},
+            "target": "P1.2", "summary": "a row another writer left",
+            "details": {"taskId": "P1.2", "phaseId": PHASE}})
+        was = _head(fresh)
+        code, text = _run(fresh)
+        now = _head(fresh)
+        again_code, again = _run(fresh)
+        check("cas28 a journal holding only another writer's row is committed, "
+              "and a second run finds nothing uncommitted - the loop a row "
+              "written after its commit would have made cannot start when the "
+              "row is inside it: %r / %r / %r" % (code, text, again),
+              code == 0 and now != was and again_code == 0
+              and _head(fresh) == now and M.NOTHING_UNCOMMITTED in again
+              and [ln for ln in _porcelain(fresh)
+                   if "docs/audit/journal" in ln] == [])
 
         # `journal_off` is `build()`'s flag for exactly this state: a disabled
         # journal makes `_journal_io.append` raise, `record_row` fail-softs to
@@ -691,19 +703,86 @@ def _cases(check):
         _exhaust(silent)
         before_silent = _head(silent)
         code, text = _run(silent)
-        check("cas29 ...and when NO row was written the line is not printed - "
-              "the commit says the trail could not be written instead. The pair "
-              "for cas27 over one branch: a sentence telling a reader a row is "
-              "waiting for the next commit when none was appended sends them to "
-              "look for something that does not exist, which is worse than "
-              "silence: %r" % (text,),
+        check("cas29 ...and when NO row was written the commit says the trail "
+              "could not be written, and claims no row inside it and no "
+              "trailer - the pair for cas27 over one branch: %r" % (text,),
               code == 0 and _head(silent) != before_silent
               and _state_rows(silent) == []
-              and "journal row could NOT be written" in text
-              and "rides along with the next commit" not in text)
+              and _scoped_commit.ROW_NOT_WRITTEN in text
+              and _invariants.ROW_TRAILER not in text
+              and _trailer_of(silent, _head(silent)) == [])
         _staging_cases(check, repos)
+        _clean_end_cases(check, repos)
     finally:
         repos.close()
+
+
+def _task_commit(fx):
+    """Commit P1.1's work the way a run does: record its gate, then commit it.
+
+    THE REAL RECORDER AND THE REAL COMMITTER, both in-process, so the tree this
+    leaves is the tree a phase really ends with rather than one a fixture
+    arranged. Returns `(code, text)` of the task commit.
+    """
+    rtg = _loader.load_script("run-test-gate.py", "rtg_for_cas")
+    ctw = _loader.load_script("commit-task-work.py", "ctw_for_cas")
+    with io.open(os.path.join(fx["root"], OWNED), "w", encoding="utf-8") as fh:
+        fh.write("a = 2  # the task's own work\n")
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        rtg.main([fx["manifest"], PHASE, "--record", "--task", "P1.1",
+                  "--no-reuse", "--project-dir", fx["root"]], out=lines.append)
+        del lines[:]
+        code = ctw.main([fx["manifest"], "P1.1", "--project", fx["root"]],
+                        out=lines.append)
+    finally:
+        sys.stderr = held
+    return code, "\n".join(lines)
+
+
+def _trailer_of(fx, sha):
+    """The `Audit-Row` values the commit message of `sha` carries."""
+    body = TI._git(fx["root"], "log", "-1", "--format=%B", sha)
+    prefix = "%s: " % (_invariants.ROW_TRAILER,) if hasattr(
+        _invariants, "ROW_TRAILER") else "\0"
+    return [ln[len(prefix):].strip() for ln in body.splitlines()
+            if ln.startswith(prefix)]
+
+
+# --- a phase ends with a clean tree ----------------------------------------------
+def _clean_end_cases(check, repos):
+    fx = repos.make()
+    code_task, text_task = _task_commit(fx)
+    _exhaust(fx)
+    code, text = _run(fx)
+    head = _head(fx)
+    trail_dirty = [ln for ln in _porcelain(fx) if "docs/audit/journal" in ln]
+    check("cas34 after commit-task-work and then commit-audit-state the journal "
+          "row naming the LAST commit is not left in the working tree - the row "
+          "is written before the commit and carried by it, so a phase that ends "
+          "on these verbs ends with no trail left to commit by hand: "
+          "task %r / state %r / %r / dirty %r"
+          % (code_task, code, text, trail_dirty),
+          code_task == 0 and code == 0 and trail_dirty == [])
+
+    carried = [ln for ln in TI._git(fx["root"], "show", "--name-only",
+                                    "--pretty=format:", head).splitlines()
+               if ln.startswith("docs/audit/journal/")]
+    nonces = _trailer_of(fx, head)
+    clone = _clone_at(fx, head, repos.scratch("clean-end"))
+    in_clone = [r for r in _journal_io.read_all(clone)
+                if r.get("action") == _invariants.ACTION_STATE_COMMITTED]
+    check("cas35 ...and the row is IN that commit, read from a fresh clone at "
+          "it, keyed by the one nonce the commit's `Audit-Row` trailer carries "
+          "- the row cannot name the SHA of the commit that contains it, so the "
+          "trailer is how a reader gets from one to the other: carried %r / "
+          "trailer %r / clone rows %r"
+          % (carried, nonces, [(r.get("details") or {}) for r in in_clone]),
+          carried != [] and len(nonces) == 1 and len(in_clone) == 1
+          and (in_clone[0].get("details") or {}).get("commitNonce") == nonces[0]
+          and "commit" not in (in_clone[0].get("details") or {}))
 
 
 def _refusing_hook(fx):
@@ -749,6 +828,24 @@ def _staging_cases(check, repos):
           code == 1 and _head(fx) == before
           and TI._git(fx["root"], "ls-files", "-s") == found
           and _scoped_commit.INDEX_RESTORED in text)
+
+    claimed = [(r.get("details") or {}).get(_invariants.NONCE_KEY)
+               for r in _state_rows(fx)]
+    withdrawn = _invariants.withdrawn_nonces(_journal_io.read_all(fx["root"]))
+    graded = _invariants.check_phase(
+        _mio.load_manifest(fx["manifest"]), PHASE, fx["manifest"], fx["root"],
+        fx["root"])
+    state = [c for c in graded["checks"] if c["name"] == "audit-state-scope"][0]
+    check("cas36 ...and the row written for that commit before it was refused is "
+          "WITHDRAWN by a row naming its nonce, the refusal says so, and the "
+          "reader grades nothing - a row claiming a commit that does not exist "
+          "would otherwise be a gap on every run after: claimed %r / withdrawn "
+          "%r / %r / %r" % (claimed, sorted(withdrawn), state["verdict"],
+                            state["gaps"]),
+          len(claimed) == 1 and claimed[0] in withdrawn
+          and _scoped_commit.ROW_WITHDRAWN % (claimed[0],) in text
+          and state["verdict"] == _invariants.NA
+          and state["gaps"] == [])
 
     # A RECORD DIRECTORY GIT IGNORES AS A WHOLE, HOLDING A TRACKED FILE.
     fx = repos.make(leave_dirty=True)

@@ -1431,8 +1431,126 @@ def _cases(check):
               % ([str(x)[:40] for x in found_now
                   if not _output.finding_code(x)],),
               found_now and all(_output.finding_code(x) for x in found_now))
+        _trailer_cases(check)
     finally:
         repos.close()
+
+
+def _nonce_row(root, action, nonce, target):
+    """A row naming its commit by nonce, the way a scoped commit writes it."""
+    return _journal_io.append(root, {
+        "action": action, "actor": {"via": "fixture"}, "target": target,
+        "summary": "committed as the commit carrying the fixture's trailer",
+        "details": {"phaseId": "P1", M.NONCE_KEY: nonce}})
+
+
+def _commit_carrying(root, paths, header, nonce):
+    """Stage `paths` and commit them with the row trailer; returns the SHA."""
+    _git(root, "add", "--", *paths)
+    _git(root, "commit", "-q", "-m", header, "-m",
+         "%s: %s" % (M.ROW_TRAILER, nonce))
+    return _head(root)
+
+
+# --- a row inside the commit it names -------------------------------------------
+def _trailer_cases(check):
+    tmp = _harness.fixture_root("audit-inv-trailer-")
+    try:
+        root = os.path.join(tmp, "repo")
+        os.makedirs(root)
+        fx = build(root)
+        audit = fx["audit"]
+        _evidence_file(audit, "failed")
+        _nonce_row(root, M.ACTION_STATE_COMMITTED, "aaaa000000000001",
+                   "docs/audit/evidence")
+        sha = _commit_carrying(root, ["docs/audit/phases/P1.json",
+                                      "docs/audit/evidence",
+                                      "docs/audit/journal"],
+                               "chore(audit-state): phase P1 - fixture",
+                               "aaaa000000000001")
+        shas, unnamed, why, unresolved = M.audit_state_commits(
+            root, "P1", git_root=root)
+        check("it1 a row keyed by a nonce resolves to the commit whose message "
+              "carries `%s: <nonce>` - the row is inside that commit and so "
+              "cannot hold its SHA: %r" % (M.ROW_TRAILER, (shas, why)),
+              shas == [sha] and unnamed == 0 and why == "" and unresolved == [])
+        state = _check(_phase_answer(fx), "audit-state-scope")
+        check("it2 ...and `audit-state-scope` grades that commit, found through "
+              "the trailer, CLEAN with one commit examined - the row and the "
+              "journal file holding it are both inside it: %r / %r"
+              % (state["verdict"], state["gaps"]),
+              state["verdict"] == M.CLEAN and state["examined"] == 1)
+
+        _git(root, "commit", "-q", "--amend", "--no-edit",
+             "--date", "2026-01-02T00:00:00Z")
+        rewritten = _head(root)
+        again, _u, _w, _r = M.audit_state_commits(root, "P1", git_root=root)
+        check("it3 ...and the row still names the commit it is inside after the "
+              "commit is REWRITTEN - an amend here, a rebase in the field - "
+              "because the message travels with the commit where a SHA does "
+              "not: %r -> %r" % (sha, again),
+              rewritten != sha and again == [rewritten])
+
+        _nonce_row(root, M.ACTION_STATE_COMMITTED, "bbbb000000000002",
+                   "docs/audit/evidence")
+        shas, _u, why, unresolved = M.audit_state_commits(root, "P1",
+                                                          git_root=root)
+        state = _check(_phase_answer(fx), "audit-state-scope")
+        check("it4 a nonce NO commit in this history carries is `unresolved` "
+              "and a gap, never dropped and never a clean pass - a row claiming "
+              "a commit this checkout cannot find is a claim without its basis: "
+              "%r / %r / %r" % (unresolved, state["verdict"], state["gaps"]),
+              unresolved == ["bbbb000000000002"] and shas == [rewritten]
+              and state["verdict"] != M.CLEAN
+              and any("bbbb000000000002" in g for g in state["gaps"]))
+
+        _journal_io.append(root, {
+            "action": M.ACTION_COMMIT_WITHDRAWN, "actor": {"via": "fixture"},
+            "target": "P1", "summary": "the commit was refused",
+            "details": {"phaseId": "P1", M.NONCE_KEY: "bbbb000000000002",
+                        "reason": "a hook refused it"}})
+        shas, _u, why, unresolved = M.audit_state_commits(root, "P1",
+                                                          git_root=root)
+        state = _check(_phase_answer(fx), "audit-state-scope")
+        check("it5 ...and once a row WITHDRAWS that nonce the reader drops the "
+              "claim instead of reporting it: the commit was never made, and "
+              "there is nothing to grade - the pair for it4 over one row: "
+              "%r / %r / %r" % (unresolved, state["verdict"], state["gaps"]),
+              unresolved == [] and shas == [rewritten]
+              and state["verdict"] == M.CLEAN and state["gaps"] == [])
+
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/widened.py"] = ["P1.2"]
+        _write_json(fx["manifest"], index)
+        _nonce_row(root, M.ACTION_INDEX_COMMITTED, "cccc000000000003",
+                   "docs/audit/audit-plan.json")
+        _commit_carrying(root, ["docs/audit/audit-plan.json",
+                                "docs/audit/journal"],
+                         "chore(audit-index): phase P1 - fixture",
+                         "cccc000000000003")
+        scope = _check(_phase_answer(fx), "index-scope")
+        check("it6 an index commit carrying the journal file that holds its own "
+              "row is CLEAN - the journal is the one path beside the index it "
+              "may carry, because the row naming the commit is in it: %r / %r"
+              % (scope["verdict"], scope["breaches"]),
+              scope["verdict"] == M.CLEAN and scope["examined"] == 1
+              and scope["breaches"] == [])
+
+        _write(os.path.join(root, "src", "a.py"), "a = 9  # swept in\n")
+        _nonce_row(root, M.ACTION_INDEX_COMMITTED, "dddd000000000004",
+                   "docs/audit/audit-plan.json")
+        _commit_carrying(root, ["src/a.py", "docs/audit/journal"],
+                         "chore(audit-index): phase P1 - fixture",
+                         "dddd000000000004")
+        scope = _check(_phase_answer(fx), "index-scope")
+        check("it7 ...and the journal allowance widens nothing else: the same "
+              "class carrying a source file beside the journal is still a "
+              "breach naming that file - the pair for it6: %r"
+              % (scope["breaches"],),
+              scope["verdict"] == M.BREACH and len(scope["breaches"]) == 1
+              and "src/a.py" in scope["breaches"][0])
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _breach_sites(tree):

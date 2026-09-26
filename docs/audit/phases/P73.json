@@ -1,7 +1,7 @@
 {
   "id": "P73",
   "title": "The trail names each commit from inside it",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "a scoped commit carries the journal row that names it, so a phase can end with a clean tree, and every reader of those rows resolves the commit they name",
   "testGate": [
@@ -17,8 +17,8 @@
   "blockedBy": [
     "P71"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "10a3e3daf8c679f3e8773a94ad71bdb992d8a4a9",
+  "branch": "audit/p73-the-trail-names-each-commit-fr",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -31,7 +31,7 @@
     {
       "id": "P73.1",
       "title": "A scoped commit carries the journal row that names it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Every scoped commit writes the journal row naming it AFTER the commit, so the row is never inside it and no phase ends with a clean tree (reported by a user; visible on this repo at every phase end). Structural fix: write the row BEFORE the commit, keyed by a nonce the commit message carries as a trailer, stage it into the same commit, and resolve the SHA from the trailer (git log --grep) wherever a reader needs it - which also survives a rebase. Survey every reader of these rows (audit-journal, doctor, verify-invariants, the panel, journal-writes' record keys) and keep each one right; the hash chain must still verify.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -43,7 +43,14 @@
         "plugins/audit/tests/test_commit_manifest_index.py",
         "plugins/audit/reference/execute-task.md",
         "tools/check-git-pipeline.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/reference/manifest-conventions.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -68,6 +75,58 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T04:55:13Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P73.2-9h1",
+      "title": "audit-journal merge resolves the evidence ledger too, and a same-second tie over disjoint targets is ordered rather than refused",
+      "status": "pending",
+      "description": "The evidence ledger is hash-chained like the journal and, before per-worktree writer keys, was appended on two branches under one name; audit-journal merge reads only the journal directory, so every such conflict was resolved by hand (interleave by timestamp, re-chain with the journal's row_hash). Give the evidence ledger the same merge verb the journal has - one implementation for both directories, the same refusals (a same-second tie that disagrees, a torn tail, a rewritten shared prefix), the same re-chain and a marker the evidence schema accepts (or a documented reason there is none) - and let a same-second tie whose rows touch disjoint targets be ordered deterministically instead of refused, with the order it chose written in the marker.",
+      "files": [
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_journal.py: repro that FAILS on current code - audit-journal merge refuses a file under the evidence directory"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P73.1"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -79,5 +138,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-26T04:55:13Z"
 }

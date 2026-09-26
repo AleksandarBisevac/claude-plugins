@@ -1618,10 +1618,17 @@ def check_index_commit_carries_only_the_index(fx):
 
     THE CLAIM IS ABOUT GIT AND CANNOT BE MADE ANYWHERE ELSE. The command's own
     suite proves the allow-list and the refusals; what only a real repository can
-    say is that `git add -- <index>` followed by a commit produces a commit whose
-    entire file list is that one path, while a shard modified in the same tree at
-    the same moment stays uncommitted. Both halves are asserted, because "the
-    index is in the commit" also passes for a commit that swept in everything.
+    say is that staging the index and committing produces a commit whose entire
+    file list is that path and the one journal file holding the row naming the
+    commit, while a shard modified in the same tree at the same moment stays
+    uncommitted and no journal file is left dirty. Both halves are asserted,
+    because "the index is in the commit" also passes for a commit that swept in
+    everything.
+
+    AND THE ROW STILL NAMES ITS COMMIT AFTER A REAL REBASE. The row is inside the
+    commit, so it names it by the nonce the commit's `Audit-Row` trailer carries
+    rather than by a SHA; the rebased commit has a new SHA and the same message,
+    and `git log --grep` finds that one and only that one.
     """
     before = git(fx, "rev-parse", "HEAD")[1].strip()
     try:
@@ -1646,14 +1653,53 @@ def check_index_commit_carries_only_the_index(fx):
         carried = [ln.strip() for ln in
                    git(fx, "show", "--name-only", "--pretty=format:",
                        head)[1].splitlines() if ln.strip()]
-        dirty = [ln for ln in git(fx, "status", "--porcelain")[1].splitlines()
-                 if ln.strip().endswith(SHARD_REL)]
-        ok = (code == 0 and head != settled and carried == [MANIFEST_REL]
-              and len(dirty) == 1)
-        return ok, ("exit %r; the commit carried %r (want exactly [%r]); the "
-                    "shard is still dirty=%r (want one line); output %r"
-                    % (code, carried, MANIFEST_REL, dirty,
-                       (out or "").strip()[:200]))
+        porcelain = git(fx, "status", "--porcelain")[1].splitlines()
+        dirty = [ln for ln in porcelain if ln.strip().endswith(SHARD_REL)]
+        trail_dirty = [ln for ln in porcelain if "docs/audit/journal/" in ln]
+        trail = [p for p in carried if p.startswith("docs/audit/journal/")]
+        prefix = "Audit-Row: "
+        nonces = [ln[len(prefix):].strip() for ln in
+                  git(fx, "log", "-1", "--format=%B", head)[1].splitlines()
+                  if ln.startswith(prefix)]
+        ok = (code == 0 and head != settled
+              and sorted(carried) == sorted([MANIFEST_REL] + trail)
+              and len(trail) == 1 and len(dirty) == 1 and trail_dirty == []
+              and len(nonces) == 1)
+        if not ok:
+            return False, ("exit %r; the commit carried %r (want [%r] and one "
+                           "journal file); the shard is still dirty=%r (want "
+                           "one line); journal left dirty=%r (want none); "
+                           "trailer %r; output %r"
+                           % (code, carried, MANIFEST_REL, dirty, trail_dirty,
+                              nonces, (out or "").strip()[:200]))
+
+        # A REAL REBASE: a commit slid in beneath the index commit. The shard
+        # edit rides along untouched - the new base is committed by pathspec,
+        # and `--autostash` sets the edit aside while git replays.
+        git(fx, "checkout", "-q", "--detach", settled)
+        with io.open(os.path.join(fx["root"], "rebase-base.txt"), "w",
+                     encoding="utf-8") as fh:
+            fh.write("a commit the rebase replays onto\n")
+        git(fx, "add", "--", "rebase-base.txt")
+        git(fx, "commit", "-q", "-m", "fixture: new base", "--",
+            "rebase-base.txt")
+        new_base = git(fx, "rev-parse", "HEAD")[1].strip()
+        if new_base == settled:
+            return False, "the fixture could not make the commit to rebase onto"
+        git(fx, "checkout", "-q", "-")
+        code, rebase_out = git(fx, "rebase", "-q", "--autostash", "--onto",
+                               new_base, settled)
+        rebased = git(fx, "rev-parse", "HEAD")[1].strip()
+        found = [ln.strip() for ln in
+                 git(fx, "log", "--format=%H", "--fixed-strings",
+                     "--grep=%s%s" % (prefix, nonces[0]))[1].splitlines()
+                 if ln.strip()]
+        ok = code == 0 and rebased != head and found == [rebased]
+        return ok, ("the index commit %s was rebased to %s (exit %r: %s); `git "
+                    "log --grep` for its trailer found %r (want exactly the "
+                    "rebased commit)" % (head[:12], rebased[:12], code,
+                                         (rebase_out or "").strip()[:200],
+                                         found))
     finally:
         git(fx, "reset", "--hard", "-q", before)
         from _suite import remove_tree   # tools/_suite.py says why it is here
@@ -1736,7 +1782,8 @@ CHECKS = (
      check_sweep_leaves_strangers),
     ("g20 the sweep reaps the worktree the plugin created and leaves the "
      "hand-made one beside it", check_sweep_only_reaps_what_it_created),
-    ("g21 an index commit lands the shared file and leaves the shard behind",
+    ("g21 an index commit lands the shared file and the row naming it, leaves "
+     "the shard behind, and the row still names it after a real rebase",
      check_index_commit_carries_only_the_index),
 )
 

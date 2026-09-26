@@ -298,6 +298,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A scoped commit carries the journal row that names it, so a phase can end with a clean tree.**
+  `commit-task-work`, `commit-audit-state` and `commit-manifest-index` each appended the row naming
+  their commit AFTER making it, so the row was never inside it: every run left the trail dirty on a
+  tree it had just reported as committed, and the last commit of every phase left one for somebody
+  to commit by hand. The row is now written first, keyed by a random nonce in a new `commitNonce`
+  detail, the commit message ends with an `Audit-Row: <nonce>` trailer, and the row's file is
+  staged into the same commit (`_scoped_commit.commit_with_rows`) - for the index commit, the one
+  journal file the row landed in joins the index on its allow-list, and `index-scope` allows the
+  journal beside the index. Readers resolve the SHA from the trailer with `git log --grep`
+  (`_invariants.commits_carrying`), which a rebase or cherry-pick does not break; a row still
+  carrying `commit` is read as before. A commit refused after its row was written - a hook, or git -
+  leaves an `audit.commit.withdrawn` row naming the nonce, so no row claims a commit that does not
+  exist; one whose nonce no commit carries and nobody withdrew is a gap in `audit-state-scope` and
+  `index-scope`, never a pass. `commit-audit-state` now commits a journal holding only other
+  writers' rows instead of declining it, since a row inside its commit ends the loop that declining
+  existed to prevent. An `--override-verdict` whose row cannot be written is refused before
+  anything is staged, where it used to commit and then report the missing row.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path

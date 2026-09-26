@@ -592,7 +592,11 @@ not need to.
           script deliberately does not: the SHA is only knowable after the commit it makes and the
           shard is inside that commit, so writing it there would need a second commit or the amend
           this document forbids. It leaves an `audit.task.committed` journal row in the meantime,
-          so the gap between the commit and this write is not a commit nothing points at.
+          so the gap between the commit and this write is not a commit nothing points at. That
+          row is INSIDE the commit it names: it is written first, keyed by a nonce the commit
+          message carries as its `Audit-Row` trailer, and `git log --grep "Audit-Row: <nonce>"`
+          finds the commit from it. A commit refused after the row was written leaves an
+          `audit.commit.withdrawn` row naming the nonce.
           **Do NOT write `bugs[]` by hand.** A bug materialized into this task (`bug.taskId` ↔
           `task.bugId`) reads as **fixed** once the task is `done` — the rollup derives it (with
           `fixedIn` = this `task.commit`) — and `/audit:task done` stores both values on the bug in

@@ -162,6 +162,12 @@ def _index_rows(fx):
             if r.get("action") == _invariants.ACTION_INDEX_COMMITTED]
 
 
+def _row_files(fx):
+    """The git-root-relative journal files holding an index-commit row."""
+    return sorted(set("docs/audit/journal/%s" % (r["_file"],)
+                      for r in _index_rows(fx)))
+
+
 def _set_session(value):
     """Name the session the command-line writers read, or take the name away.
 
@@ -224,11 +230,14 @@ def _cases(check):
               "commit for it and reports its SHA: %r / %r" % (code, text),
               code == 0 and after != before and after[:12] in text)
 
-        check("cmi2 ...and the commit carries the index and NOTHING else - "
-              "asserted as the whole file list, not as 'the index is in there', "
-              "because a commit that swept in the shard beside it also contains "
-              "the index: %r" % (_carried(fx, after),),
-              _carried(fx, after) == [INDEX_REL])
+        check("cmi2 ...and the commit carries the index and the ONE journal "
+              "file holding the row that names it, and NOTHING else - asserted "
+              "as the whole file list, not as 'the index is in there', because a "
+              "commit that swept in the shard beside it also contains the "
+              "index: %r" % (_carried(fx, after),),
+              len(_row_files(fx)) == 1
+              and sorted(_carried(fx, after)) == sorted([INDEX_REL]
+                                                        + _row_files(fx)))
 
         clone = _clone_at(fx, after, repos.scratch("widened"))
         cloned_index = json.loads(_read(os.path.join(clone, INDEX_REL)))
@@ -252,19 +261,35 @@ def _cases(check):
         # --- the trail ---------------------------------------------------------
         rows = _index_rows(fx)
         details = rows[0].get("details") if rows else {}
+        nonce = details.get(_invariants.NONCE_KEY)
+        resolved, _why = _invariants.commits_carrying(fx["root"], [nonce])
         check("cmi5 the commit anchors itself with exactly one journal row "
-              "carrying the SHA and the phase - the only handle anything has on "
+              "carrying a nonce and the phase, and the nonce resolves to THIS "
+              "commit through its trailer - the only handle anything has on "
               "such a commit, since it is not a `task.commit` and the manifest "
-              "does not name it: %r" % (details,),
-              len(rows) == 1 and details.get("commit") == after
+              "does not name it: %r -> %r" % (details, resolved),
+              len(rows) == 1 and (resolved or {}).get(nonce) == [after]
               and details.get("phaseId") == PHASE)
 
         check("cmi6 ...and both keys are on `_journal_io.DETAILS_KEYS`, checked "
               "rather than assumed: the allow-list silently DROPS a key it does "
               "not know, so a row could carry neither and this suite would still "
               "see an `audit.index.committed` action go by",
-              "commit" in _journal_io.DETAILS_KEYS
+              _invariants.NONCE_KEY in _journal_io.DETAILS_KEYS
               and "phaseId" in _journal_io.DETAILS_KEYS)
+
+        graded = _invariants.check_phase(
+            _mio.load_manifest(fx["manifest"]), PHASE, fx["manifest"],
+            fx["root"], fx["root"])
+        scope = [c for c in graded["checks"] if c["name"] == "index-scope"][0]
+        check("cmi6b ...and `index-scope` grades that commit CLEAN, journal file "
+              "and all, having FOUND it through the trailer - `examined` is "
+              "asserted, so a reader that stopped resolving the nonce could not "
+              "pass this as clean: %r / %r / %r"
+              % (scope["verdict"], scope["breaches"], scope["gaps"]),
+              scope["verdict"] == _invariants.CLEAN and scope["examined"] == 1
+              and [ln for ln in _porcelain(fx) if "docs/audit/journal" in ln]
+              == [])
 
         subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
         check("cmi7 the separating literal is a fixed SCOPE and the type is one "
@@ -568,9 +593,13 @@ def _cases(check):
         TI._git(fx["root"], "add", "--", SHARD_REL)
         TI._git(fx["root"], "commit", "-q", "-m", "the shard first")
         code, text = _run(fx)
+        lone = _carried(fx, _head(fx))
+        trail = [p for p in lone if p.startswith("docs/audit/journal/")]
         check("cmi22 SECOND DIRECTION: once the shard is committed the same index "
-              "commits, alone: %r / %r" % (code, text),
-              code == 0 and _carried(fx, _head(fx)) == [INDEX_REL])
+              "commits, alone but for the journal file holding its own row: "
+              "%r / %r / %r" % (code, text, lone),
+              code == 0 and sorted(lone) == sorted([INDEX_REL] + trail)
+              and len(trail) == 1 and trail[0] in _row_files(fx))
 
         fx = repos.make()
         index = _mio.read_json(fx["manifest"])

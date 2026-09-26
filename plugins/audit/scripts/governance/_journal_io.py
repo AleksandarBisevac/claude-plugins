@@ -255,10 +255,16 @@ DETAILS_VERSION = 2
 # on (`proposal.add`). A phase belongs on the development branch, and the one-time
 # warning a side branch gets is read back from these rows - so the fact the
 # warning is about is the record itself, not a second flag beside it.
+# `commitNonce` joins a row to the commit that CARRIES it. A row inside a commit
+# cannot name that commit's SHA - the SHA is a hash over the row - so a scoped
+# commit writes its row first, keyed by a random nonce, and its message carries
+# the same nonce as a trailer (`_invariants.ROW_TRAILER`). It passes the three
+# tests the way `runId` does: a join key between two records rather than a fact
+# about the machine, bounded like any value, and random, so it exposes nothing.
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
                 "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
-                "program", "cwd", "runId", "attempt", "branch")
+                "program", "cwd", "runId", "attempt", "branch", "commitNonce")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload

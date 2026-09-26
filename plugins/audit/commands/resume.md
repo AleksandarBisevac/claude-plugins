@@ -39,7 +39,7 @@ and compared against the same allow-list before anything is committed, and
 `verify-invariants.py`'s `audit-state-scope` re-derives the rule from git afterwards.
 
 **Calling it when nothing is wrong costs a line of output.** With nothing uncommitted it
-makes no commit and says which do-nothing state it was in — including the one where the only
-uncommitted thing is a journal row, which rides along with the next commit rather than
-earning one of its own. So run it on every resume rather than first deciding whether this
+makes no commit and says so. Journal rows another writer left are committed like the other
+records: the row this command writes to name its commit is inside that commit, so a second run
+finds nothing and stops. So run it on every resume rather than first deciding whether this
 particular interruption left anything; deciding is what it is for.

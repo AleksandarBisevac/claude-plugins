@@ -49,20 +49,17 @@ NEVER AN EMPTY COMMIT. Nothing staged means no commit and a line saying there wa
 nothing to commit, because a stream of empty commits is how a record stops being
 read.
 
-AND NEVER A COMMIT THAT ONLY ANCHORS THE LAST ONE. The journal is CARRIED by an
-audit-state commit and does not TRIGGER one: the row this command appends to
-anchor its own commit lands after that commit, so a verb that treated a dirty
-journal as work to do would commit the row announcing the previous commit, append
-a row announcing that, and never stop. What triggers a commit is the phase's
-manifest file or the evidence directory; the trail rides along with the next one,
-which is the same sentence step 4c already writes for the `task.commit` row.
+THE ROW NAMING THE COMMIT IS INSIDE IT. The row is written first, keyed by a
+nonce the commit message carries as its `Audit-Row` trailer, and the journal
+directory it lands in is on the allow-list - `_scoped_commit.commit_with_rows`.
+So a clone holding the commit holds the row, `audit-state-scope` finds the commit
+from the row by that trailer, and the run leaves no trail behind it.
 
-THE COST OF THAT IS STATED RATHER THAN LEFT TO BE DISCOVERED. Until a later commit
-carries it, the anchoring row lives only in the working tree - so a CLONE of the
-repository holds the audit-state commit and not the row naming it, and
-`audit-state-scope` there answers `not-applicable` rather than `clean`. That is
-the honest reading (nothing could be examined), and it is the same lag the
-`task.commit` row already has.
+WHICH IS WHY A DIRTY JOURNAL ALONE IS WORK TO DO. When the row landed after the
+commit, committing a journal-only change would have needed a row of its own,
+outside that commit, and never stopped; a row inside its commit terminates, so
+journal rows another writer left - a hook, an `/audit:task` verb - are carried
+like the other two records. A second run finds nothing uncommitted and says so.
 
 Usage:
   commit-audit-state.py <manifest> <phaseId> [--project DIR] [--subject TEXT]
@@ -210,13 +207,16 @@ def _rel_inside(path, git_root):
 def stage_targets(manifest, phase, manifest_path, project, git_root, config=None):
     """`{"paths", "journal", "skipped"}` - the allow-list for THIS phase, resolved.
 
-    `paths` are git-root-relative and exist on disk; `journal` is the journal's
-    own entry (or None), kept apart because it is the one path that may not
-    TRIGGER a commit; `skipped` carries one sentence per thing that could not be
-    reached, naming which of the three it was and why. A skip is REPORTED and
-    never silent: "the evidence directory was outside the repository" and "the
-    evidence directory does not exist" leave the same commit behind, and only one
-    of them is a problem somebody should fix.
+    `paths` are git-root-relative and exist on disk; `skipped` carries one
+    sentence per thing that could not be reached, naming which of the three it
+    was and why. A skip is REPORTED and never silent: "the evidence directory was
+    outside the repository" and "the evidence directory does not exist" leave the
+    same commit behind, and only one of them is a problem somebody should fix.
+
+    A JOURNAL DIRECTORY THAT DOES NOT EXIST YET IS NOT A SKIP while the journal
+    is on: the row this commit writes creates it, and `commit_with_rows` carries
+    what it created. Said as missing, the line would be false on the one run
+    that makes it true.
 
     THE LIST IS THE SAFETY PROPERTY. Nothing downstream widens it - the staging
     call takes these paths and the index verification takes this same list - so a
@@ -228,7 +228,7 @@ def stage_targets(manifest, phase, manifest_path, project, git_root, config=None
     wanted = [(MANIFEST_LABEL, phase_file_abs),
               (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
               (EVIDENCE_LABEL, _evidence_io.evidence_dir(project, config))]
-    paths, skipped, journal = [], [], None
+    paths, skipped = [], []
     for label, absolute in wanted:
         rel = _rel_inside(absolute, git_root)
         if rel is None:
@@ -236,11 +236,10 @@ def stage_targets(manifest, phase, manifest_path, project, git_root, config=None
                            "committed - proceeding without it" % (label,))
             continue
         if not os.path.exists(absolute):
-            skipped.append("%s does not exist yet, so there is nothing of it to "
-                           "stage" % (label,))
+            if not (label == JOURNAL_LABEL and _journal_io.enabled(config)):
+                skipped.append("%s does not exist yet, so there is nothing of it "
+                               "to stage" % (label,))
             continue
-        if label == JOURNAL_LABEL:
-            journal = rel
         if rel not in paths:
             paths.append(rel)
     # `kinds` is how each path is staged, `_scoped_commit.classify`'s answer;
@@ -252,10 +251,7 @@ def stage_targets(manifest, phase, manifest_path, project, git_root, config=None
         skipped.append("%s is a directory holding no file git would commit, so "
                        "there is nothing of it to stage" % (rel,))
     paths = [p for p in paths if p in kinds]
-    if journal not in paths:
-        journal = None
-    return {"paths": paths, "journal": journal, "skipped": skipped,
-            "kinds": kinds}
+    return {"paths": paths, "skipped": skipped, "kinds": kinds}
 
 
 def _foreign_after_staging(foreign):
@@ -324,8 +320,12 @@ def _coauthor(manifest):
     return value if isinstance(value, str) and value.strip() else None
 
 
-def record_row(project, phase_id, sha, config=None):
+def record_row(project, phase_id, nonce, config=None):
     """Anchor the commit in the trail. Returns the file the row landed in, or False.
+
+    WRITTEN BEFORE THE COMMIT AND CARRIED BY IT, so it names the commit by
+    `nonce` - the value of the commit's `Audit-Row` trailer - and not by a SHA,
+    which does not exist yet and could not be inside the commit it hashes.
 
     THE TARGET IS THE EVIDENCE DIRECTORY AND DELIBERATELY NOT THE PHASE'S MANIFEST
     FILE. `_invariants._recorded_states` reads every row naming that file as a
@@ -355,9 +355,10 @@ def record_row(project, phase_id, sha, config=None):
         "action": _invariants.ACTION_STATE_COMMITTED,
         "actor": {"via": "commit-audit-state"},
         "target": target,
-        "summary": "audit state for %s committed as %s - the record of a run "
-                   "with none of its work" % (phase_id, sha[:12]),
-        "details": {"commit": sha, "phaseId": str(phase_id)},
+        "summary": "audit state for %s committed as the commit carrying "
+                   "`%s` - the record of a run with none of its work"
+                   % (phase_id, _scoped_commit.row_trailer(nonce)),
+        "details": {_invariants.NONCE_KEY: nonce, "phaseId": str(phase_id)},
     }, config=config)
 
 
@@ -369,21 +370,6 @@ NOTHING_UNCOMMITTED = ("nothing uncommitted: the phase's manifest file, the "
                        "journal and the evidence are already in git. No commit "
                        "was made, because an empty one records nothing and "
                        "buries the ones that do.")
-# THE CLAUSE IS `_scoped_commit.RIDES_ALONG` AND NOT A SECOND TYPING OF IT. This
-# refusal and the success-path notice that module prints are two runs'
-# answers to one fact - the row names the SHA, so it lands outside the commit -
-# and they are NOT the same claim: this one says why a dirty trail is not work to
-# do and would never terminate if it were, the other says a row has just been
-# written and where it will land. What they share is exactly the clause below, so
-# the clause is shared and the rest is not; two typings of one fact is how the
-# run that refuses comes to describe a journal differently from the run that
-# commits.
-ONLY_THE_TRAIL = ("nothing uncommitted but the trail: the only thing not in git "
-                  "is a journal row, and %s. Committing it here would "
-                  "anchor the last commit, need a row of its own, and never "
-                  "stop." % (_scoped_commit.RIDES_ALONG,))
-
-
 def render(answer, out=print):
     """Print what happened, in the order somebody reading a terminal needs it.
 
@@ -454,44 +440,51 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
         return E_FAIL, _answer(skipped, refused=why)
     if not pending:
         return E_OK, _answer(skipped, quiet=NOTHING_UNCOMMITTED)
-    if all(_under(path, targets["journal"]) for path in pending):
-        return E_OK, _answer(skipped, quiet=ONLY_THE_TRAIL)
 
-    # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.stage_and_commit`, the
-    # one sequence all three scoped commits share: each path staged by what git
-    # holds for it, the index read back against this same list, a commit with the
-    # list as its pathspec, and the index put back as it was found on any
-    # refusal after staging. The read-back is the only check that can see a path
-    # that arrived through one of the three directories rather than past them.
+    # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.commit_with_rows`, the
+    # one sequence all three scoped commits share: the row naming the commit
+    # written first and carried, each path staged by what git holds for it, the
+    # index read back against this same list, a commit with the list as its
+    # pathspec, the index put back as it was found on any refusal after staging,
+    # and the row withdrawn when no commit was made. The read-back is the only
+    # check that can see a path that arrived through one of the three
+    # directories rather than past them.
     #
     # NO SECOND EMPTY-INDEX GUARD. `pending` above already answered "is there
     # anything to commit"; `git commit` refuses an empty index on its own, and
     # that refusal is reported like any other.
-    done = _scoped_commit.stage_and_commit(
+    phase_id = _phase_id(phase)
+    done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
-        commit_message(_phase_id(phase), subject, _coauthor(manifest)),
-        _foreign_after_staging)
+        commit_message(phase_id, subject, _coauthor(manifest)),
+        _foreign_after_staging,
+        lambda nonce: ([record_row(project, phase_id, nonce, config=config)],
+                       ""),
+        lambda nonce, why: _scoped_commit.withdraw(
+            project, config, nonce, "commit-audit-state",
+            {"phaseId": phase_id}, why))
     staged = done["staged"]
     if not done["committed"]:
         return E_FAIL, _answer(skipped, staged=staged, foreign=done["foreign"],
-                               refused=done["refused"])
+                               refused=done["refused"], done=done)
     sha = done["sha"]
     if sha and done["refused"]:
         # Committed on a HEAD that moved underneath: reported, never undone.
         return E_FAIL, _answer(skipped, committed=True, commit=sha,
-                               staged=staged, refused=done["refused"])
+                               staged=staged, refused=done["refused"],
+                               journalled=done["journalled"], done=done)
     if not sha:
         # The commit exists and this process cannot name it. A failure rather
-        # than a success with a blank field: the journal row is the only handle
-        # anything has on such a commit, and a row naming nothing is worse than
-        # no row at all.
+        # than a success with a blank field: nothing downstream can be handed a
+        # SHA, and the row inside the commit reaches it only by its trailer.
         return E_FAIL, _answer(
             skipped, committed=True, staged=staged,
-            refused="%s, so no journal row could name it" % (done["refused"],))
-
-    journalled = bool(record_row(project, _phase_id(phase), sha, config=config))
+            journalled=done["journalled"], done=done,
+            refused="%s; the row inside it names it by `%s`"
+                    % (done["refused"], _scoped_commit.row_trailer(
+                        done["nonce"]) if done["nonce"] else "nothing"))
     return E_OK, _answer(skipped, committed=True, commit=sha, staged=staged,
-                         journalled=journalled)
+                         journalled=done["journalled"], done=done)
 
 
 def main(argv, out=print):

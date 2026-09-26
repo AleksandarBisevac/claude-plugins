@@ -214,7 +214,113 @@ def _cases(check):
           "in the caller's half is not a cut to make in the command's: %r"
           % (M.fitted_header(outgrown, "a subject nobody will read"),),
           M.fitted_header(outgrown, "a subject nobody will read") == outgrown)
+    _row_cases(check, tmp)
     _staging_cases(check, tmp, outside)
+
+
+# --- the row inside the commit -------------------------------------------------
+def _trailers(repo, message):
+    """What `git interpret-trailers --parse` reads out of `message`."""
+    done = subprocess.run(["git", "-C", repo, "interpret-trailers", "--parse"],
+                          input=message.encode("utf-8"), stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT)
+    return done.stdout.decode("utf-8", "replace").splitlines()
+
+
+def _refuse_commits(repo):
+    hooks = os.path.join(repo, ".git", "hooks")
+    _write(os.path.join(hooks, "pre-commit"), "#!/bin/sh\nexit 1\n")
+    os.chmod(os.path.join(hooks, "pre-commit"), 0o755)
+    _git(repo, "config", "core.hooksPath", hooks)
+
+
+def _row_cases(check, tmp):
+    repo = _repo(tmp, "rows")
+    coauthor = "Co-Authored-By: A Person <a@example.com>"
+    both = M.with_row_trailer(["chore(x): phase P1 - a subject", coauthor], "n1")
+    alone = M.with_row_trailer(["chore(x): phase P1 - a subject"], "n2")
+    check("sc25 the row trailer joins the LAST paragraph, so git still reads the "
+          "co-author line as a trailer beside it - a paragraph of its own after "
+          "the co-author would stop that one being a trailer - and with only a "
+          "subject it becomes that paragraph: %r / %r"
+          % (_trailers(repo, "\n\n".join(both)),
+             _trailers(repo, "\n\n".join(alone))),
+          len(both) == 2
+          and _trailers(repo, "\n\n".join(both)) == [coauthor,
+                                                      M.row_trailer("n1")]
+          and _trailers(repo, "\n\n".join(alone)) == [M.row_trailer("n2")])
+
+    seen, withdrawn = [], []
+
+    def rows(nonce):
+        seen.append(nonce)
+        path = os.path.join(repo, "trail", "r.jsonl")
+        _write(path, '{"nonce": "%s"}\n' % (nonce,))
+        return [path], ""
+
+    _write(os.path.join(repo, "keep", "a.txt"), "a2\n")
+    kinds = M.classify(repo, [("keep/a.txt", True)])
+    done = M.commit_with_rows(repo, ["keep/a.txt"], kinds, ["chore: a"],
+                              lambda paths: "foreign", rows,
+                              lambda nonce, why: withdrawn.append(nonce) or "w")
+    carried = _git(repo, "show", "--name-only", "--pretty=format:",
+                   "HEAD").split()
+    body = _git(repo, "log", "-1", "--format=%B")
+    check("sc26 the row is written BEFORE the commit, its file is added to an "
+          "allow-list that did not hold it, and the commit carries it with the "
+          "nonce the row was keyed by as its trailer - `carried` is read back "
+          "from what git staged: %r / %r / %r" % (done, carried, body),
+          done["committed"] and done["carried"] and done["journalled"]
+          and done["withdrawn"] is None and len(seen) == 1
+          and done["nonce"] == seen[0]
+          and sorted(carried) == ["keep/a.txt", "trail/r.jsonl"]
+          and M.row_trailer(seen[0]) in body.splitlines() and withdrawn == [])
+
+    _write(os.path.join(repo, "keep", "a.txt"), "a3\n")
+    _refuse_commits(repo)
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    found = _git(repo, "ls-files", "-s")
+    done = M.commit_with_rows(repo, ["keep/a.txt"],
+                              M.classify(repo, [("keep/a.txt", True)]),
+                              ["chore: a"], lambda paths: "foreign", rows,
+                              lambda nonce, why: withdrawn.append(nonce) or "w")
+    check("sc27 a commit a hook REFUSES after the row was written withdraws "
+          "that row's nonce, once, puts the index back and claims no carried "
+          "row - the row stays where it was written, in the working tree, and "
+          "cannot be read as a commit: %r / %r" % (done, withdrawn),
+          not done["committed"] and done["refused"]
+          and M.INDEX_RESTORED in done["refused"]
+          and withdrawn == [seen[-1]] and done["withdrawn"] is True
+          and not done["carried"]
+          and _git(repo, "rev-parse", "HEAD").strip() == head
+          and _git(repo, "ls-files", "-s") == found)
+
+    del withdrawn[:]
+    done = M.commit_with_rows(
+        repo, ["keep/a.txt"], M.classify(repo, [("keep/a.txt", True)]),
+        ["chore: a"], lambda paths: "foreign",
+        lambda nonce: (rows(nonce)[0], "a required row could not be written"),
+        lambda nonce, why: withdrawn.append((nonce, why)) or "w")
+    check("sc28 a row the commit REQUIRES that could not be written refuses "
+          "before anything is staged, and withdraws the rows that did land: "
+          "%r / %r" % (done, withdrawn),
+          not done["committed"] and "Nothing was staged" in done["refused"]
+          and withdrawn == [(seen[-1], "a required row could not be written")]
+          and _git(repo, "ls-files", "-s") == found)
+
+    said = {}
+    for label, carried_flag in (("in", True), ("out", False)):
+        lines = []
+        M.render(M.answer([], committed=True, commit="abcdef0123456789",
+                          staged=["keep/a.txt"], journalled=True,
+                          done={"nonce": "n9", "carried": carried_flag}),
+                 "[v]", out=lines.append)
+        said[label] = lines[-1]
+    check("sc29 the success line says the row is inside the commit only when "
+          "git staged it, and says it is NOT otherwise - the pair over one "
+          "flag, so neither sentence can become the default: %r" % (said,),
+          said["in"] == "  " + M.ROW_CARRIED % ("Audit-Row", "n9")
+          and said["out"] == "  " + M.ROW_NOT_CARRIED % ("Audit-Row", "n9"))
 
 
 # --- how a path is staged, and putting the index back ------------------------
