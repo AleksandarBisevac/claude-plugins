@@ -31,42 +31,42 @@
         "severity": "high",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:226",
         "issue": "_phase_gate_lists takes buildCommands keys unfiltered, so a blank-string key enters a new phase's default gate where the previous code dropped it; absence of meta.phaseGate is then not today's behaviour exactly",
-        "resolution": "fix task P78.12-msc: filter build keys once in _phase_gate_lists, red-first case with a blank key"
+        "resolution": "fixed in P78.12-msc (2b68f3369a13)"
       },
       {
         "id": "P78-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/status/_doctor_trail.py:1100",
         "issue": "check_gate_economy divides the summed duration of measured steps by the count of all steps, so partially measured history dilutes the mean and can hide an over-budget gate",
-        "resolution": "fix task P78.13-msc: divide by the measured count from one shared _evidence_io helper, red-first case with mixed history"
+        "resolution": "fixed in P78.13-msc (9a560c620727)"
       },
       {
         "id": "P78-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-lookup.py:299",
         "issue": "the comment over _RUN_STEP_KEYS says only retry bookkeeping is dropped, while ran, measured, timeoutSeconds, teardown and suiteReader are dropped too",
-        "resolution": "fix task P78.14-msc: the comment names what is dropped and why"
+        "resolution": "fixed in P78.14-msc (188bc251ccf5)"
       },
       {
         "id": "P78-R4",
         "severity": "low",
         "file": "CHANGELOG.md:340",
         "issue": "the [Unreleased] correction line points at 'the 1.4.1 entry above', which is below it in a newest-first file",
-        "resolution": "fix task P78.15-msc: drop the direction word"
+        "resolution": "fixed in P78.15-msc (40f165be9cea)"
       },
       {
         "id": "P78-R5",
         "severity": "low",
         "file": "plugins/audit/reference/phase-signoff.md:134",
         "issue": "says 'two gate entries' for the SAME SUITE remedy while shared_counts groups two or more",
-        "resolution": "fix task P78.15-msc: say two or more"
+        "resolution": "fixed in P78.15-msc (40f165be9cea)"
       },
       {
         "id": "P78-R6",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:3006",
         "issue": "comments added in this phase cite phase and task ids (run-test-gate.py, test_audit_task.py, test_run_test_gate.py), and one older section marker in run-test-gate.py does too; comments must state their rule, not cite the private register",
-        "resolution": "fix task P78.14-msc: rewrite each comment in its own terms"
+        "resolution": "fixed in P78.14-msc (188bc251ccf5)"
       }
     ]
   },
@@ -991,7 +991,7 @@
     {
       "id": "P78.15-msc",
       "title": "Two doc sentences say what the code does",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review findings (low). CHANGELOG.md: the [Unreleased] correction line says 'the 1.4.1 entry above', but the file is newest-first and that entry is below it; drop the direction word or say below. reference/phase-signoff.md: the SAME SUITE remedy paragraph says 'when two gate entries reported the same check count', while run-test-gate.shared_counts groups two or more; say that. No other change to either file; no number written into prose.",
       "files": [
         "CHANGELOG.md",
@@ -1018,18 +1018,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "40f165be9cea",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGELOG [Unreleased] correction line now points below at the 1.4.1 entry; phase-signoff.md says two or more gate entries, matching shared_counts. Executor stamp scope CHANGELOG.md and phase-signoff.md. Gate run 2026-09-26T11:35:17Z.01532c green; reviewer matches. Resolves sign-off findings P78-R4 and P78-R5.",
+        "descriptive": "Fixed a wrong direction word and an undercounted plural in two sign-off documentation sentences so they match actual code/file behaviour."
       },
       "startedAt": "2026-09-26T11:22:33Z",
-      "completedAt": null,
+      "completedAt": "2026-09-26T11:39:20Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-26T11:35:17Z.01532c",
         "status": "passed",
         "at": "2026-09-26T11:35:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "40f165be9cea",
+        "at": "2026-09-26T11:39:20Z"
       }
     }
   ],
