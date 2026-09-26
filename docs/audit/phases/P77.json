@@ -1,7 +1,7 @@
 {
   "id": "P77",
   "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "executor, reviewer and schema share one redFirst vocabulary checked by a lint; a sanctioned red-first helper proves red in a throwaway tree without touching the shared one, and a compile or collection failure is not a proved red; and doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
   "branch": "audit/p77-red-first-has-one-vocabulary-a",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T04:35:55Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
