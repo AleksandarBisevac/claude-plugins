@@ -601,6 +601,11 @@ def row_for(project, result, scope, ids, identity, published=None):
     # `phase` beside a `taskId`, which is a shape two opposite readings both fit.
     if result.get("gateSource") is not None:
         row["gateSource"] = str(result["gateSource"])
+    # THE OTHER PHASES A GROUP'S ONE RUN OWNED (`run-test-gate.py --also`). Written
+    # only for a group run, so a row that carries none is a run for its subject
+    # alone - which is what a member's copied pointer is checked against.
+    if isinstance(result.get("groupWith"), list) and result["groupWith"]:
+        row["groupWith"] = [str(p) for p in result["groupWith"]]
     # WHAT THE GATE WAS, resolved: a digest of every entry beside the command it
     # resolves to (`gate_digest`), so a reader can tell a gate whose entries kept
     # their names while `meta.buildCommands` changed what they run. Written only

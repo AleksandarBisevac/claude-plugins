@@ -23,6 +23,9 @@ describe('the sign-off note on a phase row', () => {
     expect(note).toContain('sign-off due');
     expect(note).toContain('/audit:review');
     expect(note).toContain('/audit:phase signoff P4');
+    // A `passed` sign-off needs the gate run it rests on, so the note names it.
+    expect(note).toContain('--record');
+    expect(note).toContain('--no-evidence-reason');
   });
 
   it('a phase signed off on an unmerged branch says what it waits for instead', () => {

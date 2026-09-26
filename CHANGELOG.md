@@ -170,10 +170,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ### Changed
 - **`signoff --verdict passed` needs the gate run it rests on**, on the single-phase path and the
-  group's alike: the phase's `testEvidence` must be `empty-gate`, or `passed` with a ledger row taken
-  over its declared files as they stand now. Otherwise the verb refuses and prints the
-  `run-test-gate.py … --record` call, or takes `--no-evidence-reason "<why>"`, which it records on
-  `review.noEvidenceReason`. `--verdict skipped` needs neither.
+  group's alike, graded by the SAME rule a task commit is bound by - now one module,
+  `_verdict_binding`, that `commit-task-work.py` and the sign-off both call. The phase's newest
+  ledger row must be `passed`, under the gate it declares now, over its declared files as they
+  stand with the recorder's own writes left out; a verdict the gate repeated is graded against the
+  run it repeats, so a re-run on an unchanged tree signs off. Otherwise the verb refuses naming
+  the run and the gate call, or takes `--no-evidence-reason "<why>"`, recorded on
+  `review.noEvidenceReason` and shown on the evidence badge. `--verdict skipped` needs neither.
+- **A group sign-off accounts for merges and takes an accepted commit.** A merge commit whose
+  parents are all accounted for, or on the parent side, is accounted; any other unrecorded commit
+  can be taken into the review with `--accept <sha> --reason "<why>"`, recorded on every member.
+  A journal that cannot be read is said as that; a task commit missing from the branch names
+  `repair-commits.py`. `--bind` and the copied pointer each leave a journal row, the group run's
+  ledger row names the members it owned (`groupWith`), and the report and panel render a copied
+  pointer as the carrier's run.
 - **`close-phase.py`'s refusal for a phase with no recorded branch whose composed name is not a
   branch exits 1**, not the 4 an unanswerable ancestry gave before: git answered, and the command
   is what has to change (`--branch`).

@@ -399,6 +399,12 @@ function evRow(row,fields){
  */
 function evState(node,ev,basis){
  const row=node||{},pointer=row.testEvidence,src=row.gateSource;
+ if(pointer==null&&row.noEvidenceReason){
+  // Signed off with no gate run, and the operator's reason recorded: the badge's
+  // basis is that reason, not the silence every other absence shares.
+  const why='signed off with no gate run, and the reason recorded: '
+    +row.noEvidenceReason+'.';
+  return {key:'none',run:null,why:why};}
  if(pointer==null){
   // Answered BEFORE the boundary is consulted: `no-gate` is a fact about the
   // plan, and a gate that was never declared could not have run either side of
@@ -435,8 +441,13 @@ function evState(node,ev,basis){
      +plural((ev&&ev.unreadable)||0,'line unreadable','lines unreadable')
      +'. The plan caches the verdict "'
      +((pointer&&pointer.status)||'not recorded')+'".'};
+ // A group member's pointer is its carrier's run, named as the carrier's: bare,
+ // it would read as a sign-off run this phase made.
+ const carrier=(typeof pointer==='object'&&typeof pointer.gradedBy==='string'
+   &&pointer.gradedBy)?pointer.gradedBy:'';
  return {key:(typeof run.status==='string')?run.status:'',run:run,
-   why:'run '+(run.runId||'?')+(run.at?', recorded '+ovStamp(run.at)+' UTC':'')};}
+   why:(carrier?'graded by '+carrier+"'s run "+(run.runId||'?')+' - ':'')
+     +'run '+(run.runId||'?')+(run.at?', recorded '+ovStamp(run.at)+' UTC':'')};}
 /**
  * The observations that sit beside a badge — never inside it.
  *

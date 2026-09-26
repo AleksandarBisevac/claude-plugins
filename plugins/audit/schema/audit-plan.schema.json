@@ -1467,7 +1467,7 @@
         "at"
       ],
       "additionalProperties": true,
-      "description": "A POINTER at the run that last exercised this task (or this phase's gate), together with the verdict that run reached. IT IS A CACHE AND NOT THE SOURCE OF TRUTH: the truth is the append-only evidence ledger kept beside the manifest, every run is in it, and anything a reader wants to COUNT or COMPARE is derived by reading it. That is what makes this block disposable — deleting it is always safe, the ledger still holds the run, and the next run writes it back. ABSENT MEANS 'NO EVIDENCE RECORDED', NEVER 'FAILED': a manifest written before this field existed, a task nobody has run yet, and a block somebody deleted are one and the same state, and every surface must say so rather than render the worst reading of a silence. Optional at both levels, and additive — a manifest that carries none validates exactly as it did before this field was declared. `attempt` and a run COUNT are deliberately NOT here. A count cached beside the thing that produces it is the defect this repo has now fixed under three separate numbers, and 'how many times has this run' is a question the ledger answers without a second copy that can disagree with it; a block that cannot go stale is worth more than one that can carry more. additionalProperties stays permissive, which is this document's policy at every object level and not an oversight here: the schema ships with the plugin, so an older copy of it must keep accepting a manifest a newer one wrote, and the keys below are what a consumer may READ rather than a refusal of a fourth. What IS required is all of them at once — a block missing `runId` points at nothing, one missing `status` caches nothing, one missing `at` cannot be aged, and since dropping the whole block is always safe there is never a reason to write half of one.",
+      "description": "A POINTER at the run that last exercised this task (or this phase's gate), together with the verdict that run reached. IT IS A CACHE AND NOT THE SOURCE OF TRUTH: the truth is the append-only evidence ledger kept beside the manifest, every run is in it, and anything a reader wants to COUNT or COMPARE is derived by reading it. That is what makes this block disposable — deleting it is always safe, the ledger still holds the run, and the next run writes it back - with ONE exception: a pointer carrying `gradedBy` was copied from another phase at a group sign-off, and no run records it for this subject, so `run-test-gate.py --reconcile` does not restore it; deleting one leaves that member with no evidence until it is signed off again. ABSENT MEANS 'NO EVIDENCE RECORDED', NEVER 'FAILED': a manifest written before this field existed, a task nobody has run yet, and a block somebody deleted are one and the same state, and every surface must say so rather than render the worst reading of a silence. Optional at both levels, and additive — a manifest that carries none validates exactly as it did before this field was declared. `attempt` and a run COUNT are deliberately NOT here. A count cached beside the thing that produces it is the defect this repo has now fixed under three separate numbers, and 'how many times has this run' is a question the ledger answers without a second copy that can disagree with it; a block that cannot go stale is worth more than one that can carry more. additionalProperties stays permissive, which is this document's policy at every object level and not an oversight here: the schema ships with the plugin, so an older copy of it must keep accepting a manifest a newer one wrote, and the keys below are what a consumer may READ rather than a refusal of a fourth. What IS required is all of them at once — a block missing `runId` points at nothing, one missing `status` caches nothing, one missing `at` cannot be aged, and since dropping the whole block is always safe there is never a reason to write half of one.",
       "properties": {
         "runId": {
           "type": "string",
@@ -1489,6 +1489,10 @@
         "at": {
           "type": "string",
           "description": "ISO timestamp of the run this block points at, so a reader can tell a fresh verdict from a stale one without opening the ledger. It dates the RUN, not the moment the cache was written; the two are the same today and would stop being so the first time this block is rebuilt from the ledger."
+        },
+        "gradedBy": {
+          "type": "string",
+          "description": "Set only on a phase that took ANOTHER phase's pointer at a group sign-off (`audit-task.py signoff P1,P2 --branch <name>`): the id of the member that carried the group's one gate run. The run this block names is that member's, owned every member's files (its ledger row's `groupWith`), and is rendered as that member's run - never as a sign-off run this phase made. Absent on every pointer the recorder writes for its own subject."
         }
       }
     },
@@ -1639,6 +1643,21 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/finding"
+          }
+        },
+        "noEvidenceReason": {
+          "type": "string",
+          "description": "The operator's words, recorded verbatim, for a `passed` sign-off that no gate run binds (`audit-task.py signoff --no-evidence-reason`). The report and the panel show it where the evidence badge's basis goes. It is not a run: `--fail-on no-test-evidence` still names the phase."
+        },
+        "acceptedCommits": {
+          "type": "array",
+          "description": "Commits a group's branch carried past its fork that no member records, taken into the group's review with `audit-task.py signoff --accept <sha> --reason`. Each is the full SHA and the operator's reason, written on every member of the group.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "commit": {"type": "string"},
+              "reason": {"type": "string"}
+            }
           }
         }
       }

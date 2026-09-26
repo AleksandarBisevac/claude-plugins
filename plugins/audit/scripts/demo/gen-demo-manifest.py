@@ -1100,6 +1100,17 @@ SCHEMA_EXEMPTIONS = {
         "and not read by the orchestrator. Measured: no reader anywhere under "
         "scripts/, hooks/, commands/ or agents/ - only the schema and "
         "`_manifest_vocab.KNOWN_PHASE`. The demo shows what the plugin does.",
+    "review.noEvidenceReason":
+        "written only for a `passed` sign-off that no gate run backs, and the demo's "
+        "phases are signed off on runs its ledger carries - a reason beside a run "
+        "would claim the run did not exist.",
+    "review.acceptedCommits":
+        "written only by a GROUP sign-off that took an unrecorded commit into its "
+        "review; the demo signs no group off, and a fixture value would name a "
+        "commit on a branch the demo does not have.",
+    "testEvidence.gradedBy":
+        "written only on a group member's copy of its carrier's pointer; the demo "
+        "signs no group off, so every pointer it carries is its subject's own run.",
     "review.preExistingNotCharged":
         "defined by the schema and by nothing else - no reader, no writer, and not "
         "even a `_manifest_vocab` entry. A fixture value would demonstrate nothing.",

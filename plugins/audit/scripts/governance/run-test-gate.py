@@ -3544,6 +3544,11 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    if also:
+        # WHICH MEMBERS THIS ONE RUN OWNED, on its row: a group member's copied
+        # pointer is checked against it, and the carrier's row alone could not
+        # say whose files its coverage and its tree bracket covered.
+        res["groupWith"] = list(also)
     # The resolved gate, as a digest the row carries: what `commit-task-work`
     # compares so a `meta.buildCommands` edit after a green is a changed gate.
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(

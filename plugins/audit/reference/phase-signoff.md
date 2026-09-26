@@ -90,7 +90,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `--record` writes the row, anchors it in the trail and points `phase.testEvidence` at it — the
    phase's own gate run, kept apart from its tasks' so a reader can follow either. As at task
    level, a **refused pointer is not a failure**: the row stands and `--reconcile` catches the plan
-   up. Everything it writes happens after the verdict is complete, so the recording can never
+   up. It does not block sign-off either — step 5a grades the phase's NEWEST ledger row, not the
+   pointer — but reconcile before signing off, so the plan's cache names the run that backs the
+   verdict. Everything it writes happens after the verdict is complete, so the recording can never
    appear in the tree comparison it is being judged by.
 
    **It brackets the gate, and that is why it is a script.** A gate is a MEASUREMENT.
@@ -264,8 +266,18 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       ```
       python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId> \
           --verdict passed|skipped --summary "<what was done + impact>" \
-          [--review-outcome "<the review's one-line result>"]
+          [--review-outcome "<the review's one-line result>"] \
+          [--no-evidence-reason "<why no gate run backs a passed verdict>"]
       ```
+      **`--verdict passed` is refused unless step 2's run binds the phase's work** — the same
+      rule a task commit is bound by (`_verdict_binding`): the phase's newest ledger row is
+      `passed`, measured under the gate the phase declares now, over its declared files as they
+      stand (the recorder's own writes left out), and a verdict the gate REPEATED is graded
+      against the run it repeats; a phase whose gate declares no entry is bound to no run. The
+      refusal names the run and the command that supplies one. Where no gate run can back the
+      verdict, `--no-evidence-reason` is the operator's words, recorded verbatim on
+      `review.noEvidenceReason` and shown where the evidence badge's basis goes — it is not a
+      run, so `--fail-on no-test-evidence` still names the phase. `skipped` needs neither.
       The summary is a short paragraph: what was done and its impact, and when
       `phase.desiredOutcome` is set, how the phase met — or didn't meet — it. The verb writes
       `phase.review.status` (the verdict), `phase.review.outcome` and `phase.summary`, **clears
@@ -379,36 +391,49 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
 It refuses, naming every reason, what the group cannot be signed off with: a member with open
 work or already signed off, a member recording another branch, members resolving to different
 parents, a `--branch` that is that parent, a finished task with no `commit`, a task commit the
-branch does not carry (asked of git, not read off the plan), a commit the branch carries past its
-fork that no member records, and a union no member's gate holds. The plan and the record ask the
-same planner, so what the plan accepts the record re-checks under the lock. Then, in this order:
+branch does not carry (asked of git, not read off the plan; `repair-commits.py` re-points a task
+whose commit a rebase moved), a commit the branch carries past its fork that nothing accounts
+for, and a union no member's gate holds. The plan and the record ask the same planner, so what
+the plan accepts the record re-checks under the lock.
+
+**What the branch may carry.** Every commit in `git rev-list <fork>..<branch>` is a member task's
+`commit`, an audit-state or index commit the journal records for a member, or a MERGE whose every
+parent is one of those or lies on the parent side of the fork — a branch built by merging the
+members' own branches is made of them. Any other commit — a hand-made planning commit, a
+journal-only commit nobody recorded — is refused by SHA, and `--accept <sha> --reason "<why>"`
+takes it into the review instead: the plan lists it beside the task commits, and the record
+writes it and the reason on every member's `review.acceptedCommits`. A journal that cannot be
+read is said as that, never as a commit nobody records. Then, in this order:
 
 1. **Bind** with `--bind` in place of `--plan`: each member gets the branch as `branch` and the
-   point it left the parent (`git merge-base <parent> <branch>`) as `baseRef`, and nothing of a
-   verdict. The record refuses a member that is not bound, because step 4 grades the base-ref
-   and branch-history checks off those two fields and would otherwise not apply them.
-2. **Review** from the tasks' `commit` list the plan prints — hand the reviewer those commits and
-   the files union in place of `git diff <baseRef> -- <files>`. They are every commit the branch
-   carries past its fork: any other commit is refused unless the journal records it as a member's
-   audit-state or index commit. Findings become tasks exactly as in step 1, in the member whose
-   files they touch.
+   point it left the parent (`git merge-base <parent> <branch>`) as `baseRef`, nothing of a
+   verdict, and a `phase.bind` journal row. The record refuses a member that is not bound,
+   because step 4 grades the base-ref and branch-history checks off those two fields and would
+   otherwise not apply them.
+2. **Review** from the commit list the plan prints — the tasks' commits and any accepted ones,
+   with the files union — in place of `git diff <baseRef> -- <files>`. Findings become tasks
+   exactly as in step 1, in the member whose files they touch.
 3. **One gate run**: the plan names the member whose `testGate` holds the union of every member's
    gate, and prints its `run-test-gate.py … --also <the others> --record` call. `--also` makes the
    one run own the union of every member's files, so a rewrite of a file only another member
-   declares reads `gate-mutated` rather than passing, and the tree stamp covers all of them.
+   declares reads `gate-mutated` rather than passing, the tree stamp covers all of them, and the
+   run's ledger row names the members it owned (`groupWith`).
 4. **One invariants run**: `verify-invariants.py <manifestPath> --all`, the one spelling that
    covers more than one phase — read the rows for the group's members. A breach is the human
    decision it is in step 3.
 5. **Record** with the same command, `--verdict` and `--summary` in place of `--plan`. A `passed`
-   verdict needs the carrier's recorded run to be current — a ledger row taken over every
-   member's files as they stand now — or `--no-evidence-reason "<why>"`, which is recorded on
-   every member's review; the single-phase sign-off holds the same rule. Every member is written
-   in one write, all or nothing, and each non-carrier member takes the carrier's pointer as its
-   `testEvidence` with `gradedBy: <carrier>`, so `--fail-on no-test-evidence` and the report read
-   it as graded, by that run.
-6. **Commit** the sign-off with the lines the record prints — one `commit-audit-state.py` per
-   member, and in the sharded layout `commit-manifest-index.py` after them, because one commit
-   carrying two members' shards reads as a scope breach for each.
+   verdict is step 5a's rule over the carrier's newest run and every member's files, and that
+   run must have owned every other member (`groupWith`) — or `--no-evidence-reason "<why>"`,
+   recorded on every member's review. Every member is written in one write, all or nothing, and
+   each non-carrier member takes the carrier's run as its `testEvidence` with
+   `gradedBy: <carrier>`, journaled as a `phase.testEvidence` row. The report and the panel render
+   that pointer as the carrier's run ("graded by P1's run …"), never as the member's own, and
+   `--fail-on no-test-evidence` reads it as the member's evidence. A copied pointer is the one
+   pointer no run records for its subject, so `--reconcile` does not restore it.
+6. **Commit** the sign-off with the lines the record prints — in the sharded layout one
+   `commit-audit-state.py` per member and then `commit-manifest-index.py`, because one commit
+   carrying two members' shards reads as a scope breach for each; in the single-file layout one
+   `commit-audit-state.py`, because there is one file.
 7. **Land each phase** with the `close-phase.py --branch` lines, in order. The first merges the
    whole branch and keeps it (`--keep-worktree --keep-branch`); each later one finds it already
    contained and stamps its own `mergedAt`; only the last may take the branch and its worktree

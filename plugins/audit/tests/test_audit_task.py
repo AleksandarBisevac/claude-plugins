@@ -5894,12 +5894,15 @@ def _cases(check):
                 _panel_write._atomic_write_json(mpath, written)
             return proj, mpath, shas
 
-        def gs_gate(proj, mpath, carrier, also=None):
+        def gs_gate(proj, mpath, carrier, also=None, reuse=False):
             """The group's one gate run, recorded - the real script, so the
-            evidence the record checks is a row a real run wrote."""
+            evidence the record checks is a row a real run wrote. `reuse` lets
+            the gate repeat an earlier verdict, which is its default."""
             argv = [sys.executable, os.path.join(_output.SCRIPTS_DIR, "governance",
                                                  "run-test-gate.py"),
-                    mpath, carrier, "--record", "--no-reuse", "--project-dir", proj]
+                    mpath, carrier, "--record", "--project-dir", proj]
+            if not reuse:
+                argv.append("--no-reuse")
             if also:
                 argv += ["--also", also]
             done_ = subprocess.run(argv, stdout=subprocess.PIPE,
@@ -6144,7 +6147,7 @@ def _cases(check):
                          "--project-dir", s1_proj])
         check("so12 ...and evidence taken BEFORE the phase's files changed is not "
               "current, so it is refused too: exit %r, %s" % (code, txt),
-              code == 2 and "not current" in txt)
+              code == 2 and "have changed since it was measured" in txt)
         gs_gate(s1_proj, s1_mp, "P1")
         code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
                          "--project-dir", s1_proj])
@@ -6157,7 +6160,7 @@ def _cases(check):
         _s2_ph = [p for p in _mio.load_manifest(s2_mp)["phases"]
                   if p["id"] == "P1"][0]
         check("so14 ...and an explicit reason is RECORDED on the review, where the "
-              "report and the next reader meet it: exit %r, %r"
+              "evidence badge on the report and the panel shows it: exit %r, %r"
               % (code, _s2_ph.get("review")),
               code == 0 and (_s2_ph.get("review") or {}).get("noEvidenceReason")
               == "graded by hand: no runner here")
@@ -6166,6 +6169,214 @@ def _cases(check):
                          "--project-dir", s3_proj])
         check("so15 --verdict skipped needs no gate evidence - it says no review "
               "passed anything: exit %r, %s" % (code, txt), code == 0)
+
+        # ---- (ve) ONE verdict-binding rule: sign-off grades as a task commit does
+        def ve_rows(proj):
+            return _ve_evidence.read_rows(proj)["rows"]
+        import _evidence_io as _ve_evidence
+        v1_proj, v1_mp, _v1 = gs_fixture("ve-reuse")
+        gs_gate(v1_proj, v1_mp, "P1")
+        _v1_rc = gs_gate(v1_proj, v1_mp, "P1", reuse=True)
+        _v1_reused = [r for r in ve_rows(v1_proj)
+                      if r.get(_ve_evidence.VERDICT_SOURCE) == _ve_evidence.REUSED]
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v1_proj])
+        check("ve1 a phase gate recorded once with --no-reuse and again WITH reuse - "
+              "the gate's default - signs off `passed`: the repeat is graded "
+              "against the run that measured it: gate %r, reused rows %d, exit %r, %s"
+              % (_v1_rc, len(_v1_reused), code, txt),
+              _v1_rc == 0 and len(_v1_reused) == 1 and code == 0)
+        v2_proj, v2_mp, _v2 = gs_fixture("ve-orphan")
+        gs_gate(v2_proj, v2_mp, "P1")
+        gs_gate(v2_proj, v2_mp, "P1", reuse=True)
+        _v2_src = [r for r in ve_rows(v2_proj)
+                   if r.get(_ve_evidence.VERDICT_SOURCE) == _ve_evidence.REUSED]
+        _v2_origin = ((_v2_src or [{}])[0].get("reusedFrom") or {}).get("runId")
+        for _v2_path in _ve_evidence.ledger_files(v2_proj):
+            with open(_v2_path) as fh:
+                _v2_lines = fh.read().splitlines(True)
+            with open(_v2_path, "w") as fh:
+                fh.write("".join(ln for ln in _v2_lines
+                                 if not (_v2_origin and _v2_origin in ln
+                                         and '"reusedFrom"' not in ln)))
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v2_proj])
+        check("ve2 SECOND DIRECTION: a repeated verdict whose source run is gone from "
+              "the ledger is refused - the tree it was measured on is not "
+              "established: origin %r, exit %r, %s" % (_v2_origin, code, txt),
+              bool(_v2_origin) and code == 2 and "not in the ledger" in txt)
+        v3_proj, v3_mp, _v3 = gs_fixture("ve-manifest")
+        _v3m = _mio.load_manifest(v3_mp)
+        _v3m["phases"][0]["tasks"][0]["files"] = ["src/p1.py",
+                                                  "docs/audit/audit-plan.json"]
+        _v3m["fileIndex"]["docs/audit/audit-plan.json"] = ["P1.1"]
+        _panel_write._atomic_write_json(v3_mp, _v3m)
+        gs_gate(v3_proj, v3_mp, "P1")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v3_proj])
+        check("ve3 a phase that declares its own manifest file signs off: the "
+              "recorder's own writes to it are left out on both sides, as a task "
+              "commit leaves them: exit %r, %s" % (code, txt), code == 0)
+        v4_proj, v4_mp, _v4 = gs_fixture("ve-gate-changed")
+        _v4m = _mio.load_manifest(v4_mp)
+        _v4m["phases"][0]["testGate"] = []
+        _panel_write._atomic_write_json(v4_mp, _v4m)
+        gs_gate(v4_proj, v4_mp, "P1")
+        _v4m = _mio.load_manifest(v4_mp)
+        _v4m["phases"][0]["testGate"] = ["test"]
+        _panel_write._atomic_write_json(v4_mp, _v4m)
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v4_proj])
+        check("ve4 an `empty-gate` run recorded before the gate gained an entry backs "
+              "no `passed` - a gate changed after the measurement: exit %r, %s"
+              % (code, txt), code == 2 and "different gate" in txt)
+        v5_proj, v5_mp, _v5 = gs_fixture("ve-group-reuse")
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", v5_proj])
+        gs_gate(v5_proj, v5_mp, "P1", "P2")
+        gs_gate(v5_proj, v5_mp, "P1", "P2", reuse=True)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v5_proj])
+        check("ve5 the group's gate, repeated by reuse, still backs the group's "
+              "`passed`: exit %r, %s" % (code, txt), code == 0)
+        v6_proj, v6_mp, _v6 = gs_fixture("ve-group-alone")
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", v6_proj])
+        gs_gate(v6_proj, v6_mp, "P1")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v6_proj])
+        check("ve6 a carrier run that did NOT own the other member (no --also) backs "
+              "no group verdict, and the refusal names the member it left out: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and "P2" in txt and "--also P2" in txt)
+
+        v7_proj, v7_mp, _v7 = gs_fixture("ve-group-owned")
+        _v7m = _mio.load_manifest(v7_mp)
+        _v7m["phases"][1]["tasks"][0]["files"] = ["src/p1.py"]
+        _v7m["fileIndex"] = {"src/p1.py": ["P1.1", "P2.1"]}
+        _panel_write._atomic_write_json(v7_mp, _v7m)
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", v7_proj])
+        gs_gate(v7_proj, v7_mp, "P1")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v7_proj])
+        check("ve7 even over the SAME files, a carrier run that did not own the other "
+              "member (no `groupWith` on its row) backs no group verdict: exit %r, %s"
+              % (code, txt), code == 2 and "owned P1 alone, not P2" in txt)
+
+        # ---- (ga) what a group branch may carry that no member records --------
+        a1_proj, a1_mp, _a1 = gs_fixture("ga-accept")
+        gs_git(a1_proj, "checkout", "-q", "combined")
+        gs_git(a1_proj, "commit", "-q", "--allow-empty", "-m", "planning")
+        _a1_extra = gs_git(a1_proj, "rev-parse", "HEAD")
+        gs_git(a1_proj, "checkout", "-q", "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _a1_extra, "--reason", "the multi-phase plan",
+                         "--project-dir", a1_proj])
+        check("ga1 --accept <sha> --reason lets a commit no member records into the "
+              "group, and the plan lists it for review rather than hiding it: "
+              "exit %r, %s" % (code, txt),
+              code == 0 and ("git show %s" % (_a1_extra,)) in txt
+              and "the multi-phase plan" in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _a1_extra, "--project-dir", a1_proj])
+        check("ga2 ...and --accept with no --reason is refused: an accepted commit "
+              "is recorded with why: exit %r, %s" % (code, txt),
+              code == 2 and "--reason" in txt)
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--accept", _a1_extra, "--reason", "the multi-phase plan",
+             "--project-dir", a1_proj])
+        gs_gate(a1_proj, a1_mp, "P1", "P2")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--accept", _a1_extra,
+                         "--reason", "the multi-phase plan",
+                         "--project-dir", a1_proj])
+        _a1_ph = dict((p["id"], p) for p in _mio.load_manifest(a1_mp)["phases"])
+        check("ga3 ...and the record writes the accepted commit and its reason on "
+              "every member's review: exit %r, %r"
+              % (code, [_a1_ph[p].get("review") for p in ("P1", "P2")]),
+              code == 0 and all(
+                  [{"commit": _a1_extra, "reason": "the multi-phase plan"}]
+                  == (_a1_ph[p].get("review") or {}).get("acceptedCommits")
+                  for p in ("P1", "P2")))
+        # A branch BUILT BY MERGING the members' own branches, --no-ff.
+        m_plan = base_manifest()
+        m_plan["phases"] = [
+            {"id": "P1", "title": "One", "status": "in_progress", "testGate": ["test"],
+             "branch": None, "baseRef": None,
+             "tasks": [{"id": "P1.1", "title": "a", "status": "done",
+                        "files": ["src/p1.py"]}]},
+            {"id": "P2", "title": "Two", "status": "in_progress", "testGate": ["test"],
+             "branch": None, "baseRef": None,
+             "tasks": [{"id": "P2.1", "title": "b", "status": "done",
+                        "files": ["src/p2.py"]}]}]
+        m_proj, m_mp = mk("ga-merged", m_plan, git=True)
+        gs_git(m_proj, "checkout", "-q", "-b", "main")
+        gs_git(m_proj, "commit", "-q", "--allow-empty", "-m", "base")
+        _m_sha = {}
+        for tid, side in (("P1.1", "side1"), ("P2.1", "side2")):
+            gs_git(m_proj, "checkout", "-q", "-b", side, "main")
+            gs_git(m_proj, "commit", "-q", "--allow-empty", "-m", tid)
+            _m_sha[tid] = gs_git(m_proj, "rev-parse", "HEAD")
+        gs_git(m_proj, "checkout", "-q", "-b", "combined", "main")
+        gs_git(m_proj, "merge", "-q", "--no-ff", "-m", "merge side1", "side1")
+        gs_git(m_proj, "merge", "-q", "--no-ff", "-m", "merge side2", "side2")
+        gs_git(m_proj, "checkout", "-q", "main")
+        _m_m = _mio.load_manifest(m_mp)
+        for _ph in _m_m["phases"]:
+            for _t in _ph["tasks"]:
+                _t["commit"] = _m_sha[_t["id"]]
+        _panel_write._atomic_write_json(m_mp, _m_m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", m_proj])
+        check("ga4 a combined branch built by merging the members' branches is "
+              "accounted for: each merge commit's parents are member commits or the "
+              "parent side: exit %r, %s" % (code, txt[:400]), code == 0)
+        g8b_proj, g8b_mp, g8b_shas = gs_fixture("ga-rebased")
+        _g8b = _mio.load_manifest(g8b_mp)
+        _g8b["phases"][1]["tasks"][0]["commit"] = g8b_shas["stray"]
+        _panel_write._atomic_write_json(g8b_mp, _g8b)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g8b_proj])
+        check("ga5 a recorded task commit missing from the branch names "
+              "repair-commits.py, the verb that re-points a rebased task: exit %r, %s"
+              % (code, txt), code == 2 and "repair-commits.py" in txt)
+        j_proj, j_mp, _j = gs_fixture("ga-journal")
+        gs_git(j_proj, "checkout", "-q", "combined")
+        gs_git(j_proj, "commit", "-q", "--allow-empty", "-m", "audit-state")
+        gs_git(j_proj, "checkout", "-q", "main")
+        _j_real = M._journal_io.read_all
+
+        def _j_broken(*_a, **_k):
+            raise IOError("the trail is not readable here")
+        M._journal_io.read_all = _j_broken
+        try:
+            code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                             "--project-dir", j_proj])
+        finally:
+            M._journal_io.read_all = _j_real
+        check("ga6 a commit that only the journal could account for, with the journal "
+              "unreadable, is said as that - not as a commit no member records: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and "journal could not be read" in txt
+              and "the trail is not readable here" in txt)
+        b_proj, b_mp, _b = gs_fixture("ga-bind-trail")
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", b_proj])
+        gs_gate(b_proj, b_mp, "P1", "P2")
+        run(["signoff", "P1,P2", "--branch", "combined", "--verdict", "passed",
+             "--summary", "s", "--project-dir", b_proj])
+        _b_rows = _journal_io.read_all(b_proj)
+        _b_bind = [r for r in _b_rows if r.get("action") == "phase.bind"]
+        _b_ptr = [r for r in _b_rows if r.get("action") == "phase.testEvidence"
+                  and (r.get("details") or {}).get("phaseId") == "P2"
+                  and (r.get("details") or {}).get("fromPhase") == "P1"]
+        check("ga7 --bind journals a phase.bind row per member, and the record "
+              "journals the copied pointer on P2 naming P1: %r / %r"
+              % ([(r.get("details") or {}).get("phaseId") for r in _b_bind],
+                 [r.get("summary") for r in _b_ptr]),
+              sorted((r.get("details") or {}).get("phaseId") for r in _b_bind)
+              == ["P1", "P2"] and len(_b_ptr) == 1)
 
         # ---- (sv) a close stores its bug's derived status; settle stores the rest
         # A linked bug derives `fixed` and its `fixedIn` from its fix task's close,

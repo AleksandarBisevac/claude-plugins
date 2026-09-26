@@ -973,7 +973,13 @@ def _tev_phase_marks(entry):
         return ""
     out = ""
     own = entry.get("own")
-    if own:
+    if own and own.get("gradedBy"):
+        # Another phase's run, and the label says whose before the badge does.
+        out += ('<span class="ptev" title="the run of the group gate %s carried, '
+                'which graded this phase too">sign-off (graded by %s\'s run) '
+                '%s%s</span>' % (e(own["gradedBy"]), e(own["gradedBy"]),
+                                 _tev_badge(own), _tev_marks(own)))
+    elif own:
         out += ('<span class="ptev" title="the run the gate this phase signs '
                 'off with last recorded">sign-off %s%s</span>'
                 % (_tev_badge(own), _tev_marks(own)))

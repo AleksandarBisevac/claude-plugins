@@ -5558,6 +5558,27 @@ def _group_cases(check):
                                "--json"])
         check("gg4 an --also member the plan does not carry is refused, not "
               "skipped: exit %r" % (code_u,), code_u == M.E_ASK)
+        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
+                       check=True)
+        with open(mpath) as fh:
+            _gg = json.load(fh)
+        _gg["meta"]["buildCommands"]["rw"] = "true"
+        with open(mpath, "w") as fh:
+            json.dump(_gg, fh)
+        reset()
+        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record",
+                "--no-reuse"], out=lambda *_a: None)
+        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
+               out=lambda *_a: None)
+        _gg_rows = sorted(_recorded_rows(os.path.join(root, "docs", "audit",
+                                                      "evidence")),
+                          key=lambda r: str(r.get("ts") or ""))
+        _gg_with = [r.get("groupWith") for r in _gg_rows]
+        check("gg5 a group run's ledger row names the members it owned, and a run "
+              "for the carrier alone names none - the row is where a member's "
+              "copied pointer is checked against: %r" % (_gg_with,),
+              len(_gg_rows) == 2 and _gg_rows[0].get("groupWith") == ["P2"]
+              and "groupWith" not in _gg_rows[1])
     finally:
         _harness.remove_tree(root)
 

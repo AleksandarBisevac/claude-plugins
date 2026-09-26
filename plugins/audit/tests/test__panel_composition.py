@@ -1106,6 +1106,11 @@ def _signoff_cases(check):
           % ({k: due.get(k) for k in ("status", "signoffDue", "signoffVerdict")},),
           due["status"] == "in_progress" and due["signoffDue"] is True
           and due["signoffVerdict"] is None)
+    reasoned = row(review={"status": "passed", "noEvidenceReason": "by hand"})
+    check("pc-sd0 a phase signed off with a recorded reason and no gate run carries "
+          "the reason, so the badge can say it: %r" % (reasoned.get("noEvidenceReason"),),
+          reasoned.get("noEvidenceReason") == "by hand"
+          and row().get("noEvidenceReason") is None)
     signed = row(review={"status": "passed"})
     check("pc-sd2 signed off with no branch, the row reads DONE, so the view files it "
           "with the closed phases and freezes its controls: %r" % (signed["status"],),

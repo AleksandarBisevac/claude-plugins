@@ -777,8 +777,62 @@ def _shipped_cases(check):
                  for t in _shipped_excused if t in shipped["tasks"]}) == 2)
 
 
+def _graded_cases(check):
+    """A group member carries the carrier's pointer, named `gradedBy`; the report
+    renders it as the carrier's run, never as the member's own. A phase signed off
+    with a recorded reason and no run says that reason where its badge would be."""
+    root = _harness.fixture_root("evidence-view-graded")
+    try:
+        plan = {"meta": {"version": 2, "title": "g", "repo": "r"}, "bugs": [],
+                "phases": [
+                    {"id": "P1", "title": "carrier", "status": "done",
+                     "testGate": ["make test"],
+                     "testEvidence": {"runId": "R-G", "status": "passed",
+                                      "at": "2026-08-01T10:00:00Z"}, "tasks": []},
+                    {"id": "P2", "title": "member", "status": "done",
+                     "testGate": ["make test"],
+                     "testEvidence": {"runId": "R-G", "status": "passed",
+                                      "at": "2026-08-01T10:00:00Z",
+                                      "gradedBy": "P1"}, "tasks": []},
+                    {"id": "P3", "title": "reasoned", "status": "done",
+                     "testGate": ["make test"],
+                     "review": {"status": "passed",
+                                "noEvidenceReason": "no runner on this host"},
+                     "tasks": []}]}
+        rows = [{"v": 1, "runId": "R-G", "ts": "2026-08-01T10:00:00Z",
+                 "scope": "phase", "phaseId": "P1", "status": "passed",
+                 "steps": [], "failed": [], "testedState": {},
+                 "observations": {}}]
+        path = _write_project(root, plan, rows)
+        ev = M.load_evidence(plan, path, project_dir=root)
+        own = lambda pid: ev["phases"][pid]["own"]  # noqa: E731
+        check("gv1 a member's copied pointer renders as the CARRIER's run - the "
+              "view names the carrier and its reason says so: %r"
+              % ({k: own("P2").get(k) for k in ("gradedBy", "why")},),
+              own("P2").get("gradedBy") == "P1"
+              and own("P2")["why"].startswith("graded by P1's run R-G"))
+        check("gv2 SECOND DIRECTION: the carrier's own pointer names no carrier",
+              own("P1").get("gradedBy") is None
+              and not own("P1")["why"].startswith("graded by"))
+        check("gv3 a phase signed off with a recorded reason and no run shows the "
+              "reason where the badge's basis goes: %r" % (own("P3").get("why"),),
+              "no runner on this host" in (own("P3").get("why") or ""))
+        marks = _report_html._tev_phase_marks(ev["phases"]["P2"])
+        check("gv4 the phase row's mark says whose run graded it, and the carrier's "
+              "row does not: %r" % (marks,),
+              "sign-off (graded by P1's run)" in marks.replace("&#x27;", "'")
+              .replace("&#39;", "'")
+              and "graded by" not in _report_html._tev_phase_marks(
+                  ev["phases"]["P1"]))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _graded_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

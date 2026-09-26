@@ -735,15 +735,18 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
         due = state.get("signoffDuePhase")
         note = ("" if not stale else
                 " (phase %s merged with no sign-off recorded - it no longer "
-                "counts as running; `/audit:phase signoff %s` records the "
-                "verdict that reads it done)" % (stale, stale))
+                "counts as running; run its gate with `run-test-gate.py --record` "
+                "(or pass --no-evidence-reason), then `/audit:phase signoff %s` "
+                "records the verdict that reads it done)" % (stale, stale))
         # A phase only awaiting sign-off is in_progress on the page and not running
         # by the gate's rule, so the line has to say which of the two it read -
         # "no phase is in_progress" would be false of the plan beside it.
         if due:
             head = ("warn - no phase has work in flight: phase %s (%s) only awaits "
                     "sign-off (every task terminal, no verdict recorded), which does "
-                    "not hold the gate - `/audit:phase signoff %s` records it"
+                    "not hold the gate - run its gate with `run-test-gate.py "
+                    "--record` (or pass --no-evidence-reason), then `/audit:phase "
+                    "signoff %s` records it"
                     % (due, state.get("signoffDueStatus"), due))
         else:
             head = "warn - a manifest exists but no phase is in_progress"

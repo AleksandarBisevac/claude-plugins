@@ -155,6 +155,7 @@ claude-plugins/                           # this repo (personal, public)
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
+          _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
@@ -336,6 +337,7 @@ L3:
   _panel_settings -> _config_rules, _output
   _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
   _usage_viz -> _fmt, _output, _report_html
+  _verdict_binding -> _evidence_io, _journal_io, _output, _tree_stamp
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L4:
@@ -374,14 +376,14 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _tree_stamp, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _tree_stamp
+  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
@@ -3544,6 +3546,23 @@ tree identity. The module holds `porcelain()`, `HEAD_BASIS`, `scope_digest()`, `
 `tested_state()` unchanged. An entry point reaching another entry point is the `KNOWN_LAYER_DEBT`
 shape that table exists to keep rare, which is why the shared half came down to L2 rather than the
 new command reaching up.
+
+### `plugins/audit/scripts/governance/_verdict_binding.py`
+Whether a recorded gate verdict binds the declared work as it stands now - one answer for the two
+writers that stand on one. `commit-task-work.py` commits a task's work only under a green run of
+the gate that measures it; `audit-task.py signoff` records a `passed` sign-off only under a green
+run of the phase's gate (a group's carrier, over every member's files). A second implementation
+of the rule in the sign-off verb had fewer arms than the task commit's: it graded a repeated
+verdict by the repeat's own empty stamp and refused it on an unchanged tree, compared a digest the
+recorder took with its own writes left out against one taken with them in, and accepted an
+`empty-gate` row under a gate that had since gained entries. So the rule moved here, at L3 - the
+first layer above `_evidence_io` (the ledger) and `_tree_stamp` (the digest), which are peers and
+cannot hold it. `binding()` takes the subject's ids, the gate entries that measure it and their
+source, its declared files and the caller's own sentences, and answers `bound`, `no-gate` or
+`refused` with a sentence naming the run: the newest row for the subject, never the plan's
+pointer; a repeat graded through `reusedFrom`; a gate changed after the run; a red nothing
+retired; an unparseable line that could be the subject's; the digest with the recorder's paths
+left out on both sides. Its cases are `plugins/audit/tests/test__verdict_binding.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.

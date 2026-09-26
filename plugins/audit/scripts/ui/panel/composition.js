@@ -890,8 +890,9 @@ function freezeControls(root,why){
  * @returns {string|null} the note, or null when there is nothing to explain
  */
 function phaseSignoffNote(ph){
- if(ph.signoffDue)return 'every task finished — sign-off due (/audit:review, then '
-   +'/audit:phase signoff '+ph.id+')';
+ if(ph.signoffDue)return 'every task finished — sign-off due (/audit:review, record '
+   +'the gate with --record or pass --no-evidence-reason, then /audit:phase signoff '
+   +ph.id+')';
  if(ph.signoffVerdict&&ph.status!=='done'&&ph.status!=='cancelled')
   return 'signed off ('+ph.signoffVerdict+') — done once '
    +(ph.branch||'its branch')+' merges';

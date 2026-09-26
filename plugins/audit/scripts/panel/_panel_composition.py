@@ -902,6 +902,9 @@ def _composition_view(manifest, boundary=None):
                            "signoffVerdict": (review.get("status")
                                               if _mio.signoff_recorded(ph) else None),
                            "branch": ph.get("branch"),
+                           # The operator's why for a `passed` sign-off no gate run
+                           # backs, so the evidence badge can say it.
+                           "noEvidenceReason": review.get("noEvidenceReason") or None,
                            "reviewModel": review.get("model"),
                            "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill"),
                            # Through `_priority.tier_of`, never off the raw field:

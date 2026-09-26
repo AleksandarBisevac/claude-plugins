@@ -144,6 +144,20 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None):
         pointer, row, configured,
         gap=_status_facts.evidence_gap(holder, scope, boundary),
         basis=(boundary or {}).get("basis"))
+    # A GROUP MEMBER'S POINTER IS ITS CARRIER'S RUN, and saying so is the whole
+    # difference between "graded" and "measured here": rendered bare it would
+    # claim a sign-off run for this phase that nobody made.
+    carrier = _status_facts.graded_by(holder)
+    if carrier and pointer:
+        view["gradedBy"] = carrier
+        view["why"] = "graded by %s's run %s - %s" % (carrier, pointer.get("runId"),
+                                                       view.get("why") or "")
+    # ...and a phase signed off with a recorded reason and no run says the reason
+    # where the badge's basis goes, rather than only that no run was recorded.
+    review = holder.get("review") if isinstance(holder.get("review"), dict) else {}
+    if scope == "phase" and not pointer and review.get("noEvidenceReason"):
+        view["why"] = "signed off with no gate run, and the reason recorded: %s. %s" % (
+            review["noEvidenceReason"], view.get("why") or "")
     subject = holder.get("id")
     if subject:
         current = str((row or {}).get("runId") or "")

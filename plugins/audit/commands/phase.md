@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] | settle'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] [--accept SHA --reason TEXT] | settle'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -433,12 +433,14 @@ operator's and the reviewer's words: pass them verbatim, or `-` to read them off
 `--verdict` is the reviewer's call and has no default. `skipped` is honest where no review ran -
 say so in `--summary` - and is never a way to sign off work nobody looked at as if it had passed.
 
-**`passed` needs the gate run it rests on.** The verb refuses `--verdict passed` unless the phase's
-`testEvidence` is `empty-gate`, or `passed` with a ledger row taken over the phase's declared files
-as they stand now — the run step 2 of `reference/phase-signoff.md` records — and prints the gate
-call that supplies it. Where no gate run can back the verdict, pass
-`--no-evidence-reason "<why>"`: it is the operator's words, recorded verbatim on
-`review.noEvidenceReason`. `skipped` needs neither.
+**`passed` needs the gate run it rests on.** The verb refuses `--verdict passed` unless the
+phase's newest recorded gate run binds its work — the rule a task commit is bound by, which grades
+a repeated verdict against the run it repeats and leaves the recorder's own writes out — and
+prints the gate call that supplies one. A phase whose gate declares no entry is bound to no run.
+Where no gate run can back the verdict, pass `--no-evidence-reason "<why>"`: it is the operator's
+words, recorded verbatim on `review.noEvidenceReason` and shown where the evidence badge's basis
+goes. It is not a run, so `--fail-on no-test-evidence` still names such a phase. `skipped` needs
+neither.
 
 ### A group of phases built on one branch — `signoff <P1,P2,...> --branch NAME`
 
@@ -461,13 +463,16 @@ the tasks' `commit`s**, which must be every commit the branch carries past its f
 journaled audit-state or index commit); **one gate run** over the union of the members'
 `testGate`, carried by the member whose gate holds all of it and owning every member's files
 (the gate's `--also`); **one invariants run**; the record, which needs that run to be
-current for `passed`; the commit, one `commit-audit-state.py` per member; and **one
+current for `passed`; the commit — sharded, one `commit-audit-state.py` per member and then the
+index; single-file, one; and **one
 `close-phase.py --branch` per phase** — every one but the last keeps the branch and its worktree,
 because the first landing merges the whole branch. It refuses — naming every reason — a member with
 open work or already signed off, a member recording another branch, members that resolve to
 different parents, a `--branch` that is that parent, a finished task with no `commit`, a commit
-the branch does not carry, a commit it carries that no member records, and a union no member's
-gate holds (`/audit:phase retarget` gives one member the missing entries).
+the branch does not carry (naming `repair-commits.py` for a rebase), a commit it carries that no
+member records and no merge of theirs explains — `--accept <sha> --reason "<why>"` takes one into
+the review, recorded on every member — and a union no member's gate holds (`/audit:phase
+retarget` gives one member the missing entries).
 
 ## Subcommand: `settle`
 
