@@ -131,6 +131,27 @@ def _cases(check):
                   _levels(rep, "locks") == ["WARNING"]
                   and "phase-P1" in _detail(rep, "locks")
                   and "index" not in _detail(rep, "locks"))
+
+            lock("user-e2e", 999999)
+            rep = base.Report()
+            M.check_locks(rep, tmp, tmp, mrel)
+            _advice = " ".join(str(r.get("fix") or r.get("remedy") or r.get("hint")
+                                   or "") for r in rep.rows
+                               if r["check"] == "locks")
+            _split = M.abandoned_advice(["phase-P1", "user-e2e"])
+            check("dh6b an abandoned USER lock is advised by its own namespace - "
+                  "no /audit command takes one over, so the advice names the "
+                  "owning tool's --takeover path and does not promise an /audit "
+                  "command will offer one: %r" % (_split,),
+                  "user-e2e: user tooling's" in _split
+                  and "--takeover" in _split.split("user-e2e:")[1]
+                  and "offer to take over" not in _split.split("user-e2e:")[1]
+                  and "phase-P1: a mutating /audit command" in _split
+                  and "user-e2e" in _detail(rep, "locks") + _advice)
+            check("dh6c ...and a plugin-only set is advised exactly as before, "
+                  "with no user-tooling clause invented",
+                  "user tooling" not in M.abandoned_advice(["index"])
+                  and "offer to take over" in M.abandoned_advice(["index"]))
             shutil.rmtree(ldir, ignore_errors=True)
 
             # --------------------------------------- check_local_artifacts

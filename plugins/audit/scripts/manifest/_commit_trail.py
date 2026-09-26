@@ -57,6 +57,19 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 
+def no_change_close(task):
+    """`outcome.noChange` when `task` was closed as `done --no-change`, else None.
+
+    THE ONE DONE TASK THAT OWES NO SHA: its answer was that nothing needed to
+    change, so nothing was committed and the block records why and the HEAD it
+    was examined at. Asked here because the verb that writes it and the doctor
+    that would otherwise warn about the missing SHA both need the same answer.
+    """
+    outcome = task.get("outcome") if isinstance(task, dict) else None
+    block = outcome.get("noChange") if isinstance(outcome, dict) else None
+    return block if isinstance(block, dict) else None
+
+
 def recorded(manifest):
     """`[(phaseId, taskId, sha)]` for every task that names a commit."""
     out = []

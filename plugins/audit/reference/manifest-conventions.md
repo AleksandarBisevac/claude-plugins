@@ -283,8 +283,12 @@ Rules:
 - **A dependency on another session is NOT a decision and gets no row.** It has no status
   anything here can settle, so naming one in `blockedBy` stays a validator finding rather
   than resolving to something that never clears — a dependency that cannot be cleared is
-  a row that lies about what the plan is waiting for. Say it in the task's `description`
-  and let a human move the task.
+  a row that lies about what the plan is waiting for. Set the task blocked with the
+  dependency as its reason — `/audit:task block <taskId> --reason "<what it waits on>"`,
+  which writes `status` and `blockedReason` together with a `task.block` row — and record
+  what changes with `/audit:task note <taskId> --text "..."`. Not the `description`: once
+  the task has started, `scope --description` refuses it, because the brief is what its
+  attempts were judged against.
 
 ## Task outputs (`task.outputs`)
 
@@ -321,11 +325,12 @@ Route new work to an open phase or create a new one.
 ## Moving a task (`/audit:task move`)
 
 `/audit:task move <taskId> --to <phaseId>` is the only sanctioned way to relocate a
-task. It allocates a fresh `<targetPhase>.<n>` id under the index lock (counting
-reserved proposal ids), writes `movedFrom: {id, phase, at}` on the task, rewrites every
-`blockedBy`/`dependsOn`/`fileIndex`/`bugs[].taskId` reference across the index and all
-shards, and appends a chained `task.move` journal row with
-`{fromId, toId, fromPhase, toPhase}`. A hand-drag keeps the old id, which the validator
+task, and it is a script call (`audit-task.py move`), not a hand procedure. It allocates a
+fresh `<targetPhase>.<n>` id under the index lock with the allocator `next-id task` prints
+(counting reserved proposal ids), writes `movedFrom: {id, phase, at}` on the task, rewrites
+every `blockedBy`/`dependsOn`/`fileIndex`/`bugs[].taskId` reference across the index, all
+shards and the parked proposals, revalidates (rolling back on findings), and appends a
+chained `task.move` journal row with `{fromId, toId, fromPhase, toPhase}`. A hand-drag keeps the old id, which the validator
 flags (`id does not follow its phase's prefix` — a warning, never a finding).
 
 **Ledger attribution:** historical usage-ledger rows keep the OLD taskId — history is
@@ -387,6 +392,11 @@ The journal's **completion-record actions**:
   work item (details: taskId?, phaseId, adoId). `lastSyncedAt` bumps deliberately
   draw NO row — the plan did not move (see tracker-sync.md → Journal)
 - `task.move` — a task was renumbered into another phase (details: fromId, toId, fromPhase, toPhase)
+- `task.block` — `audit-task.py block` set a task blocked with its reason (details: taskId,
+  phaseId, reason, changes). It is the verb's own row, the way `task.done` sits beside
+  `task.complete`: the hook derives `task.blocked` from a status an edit tool moved
+- `task.note` — `audit-task.py note` appended one `{at, text}` entry to a task's `notes[]`
+  (details: taskId, phaseId, changes)
 - `task.reopen` — `audit-task.py reopen` put a done task back to pending (details: taskId, phaseId,
   reason, changes - the task's cleared close and any linked bug moved back to `in_progress`)
 - `plan.settle` — `audit-task.py settle` stored the derived values a plan carried stale (details:
@@ -426,7 +436,8 @@ derived, and an old, unrelated completion of the same task is a different record
 by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot tell one sign-off
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
-`task.move` is written by `/audit:task move` via the journal CLI. The evidence actions are
+`task.move`, `task.block` and `task.note` are written **in process** by `audit-task.py`, the
+same way its `task.done`, `task.reopen` and `plan.settle` rows are. The evidence actions are
 written **in process** by `_evidence_io` and `commit-audit-state.py`, because the hook sees edit
 *tools* and those writers use `os.replace` and `git commit` — the same blindness `audit-task.py`
 already works around.

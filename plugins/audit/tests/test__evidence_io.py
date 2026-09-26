@@ -1155,6 +1155,58 @@ def _cases(check):
               again["moved"] == []
               and sorted(again["already"]) == ["phase P1", "task P1.1"])
 
+        # A MOVED TASK'S RUNS STILL JOIN. The ledger keeps the subject a run was
+        # recorded under, and `move` gives the task a new id - so a reader keyed on
+        # the id alone sees a subject the plan no longer has, and a reconcile
+        # would aim at it. The plan's `movedFrom` chain is the map.
+        _mv_plan = {"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.2", "movedFrom": {"id": "P1.1", "phase": "P1",
+                                         "previous": {"id": "P0.9", "phase": "P0"}}}]}]}
+        _mv_alias = M.subject_aliases(_mv_plan)
+        _mv_best = M.latest_by_subject(
+            [{"runId": "RO", "ts": "2026-08-26T09:00:00Z", "scope": "task",
+              "taskId": "P0.9"},
+             {"runId": "RM", "ts": "2026-08-26T10:00:00Z", "scope": "task",
+              "taskId": "P1.1"}], aliases=_mv_alias)
+        check("mvr1 `subject_aliases` maps every id a task was moved FROM onto the id "
+              "it holds now, and `latest_by_subject` keys the runs through it - the "
+              "newest of all of them, under the live id: %r"
+              % ((_mv_alias, dict((k, v["runId"]) for k, v in _mv_best.items())),),
+              _mv_alias == {("task", "P1.1"): ("task", "P1.2"),
+                            ("task", "P0.9"): ("task", "P1.2")}
+              and dict((k, v["runId"]) for k, v in _mv_best.items())
+              == {("task", "P1.2"): "RM"})
+        _mv_bad = {"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1"},
+            {"id": "P1.2", "movedFrom": {"id": "P1.1", "phase": "P1"}},
+            {"id": "P1.3", "movedFrom": {"id": "P0.5", "phase": "P0"}},
+            {"id": "P1.4", "movedFrom": {"id": "P0.5", "phase": "P0"}},
+            {"id": "P1.5", "movedFrom": {"id": "P0.6", "phase": "P0"}}]}]}
+        _mv_bad_alias = M.subject_aliases(_mv_bad)
+        check("mvr3 an old id a LIVE task holds is never aliased away from it, and "
+              "one two chains both claim is aliased to neither - only the clean "
+              "link is kept: %r" % (_mv_bad_alias,),
+              _mv_bad_alias == {("task", "P0.6"): ("task", "P1.5")})
+        mvproj, mvpath = _manifest_project("recon-moved")
+        with open(os.path.join(mvproj, "docs", "audit", "phases", "P1.json"),
+                  "w") as fh:
+            _json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                        "testGate": [], "tasks": [
+                            {"id": "P1.2", "title": "t", "status": "blocked",
+                             "movedFrom": {"id": "P2.1", "phase": "P2",
+                                           "at": "2026-08-26T11:00:00Z"}}]}, fh)
+        M.append_row(mvproj, {"v": 1, "runId": "RM", "ts": "2026-08-26T10:00:00Z",
+                              "scope": "task", "taskId": "P2.1", "phaseId": "P2",
+                              "status": "failed", "steps": []})
+        mvrep = M.reconcile(mvproj, mvpath)
+        mvbody = _json.loads(io.open(os.path.join(mvproj, "docs", "audit", "phases",
+                                                  "P1.json"), encoding="utf-8").read())
+        check("mvr2 reconcile points a MOVED task at the runs recorded under its old "
+              "id, in the phase it lives in now - not at an id the plan no longer "
+              "has: %r" % ((mvrep["moved"], mvrep["refused"]),),
+              mvrep["moved"] == ["task P1.2 -> RM"] and mvrep["refused"] == []
+              and mvbody["tasks"][0].get("testEvidence", {}).get("runId") == "RM")
+
         orphan = _manifest_project("orphan")[0]
         M.append_row(orphan, {"v": 1, "runId": "RX", "ts": "2026-08-26T09:00:00Z",
                               "scope": "task", "status": "passed", "steps": []})
@@ -1767,6 +1819,81 @@ def _cases(check):
           "claim as a run that cost nothing",
           M.gate_cost_ms([{"steps": [{"name": "lint", "exit": 0}]}], "lint")
           is None)
+
+    _worktree_ledger_cases(check)
+
+
+def _worktree_ledger_cases(check):
+    """(ew) THE LEDGER'S WRITER IS THE SESSION AND THE WORKTREE, like the trail's.
+
+    The evidence file was named by session alone, so a session appending runs in
+    two linked worktrees wrote one basename in both branches, and merging them met
+    a conflict `audit-journal merge` cannot resolve - it reads the journal
+    directory only. Measured merging main into a phase branch."""
+    import _invariants
+    ok, pair = _harness.attempt(_harness.worktree_pair, "evidence-io-wt-")
+    if not ok:
+        check("ew0 the worktree fixture builds (%s)" % (pair,), False)
+        return
+    main, wt_a = pair["main"], pair["wt"]
+    wt_b = os.path.join(pair["root"], "main-B")
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false"]
+
+    def run_git(cwd, *argv):
+        return subprocess.run(git + list(argv), cwd=cwd, capture_output=True,
+                              text=True, timeout=30)
+    run_git(main, "worktree", "add", "-q", wt_b, "-b", "chore/b")
+    sid = "dddddddd-0000-4000-8000-00000000000d"
+
+    def run(run_id, task):
+        return {"v": 1, "runId": run_id, "ts": "2026-09-25T10:00:00Z",
+                "scope": "task", "taskId": task, "phaseId": task.split(".")[0],
+                "status": "passed", "steps": [], "failed": [],
+                M.REUSE_KEY: "key-" + task}
+    in_a = M.append_row(wt_a, run("run-a", "P48.1"), session_id=sid)
+    in_b = M.append_row(wt_b, run("run-b", "P41.1"), session_id=sid)
+    in_m = M.append_row(main, run("run-m", "P41.1"), session_id=sid)
+    check("ew1 two linked worktrees driven by ONE session append their runs to "
+          "two different ledger files",
+          os.path.basename(in_a) != os.path.basename(in_b),
+          repr((in_a, in_b)))
+    check("ew2 ...and the main checkout keeps the session-keyed name",
+          os.path.basename(in_m) == "2026-09.%s.jsonl"
+          % _journal_io.writer_id({"sessionId": sid}), repr(in_m))
+    ev_rel = os.path.relpath(M.evidence_dir(main), main).replace(os.sep, "/")
+    for tree, msg in ((wt_a, "a"), (wt_b, "b"), (main, "m")):
+        run_git(tree, "add", "-A", ev_rel)
+        run_git(tree, "commit", "-qm", msg)
+    merges = [run_git(main, "merge", "--no-edit", "-q", br)
+              for br in ("chore/p48", "chore/b")]
+    check("ew3 merging both worktree branches into main raises no evidence "
+          "conflict", all(m.returncode == 0 for m in merges),
+          repr([(m.returncode, m.stdout[-200:]) for m in merges]))
+    read = M.read_rows(main)
+    check("ew4 every name is read: read_rows walks all three files, and the "
+          "merged ledger verifies",
+          read["files"] == 3 and sorted(r["runId"] for r in read["rows"])
+          == ["run-a", "run-b", "run-m"] and M.verify(main)["ok"],
+          repr((read["files"], M.verify(main).get("findings"))))
+    check("ew5 the reuse lookup finds a run recorded in a worktree-keyed file, "
+          "by its task", (M.reusable_run(read["rows"], "task", {"taskId": "P48.1",
+                          "phaseId": "P48"}, "key-P48.1", ("passed",))
+                          or {}).get("runId") == "run-a")
+    shared_cfg = dict(_journal_io.load_config(wt_a),
+                      stateDir=os.path.join(pair["root"], "one-shared-state"))
+    sa = M.append_row(wt_a, run("run-sa", "P48.1"), session_id="s" + sid[1:],
+                      config=shared_cfg)
+    sb = M.append_row(wt_b, run("run-sb", "P41.1"), session_id="s" + sid[1:],
+                      config=dict(shared_cfg))
+    check("ew7 two worktrees sharing ONE absolute stateDir still write two "
+          "ledger files - the key lives in each worktree's own git dir",
+          os.path.basename(sa) != os.path.basename(sb), repr((sa, sb)))
+    committed, gaps = _invariants._committed_run_ids(main, ev_rel)
+    check("ew6 ...and evidence-committed reads the committed worktree-keyed "
+          "files as it reads the old one", not gaps
+          and {"run-a", "run-b", "run-m"} <= set(committed),
+          repr((sorted(committed), gaps)))
 
 
 def _selftest():

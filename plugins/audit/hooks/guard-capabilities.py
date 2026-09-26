@@ -153,19 +153,26 @@ def decide(data, *, cfg=None, active=None):
                                        data.get("tool_input") or {})
     if not kind:
         return ("allow", "not a governed tool")
-    root = _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    # The POLICY is the project's config; the AREAS that are live come from the
+    # plan of the tree the session is standing in. A session in a linked
+    # worktree running the `api` phase was held to whatever the main checkout
+    # ran, so that area's rules never applied where its work was being done.
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg)
+    cfg = home["cfg"]
     policy = pol_mod.policy_cfg(cfg)
     if not pol_mod.is_active(policy):
         return ("allow", "policy is inert")
-    _mark_seen(root, cfg)
+    _mark_seen(home["project"], cfg)
     if active is None:
         # Only when an area rule could possibly change the answer. Reading the
-        # manifest is the expensive half of this hook, and most policies are
-        # project-wide.
-        active = (_config.active_area_tags(
-            root, cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"])
-            if _has_area_rules(policy, kind) else [])
+        # manifest - and asking git which tree the session stands in - is the
+        # expensive half of this hook, and most policies are project-wide.
+        active = []
+        if _has_area_rules(policy, kind):
+            tree = _config.tree_for(data, None, cfg, project=home["project"])
+            active = _config.active_area_tags(
+                tree["root"],
+                cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"])
     verdict = pol_mod.resolve(policy, kind, name, active_tags=active)
     if verdict.get("verdict") != "violation":
         return ("allow", verdict.get("basis") or "allowed")

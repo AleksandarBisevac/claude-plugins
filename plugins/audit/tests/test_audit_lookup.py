@@ -177,6 +177,24 @@ def _cases(check):
           and payload["lastStatus"] == "cancelled"
           and payload["declaringTasks"] == ["P1.1", "P1.2"])
 
+    # A RANGED DECLARATION: `add`/`scope` key the row by the PATH, so a lookup of
+    # the entry as the task spells it must find that row, not report it absent.
+    _rg = _manifest()
+    _rg["phases"][0]["tasks"].append({"id": "P1.4", "status": "pending",
+                                      "files": ["src/q.ts:10-20"]})
+    _rg["fileIndex"]["src/q.ts"] = ["P1.4"]
+    found, payload = M.file_lookup(_rg, "src/q.ts:10-20")
+    found_b, brief = M.brief_lookup(_rg, "P1.4")
+    check("al40 a `:line-range` entry is looked up by its PATH - the key the gate, "
+          "the validator and the writers use - and keeps the entry as typed in "
+          "the answer: %r" % ((payload, brief),),
+          found is True and payload["last"] == "P1.4"
+          and payload["path"] == "src/q.ts:10-20" and found_b is True
+          and brief["files"][0]["last"] == "P1.4")
+    found, msg = M.file_lookup(_rg, "src/q")
+    check("al41 SECOND DIRECTION: the match is still exact on the path - a prefix "
+          "of the key is a miss: %r" % (msg,), found is False)
+
     # --- brief --------------------------------------------------------------
     # The one thing a spawn prompt is missing: `task.files` is already handed
     # to an executor, but who last declared each of those paths is not - and

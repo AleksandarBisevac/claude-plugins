@@ -458,6 +458,25 @@ def evidence_status(holder):
     return status if isinstance(status, str) and status else None
 
 
+def intent_unanswered(phase):
+    """The ids of `phase`'s DONE tasks whose `intentCheck` carries no answer.
+
+    ABSENCE IS THE SUBJECT, and it is not a verdict: the schema reads a missing
+    block as "no answer recorded", never as agreement, and until something read
+    it that absence was invisible on every surface a phase is judged from. A
+    deliberate `not-asked` IS an answer - it carries its basis - so it is not
+    listed; a cancelled task never reached the question. One home for the
+    predicate because sign-off and `/audit:status` both print it, and two
+    readings of "no answer" would be two answers about the same task.
+    """
+    if not isinstance(phase, dict):
+        return []
+    return [str(t.get("id")) for t in (phase.get("tasks") or [])
+            if isinstance(t, dict) and t.get("status") == "done"
+            and not (isinstance(t.get("intentCheck"), dict)
+                     and t["intentCheck"].get("answer"))]
+
+
 # --- the evidence boundary --------------------------------------------------------
 # WHAT THE CONDITION COULD NOT ASK. `no-test-evidence` asks whether finished work
 # is backed by a recorded run, and never whether it COULD have been. For a plan

@@ -3369,16 +3369,15 @@ def _cases(check):
         _eb_at = dict((_marker, [i for i, _l in enumerate(_eb_lines)
                                  if _marker in _l])
                       for _marker in ("<<'BRIEF'", "Seen at:",
-                                      "COMMAND SUBSTITUTION",
-                                      "Refused rather than written"))
+                                      "COMMAND SUBSTITUTION"))
         check("eb2b ...and it says it in THAT order: the heredoc the reader "
-              "retypes first, then each reason in one sentence. Before this the "
-              "same facts arrived with two paragraphs of argument in front of "
-              "the three lines that are the repair: %r" % (_eb_at,),
+              "retypes first, then the marked span, then one line of cause. "
+              "Before this the same facts arrived with two paragraphs of "
+              "argument in front of the three lines that are the repair: %r"
+              % (_eb_at,),
               all(_hits for _hits in _eb_at.values())
               and _eb_at["<<'BRIEF'"][0] < _eb_at["Seen at:"][0]
-              < _eb_at["COMMAND SUBSTITUTION"][0]
-              < _eb_at["Refused rather than written"][0])
+              < _eb_at["COMMAND SUBSTITUTION"][0])
         # SECOND-DIRECTION CASE, and the one that decides whether this can ship:
         # an ordinary sentence with a comma in it is most of the corpus.
         code, txt = run(["add", "Ordinary brief", "--phase", "P2",
@@ -3480,7 +3479,10 @@ def _cases(check):
         # of a backtick span being eaten. There were no backticks: the check
         # tests `_GAP_SHAPES` and none of them is one.
         gm_brief = "foo() ? (a ? 280 : 70) : 0"
-        gm_what, gm_excerpt, gm_rs, gm_re = M.shell_eaten_gap(gm_brief)
+        # A MISS IS A FAILED CASE, not a raise: unpacking None would stop the
+        # suite here and every case after this line would go unrun.
+        gm_what, gm_excerpt, gm_rs, gm_re = (M.shell_eaten_gap(gm_brief)
+                                             or (None, "", 0, 0))
         check("gm0 fixture check: the ternary matches the space-before-a-mark "
               "shape on exactly the space+colon after `280`, and the excerpt "
               "is the whole short brief -- so the assertions below are "
@@ -3523,8 +3525,8 @@ def _cases(check):
               "here, with no shell and no backtick anywhere in the call: %r"
               % (gm_txt[-460:],),
               "COMMAND SUBSTITUTION" in gm_txt
-              and "cannot tell that apart from code quoted straight into "
-                  "the brief" in gm_txt
+              and "cannot tell COMMAND SUBSTITUTION of a backtick span from "
+                  "code quoted straight into the brief" in gm_txt
               and "`" not in gm_brief)
         # SECOND-DIRECTION CASE, and the one that decides whether this reads
         # as a repair rather than a rewording: the OLD sentence asserted the
@@ -3788,10 +3790,14 @@ def _cases(check):
               "`done`, and they are the same argument as `--reason`: both halves "
               "of a task's `outcome` are the operator's own sentence, one "
               "rendered by every report surface and one quoted back to the next "
-              "executor: %r" % (sorted(M.PROSE_FLAGS),),
+              "executor. `--intent-basis` and a note's `--text` are the same "
+              "again, and `move --to` is an id, which is why it is not: %r"
+              % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
-              == ["description", "descriptive", "outcome", "reason", "rename",
-                  "review_outcome", "summary", "technical"]
+              == ["description", "descriptive", "intent_basis", "outcome",
+                  "reason", "rename", "review_outcome", "summary", "technical",
+                  "text"]
+              and "to" not in M.PROSE_FLAGS
               and "gate" not in M.PROSE_FLAGS
               and "commit" not in M.PROSE_FLAGS
               and "verified_by" not in M.PROSE_FLAGS
@@ -3907,7 +3913,12 @@ def _cases(check):
                    "settle": ["settle"],
                    # `reopen` on the done task the fixture carries, in its open
                    # phase, with the one flag it requires.
-                   "reopen": ["reopen", "P2.1", "--reason", "r"]}
+                   "reopen": ["reopen", "P2.1", "--reason", "r"],
+                   # `move`, `block` and `note` each on the pending task the
+                   # fixture carries, with the one flag each requires.
+                   "move": ["move", "P2.3", "--to", "P3"],
+                   "block": ["block", "P2.3", "--reason", "r"],
+                   "note": ["note", "P2.3", "--text", "t"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -3987,6 +3998,23 @@ def _cases(check):
         _vf_ok["reopen/--reason"] = run(
             ["reopen", "P2.1", "--reason", "r", "--json",
              "--project-dir", _vf_reopen_proj])[0]
+        # `move`, `block` and `note` each against a project of their own, since
+        # each changes the task the next would act on.
+        for _vfargv, _vfwhat in (
+                (["move", "P2.3", "--to", "P3", "--json"], "move/--to"),
+                (["block", "P2.3", "--reason", "r", "--json"], "block/--reason"),
+                (["note", "P2.3", "--text", "t", "--json"], "note/--text")):
+            _vf_own_proj, _vf_own_mp = mk("vf-%s" % _vfargv[0], base_manifest())
+            _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", _vf_own_proj])[0]
+        # `done`'s no-change close reads `--no-change` and `--reason`, the half of
+        # its row the close with a commit above does not reach.
+        _vf_nc = base_manifest()
+        _vf_nc["phases"][1]["tasks"][1].update(status="in_progress", attempts=1)
+        _vf_nc_proj, _vf_nc_mp = mk("vf-nochange", _vf_nc)
+        _vf_ok["done/--no-change"] = run(
+            ["done", "P2.3", "--no-change", "--reason", "nothing to change",
+             "--intent", "not-asked", "--intent-basis", "no diff to review",
+             "--json", "--project-dir", _vf_nc_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -5539,6 +5567,11 @@ def _cases(check):
             ("settle", ["settle"]),
             # `reopen` on the task `done` above just closed, in its open phase.
             ("reopen", ["reopen", "P2.3", "--reason", "r"]),
+            # ...then a note on it, a block of it, and a move of the blocked task
+            # into the phase `add-phase` above created - P3 is cancelled by now.
+            ("note", ["note", "P2.3", "--text", "t"]),
+            ("block", ["block", "P2.3", "--reason", "r"]),
+            ("move", ["move", "P2.3", "--to", "P4"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -6282,6 +6315,736 @@ def _cases(check):
               code == 0 and head_of(projh) == want and h_shard.get("branch") == want
               and h_shard.get("baseRef") == h_sha
               and "branch" not in h_stub and "baseRef" not in h_stub)
+        # ---- (ia) an intent question deliberately not asked, and its reader ---
+        # `--intent` took three words, every one of them a reviewer's answer, so a
+        # close whose reviewer was skipped ON PURPOSE (a two-string edit) had no
+        # spelling: omitting the flag records the same absence as a reviewer call
+        # that died, and those are opposite facts. `not-asked` is the fourth word,
+        # and it carries its reason or it is refused.
+        projia, mpia = mk("ia-not-asked", pd_fixture())
+        code, txt = run(["done", "P2.4", "--commit", _PD_SHA, "--intent", "not-asked",
+                         "--intent-basis", "two-string copy edit, reviewer not spawned",
+                         "--project-dir", projia])
+        _ia_t = task_in(mpia, "P2.4") or {}
+        check("ia1 `--intent not-asked --intent-basis TEXT` records a deliberate "
+              "no-question as its own answer, the basis verbatim beside the SHA: %s"
+              % (txt,),
+              code == 0 and (_ia_t.get("intentCheck") or {}).get("answer") == "not-asked"
+              and (_ia_t.get("intentCheck") or {}).get("basis")
+              == "two-string copy edit, reviewer not spawned"
+              and (_ia_t.get("intentCheck") or {}).get("commit") == _PD_SHA)
+        projia2, mpia2 = mk("ia-no-basis", pd_fixture())
+        with open(mpia2, "rb") as _fh:
+            _ia_before = _fh.read()
+        _ia_nob = run(["done", "P2.4", "--commit", _PD_SHA, "--intent", "not-asked",
+                       "--project-dir", projia2])
+        _ia_orphan = run(["done", "P2.4", "--commit", _PD_SHA,
+                          "--intent-basis", "a reason with no answer",
+                          "--project-dir", projia2])
+        with open(mpia2, "rb") as _fh:
+            _ia_after = _fh.read()
+        check("ia2 `not-asked` with no basis is refused, and so is a basis with no "
+              "answer beside it - a skip nobody can explain reads exactly like a "
+              "reviewer call that never came back; nothing written: %r"
+              % ((_ia_nob[0], _ia_orphan[0], _ia_nob[1][:100]),),
+              _ia_nob[0] == 2 and "--intent-basis" in _ia_nob[1]
+              and _ia_orphan[0] == 2 and "--intent" in _ia_orphan[1]
+              and _ia_after == _ia_before)
+        # THE READER. Nothing read `intentCheck` at all, so an absent answer was
+        # invisible everywhere a phase is judged. Sign-off is where the answer is
+        # owed, so it names the done tasks carrying none - and a deliberate
+        # `not-asked` IS an answer, which is the second direction.
+        iasign = base_manifest()
+        iasign["phases"][1]["tasks"][1].update(status="done", commit=_PD_SHA)
+        iasign["phases"][1]["tasks"].append(
+            {"id": "P2.5", "title": "skipped on purpose", "status": "done",
+             "commit": _PD_SHA,
+             "intentCheck": {"answer": "not-asked", "basis": "copy edit",
+                             "commit": _PD_SHA}})
+        projis, _mpis = mk("ia-signoff", iasign)
+        code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", projis])
+        _ia_line = [ln for ln in txt.splitlines() if "no intent answer" in ln]
+        check("ia3 sign-off NAMES the done tasks with no intent answer, and leaves "
+              "out the one whose answer is a deliberate not-asked: %r" % (_ia_line,),
+              code == 0 and len(_ia_line) == 1 and "P2.1" in _ia_line[0]
+              and "P2.3" in _ia_line[0] and "P2.5" not in _ia_line[0])
+        projis2, _mpis2 = mk("ia-signoff-json", iasign)
+        code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--json", "--project-dir", projis2])
+        try:
+            _ia_js = json.loads(txt)
+        except ValueError:
+            _ia_js = {}
+        check("ia4 ...and `--json` carries the same list as data: %r"
+              % (_ia_js.get("intentUnanswered"),),
+              code == 0 and _ia_js.get("intentUnanswered") == ["P2.1", "P2.3"])
+        iaall = base_manifest()
+        iaall["phases"][1]["tasks"] = [
+            {"id": "P2.1", "title": "a", "status": "done", "commit": _PD_SHA,
+             "files": ["src/a.ts"],
+             "intentCheck": {"answer": "matches", "commit": _PD_SHA}}]
+        projia3, _mpia3 = mk("ia-signoff-answered", iaall)
+        code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", projia3])
+        check("ia5 SECOND DIRECTION: a phase whose every done task carries an answer "
+              "prints no such line - the one an always-on list would fail: %s" % (txt,),
+              code == 0 and "no intent answer" not in txt)
+        with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                               "audit-plan.schema.json"), encoding="utf-8") as _fh:
+            _ia_enum = (json.load(_fh)["$defs"]["intentCheck"]["properties"]
+                        ["answer"]["enum"])
+        _ia_choices = [a.choices for a in M.build_parser()._actions
+                       if a.dest == "intent"]
+        check("ia6 the words `--intent` accepts are the schema enum's, in its order - "
+              "a word the parser took and the schema does not list is a value the "
+              "schema calls invalid, and one the schema lists and the parser does "
+              "not is an answer nobody can record: %r" % ((_ia_choices, _ia_enum),),
+              _ia_choices == [list(M.INTENT_ANSWERS)]
+              and list(M.INTENT_ANSWERS) == _ia_enum)
+
+        # ---- (nc) a close that changed nothing, on purpose -----------------------
+        # `done` demanded a SHA, so a task whose correct answer was "nothing needs
+        # to change" had two exits and both were wrong: `cancel` (it WAS done) or a
+        # fabricated commit. `--no-change --reason` closes it with the reason and
+        # the HEAD it examined, and no commit - which is what it really has.
+        projnc, mpnc, headnc = pd_repo("nc-close", pd_fixture())
+        code, txt = run(["done", "P2.4", "--no-change",
+                         "--reason", "backend-only, nothing to edit here",
+                         "--project-dir", projnc])
+        _nc_t = task_in(mpnc, "P2.4") or {}
+        _nc_rows = [r for r in _journal_io.read_all(projnc)
+                    if r.get("action") == "task.done"]
+        check("nc1 `done --no-change --reason` closes a started task with no commit, "
+              "recording outcome.noChange {reason, examinedAt: HEAD} and leaving the "
+              "outcome half nobody named standing: %s" % (txt,),
+              code == 0 and _nc_t.get("status") == "done"
+              and _nc_t.get("commit") is None
+              and (_nc_t.get("outcome") or {}).get("noChange")
+              == {"reason": "backend-only, nothing to edit here",
+                  "examinedAt": headnc}
+              and (_nc_t.get("outcome") or {}).get("technical")
+              == "attempt 1: gate red on t_checkout"
+              and len(_nc_rows) == 1
+              and (_nc_rows[0].get("details") or {}).get("reason")
+              == "backend-only, nothing to edit here")
+        projnc2, mpnc2 = mk("nc-refusals", pd_fixture())
+        with open(mpnc2, "rb") as _fh:
+            _nc_before = _fh.read()
+        _nc_noreason = run(["done", "P2.4", "--no-change", "--project-dir", projnc2])
+        _nc_both = run(["done", "P2.4", "--no-change", "--reason", "r",
+                        "--commit", _PD_SHA, "--project-dir", projnc2])
+        _nc_stray = run(["done", "P2.4", "--commit", _PD_SHA, "--reason", "r",
+                         "--project-dir", projnc2])
+        with open(mpnc2, "rb") as _fh:
+            _nc_after = _fh.read()
+        check("nc2 `--no-change` with no reason, `--no-change` beside a commit, and a "
+              "`--reason` on a close that is not a no-change close are each refused, "
+              "and nothing is written: %r"
+              % ((_nc_noreason[0], _nc_both[0], _nc_stray[0]),),
+              _nc_noreason[0] == 2 and "--reason" in _nc_noreason[1]
+              and _nc_both[0] == 2 and "--no-change" in _nc_both[1]
+              and _nc_stray[0] == 2 and "--no-change" in _nc_stray[1]
+              and _nc_after == _nc_before)
+        projnc3, mpnc3 = mk("nc-nogit", pd_fixture())
+        code, txt = run(["done", "P2.4", "--no-change", "--reason", "nothing to do",
+                         "--project-dir", projnc3])
+        _nc3 = ((task_in(mpnc3, "P2.4") or {}).get("outcome") or {}).get("noChange")
+        check("nc3 with no git to ask, the close is written with examinedAt null and "
+              "the output SAYS the examined commit was not recorded: %s" % (txt,),
+              code == 0 and isinstance(_nc3, dict) and _nc3.get("examinedAt") is None
+              and "examinedAt: NOT RECORDED" in txt)
+        ncpend = base_manifest()
+        projnc4, _mpnc4 = mk("nc-unstarted", ncpend)
+        code, txt = run(["done", "P2.3", "--no-change", "--reason", "r",
+                         "--project-dir", projnc4])
+        check("nc4 a task that was never started is still refused: a no-change close "
+              "claims the task was LOOKED AT, and nothing records that it was: %s"
+              % (txt,), code == 2 and "start" in txt)
+
+        # ---- (bk) a task set blocked, with the reason it is waiting --------------
+        projbk, mpbk = mk("bk-block", base_manifest())
+        code, txt = run(["block", "P2.3", "--reason", "waiting on the BE endpoint",
+                         "--project-dir", projbk])
+        _bk_t = task_in(mpbk, "P2.3") or {}
+        _bk_rows = [r for r in _journal_io.read_all(projbk)
+                    if r.get("action") == "task.block"]
+        check("bk1 `block <id> --reason` sets status blocked, keeps the reason in "
+              "blockedReason and writes one task.block row carrying it: %s" % (txt,),
+              code == 0 and _bk_t.get("status") == "blocked"
+              and _bk_t.get("blockedReason") == "waiting on the BE endpoint"
+              and len(_bk_rows) == 1
+              and (_bk_rows[0].get("details") or {}).get("reason")
+              == "waiting on the BE endpoint")
+        with open(mpbk, "rb") as _fh:
+            _bk_before = _fh.read()
+        _bk_noreason = run(["block", "P2.1", "--project-dir", projbk])
+        _bk_done = run(["block", "P2.1", "--reason", "r", "--project-dir", projbk])
+        _bk_phase = run(["block", "P2", "--reason", "r", "--project-dir", projbk])
+        _bk_again = run(["block", "P2.3", "--reason", "r2", "--project-dir", projbk])
+        with open(mpbk, "rb") as _fh:
+            _bk_after = _fh.read()
+        check("bk2 no reason, a done task, a phase id and an already-blocked task "
+              "are each refused and nothing is written: %r"
+              % ([_bk_noreason[0], _bk_done[0], _bk_phase[0], _bk_again[0]],),
+              [_bk_noreason[0], _bk_done[0], _bk_phase[0], _bk_again[0]]
+              == [2, 2, 2, 2] and "already blocked" in _bk_again[1]
+              and _bk_after == _bk_before)
+        code, txt = run(["start", "P2.3", "--project-dir", projbk])
+        _bk_s = task_in(mpbk, "P2.3") or {}
+        _bk_start = [c for r in _journal_io.read_all(projbk)
+                     if r.get("action") == "task.start"
+                     for c in ((r.get("details") or {}).get("changes") or [])
+                     if c.get("field") == "blockedReason"]
+        check("bk3 starting the blocked task clears the reason it was blocked for - "
+              "a running task carrying a stale blockedReason reads as still "
+              "waiting - and the task.start row says what it cleared: %r"
+              % (_bk_start,),
+              code == 0 and _bk_s.get("status") == "in_progress"
+              and "blockedReason" not in _bk_s
+              and [(c.get("from"), c.get("to")) for c in _bk_start]
+              == [("waiting on the BE endpoint", None)])
+
+        # ---- (nt) an append-only note ----------------------------------------------
+        projnt, mpnt = mk("nt-note", pd_fixture())
+        code1, txt1 = run(["note", "P2.4", "--text", "BE replied: endpoint ships Friday",
+                           "--project-dir", projnt])
+        code2, txt2 = run(["note", "P2.4", "--text", "Friday slipped to Monday",
+                           "--project-dir", projnt])
+        _nt_t = task_in(mpnt, "P2.4") or {}
+        _nt_notes = _nt_t.get("notes") or []
+        _nt_rows = [r for r in _journal_io.read_all(projnt)
+                    if r.get("action") == "task.note"]
+        check("nt1 `note` APPENDS {at, text} to a STARTED task - the task `scope "
+              "--description` refuses - leaving the earlier note and the "
+              "description as they were, one task.note row per call: %r"
+              % (_nt_notes,),
+              code1 == 0 and code2 == 0
+              and [n.get("text") for n in _nt_notes]
+              == ["BE replied: endpoint ships Friday", "Friday slipped to Monday"]
+              and all(isinstance(n.get("at"), str) for n in _nt_notes)
+              and _nt_t.get("description") == "" and len(_nt_rows) == 2)
+        with open(mpnt, "rb") as _fh:
+            _nt_before = _fh.read()
+        _nt_empty = run(["note", "P2.4", "--text", "", "--project-dir", projnt])
+        _nt_phase = run(["note", "P2", "--text", "x", "--project-dir", projnt])
+        with open(mpnt, "rb") as _fh:
+            _nt_after = _fh.read()
+        check("nt2 an empty note and a phase id are refused, nothing written: %r"
+              % ((_nt_empty[0], _nt_phase[0]),),
+              _nt_empty[0] == 2 and _nt_phase[0] == 2 and _nt_after == _nt_before)
+
+        # ---- (mv) move: the hand procedure, as a verb ------------------------------
+        def mv_fixture():
+            fx = base_manifest()
+            fx["phases"][1]["tasks"][1].update(files=["src/b.ts"], bugId="BUG-1")
+            fx["phases"][1]["tasks"].append(
+                {"id": "P2.4", "title": "waits on b", "status": "pending",
+                 "dependsOn": ["P2.3"]})
+            fx["phases"][2]["tasks"] = [
+                {"id": "P3.1", "title": "already there", "status": "pending",
+                 "blockedBy": ["P2.3"]}]
+            fx["fileIndex"]["src/b.ts"] = ["P2.3"]
+            fx["bugs"] = [{"id": "BUG-1", "title": "b", "status": "open",
+                           "severity": "low", "taskId": "P2.3"}]
+            fx["proposals"] = [{"id": "PROP-1", "status": "proposed",
+                                "payload": {"phase": {
+                                    "id": "P4", "title": "parked", "status": "pending",
+                                    "blockedBy": ["P2.3"],
+                                    "tasks": [{"id": "P4.1", "title": "x",
+                                               "status": "pending",
+                                               "blockedBy": ["P2.3"]}]}}}]
+            return fx
+
+        for _mv_layout in ("single", "sharded"):
+            projmv, mpmv = mk("mv-%s" % _mv_layout, mv_fixture(),
+                              sharded=_mv_layout == "sharded")
+            _mv_next = (run(["next-id", "task", "--phase", "P3", "--json",
+                             "--project-dir", projmv])[1])
+            try:
+                _mv_next = json.loads(_mv_next).get("id")
+            except ValueError:
+                _mv_next = None
+            code, txt = run(["move", "P2.3", "--to", "P3", "--project-dir", projmv])
+            _mv_m = _mio.load_manifest(mpmv)
+            _mv_by = _mio.tasks_by_id(_mv_m)
+            _mv_new = _mv_by.get(_mv_next) or {}
+            _mv_prop = _mv_m["proposals"][0]["payload"]["phase"]
+            _mv_rows = [r for r in _journal_io.read_all(projmv)
+                        if r.get("action") == "task.move"]
+            check("mv1-%s `move` renumbers the task with the id `next-id task` "
+                  "names, records movedFrom, and rewrites every reference - a "
+                  "sibling's dependsOn, the target phase's blockedBy, fileIndex, "
+                  "the bug's taskId and the parked proposal's phase and task - "
+                  "then validates, with one task.move row: %s" % (_mv_layout, txt),
+                  code == 0 and _mv_next == "P3.2" and "P2.3" not in _mv_by
+                  and _mv_new.get("movedFrom", {}).get("id") == "P2.3"
+                  and _mv_new.get("movedFrom", {}).get("phase") == "P2"
+                  and _mv_by["P2.4"].get("dependsOn") == ["P3.2"]
+                  and _mv_by["P3.1"].get("blockedBy") == ["P3.2"]
+                  and _mv_m["fileIndex"].get("src/b.ts") == ["P3.2"]
+                  and _mv_m["bugs"][0].get("taskId") == "P3.2"
+                  and _mv_prop.get("blockedBy") == ["P3.2"]
+                  and _mv_prop["tasks"][0].get("blockedBy") == ["P3.2"]
+                  and [p["id"] for p in _mv_m["phases"]
+                       if any(t["id"] == "P3.2" for t in p.get("tasks") or [])]
+                  == ["P3"]
+                  and _panel_write._cores()[0].validate(_mv_m)[0] == []
+                  and len(_mv_rows) == 1
+                  and (_mv_rows[0].get("details") or {}).get("fromId") == "P2.3"
+                  and (_mv_rows[0].get("details") or {}).get("toId") == "P3.2")
+        mvref = mv_fixture()
+        mvref["phases"][1]["tasks"].append(
+            {"id": "P2.5", "title": "running", "status": "in_progress",
+             "attempts": 1})
+        projmr, mpmr = mk("mv-refusals", mvref)
+        with open(mpmr, "rb") as _fh:
+            _mv_before = _fh.read()
+        _mv_codes = [run(argv + ["--project-dir", projmr])[0] for argv in (
+            ["move", "P2.3"],                       # no --to
+            ["move", "P2.3", "--to", "P2"],         # same phase
+            ["move", "P2.1", "--to", "P3"],         # done
+            ["move", "P2.5", "--to", "P3"],         # in_progress
+            ["move", "P2.3", "--to", "P1"],         # target done
+            ["move", "P2.3", "--to", "P9"],         # no such phase
+            ["move", "P2.9", "--to", "P3"])]        # no such task
+        with open(mpmr, "rb") as _fh:
+            _mv_after = _fh.read()
+        check("mv2 every refusal the documented procedure lists fires before a "
+              "write - no --to, the same phase, a done task, a running task, a done "
+              "target, an unknown phase, an unknown task: %r" % (_mv_codes,),
+              _mv_codes == [2] * 7 and _mv_after == _mv_before)
+
+        # ---- (dr) `add --dry-run`: built and validated, nothing written -------
+        projdr, mpdr = mk("dr-dry", base_manifest())
+        with open(mpdr, "rb") as _fh:
+            _dr_before = _fh.read()
+        code, txt = run(["add", "Would be", "--phase", "P2", "--files", "src/a.ts",
+                         "--dry-run", "--project-dir", projdr])
+        with open(mpdr, "rb") as _fh:
+            _dr_after = _fh.read()
+        _dr_rows = [r for r in _journal_io.read_all(projdr)
+                    if r.get("action") == "task.add"]
+        check("dr1 `add --dry-run` names the id and the task it WOULD write, and "
+              "writes nothing - the manifest byte identical and no task.add row: %s"
+              % (txt,),
+              code == 0 and "DRY RUN" in txt and "P2.4" in txt
+              and _dr_after == _dr_before and _dr_rows == [])
+        code, txt = run(["add", "Bad dep", "--phase", "P2", "--depends-on", "P9.9",
+                         "--dry-run", "--project-dir", projdr])
+        with open(mpdr, "rb") as _fh:
+            _dr_after2 = _fh.read()
+        check("dr2 ...and it VALIDATES what it built: a dependency on nothing is the "
+              "same FINDING the real add rolls back on, with nothing written: %s"
+              % (txt,),
+              code == M.E_INVALID and "FINDING" in txt and "P9.9" in txt
+              and _dr_after2 == _dr_before)
+        code, txt = run(["add", "Would be", "--phase", "P2", "--dry-run", "--json",
+                         "--project-dir", projdr])
+        try:
+            _dr_js = json.loads(txt)
+        except ValueError:
+            _dr_js = {}
+        check("dr3 ...and `--json` says it was a dry run, as data: %r"
+              % (sorted(_dr_js),),
+              code == 0 and _dr_js.get("dryRun") is True
+              and _dr_js.get("id") == "P2.4" and _dr_js.get("written") == [])
+
+        # ---- (jr) `--json` refusals are JSON -----------------------------------
+        projjr, mpjr = mk("jr-refusals", base_manifest())
+        _jr = {}
+        for _jrwhat, _jrargv in (
+                ("validator", ["add", "Bad", "--phase", "P2", "--depends-on", "P9.9"]),
+                ("argv-gap", ["add", "Gap", "--phase", "P2", "--description",
+                              " leading space"]),
+                ("usage", ["add", "No phase", "--phase", "P9"])):
+            _jrc, _jrt = run(_jrargv + ["--json", "--project-dir", projjr])
+            try:
+                _jrj = json.loads(_jrt)
+            except ValueError:
+                _jrj = None
+            _jr[_jrwhat] = (_jrc, _jrj)
+        check("jr1 every refusal under `--json` is ONE JSON object - {ok: false, "
+              "refused, findings} - on the validator's refusal, the argv-gap "
+              "refusal and a usage refusal alike, with the exit code unchanged: %r"
+              % (dict((k, (v[0], sorted(v[1]) if isinstance(v[1], dict) else v[1]))
+                      for k, v in _jr.items()),),
+              all(isinstance(v[1], dict) and v[1].get("ok") is False
+                  and isinstance(v[1].get("refused"), str) and v[1]["refused"]
+                  and isinstance(v[1].get("findings"), list)
+                  for v in _jr.values())
+              and _jr["validator"][0] == M.E_INVALID
+              and any("P9.9" in f for f in _jr["validator"][1]["findings"])
+              and _jr["argv-gap"][0] == 2 and _jr["usage"][0] == 2)
+        code, txt = run(["add", "Fine", "--phase", "P2", "--json",
+                         "--project-dir", projjr])
+        try:
+            _jr_ok = json.loads(txt)
+        except ValueError:
+            _jr_ok = {}
+        check("jr2 SECOND DIRECTION: a successful `--json` call is still the verb's "
+              "own object, not wrapped: %r" % (sorted(_jr_ok)[:6],),
+              code == 0 and _jr_ok.get("ok") is True and "refused" not in _jr_ok)
+
+        # ---- (lf) list flags repeat, and say their separator ---------------------
+        projlf, mplf = mk("lf-lists", base_manifest())
+        code, txt = run(["add", "Repeated", "--phase", "P2",
+                         "--depends-on", "P2.1", "--depends-on", "P2.3",
+                         "--files", "src/a.ts", "--files", "src/b.ts,src/c.ts",
+                         "--project-dir", projlf])
+        _lf_t = task_in(mplf, "P2.4") or {}
+        check("lf1 a list flag REPEATS and still splits on commas: two --depends-on "
+              "and a mixed --files land as one list each, in order: %r"
+              % ((_lf_t.get("dependsOn"), _lf_t.get("files")),),
+              code == 0 and _lf_t.get("dependsOn") == ["P2.1", "P2.3"]
+              and _lf_t.get("files") == ["src/a.ts", "src/b.ts", "src/c.ts"])
+        _lf_help = dict((a.dest, a.help or "") for a in M.build_parser()._actions)
+        _lf_miss = [d for d in ("files", "depends_on", "blocked_by", "verified_by")
+                    if not ("comma" in _lf_help.get(d, "")
+                            and "repeat" in _lf_help.get(d, "")
+                            and re.search(r"--[a-z-]+ \S+,\S+", _lf_help.get(d, "")))]
+        check("lf2 each list flag's --help names the separator, says it repeats and "
+              "shows an example - the separator was guessed before: %r" % (_lf_miss,),
+              _lf_miss == [])
+        projlf2, mplf2 = mk("lf-verified", pd_fixture())
+        code, txt = run(["done", "P2.4", "--commit", _PD_SHA,
+                         "--verified-by", "t_one", "--verified-by", "t_two,t_three",
+                         "--project-dir", projlf2])
+        check("lf3 ...and `done --verified-by` repeats the same way: %r"
+              % ((task_in(mplf2, "P2.4") or {}).get("verifiedBy"),),
+              code == 0 and (task_in(mplf2, "P2.4") or {}).get("verifiedBy")
+              == ["t_one", "t_two", "t_three"])
+
+        # ---- (dy) scope's DIRTY note means the index bytes changed ---------------
+        def dy_manifest():
+            fx = base_manifest()
+            fx["phases"][1]["tasks"] += [
+                {"id": "P2.4", "title": "owns b", "status": "pending",
+                 "files": ["src/b.ts"],
+                 "tests": {"mode": "gate-only", "add": [], "gate": ["test"]}},
+                {"id": "P2.5", "title": "shares b", "status": "pending",
+                 "files": ["src/b.ts"]}]
+            fx["fileIndex"]["src/b.ts"] = ["P2.4", "P2.5"]
+            return fx
+
+        projdy, mpdy = mk("dy-dirty", dy_manifest(), sharded=True, git=True)
+        git(projdy, "add", "-A")
+        git(projdy, "commit", "-q", "-m", "base")
+        with open(mpdy, "rb") as _fh:
+            _dy_before = _fh.read()
+        code, txt = run(["scope", "P2.4", "--gate-clear", "--json",
+                         "--project-dir", projdy])
+        with open(mpdy, "rb") as _fh:
+            _dy_after = _fh.read()
+        try:
+            _dy_js = json.loads(txt)
+        except ValueError:
+            _dy_js = {}
+        _dy_rel = _output.posix_rel(mpdy, projdy)
+        check("dy1 a scope that moves no index row leaves the index BYTE IDENTICAL - "
+              "the shared row P2.4 heads keeps its order - and carries no DIRTY note "
+              "and no index in `written`: %r"
+              % ((_dy_js.get("written"), _dy_js.get("indexDirtyNote")),),
+              code == 0 and _dy_after == _dy_before
+              and "indexDirtyNote" not in _dy_js
+              and _dy_js.get("written") and _dy_rel not in _dy_js["written"])
+        code, txt = run(["scope", "P2.4", "--files", "src/b.ts,src/a.ts",
+                         "--project-dir", projdy])
+        with open(mpdy, "rb") as _fh:
+            _dy_after2 = _fh.read()
+        _dy_idx = json.loads(_dy_after2.decode("utf-8")).get("fileIndex") or {}
+        check("dy2 SECOND DIRECTION: a scope that claims a path writes the index and "
+              "says it is DIRTY, and the shared row still reads in its old order: %r"
+              % (_dy_idx,),
+              code == 0 and _dy_after2 != _dy_before and "is now DIRTY" in txt
+              and _dy_idx.get("src/b.ts") == ["P2.4", "P2.5"]
+              and _dy_idx.get("src/a.ts") == ["P2.1", "P2.4"])
+
+        # IDENTICAL BYTES ARE NOT A WRITE, asked of the writer itself: handed a
+        # fileIndex it calls changed and is not, it leaves the index alone and
+        # does not name it in `written` - which is what the DIRTY note reads.
+        projdy3, mpdy3 = mk("dy-same-bytes", dy_manifest(), sharded=True)
+        with open(mpdy3, "rb") as _fh:
+            _dy3_before = _fh.read()
+        _dy3_written = M._write_add(projdy3, mpdy3, _mio.read_json(mpdy3),
+                                    _mio.load_manifest(mpdy3), "P2", True)
+        with open(mpdy3, "rb") as _fh:
+            _dy3_after = _fh.read()
+        check("dy3 a write handed `fileIndex` as changed when it is not leaves the "
+              "index byte identical and out of `written`: %r" % (_dy3_written,),
+              _dy3_after == _dy3_before
+              and _output.posix_rel(mpdy3, projdy3) not in _dy3_written)
+
+        # ---- (cg) the colon that starts an identifier is not a hole ------------
+        projcg, mpcg = mk("cg-colon", base_manifest())
+        _cg_texts = ("params :id and :key are validated",
+                     "the route takes :slug and :_token")
+        _cg = [run(["add", "Colon %d" % i, "--phase", "P2", "--description", t,
+                    "--project-dir", projcg])[0] for i, t in enumerate(_cg_texts)]
+        _cg_stored = sorted(t.get("description") for t in
+                            _mio.tasks_by_id(_mio.load_manifest(mpcg)).values()
+                            if (t.get("title") or "").startswith("Colon"))
+        check("cg1 a colon that STARTS an identifier (`:id`, `:slug`, `:_token`) "
+              "is written verbatim - the shape this plan's own texts carry: %r"
+              % (_cg_stored,),
+              _cg == [0, 0] and _cg_stored == sorted(_cg_texts))
+        code, txt = run(["add", "Spaced colon", "--phase", "P2", "--description",
+                         "the value : is gone", "--project-dir", projcg])
+        check("cg2 SECOND DIRECTION: a colon with whitespace on BOTH sides is still "
+              "the hole it was, and refused: %s" % (txt[:120],),
+              code == 2 and "hugs the word" in txt)
+
+        # ---- (gs) the refusal names substitution, and is short ------------------
+        projgs, _mpgs = mk("gs-short", base_manifest())
+        code, txt = run(["add", "Lead", "--phase", "P2", "--description",
+                         " now returns 204", "--project-dir", projgs])
+        _gs_lines = txt.splitlines()
+        _gs_route = [i for i, ln in enumerate(_gs_lines) if "<<'BRIEF'" in ln]
+        check("gs1 a leading or doubled space is named as LIKELY backtick "
+              "substitution, pointing at the shell's own stderr, in a refusal cut to "
+              "the route and the marked span: %d line(s): %r"
+              % (len(_gs_lines), txt),
+              code == 2 and "COMMAND SUBSTITUTION" in txt
+              and "command not found" in txt and len(_gs_lines) <= 8
+              and _gs_route and _gs_route[0] <= 2 and "Seen at:" in txt)
+        code, txt = run(["add", "Comma", "--phase", "P2", "--description",
+                         "gating on , returning it", "--project-dir", projgs])
+        check("gs2 SECOND DIRECTION: a shape that is just as likely code quoted into "
+              "prose does not claim substitution as likely - it says the check "
+              "cannot tell them apart: %r" % (txt,),
+              code == 2 and "likely" not in txt.lower()
+              and "cannot tell" in txt and len(txt.splitlines()) <= 8)
+
+        # ---- (ew) phase entry warns about an empty gate or a missing outcome ---
+        ewfx = base_manifest()
+        ewfx["phases"][2]["tasks"] = [{"id": "P3.1", "title": "first",
+                                       "status": "pending"}]
+        projew, _mpew = mk("ew-entry", ewfx)
+        code, txt = run(["start", "P3.1", "--project-dir", projew])
+        _ew = [ln for ln in txt.splitlines() if "phase entry" in ln.lower()
+               and "WARNING" in ln]
+        check("ew1 the start that ENTERS a phase with an empty testGate and no "
+              "desiredOutcome warns about each - and still exits 0, because an "
+              "empty gate is a designed state: %r" % (_ew,),
+              code == 0 and len(_ew) == 2
+              and any("testGate" in ln for ln in _ew)
+              and any("desiredOutcome" in ln for ln in _ew))
+        ewok = base_manifest()
+        ewok["phases"][2].update(testGate=["test"], desiredOutcome="it ships")
+        ewok["phases"][2]["tasks"] = [{"id": "P3.1", "title": "first",
+                                       "status": "pending"}]
+        projew2, _mpew2 = mk("ew-entry-ok", ewok)
+        code, txt = run(["start", "P3.1", "--project-dir", projew2])
+        code2, txt2 = run(["start", "P2.3", "--project-dir", projew])
+        check("ew2 SECOND DIRECTION: entering a phase that has both prints no such "
+              "warning, and neither does a start inside a phase already running: %r"
+              % ((txt[-120:], txt2[-120:]),),
+              code == 0 and "phase entry" not in txt.lower()
+              and code2 == 0 and "phase entry" not in txt2.lower())
+
+        # ---- (gd) a gate token that is a directory ------------------------------
+        projgd, _mpgd = mk("gd-dir", base_manifest())
+        os.makedirs(os.path.join(projgd, "src"), exist_ok=True)
+        code, txt = run(["add", "Dir gate", "--phase", "P2", "--gate", "src",
+                         "--project-dir", projgd])
+        _gd = [ln for ln in txt.splitlines() if "directory" in ln and "src" in ln]
+        check("gd1 a gate entry that is one token, no buildCommands key, and a "
+              "DIRECTORY in the project tree is warned about - it names no command "
+              "- and the add still happens: %r" % (_gd,),
+              code == 0 and len(_gd) == 1 and _gd[0].startswith("WARNING"))
+        code, txt = run(["scope", "P2.3", "--gate", "src", "--tests-mode",
+                         "gate-only", "--project-dir", projgd])
+        check("gd2 ...and `scope --gate` warns the same way: %s" % (txt[-200:],),
+              code == 0 and any("directory" in ln and "src" in ln
+                                and ln.startswith("WARNING")
+                                for ln in txt.splitlines()))
+        # A DIRECTORY NAMED LIKE THE KEY, so the key check is what keeps this quiet
+        # rather than the absence of a directory.
+        os.makedirs(os.path.join(projgd, "test"), exist_ok=True)
+        code, txt = run(["add", "Key gate", "--phase", "P2", "--gate", "test",
+                         "--gate", "pytest src", "--project-dir", projgd])
+        check("gd3 SECOND DIRECTION: a buildCommands key and a command that merely "
+              "NAMES a directory draw no such warning: %s" % (txt[-200:],),
+              code == 0 and not [ln for ln in txt.splitlines()
+                                 if "directory" in ln and ln.startswith("WARNING")])
+
+        # ---- (rv) P76 review findings --------------------------------------------
+        # R1: a no-change close on a bug's FIX TASK would derive the bug `fixed`
+        # with no fixedIn - a bug marked fixed with no fix commit, which the
+        # release guard then stops counting as open.
+        rvbug = pd_fixture()
+        rvbug["phases"][1]["tasks"][-1]["bugId"] = "BUG-1"
+        rvbug["bugs"] = [{"id": "BUG-1", "title": "b", "status": "in_progress",
+                          "severity": "low", "taskId": "P2.4"}]
+        projrv1, mprv1 = mk("rv-nochange-bug", rvbug)
+        with open(mprv1, "rb") as _fh:
+            _rv1_before = _fh.read()
+        code, txt = run(["done", "P2.4", "--no-change", "--reason", "not a bug",
+                         "--project-dir", projrv1])
+        with open(mprv1, "rb") as _fh:
+            _rv1_after = _fh.read()
+        _rv1_bug = (_mio.load_manifest(mprv1).get("bugs") or [{}])[0]
+        check("nc5 `done --no-change` on a bug's FIX TASK is refused and names "
+              "`/audit:bug close <id> not_a_bug|wontfix` - a bug is never fixed "
+              "without a fix commit - and the bug stays open: %s" % (txt,),
+              code == 2 and "/audit:bug close BUG-1" in txt
+              and "not_a_bug" in txt and _rv1_after == _rv1_before
+              and _rv1_bug.get("status") == "in_progress")
+        check("nc6 ...and the route it names runs CANCEL FIRST: `/audit:bug close` "
+              "refuses while the bug's task is in progress, so the other order "
+              "fails at its first step: %s" % (txt,),
+              "/audit:task cancel P2.4" in txt
+              and txt.index("/audit:task cancel P2.4") < txt.index("/audit:bug close"))
+        # R2: the moved-away id is never minted again.
+        projrv2, mprv2 = mk("rv-move-reissue", base_manifest())
+        run(["move", "P2.3", "--to", "P3", "--project-dir", projrv2])
+        code, txt = run(["add", "After the move", "--phase", "P2", "--json",
+                         "--project-dir", projrv2])
+        try:
+            _rv2_id = json.loads(txt).get("id")
+        except ValueError:
+            _rv2_id = None
+        check("mv3 moving a phase's HIGHEST task and then adding to that phase does "
+              "not reissue the moved-away id: %r" % (_rv2_id,),
+              code == 0 and _rv2_id == "P2.4")
+        code, txt = run(["move", "P3.1", "--to", "P2", "--project-dir", projrv2])
+        _rv2_m = _mio.tasks_by_id(_mio.load_manifest(mprv2))
+        _rv2_back = [t for t in _rv2_m.values()
+                     if (t.get("movedFrom") or {}).get("id") == "P3.1"]
+        check("mv4 a second move keeps the first one's origin in the chain - so both "
+              "old ids stay taken and a reader can still join the oldest rows: %r"
+              % ([t.get("movedFrom") for t in _rv2_back],),
+              code == 0 and len(_rv2_back) == 1
+              and (_rv2_back[0]["movedFrom"].get("previous") or {}).get("id")
+              == "P2.3" and _rv2_back[0]["id"] == "P2.5")
+        # R3: move says what it leaves behind in the evidence ledger.
+        import _evidence_io
+        projrv3, mprv3 = mk("rv-move-evidence", base_manifest())
+        _evidence_io.append_row(projrv3, {
+            "v": 1, "runId": "RV1", "ts": "2026-08-26T10:00:00Z", "scope": "task",
+            "taskId": "P2.3", "phaseId": "P2", "status": "failed", "steps": []})
+        code, txt = run(["move", "P2.3", "--to", "P3", "--json",
+                         "--project-dir", projrv3])
+        try:
+            _rv3_js = json.loads(txt)
+        except ValueError:
+            _rv3_js = {}
+        projrv3b, _mprv3b = mk("rv-move-evidence-human", base_manifest())
+        _evidence_io.append_row(projrv3b, {
+            "v": 1, "runId": "RV2", "ts": "2026-08-26T10:00:00Z", "scope": "task",
+            "taskId": "P2.3", "phaseId": "P2", "status": "failed", "steps": []})
+        code2, txt2 = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv3b])
+        _rv3_line = [ln.strip() for ln in txt2.splitlines()
+                     if ln.strip().startswith("evidence:")]
+        check("mv5 a move over ONE recorded run counts it exactly - `--json` "
+              "carries evidenceRunsLeft 1 and the line names the count and the "
+              "two readers that join it: %r" % ((_rv3_js.get("evidenceRunsLeft"),
+                                                  _rv3_line),),
+              code == 0 and _rv3_js.get("evidenceRunsLeft") == 1 and code2 == 0
+              and len(_rv3_line) == 1
+              and _rv3_line[0].startswith("evidence: 1 recorded run(s) stay keyed "
+                                          "to P2.3")
+              and "/audit:doctor and --reconcile join them" in _rv3_line[0])
+        projrv3c, _mprv3c = mk("rv-move-no-evidence", base_manifest())
+        code3, txt3 = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv3c])
+        check("mv5b SECOND DIRECTION: a move over NO recorded run prints no evidence "
+              "line at all: %s" % (txt3,),
+              code3 == 0 and not [ln for ln in txt3.splitlines()
+                                  if ln.strip().startswith("evidence:")])
+        with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                               "audit-plan.schema.json"), encoding="utf-8") as _fh:
+            _rv_mf = (json.load(_fh)["$defs"]["task"]["properties"]["movedFrom"])
+        check("mv5c the schema documents `movedFrom.previous`, the link a second "
+              "move nests: %r" % (sorted(_rv_mf.get("properties") or {}),),
+              "previous" in (_rv_mf.get("properties") or {})
+              and "previous" in _rv_mf.get("description", ""))
+        # R6: the target resolves before the task's own status is judged, and a
+        # signed-off target's refusal speaks of the move.
+        projrv6, _mprv6 = mk("rv-move-order", base_manifest())
+        code, txt = run(["move", "P2.1", "--to", "P99", "--project-dir", projrv6])
+        check("mv6 `move <done task> --to <no such phase>` names the missing phase - "
+              "item 1 of the documented order - before the task's status: %s"
+              % (txt,), code == 2 and "no phase P99" in txt)
+        code, txt = run(["move", "P2.1", "--to", "P1", "--project-dir", projrv6])
+        check("mv6b `move <done task> --to <done phase>` answers with the TASK's "
+              "refusal (item 3), not the target's state (item 5) - the phase is "
+              "checked for existence first and judged after the task: %s" % (txt,),
+              code == 2 and "P2.1 is done" in txt and "phase P1 is done" not in txt)
+        rvso = base_manifest()
+        rvso["phases"][2].update(status="in_progress", branch="audit/p3",
+                                 review={"status": "passed"})
+        rvso["phases"][2]["tasks"] = [{"id": "P3.1", "title": "x", "status": "done"}]
+        projrv6b, _mprv6b = mk("rv-move-signed", rvso)
+        code, txt = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv6b])
+        check("mv7 ...and a signed-off target's refusal is about the MOVE, not about "
+              "adding a task: %s" % (txt,),
+              code == 2 and "signed off" in txt and "moved" in txt
+              and "a task added now" not in txt)
+        # R5: a --json no-op is a JSON object.
+        projrv5, _mprv5 = mk("rv-json-noop", base_manifest())
+        code, txt = run(["scope", "P2.3", "--risk", "low", "--json",
+                         "--project-dir", projrv5])
+        code2, txt2 = run(["scope", "P2.3", "--risk", "low", "--json",
+                           "--project-dir", projrv5])
+        code3, txt3 = run(["retarget", "P3", "--area", "", "--json",
+                           "--project-dir", projrv5])
+        code4, txt4 = run(["retarget", "P3", "--area", "", "--json",
+                           "--project-dir", projrv5])
+        def _rv_obj(t):
+            try:
+                o = json.loads(t)
+            except ValueError:
+                return None
+            return o if isinstance(o, dict) else None
+        check("jr3 a `--json` call that changes nothing - `scope` and `retarget` "
+              "alike - prints one object saying so, never prose: %r"
+              % ((_rv_obj(txt2), _rv_obj(txt4)),),
+              code2 == 0 and (_rv_obj(txt2) or {}).get("changed") is False
+              and (_rv_obj(txt2) or {}).get("ok") is True
+              and code4 == 0 and (_rv_obj(txt4) or {}).get("changed") is False)
+        # R7: the ceiling refusal names the verb the reference docs now require.
+        rvcap = base_manifest()
+        rvcap["phases"][1]["tasks"][1].update(attempts=3, maxAttempts=3)
+        projrv7, _mprv7 = mk("rv-ceiling", rvcap)
+        code, txt = run(["start", "P2.3", "--project-dir", projrv7])
+        check("bk4 the start refused at maxAttempts names `audit-task.py block <id> "
+              "--reason`, the verb the orchestrator is told to use: %s" % (txt,),
+              code == 2 and "audit-task.py block P2.3 --reason" in txt)
+        # Pre-existing: fileIndex rows keyed through the line-range suffix.
+        projrvx, mprvx = mk("rv-line-suffix", base_manifest())
+        code, txt = run(["scope", "P2.3", "--files", "src/q.ts:10-20",
+                         "--project-dir", projrvx])
+        code2, txt2 = run(["add", "Ranged", "--phase", "P2", "--files",
+                           "src/r.ts:1-5", "--project-dir", projrvx])
+        _rvx = _mio.load_manifest(mprvx).get("fileIndex") or {}
+        check("fx1 `scope` and `add` key a `:line-range` entry's fileIndex row by the "
+              "PATH - the key the plan gate and the validator match on: %r" % (_rvx,),
+              code == 0 and code2 == 0 and _rvx.get("src/q.ts") == ["P2.3"]
+              and _rvx.get("src/r.ts") == ["P2.4"]
+              and "src/q.ts:10-20" not in _rvx and "src/r.ts:1-5" not in _rvx)
+        code, txt = run(["scope", "P2.3", "--files", "src/a.ts",
+                         "--project-dir", projrvx])
+        _rvx2 = _mio.load_manifest(mprvx).get("fileIndex") or {}
+        check("fx2 ...and releasing that entry removes the task from the PATH's row: "
+              "%r" % (_rvx2,),
+              code == 0 and "P2.3" not in (_rvx2.get("src/q.ts") or [])
+              and "P2.3" in (_rvx2.get("src/a.ts") or []))
+        # R4: a colon before a DIGIT after whitespace is what a substituted
+        # "`path`:line" citation leaves, so it stays refused.
+        projrv4, _mprv4 = mk("rv-colon-digit", base_manifest())
+        code, txt = run(["add", "Cite", "--phase", "P2", "--description",
+                         "see :2680 for the retry", "--project-dir", projrv4])
+        check("cg3 SECOND DIRECTION: ` :2680` - what \"`run-test-gate.py`:2680\" "
+              "leaves after substitution - is still refused: %s" % (txt[:120],),
+              code == 2 and "hugs the word" in txt)
+        # R8: a span substituted at the END leaves trailing whitespace on its own.
+        code, txt = run(["add", "Trail", "--phase", "P2", "--description",
+                         "fix the build ", "--project-dir", projrv4])
+        check("gs3 trailing whitespace is named as likely COMMAND SUBSTITUTION too - a "
+              "span at the end of the text leaves it as mechanically as one at the "
+              "start: %s" % (txt,),
+              code == 2 and "Likely COMMAND SUBSTITUTION" in txt)
+
     finally:
         _harness.remove_tree(tmp)
 

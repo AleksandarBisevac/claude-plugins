@@ -255,6 +255,54 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp_k, ignore_errors=True)
 
+    # (tf) THE AREA POLICY READS THE PLAN OF THE TREE THE SESSION IS IN. The
+    # live areas came from CLAUDE_PROJECT_DIR's manifest, so a session standing
+    # in a linked worktree that runs the `api` phase was held to the areas the
+    # main checkout runs - `api`'s deny rule never applied there, and a rule of
+    # an area only the main tree runs did.
+    _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "capabilities-wt-")
+    if not _tf_ok:
+        check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
+    else:
+        for _tree, _area in ((_tf["main"], "web"), (_tf["wt"], "api")):
+            _man = os.path.join(_tree, _tf["manifest_rel"])
+            with open(_man, "r", encoding="utf-8") as fh:
+                _doc = json.load(fh)
+            for _ph in _doc["phases"]:
+                if _ph["status"] == "in_progress":
+                    _ph["area"] = _area
+            with open(_man, "w", encoding="utf-8") as fh:
+                json.dump(_doc, fh, indent=2)
+        _tf_pol = {"skills": {"default": "allow",
+                              "areas": {"api": {"deny": ["deploy-*"]},
+                                        "web": {"deny": ["lint-*"]}}}}
+        _prev_tf = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
+        try:
+            def _tf_call(skill, cwd):
+                ok, got = _harness.attempt(
+                    M.decide, {"tool_name": "Skill", "cwd": cwd,
+                               "tool_input": {"skill": skill}},
+                    cfg=cfg_with(_tf_pol))
+                return got if ok else ("EXC", got)
+            _v = _tf_call("deploy-prod", _tf["wt"])
+            check("tf1 in the worktree, the worktree's running area's rule "
+                  "applies - `api` runs there and denies deploy-*",
+                  _v[0] == "deny" and "areas.api.deny" in _v[1], repr(_v))
+            _v = _tf_call("lint-all", _tf["wt"])
+            check("tf2 ...and the main checkout's running area does NOT - `web` "
+                  "is pending in the worktree's plan", _v[0] == "allow", repr(_v))
+            _v = _tf_call("deploy-prod", _tf["main"])
+            check("tf3 ...while in the main checkout the same skill is allowed, "
+                  "because `api` is pending there - the verdict follows the tree, "
+                  "not whichever plan the config sits beside", _v[0] == "allow",
+                  repr(_v))
+        finally:
+            if _prev_tf is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -1,0 +1,382 @@
+{
+  "id": "P79",
+  "title": "The derived sign-off gate, in shadow first",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "With meta.phaseGate.mode set, derive-phase-gate.py computes a phase's sign-off gate from its tasks' tests, recorded couplings, a version-checked importer listing, changed and last-failed test files and the always and smoke entries, and records it with its basis - beside the wide gate in shadow, as the gate in enforce - while the runner prints NARROWED, refuses a derived run that did not name every listed suite as could-not-run, and the doctor prints test and change recall over the shadow runs.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [
+    "P78"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P79.1",
+      "title": "meta.phaseGate mode/derived/smoke, meta.coupling, phase.testGateBasis/testGateDerived: schema, vocabulary, validator",
+      "status": "pending",
+      "description": "Schema additions, each saying what absence means. meta.phaseGate.mode: 'shadow' | 'enforce'; ABSENT MEANS NO DERIVATION. The previous phase made phaseGate meaningful without derivation (always, exclude), so the presence of the block can no longer be read as a request to derive: init writes shadow explicitly and enforce is the owner's choice. meta.phaseGate.derived: object or null with runner (a buildCommands key), spelling (the path-scoped entry with a {paths} placeholder), listing (null, or {related: a command with {paths} that LISTS without executing, all: a command listing every suite}) and verifiedOn ({command, answer}: the version command init ran and its output verbatim; a bare '<runner> <version>' string names no command to re-ask, so it could only be compared against a guess). meta.phaseGate.smoke: a buildCommands key or null. meta.coupling: array of {test, sources[], basis {runId, head, phases[]}, learnedAt}; absent means the derivation has no learned arm. phase.testGateBasis: open vocabulary, read as an unnarrowed default when absent (the tests.gateBasis rule). phase.testGateDerived: {tests[], entry, listed, full, arms {tests.add, coupling, importers, changed, lastFailed}, always[], smoke, narrowed, listing {command, exit, durationMs} or null, at}; absent means no derived gate and the runner prints no NARROWED line. _manifest_vocab.py: KNOWN_META += coupling; KNOWN_PHASE += testGateBasis, testGateDerived; the phase basis words derived, derived-empty and 'wide: importers resolved to the full suite' (in GATE_BASIS, or a PHASE_GATE_BASIS tuple if a task must never be offered them - decide by who reads them and say so in the comment). Validator WARNINGS, never findings: mode outside the two words; derived.runner or smoke not a buildCommands key; a spelling without {paths}; a listing with no verifiedOn; a coupling entry missing test, sources or basis.runId, or a duplicate test. Phase-level checks ride _walk_phases in _manifest_phases.py, meta checks _check_meta in _manifest_rules.py. SCHEMA_EXEMPTIONS rows in gen-demo-manifest.py for every new field no rendered surface shows yet, with the reason. Red-first: mode 'enforced' warns naming both words (on the code this phase starts from nothing reads mode); a coupling without basis warns (mutation: accept it -> red). Allow case: a plan with phaseGate {always: [lint]} and nothing else gains no new warning (mutation: warn on an absent mode -> red).",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_validate_manifest.py: repro that FAILS on current code - meta.phaseGate.mode 'enforced' and a coupling entry without basis validate with no warning naming them",
+          "plugins/audit/tests/test__manifest_vocab.py: repro that FAILS on current code - coupling, testGateBasis and testGateDerived are not known keys and derived / derived-empty are not basis words"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P79.2",
+      "title": "_gate_derive.py: the gate helpers' one home, and a pure derive()",
+      "status": "pending",
+      "description": "New importable helper plugins/audit/scripts/governance/_gate_derive.py. MOVE, bodies and docstrings unchanged, _is_shared_key, _path_scoped_sibling and _repointed out of audit-task.py as is_shared_key, path_scoped_sibling, repointed; audit-task.py imports _gate_derive and keeps thin aliases. gate_entry_paths stays in _manifest_phases, where L1.a put it for --own. Layer: it imports _manifest_phases (tests_add_path, gate_entry_paths, is_suite_path, subject_of), _manifest_io, _manifest_vocab and _evidence_io - _manifest_rules only re-exports tests_add_path - so it takes the layer directly above _evidence_io and _manifest_phases; assign it in _deps.LAYERS with the reason in a comment, and do not restate the number in the docstring (_deps.layer_doc_drift). derive(manifest, phase, facts) is PURE: every observation arrives in facts from the caller (the listing answers with their exits, the installed version's answer, the paths changed since phase.baseRef, the newest red phase-scope row, the exempt verdict of each touched file), so cases need no subprocess. The derivation replaces only the NON-always part of the default, and only when meta.phaseGate.mode is set: always entries are kept verbatim and meta.phaseGate.exclude keys stay out, both read from _manifest_phases.phase_gate_default (L1.b) - one answer for the default, so a fallback can never run fewer suites than add-phase would have written. It returns {entries, basis, derived, narrowed, lines}. (1) always = meta.phaseGate.always verbatim. (2) tests = the union of path-scoped paths in each task's own gate (P71's _manifest_io.gate_entries with source 'task', entries that are not shared keys), arm tests.add, plus each meta.coupling[].test whose sources meet the union of the tasks' files, arm coupling. (3) importers only when derived.listing is recorded AND facts carries a version answer equal to verifiedOn.answer (dg23: otherwise the arm is skipped with 'importers: skipped - listing verified on <answer>, this machine answers <now>'), the related listing exited 0, and its paths are a STRICT subset of the all-listing: then arm importers with listed/full; equal -> the default's non-always part replaces the path-scoped entry, narrowed false, basis 'wide: importers resolved to the full suite', line 'DERIVED = FULL' (dg1); any non-zero exit -> the arm is skipped with the exit named, never an empty set and never red (the recorded listing carries the runner's pass-with-no-tests flag; init 5.4 checks that). (4) always-on additions: test files changed since baseRef (is_suite_path), arm changed; failingSuites of the newest red phase-scope row with a named basis, arm lastFailed. (5) smoke: meta.phaseGate.smoke is added unless EVERY file the phase's tasks declare is exempt (the plan gate's exemptGlobs verdict in facts) or is_suite_path, with the line 'smoke: skipped - every file this phase touched is docs or tests'; never decided by the meta.runtimeBoot.appRootPath prefix (dg10). (6) no path-scoped sibling -> always plus the default's non-always part (phase_gate_default after exclude), basis phase-no-spelling; no suite after (2)-(4) -> the same, basis derived-empty, before anything runs (dg2). The tests entry is the sibling spelling re-pointed at the sorted test set (repointed). The basis always carries 'selected by import graph and recorded couplings only' (dg4). Red-first in test__gate_derive.py: dg1 (allow: a strict subset keeps narrowed true and prints no such line; mutation: drop the subset comparison -> red); dg2 (mutation: return [] -> red; and a fallback on a plan with exclude [coverage] keeps coverage out and every other key in - mutation: fall back to every buildCommands key -> red); dg10 (mutation: decide by the prefix -> red; allow: a docs-and-tests-only phase skips with the line); dg23 (allow: equal answer uses the arm; mutation: ignore the version -> red); dg4 widen-only pin of the boundary sentence; a coupling whose sources miss the phase's files adds nothing. test_audit_task.py: the aliases ARE the _gate_derive functions and gb1 stays green. A migrated --selftest that prints where its cases live, safe_stdio() first in __main__, _output.PATH_PREAMBLE byte for byte, a PLUGIN-BUILD-GUIDE.md tree line and section, no register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__gate_derive.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__gate_derive.py: repro that FAILS on current code - there is no derive(), so a phase whose importer listing names every suite cannot answer narrowed false with DERIVED = FULL (dg1)",
+          "plugins/audit/tests/test__gate_derive.py: repro that FAILS on current code - a phase touching packages/ui/Button.tsx under an appRootPath of apps/web has no smoke selection rule at all (dg10)",
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - audit-task's _is_shared_key, _path_scoped_sibling and _repointed are its own bodies rather than _gate_derive's"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P79.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P79.3",
+      "title": "derive-phase-gate.py: observe, derive, record - beside the wide gate in shadow, as the gate in enforce",
+      "status": "pending",
+      "description": "New entry point plugins/audit/scripts/governance/derive-phase-gate.py <manifest> <phaseId> [--dry-run] [--brief] [--json] [--project-dir DIR] [--takeover]. It gathers the observations and hands them to _gate_derive.derive, so the runner never derives: it measures what the phase declares. No meta.phaseGate.mode -> prints that nothing is derived and why, exit 0, writes nothing. Observations: the version answer (derived.verifiedOn.command, run once, output compared verbatim); the related and all listings (subprocess, meta.nodePreamble applied the way run-test-gate._resolved applies it, {paths} filled with the shell-quoted union of the tasks' files, each timed; a listing never executes a test); the paths changed since phase.baseRef from git (absent baseRef: arm skipped with the reason); the newest red phase-scope row from _evidence_io.read_rows; the exempt verdict of each touched file from the plan gate's exemptGlobs (hooks config through _loader.load_hooks_config()). WRITE under the index lock with snapshot, validate before and after, and roll-back through _panel_write exactly as set-priority.py does (acquire_index_lock, snapshot/restore, _cores()[0].validate, _journalmod() for the row), into the phase's shard: mode enforce -> testGate, testGateBasis, testGateDerived; mode shadow -> testGateDerived and testGateBasis only, testGate untouched (the wide gate still signs). One journal row phase.gateDerived {phaseId, mode, changes, basis}. Output in the shape tools/verify.sh --affected uses: 'DERIVED sign-off gate for <P>: always <entries> | <spelling> over <k> test file(s) [tests.add a, coupling b, importers c of <full> listed, changed d, last failed e] | smoke <sentence>. Recorded on phase.testGateBasis.' or 'DERIVED sign-off gate for <P> could not be bounded: <reason>. The wide gate runs (<keys>). Nothing was narrowed.' - every number computed at run time. --brief prints the reviewer's basis line only: 'derived: <listed> of <full>; couplings: <j>; smoke: <sentence>; basis: <testGateBasis>; derived at <at>' - never a path list or runner output (tk2). --dry-run computes and prints and writes nothing. Red-first in test_derive_phase_gate.py, inside a _harness.fixture_root() git repo with fake listing commands: shadow mode leaves testGate unchanged and writes testGateDerived (mutation: write testGate in shadow -> red); enforce writes testGate, testGateBasis and testGateDerived and one journal row; a differing version answer skips the importers arm with the line (dg23 end to end); a written plan that fails validation is rolled back byte for byte; --brief output carries no path and no failing text (tk2, widen-only: a mutation appending the test list -> red); no mode -> nothing written. Layer entry in _deps.LAYERS, PATH_PREAMBLE, safe_stdio() first, migrated --selftest, PLUGIN-BUILD-GUIDE.md tree line and section.",
+      "files": [
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/tests/test__deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_derive_phase_gate.py: repro that FAILS on current code - no command records a derived sign-off gate, so a shadow-mode phase carries no testGateDerived and nothing leaves its wide testGate untouched on purpose",
+          "plugins/audit/tests/test_derive_phase_gate.py: repro that FAILS on current code - there is no --brief line for the reviewer, so a brief could carry the listing and the runner output (tk2)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P79.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P79.4",
+      "title": "couple / uncouple write meta.coupling",
+      "status": "pending",
+      "description": "audit-task.py couple --test <path> --sources <p,p> --basis-run <runId> --basis-head <sha> --phases <ids> and uncouple --test <path> are the only writers of meta.coupling. couple appends {test, sources, basis {runId, head, phases}, learnedAt} or, for a test already coupled, unions the sources and keeps the first learnedAt (a coupling is widened, never silently replaced); uncouple removes the entry and refuses exit 2 when the test is not coupled. Both run under _under_lock, write the index through _write_add(..., phase_id=None, index_fields=('meta',)) - the index-only path P69 gave _write_add - revalidate with roll-back, and journal coupling.learned / coupling.dropped with the entry. --test must be one path that tests_add_path and is_suite_path accept; each source must be a path; --basis-run must name a row the ledger holds (_evidence_io.row_by_run), refused otherwise, because a coupling says what taught it. retarget --gate-drop stays about gate entries and never touches couplings; the two verbs share no flag. No change to _phase_gate here: L1's default is already today's set (always only reorders it, exclude is declared and printed), so a shadow phase's gate is the wide one the comparison needs. New dests in VERB_FLAGS, the command choices in build_parser, commands/task.md argument-hint and a section, the /audit:task README row (_refs.command_flag_drift). Red-first: couple writes the entry and one journal row; coupling the same test twice unions the sources (mutation: overwrite -> red); uncouple of an unknown test refused; a runId the ledger lacks refused (mutation: skip the lookup -> red).",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - couple is an unknown verb, so a learned coupling can only be written by hand"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P79.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P79.5",
+      "title": "The runner prints NARROWED, grades a derived run that skipped a listed suite as could-not-run, and records shadow",
+      "status": "pending",
+      "description": "Observations on a PHASE-scope run, read off the plan and the run, none deriving anything. (1) NARROWED: when phase.testGateBasis is derived and testGateDerived.narrowed is true, print after the verdict banner 'NARROWED sign-off: this run measured the DERIVED gate (<listed> of <full> listed checks; basis on phase.testGateBasis). It is evidence about this phase's own tests and their recorded couplings. The full suite was not run here and is owed before <P> is whole.' and put narrowed {listed, full} on the row. (2) derived-mismatch (dg3): the step whose entry equals testGateDerived.entry must name every listed test file (files_named plus _manifest_phases.subject_of stems, the matching coverage already uses); when it names k of N, the step's outcome becomes could-not-run with outcomeBasis 'DERIVED RUN NAMED k OF N LISTED SUITES: <sample>', printed as that line. NOT a new status word: the schema's testEvidence.status description says which member of the no-verdict class a run was is a per-step observation rather than a word of its own, and could-not-run already lands in _status_facts.NO_VERDICT_EVIDENCE and NOT_REUSABLE_STATUS. The printed repair is re-derive (derive-phase-gate.py) and re-run. A runner that names no path makes the question unanswerable, and the line says so instead of passing or failing it. (3) shadow (dg19): only on a run whose gate is the WIDE one (testGateBasis not derived) of a phase in mode shadow that carries testGateDerived, the row gets shadow {listed, full, missed} where missed = the steps' failingSuites with a named basis that testGateDerived.tests does not hold, and the terminal prints 'shadow: derived would have listed k of n failing suites'. _evidence_io.row_for allow-lists what crosses into a row (an inventive caller cannot widen it): add narrowed and shadow, bounded by MAX_PATHS and redacted as _paths does. Red-first: dg3 ends could-not-run with the line, never passed (mutation: skip the comparison -> red); dg19 records missed of one (mutation: record shadow on a derived run -> red; allow: a plan without mode records no shadow); NARROWED only for a narrowed derived gate (allow: narrowed false prints nothing). test__evidence_io.py: row_for keeps both fields and cuts missed at MAX_PATHS with a count.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - a derived gate listing three suites whose run names two comes back passed (dg3)",
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - a wide run of a shadow-mode phase with two failing suites, one of them listed, records no shadow field (dg19)",
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - row_for drops narrowed and shadow"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P79.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P79.6",
+      "title": "The doctor prints test recall and change recall over the shadow runs",
+      "status": "pending",
+      "description": "check_shadow_recall(rep, project, manifest_rel, manifest, config=None) in _doctor_trail.py, wired after the economy row. Over ledger rows carrying shadow (fixtures built through _evidence_io.row_for, so the shape is the writer's): test recall = failing suites the derived set would have listed / failing suites; change recall = red shadow runs with at least one covered failure / red shadow runs - the definitions from Meta's predictive test selection paper. Printed with both counts as the basis and the shadow run count; computed from the ledger every time and never written anywhere. No meta.phaseGate.mode: an OK row saying no derivation is declared (a row that vanished would read as checked). Mode shadow and no shadow row yet: an OK row saying none recorded. The recall row's remedy: 'set meta.phaseGate.mode to \"enforce\" when this recall is enough - nothing switches it for you'; no threshold switches anything. Red-first: a fixture of shadow rows yields the recall figures with their counts; mutation: count RUNS instead of SUITES for test recall -> red on a fixture where the two differ. Allow case: rows without shadow contribute nothing.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_audit_doctor.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_trail.py: repro that FAILS on current code - a ledger of shadow rows yields no recall row"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P79.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P79.7",
+      "title": "Docs: init 5.4 runner table, sign-off step 2a, the reviewer's basis line, the boundary sentence",
+      "status": "pending",
+      "description": "commands/init.md step 5.4 (assemble the candidate manifest): write meta.phaseGate with mode 'shadow', always (the lint/typecheck/build keys recon found), smoke (a tagged e2e key when there is one), and derived ONLY for a runner whose listing recon RAN and saw work without executing a test, with the pass-with-no-tests flag in both listing commands and verifiedOn = the version command and its output. Carry the design's runner table as claims about each tool with the documentation date the design records: Jest 30+ --listTests --findRelatedTests (exit 1 on no match since v28 without --passWithNoTests; an unmapped TS paths alias is an invisible edge), Vitest 5 'vitest list --filesOnly' (2.x-4.x executes files; related transforms every module on the path; no rerun-last-failed), Playwright 1.46+ '--list --reporter=json' (loads every file; a shared fixture means the whole suite), Cypress (no listing in run), Nx and Turborepo (list projects or tasks, not tests; a shallow clone means everything changed), pytest --collect-only -qq (imports modules; exit 5 on none), Go/Gradle/.NET list flags; a runner with no non-executing listing gets listing null. Offer, never impose, reporter settings for the executor's own run (vitest --silent=passed-only, jest --silent, playwright line/dot); no retries in proposed commands. reference/phase-signoff.md step 2a: when meta.phaseGate.mode is set run derive-phase-gate.py <m> <P> before step 2's run-test-gate.py --record, read the DERIVED line, and route the NARROWED and 'DERIVED RUN NAMED k OF N' lines; the reviewer's sign-off brief carries the derive-phase-gate.py --brief line and the runId only (tk2), never the listing or runner output. agents/audit-reviewer.md: what that line means and that the reviewer never re-runs the suite. manifest-conventions.md: the coupling.learned, coupling.dropped and phase.gateDerived journal actions and their details. commands/doctor.md: the recall row. README Test evidence: the derived gate, shadow first, and the boundary 'selected by import graph and recorded couplings only' (dg4). COMPATIBILITY.md: mode absent = no derivation; coupling absent = no learned arm; testGateDerived absent = no NARROWED line. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P79.1",
+        "P79.2",
+        "P79.3",
+        "P79.4",
+        "P79.5",
+        "P79.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

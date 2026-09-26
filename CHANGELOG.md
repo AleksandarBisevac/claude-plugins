@@ -7,6 +7,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **`stamp-verification.py red` proves a red-first without touching the shared tree.** The executor
+  brief used to prove a red by undoing the fix in the working tree for the length of the run, which a
+  host refused beside a sibling's uncommitted work. `red --manifest M --task T -- <cmd>` checks HEAD
+  out with `git worktree add --detach` into a temp directory, copies the task's test files over it,
+  runs the command there, removes the throwaway in a `finally` and checks git no longer lists it, and
+  prints the `redFirst` block the executor returns. `--introduces SYM` is where "the task introduces
+  the symbol" is decided. The executor, reviewer and `execute-task.md` briefs point at it.
+- **`/audit:task` has verbs for what operators were hand-editing.** `move <taskId> --to <phaseId>`
+  performs the procedure `commands/task.md` used to describe as Edits: the new id from the
+  allocator `next-id task` prints, every reference rewritten (dependencies, `fileIndex`, a bug's
+  `taskId`, parked proposals), `movedFrom`, a `task.move` row, revalidated and rolled back on
+  findings, in both layouts. `block <taskId> --reason` sets a task blocked with the reason in a new
+  `blockedReason` field and a `task.block` row (the next `start` clears it), for a dependency no id
+  can name. `note <taskId> --text` appends a dated `{at, text}` entry to a new `notes[]` - the one
+  addition a started task takes, since `scope --description` refuses one. `reopen` is now listed in
+  `commands/task.md` beside them.
+- **A close whose answer was "nothing needed to change", and an intent question skipped on
+  purpose.** `done --no-change --reason` closes a started task with no commit, recording the reason
+  and the HEAD it examined in `outcome.noChange`; `/audit:doctor`'s no-SHA warning leaves such a task
+  out and names it on its own line. `done --intent not-asked --intent-basis TEXT` records an intent
+  question deliberately not put, and is refused without its basis. Sign-off and `/audit:status` (on
+  a phase whose sign-off is due) now name the done tasks carrying no intent answer at all, which
+  nothing read before.
+- **`add --dry-run`** builds the task and validates the plan with it in memory, and writes nothing.
 - **The manifest merges by record: `/audit:layout merge-driver install`.** Every writer appends at a
   list tail, so two branches that each add a different phase, task, bug or `fileIndex` row conflicted
   on the same lines — in both layouts, because sharding keeps a phase RUN in its own file while every
@@ -87,6 +111,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   count and the `--verbose` pointer; `audit-lookup` answers a
   bug's and a phase's status from the derivation and prints `stored X, derived Y (basis)` where
   they differ.
+- **`verify-invariants.py` and the invariant gate can count only what is new.** A long history
+  carries breaches nobody will repair, and printing all of them on every run buried the one made
+  today - an operator was left grepping for the day's SHAs. `--write-baseline` records the current
+  breaches in `invariants-baseline.json` beside the manifest; once that file exists a run prints the
+  new breaches and how many baselined ones are still reported, and exits 1 only on a new one.
+  `/audit:status --gate --fail-on invariant-breach` reads the same baseline through the same
+  `_invariants` functions, so the gate and the CLI give one verdict; its JSON keeps the full list
+  as `allBreaches`, and its text names the baseline and what it counted on both paths. An entry
+  is matched on its phase, check, subject and commit SHA - keys every check now returns beside its
+  sentence, with the SHA resolved to the full id through git and a validator finding keyed on
+  the code of the rule that raised it (every validator finding now carries one, and a lint fails a
+  finding site without it), its locus and the ids it quotes, an allowed-values list left out -
+  never on the printed sentence, so a reworded message or a
+  count that moves between runs does not bring the flood back. An entry that no
+  longer matches is printed with what git says about its commit and stays in the file; one whose
+  check had a gap this run, or whose phase was not examined, is set aside with that reason rather
+  than called repaired, and one read from a clone's own evidence (a reflog, the stash, a
+  remote-tracking ref, the gitignored usage ledger) carries that clone's id - a random token kept
+  in its git common dir, published whole, so it moves with the clone and no two clones share it (a
+  byte copy of the git dir is the same clone); a write with a local breach and no id is refused -
+  and goes stale
+  only there. A rebase, squash or amend re-reports its breaches as new beside the old
+  unmatched entries, and the output says so. `--write-baseline` refuses while a phase it covers is
+  in flight, takes the `index` lock around its read-then-write and refuses a hold it did not take
+  itself, keeps every set-aside entry and
+  names each one it removes, and exits 0 once written (2 when refused, and 2 when a check raises); the baseline is a human's commit on the development branch, outside
+  any phase commit. An unreadable baseline, one in the sentence-keyed shape an earlier build of
+  this change wrote, or an explicit `--baseline` that is not there is exit 2 and trips the gate.
+- **User tooling can share the cross-worktree lock: `audit-lock.py acquire user-<name>`.** The
+  lock under the git common dir spans every worktree of a clone, but it refused every name except
+  `index`, `usage` and `phase-<id>`, so a guard driving one backend from several worktrees had to
+  invent a lockfile each worktree saw only in its own tree. `_locks.valid_name` now admits a
+  namespaced `user-<name>` under rules `_locks.USER_NAME_RULES` states, printed by a refused
+  `acquire` or `release`: lower case, digits, `-` and `_`, bounded length, and never a name whose
+  own part is itself a lock name, so `user-index` or `user-phase-p1` cannot pass for the plugin's.
+  A user lock excludes by holder: a second acquire from the same session and pid - which is what
+  parallel subagents of one Claude Code session look like - is refused rather than answered as
+  re-entry. `/audit:worktree` documents it as the lock worktree tooling shares, with a one-shell
+  POSIX-shell recipe that runs under sh, bash and zsh - a test runs it under each where installed,
+  and skips Git Bash on Windows, whose `$$` is not the pid the lock probes - and `/audit:doctor`
+  advises an abandoned user lock by its own `--takeover` path.
 
 ### Changed
 - **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the
@@ -140,6 +205,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   staging, so it carries exactly the allowed paths and runs the project's `pre-commit` and
   `commit-msg` hooks like any other commit; if HEAD moved underneath it the command exits 1 naming
   both SHAs and resets nothing.
+- **One `redFirst` vocabulary.** The reviewer graded with `not-applicable` and `not-proved` while
+  the executor and the schema said `proved|could-not-prove|not-attempted`, and the reviewer brief
+  misquoted what the executor sends. The schema enum is now the one source: the reviewer echoes the
+  executor's word when its basis holds, `not-attempted` replaces `not-applicable`, and `not-proved`
+  stays as a declared reviewer-only grade. `_refs.red_first_vocabulary_drift()` fails the build when
+  either return shape strays from that.
+- **The Claude Code record readers moved to `scripts/status/_claude_home.py`**, so `/audit:version`
+  and `/audit:doctor` read `installed_plugins.json` and `known_marketplaces.json` through one module
+  instead of two.
+- **Under `--json`, every `audit-task.py` refusal is one JSON object**, `{ok: false, exit, refused,
+  findings}`, where it used to be prose on the stdout a caller was about to parse.
+- **The list flags repeat.** `--files`, `--blocked-by`, `--depends-on` and `--verified-by` take the
+  flag more than once and still split each value on commas, and `--help` says so on each, with an
+  example - the separator used to be guessed.
+- **The argv gap refusal is short and says what it most likely saw.** It is the heredoc to retype,
+  the marked span and one line of cause; for a leading, doubled or trailing space it names backtick command
+  substitution as likely and points at the shell's `command not found` lines, and for every other
+  shape it says the check cannot tell substitution from code quoted into the brief.
+- **The start that enters a phase warns about an empty `testGate` or a missing `desiredOutcome`**,
+  and `add`/`scope --gate` warn about a gate entry that is a directory rather than a command. Both
+  are warnings, never refusals.
+- **The orchestrator sets `blocked` through `audit-task.py block`**, so the reason is recorded; a
+  cross-session dependency goes there and into `note` rather than into a description.
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
   names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
   the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the
@@ -227,6 +315,91 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   conflict's stages and an intent-to-add path included - so a failed staging or a commit a hook
   refuses leaves the index as it was found, and a conflict resolved in the tree is staged rather
   than refused.
+- **`/audit:doctor`'s `running plugin` row no longer stays yellow over a dead session's stamp.** It
+  counted every stamp not naming this copy as drift and never read the stamp's age, so one ended
+  session's file - which state GC keeps for days - held the row at WARNING while every newer stamp
+  named the running copy, and "start a new session" could not clear it. It now grades the newest
+  stamp per copy: a copy superseded by a newer stamp since is reported as history, named, aged and
+  offered for pruning by path, and a live foreign stamp carries its age. Liveness is each copy's
+  own age against an idle bound the row prints, never the asking session's stamp - that session
+  has always just prompted - and `guard-secrets-read` now refreshes the calling session's stamp on
+  Read, Grep, Bash and MCP calls, throttled, so a session mid-turn on an older copy stays a
+  WARNING.
+- **`/audit:doctor`'s `plugin files` row verifies a marketplace-cache install** instead of warning on
+  every one that it is "not inside a git checkout". Claude Code's `installed_plugins.json` records
+  the commit the cache copy was made from and the marketplace clone holds it, so the copy is
+  compared byte for byte with `git archive` of that commit and each differing or missing file is
+  named. Both records are undocumented Claude Code files, read fail-open, and the row says so; it is
+  unverifiable only when a record, the commit or the clone is missing.
+- **A compile error is no longer credited as a proved red.** The briefs graded any named command
+  with a non-zero exit as `proved`; `proved` now needs at least one test collected and an assertion
+  failing - a named case of the task's own - and a compile, import or collection error is
+  `could-not-prove` unless the task introduces the symbol the run fails on: an identifier, a final
+  import/attribute/name error naming it (never a syntax error), and a second run with the working
+  tree's implementation copied in that loses the error.
+- **`stamp-verification.py red` always accounts for its throwaway.** A SIGTERM left the throwaway
+  registered in git and a timeout left a test runner's grandchildren writing into it. The run is
+  now one process group torn down whole, SIGINT/SIGTERM raise so the cleanup runs, the default
+  timeout stays under the host's Bash limit, a throwaway left by SIGKILL is reported by name on the
+  next run, and the child's environment is scrubbed of what points at the shared tree. The
+  teardown and the interrupt handling moved to `scripts/governance/_proc_group.py`, shared with
+  `run-test-gate.py`. `pytest -q`'s unframed summary is now read as a tally.
+- **The `plugin files` row names unpublished files under `hooks/` and `scripts/`**, bytecode
+  included - bytecode beside a published `.py` is what Python executes - instead of calling them
+  harmless; bytecode is counted rather than named only when its header records its published
+  source AND its body matches a fresh compile of that source, since a matching header alone is
+  what makes Python run a stale body. The `redFirst` lint now also refuses a retired word anywhere in the two briefs.
+- **The running-plugin stamp refresh can no longer change `guard-secrets-read`'s verdict.** It ran
+  before the decision, and a `stateDir` that was not a string made it raise, which the hook's exit
+  0 turned into an allowed read of a secret file. It now runs after the verdict, with everything
+  it computes inside one never-raise.
+- **`red`'s environment scrub goes by path, not substring**: only a variable whose value is a path
+  under the shared root, or the entries of a path list that are, are removed, so PATH survives an
+  in-repo `.venv/bin`; the basis names what was dropped. One deadline now covers both runs and a
+  `--timeout` past the host's limit is refused; `--case` is held to the same absent-from-HEAD test
+  as a derived case; pytest collection errors and a bare AttributeError reach `--introduces`'
+  second run; a leftover throwaway is `left behind` only when its owning process is gone; and the
+  throwaway is never built under a TMPDIR inside the shared tree. The deadline covers the build and
+  the first run too, with the teardown and removal bounded inside the host's limit, and a kept
+  variable that carries a path under the shared root is named in the basis.
+- **`scope` said the index was DIRTY when its bytes had not changed, and reordered a shared
+  `fileIndex` row on a call that moved nothing.** It re-derived every row it held by removing and
+  re-appending, and always passed `fileIndex` as changed; it now touches only the rows it claims or
+  releases, and the index write is skipped when its bytes would come out identical - so the note
+  appears only when there is something for `commit-manifest-index.py` to land.
+- **The argv guard refused `params :id and :key`.** A colon that starts an identifier no longer
+  reads as a hole. A colon before a digit after whitespace is still refused on purpose: it is
+  exactly what a substituted "`path`:line" citation leaves, so a line reference after a space goes
+  in on stdin.
+- **A no-change close could mark a bug fixed with no fix commit.** `done --no-change` on a bug's fix
+  task is refused, and names the route that works: cancel the task first, then
+  `/audit:bug close <id> not_a_bug|wontfix` (which refuses while the task is in progress).
+- **A moved task's old id could be minted again.** Every id in a live task's `movedFrom` chain
+  (a second move keeps the first as `movedFrom.previous`, now in the schema) counts as taken, and
+  `/audit:doctor` and `--reconcile` join runs recorded under an old id to the live task; the
+  report's run history still lists them under the old id. A chain naming a live task's id, or an
+  id two chains claim, is joined by neither and drawn as a validator warning. `move` reports the
+  exact number of runs it leaves keyed to the old id.
+- **`move` judged the target phase in the wrong place**: it now checks that the phase exists
+  first, then the task's own status, then the phase's state, as documented, and a signed-off
+  target's refusal speaks of the move. `scope`/`retarget` no-ops under `--json` print an object,
+  and `start`'s ceiling refusal names `audit-task.py block`.
+- **One spelling of a `fileIndex` key.** `scope`, `add` and `/audit:propose materialize` key a
+  `:line-range` entry's row by its path, and `audit-lookup` looks an entry up by that path - it
+  reported a ranged declaration as "not in fileIndex yet". And only a trailing `:<digit range>`
+  is a line suffix now, in both copies of the rule (`_manifest_vocab`, `hooks/_config`): an
+  absolute Windows entry used to strip to its drive letter.
+- **A phase lock name is ASCII, and one spelling per folded name.** `phase-<id>` accepted any
+  `str.isalnum()` character, so letters of every script were lock names, and `phase-P1` and
+  `phase-p1` were two claims on Linux and one file on macOS and Windows. The id is now ASCII
+  `[A-Za-z0-9._-]`, acquiring a spelling that differs only in case from a lock already held is
+  refused on every platform, and releasing one is refused only where the filesystem folds case -
+  where both spellings are two files, the exact one is released, `--force` included.
+- **A finished phase no longer carries another phase's unpaired `fileIndex` rows as its own
+  breach.** `manifest-revalidated`'s live pairing re-check validated the whole manifest and
+  charged every unpaired row to the phase being checked, so a phase in flight elsewhere - which
+  has such rows by construction - broke a phase that was done. It keeps only rows naming the
+  checked phase's own tasks.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,
@@ -309,6 +482,72 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **The README said ids "never collide" because they are allocated under the index lock.** The lock
   is per clone; two branches can mint the same `max+1` id, and the sentence now says so. The same
   documents' "no manifest conflict" promise is scoped to a phase RUN, which is the case it held for.
+- **Every hook judges a linked worktree's work against that worktree's plan.** Only `require-plan`
+  re-rooted onto a worktree beside the checkout. `guard-secrets-read` skipped a `sed -i` or
+  `python3 -c` write into a worktree file, or refused it naming the main checkout's running phase;
+  the capability policy read the main checkout's live areas; `remind-tdd` was silent; `guard-edits`
+  let a worktree's journal and bypass state be edited by hand; the journal recorder filed no
+  `task.complete` / `task.commit` for a task finished in a worktree; spend was `unattributed`; and the
+  history guard read the main checkout's recorded SHAs for a rebase of the worktree branch. One
+  helper, `_config.tree_for`, now places each path (and each Bash command, where its shell stood after
+  any `cd`) in its tree, and `_deps.hook_tree_violations()` fails the build on a hook that reads the
+  plan beside `repo_root` (or an alias of it), or beside a `tree_for` asked only for `PROJECT_ONLY`
+  with no target placed; the one scope that reads the project's plan on purpose is declared with
+  its reason. The config and the session's own state stay with the project.
+- **The bash-write guard blamed a shell command for journal rows the plugin wrote.** A peer
+  session's hook rows, a plugin script's rows and a merge's journal files each drew "that shell
+  command wrote into the append-only audit journal". The verdict is read from the bytes now: a file
+  identical to its version at a `MERGE_HEAD` or `ORIG_HEAD` git wrote inside the window (and not a
+  truncation of HEAD's own version) is the merge's, rows that chain onto the
+  committed tail with verifying hashes, a plugin `via` and a fresh stamp are named as the plugin's
+  writer, and everything else keeps the tamper notice. A peer session's claim file is still not read.
+- **The history guard keeps refusing prose that names `git stash`, on purpose.** An exemption
+  for text emitters' arguments and a data reading of a piped heredoc's far side were both tried
+  in this release and both removed: each fix of them opened another pass (a later pipe stage, an
+  interpreter option set in the environment, a comment ending in a backslash, a file run by name
+  or by git itself). Every `git` word counts, and a piped heredoc body is graded as shell. The
+  need the field report named is met without either: feed the heredoc to the script directly,
+  `python3 x.py --technical - <<'EOF'`, which is data. An unquoted delimiter whose body carries
+  `$(…)` or a backquote is graded wherever the body goes.
+- **Commands the history and secret guards did not read.** The rest of a heredoc's own line after
+  its marker (`cat <<'EOF' && …`) was dropped with the body; a here-string (`<<<`) was read as a
+  heredoc and the lines after it dropped; a heredoc head that ran its body through a wrapper, an
+  option value or process substitution (`env python3 -W ignore -`, `bash <(cat)`) was read as
+  data; a `$(…)` inside double quotes was one word, so `echo "$(git stash)"` and
+  `eval "$(echo …)"` ran unread (quotes inside it are now tracked, and an inner body that will
+  not parse sends the command to the raw-text reading); a here-string fed to a shell or an
+  interpreter (`sh <<<'…'`) was never read; only the first `git reset --hard` of a command was
+  graded; and `xargs git` took its verb from stdin unseen - it is refused while a plan exists. A
+  reset or amend reaching several worktrees now resolves its refs in the tree it runs in, and a
+  backslash-newline is joined as the shell joins it, except inside a comment.
+- **A session's journal hook recorded other sessions' writes, and read a stored status as a
+  sign-off.** After the orchestrator stored its phases' derived statuses, a different session's
+  next unrelated Bash call derived rows from the manifest digest it saw move - 105 of them
+  `phase.signoff` - and filed them under itself. The Bash and MCP lanes now refresh their
+  baseline before each call, so a call derives rows only from what moved while it ran; and
+  `phase.signoff` is derived from the derivation's inputs on both sides of a write (the verdict,
+  and with a branch the merge stamp), never from a `status` flipped by hand or stored to match the
+  derivation - so a hand flip made before the verdict no longer swallows it. Such a flip is still
+  recorded, as the edit it is. A move made between calls is absorbed, whoever made it: the hook
+  records only what its own call wrote, and each agent of a session keeps its own baseline, so
+  one agent's Pre cannot swallow another's write. A move no row explains (an editor, a terminal,
+  a background job) is not lost: `audit-journal verify` warns that the file "has changed since the
+  last row that recorded it", and `/audit:doctor` reports that warning as out-of-band drift; a task
+  closed from the CLI records its own `task.done` row, which the doctor accepts as the receipt.
+- **One session's worktrees shared a journal file.** The writer id was the session alone, so
+  every linked worktree a session drove appended the same `<month>.<session>.jsonl`, and merging
+  two of those branches met a file whose same-second rows disagreed. A linked worktree now writes
+  `<month>.<session>.wt-<key>.jsonl`, the key taken from the worktree's own writer token; a main
+  checkout keeps the name it always had, and every reader still reads both. The evidence ledger
+  had the same defect - and `audit-journal merge` reads the journal directory only, so its
+  conflict had no resolver - and is keyed the same way. Whether a checkout is a linked worktree
+  is git's answer, asked where `gitRoot` points, and the key is kept in the worktree's own git
+  dir, so a `gitRoot` subdirectory or a shared absolute `stateDir` no longer collapses it.
+  **Limit:** when git cannot be asked, or the key cannot be stored there, the session-keyed name
+  is used. A main checkout is answered from its `.git` directory with no git process; a
+  worktree's key is kept in the process only while its `.git` file is the same file, so one
+  removed and added back at the same path gets a new key; a caller that passes no config gets
+  the project's own.
 
 ## [3.0.1] - 2026-09-18
 

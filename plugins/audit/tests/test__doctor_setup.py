@@ -851,7 +851,7 @@ def _cases(check):
                   _got["verdict"] == "dev", repr(_got))
             nogit = tempfile.mkdtemp(prefix="doctor-nogit-")
             try:
-                _got = M.plugin_integrity(nogit, project=pin)
+                _got = M.plugin_integrity(nogit, project=pin, home=nogit)
                 check("ds40 ...and a copy in no checkout at all is unverifiable "
                       "with the reason said, never clean",
                       _got["verdict"] == "unverifiable" and _got["detail"],
@@ -864,6 +864,195 @@ def _cases(check):
     else:
         _harness.skip(check, "ds37-ds40 plugin_integrity against a real checkout",
                       "git", "git is not on PATH")
+
+    if have_git:
+        _harness.stage(check, "pc-cache", _cache_install_cases)
+    else:
+        _harness.skip(check, "pc1-pc8 a marketplace-cache install", "git",
+                      "git is not on PATH")
+
+
+def _cache_home(root):
+    """A Claude home laid out the way `/plugin install` leaves it: the cache copy
+    is a plain directory, the marketplace clone is a git repository, and the two
+    undocumented records join them. Returns `(home, cache, clone, sha)`."""
+    home = os.path.join(root, "claude-home")
+    plugins = os.path.join(home, "plugins")
+    clone = os.path.join(plugins, "marketplaces", "qg")
+    src = os.path.join(clone, "plugins", "audit")
+    for rel, text in (("hooks/guard.py", "x = 1\n"),
+                      (".claude-plugin/plugin.json", '{"version": "1.0.0"}\n'),
+                      ("README.md", "readme\n")):
+        path = os.path.join(src, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    os.makedirs(os.path.join(clone, ".claude-plugin"))
+    with open(os.path.join(clone, ".claude-plugin", "marketplace.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"name": "qg", "plugins": [{"name": "audit",
+                                              "source": "./plugins/audit"}]}, fh)
+
+    def cgit(*args):
+        return subprocess.run(["git", "-C", clone, "-c", "user.email=t@t.invalid",
+                               "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+                              + list(args), stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, universal_newlines=True)
+    cgit("init", "-q")
+    cgit("add", "-A")
+    cgit("commit", "-qm", "release")
+    sha = cgit("rev-parse", "HEAD").stdout.strip()
+    cache = os.path.join(plugins, "cache", "qg", "audit", "1.0.0")
+    shutil.copytree(src, cache)
+    # What a running install leaves beside the published files: bytecode and the
+    # harness's own marker. Neither is a published file, so neither is a change.
+    os.makedirs(os.path.join(cache, "hooks", "__pycache__"))
+    with open(os.path.join(cache, "hooks", "__pycache__", "guard.pyc"), "wb") as fh:
+        fh.write(b"\0")
+    with open(os.path.join(cache, ".in_use"), "w", encoding="utf-8") as fh:
+        fh.write("")
+    with open(os.path.join(plugins, "installed_plugins.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"version": 2, "plugins": {"audit@qg": [
+            {"scope": "user", "installPath": cache, "version": "1.0.0",
+             "gitCommitSha": sha}]}}, fh)
+    with open(os.path.join(plugins, "known_marketplaces.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"qg": {"installLocation": clone}}, fh)
+    return home, cache, clone, sha
+
+
+def _cache_install_cases(check):
+    root = _harness.fixture_root("doctor-cache-install-")
+    project = _harness.fixture_root("doctor-cache-project-")
+    home, cache, clone, sha = _cache_home(root)
+
+    got = M.plugin_integrity(cache, project=project, home=home)
+    check("pc1 a marketplace-CACHE install is not a checkout, and is verified "
+          "anyway: its files are compared with `git archive` of the commit "
+          "installed_plugins.json records, from the marketplace clone that "
+          "holds it - clean, carrying that commit. Bytecode and the harness's "
+          "own marker beside the published files are not changes: %r" % (got,),
+          got["verdict"] == "clean" and got["commit"] == sha[:12])
+    rep = base.Report()
+    M.check_plugin_files(rep, project, plugin_root=cache, integrity=got)
+    said = _detail(rep, "plugin files")
+    check("pc2 ...and the row says what the answer rests on: the two records, "
+          "and that Claude Code does not document them - the fail-open basis "
+          "`/audit:version` already states: %r" % (said,),
+          _levels(rep, "plugin files") == ["OK"]
+          and "installed_plugins.json" in said and "does not document" in said
+          and sha[:12] in said)
+
+    os.makedirs(os.path.join(cache, "scripts"))
+    with open(os.path.join(cache, "scripts", "stray.py"), "w",
+              encoding="utf-8") as fh:
+        fh.write("print('not published')\n")
+    got_x = M.plugin_integrity(cache, project=project, home=home)
+    rep = base.Report()
+    M.check_plugin_files(rep, project, plugin_root=cache, integrity=got_x)
+    said_x = _detail(rep, "plugin files")
+    check("pc5 files the commit does not publish under hooks/ and scripts/ are "
+          "NAMED as extras - bytecode beside a published .py is what Python "
+          "executes, so a clean verdict over them says so rather than calling "
+          "them harmless; the harness's own marker outside those directories is "
+          "not listed: %r %r" % (got_x.get("extras"), said_x),
+          got_x["verdict"] == "clean"
+          and got_x.get("extras") == ["hooks/__pycache__/guard.pyc",
+                                      "scripts/stray.py"]
+          and "hooks/__pycache__/guard.pyc" in said_x
+          and "bytecode executes" in said_x)
+    os.remove(os.path.join(cache, "scripts", "stray.py"))
+
+    import py_compile
+    fresh = os.path.join(cache, "hooks", "__pycache__",
+                         "guard.%s.pyc" % (sys.implementation.cache_tag,))
+    py_compile.compile(os.path.join(cache, "hooks", "guard.py"), cfile=fresh,
+                       doraise=True)
+    got_f = M.plugin_integrity(cache, project=project, home=home)
+    rep = base.Report()
+    M.check_plugin_files(rep, project, plugin_root=cache, integrity=got_f)
+    said_f = _detail(rep, "plugin files")
+    check("pc6 bytecode that MATCHES its published source - Python's own, written "
+          "the first time a hook ran - is counted, not named: a line naming it on "
+          "every install is read past. Bytecode that does not match is still "
+          "named: %r %r" % (got_f.get("extras"), said_f),
+          got_f.get("extras") == ["hooks/__pycache__/guard.pyc"]
+          and got_f.get("freshBytecode") == 1
+          and "body matches a fresh compile" in said_f)
+
+    # A matching HEADER is the condition under which Python executes a .pyc; it
+    # says nothing about the body. A restore inside one second at one size, or a
+    # `cp -p` of an edited-then-restored hook, leaves exactly this.
+    with open(fresh, "rb") as fh:
+        header = fh.read(16)
+    other = os.path.join(_harness.fixture_root("doctor-pyc-other-"), "guard.py")
+    with open(other, "w", encoding="utf-8") as fh:
+        fh.write("x = 'something else entirely'\n")
+    swapped = os.path.join(os.path.dirname(other), "swapped.pyc")
+    py_compile.compile(other, cfile=swapped, doraise=True)
+    with open(swapped, "rb") as fh:
+        body = fh.read()[16:]
+    with open(fresh, "wb") as fh:
+        fh.write(header + body)
+    got_s = M.plugin_integrity(cache, project=project, home=home)
+    check("pc7 a .pyc whose HEADER matches its source but whose BODY is another "
+          "program's is NAMED, not counted - the header is what makes Python run "
+          "it, so it is the bytecode this line exists to surface: %r"
+          % (got_s.get("extras"),),
+          fresh.replace(os.sep, "/").split(cache.replace(os.sep, "/") + "/")[-1]
+          in (got_s.get("extras") or [])
+          and got_s.get("freshBytecode") == 0)
+
+    # A module a hook reaches through `hooks/../scripts/` is compiled under THAT
+    # name; the body embeds it, so a fresh compile has to be given the same one.
+    detour = os.path.join(cache, "hooks", "..", "hooks", "guard.py")
+    py_compile.compile(os.path.join(cache, "hooks", "guard.py"), cfile=fresh,
+                       dfile=detour, doraise=True)
+    got_d = M.plugin_integrity(cache, project=project, home=home)
+    check("pc8 bytecode compiled under the path it was IMPORTED by - not its plain "
+          "path - is still Python's own and counted: the fresh compile is given "
+          "the recorded name, or every module a hook reaches by a relative detour "
+          "would be named on every install: %r" % (got_d.get("extras"),),
+          got_d.get("freshBytecode") == 1
+          and got_d.get("extras") == ["hooks/__pycache__/guard.pyc"])
+    os.remove(fresh)
+
+    with open(os.path.join(cache, "hooks", "guard.py"), "w",
+              encoding="utf-8") as fh:
+        fh.write("x = 2\n")
+    os.remove(os.path.join(cache, "README.md"))
+    got = M.plugin_integrity(cache, project=project, home=home)
+    check("pc3 one changed byte and one deleted file are MODIFIED, each named - "
+          "a published file missing from the install is as much a difference as "
+          "one rewritten: %r" % (got,),
+          got["verdict"] == "modified"
+          and sorted(got["modified"]) == ["README.md", "hooks/guard.py"])
+
+    records = os.path.join(home, "plugins", "installed_plugins.json")
+    with open(records, "r", encoding="utf-8") as fh:
+        held = fh.read()
+    with open(records, "w", encoding="utf-8") as fh:
+        json.dump({"version": 2, "plugins": {"audit@qg": [
+            {"scope": "user", "installPath": cache, "version": "1.0.0",
+             "gitCommitSha": "0" * 40}]}}, fh)
+    got_sha = M.plugin_integrity(cache, project=project, home=home)
+    os.remove(records)
+    got_rec = M.plugin_integrity(cache, project=project, home=home)
+    with open(records, "w", encoding="utf-8") as fh:
+        fh.write(held)
+    shutil.rmtree(os.path.join(clone, ".git"))
+    got_clone = M.plugin_integrity(cache, project=project, home=home)
+    check("pc4 UNVERIFIABLE only when one side is missing, and each says which: "
+          "a recorded commit the clone does not hold, no install record, and a "
+          "clone that is not a repository - never clean: %r"
+          % ([(g["verdict"], g["detail"][:80]) for g in (got_sha, got_rec,
+                                                          got_clone)],),
+          [g["verdict"] for g in (got_sha, got_rec, got_clone)]
+          == ["unverifiable"] * 3
+          and "0000000" in got_sha["detail"]
+          and "installed_plugins.json" in got_rec["detail"]
+          and clone in got_clone["detail"])
 
 
 def _merge_driver_cases(check):

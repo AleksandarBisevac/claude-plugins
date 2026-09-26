@@ -33,6 +33,7 @@ import _harness                                    # sets sys.path for scripts/ 
 import _output                                     # noqa: E402  (PLUGIN_ROOT, for the schema read)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
+import _proc_group as _pg                          # noqa: E402  (the teardown `_tear_down` is)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
@@ -2437,21 +2438,21 @@ def _cases(check):
                   "group WOULD signal us, one given its own session would not. "
                   "Both ends asserted, because a predicate stuck at either "
                   "constant is half right and wholly useless: same=%r detached=%r"
-                  % (M.shares_our_group(plain.pid),
-                     M.shares_our_group(detached.pid)),
-                  M.shares_our_group(plain.pid) is True
-                  and M.shares_our_group(detached.pid) is False)
+                  % (_pg.shares_our_group(plain.pid),
+                     _pg.shares_our_group(detached.pid)),
+                  _pg.shares_our_group(plain.pid) is True
+                  and _pg.shares_our_group(detached.pid) is False)
             check("lc12 ...and an unanswerable pid is True, the SAFE direction: "
                   "not knowing whether we would hit ourselves must never read as "
                   "permission to aim at the group",
-                  M.shares_our_group(-1) is True)
+                  _pg.shares_our_group(-1) is True)
 
-            real = M.shares_our_group
+            real = _pg.shares_our_group
             try:
-                M.shares_our_group = lambda _pid: True
+                _pg.shares_our_group = lambda _pid: True
                 narrow = M._tear_down(detached)
             finally:
-                M.shares_our_group = real
+                _pg.shares_our_group = real
             check("lc13 ...and `_tear_down` READS it: told the child shares our "
                   "group, it takes the narrow kill and reports UNCONFIRMED, even "
                   "though this child had a session of its own. The use site, "
@@ -2509,22 +2510,22 @@ def _cases(check):
                   "it can answer, and True is 'do not aim at the group'. This is "
                   "the platform half of lc11, and it is only honest beside "
                   "lc13w - a constant nobody reads: same=%r detached=%r own=%r"
-                  % (M.shares_our_group(detached.pid),
-                     M.shares_our_group(ignored.pid),
-                     M.shares_our_group(os.getpid())),
-                  M.shares_our_group(detached.pid) is True
-                  and M.shares_our_group(ignored.pid) is True
-                  and M.shares_our_group(os.getpid()) is True
-                  and M.shares_our_group(-1) is True)
+                  % (_pg.shares_our_group(detached.pid),
+                     _pg.shares_our_group(ignored.pid),
+                     _pg.shares_our_group(os.getpid())),
+                  _pg.shares_our_group(detached.pid) is True
+                  and _pg.shares_our_group(ignored.pid) is True
+                  and _pg.shares_our_group(os.getpid()) is True
+                  and _pg.shares_our_group(-1) is True)
 
-            real = M.shares_our_group
+            real = _pg.shares_our_group
             try:
-                M.shares_our_group = lambda _pid: True
+                _pg.shares_our_group = lambda _pid: True
                 forced_true = M._tear_down(detached)
-                M.shares_our_group = lambda _pid: False
+                _pg.shares_our_group = lambda _pid: False
                 forced_false = M._tear_down(ignored)
             finally:
-                M.shares_our_group = real
+                _pg.shares_our_group = real
             _harness.attempt(detached.wait, 10)
             _harness.attempt(ignored.wait, 10)
             check("lc13w ...and `_tear_down` does NOT read it here: swung to "

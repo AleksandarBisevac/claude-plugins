@@ -2225,6 +2225,137 @@ def _cases(check):
           not (set(M._all_names()) & set(os.path.basename(r)[:-3]
                                          for r, _p in _output.py_files(M._output.TESTS_DIR))))
 
+    # ---- which tree a hook reads the plan from (`ht*`) ------------------------
+    # Fixtures in both directions: the shapes the hooks had (a reader beside
+    # `repo_root`, directly and through a helper of the same file) and the
+    # shapes that must stay quiet (config and session state only; the tree from
+    # `tree_for`). A lint only ever seen returning [] over the real tree could be
+    # returning [] for the wrong reason.
+    ht = tempfile.mkdtemp(prefix="deps-hooktree-")
+    try:
+        def _wht(name, text):
+            with open(os.path.join(ht, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        _hdr = "import _config\n\n\n"
+        _wht("direct.py", _hdr +
+             "def decide(data):\n"
+             "    root = _config.repo_root(data)\n"
+             "    return _config.manifest_state(root, 'm.json')\n")
+        _wht("helper.py", _hdr +
+             "def _covered(root):\n"
+             "    return _config.in_progress_files(root, 'm.json')\n\n\n"
+             "def decide(data):\n"
+             "    root = _config.repo_root(data)\n"
+             "    return _covered(root)\n")
+        _wht("state_only.py", _hdr +
+             "def main(data):\n"
+             "    root = _config.repo_root(data)\n"
+             "    cfg = _config.load(root)\n"
+             "    return _config.state_dir(root, cfg)\n")
+        _wht("tree.py", _hdr +
+             "def decide(data, path):\n"
+             "    tree = _config.tree_for(data, path)\n"
+             "    return _config.in_journal(tree['root'], tree['cfg'], path)\n")
+        _wht("_config.py", _hdr.replace("import _config\n", "") +
+             "def repo_root(data):\n    return data\n\n\n"
+             "def manifest_state(root, rel):\n    return repo_root(root)\n")
+        _wht("broken.py", "def (:\n")
+        _ht = M.hook_tree_violations(ht)
+        _ht_files = sorted(set(f for f, _w in _ht))
+        check("ht1 a hook scope reading the plan beside `repo_root` is reported, "
+              "naming the reader it reached: %r" % (_ht,),
+              any(f == "direct.py" and "_config.manifest_state" in w
+                  for f, w in _ht))
+        check("ht2 ...and so is one that reaches the reader through a helper of "
+              "its own file - the fixpoint, and the shape `decide` -> `classify` "
+              "had: %r" % (_ht,),
+              any(f == "helper.py" and "_covered -> _config.in_progress_files" in w
+                  for f, w in _ht))
+        check("ht3 `repo_root` for the config and the session's own state is not "
+              "a finding - the allow case, and the one that fails if the lint "
+              "widens to every `repo_root`: %r" % (_ht_files,),
+              "state_only.py" not in _ht_files)
+        check("ht4 a reader handed the tree `tree_for` answered is not a finding "
+              "either: %r" % (_ht_files,), "tree.py" not in _ht_files)
+        check("ht5 `_config.py` defines both halves and is not read as a hook, "
+              "while a file that will not parse is reported rather than skipped: "
+              "%r" % (_ht_files,),
+              "_config.py" not in _ht_files and "broken.py" in _ht_files)
+        # The same defect by another spelling: PROJECT_ONLY is the project.
+        _wht("project_only.py", _hdr +
+             "def decide(data):\n"
+             "    home = _config.tree_for(data, _config.PROJECT_ONLY)\n"
+             "    return _config.manifest_state(home['root'], 'm.json')\n")
+        _wht("project_only_placed.py", _hdr +
+             "def _judge(data, path, cfg):\n"
+             "    tree = _config.tree_for(data, path, cfg)\n"
+             "    return tree\n\n\n"
+             "def decide(data, path):\n"
+             "    home = _config.tree_for(data, _config.PROJECT_ONLY)\n"
+             "    tree = _judge(data, path, home['cfg'])\n"
+             "    return _config.in_journal(tree['root'], home['cfg'], path)\n")
+        _wht("alias.py", _hdr +
+             "rr = _config.repo_root\n\n\n"
+             "def decide(data):\n"
+             "    return _config.manifest_state(rr(data), 'm.json')\n")
+        _ht = M.hook_tree_violations(ht)
+        _ht_files = sorted(set(f for f, _w in _ht))
+        check("ht7 a scope that asks `tree_for` only for PROJECT_ONLY and reads "
+              "the plan is reported - the project's plan by another spelling: %r"
+              % (_ht_files,), "project_only.py" in _ht_files)
+        check("ht8 ...while one whose callee PLACES a target is not - the "
+              "allow case beside ht7: %r" % (_ht_files,),
+              "project_only_placed.py" not in _ht_files)
+        check("ht9 a name bound to `_config.repo_root` is the call itself: %r"
+              % (_ht_files,), "alias.py" in _ht_files)
+        _wht("import_alias.py", "from _config import repo_root as rr\n"
+             "import _config\n\n\n"
+             "def decide(data):\n"
+             "    return _config.manifest_state(rr(data), 'm.json')\n")
+        _ht = M.hook_tree_violations(ht)
+        check("ht13 a name imported FROM `_config` is the call itself too: %r"
+              % (sorted(set(f for f, _w in _ht)),),
+              "import_alias.py" in set(f for f, _w in _ht))
+        # The exemption table, both directions, on a fixture file of the
+        # exempted name.
+        _ex = tempfile.mkdtemp(prefix="deps-hooktree-ex-")
+        try:
+            with open(os.path.join(_ex, "guard-bash-writes.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_hdr + "def decide(data):\n"
+                         "    home = _config.tree_for(data, _config.PROJECT_ONLY)\n"
+                         "    return _config.manifest_state(home['root'], 'm')\n")
+            check("ht10 a scope HOOK_TREE_EXEMPT names, with a reason, is "
+                  "excused: %r" % (M.hook_tree_violations(_ex),),
+                  M.hook_tree_violations(_ex) == [])
+            _saved = M.HOOK_TREE_EXEMPT
+            M.HOOK_TREE_EXEMPT = (("guard-bash-writes.py", "decide", "  "),)
+            try:
+                _blank = M.hook_tree_violations(_ex)
+            finally:
+                M.HOOK_TREE_EXEMPT = _saved
+            check("ht11 ...but a row with no reason excuses nothing: %r"
+                  % (_blank,), len(_blank) == 1)
+            with open(os.path.join(_ex, "guard-bash-writes.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_hdr + "def decide(data):\n    return data\n")
+            _stale = M.hook_tree_violations(_ex)
+            check("ht12 ...and a row that no longer matches a finding is itself "
+                  "reported as stale: %r" % (_stale,),
+                  len(_stale) == 1 and "stale" in _stale[0][1])
+            os.remove(os.path.join(_ex, "guard-bash-writes.py"))
+            _gone = M.hook_tree_violations(_ex)
+            check("ht14 ...and so is a row naming a hook file that no longer "
+                  "exists: %r" % (_gone,),
+                  len(_gone) == 1 and "guard-bash-writes.py" in _gone[0][1])
+        finally:
+            shutil.rmtree(_ex, ignore_errors=True)
+    finally:
+        shutil.rmtree(ht, ignore_errors=True)
+    check("ht6 ...and the REAL hooks carry none: every manifest or journal read "
+          "in hooks/ asks `_config.tree_for` which tree the work is in: %r"
+          % (M.hook_tree_violations(),), M.hook_tree_violations() == [])
+
     # ---- the tracker connector: the core may not reach into its own doors ----
     # `tk*`. Fixtures, because the real tree is (and must stay) clean, and a rule
     # only ever seen returning [] is a rule that might be returning [] for the

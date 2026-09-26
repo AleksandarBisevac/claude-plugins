@@ -1339,8 +1339,72 @@ def _cases(check):
               "not the verdict `decide()` itself hands back for the one it "
               "settles on, so it never needs to refuse",
               _ip4 is False)
+
+        # (tr) tree_for - the one question every plan-reading hook asks, over
+        # w1-w9's real trees. Each answer is asserted on `root`, `moved` and
+        # `inside` together, because a helper that re-rooted everything, or
+        # nothing, would satisfy any one of them alone.
+        _tr = M.tree_for({"cwd": str(wprim)}, str(wprim / "pkg" / "a.py"), wcfg,
+                         project=wprim)
+        check("tr1 a path inside the project is the project, spelled from it",
+              _tr["moved"] is False and _tr["inside"] is True
+              and _tr["rel"] == "pkg/a.py" and str(_tr["root"]) == str(wprim),
+              repr(_tr))
+        _tr = M.tree_for({"cwd": str(wprim)}, str(wlink / "src" / "a.py"), wcfg,
+                         project=wprim)
+        check("tr2 a path in a LINKED WORKTREE re-roots onto it, spelled from "
+              "the worktree - the plan read next is the worktree's",
+              _tr["moved"] is True and _tr["inside"] is True
+              and M._same_dir(_tr["root"], wlink) and _tr["rel"] == "src/a.py"
+              and str(_tr["project"]) == str(wprim), repr(_tr))
+        _tr = M.tree_for({"cwd": str(wprim)}, str(wother / "b.py"), wcfg,
+                         project=wprim)
+        check("tr3 a path in a SEPARATE repository is outside the plan - not "
+              "re-rooted, not inside, the project unchanged",
+              _tr["moved"] is False and _tr["inside"] is False
+              and str(_tr["root"]) == str(wprim)
+              and _tr["basis"] == "a separate git repository", repr(_tr))
+        _tr = M.tree_for({"cwd": str(wlink)}, M.PROJECT_ONLY, wcfg,
+                         project=wprim)
+        check("tr4 PROJECT_ONLY asks nothing: the homes, with the session's "
+              "worktree cwd ignored rather than placed",
+              _tr["moved"] is False and _tr["command"] is None
+              and str(_tr["root"]) == str(wprim), repr(_tr))
+        _tr = M.tree_for({"cwd": str(wlink)}, None, wcfg, project=wprim)
+        check("tr5 no target places the SESSION: a cwd in a linked worktree "
+              "re-roots onto it, through `command_tree`",
+              _tr["moved"] is True and M._same_dir(_tr["root"], wlink)
+              and _tr["command"] is not None, repr(_tr))
+        _tr = M.tree_for({"cwd": str(wprim / "pkg")}, None, wcfg, project=wprim)
+        check("tr6 ...while a cwd inside the project is the project, answered "
+              "by containment with no git call at all",
+              _tr["moved"] is False and _tr["command"] is None, repr(_tr))
+        _cd = M.effective_cwd("cd %s && sed -i x f.ts" % wlink, str(wprim))
+        check("tr7 effective_cwd reads a literal `cd` - the reading every hook "
+              "that places a Bash command now shares - and declines one it "
+              "cannot resolve", M._same_dir(_cd, wlink)
+              and M.effective_cwd("cd $X && y", str(wprim)) is None
+              and M.effective_cwd("y", str(wprim)) == str(wprim), repr(_cd))
     finally:
         _harness.remove_tree(str(wroot))
+
+    # (jc) join_continuations, with no other layer in front of it: a comment
+    # runs to the end of its line and is not joined; everything else is.
+    _nl = "\\" + "\n"
+    _jc = M.join_continuations
+    check("jc1 a backslash ending a COMMENT keeps its newline - the next line "
+          "is a command of its own", _jc("echo x # " + _nl + "git stash")
+          == "echo x # " + _nl + "git stash",
+          repr(_jc("echo x # " + _nl + "git stash")))
+    check("jc2 ...while one ending an ordinary line is joined",
+          _jc("echo x " + _nl + "git stash") == "echo x git stash",
+          repr(_jc("echo x " + _nl + "git stash")))
+    check("jc3 a `#` in the middle of a word is not a comment, so that line is "
+          "joined", _jc("a#b " + _nl + "c") == "a#b c", repr(_jc("a#b " + _nl + "c")))
+    check("jc4 ...and neither is one inside quotes",
+          _jc("echo '#' " + _nl + "c") == "echo '#' c"
+          and _jc('echo "#" ' + _nl + "c") == 'echo "#" c',
+          repr((_jc("echo '#' " + _nl + "c"), _jc('echo "#" ' + _nl + "c"))))
 
     # (i) ensure_local_dir: plugin-managed local dirs are self-ignoring --------
     # state/, logs/ and the ledger hold live tokens, person identities and
@@ -1765,6 +1829,37 @@ def _cases(check):
               % (M.running_plugin_stamps(os.path.join(rp_tmp, "nope")),),
               M.running_plugin_stamps(os.path.join(rp_tmp, "nope"))
               == {"stamps": [], "unreadable": []})
+        # -- the stamp's mtime means the last GUARDED TOOL CALL, not the last prompt
+        # One prompt can drive hours of tool calls, so a stamp written only on a
+        # prompt made every session mid-turn look idle beside the one asking.
+        stale_at = time.time() - M.RUNNING_STAMP_REFRESH_SECONDS - 5
+        slot = os.path.join(state, M.RUNNING_STAMP % "sess-1")
+        os.utime(slot, (stale_at, stale_at))
+        touched = M.refresh_running_stamp(state, "sess-1")
+        check("rp12 a guarded tool call REFRESHES its session's stamp once the "
+              "stamp is older than the throttle: %r mtime moved %r"
+              % (touched, os.path.getmtime(slot) > stale_at + 1),
+              touched is True and os.path.getmtime(slot) > stale_at + 1)
+        before = os.path.getmtime(slot)
+        again = M.refresh_running_stamp(state, "sess-1")
+        check("rp13 THE THROTTLE: a second call inside the throttle only stats - "
+              "it writes nothing, so a tool call pays one stat and not a write: "
+              "%r" % (again,),
+              again is False and os.path.getmtime(slot) == before)
+        missing = M.refresh_running_stamp(state, "never-prompted")
+        check("rp14 ...and a session with no stamp gets none CREATED here - the "
+              "prompt hook owns the payload, and this path only moves a clock: %r"
+              % (missing,),
+              missing is False and not os.path.exists(
+                  os.path.join(state, M.RUNNING_STAMP % "never-prompted"))
+              and M.refresh_running_stamp(state, "") is False)
+        try:
+            guarded = M.refresh_session_stamp(rp_tmp, {"stateDir": 5}, "sess-1")
+        except Exception as exc:
+            guarded = "raised %s" % (type(exc).__name__,)
+        check("rp15 the guard's entry point never raises, whatever the config "
+              "holds - a guard's main exits 0 on an exception, and 0 is allow: %r"
+              % (guarded,), guarded is False)
     finally:
         import shutil as _sh_rp
         _sh_rp.rmtree(rp_tmp, ignore_errors=True)
@@ -1908,6 +2003,15 @@ def _cases(check):
           "leaving the reader to trust a copy of the digit: wanted %r"
           % (_bound_needle,),
           _bound_needle in _exec_task_doc)
+    # ONLY A TRAILING `:<digit range>` IS A LINE SUFFIX. Split on the first
+    # colon, an absolute Windows entry (`C:\\repo\\a.py`) stripped to `C`.
+    _ls = [("a\\b.tsx:291-294,308", "a/b.tsx"), ("a.py:12", "a.py"),
+           ("C:\\repo\\a.py", "C:/repo/a.py"), ("C:/repo/a.py:5-9", "C:/repo/a.py"),
+           ("docs/x:y.md", "docs/x:y.md")]
+    _ls_got = [(e, M.strip_line_suffix(e)) for e, _w in _ls]
+    check("ls1 `strip_line_suffix` drops only a trailing `:<digit range>` - a drive "
+          "letter and a colon inside a name are part of the path: %r" % (_ls_got,),
+          [g for _e, g in _ls_got] == [w for _e, w in _ls])
 
 
 def _selftest():

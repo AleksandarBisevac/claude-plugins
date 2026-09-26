@@ -1,0 +1,421 @@
+{
+  "id": "P81",
+  "title": "Selection miss learns, flaky is muted",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "A full run that fails on a suite no derived sign-off gate listed prints SELECTION MISS and records it, and full-gate.py files a bug and a coupling for it only when the runner named that suite as failing; a muted suite's failure is recorded but neither blocks a verdict nor teaches a coupling, an expired mute blocks again, and Playwright's flaky tests are recorded as flaky beside a passing verdict rather than as passes or failures.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [
+    "P80"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P81.1",
+      "title": "meta.muted and coupling.lastCaught: schema, vocabulary, validator",
+      "status": "pending",
+      "description": "Schema: meta.muted (array of {test path, reason, owner, until ISO date, bugId}; absent means nothing is quarantined and every failure blocks) and meta.coupling[].lastCaught (the ts of the newest third-place run that named the coupled test as failing; absent means never caught since it was learned). KNOWN_META += muted. Validator: a muted entry whose bugId is missing, or names no bug in bugs[], is a FINDING - a mute with no bug is the retry-until-green shape this exists to refuse, and it is wrong from the moment it is written. An EXPIRED until is a WARNING naming the entry and the unmute or extend command - NOT a finding, and this deviates from the lane on purpose: every mutating verb pre-validates and refuses a manifest already carrying a finding (_locked_retarget: 'the manifest is already invalid -- nothing written'), and DEFAULT_GATE holds invalid, so a date-triggered finding would freeze every verb and fail every default CI gate on the expiry day, including the verb that lifts the mute. The runner's refusal to honour an expired mute (L4.c) is the enforcement. Reverting to a finding is a one-word change plus exempting the mute verbs from their own pre-check, the repair-tests-add precedent. A duplicate test, a missing owner or reason, and an unparseable until are warnings. SCHEMA_EXEMPTIONS rows for the new fields, with the reason. Red-first: a muted entry without bugId is a finding; one naming a bug id bugs[] does not hold is a finding (mutation: accept any string -> red); an expired until is a warning and the manifest stays valid (mutation: make it a finding -> red). Allow case: a well-formed unexpired entry validates clean.",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_validate_manifest.py: repro that FAILS on current code - a meta.muted entry with no bugId, or one naming a bug the plan does not hold, validates with no finding"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.2",
+      "title": "bug-add writes the bug shape /audit:bug spells; mute and unmute write meta.muted",
+      "status": "pending",
+      "description": "audit-task.py bug-add \"<title>\" [manifest] --severity low|med|high --description TEXT --files a,b [--repro TEXT] [--expected TEXT] [--actual TEXT] writes exactly the shape commands/bug.md step 3 spells - {id, title, status 'open', severity, reportedAt, reportedBy null, description, repro, expected, actual, files, taskId null, fixedIn null, notes null} - with the id from _id_shape.next_bug_id(assembled, suffix) (the allocator next-id bug already uses, suffix from _mint_suffix), creating bugs [] when absent, under _under_lock, into the index through _write_add(..., phase_id=None, index_fields=('bugs',)) (the index-only path P69 added), revalidated with roll-back, journal row bug.add. The title is the POSITIONAL, not a --title flag: this parser's positional slot is named title, and the --rename comment in build_parser records why a --title flag would shadow it. --repro, --expected and --actual join PROSE_FLAGS. mute --test <path> --reason TEXT --owner NAME --until <date> --bug <id> and unmute --test <path> are the only writers of meta.muted (same lock, index write with index_fields=('meta',), revalidation, journal test.muted / test.unmuted); mute on an already-muted test with a later until extends it. Because an expired mute is a warning (L4.a), unmute and an extending mute run on such a plan like every other verb. commands/bug.md steps 1-3 become the bug-add call (no hand edit of bugs[]) and /audit:bug add passes its gathered answers as flags; the /audit:bug README row and commands/task.md for mute and unmute (_refs.command_flag_drift). Red-first: bug-add writes the step-3 shape with every key present, an allocator id and one journal row; on a plan with no bugs key it creates the list; mute without --bug refused; mute naming a bug the plan lacks is refused by the validator's finding and rolled back (mutation: skip the revalidation -> red). Allow case: unmute of a muted test removes exactly that entry.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - bug-add is an unknown verb, so /audit:bug add hand-edits bugs[] and nothing guarantees every key of the step-3 shape is written",
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - mute is an unknown verb, so a quarantine can only be written by hand"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.3",
+      "title": "A muted suite's failure is recorded and does not block; Playwright's flaky is its own word",
+      "status": "pending",
+      "description": "Verdict rule (dg20): a failed step whose failingSuites (named basis only) are ALL muted by an unexpired meta.muted entry does not make the run fail - failed_steps / run_status exclude it - and the step keeps its exit, failing and failingSuites on the row; the row gets muted [{test, bugId, until}] and the terminal prints 'muted: <test> failed (bug <bugId>, until <date>)'. A step with one non-muted failing suite, or whose failures could not be named (tail basis), fails as today: a mute is never assumed. An expired entry is not honoured, and the line says 'muted until <date> - expired, so this failure blocks'. The runner never retries a non-muted failure (a retry stays reserved for a signal death). Playwright: add a summary reader row (passed, failed and flaky counted as ran) and a failure reader row TOGETHER (fr0 reads _SUMMARY_READERS and _FAILURE_READERS against each other), and a step observation flaky (the names Playwright reports as flaky) with flakyBasis, recorded on a step that exited 0 as well. NOT a step outcome: _evidence_io._step_failed and every tally read any outcome as not-passed, and a flaky-but-green step is a pass with a named doubt. Capture a real Playwright run's list or line reporter output as the fixture before writing the regex (the verifying-external-behavior skill): the reader must match what the pinned version prints. _evidence_io: muted on the row (row_for allow-list), flaky and flakyBasis in STEP_KEYS, bounded and redacted. Red-first: dg20 - a muted failing suite beside green steps -> status passed with the muted line (mutation: remove the filter -> red); allow: an expired until -> the failure blocks (mutation: ignore until -> red); a muted suite beside an unmuted failure -> failed; a tail-basis failure -> failed. Playwright output with one flaky test -> step exit 0, flaky names it, status passed (mutation: record it as outcome -> red, through gate_tally counting it failed).",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - a run whose only failing suite is muted by an unexpired entry comes back failed (dg20)",
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - Playwright output reporting a flaky test records nothing that names it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.4",
+      "title": "The --full post-pass names a SELECTION MISS, learning only from a suite the runner named",
+      "status": "pending",
+      "description": "After a --full run, a post-pass (dg15). Failing suites = the steps' failingSuites whose basis says the runner NAMED them - never the failing tail, never a muted suite. Derived sets = the union of phase.testGateDerived.tests over the phases whose mergedHead the run's head contains (_worktrees.merged_into) and that merged after the newest earlier whole-bearing green full row. A failing suite none of them listed is a SELECTION MISS: print 'SELECTION MISS: <path> failed at the third place and no derived sign-off gate in <P, ...> listed it. remedy: audit-task.py couple --test <path> --sources <files> --basis-run <runId> --basis-head <head> --phases <ids>; audit-task.py bug-add ...' and put selectionMiss [{test, phases, sources}] on the row (row_for allow-list). Sources are the union of those phases' tasks' files - the work since the last green full run, read off the plan rather than guessed from a diff. When the failures were not named, print 'not learned: the runner did not name the failing suites (basis: <basis>)' instead. The runner prints and records; it never writes the manifest - full-gate.py acts. Red-first: a full run failing on e2e/cart.spec.ts, with one merged phase whose derived tests do not list it, prints the miss and records it; dg15 - the same failure with a tail basis records no miss and prints the not-learned line (mutation: learn from the tail -> red). Allow cases: a failing suite a derived gate listed is not a miss; a muted suite is never a miss.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - a full run failing on a suite no merged phase's derived gate listed prints no SELECTION MISS and records nothing on the row",
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - nothing refuses to learn from a failure the runner did not name (dg15)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.5",
+      "title": "couple --caught refreshes a coupling's lastCaught from a named third-place failure",
+      "status": "pending",
+      "description": "couple --test <path> --caught <runId> on an already-coupled test sets lastCaught to that run's ts and journals coupling.caught. The run must be a scope full row whose failingSuites, with a named basis, include the test (looked up with _evidence_io.row_by_run); otherwise refused exit 2 naming which. A coupling first written from a miss carries no lastCaught. --caught never creates a coupling (a test that is not coupled is refused) and never changes sources. Add the dest to VERB_FLAGS['couple'] and commands/task.md. Red-first: --caught on a coupled test named failing in a full row sets lastCaught to the row's ts and writes one journal row; mutation: accept a row whose basis is a tail -> red. Allow cases: an uncoupled test refused; a phase-scope row refused.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - there is no way to record that a coupled test caught a failure, so every coupling ages as if it never earned its place"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.2",
+        "P81.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.6",
+      "title": "The doctor names untracked couplings and uncouple candidates, never removing either",
+      "status": "pending",
+      "description": "check_couplings(rep, project, manifest_rel, manifest, git_root, config=None) in _doctor_trail.py, wired after the full-run row. (dg5) A coupling whose test or any source git does not track (one batched git ls-files over the named paths) is a WARNING naming the path and 'audit-task.py uncouple --test <path>' - never removed silently. A coupling not caught (lastCaught, else learnedAt) in the last K green whole-bearing full runs is named as a CANDIDATE for uncouple, with K printed as the basis (a module constant with its reason); never removed, because removal narrows the gate. No meta.coupling: an OK row. Red-first: delete the coupled test file in a fixture repo -> the doctor names it with the command (mutation: skip untracked paths -> red). Allow cases: a coupling caught recently is not a candidate; one older than K green full runs is.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_audit_doctor.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_trail.py: repro that FAILS on current code - a coupling whose test file git no longer tracks draws no warning and no uncouple command (dg5)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.7",
+      "title": "full-gate.py acts on a miss: a coupling and a bug, and nothing from an unnamed failure",
+      "status": "pending",
+      "description": "After the --full --record subprocess, full-gate.py reads the row it wrote (_evidence_io.row_by_run with the runId the runner printed on its 'evidence: recorded' line; failing that, the newest full row for HEAD) and, for each selectionMiss entry, runs audit-task.py couple --test <path> --sources <sources> --basis-run <runId> --basis-head <head> --phases <ids>, then audit-task.py bug-add \"Selection miss: <path>\" --severity med --files <path> --description <the miss sentence, the runId, the head and the phases>, both as subprocesses through _loader.script_path; and couple --test <t> --caught <runId> for each already-coupled test named failing. It prints what it wrote and each verb's own output, and exits with the runner's code: a miss is learned and the red still blocks the push. It never acts on a row whose failures were not named. Red-first in test_full_gate.py: a fake full run producing a miss ends with a coupling and a bug in the fixture plan and one journal row each; dg15 end to end - a tail-basis red writes nothing (mutation: act on the failing lines -> red). Allow case: a green run writes nothing.",
+      "files": [
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_full_gate.py: repro that FAILS on current code - a full run with a selection miss leaves the plan with no coupling and no bug for it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.2",
+        "P81.4",
+        "P81.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.8",
+      "title": "Docs: the learning loop, quarantine and flaky",
+      "status": "pending",
+      "description": "reference/orchestrator.md: the learning loop - a miss at the third place becomes a coupling and a bug through full-gate.py, only from a suite the runner named; removal is uncouple by a person, never automatic. Quarantine: a muted suite is run and recorded, never blocks, never teaches, and blocks again when its until passes; no retry-until-green. reference/manifest-conventions.md: the bug.add, test.muted, test.unmuted and coupling.caught journal actions and their details. commands/doctor.md: the coupling row. commands/review.md: what --full now learns. README: meta.muted and a flaky step, and what a SELECTION MISS asks of the operator. COMPATIBILITY.md: muted absent = nothing quarantined; lastCaught absent = never caught since learned; an expired mute is a warning and why it is not a finding. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.1",
+        "P81.2",
+        "P81.3",
+        "P81.4",
+        "P81.5",
+        "P81.6",
+        "P81.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

@@ -477,6 +477,11 @@ def _cases(check):
           "- offline, with no meta.ado.hierarchy in that manifest at all, "
           "because the structural tier stands on the manifest's own ids: %r"
           % (_f,), len(_f) == 2 and _w == [])
+    _codes = sorted(str(getattr(x, "code", None)) for x in _f)
+    check("ap30b ...and each carries the hierarchy rule's own code, so a baseline "
+          "keys it on that rule and not on its sentence: %r" % (_codes,),
+          len(_codes) == 2
+          and all(c.startswith("crossrefs.ado_parents.A") for c in _codes))
     check("ap31 ...and it reaches every consumer through `validate()`, not "
           "only a direct caller: %r"
           % ([x for x in _rules.validate(_loop)[0]

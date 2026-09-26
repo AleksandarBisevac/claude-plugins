@@ -151,7 +151,10 @@ def check_evidence_pointers(rep, project, manifest):
                 pointers.append((scope, subject, str(block["runId"])))
     try:
         read = _evidence_io.read_rows(project)
-        latest = _evidence_io.latest_by_subject(read["rows"])
+        # Through `movedFrom`: a run recorded under a moved task's old id is that
+        # task's run, not a subject the plan no longer has.
+        latest = _evidence_io.latest_by_subject(
+            read["rows"], aliases=_evidence_io.subject_aliases(manifest))
     except Exception as exc:
         # NOT an ok line. A reader who could not open the ledger has cleared
         # nothing, and saying so is the whole point of the level.
@@ -318,8 +321,19 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     # so a `git reset --hard` that orphaned three task commits left all three
     # green until a `gc` ran, at which point they turned from recoverable into
     # gone with no event in between. Existence is not reachability.
-    no_sha = [str(t.get("id")) for t in done if not t.get("commit")]
+    # A NO-CHANGE CLOSE HAS NO SHA BY DESIGN - `done --no-change` records why
+    # nothing needed to change in `outcome.noChange` instead - so it is left out
+    # of the warning and named on a line of its own, never dropped in silence.
+    no_change = [str(t.get("id")) for t in done
+                 if not t.get("commit") and _commit_trail.no_change_close(t)]
+    no_sha = [str(t.get("id")) for t in done
+              if not t.get("commit")
+              and _commit_trail.no_change_close(t) is None]
     trail = {"missing": [], "unreachable": []}
+    if no_change:
+        rep.ok("completions",
+               "%d done task(s) closed with no change and so no commit, each "
+               "recording why: %s" % (len(no_change), _output.some_of(no_change)))
     if no_sha:
         rep.warn("completions",
                  "%d done task(s) carry no commit SHA: %s"

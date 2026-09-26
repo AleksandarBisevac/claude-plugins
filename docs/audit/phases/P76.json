@@ -1,0 +1,344 @@
+{
+  "id": "P76",
+  "title": "The verbs cover what operators were hand-editing",
+  "status": "done",
+  "description": "",
+  "desiredOutcome": "audit-task has verbs for what field reports hand-edited - a deliberate no-intent answer with a reader, a no-change close, move, block with a reason, an append-only note - add has a dry run and --json refusals that are JSON, list flags say their separator and repeat, scope reports the index dirty only when bytes changed and keeps fileIndex order, and the argv guard stops refusing a colon-prefixed identifier and names backtick substitution when that is what it saw",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
+  "branch": "audit/p76-the-verbs-cover-what-operators",
+  "mergedAt": "2026-09-26T04:13:12Z",
+  "review": {
+    "tool": "audit:audit-reviewer",
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P76-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`done --no-change` is accepted on a bug's fix task, and nothing stops the close from marking the bug fixed. `_locked_done` runs `_settle` over every bug whose `taskId == tid`. `effective_bug_status` treats any fix task with status `done` as `fixed`, whatever its commit. So a no-change close stores the bug as `fixed` with `fixedIn: null`. `bug_basis` then reads 'fix task X is done at no commit'. A ",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The allocator can hand out a moved task's old id again. `move` takes the id away from the source phase. `_allocate_id`/`next_task_id` count only live task ids and parked-proposal ids, and never `movedFrom.id`. When the moved task had the highest number in its phase (the usual case: the task just added to the wrong phase), the next `add --phase <source>` mints the old id again. `_allocate_id`'s own",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`move` handles the evidence ledger only by leaving it alone, and every evidence reader keys on the old id. A `blocked` task, which `move` explicitly allows, usually carries red gate runs and a `testEvidence` pointer. The pointer moves with the task under its new id, but the evidence rows keep subject `(task, <oldId>)`. `check_evidence_pointers` then reports 'the record is ahead of the plan for tas",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The colon exemption lets through one real kind of shell damage, and it is common in this repo's prose. A brief written as \"see `run-test-gate.py`:2680\" in double quotes reaches argv as 'see :2680'. That is exactly the ':digit after whitespace' shape now exempted. The measurement over existing texts shows the legitimate shape (':2680-2701') exists. But the damaged form of the plan's most common cit",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R5",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md",
+        "issue": "The new doc sentence says that under `--json` 'a caller parsing stdout never meets prose'. `scope` and `retarget` no-ops still print '[audit-task] X already reads that way -- nothing written' and exit 0 under `--json`. `main` wraps only when `code != 0`, so that prose reaches the JSON caller unchanged. The refusal half of the claim holds; the 'never meets prose' half does not.",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R6",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md",
+        "issue": "The move refusals are documented 'in this order' with an unknown target phase in item 1, but `_locked_move` checks the task's status (items 2-4) before it resolves the target phase. So `move <doneTask> --to P99` gets the 'done' refusal, not the 'no phase' one. Also, a signed-off target returns `_signed_off_refusal(ph, \"a task added now\")`, whose wording talks about adding, not moving.",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R7",
+        "severity": "low",
+        "file": "plugins/audit/commands/run.md",
+        "issue": "Undoing a block is still a hand edit, and that edit leaves `blockedReason` behind. manifest-conventions now sends a cross-session dependency to `block`, but `/audit:run` refuses a blocked task and offers a 'confirmed reset of attempts to 0 (back to pending)'. Nothing clears `blockedReason` on that path, so a pending task keeps a stale reason. Only `start` clears it, per the schema. Separately, `st",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`_SUBSTITUTION_SHAPES` names only a leading space and a doubled space as the shapes a substituted backtick span leaves 'on its own'. A span at the end of the text (\"fix `make`\") leaves trailing whitespace just as mechanically. That case is labelled 'whitespace after the last word' and gets the 'cannot tell' line, so the docstring's and task.md's claim about which shapes substitution produces by it",
+        "resolution": "fix task P76.3-6qa"
+      }
+    ],
+    "outcome": "matches; three review passes, every finding fixed in P76.3-P76.4"
+  },
+  "summary": "audit-task gains the verbs field reports were hand-editing for: an intent answer of not-asked with its basis and a reader that lists closed tasks with none; done --no-change for a task whose answer was no change, refused on a bug's fix task so a bug is never fixed without a commit; move, block and note, each under the index lock with a journal row, move reusing the allocator so a moved id is never reissued and its evidence still joining the live task; add --dry-run, JSON refusals under --json, repeatable list flags that explain their separator, a scope whose dirty note means changed bytes, and an argv guard that exempts only a colon starting an identifier. Every fileIndex reader and writer agrees on the path with its line range stripped. Reviewed three times, every finding fixed; merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach.",
+  "tasks": [
+    {
+      "id": "P76.1",
+      "title": "New verbs and answers for what operators hand-edited: intent not-asked, done --no-change, move, block, note",
+      "status": "done",
+      "description": "Reproduced at HEAD: (1) intentCheck has no spelling for 'not asked, on purpose' and nothing reads an absent answer - add enum member not-asked with a required basis (--intent not-asked --intent-basis TEXT), and a reader: sign-off and status list closed tasks with no answer. (2) done demands --commit - add done --no-change --reason TEXT recording outcome.noChange {reason, examinedAt: HEAD sha}; doctor's no-SHA check and verify-invariants' commit-scope skip such tasks. (3) move is a documented sequence of hand edits (commands/task.md) - make it a verb doing exactly those steps under the index lock (next-id task, movedFrom, references rewritten across index, shards and proposals, a task.move row, revalidate, rollback). (4) block <id> --reason (status + blockedReason + row) and note <id> - (append {at, text} to notes[] + row); manifest-conventions stops telling operators to put a dependency in the description, which scope refuses on a started task; orchestrator.md and execute-task.md set blocked through the verb.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/manifest/_commit_trail.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - done --intent not-asked is an invalid choice, done without --commit is refused for a task whose answer was no change, and move/block/note are invalid verbs"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "07a974f3",
+      "outcome": {
+        "technical": "not-asked intent answer and intent_unanswered reader; done --no-change with outcome.noChange; move/block/note verbs under the index lock with journal rows.",
+        "descriptive": "Operators can record a deliberate skipped intent check, close a task that needed no change, and move, block or annotate a task without editing the plan by hand."
+      },
+      "startedAt": "2026-09-25T18:00:40Z",
+      "completedAt": "2026-09-25T22:03:14Z",
+      "verifiedBy": [
+        "test_audit_task ia1",
+        "test_audit_task nc1",
+        "test_audit_task mv1-sharded",
+        "test_audit_task bk1",
+        "test_audit_task nt1",
+        "test_audit_status ni1"
+      ]
+    },
+    {
+      "id": "P76.2",
+      "title": "add has a dry run and JSON refusals, list flags say their separator, scope's dirty note means changed bytes, and the argv guard stops refusing colon identifiers",
+      "status": "done",
+      "description": "Reproduced at HEAD: add --dry-run is unrecognised and --json refusals are prose; --verified-by/--files/--depends-on/--blocked-by carry no help and the separator is guessed (a comma); scope passes files_changed=True unconditionally so the DIRTY note fires on identical bytes, and its remove-then-append re-derivation reorders a shared fileIndex row on a no-op (merge-conflict material); the argv gap guard refuses 'params :id and :key' (a colon starting an identifier is not a hugging mark) and, when bash substituted backtick spans, blames 'whitespace before the first word' without naming substitution or pointing at the shell's stderr, in a ten-line message. Fix: --dry-run builds and validates in memory and writes nothing; --json refusals emit {ok:false, refused, findings}; list flags repeat (action append, comma split kept) with help and an example; scope passes whether anything was released or claimed, appends only newly claimed ids, and the index write skips identical bytes; the guard exempts [ \\t]:identifier (measure over the tree's own texts first), names likely backtick substitution when the window shows a leading or doubled space, and the refusal is cut to its route plus the marked span. Also: the verb that performs phase entry prints a warning (never a refusal - an empty gate is a designed state) when the phase has an empty testGate or no desiredOutcome; scope/add warn when a gate token resolves to a directory in the project tree.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "CHANGELOG.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - scope --gate-clear on a task that owns its fileIndex rows prints that the index is DIRTY while the index bytes are unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P76.1"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d54c07e4",
+      "outcome": {
+        "technical": "add --dry-run; json_refusal in main; repeatable list flags with help; scope byte-identical index skip; colon-identifier exemption; entry and directory-gate warnings.",
+        "descriptive": "Adding a task can be previewed, scripted refusals are JSON, list flags explain themselves, and the argument guard stops refusing ordinary route parameters."
+      },
+      "startedAt": "2026-09-25T22:03:15Z",
+      "completedAt": "2026-09-25T22:48:38Z",
+      "verifiedBy": [
+        "test_audit_task dr1",
+        "test_audit_task jr1",
+        "test_audit_task dy2",
+        "test_audit_task cg1",
+        "test_audit_task ew1",
+        "test_audit_task gd1"
+      ]
+    },
+    {
+      "id": "P76.3-6qa",
+      "title": "Review findings: a bug is never fixed without a commit, a moved id is never reissued, and moved evidence still joins",
+      "status": "done",
+      "description": "Phase review findings, all to be fixed, the pre-existing one included. Orchestrator decisions: (R1) --no-change is refused on a bug's fix task and points at /audit:bug close <id> not_a_bug|wontfix - a bug is never fixed without a fix commit; (R2) every live task's movedFrom.id counts as taken for the allocator; (R3) evidence readers map a subject through movedFrom, and move says what it leaves; (R4) the colon exemption narrows to a colon starting an IDENTIFIER - ':<digit>' after whitespace is exactly what a substituted backtick path leaves, so it stays refused and the stdin route stays the way in; (R5) --json no-op paths print a JSON object; (R6-R8) as the review says.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:3645-3670 (with plugins/audit/scripts/manifest/_manifest_io.py:568-600, 721-739): `done --no-change` is accepted on a bug's fix task, and nothing stops the close from marking the bug fixed. `_locked_done` runs `_settle` over every bug whose `taskId == tid`. `effective_bug_status` treats any fix task with status `done` as `fixed`, whatever its commit. So a no-change close stores the bug as `fixed` with `fixedIn: null`. `bug_basis` then reads 'fix task X is done at no commit'. A bug whose answer was that nothing needed to change is `not_a_bug` or `wontfix`, a human verdict. With this path it reads as fixed without any fix commit, and `.claude/hooks/guard-release.py` stops counting it as an open bug. The release guard was the reason commits were required here in the first place. -> In `_done_flags_refusal`/`_locked_done`, refuse `--no-change` on a task with a `bugId`, or one that any `bugs[].taskId` names. Point the operator at `/audit:bug close <bugId> not_a_bug|wontfix`. Alternatively, make `_fix_task` or `effective_bug_status` skip a task where `_commit_trail.no_change_close(task)` is set. Add an nc case where the fix task carries `bugId`, and assert the bug does not derive `fixed`.\nR2 (med) plugins/audit/scripts/manifest/audit-task.py:4272 (with plugins/audit/scripts/manifest/_id_shape.py:170-182): The allocator can hand out a moved task's old id again. `move` takes the id away from the source phase. `_allocate_id`/`next_task_id` count only live task ids and parked-proposal ids, and never `movedFrom.id`. When the moved task had the highest number in its phase (the usual case: the task just added to the wrong phase), the next `add --phase <source>` mints the old id again. `_allocate_id`'s own docstring rules this out ('Gaps are history ... never P2.2 again'). Three things go wrong silently when it happens. Usage-ledger, evidence and journal rows written under the old id attach to an unrelated new task. Another branch's `blockedBy`/`dependsOn` on the old id binds to the wrong task after merge, where it should become a validator finding. And the join the move report promises ('movedFrom plus the task.move row are what join the two') becomes ambiguous. mv1 moves P2.3 while P2.4 exists, so it never reaches this case. -> In `next_task_id`, or via `extra_ids` in `_allocate_id`, count every live task's `movedFrom.id` as taken, and add the moved-away id to the taken set for the rest of the call. Add a case: move the highest-numbered task, then `add --phase <source>`, and assert the new id is not the old one. In commands/task.md -> move, also say that references to the old id on other branches are not rewritten and surface as findings at merge.\nR3 (med) plugins/audit/scripts/manifest/audit-task.py:4251-4340 (with plugins/audit/scripts/status/_doctor_completions.py:144-190): `move` handles the evidence ledger only by leaving it alone, and every evidence reader keys on the old id. A `blocked` task, which `move` explicitly allows, usually carries red gate runs and a `testEvidence` pointer. The pointer moves with the task under its new id, but the evidence rows keep subject `(task, <oldId>)`. `check_evidence_pointers` then reports 'the record is ahead of the plan for task <oldId>' on every doctor run and prescribes `run-test-gate.py --reconcile`. That reconcile targets an id that no longer exists, or a different task once finding 2 re-mints it. The task.md wording 'every reference rewritten' does not cover this cross-store reference, and no reader applies `movedFrom`. -> Have the evidence readers map a subject through `movedFrom` (`latest_by_subject` joined against the plan's movedFrom ids, in `_doctor_completions` and `_invariants` evidence-committed). Alternatively, have `move` drop the task's `testEvidence` pointer and say so in its report. Add an mv case: move a task that has a recorded run, then show the doctor names no phantom subject.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:586 (and plugins/audit/commands/task.md:284-287): The colon exemption lets through one real kind of shell damage, and it is common in this repo's prose. A brief written as \"see `run-test-gate.py`:2680\" in double quotes reaches argv as 'see :2680'. That is exactly the ':digit after whitespace' shape now exempted. The measurement over existing texts shows the legitimate shape (':2680-2701') exists. But the damaged form of the plan's most common citation style ('`path`:line') is identical to it, and the doc/CHANGELOG present the narrowing as having no cost. -> Either keep ':<digits>' refused unless the text already contains a 'path:NNN' citation, or document the residual next to the exemption: 'a backtick-quoted path followed by :line reads the same after substitution and is let through; the shell's `command not found` on stderr is the only sign'. Add a gs/cg case that pins whichever choice is made.\nR5 (low) plugins/audit/commands/task.md:326-330 (with plugins/audit/scripts/manifest/audit-task.py:5172-5174, 5535-5537, 6651): The new doc sentence says that under `--json` 'a caller parsing stdout never meets prose'. `scope` and `retarget` no-ops still print '[audit-task] X already reads that way -- nothing written' and exit 0 under `--json`. `main` wraps only when `code != 0`, so that prose reaches the JSON caller unchanged. The refusal half of the claim holds; the 'never meets prose' half does not. -> Either emit `{ok: true, changed: false, ...}` on those two no-op paths when `args.as_json`, or have `main` also wrap exit-0 output that is not one JSON object. Or narrow the sentence to 'every refusal'. Add a jr case for `scope --json` with no change.\nR6 (low) plugins/audit/commands/task.md:771-781 (with plugins/audit/scripts/manifest/audit-task.py:4223-4270, 1439): The move refusals are documented 'in this order' with an unknown target phase in item 1, but `_locked_move` checks the task's status (items 2-4) before it resolves the target phase. So `move <doneTask> --to P99` gets the 'done' refusal, not the 'no phase' one. Also, a signed-off target returns `_signed_off_refusal(ph, \"a task added now\")`, whose wording talks about adding, not moving. -> Either resolve the target in `_locked_move` before `_move_refusal` so the order matches the doc, or reword the doc to the code's order. Pass the calling verb's noun into `_resolve_phase`'s signed-off refusal.\nR7 (low) plugins/audit/commands/run.md:49-50 (with plugins/audit/scripts/manifest/audit-task.py:3136-3143): Undoing a block is still a hand edit, and that edit leaves `blockedReason` behind. manifest-conventions now sends a cross-session dependency to `block`, but `/audit:run` refuses a blocked task and offers a 'confirmed reset of attempts to 0 (back to pending)'. Nothing clears `blockedReason` on that path, so a pending task keeps a stale reason. Only `start` clears it, per the schema. Separately, `start`'s max-attempts refusal still says the orchestrator's move is 'blocked plus a human' and does not name `audit-task.py block`, which the reference docs now require. -> Have run.md's reset path go through a verb that clears `blockedReason` (or state that the reset removes it). Have the start refusal name `audit-task.py block <id> --reason ...`.\nR8 (low) plugins/audit/scripts/manifest/audit-task.py:787-792, 816-823: `_SUBSTITUTION_SHAPES` names only a leading space and a doubled space as the shapes a substituted backtick span leaves 'on its own'. A span at the end of the text (\"fix `make`\") leaves trailing whitespace just as mechanically. That case is labelled 'whitespace after the last word' and gets the 'cannot tell' line, so the docstring's and task.md's claim about which shapes substitution produces by itself is incomplete. -> Add 'whitespace after the last word' to `_SUBSTITUTION_SHAPES`, update the task.md/CHANGELOG sentence, and add a gs case.\nR1 (low) plugins/audit/scripts/manifest/audit-task.py:5107-5121 (scope fileIndex keys): `scope` keys `fileIndex` rows by the raw `files` entry, including any `:line-range` suffix, while the validator matches on the stripped key. Both the old and new derivation do this; the diff only narrowed which rows are touched. -> Key the rows by `_strip_line_suffix(entry)` when claiming and releasing.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_id_shape.py",
+        "plugins/audit/tests/test__id_shape.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/run.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - done --no-change on a bug fix task stores the bug as fixed with no fixedIn"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "3052f97e",
+      "outcome": {
+        "technical": "no-change refused on fix tasks; movedFrom chain counted by the allocator; subject_aliases for evidence; identifier-only colon exemption; JSON no-ops.",
+        "descriptive": "A bug can no longer be closed as fixed without a fix, moved tasks never lose or reuse their identity, and the colon rule no longer lets shell damage through."
+      },
+      "startedAt": "2026-09-25T22:58:37Z",
+      "completedAt": "2026-09-26T03:12:27Z",
+      "verifiedBy": [
+        "test_audit_task nc5",
+        "test_audit_task mv3",
+        "test__evidence_io mvr1",
+        "test_audit_task cg3",
+        "test__doctor_completions dc39"
+      ]
+    },
+    {
+      "id": "P76.4-6qa",
+      "title": "Final-review findings: every fileIndex reader agrees on the stripped key, the moved-evidence aliases trust nothing a hand edit can break, and the move refusals keep their documented order",
+      "status": "done",
+      "description": "Final-pass review findings, all to be fixed, the pre-existing one included (only a trailing ':<digit range>' is a line suffix, in both copies). Class rule: every reader and writer of fileIndex keys and every evidence reader keyed by task id is found by grep and answered in the report, not only the ones the review named.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:2408-2410, 5278-5307 (with plugins/audit/scripts/status/audit-lookup.py:211-229, 251-260 and plugins/audit/scripts/manifest/_proposals.py:624-631): Stripping the line range from fileIndex keys changes a shape that crosses a boundary, and one reader on the other side still does an exact match. The plan gate is unaffected: hooks/_config.py:1726 and :1730-1738 strip both task.files and fileIndex keys, and the validator (_manifest_crossrefs.py:528-548) strips both sides, so no path is dropped or duplicated there. `audit-lookup.py` is different. `file_lookup` says 'EXACT KEY MATCH ONLY ... `path` must be spelled exactly as a task's `files` entry (and therefore the index key) spells it', and `brief_lookup` calls it once per raw `task.files` entry. A task whose files carry `src/q.ts:10-20` now has its row under `src/q.ts`. So `audit-lookup.py <m> brief <taskId>`, the call reference/execute-task.md:81 hands every executor at spawn, prints 'src/q.ts:10-20: not in fileIndex yet'. That is false, and before this diff it was right. Separately, `_proposals.py:624-631` (materialize) still keys rows by the raw entry. The index now holds two spellings for one kind of declaration, and which one the lookup finds depends on which verb wrote the row. The commit's claims line 3 (instance or class?) names the sweep instead of a grep for the other fileIndex writers and exact-match readers, and those are exactly the sites it missed. -> In `audit-lookup.file_lookup`, match on `_manifest_vocab._strip_line_suffix(path)` against stripped keys, as the gate and the validator already do, and keep `path` as typed in the payload. Key `_proposals.py`'s materialize rows by the stripped path too. Add a lookup case: a task declaring `src/q.ts:10-20` via add gets `brief` saying 'last declared by <id>', not 'not in fileIndex yet'.\nR2 (low) plugins/audit/scripts/manifest/audit-task.py:4309-4323 (with plugins/audit/commands/task.md:776-785): Finding 6 is only half closed, and the commit's claim 'move checks its target before the task in the documented order' is not what the code does. `_resolve_phase` now runs before `_move_refusal`. It carries both documented item 1 (no such phase) and most of item 5 (target done, signed off, reserved by a proposal). So item 5 now fires before items 2-4. `move P2.1 (done) --to P1 (done phase)` answers 'phase P1 is done', where the documented order gives the task's own 'done' refusal. The cancelled-target arm of item 5 (4315-4318) still runs after `_move_refusal`, so the two halves of item 5 now sit on opposite sides of items 2-4. -> Resolve the phase's existence first, as item 1 says, and judge its state after `_move_refusal`. One way: a `_find_phase` lookup up front, then `_resolve_phase` for the done, signed-off and reserved arms after the task-status refusals. Or rewrite task.md's list to the code's actual order. Add a case `move <done task> --to <done phase>` that pins whichever order is chosen.\nR3 (low) plugins/audit/scripts/manifest/audit-task.py:3669-3684 (and plugins/audit/commands/task.md:495-498): The no-change refusal on a bug's fix task closes finding 1, but the route it prescribes runs into a documented refusal. The text says '/audit:bug close <bugId> not_a_bug|wontfix, then cancel this task'. commands/bug.md:96-97 step 1 refuses a close while the bug's materialized task is `in_progress`. `done` requires a started task, so the task this refusal fires on is usually in_progress. The operator who follows the advice as written gets refused at its first step. -> Reverse the order in both places: cancel the task (`/audit:task cancel <tid> --reason ...`, which accepts in_progress), then `/audit:bug close <bugId> not_a_bug|wontfix`. Extend nc5 to assert the order the text names.\nR4 (low) plugins/audit/tests/test_audit_task.py:6917-6925 (mv5): mv5 cannot tell the count line from the unreadable-ledger line. It asserts '\"evidence:\" in txt and \"P2.3\" in txt and \"movedFrom\" in txt'. `P2.3` is on the first report line, and `movedFrom` is on the unconditional 'ledger:' line (audit-task.py:4392-4394). If `_runs_under` raised and returned None, the 'evidence: the ledger could not be read' line would satisfy all three. So would any count at all. The case is a presence check where a count is the claim. -> Assert the exact line '1 recorded run(s) stay keyed to P2.3', and under `--json` `evidenceRunsLeft == 1`. Add a second fixture with zero runs that asserts no 'evidence:' line.\nR5 (low) plugins/audit/scripts/governance/_evidence_io.py:1493-1508 (with plugins/audit/scripts/manifest/_manifest_phases.py:867-879): On the alias question: for verb-made plans, two live tasks cannot share evidence. `next_task_id` counts every `moved_from_ids` link (_id_shape.py:188). `move` allocates while the task still sits in its source phase with its chain intact (audit-task.py:4323). `merge-manifest.py:403` renumbers through the same `next_task_id`. Nothing deletes a task. So after A moves to B, A is never minted again (mv3, mv4 and is17 cover this). But `subject_aliases` assumes that invariant and never checks it, and the validator does not check it either. If a hand edit or a pre-fix plan leaves a live task holding an id that appears in another task's chain, `latest_by_subject` re-keys the live task's own runs onto the other task, and says nothing. Two chains naming one old id are resolved last-wins, also silently. -> In `subject_aliases`, skip an old id that a live task currently holds, and do not alias an id two chains both claim. Add a validator finding (or warning) for a `movedFrom` chain id that equals a live task id or appears in two chains. Add an mvr case where the old id is live.\nR6 (low) plugins/audit/scripts/manifest/audit-task.py:4398-4401 (with plugins/audit/scripts/report/_evidence_view.py:144-148): The move report prints 'the evidence readers and --reconcile join them to <new> through movedFrom'. Only the doctor (`check_evidence_pointers`) and `reconcile` use `subject_aliases`. The report/panel evidence history (`_rows_for(rows, scope, subject)`) still filters by the live id, so a moved task's history omits its old-id runs. task.md:811-814 names the two readers correctly; the printed line and the CHANGELOG ('the evidence readers - /audit:doctor and --reconcile -') read as covering every reader. The schema's `movedFrom` description (audit-plan.schema.json:1176) also says nothing of the new `previous` link. -> Either print '/audit:doctor and --reconcile join them' in place of 'the evidence readers', or pass `subject_aliases` into `_evidence_view`'s history filter. Add `previous` to the schema's movedFrom properties and description.\nR7 (low) commit 3052f97e message, claims line 3: The verification claims ('python3 tools/sweep-selftests.py --jobs 4 exit 0; ruff and vermin exit 0; validate-manifest exit 0') carry no stamp. The tree is shared with siblings, so a command plus an exit code does not say which tree was measured. Claims line 3 is also meant to answer question 3 (instance or class, with the grep and its hits), and it holds the sweep result instead. Finding 1 is what that unanswered question missed. -> Attach a `stamp-verification.py` stamp to the sweep claim, or re-run the gate on the committed tree and record it. Answer line 3 with the grep for fileIndex writers and exact-key readers, and for evidence readers keyed by task id, with every hit accounted for.\nR1 (low) plugins/audit/scripts/manifest/_manifest_vocab.py:723-725 and plugins/audit/hooks/_config.py:1534-1537: `strip_line_suffix` splits on the first colon, so an absolute Windows `files` entry (`C:\\repo\\a.py`) strips to `C`. The gate and the validator have always done this. The new add/scope keying only makes the index agree with them, so it is not charged to this diff. -> Split only on a colon followed by a digit range (for example `re.sub(r':[0-9][0-9,-]*$', '', s)`) in both copies, or refuse absolute paths in `files`.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/commands/task.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: repro that FAILS on current code - audit-lookup brief says not in fileIndex for a task declaring a ranged entry"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ed9d4cfb",
+      "outcome": {
+        "technical": "stripped keys in audit-lookup and materialize; trailing-range-only suffix; move refusal order; alias conflicts skipped and warned.",
+        "descriptive": "Lookups find ranged file entries again, Windows paths keep their drive, and moved-task evidence can never be claimed by the wrong task."
+      },
+      "startedAt": "2026-09-26T03:22:08Z",
+      "completedAt": "2026-09-26T04:05:39Z",
+      "verifiedBy": [
+        "test_audit_lookup al40",
+        "test__config ls1",
+        "test_audit_task mv6b",
+        "test__evidence_io mvr3",
+        "test__manifest_phases mo5"
+      ]
+    }
+  ],
+  "startedAt": "2026-09-25T18:00:40Z",
+  "testEvidence": {
+    "runId": "2026-09-26T04:12:40Z.5fbc58",
+    "status": "passed",
+    "at": "2026-09-26T04:12:40Z"
+  }
+}

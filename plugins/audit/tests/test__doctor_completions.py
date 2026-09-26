@@ -196,6 +196,27 @@ def _cases(check):
               and "carry no commit SHA" in _detail(rep, "completions")
               and "/audit:resume" in _fix)
 
+        # A NO-CHANGE CLOSE owes no SHA - `done --no-change` records why in
+        # `outcome.noChange` - so it leaves the warning and is named on its own
+        # line, beside a plain no-SHA task that still draws the warning.
+        mf = _manifest([
+            _task("P1.1", completedAt="2026-05-01T00:00:00Z", commit=None,
+                  outcome={"noChange": {"reason": "nothing to edit",
+                                        "examinedAt": "a" * 40}}),
+            _task("P1.2", completedAt="2026-05-01T00:00:00Z")])
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, mf, mrel, None)
+        _nc_warn = [r["detail"] for r in rep.rows if r["check"] == "completions"
+                    and "carry no commit SHA" in r["detail"]]
+        _nc_ok = [r["detail"] for r in rep.rows if r["check"] == "completions"
+                  and "closed with no change" in r["detail"]]
+        check("dc38 a done task closed with NO CHANGE is left out of the no-SHA "
+              "warning and named on an ok line of its own, while the plain no-SHA "
+              "task beside it still draws the warning: %r" % ((_nc_warn, _nc_ok),),
+              len(_nc_warn) == 1 and "P1.2" in _nc_warn[0]
+              and "P1.1" not in _nc_warn[0]
+              and len(_nc_ok) == 1 and "P1.1" in _nc_ok[0])
+
         mf = _manifest([_task("P1.1", completedAt="2026-05-01T00:00:00Z",
                               commit="0" * 40)])
         rep = base.Report()
@@ -568,6 +589,22 @@ def _cases(check):
           "the record agree, or nobody will read the times it is not: %r"
           % (_levels(rep, "evidence"),),
           _levels(rep, "evidence") == ["OK"])
+
+    # A MOVED TASK: the run was recorded under P1.1, the task is P1.2 now with
+    # `movedFrom` naming P1.1, and its pointer names the run. Keyed on the id
+    # alone the doctor saw a phantom subject P1.1 "ahead of the plan" and sent the
+    # reader to a reconcile aimed at an id that no longer exists.
+    rep = base.Report()
+    proj = _ledger_project("dcev-moved", [ROW])
+    _moved_plan = _plan({"runId": "R1", "status": "failed", "at": ROW["ts"]})
+    _moved_plan["phases"][0]["tasks"][0].update(
+        id="P1.2", movedFrom={"id": "P1.1", "phase": "P1", "at": ROW["ts"]})
+    M.check_evidence_pointers(rep, proj, _moved_plan)
+    check("dc39 a run recorded under a task's OLD id joins the task through "
+          "`movedFrom` - one ok line, and no phantom subject ahead of the plan: %r"
+          % (_detail(rep, "evidence"),),
+          _levels(rep, "evidence") == ["OK"]
+          and "P1.1" not in _detail(rep, "evidence"))
 
     rep = base.Report()
     proj = _ledger_project("dcev-dangling", [ROW])

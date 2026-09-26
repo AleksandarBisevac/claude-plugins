@@ -444,6 +444,18 @@ TABLE = (
   "def json_encoding_violations(script_dir=None, hooks_dir=None):",
   "def json_encoding_violations(script_dir=None, hooks_dir=None):\n    return []",
   DEP, "je2"),
+ # The one-tree rule, crippled. It is what keeps a hook from reading the main
+ # checkout's plan for work in a linked worktree, and a version reporting
+ # nothing reads exactly like hooks that all ask `_config.tree_for`.
+ ("hook_tree_violations", S + "_deps.py", "replace",
+  "def hook_tree_violations(hooks_dir=None):",
+  "def hook_tree_violations(hooks_dir=None):\n    return []",
+  DEP, "ht1"),
+ # ...and its second rule, the same defect spelled `tree_for(PROJECT_ONLY)`.
+ ("hook_tree_violations", S + "_deps.py", "replace",
+  "            elif project_only and name in reads and name not in places:",
+  "            elif False:",
+  DEP, "ht7"),
  # The whole mechanism, crippled the same way. A comment or a document citing
  # the private register is a claim nobody can check on the far side of it, and
  # a version reporting nothing reads exactly like a tree with no citations left
@@ -616,6 +628,12 @@ TABLE = (
  # has nowhere to put what the documents just promised.
  ("red_first_drift", "plugins/audit/schema/audit-plan.schema.json", "replace",
   '            "could-not-prove",\n', "", REF, "rf2"),
+ # The reviewer's return grading with a word the schema rejects and nothing
+ # declares reviewer-only - the shipped state, `not-applicable` standing where
+ # the executor's `not-attempted` belongs, which read as consistent on its own.
+ ("red_first_vocabulary_drift", "plugins/audit/agents/audit-reviewer.md", "replace",
+  '"redFirst": "proved|not-proved|could-not-prove|not-attempted"',
+  '"redFirst": "proved|not-proved|could-not-prove|not-applicable"', REF, "rv1"),
  # THE BRIEF GROWS A FIELD AND THE REFERENCE DOES NOT FOLLOW; renaming a key
  # is that event with a shorter diff. `testsAdded` is what fills `task.verifiedBy`,
  # so this is the shipped defect with the name changed - the field was declared,
@@ -1298,6 +1316,17 @@ ALLOW = (
   "                if _called_name(node) not in JSON_WRITER_NAMES "
   "+ _JSON_DUMP_NAMES:",
   DEP, "je5"),
+ # The one-tree rule, widened to every `repo_root`. The config and the
+ # session's own state live with the project on purpose, so a hook resolving
+ # the project for those alone is honest code this would convict.
+ ("hook_tree_violations", S + "_deps.py", "replace",
+  "            if uses_root and name in reads:",
+  "            if uses_root:", DEP, "ht3"),
+ # The exemption table, ignored: the one scope that reads the project's plan
+ # on purpose, with its reason declared, would be convicted anyway.
+ ("hook_tree_violations", S + "_deps.py", "replace",
+  '                if exempt.pop(key, "").strip():',
+  "                if False:", DEP, "ht10"),
  # `reference/tracker-sync.md` names its own live-network probes "live-gate
  # F<n>", which resolves inside that same document and is not the private
  # register - drop the narrowing and the lint convicts the document for
@@ -1713,6 +1742,13 @@ ALLOW = (
  ("red_first_drift", S + "_refs.py", "replace",
   "            if RED_FIRST_TRIGGER not in text:",
   '            if "" not in text:', REF, "rf7"),
+ # The declared reviewer-only grade dropped from what the reviewer may say, so
+ # the lint refuses `not-proved` - the reviewer's honest answer when nothing names
+ # a red run. A lint that convicts the one grade the design keeps on purpose is
+ # the kind that gets deleted rather than believed.
+ ("red_first_vocabulary_drift", S + "_refs.py", "replace",
+  "    allowed = set(schema) | set(RED_FIRST_REVIEWER_ONLY)\n",
+  "    allowed = set(schema)\n", REF, "rv3"),
  # The TOP-LEVEL restriction dropped, so every nested key of the declared
  # shape is demanded as a standalone backticked word of its own: a reference that
  # writes `outcome` = `{ technical, descriptive }` is convicted for naming both

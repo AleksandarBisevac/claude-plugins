@@ -31,8 +31,12 @@ not need to.
    the phase's manifest file (the shard when sharded), under the lock, revalidated and journaled.
    **If the increment would take `attempts` past `maxAttempts` (default 3), it REFUSES rather than
    spawn** — that transition still owes an ADO echo and a human, neither of which the verb can
-   supply — so on that refusal do NOT spawn: set `task.status = "blocked"` yourself and surface it
-   to the human. A task entering `blocked` gets the **ADO echo** (`reference/orchestrator.md` → **ADO echo**).
+   supply — so on that refusal do NOT spawn: set the task blocked through the verb,
+   `audit-task.py block <taskId> --reason "<attempts exhausted: the last red gate's reason>"`,
+   and surface it to the human. The verb writes `status` and `blockedReason` with a `task.block`
+   row; nothing refuses a hand edit of the status, but only the verb records why. A task entering
+   `blocked` gets the **ADO echo** (`reference/orchestrator.md` → **ADO echo**), which the verb
+   does not send.
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
    `subagent_type: "audit:audit-executor"`, `model = task.model`, and **`description` starting with
    the task id** (e.g. `"P3.2 shard writer"`). The id prefix is what makes token metering exact:
@@ -92,20 +96,51 @@ not need to.
      **Ask what happened to the PROOF, not only to the gate.** A gate verdict says the
      suite is green; it cannot say whether the new assertion was ever watched failing, and
      an assertion nobody has seen fail may be asserting nothing. So the outcome carries
-     `redFirst` = `{status, basis}` beside the gates, in one of three words: `proved` (it
-     was watched going red, and the basis is the command and its exit code),
-     `could-not-prove` (the proof was attempted and something that is not the work refused
-     it — typically the host's own permission classifier declining the edit that
-     temporarily undoes the fix, which from outside looks like removing a test; the basis
-     is that refusal **verbatim**), or `not-attempted` (none was owed, and the basis says
-     why). `agents/audit-executor.md` states the rule for the executor and
-     `schema/audit-plan.schema.json`'s `redFirst` block declares the words. **Nothing
-     checks that a returned outcome carries the block** — `red_first_drift()` in
-     `plugins/audit/scripts/_refs.py` holds only that every document naming a red-first
-     proof offers the third word, and the `redFirst` enum refuses a fourth spelling only
-     once one is written down and only under the `ajv` step CI and `tools/verify.sh` run;
-     nothing under `scripts/` reads this vocabulary. So asking for the block is yours, and
-     one that did not come back is recorded as absent rather than filled in.
+     `redFirst` = `{status, basis, at}` beside the gates, in one of three words: `proved` (it
+     was watched going red — at least one test collected and an assertion failing — and the
+     basis is the command, its exit code and the tally), `could-not-prove` (the proof was
+     attempted and something that is not the work refused it, or the run reached no
+     assertion: a compile error, an import error or zero tests collected is not a red
+     unless the task introduces the symbol the run fails on; a refusal goes in the basis
+     **verbatim**), or `not-attempted` (none was owed, and the basis says why).
+     `agents/audit-executor.md` states the rule for the executor and
+     `schema/audit-plan.schema.json`'s `redFirst` block declares the words.
+
+     **A red proved after the fix is in runs in a throwaway tree, never in the shared one.**
+     Put the resolved helper in the spawn prompt beside the stamp command below:
+
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/stamp-verification.py" red \
+         --project <gitRoot> --manifest <manifestPath> --task <taskId> -- <test command>
+     ```
+
+     It checks HEAD out with `git worktree add --detach` into a temp directory, copies the
+     task's declared test files from the working tree over it, runs the command there,
+     removes the throwaway in a `finally` and reports whether the removal held, and prints
+     the `redFirst` block, naming the failing case it rests on — which must be one of the
+     task's own: a case present in the working tree's test file and absent from HEAD's.
+     `--case` narrows to the ids it names, held to that same test, so naming a case HEAD
+     already carries proves nothing. Its
+     `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
+     identifier absent from HEAD's copy of every declared implementation file and present
+     in the working tree's, a final import/attribute/name error naming it, and a second run
+     with the working tree's implementation copied in that loses that error and reaches its
+     assertions. The throwaway holds tracked files only and runs with a scrubbed
+     environment, so a suite needing an untracked dependency comes back `could-not-prove`. The executor used to be
+     told to undo its fix in the shared tree for the length of the run, which is a write
+     over ground siblings are editing; a host refused it beside a sibling's uncommitted
+     work. Nothing stops an executor overwriting a file anyway — the plan gate grades which
+     files it touches, not why — so asking for the helper is yours.
+
+     **One vocabulary, checked.** The schema enum is the one source: the executor's return
+     offers exactly its words, and the reviewer's offers those plus its declared
+     reviewer-only `not-proved` — `red_first_vocabulary_drift()` in
+     `plugins/audit/scripts/_refs.py` fails the build otherwise, and `red_first_drift()`
+     beside it holds that every document naming a red-first proof offers the third word.
+     **Nothing checks that a returned outcome carries the block**: the `redFirst` enum
+     refuses a fourth spelling only once one is written down and only under the `ajv` step
+     CI and `tools/verify.sh` run. So asking for the block is yours, and one that did not
+     come back is recorded as absent rather than filled in.
    - **A reported verification carries the tree it was taken on.** Evidence names a command and
      an exit code; it does not say *which tree*, and a claim about a tree that has since moved
      reads exactly like one that is still true. That is one structure behind five separate
@@ -283,7 +318,11 @@ not need to.
      produced nothing usable — it died, timed out, or returned no parseable `intent` — do not
      guess: omit `--intent` entirely.** An omitted flag and a recorded `diverges` are opposite
      facts, and a guessed `matches` filling the gap is exactly the failure this call exists to
-     close.
+     close. **When you deliberately did not ask** — a change too small to review, or a close
+     with no diff at all (`done --no-change`) — say so rather than omitting the flag:
+     `--intent not-asked --intent-basis "<why the question was not put>"`. The verb refuses
+     that word without its basis, and sign-off lists every done task with NO answer, which a
+     deliberate `not-asked` is not.
 
      None of this blocks the commit and that is deliberate: `run-test-gate.py` is the one
      measurement that decides whether a task is done, and a cheap per-task reviewer that could
@@ -352,10 +391,12 @@ not need to.
      looks afterwards exactly like one briefed well.
    - The subagent does **not** commit — the orchestrator commits (step 4).
    - **The subagent must NEVER run `git stash`** (a stash in a shared working tree destroys sibling tasks' work).
-     For baselines it should use `git diff`/`git show HEAD:<file>` instead. Put this in every subagent prompt.
+     To read a baseline it should use `git diff`/`git show HEAD:<file>` to stdout instead, never redirected
+     over a file; a red against HEAD is `stamp-verification.py red`'s job. Put this in every subagent prompt.
    - **No usable return** (the subagent died, timed out, or came back with no parseable outcome / no
      file changes) is a **failure**, not a success — handle it exactly like a test failure in step 4
-     (leave `in_progress`, do not commit; retry until `attempts >= maxAttempts`, then `blocked`).
+     (leave `in_progress`, do not commit; retry until `attempts >= maxAttempts`, then `blocked`
+     through `audit-task.py block`, as step 2 says).
 4. On the subagent's return:
    - **success** (all gates green):
      a. **Risk gate first:** if `task.risk == "high"`, **stop and ask the human to confirm**
@@ -580,8 +621,10 @@ not need to.
      that refuses the edit refuses it again. So the record is the whole remedy, and
      **nothing grades it** — no gate reads `task.redFirst` today — which is exactly why the
      word and its verbatim basis have to be on the record rather than in your report.
-   - **test failure** (gates RAN and are red) → leave `status = "in_progress"` (or `"blocked"` if attempts
-     exhausted), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not commit.
+   - **test failure** (gates RAN and are red) → leave `status = "in_progress"` (or, if attempts are
+     exhausted, set it blocked through `audit-task.py block <taskId> --reason "<the red gate's
+     reason>"`), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not
+     commit.
      A transition to `blocked` gets the **ADO echo** (`reference/orchestrator.md` → **ADO echo**).
    - **infrastructure failure** (gates could NOT run: missing command, runner crash before tests,
      zero tests collected where `tests.add` expects some, a filter that selected no test file, a
