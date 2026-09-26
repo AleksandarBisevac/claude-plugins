@@ -23,7 +23,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P73-S1",
@@ -179,9 +179,10 @@
         "issue": "The last-only cause, 'its subject is the class header, so this may be the scoped commit itself with a paragraph added after its trailer block (a hook or an amend)', is printed whatever else is true. graded is not consulted. Two probes on a scratch export of HEAD (scratchpad/p73e/probe2.py) show where this reads wrong. (a) it12's own fixture is one the test file calls 'as a forge's squash does': a ",
         "resolution": "fix task P73.7-9h1"
       }
-    ]
+    ],
+    "outcome": "matches; six review passes, every finding fixed in P73.3-P73.7"
   },
-  "summary": null,
+  "summary": "The journal and the evidence ledger are one merged, anchored record.\n\nScoped commits:\n- A scoped commit carries the journal row that names it. The row is written with a nonce before the commit, and an Audit-Row trailer in the commit message names the nonce.\n- Readers resolve the SHA from the trailer, so the link survives amend, rebase, cherry-pick and squash.\n- A refused commit leaves a withdrawal row. An unresolved nonce is a gap, never a pass.\n- A commit that absorbed a scoped one (a squash, or a copy that gained a paragraph) is a gap that names it and the test it failed, and it is never graded.\n\nMerging the record:\n- audit-journal merge resolves an evidence ledger file through the same merge_rows as the journal. A same-second tie is ordered deterministically only when the ledger's own reader keys the rows apart.\n- verify chooses a file's anchor by a content-derived rule, independent of the order it reads files.\n\nReviewed six times; every finding was fixed in P73.3 through P73.7. Main (P78 included) was merged in before the gate. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P73.1",
@@ -627,8 +628,8 @@
   ],
   "startedAt": "2026-09-26T04:55:13Z",
   "testEvidence": {
-    "runId": "2026-09-26T11:55:12Z.66813d",
+    "runId": "2026-09-26T12:08:11Z.bc894b",
     "status": "passed",
-    "at": "2026-09-26T11:55:12Z"
+    "at": "2026-09-26T12:08:11Z"
   }
 }
