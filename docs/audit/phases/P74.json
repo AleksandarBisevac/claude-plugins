@@ -655,7 +655,7 @@
     {
       "id": "P74.6-qq5",
       "title": "Round-5 review findings: a merge git cannot recompute prints a review command that shows it, and a waiting merge is judged now",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-5 phase review findings, all to be fixed. Orchestrator decisions: (V1) on the could-not-ask branch the printed review command is `git show -m <sha>` (a diff against each parent), and ga11 runs it on a drop-a-side merge under the old-git shim and asserts the deletion shows. (V2) a merge waiting on a refused one is judged NOW as if that parent were accounted: clean is reported as waiting on <sha>, own content or could-not-ask is refused with its own reason in the same refusal; the wording in audit-task, phase-signoff.md and CHANGELOG says exactly that. (V3) ga12 asserts 'could not be asked' present and 'carries content of its own' absent. (V4) a hex-spelled name that resolves through a ref is refused with a sentence saying it names a ref, not a commit SHA, and a case pins it.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:6310-6317 (_review_command falls back to `git show <sha>`), :6322-6326 (_merge_refusal, could-not-ask branch), :6742-6744 (plan's accepted line): U2's defect is still there on the could-not-ask branch. That is exactly where the operator's own review is the only check. When a merge has no recomputed tree (a git before 2.38, or an octopus merge), the refusal says 'Review it (`git show <sha>`)', and an accepted merge of that kind is listed as `git show <sha>` too. For a merge, `git show` prints the dense combined diff, which hides a dropped side. I RAN this (scratchpad/p74r3/r5d.py, which is r4c's drop-side2 merge under the oldgit/git shim): the refusal named `git show 678cca0cb863...`, and that command printed 0 bytes. `git show -m --format= <sha> --stat` printed the deletion of src/p2.py. On old git, every merge takes this branch. -> When `_review_command` has a merge but no tree, name a per-parent diff that works on any git and on an octopus merge. That is `git show -m <sha>`, or `git diff <sha>^1 <sha>` plus one diff per further parent. `_review_command` needs the parent count. Extend ga11 with a drop-a-side fixture under `_old_git`: run the printed command and assert its output names the dropped file.\nR2 (low) plugins/audit/scripts/manifest/audit-task.py:6226-6230 (waiting sentence), :6368-6373 (_account's waiting branch never calls judge); plugins/audit/reference/phase-signoff.md:409-410; CHANGELOG.md:185: The waiting sentence promises something the code never checked. The code says '<m2> is a merge over <m1>, refused above - it is accounted once that one is', and the docs call m2 'a clean merge'. But `judge` is never called on a waiting merge, so nothing established that it is clean. I RAN two cases. First, r5b.py: m1 and m2 each add a file inside the merge commit. `--plan` said m2 'is accounted once' m1 is. With `--accept <m1>`, m2 was then refused as 'carries content of its own'. Second, r5c.py: on the old-git shim, `--accept <m1>` on the clean two-merge branch was followed by m2 refused as could-not-ask, so it is never 'accounted once that one is' there. The gate still holds, so this is not a safety hole. It is a claim without its basis, the same class as U1 and U4. -> Judge a waiting merge too. merge-tree can replay its two parents whether or not they are accounted. Then either say 'recomputes clean; accounted once <m1> is', or refuse it now with its own sentence. The weaker fix is to reword it to 'judged once <m1> is accounted', in the code, phase-signoff.md and the CHANGELOG. Add an evil-then-evil case to ga14 that asserts m2 is not promised accounting.\nR3 (low) plugins/audit/tests/test_audit_task.py:6474-6477 (ga12): The fix for U3 is not guarded. I ran a mutation in a git-archive export: `_clean_merge`'s octopus branch was changed to return MERGE_OWN, so a clean octopus is refused as 'carries content of its own'. The suite stayed ALL PASS (574 of 574). ga12 asserts only `\"octopus\" in txt and \"an edit\" not in txt`, and the octopus `why` string contains 'octopus' in both states. -> Make ga12 assert 'could not be asked' in txt and 'carries content of its own' not in txt, as ga11 does for old git.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:6206-6212 (`full.startswith(name.lower())` and its refusal); plugins/audit/tests/test_audit_task.py (no case): The startswith guard has no test. I mutated it to `if code == 0 and full:` and test_audit_task stayed ALL PASS (574 of 574). That arm is what stops a branch or tag whose NAME is hex from being accepted by name. git prefers the ref, so the ref would re-resolve on every call, which is the U5 hole. I RAN r5a.py: a branch named `e1e6d3`, pointing at a different commit, is refused today. But its sentence says 'does not resolve to exactly one commit', which misstates the cause: it resolved to a ref. -> Add a case: create a branch named with a hex prefix that points elsewhere, and assert refusal. Give that arm its own sentence, e.g. '--accept X resolves through a ref of that name to <sha>, not to a commit it prefixes'.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -703,14 +703,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "98bf532a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "git show -m for a merge with no recomputed tree; waiting merges judged now; octopus wording separable; hex-named refs refused by name.",
+        "descriptive": "Group sign-off now prints a review command that shows every merge it refuses, and judges a merge waiting on another one immediately."
       },
       "startedAt": "2026-09-26T11:46:38Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T15:32:08Z",
+      "verifiedBy": [
+        "test_audit_task ga11b",
+        "test_audit_task ga11c",
+        "test_audit_task ga12",
+        "test_audit_task ga14c",
+        "test_audit_task ga10b"
+      ]
     },
     {
       "id": "P74.7-qq5",
