@@ -529,6 +529,12 @@
       "title": "red-first names the task's own case by its label, and reads only the runner that ran",
       "status": "pending",
       "shard": "phases/P82.json"
+    },
+    {
+      "id": "P83",
+      "title": "the history and secrets guards close the residuals SECURITY.md states as open",
+      "status": "pending",
+      "shard": "phases/P83.json"
     }
   ],
   "fileIndex": {
@@ -646,7 +652,9 @@
       "P79.7",
       "P80.12",
       "P81.8",
-      "P82.1"
+      "P82.1",
+      "P83.1",
+      "P83.2"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -794,7 +802,9 @@
       "P72.8-ttl",
       "P80.11",
       "P75.2-j5h",
-      "P77.2"
+      "P77.2",
+      "P83.1",
+      "P83.2"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1239,7 +1249,9 @@
       "P72.6-ttl",
       "P76.4-6qa",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.1",
+      "P83.2"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1279,7 +1291,8 @@
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P83.1"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -1306,7 +1319,8 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.2"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -2484,7 +2498,8 @@
       "P72.6-ttl",
       "P76.4-6qa",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.1"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -3099,7 +3114,8 @@
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P83.1"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -3119,7 +3135,8 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.2"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
