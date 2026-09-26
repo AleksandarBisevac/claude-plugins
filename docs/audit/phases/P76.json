@@ -1,7 +1,7 @@
 {
   "id": "P76",
   "title": "The verbs cover what operators were hand-editing",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "audit-task has verbs for what field reports hand-edited - a deliberate no-intent answer with a reader, a no-change close, move, block with a reason, an append-only note - add has a dry run and --json refusals that are JSON, list flags say their separator and repeat, scope reports the index dirty only when bytes changed and keeps fileIndex order, and the argv guard stops refusing a colon-prefixed identifier and names backtick substitution when that is what it saw",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
   "branch": "audit/p76-the-verbs-cover-what-operators",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T04:13:12Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
