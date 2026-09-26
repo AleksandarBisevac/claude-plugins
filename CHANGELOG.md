@@ -309,8 +309,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   place - never graded, and never a pass. A carrier without the header is read as a commit that
   absorbed the scoped one (a squash), and the named commit is then not in this history as a commit
   of its own unless another carrier was graded, which the gap names; a carrier with the header
-  whose trailer is not last may be the scoped commit with a paragraph added after its trailer, and
-  no absence is claimed for it. This
+  whose trailer is not last is a copy of the scoped commit (a cherry-pick or a rebase) when that
+  commit was graded, and otherwise may be the scoped commit with a paragraph added after its
+  trailer or a squash that kept its subject - no absence is claimed for it either way. This
   holds for a squash whose message ends with the index commit's trailer (the index commit made
   before the work), where only the subject header tells the two apart. The
   index commit's breach sentence and the docs now say it carries the index and the journal file

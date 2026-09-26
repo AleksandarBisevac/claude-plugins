@@ -1768,12 +1768,19 @@ def _carrier_cases(check):
             ("chore(audit-index): phase P1 - squashed",
              "Audit-Row: 5a5a000000000001\n\nand the work beside it"))
         scope = _check(_phase_answer(fx), "index-scope")
+        gap = " ".join(scope["gaps"])
         check("it12 a carrier whose subject opens with the class header but whose "
               "trailer is not in its LAST paragraph is absorbed too - a gap "
-              "naming it, never a breach: %r / %r"
+              "naming it, never a breach - and, nothing else carrying the row "
+              "having been graded, its cause offers BOTH readings such a carrier "
+              "has - the scoped commit with a paragraph added after its trailer, "
+              "or a squash that kept its subject - and claims no absence: %r / %r"
               % (scope["breaches"], scope["gaps"]),
               scope["breaches"] == []
-              and any(squash[:12] in g for g in scope["gaps"]))
+              and any(squash[:12] in g for g in scope["gaps"])
+              and "paragraph added after its trailer block" in gap
+              and "squash that kept its subject" in gap
+              and "not in this history" not in gap)
 
         # A GENUINE SCOPED COMMIT whose trailer line is indented (the stripped
         # form), in its last paragraph: graded, and clean.
@@ -1859,7 +1866,8 @@ def _carrier_cases(check):
               and "subject does not open" not in gap
               and "not in this history" not in gap
               and "paragraph added after its trailer block" in gap
-              and "squash" not in gap)
+              and "squash that kept its subject" in gap
+              and "copy of the scoped commit" not in gap)
 
         # A ROW WITH A SCOPED COMMIT THAT RESOLVED *AND* A SECOND CARRIER.
         root = os.path.join(tmp, "both")
@@ -1888,6 +1896,36 @@ def _carrier_cases(check):
               scope["examined"] == 1 and extra[:12] in gap
               and genuine[:12] in gap and "not in this history" not in gap
               and "subject does not open" in gap)
+
+        # A GRADED GENUINE COMMIT AND A HEADER-KEPT COPY WITH A NOTE: the copy
+        # cannot be the scoped commit, because that one was graded.
+        root = os.path.join(tmp, "copy-with-note")
+        os.makedirs(root)
+        fx = build(root)
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/widened.py"] = ["P1.2"]
+        _write_json(fx["manifest"], index)
+        _nonce_row(root, M.ACTION_INDEX_COMMITTED, "9e9e000000000005",
+                   "docs/audit/audit-plan.json")
+        genuine = _commit_carrying(root, ["docs/audit/audit-plan.json",
+                                          "docs/audit/journal"],
+                                   "chore(audit-index): phase P1 - fixture",
+                                   "9e9e000000000005")
+        _git(root, "commit", "-q", "--allow-empty", "-m",
+             "chore(audit-index): phase P1 - fixture", "-m",
+             "%s: 9e9e000000000005" % (M.ROW_TRAILER,), "-m",
+             "(cherry picked, with a note)")
+        copy = _head(root)
+        scope = _check(_phase_answer(fx), "index-scope")
+        gap = " ".join(scope["gaps"])
+        check("it20 when the row's scoped commit was graded, a header-kept carrier "
+              "whose trailer is not last is named as a COPY of it - a cherry-pick "
+              "or a rebase - and not as possibly the scoped commit itself: %r"
+              % (scope["gaps"],),
+              scope["examined"] == 1 and copy[:12] in gap and genuine[:12] in gap
+              and "copy of the scoped commit" in gap
+              and "may be the scoped commit itself" not in gap
+              and "not in this history" not in gap)
     finally:
         _harness.remove_tree(tmp)
 

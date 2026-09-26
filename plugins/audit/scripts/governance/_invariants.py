@@ -664,10 +664,12 @@ def absorbed_gaps(absorbed, noun, header):
     A subject without `header` is a commit that absorbed the scoped one, a
     squash merge most often; with nothing else graded for the row, the named
     commit is then not in this history as a commit of its own. A subject WITH
-    the header whose trailer is not in its last paragraph may be the scoped
-    commit itself with a paragraph added after its trailer block, by a hook or
-    an amend, so no absence is claimed for it. When another carrier of the row
-    was graded, that one is named instead."""
+    the header whose trailer is not in its last paragraph is, when the row's
+    scoped commit was graded, a copy of it (a cherry-pick or a rebase) that
+    gained a paragraph after its trailer block; when none was, it may be the
+    scoped commit itself with such a paragraph (a hook or an amend) or a squash
+    that kept the class subject, and no absence is claimed for it. A graded
+    carrier of the row is always named."""
     out = []
     for entry in absorbed:
         failed = entry.get("failed") or []
@@ -677,14 +679,20 @@ def absorbed_gaps(absorbed, noun, header):
             tests.append("its subject does not open with `%s`" % (header,))
         if "last" in failed:
             tests.append("the trailer is not in its last paragraph")
+        graded = entry.get("graded") or []
         if "header" in failed:
             cause = ("most often a commit that absorbed the scoped one - a "
                      "squash merge")
+        elif graded:
+            cause = ("its subject is the class header and the row's scoped "
+                     "commit was graded, so this is a copy of the scoped "
+                     "commit - a cherry-pick or a rebase - that gained a "
+                     "paragraph after its trailer block")
         else:
             cause = ("its subject is the class header, so this may be the "
                      "scoped commit itself with a paragraph added after its "
-                     "trailer block (a hook or an amend)")
-        graded = entry.get("graded") or []
+                     "trailer block (a hook or an amend), or a squash that "
+                     "kept its subject")
         if graded:
             tail = ("The row resolved to %s, graded as %s; %s's files were not "
                     "graded" % (", ".join(g[:12] for g in graded), noun, sha))
