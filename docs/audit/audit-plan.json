@@ -647,7 +647,8 @@
       "P80.12",
       "P81.8",
       "P82.1",
-      "P82.2-fye"
+      "P82.2-fye",
+      "P82.3-fye"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -759,7 +760,8 @@
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
-      "P82.1"
+      "P82.1",
+      "P82.3-fye"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1885,7 +1887,8 @@
       "P77.4-6u9",
       "P77.5-6u9",
       "P82.1",
-      "P82.2-fye"
+      "P82.2-fye",
+      "P82.3-fye"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3279,7 +3282,8 @@
       "P77.4-6u9",
       "P77.5-6u9",
       "P82.1",
-      "P82.2-fye"
+      "P82.2-fye",
+      "P82.3-fye"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
