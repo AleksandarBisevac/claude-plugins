@@ -565,7 +565,7 @@
     {
       "id": "P73.7-9h1",
       "title": "Round-5 review finding: the last-paragraph gap names a copy when another carrier was graded, and a squash that kept its subject when none was",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-5 phase review finding, to be fixed. Orchestrator decision: (W1) the last-paragraph cause depends on whether another carrier of the row was graded - when one was, this carrier is named as a copy of the scoped commit (a cherry-pick or rebase copy); when none was, the cause offers both a paragraph added after the trailer and a squash that kept the class subject. Wording checks added to it12 and a new case for a graded genuine commit plus a header-carrying copy with an added note, each proven red.\nR1 (low) plugins/audit/scripts/governance/_invariants.py:680-686 (absorbed_gaps, the last-only cause); plugins/audit/tests/test__invariants.py:1765-1776 (it12): The last-only cause, 'its subject is the class header, so this may be the scoped commit itself with a paragraph added after its trailer block (a hook or an amend)', is printed whatever else is true. graded is not consulted. Two probes on a scratch export of HEAD (scratchpad/p73e/probe2.py) show where this reads wrong. (a) it12's own fixture is one the test file calls 'as a forge's squash does': a squash with work in it that kept the class header. It prints only the hook/amend reading, and the squash reading is dropped. The work the squash carries is still not graded and no absence is claimed, so nothing is hidden, but the offered cause sends a reader to look at hooks. (b) P11: a graded genuine commit plus a header-kept copy that has a note paragraph. It prints 'this may be the scoped commit itself' and, in the same sentence, 'The row resolved to <genuine>, graded as a manifest-index commit'. Both cannot be the scoped commit. This follows the wording I proposed in round 4, so it is partly a gap in my own resolution. The verdict stays no-basis or partial, never clean, and never a breach. -> Build the last-only cause from graded as well. With graded non-empty, say 'a copy of the scoped commit - a cherry-pick or a rebase - that gained a paragraph after its trailer block'. Without graded, say 'may be the scoped commit itself with a paragraph added after its trailer block (a hook or an amend), or a squash that kept its subject'. Add a wording assertion to it12 and one for the P11 shape. This can land after sign-off as a follow-up task. It does not block.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -611,14 +611,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2a6d335f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "absorbed_gaps picks the trailer-place-only cause from graded: copy when another carrier was graded, scoped-itself-or-squash otherwise.",
+        "descriptive": "When a commit is not graded because of a paragraph after its trailer, the check now says whether it is a copy of a graded commit or which readings remain."
       },
       "startedAt": "2026-09-26T11:25:09Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T11:39:45Z",
+      "verifiedBy": [
+        "test__invariants it12",
+        "test__invariants it16",
+        "test__invariants it20"
+      ]
     }
   ],
   "startedAt": "2026-09-26T04:55:13Z"
