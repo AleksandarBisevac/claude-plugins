@@ -204,6 +204,25 @@ def _cases(record):
                                      if "phaseGate" in x or "no suite" in x],),
            not any("phaseGate" in x or "no suite" in x for x in _pg_ok_w))
 
+    # --- P79.1 THE REPRO: mode and coupling shape checks ----------------------
+    _pg_mode = copy.deepcopy(_pg_base)
+    _pg_mode["meta"]["phaseGate"] = {"mode": "enforced"}
+    _pg_mode_w = M.validate(_pg_mode)[1]
+    record("c36 an invalid `meta.phaseGate.mode` ('enforced' - neither of the "
+           "two real words) draws a warning naming the field: %r"
+           % ([x for x in _pg_mode_w if "phaseGate.mode" in x],),
+           any("phaseGate.mode" in x for x in _pg_mode_w))
+
+    _pg_coupling = copy.deepcopy(_pg_base)
+    _pg_coupling["meta"]["coupling"] = [{"test": "tests/test_x.py",
+                                         "sources": ["src/x.py"]}]
+    _pg_coupling_w = M.validate(_pg_coupling)[1]
+    record("c37 a `meta.coupling` entry with no `basis` at all draws a warning "
+           "naming the missing `basis.runId`: %r"
+           % ([x for x in _pg_coupling_w if "coupling" in x],),
+           any("coupling" in x and "basis.runId" in x
+               for x in _pg_coupling_w))
+
     # --- a stub fallen behind its shard -------------------------------------
     # `validate()` reads the assembled manifest, where the body wins, so the stub's
     # stale copy is invisible to it - and the stub is what the index alone answers.

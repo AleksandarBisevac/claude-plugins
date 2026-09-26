@@ -1,7 +1,7 @@
 {
   "id": "P79",
   "title": "The derived sign-off gate, in shadow first",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "With meta.phaseGate.mode set, derive-phase-gate.py computes a phase's sign-off gate from its tasks' tests, recorded couplings, a version-checked importer listing, changed and last-failed test files and the always and smoke entries, and records it with its basis - beside the wide gate in shadow, as the gate in enforce - while the runner prints NARROWED, refuses a derived run that did not name every listed suite as could-not-run, and the doctor prints test and change recall over the shadow runs.",
   "testGate": [
@@ -17,8 +17,8 @@
   "blockedBy": [
     "P78"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "2e61d2ca347913ca3c3a7007778a5c5e1a9a457a",
+  "branch": "audit/p79-the-derived-sign-off-gate-in-s",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -31,7 +31,7 @@
     {
       "id": "P79.1",
       "title": "meta.phaseGate mode/derived/smoke, meta.coupling, phase.testGateBasis/testGateDerived: schema, vocabulary, validator",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Schema additions, each saying what absence means. meta.phaseGate.mode: 'shadow' | 'enforce'; ABSENT MEANS NO DERIVATION. The previous phase made phaseGate meaningful without derivation (always, exclude), so the presence of the block can no longer be read as a request to derive: init writes shadow explicitly and enforce is the owner's choice. meta.phaseGate.derived: object or null with runner (a buildCommands key), spelling (the path-scoped entry with a {paths} placeholder), listing (null, or {related: a command with {paths} that LISTS without executing, all: a command listing every suite}) and verifiedOn ({command, answer}: the version command init ran and its output verbatim; a bare '<runner> <version>' string names no command to re-ask, so it could only be compared against a guess). meta.phaseGate.smoke: a buildCommands key or null. meta.coupling: array of {test, sources[], basis {runId, head, phases[]}, learnedAt}; absent means the derivation has no learned arm. phase.testGateBasis: open vocabulary, read as an unnarrowed default when absent (the tests.gateBasis rule). phase.testGateDerived: {tests[], entry, listed, full, arms {tests.add, coupling, importers, changed, lastFailed}, always[], smoke, narrowed, listing {command, exit, durationMs} or null, at}; absent means no derived gate and the runner prints no NARROWED line. _manifest_vocab.py: KNOWN_META += coupling; KNOWN_PHASE += testGateBasis, testGateDerived; the phase basis words derived, derived-empty and 'wide: importers resolved to the full suite' (in GATE_BASIS, or a PHASE_GATE_BASIS tuple if a task must never be offered them - decide by who reads them and say so in the comment). Validator WARNINGS, never findings: mode outside the two words; derived.runner or smoke not a buildCommands key; a spelling without {paths}; a listing with no verifiedOn; a coupling entry missing test, sources or basis.runId, or a duplicate test. Phase-level checks ride _walk_phases in _manifest_phases.py, meta checks _check_meta in _manifest_rules.py. SCHEMA_EXEMPTIONS rows in gen-demo-manifest.py for every new field no rendered surface shows yet, with the reason. Red-first: mode 'enforced' warns naming both words (on the code this phase starts from nothing reads mode); a coupling without basis warns (mutation: accept it -> red). Allow case: a plan with phaseGate {always: [lint]} and nothing else gains no new warning (mutation: warn on an absent mode -> red).",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -58,27 +58,30 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T11:54:49Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T12:08:36Z.fa325b",
+        "status": "passed",
+        "at": "2026-09-26T12:08:36Z"
+      }
     },
     {
       "id": "P79.2",
@@ -108,11 +111,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -157,11 +158,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -204,11 +203,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -253,11 +250,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -300,11 +295,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -349,11 +342,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -378,5 +369,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-26T11:54:49Z"
 }

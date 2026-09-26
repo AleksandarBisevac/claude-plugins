@@ -333,11 +333,110 @@ def phase_gate_suite_gap(manifest, suite_keys=None):
             % (_output.some_of(default["entries"]),))
 
 
+# The two words `meta.phaseGate.mode` may hold. ABSENT MEANS NO DERIVATION -
+# `always`/`exclude` alone still shape the wide gate, and nothing narrower is
+# ever computed - so this tuple is read only when the key is PRESENT.
+PHASE_GATE_MODES = ("shadow", "enforce")
+
+
+def _check_phase_gate_derived(derived, build_keys):
+    """WARNINGS for `meta.phaseGate.derived` - shape only, no ledger, no running.
+
+    `derived` is None (absent or explicit null) whenever `meta.phaseGate.mode`
+    applies to nothing yet - a project that turned shadow mode on before
+    telling the derivation how its own runner takes paths. That is not a shape
+    problem, so it draws nothing here.
+    """
+    if derived is None:
+        return []
+    if not isinstance(derived, dict):
+        return ["meta.phaseGate.derived: must be an object or null, got %s"
+               % (type(derived).__name__,)]
+    out = []
+    runner = derived.get("runner")
+    if runner is not None:
+        if not (isinstance(runner, str) and runner.strip()):
+            out.append("meta.phaseGate.derived.runner: must be a non-blank "
+                       "buildCommands key, got %s" % (type(runner).__name__,))
+        elif build_keys and runner not in build_keys:
+            out.append("meta.phaseGate.derived.runner: %r is not a "
+                       "buildCommands key - meta.buildCommands declares %s"
+                       % (runner, _output.some_of(sorted(build_keys))))
+    spelling = derived.get("spelling")
+    if spelling is not None:
+        if not (isinstance(spelling, str) and spelling.strip()):
+            out.append("meta.phaseGate.derived.spelling: must be a non-blank "
+                       "string, got %s" % (type(spelling).__name__,))
+        elif "{paths}" not in spelling:
+            out.append("meta.phaseGate.derived.spelling: %r carries no "
+                       "{paths} placeholder - the derivation has nowhere to "
+                       "substitute a resolved path list into it" % (spelling,))
+    listing = derived.get("listing")
+    if listing is not None and not isinstance(listing, dict):
+        out.append("meta.phaseGate.derived.listing: must be an object or "
+                   "null, got %s" % (type(listing).__name__,))
+        listing = None
+    verified_on = derived.get("verifiedOn")
+    if listing is not None and not (isinstance(verified_on, dict)
+                                    and verified_on.get("command")):
+        out.append("meta.phaseGate.derived: a `listing` command is declared "
+                   "with no `verifiedOn` - its version was never checked, so "
+                   "a later mismatch has no real answer to compare against, "
+                   "only a guess")
+    return out
+
+
+def _check_coupling(coupling):
+    """WARNINGS for `meta.coupling` - shape only, additive.
+
+    Every entry needs `test`, a non-empty `sources` and `basis.runId` - a
+    pointer with no runId points at nothing, the same reason `testEvidence`
+    requires one. Two entries naming the same `test` are named together
+    rather than one silently shadowing the other: a reader (and a future
+    derivation) has no rule for which of two conflicting source lists wins.
+    """
+    if not isinstance(coupling, list):
+        return ["meta.coupling: must be an array, got %s"
+               % (type(coupling).__name__,)]
+    out = []
+    seen, dup = set(), set()
+    for i, entry in enumerate(coupling):
+        where = "meta.coupling[%d]" % (i,)
+        if not isinstance(entry, dict):
+            out.append("%s: must be an object, got %s"
+                       % (where, type(entry).__name__))
+            continue
+        missing = []
+        test = entry.get("test")
+        if not (isinstance(test, str) and test.strip()):
+            missing.append("test")
+        sources = entry.get("sources")
+        if not (isinstance(sources, list) and sources):
+            missing.append("sources")
+        basis = entry.get("basis")
+        run_id = basis.get("runId") if isinstance(basis, dict) else None
+        if not (isinstance(run_id, str) and run_id.strip()):
+            missing.append("basis.runId")
+        if missing:
+            out.append("%s: missing %s" % (where, _output.some_of(missing)))
+        if isinstance(test, str) and test.strip():
+            if test in seen:
+                dup.add(test)
+            seen.add(test)
+    if dup:
+        out.append(
+            "meta.coupling: duplicate `test` value(s) %s - each test should "
+            "carry ONE entry with every source it is coupled to, not two "
+            "entries a reader has no rule for choosing between"
+            % (_output.some_of(sorted(dup), render=repr),))
+    return out
+
+
 def _check_phase_gate(manifest, warnings):
-    """WARNINGS for `meta.phaseGate` and `meta.gateBudgetMs` - additive, never
-    a finding (`COMPATIBILITY.md` -> Validation stays additive): both fields
-    are new, so a shape a validator does not like is named rather than
-    refused.
+    """WARNINGS for `meta.phaseGate`, `meta.gateBudgetMs` and `meta.coupling` -
+    additive, never a finding (`COMPATIBILITY.md` -> Validation stays
+    additive): all three are new, so a shape a validator does not like is
+    named rather than refused.
 
     THE 'RUNS NO SUITE' SENTENCE IS NOT HERE. `phase_gate_suite_gap` is asked
     directly by `_manifest_rules._check_meta`, with no evidence, so the pure
@@ -387,6 +486,28 @@ def _check_phase_gate(manifest, warnings):
                     "always is always, so %s stays in the default gate"
                     % (_output.some_of(both, render=repr),
                        "it" if len(both) == 1 else "they"))
+            if "mode" in gate:
+                mode = gate.get("mode")
+                if mode not in PHASE_GATE_MODES:
+                    warnings.append(
+                        "meta.phaseGate.mode: must be 'shadow' or 'enforce', "
+                        "got %r" % (mode,))
+            if "derived" in gate:
+                warnings.extend(_check_phase_gate_derived(
+                    gate.get("derived"), build_keys))
+            if "smoke" in gate:
+                smoke = gate.get("smoke")
+                if smoke is not None:
+                    if not (isinstance(smoke, str) and smoke.strip()):
+                        warnings.append(
+                            "meta.phaseGate.smoke: must be a non-blank "
+                            "buildCommands key or null, got %s"
+                            % (type(smoke).__name__,))
+                    elif build_keys and smoke not in build_keys:
+                        warnings.append(
+                            "meta.phaseGate.smoke: %r is not a buildCommands "
+                            "key - meta.buildCommands declares %s"
+                            % (smoke, _output.some_of(sorted(build_keys))))
     if "gateBudgetMs" in meta:
         budget = meta.get("gateBudgetMs")
         if isinstance(budget, bool) or not isinstance(budget, int):
@@ -396,6 +517,8 @@ def _check_phase_gate(manifest, warnings):
             warnings.append("meta.gateBudgetMs: must be greater than 0 (got "
                             "%s) - omit the key entirely for 'no budget'"
                             % (budget,))
+    if "coupling" in meta:
+        warnings.extend(_check_coupling(meta.get("coupling")))
 
 
 def _check_phase_intent(phase, pwhere, build_keys):

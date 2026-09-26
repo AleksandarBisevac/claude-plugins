@@ -131,9 +131,10 @@ TERMINAL = _mio.TERMINAL
 _check_claim = _phases._check_claim
 # The one phase-gate default, and the two rules that read it: what a NEW
 # phase's gate starts as (`phase_gate_default`), whether that default runs no
-# suite at all (`phase_gate_suite_gap`), and the shape warnings for the two
-# fields that drive both (`_check_phase_gate`, called from `_check_meta`
-# below).
+# suite at all (`phase_gate_suite_gap`), and the shape warnings for
+# `meta.phaseGate` — `always`/`exclude` plus `mode`/`derived`/`smoke` now —
+# and for `meta.coupling` beside it (`_check_phase_gate`, called from
+# `_check_meta` below).
 phase_gate_default = _phases.phase_gate_default
 phase_gate_suite_gap = _phases.phase_gate_suite_gap
 _check_phase_gate = _phases._check_phase_gate

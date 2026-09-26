@@ -197,6 +197,30 @@ GATE_BASIS = ("declared", "cleared", "tests.add", "files",
 GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling", "gate-only-no-suite")
 
 
+# --- which derivation produced a PHASE's `testGateDerived` -----------------------
+# `phase.testGateBasis`'s vocabulary — SEPARATE from `GATE_BASIS` above, and
+# deliberately so: `GATE_BASIS` is a TASK's `tests.gateBasis` word, read by
+# `audit-task.py`'s writer and by `_manifest_phases`'s wide-gate-verbatim warning
+# (`GATE_BASIS_ANSWERED`), and both of those readers ask about ONE task's own
+# gate. Folding a phase-only word into that tuple would let a task claim a
+# derivation no task ever goes through — nothing stops a caller writing
+# `tests.gateBasis: "derived"` on a task, and the wide-gate warning would then
+# read it as an answer rather than as the nonsense it is. A phase reads this
+# tuple; a task's vocabulary never sees it.
+#
+# 'derived' = `derive-phase-gate.py` narrowed the phase's wide gate to a real
+# subset it computed. 'derived-empty' = the same run computed nothing to narrow
+# to — no task named this phase in `tests.add`, no coupling entry matched, no
+# importer resolved, nothing changed, nothing last failed — so the WIDE gate
+# stayed the answer for lack of anything narrower, the same standing
+# `gate-only-no-suite` has in `GATE_BASIS_ANSWERED` above.
+# 'wide: importers resolved to the full suite' = the derivation ran and an
+# importer listing matched every suite file this runner would collect, so the
+# wide gate IS the narrow answer rather than an unnarrowed default.
+PHASE_GATE_BASIS = ("derived", "derived-empty",
+                    "wide: importers resolved to the full suite")
+
+
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.
 # The "legacy" names below were removed from the schema in v0.3.0 but remain
@@ -246,6 +270,13 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # Absent = nothing is graded on cost, same shape as `budgetUSD` one
               # level down.
               "gateBudgetMs",
+              # What a derived phase gate LEARNED beside its declared arms — a
+              # test that has, in practice, gone red for a change none of them
+              # would have named. Absent/empty = no coupling learned yet, which
+              # is today's behaviour: the derivation still runs on
+              # tests.add/importers/changed/lastFailed alone.
+              # `_manifest_phases._check_coupling` is the shape check.
+              "coupling",
               # The rest are NOT in the schema, and the reason for each is in
               # `OFF_SCHEMA` below rather than here - one copy, and a lint that
               # goes red when it stops being true. (The comment that stood here
@@ -396,6 +427,16 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # inside a block stayed exactly as silent - which is this
                # module's own KNOWN_CLAIM argument, one nesting level over.
                "testEvidence",
+               # Which derivation produced `testGateDerived` below — the phase
+               # twin of a task's `tests.gateBasis`, and open the same way:
+               # absent reads as an unnarrowed default rather than as
+               # 'derived and empty on purpose'. See `PHASE_GATE_BASIS`.
+               "testGateBasis",
+               # What `derive-phase-gate.py` computed for this phase's sign-off
+               # gate, beside the wide `testGate` array — never in place of it.
+               # Absent means "meta.phaseGate.mode has never derived for this
+               # phase", the same reading `testEvidence`'s absence gets.
+               "testGateDerived",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a

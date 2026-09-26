@@ -855,6 +855,31 @@ def _cases(check):
           # `gateBasis` value and has no business in the ANSWERED set.
           and "failing-from-run" not in M.GATE_BASIS_ANSWERED)
 
+    # --- P79.1: the derived sign-off gate's vocabulary -----------------------
+    check("mv50 `coupling` is a KNOWN_META key and `testGateBasis` and "
+          "`testGateDerived` are KNOWN_PHASE keys - the typo-catcher's whole "
+          "involvement with the three new fields: %r"
+          % ({"coupling in KNOWN_META": "coupling" in M.KNOWN_META,
+              "testGateBasis in KNOWN_PHASE": "testGateBasis" in M.KNOWN_PHASE,
+              "testGateDerived in KNOWN_PHASE":
+                  "testGateDerived" in M.KNOWN_PHASE},),
+          "coupling" in M.KNOWN_META
+          and "testGateBasis" in M.KNOWN_PHASE
+          and "testGateDerived" in M.KNOWN_PHASE)
+    check("mv51 `derived` and `derived-empty` are `PHASE_GATE_BASIS` words - "
+          "the phase-level twin of `GATE_BASIS`, kept SEPARATE so a task can "
+          "never claim a derivation only a phase goes through: %r"
+          % (sorted(getattr(M, "PHASE_GATE_BASIS", ())),),
+          "derived" in getattr(M, "PHASE_GATE_BASIS", ())
+          and "derived-empty" in getattr(M, "PHASE_GATE_BASIS", ())
+          and "wide: importers resolved to the full suite"
+              in getattr(M, "PHASE_GATE_BASIS", ()))
+    check("mv52 ...and neither phase-only word leaked into the TASK vocabulary "
+          "- `GATE_BASIS` is what `audit-task.py` writes to a task's own "
+          "`tests.gateBasis`, and a phase word appearing there would let a "
+          "task claim a derivation no task ever runs through",
+          "derived" not in M.GATE_BASIS and "derived-empty" not in M.GATE_BASIS)
+
 
 def _selftest():
     return _harness.run(_cases)
