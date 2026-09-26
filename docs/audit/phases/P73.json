@@ -31,7 +31,7 @@
     {
       "id": "P73.1",
       "title": "A scoped commit carries the journal row that names it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Every scoped commit writes the journal row naming it AFTER the commit, so the row is never inside it and no phase ends with a clean tree (reported by a user; visible on this repo at every phase end). Structural fix: write the row BEFORE the commit, keyed by a nonce the commit message carries as a trailer, stage it into the same commit, and resolve the SHA from the trailer (git log --grep) wherever a reader needs it - which also survives a rebase. Survey every reader of these rows (audit-journal, doctor, verify-invariants, the panel, journal-writes' record keys) and keep each one right; the hash chain must still verify.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -77,14 +77,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2d30d193",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "commit_with_rows writes nonce-keyed rows before staging, an Audit-Row trailer names them, readers resolve via git log --grep, refusals append a withdrawal row.",
+        "descriptive": "Every audit commit now contains the journal row that names it, so a phase can finish with a clean tree."
       },
       "startedAt": "2026-09-26T04:55:13Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T07:31:50Z",
+      "verifiedBy": [
+        "test_commit_audit_state cas34",
+        "test_commit_audit_state cas35",
+        "test__invariants it3",
+        "test__scoped_commit sc27"
+      ]
     },
     {
       "id": "P73.2-9h1",
