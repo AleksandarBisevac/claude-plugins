@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P72-R1",
@@ -184,9 +184,10 @@
         "issue": "'full selftest sweep, bench-hooks --gate, gate-parity, check-committed-pii' names commands but no exit codes and no stamp. Under this brief that is a verification claim with no evidence. I did not re-run them: the brief forbids the suite, and the gate is the orchestrator's measurement.",
         "resolution": "fix task P72.6-ttl"
       }
-    ]
+    ],
+    "outcome": "diverges on one clause by decision: the history guard reads every git word, not only command position; four review passes, all findings fixed in P72.2-P72.8 except the guard-spelling half handed to a maintainer (P72.6 cancelled with its reason)"
   },
-  "summary": null,
+  "summary": "Every hook that reads the plan or state resolves the tree of the path or command it judges through one _config.tree_for, and a lint keeps a bare repo_root from coming back, so an executor in a linked worktree is held to that worktree's plan. guard-bash-writes attributes a journal file from its bytes and chain - brought in by a merge only on a MERGE_HEAD/ORIG_HEAD written in this window - and journal-writes records only what its own call wrote, derives a sign-off from its inputs rather than a stored status, and writes a linked worktree's journal and evidence to their own files keyed by git, so parallel worktrees of one session never share one. The history guard kept only tightenings it can prove - continuation joining that follows comments, quoted substitutions read as commands, every reset graded in its own tree, here-strings to a shell read like -c - after two narrowings (an inert-emitter exemption and piped-heredoc-as-data) were removed because each fix of them opened a new pass; a reviewer measured 147 spellings and none the base refused is allowed. Reviewed four times; the remaining spelling hardening past the base was handed to a human maintainer after a safety classifier stopped the automated executor three times, and SECURITY.md names it as open. Merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P72.1",
@@ -669,5 +670,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-25T14:32:08Z"
+  "startedAt": "2026-09-25T14:32:08Z",
+  "testEvidence": {
+    "runId": "2026-09-26T02:42:41Z.5ae346",
+    "status": "passed",
+    "at": "2026-09-26T02:42:41Z"
+  }
 }
