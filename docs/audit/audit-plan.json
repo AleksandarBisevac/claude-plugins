@@ -527,7 +527,7 @@
     {
       "id": "P82",
       "title": "red-first names the task's own case by its label, and reads only the runner that ran",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P82.json"
     }
   ],
@@ -757,7 +757,8 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P82.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -976,7 +977,8 @@
       "P78.11",
       "P77.1",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P82.1"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1396,7 +1398,8 @@
       "P77.1",
       "P77.3-6u9",
       "P77.5-6u9",
-      "P78.11"
+      "P78.11",
+      "P82.1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
