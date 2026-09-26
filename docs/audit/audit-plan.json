@@ -642,7 +642,8 @@
       "P81.8",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -757,7 +758,8 @@
       "P73.1",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1402,7 +1404,8 @@
       "P78.11",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1722,7 +1725,8 @@
       "P76.4-6qa",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1735,7 +1739,8 @@
       "P76.3-6qa",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -1759,7 +1764,8 @@
       "P73.2-9h1",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1787,7 +1793,8 @@
       "P71.4-zso",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -1832,7 +1839,8 @@
       "P71.2-zso",
       "P71.4-zso",
       "P73.1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1847,7 +1855,8 @@
       "P71.4-zso",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
@@ -1856,7 +1865,8 @@
       "P71.4-zso",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6"
@@ -2620,7 +2630,8 @@
       "P76.4-6qa",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -2656,7 +2667,8 @@
       "P76.3-6qa",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -2675,7 +2687,8 @@
       "P72.8-ttl",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -2878,7 +2891,8 @@
       "P71.4-zso",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -3072,7 +3086,8 @@
       "P71.2-zso",
       "P71.4-zso",
       "P73.1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -3083,7 +3098,8 @@
       "P71.4-zso",
       "P73.1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
@@ -3405,7 +3421,8 @@
       "P73.1",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P73.4-9h1"
+      "P73.4-9h1",
+      "P73.5-9h1"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
