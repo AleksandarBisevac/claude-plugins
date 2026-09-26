@@ -17,8 +17,10 @@ so ids keep reading in the order they were made and the development branch, afte
 a merge, continues from the highest number either side reached.
 
 THE ALPHABET IS `[0-9a-z]`. A phase id becomes a lock name (`_locks.valid_name`
-takes `[A-Za-z0-9._-]`), a shard file name and a lower-cased branch component, so
-the suffix is lower case and survives all three unchanged.
+takes ASCII `[A-Za-z0-9._-]`, and refuses one that differs only in case from a lock
+already held, since the lock directory folds case on macOS and Windows by default),
+a shard file name and a lower-cased branch component, so the suffix is lower case
+and survives all three unchanged.
 
 WHAT IT DOES NOT PREVENT: two clones minting on the development branch itself.
 That collision still reaches the merge, which names it, and
@@ -54,6 +56,7 @@ _output.install_path()
 
 import _branch  # noqa: E402  (parent_branch: the one answer to "which branch is the trunk")
 import _manifest_vocab  # noqa: E402  (ID_SUFFIX: the suffix's one spelling)
+import _manifest_io as _mio  # noqa: E402  (moved_from_ids: the ids a moved task held)
 
 
 ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -170,7 +173,12 @@ def next_prop_id(manifest, suffix):
 def next_task_id(manifest, phase_id, suffix, extra_ids=()):
     """`<phaseId>.<max+1>[-suffix]`. A phase that already carries this branch's
     suffix was minted here, so its tasks do not repeat it. `extra_ids` are ids
-    reserved elsewhere (parked proposals) that must not be reused."""
+    reserved elsewhere (parked proposals) that must not be reused.
+
+    EVERY ID A LIVE TASK WAS MOVED FROM IS TAKEN TOO, down the whole `movedFrom`
+    chain. `move` takes an id out of its phase, and minting it again would hand
+    the ledger, evidence and journal rows written under it to an unrelated task,
+    and bind another branch's `blockedBy` on it to the wrong one after a merge."""
     prefix = "%s." % (phase_id,)
     if suffix and str(phase_id).endswith("-" + suffix):
         suffix = None
@@ -179,7 +187,9 @@ def next_task_id(manifest, phase_id, suffix, extra_ids=()):
         for task in (phase or {}).get("tasks") or []:
             if isinstance(task, dict):
                 taken.append(task.get("id"))
+                taken.extend(_mio.moved_from_ids(task))
     return _mint(prefix, taken, suffix)
+
 
 
 def is_placeholder_phase(phase_id):

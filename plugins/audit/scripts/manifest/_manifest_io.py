@@ -359,6 +359,20 @@ def iter_tasks(manifest):
                 yield phase, task
 
 
+def moved_from_ids(task):
+    """Every id `task` was moved from, newest first: `movedFrom.id`, then each
+    `previous` link `move` nests inside it. A link that is not an object ends the
+    chain. One walk, because the allocator (which must never mint one of these
+    again) and the evidence readers (which join old-id runs to the live task)
+    both need it."""
+    out = []
+    link = task.get("movedFrom") if isinstance(task, dict) else None
+    while isinstance(link, dict) and link.get("id"):
+        out.append(str(link.get("id")))
+        link = link.get("previous")
+    return out
+
+
 def tasks_by_id(manifest):
     """`{task id: task}` — the ONE id -> task index.
 

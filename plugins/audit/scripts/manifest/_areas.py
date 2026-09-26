@@ -389,22 +389,22 @@ def validate_registry(areas, where="meta.areas"):
     if areas is None:
         return findings, warnings
     if not isinstance(areas, dict):
-        findings.append("%s: must be an object {tag: {root, description, "
+        findings.append(_output.finding("areas.validate_registry.object-tag-root", "%s: must be an object {tag: {root, description, "
                         "reviewSkill?, skills?, owner?}}, got %s"
-                        % (where, type(areas).__name__))
+                        % (where, type(areas).__name__)))
         return findings, warnings
     for tag, entry in areas.items():
         t = _norm_tag(tag)
         awhere = "%s.%s" % (where, tag if isinstance(tag, str) and tag else "?")
         if not t:
-            findings.append("%s: an area tag must be a non-empty name" % where)
+            findings.append(_output.finding("areas.validate_registry.area-tag-non", "%s: an area tag must be a non-empty name" % where))
             continue
         if t != tag:
             warnings.append("%s: tag %r has surrounding whitespace - it is matched "
                             "trimmed, so write it as %r" % (where, tag, t))
         if not isinstance(entry, dict):
-            findings.append("%s: must be an object {root, description, reviewSkill?, "
-                            "skills?, owner?}, got %s" % (awhere, type(entry).__name__))
+            findings.append(_output.finding("areas.validate_registry.object-root-description", "%s: must be an object {root, description, reviewSkill?, "
+                            "skills?, owner?}, got %s" % (awhere, type(entry).__name__)))
             continue
         for key in entry:
             ks = str(key)
@@ -416,8 +416,8 @@ def validate_registry(areas, where="meta.areas"):
             warnings.append("%s: no 'root' - an area with no directory cannot be "
                             "checked against the tree (/audit:doctor skips it)" % awhere)
         elif not isinstance(root, str) or not root.strip():
-            findings.append("%s.root: must be a non-empty repo-relative directory "
-                            "path, got %r" % (awhere, root))
+            findings.append(_output.finding("areas.validate_registry.non-empty-repo", "%s.root: must be a non-empty repo-relative directory "
+                            "path, got %r" % (awhere, root)))
         else:
             clean = root.strip().replace("\\", "/")
             if clean.startswith("/") or (len(clean) > 1 and clean[1] == ":"):
@@ -429,12 +429,12 @@ def validate_registry(areas, where="meta.areas"):
                                 % (awhere, root))
         desc = entry.get("description")
         if "description" in entry and not isinstance(desc, str):
-            findings.append("%s.description: must be a string, got %s"
-                            % (awhere, type(desc).__name__))
+            findings.append(_output.finding("areas.validate_registry.string", "%s.description: must be a string, got %s"
+                            % (awhere, type(desc).__name__)))
         rs = entry.get("reviewSkill")
         if "reviewSkill" in entry and rs is not None and not isinstance(rs, str):
-            findings.append("%s.reviewSkill: must be a skill name or null, got %s"
-                            % (awhere, type(rs).__name__))
+            findings.append(_output.finding("areas.validate_registry.skill-name-null", "%s.reviewSkill: must be a skill name or null, got %s"
+                            % (awhere, type(rs).__name__)))
         skills = entry.get("skills")
         if "skills" in entry:
             # `null` IS LEGAL HERE and this branch was the only reader that
@@ -453,9 +453,9 @@ def validate_registry(areas, where="meta.areas"):
             # which COMPATIBILITY.md makes a major release - for a value nothing
             # ships and no reader needed changed.
             if skills is not None and not isinstance(skills, list):
-                findings.append("%s.skills: must be an array of skill names or "
+                findings.append(_output.finding("areas.validate_registry.array-skill-names", "%s.skills: must be an array of skill names or "
                                 "null, got %s"
-                                % (awhere, type(skills).__name__))
+                                % (awhere, type(skills).__name__)))
             elif isinstance(skills, list):
                 # `elif isinstance`, not `else`: with `None` now legal above, a
                 # bare `else` iterates it and the VALIDATOR crashes - which is
@@ -463,22 +463,22 @@ def validate_registry(areas, where="meta.areas"):
                 # the validator rather than by reading the branch.
                 bad = [s for s in skills if not isinstance(s, str) or not s.strip()]
                 if bad:
-                    findings.append("%s.skills: every entry must be a non-empty skill "
+                    findings.append(_output.finding("areas.validate_registry.every-entry-non", "%s.skills: every entry must be a non-empty skill "
                                     "name (%d bad: %s)"
                                     % (awhere, len(bad),
-                                       _output.some_of(bad, render=repr)))
+                                       _output.some_of(bad, render=repr))))
         owner = entry.get("owner")
         if "owner" in entry:
             # Type only. Whether this identity has ever appeared in the ledger is
             # the doctor's question (it has the ledger in hand); an offline shape
             # check that guessed would false-alarm on every pre-first-run project.
             if owner is not None and not isinstance(owner, str):
-                findings.append("%s.owner: must be an author string (the form "
+                findings.append(_output.finding("areas.validate_registry.author-string-form", "%s.owner: must be an author string (the form "
                                 "usage.authorMode records) or null, got %s"
-                                % (awhere, type(owner).__name__))
+                                % (awhere, type(owner).__name__)))
             elif isinstance(owner, str) and not owner.strip():
-                findings.append("%s.owner: must not be empty - write null to say "
-                                "'nobody owns this'" % awhere)
+                findings.append(_output.finding("areas.validate_registry.empty-write-null", "%s.owner: must not be empty - write null to say "
+                                "'nobody owns this'" % awhere))
     return findings, warnings
 
 

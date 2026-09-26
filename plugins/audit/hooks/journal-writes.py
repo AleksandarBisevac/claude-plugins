@@ -62,9 +62,11 @@ REFRESHES the slot:
 
     task.complete   a task's status moved to done
     task.commit     a task's commit moved null -> SHA
-    phase.signoff   a phase reached done - its DERIVED status, so a verdict
-                    recorded by the signoff verb or a merge stamped after one
-                    counts, and a hand-written `done` over it is not a second
+    phase.signoff   a phase reached done - its DERIVED status, moved by its
+                    inputs: a verdict recorded by the signoff verb, or a merge
+                    stamped after one. A stored `status` flipped by hand, or
+                    storing what the derivation already answered, is an edit
+                    and signs nothing off
 
 This HOOK is the only writer of those actions -- a prose instruction to append
 them would be a second writer, and two writers means duplicate rows. Tokens are
@@ -210,28 +212,46 @@ def classify(data, *, cfg, root):
     """What kind of target this write hits. Returns (action, rel, tool, ti);
     `action` is None with the reason in `rel`'s place when it is nobody's
     business. Shared by the Pre and Post passes so the two can never disagree
-    about what counts as the manifest."""
+    about what counts as the manifest. `_classify_placed` is the same answer
+    with the tree that holds the target beside it."""
+    return _classify_placed(data, cfg, root)[:4]
+
+
+def _classify_placed(data, cfg, root):
+    """`classify`, plus the tree whose plan the target belongs to.
+
+    -> (action, rel, tool, ti, tree root)
+
+    `rel` IS SPELLED FROM THAT TREE, not from `root`. A linked worktree's
+    manifest, spelled from the project, was `../<worktree>/docs/audit/...`,
+    matched no manifest path, and a phase finished in a worktree recorded
+    nothing at all. `_config.tree_for` places the path; inside the project it
+    asks no process."""
     tool = data.get("tool_name", "")
     if tool not in _EDIT_TOOLS:
-        return (None, "not an edit tool", tool, {})
+        return (None, "not an edit tool", tool, {}, root)
     ti = data.get("tool_input", {}) or {}
     path = _target_of(tool, ti)
     if not path:
-        return (None, "no path", tool, ti)
-    rel = _config.rel_path(root, path)
+        return (None, "no path", tool, ti, root)
+    tree = _config.tree_for(data, path, cfg, project=root)
+    if not tree["inside"]:
+        return (None, "outside this project (%s)" % tree["basis"], tool, ti,
+                root)
+    rel, troot = tree["rel"], tree["root"]
     manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
 
     # The journal itself is never journalled. guard-edits refuses that write
     # anyway, so this only matters when the guards are off — and a recorder that
     # records the recording is a loop nobody wants to read.
-    if _config.in_journal(root, cfg, rel):
-        return (None, "the journal is not its own subject", tool, ti)
+    if _config.in_journal(troot, cfg, rel):
+        return (None, "the journal is not its own subject", tool, ti, troot)
 
     if rel == manifest_rel or _config.governing_lock(manifest_rel, rel):
-        return ("manifest.edit", rel, tool, ti)
+        return ("manifest.edit", rel, tool, ti, troot)
     if rel == _config.CONFIG_REL:
-        return ("config.edit", rel, tool, ti)
-    return (None, "not a manifest or config path", tool, ti)
+        return ("config.edit", rel, tool, ti, troot)
+    return (None, "not a manifest or config path", tool, ti, troot)
 
 
 def _actor(data, root, cfg):
@@ -270,27 +290,43 @@ def _entry(action, rel, tool, ti, data, root, cfg):
 
 def decide(data, *, cfg=None, root=None):
     """Pure decision core. Returns ("journal", entry) or ("skip", reason)."""
-    root = root if root is not None else _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
-    action, rel, tool, ti = classify(data, cfg=cfg, root=root)
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+    root, cfg = home["project"], home["cfg"]
+    action, rel, tool, ti, troot = _classify_placed(data, cfg, root)
     if action is None:
         return ("skip", rel)
     if not _config.journal_enabled(cfg):
         return ("skip", "journal disabled")
-    return ("journal", _entry(action, rel, tool, ti, data, root, cfg))
+    return ("journal", _entry(action, rel, tool, ti, data, troot, cfg))
 
 
 # --- the pre-image cache ------------------------------------------------------
-def _slot_path(root, cfg, data, rel):
-    """<stateDir>/journal-preimage-<sessionId>.<sha256(rel)[:12]>.json — one slot
-    per (session, target), so parallel sessions never clobber each other's
-    pre-image and the same session's retries overwrite their own."""
-    state_rel = str(cfg.get("stateDir") or _config.DEFAULTS["stateDir"])
+def _writer_key(data):
+    """The session, and the subagent when a subagent made the call - the key a
+    pre-image is kept under. Two agents of one session share `session_id`, so a
+    slot keyed by the session alone let one agent's Pre refresh the baseline
+    another agent's running command was about to be diffed against. The agent
+    is `_config.agent_of`'s, the one spelling of that question: an id that
+    sanitises to nothing is still a subagent, named `UNNAMED_AGENT` there,
+    never the orchestrator. The main agent's key is the session alone, the name
+    every earlier release wrote."""
     sid = _SAFE_SID.sub("-", str(data.get("session_id") or "")).strip("-.")
     sid = (sid or "no-session")[:40]
+    if not _config.is_subagent(data):
+        return sid
+    agent = _SAFE_SID.sub("-", _config.agent_of(data)).strip("-.")[:40]
+    return "%s-%s" % (sid, agent or _config.UNNAMED_AGENT)
+
+
+def _slot_path(root, cfg, data, rel):
+    """<stateDir>/journal-preimage-<writer key>.<sha256(rel)[:12]>.json - one
+    slot per (session, agent, target), so parallel sessions and parallel agents
+    never clobber each other's pre-image and a writer's retries overwrite their
+    own."""
+    state_rel = str(cfg.get("stateDir") or _config.DEFAULTS["stateDir"])
     digest = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:12]
-    return os.path.join(str(root), state_rel,
-                        "journal-preimage-%s.%s.json" % (sid, digest))
+    return os.path.join(str(root), state_rel, "journal-preimage-%s.%s.json"
+                        % (_writer_key(data), digest))
 
 
 def _snapshot(path):
@@ -346,20 +382,23 @@ def pre_cache(data, *, cfg=None, root=None):
     can diff. Returns the slot path when one was written, else None.
 
     Never raises, never blocks, never speaks. IT STAYS, and that was decided
-    rather than assumed: the slot is keyed per (session, target), so with
+    rather than assumed: the slot is keyed per (session, agent, target), so with
     no Pre pass the FIRST write of every session would have no baseline and would
     lose its derived rows -- a regression wearing the shape of a simplification."""
     try:
-        root = root if root is not None else _config.repo_root(data)
-        cfg = cfg if cfg is not None else _config.load(root)
+        home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+        root, cfg = home["project"], home["cfg"]
         if not _config.journal_enabled(cfg):
             return None            # on Pre, the config on disk IS the pre-image
         if _swept_tool(data.get("tool_name")):
-            return _pre_seed_sweep(root, cfg, data)
-        action, rel, _tool, _ti = classify(data, cfg=cfg, root=root)
+            last = None
+            for troot in _sweep_roots(data, cfg, root):
+                last = _pre_seed_sweep(troot, cfg, data) or last
+            return last
+        action, rel, _tool, _ti, troot = _classify_placed(data, cfg, root)
         if action is None:
             return None
-        return _write_slot(root, cfg, data, rel)
+        return _write_slot(troot, cfg, data, rel)
     except Exception:
         return None
 
@@ -391,12 +430,26 @@ def _pre_seed_sweep(root, cfg, data):
     file, and `audit-journal verify` later reported `an edit the journal never
     saw`. That warning was telling the truth; the window was the defect.
 
-    NOT A HASH PER CALL. A slot that already exists is left alone, so the cost
-    after the session's first call on this lane is one `exists` per watched path —
-    and only the paths this hook already sweeps on Post are touched, so the Pre and
-    Post passes cannot disagree about what is watched. That bound is what lets the
-    MCP matcher share the lane: an MCP call pays the same `exists` per watched path
-    that a Bash call does, and every call after the first pays nothing else.
+    AND A BASELINE AS OF THIS CALL, NOT AS OF THIS SESSION'S LAST ONE. The Post
+    pass derives rows from what moved between the slot and now, and files them
+    under this session. A slot left from the session's previous call made that
+    window span every other writer's work in between: after the orchestrator
+    stored its derived statuses, a different session's next unrelated Bash call
+    derived 147 rows as its own. So a slot whose digest no longer matches the
+    file is refreshed here, and what is left for Post is what moved while THIS
+    call ran. A peer writing during that same window is still read as this
+    call's write, which is the residual.
+
+    A MOVE BETWEEN CALLS IS ABSORBED, whoever made it: this hook records only
+    what its own call wrote. A writer with a hook records its own; a move that
+    no row explains - an editor, a terminal, a background job - is not lost,
+    because `audit-journal verify` warns that the file "has changed since the
+    last row that recorded it" and the doctor reports that warning as
+    out-of-band drift. A task closed from the CLI records its own `task.done`
+    row, which the doctor accepts as the receipt. Recording such a move here as
+    an unattributed row was tried and removed: whether it duplicated a
+    writer's own rows depended on the order the Posts arrived in, and a Pre
+    whose Post never came left it waiting for ever.
 
     Returns the last slot written, or None, matching `pre_cache`'s contract.
     """
@@ -404,11 +457,12 @@ def _pre_seed_sweep(root, cfg, data):
     for rel in _swept_targets(root, cfg):
         if _config.in_journal(root, cfg, rel):
             continue
-        slot = _slot_path(root, cfg, data, rel)
-        if os.path.exists(slot):
-            continue
-        if _snapshot(os.path.join(str(root), rel))[0] is None:
+        now_sha = _snapshot(os.path.join(str(root), rel))[0]
+        if now_sha is None:
             continue               # nothing readable to be a baseline
+        pre = _read_preimage(root, cfg, data, rel)
+        if pre is not None and pre.get("sha256") == now_sha:
+            continue
         last = _write_slot(root, cfg, data, rel) or last
     return last
 
@@ -506,6 +560,15 @@ def _phase_status_reader():
     mio = _config._load_scripts_module("_manifest_io", "_manifest_io.py")
     reader = getattr(mio, "effective_phase_status", None)
     return reader if callable(reader) else (lambda phase: phase.get("status"))
+
+
+def _inputs_only(phase):
+    """`phase` with a stored `done` set aside, so its status is what the
+    derivation's INPUTS answer. `cancelled` stays: it is a decision, not a
+    stored copy of a derivation."""
+    if phase.get("status") == "done":
+        return dict(phase, status=None)
+    return phase
 
 
 def semantic_diff(old_obj, new_obj):
@@ -623,7 +686,18 @@ def semantic_diff(old_obj, new_obj):
             # From a phase BODY only - one that carries its tasks. An index stub
             # is a mirror: it derives nothing, and a stored `done` flipped on it
             # beside its shard is the same sign-off the shard's diff records.
-            oe, ne = status_of(old_phase), status_of(new_phase)
+            #
+            # AND FROM THE DERIVATION'S INPUTS, NEVER FROM `status`. A sign-off
+            # is the verdict (and, with a branch, the merge stamp); a stored
+            # `status` moved to done - by hand, or by storing what the
+            # derivation already answered - signs nothing off. So BOTH sides
+            # are derived with a stored `done` set aside (`_inputs_only`): only
+            # a change to the tasks, the verdict or `mergedAt` can move the
+            # answer, and a hand flip made before the verdict cannot swallow the
+            # verdict's row. A hand flip is still recorded, as the `status`
+            # change on the edit row.
+            oe = status_of(_inputs_only(old_phase))
+            ne = status_of(_inputs_only(new_phase))
             if (ne == "done" and oe != "done"
                     and isinstance(new_phase.get("tasks"), list)):
                 events.append({"action": "phase.signoff",
@@ -719,8 +793,8 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
     ti = data.get("tool_input", {}) or {}
     if not sandbox_disabled(ti):
         return []
-    root = root if root is not None else _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+    root, cfg = home["project"], home["cfg"]
     if not _config.journal_enabled(cfg):
         return []
     command = str(ti.get("command", ""))
@@ -916,17 +990,60 @@ def swept_entries(data, *, cfg=None, root=None):
 
     The user's switch still wins, with the same exception the edit lane has: when
     the CONFIG itself moved, `journal.enabled` is judged against the pre-image, so
-    a shell that flips the switch off is journalled by its own last row."""
-    root = root if root is not None else _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    a shell that flips the switch off is journalled by its own last row.
+
+    The entries alone; `_swept_rows` is the same pass with the tree each row
+    belongs to."""
+    return [entry for _root, entry in _swept_rows(data, cfg=cfg, root=root)]
+
+
+def _sweep_roots(data, cfg, project):
+    """The trees whose recorded paths a sweep-lane call could have moved: the
+    project, and the tree the command stood in when that is a linked worktree
+    of it.
+
+    THE COMMAND'S TREE COMES FROM WHERE ITS SHELL STOOD, and that is not the
+    payload's `cwd` alone. An agent's shell starts in the session's directory on
+    every call, so `cd <worktree> && audit-task.py done ...` names the main
+    checkout in the payload while it writes the worktree's plan -
+    `_config.effective_cwd` reads the `cd` (the reading `guard-secrets-read`
+    places its write targets with), and `_config.tree_for` says whose tree that
+    directory is. A `cd` it cannot read falls back to the payload's own
+    directory. The project stays on the list whatever the command did: a
+    command that walked away can still write the project by absolute path, and
+    sweeping it is what this lane already did."""
+    command = str(((data or {}).get("tool_input") or {}).get("command") or "")
+    cwd = _config.effective_cwd(command, (data or {}).get("cwd"))
+    tree = _config.tree_for(data, cwd or None, cfg, project=project)
+    roots = [project]
+    if tree["moved"] and tree["inside"]:
+        roots.append(tree["root"])
+    return roots
+
+
+def _swept_rows(data, *, cfg=None, root=None):
+    """`swept_entries`' pass, each row with the tree whose journal it belongs to.
+
+    -> [(tree root, entry), ...]"""
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+    root, cfg = home["project"], home["cfg"]
     # The row says which tool wrote, and on this lane that is the ONE place the
     # tool's name appears: `unsandboxed_entries` reads the sandbox flag and the
     # sweep reads digests, so the name below is reportage and never a verdict. An
     # MCP call is named in full, server segment included, because the row is read
     # by a person deciding whether they recognise the write.
     tool = str(data.get("tool_name") or "Bash")
-    rows = unsandboxed_entries(data, cfg=cfg, root=root)
+    rows = [(root, e) for e in unsandboxed_entries(data, cfg=cfg, root=root)]
     enabled = _config.journal_enabled(cfg)
+    for troot in _sweep_roots(data, cfg, root):
+        rows.extend(_swept_tree(data, cfg, troot, tool, enabled))
+    return rows
+
+
+def _swept_tree(data, cfg, root, tool, enabled):
+    """The rows ONE tree's recorded paths owe for this call - `root` is that
+    tree, whose slots, trail and manifest are all read from it."""
+    rows = []
     # With the switch off the ONLY path that can still owe a row is the config, and
     # only because of the flip that turned it off - judged against the pre-image, as
     # on the edit lane. Sweeping the manifest here would be the plugin doing work
@@ -968,8 +1085,8 @@ def swept_entries(data, *, cfg=None, root=None):
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
                             else _manifest_rows(entry, rel, old_obj, new_obj,
                                                 recorded=recorded))
-        rows.append(primary)
-        rows.extend(chained)
+        rows.append((root, primary))
+        rows.extend((root, row) for row in chained)
         if enabled:
             _write_slot(root, cfg, data, rel)
     return rows
@@ -988,15 +1105,29 @@ def post_entries(data, *, cfg=None, root=None):
 
     The disable loophole is closed HERE: when the config itself is the target,
     `journal.enabled` is judged against the pre-image, so a true->false flip is
-    journalled as a final config.edit row instead of silencing its own record."""
+    journalled as a final config.edit row instead of silencing its own record.
+
+    The entries alone; `post_rows` is the same pass with the tree each row is
+    appended to, which is what `main` needs."""
+    return [entry for _root, entry in post_rows(data, cfg=cfg, root=root)]
+
+
+def post_rows(data, *, cfg=None, root=None):
+    """`post_entries`' pass, each row with the tree whose journal it belongs to.
+
+    -> [(tree root, entry), ...]. A write to a linked worktree's plan is
+    recorded in THAT tree's journal: the trail is committed with the branch
+    that did the work, and the completion dedupe reads it back from there after
+    a merge. Never raises."""
     try:
         if _swept_tool(data.get("tool_name")):
-            return swept_entries(data, cfg=cfg, root=root)
-        root = root if root is not None else _config.repo_root(data)
-        cfg = cfg if cfg is not None else _config.load(root)
-        action, rel, tool, ti = classify(data, cfg=cfg, root=root)
+            return _swept_rows(data, cfg=cfg, root=root)
+        home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+        root, cfg = home["project"], home["cfg"]
+        action, rel, tool, ti, troot = _classify_placed(data, cfg, root)
         if action is None:
             return []
+        root = troot
         pre = _read_preimage(root, cfg, data, rel)
         old_obj = _parse_preimage(pre)
         # REFRESHED, NOT CONSUMED, and here rather than after the row is
@@ -1019,7 +1150,7 @@ def post_entries(data, *, cfg=None, root=None):
         primary, chained = (_config_rows(entry, old_obj, new_obj)
                             if action == "config.edit"
                             else _manifest_rows(entry, rel, old_obj, new_obj))
-        return [primary] + chained
+        return [(root, row) for row in [primary] + chained]
     except Exception:
         return []
 
@@ -1085,19 +1216,29 @@ def main():
         if str(data.get("hook_event_name") or "PostToolUse") == "PreToolUse":
             pre_cache(data)
         else:
-            entries = post_entries(data)
-            if entries:
-                mod = _journal_lib()
-                if mod is not None:
-                    root = str(_config.repo_root(data))
-                    cfg = _config.load(root)
-                    for entry in entries:
-                        written = mod.append(root, entry)
-                        if written:
-                            record_plugin_write(root, cfg, data, written)
+            _append_rows(data, post_rows(data))
     except Exception:
         pass
     sys.exit(0)
+
+
+def _append_rows(data, rows):
+    """Append [(tree root, entry)] to each tree's journal, and claim each
+    project-tree append in this session's sidecar. Nothing to do for []."""
+    if not rows:
+        return
+    mod = _journal_lib()
+    if mod is None:
+        return
+    home = _config.tree_for(data, _config.PROJECT_ONLY)
+    project = str(home["project"])
+    for troot, entry in rows:
+        written = mod.append(str(troot), entry, home["cfg"])
+        # The sidecar claims a rel in the PROJECT's tree, the one
+        # guard-bash-writes watches; a worktree's journal file of the same
+        # name is not that file.
+        if written and _config._same_dir(troot, project):
+            record_plugin_write(project, home["cfg"], data, written)
 
 
 if __name__ == "__main__":

@@ -394,6 +394,10 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # the durable half of the mapping (the other half is the
               # journal's task.move row):
               "movedFrom",
+              # Why a task is `blocked`, beside the status `/audit:task block`
+              # sets, and the append-only `{at, text}` log `/audit:task note`
+              # writes - the one addition a started task still takes:
+              "blockedReason", "notes",
               # The task-level twin of the phase key above: the same $def, the
               # same pointer-not-truth rule, and the same reason no vocabulary
               # for its contents lives here. See the comment on KNOWN_PHASE.
@@ -716,9 +720,17 @@ INLINE_ANCHORS = (
 
 
 # --- the shape checks every level shares -----------------------------------------
+_LINE_SUFFIX = re.compile(r":[0-9][0-9,-]*\Z")
+
+
 def _strip_line_suffix(entry):
-    """`a/b.tsx:291-294,308` -> `a/b.tsx` (same rule as hooks/_config.py)."""
-    return str(entry).replace("\\", "/").split(":", 1)[0]
+    """`a/b.tsx:291-294,308` -> `a/b.tsx` (same rule as hooks/_config.py).
+
+    ONLY A TRAILING `:<digit range>` IS A SUFFIX. Splitting on the first colon
+    turned an absolute Windows entry (`C:\\repo\\a.py`) into `C`, and a colon
+    inside a name into a cut; the digit range is the one shape the schema's
+    `files` suffix takes. The hooks' copy is pinned equal by `mv6b`."""
+    return _LINE_SUFFIX.sub("", str(entry).replace("\\", "/"))
 
 
 def _safe_list(val):
@@ -733,7 +745,7 @@ def _require_fields(obj, where, findings):
     ok = True
     for key in ("id", "title", "status"):
         if not obj.get(key):
-            findings.append("%s: missing required '%s'" % (where, key))
+            findings.append(_output.finding("vocab.require_fields.missing-required", "%s: missing required '%s'" % (where, key)))
             ok = False
     return ok
 
@@ -746,26 +758,26 @@ def _check_ado(obj, where, findings):
     if ado is None:
         return
     if not isinstance(ado, dict):
-        findings.append("%s: ado must be an object or null, got %s"
-                        % (where, type(ado).__name__))
+        findings.append(_output.finding("vocab.ado.ado-object-null", "%s: ado must be an object or null, got %s"
+                        % (where, type(ado).__name__)))
         return
     # `isinstance(x, bool)` first, because `bool` subclasses `int` and `true`
     # would otherwise be accepted as a work-item id. `meta.version` already
     # excluded it by name, so the tree disagreed with itself about one question.
     if "id" in ado and (isinstance(ado.get("id"), bool)
                         or not isinstance(ado.get("id"), int)):
-        findings.append("%s: ado.id must be an integer work-item id, got %r"
-                        % (where, ado.get("id")))
+        findings.append(_output.finding("vocab.ado.ado-id-integer", "%s: ado.id must be an integer work-item id, got %r"
+                        % (where, ado.get("id"))))
     # A FINDING rather than a warning, and not for symmetry: a misspelled origin
     # reads as "unrecorded" everywhere downstream, which is the same silence a
     # pre-0.44 link produces. So the one wrong value here is indistinguishable
     # from the honest absence unless the validator refuses it. `null` and absent
     # both mean unrecorded and are left alone.
     if ado.get("origin") is not None and ado.get("origin") not in ADO_ORIGIN:
-        findings.append("%s: ado.origin must be one of %s (or absent/null for "
+        findings.append(_output.finding("vocab.ado.ado-origin-one", "%s: ado.origin must be one of %s (or absent/null for "
                         "unrecorded), got %r"
                         % (where, ", ".join(repr(v) for v in ADO_ORIGIN),
-                           ado.get("origin")))
+                           ado.get("origin"))))
 
 
 def _unknown_keys(obj, known, where, warnings):

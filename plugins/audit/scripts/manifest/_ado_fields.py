@@ -217,16 +217,16 @@ def _check_value(where, name, value, findings, warnings):
     if isinstance(value, (int, float)):
         return
     if not isinstance(value, str):
-        findings.append("%s.%s: must be a string, number or boolean literal, "
+        findings.append(_output.finding("fields.value.string-number-boolean", "%s.%s: must be a string, number or boolean literal, "
                         "got %s - null sets nothing and a field the board "
                         "requires would still arrive empty"
-                        % (where, name, type(value).__name__))
+                        % (where, name, type(value).__name__)))
         return
     if not value.strip():
-        findings.append("%s.%s: an empty string satisfies no requiredFields "
+        findings.append(_output.finding("fields.value.empty-string-satisfies", "%s.%s: an empty string satisfies no requiredFields "
                         "rule - conventions treat empty as missing, so this "
                         "would pass validation and still be refused at push"
-                        % (where, name))
+                        % (where, name)))
         return
     if "{" in value and "}" in value:
         warnings.append("%s.%s: %r is written to the board LITERALLY - "
@@ -239,8 +239,8 @@ def _check_template(wit, template, findings, warnings):
     """One work item type's template."""
     where = "meta.ado.fields.%s" % (wit,)
     if not isinstance(template, dict):
-        findings.append("%s must be an object of field reference name -> "
-                        "literal value, got %s" % (where, type(template).__name__))
+        findings.append(_output.finding("fields.template.object-field-reference", "%s must be an object of field reference name -> "
+                        "literal value, got %s" % (where, type(template).__name__)))
         return
     if not template:
         warnings.append("%s is empty, so it supplies nothing - remove the key "
@@ -248,26 +248,26 @@ def _check_template(wit, template, findings, warnings):
         return
     for name in sorted(template, key=str):
         if not isinstance(name, str) or not name.strip():
-            findings.append("%s: every key must be a non-empty ADO field name "
-                            "(reference or display), got %r" % (where, name))
+            findings.append(_output.finding("fields.template.every-key-non", "%s: every key must be a non-empty ADO field name "
+                            "(reference or display), got %r" % (where, name)))
             continue
         spelling = _norm(name)
         reserved = _RESERVED_BY_SPELLING.get(spelling)
         if reserved is not None:
-            findings.append("%s.%s names %s, which the connector itself maps "
+            findings.append(_output.finding("fields.template.winning-would-make", "%s.%s names %s, which the connector itself maps "
                             "(%s). A template cannot decide it: winning would "
                             "make commands/sync.md's mapping table a lie and "
                             "losing would make this config one"
-                            % (where, name, reserved[0], reserved[2]))
+                            % (where, name, reserved[0], reserved[2])))
             continue
         read_only = _READ_ONLY_BY_SPELLING.get(spelling)
         if read_only is not None:
-            findings.append("%s.%s names %s, which ADO reports as readOnly and "
+            findings.append(_output.finding("fields.template.names-which-ado", "%s.%s names %s, which ADO reports as readOnly and "
                             "will not accept through --fields. Some refuse out "
                             "loud (TF401326); System.Parent instead CREATES the "
                             "item, reports success and leaves no parent, so "
                             "attempting it would look like it worked"
-                            % (where, name, read_only[0]))
+                            % (where, name, read_only[0])))
             continue
         _check_value(where, name, template[name], findings, warnings)
 
@@ -285,8 +285,8 @@ def check_fields_config(fields):
     if fields is None:
         return findings, warnings
     if not isinstance(fields, dict):
-        findings.append("meta.ado.fields must be an object keyed by work item "
-                        "type name, got %s" % (type(fields).__name__,))
+        findings.append(_output.finding("fields.fields_config.meta-ado-fields", "meta.ado.fields must be an object keyed by work item "
+                        "type name, got %s" % (type(fields).__name__,)))
         return findings, warnings
     if not fields:
         warnings.append("meta.ado.fields is empty, so it supplies nothing - "
@@ -295,9 +295,9 @@ def check_fields_config(fields):
         return findings, warnings
     for wit in sorted(fields, key=str):
         if not isinstance(wit, str) or not wit.strip():
-            findings.append("meta.ado.fields: every key must be a work item "
+            findings.append(_output.finding("fields.fields_config.every-key-work", "meta.ado.fields: every key must be a work item "
                             "type name (the same vocabulary meta.ado.types "
-                            "uses), got %r" % (wit,))
+                            "uses), got %r" % (wit,)))
             continue
         _check_template(wit, fields[wit], findings, warnings)
     return findings, warnings

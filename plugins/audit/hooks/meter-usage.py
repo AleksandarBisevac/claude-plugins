@@ -245,9 +245,15 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
     """Scan, attribute and append. Returns the number of rows written (0 when
     disabled, when there is nothing new, or on any handled failure).
 
-    Split out from `main` so the selftest can drive it with a fake payload."""
-    root = Path(root) if root is not None else _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    Split out from `main` so the selftest can drive it with a fake payload.
+
+    TWO TREES, AND EACH ANSWERS ONE QUESTION. The ledger, its cursors and the
+    author are the PROJECT's - this machine's record of the session. The
+    manifest that attributes spend is the plan of the tree the session stands
+    in (`_config.tree_for`): the claim naming this session is stamped where its
+    phase runs, and in a linked worktree that is the worktree's copy."""
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+    root, cfg = home["project"], home["cfg"]
     if not _config.usage_enabled(cfg):
         return 0
 
@@ -267,8 +273,10 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
 
     # A missing or unreadable manifest is fine: attribution degrades to
     # `unattributed` rather than failing, so off-phase spend is still recorded.
+    plan_root = _config.tree_for(data, None, cfg, project=root)["root"]
     manifest = _config._load_manifest_assembled(
-        Path(root) / (cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]))
+        Path(plan_root)
+        / (cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]))
 
     rows, cursor = ul.scan_transcripts(
         transcript, session_id, cursor, manifest,

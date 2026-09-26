@@ -79,6 +79,16 @@ def _cases(check):
           "backslashes, so a fileIndex key and a task's `files` entry compare",
           M._strip_line_suffix("a\\b.tsx:291-294,308") == "a/b.tsx",
           M._strip_line_suffix("a\\b.tsx:291-294,308"))
+    import _config as _hookcfg
+    _ls = ["a\\b.tsx:291-294,308", "a.py:12", "C:\\repo\\a.py",
+           "C:/repo/a.py:5-9", "docs/x:y.md"]
+    _ls_got = [M._strip_line_suffix(e) for e in _ls]
+    check("mv6b only a trailing `:<digit range>` is a line suffix - a drive letter "
+          "is not - and the hooks' copy answers the same for every entry: %r"
+          % (_ls_got,),
+          _ls_got == ["a/b.tsx", "a.py", "C:/repo/a.py", "C:/repo/a.py",
+                      "docs/x:y.md"]
+          and _ls_got == [_hookcfg.strip_line_suffix(e) for e in _ls])
 
     f = []
     ok = M._require_fields({"id": "P1", "title": "", "status": "pending"},

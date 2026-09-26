@@ -1173,7 +1173,7 @@
             "object",
             "null"
           ],
-          "description": "Written by /audit:task move when a task is renumbered into another phase: the id and phase it held before, and when it moved. The journal's chained task.move row is the other half of the mapping; historical ledger rows keep the OLD taskId, and this field is what lets a reader join them.",
+          "description": "Written by /audit:task move when a task is renumbered into another phase: the id and phase it held before, and when it moved. The journal's chained task.move row is the other half of the mapping; historical ledger rows keep the OLD taskId, and this field is what lets a reader join them. A task moved again keeps its earlier record nested as `previous`, one link per move, so every id it ever held is on the task: the allocator never mints one of them again, and the evidence readers join runs recorded under any of them.",
           "additionalProperties": true,
           "properties": {
             "id": {
@@ -1187,6 +1187,42 @@
             "at": {
               "type": "string",
               "description": "ISO timestamp of the move."
+            },
+            "previous": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "The `movedFrom` record this task carried before its latest move - the same {id, phase, at} shape, with a `previous` of its own when it moved more than twice."
+            }
+          }
+        },
+        "blockedReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why this task is `blocked`, verbatim - written by `/audit:task block <id> --reason` beside the status, and cleared by `/audit:task start` when the task runs again (the task.start row keeps it as the value it moved from). For a dependency no id can name - another team's endpoint, a reply nobody has sent - which `blockedBy` refuses on purpose because nothing could ever clear it. Absent on a task blocked through a hand edit, which states no reason."
+        },
+        "notes": {
+          "type": "array",
+          "description": "Append-only log of what an operator learned about this task after it was written - `/audit:task note <id> --text`, one {at, text} entry per call, never rewritten. It is the one addition a STARTED task takes: `scope --description` refuses a task that has started, because its brief is what its attempts were judged against, so a finding that arrived since goes here, dated, beside the brief rather than in place of it.",
+          "items": {
+            "type": "object",
+            "required": [
+              "at",
+              "text"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "type": "string",
+                "description": "ISO timestamp of the note."
+              },
+              "text": {
+                "type": "string",
+                "description": "The note, verbatim."
+              }
             }
           }
         },
@@ -1493,11 +1529,12 @@
       "description": "A GATE PROVES THE SUITE IS GREEN AND SAYS NOTHING ABOUT WHETHER THE GREEN CHANGE IS THE CHANGE SOMEBODY WANTED — the separate question this block answers, asked once per task rather than only at phase sign-off, because a claim can only be bound to the task that made it here. Optional and absent by default, and absent means 'no answer recorded', NEVER agreement: a manifest written before this block existed, a task closed by a copy of the plugin that predates it, and a close whose reviewer call could not be made are one and the same state, and a reader must not fold any of them into 'matches'. That is the failure mode this block exists against — an answer that is yes by default — so `answer` and `commit` are required together the way `redFirst`'s `status` and `basis` are: an answer with no commit beside it names nothing the diff it was measured against, and dropping the whole block is always safe. Written by the ORCHESTRATOR from the reviewer's returned `intent`, never inferred. additionalProperties stays permissive, this document's policy at every object level: the schema ships with the plugin, so an older copy must keep accepting a manifest a newer one wrote.",
       "properties": {
         "answer": {
-          "description": "'matches' means the diff does what `description` asked and the executor's claim describes the diff in front of the reviewer. 'diverges' means one of those two failed — the work missing its target, or the record missing the work — and is routed as a human action item rather than a fix run, because the wrong half may be the code, the description or the claim and only the operator can say which. 'cannot-tell' means an input the reviewer needed was not handed to it; a basis you invented is worse than a gap you reported, so this is the honest answer and not a softer 'matches'. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'matches'.",
+          "description": "'matches' means the diff does what `description` asked and the executor's claim describes the diff in front of the reviewer. 'diverges' means one of those two failed — the work missing its target, or the record missing the work — and is routed as a human action item rather than a fix run, because the wrong half may be the code, the description or the claim and only the operator can say which. 'cannot-tell' means an input the reviewer needed was not handed to it; a basis you invented is worse than a gap you reported, so this is the honest answer and not a softer 'matches'. 'not-asked' is the one word no reviewer gives: the orchestrator put no intent question on purpose (a change too small to review, a close with no diff), and it is written only beside `basis`, the reason, because a skip with no reason on the record reads exactly like a reviewer call that never came back. It is an ANSWER - a reader listing the done tasks with no answer leaves it out - and it is never agreement. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'matches'.",
           "enum": [
             "matches",
             "diverges",
-            "cannot-tell"
+            "cannot-tell",
+            "not-asked"
           ]
         },
         "commit": {
@@ -1505,11 +1542,15 @@
             "string",
             "null"
           ],
-          "description": "THE DIFF THIS ANSWER WAS GIVEN, named rather than left to inference: the same SHA `task.commit` carries, because the reviewer read the working tree the moment before this same commit was made and nothing else on the record ties the two together. A close is refused with no `task.commit` at all (see `commit` above), so this is never null in practice — it is typed to match `task.commit` rather than to invent a stricter rule of its own."
+          "description": "THE DIFF THIS ANSWER WAS GIVEN, named rather than left to inference: the same SHA `task.commit` carries, because the reviewer read the working tree the moment before this same commit was made and nothing else on the record ties the two together. It is null on a close recorded with `outcome.noChange` - the one close allowed without a commit, because nothing was committed - and it is typed to match `task.commit` rather than to invent a stricter rule of its own."
         },
         "at": {
           "type": "string",
           "description": "ISO timestamp of the close this block was recorded at, so a reader can tell a fresh answer from one left behind by an earlier attempt of the same task."
+        },
+        "basis": {
+          "type": "string",
+          "description": "Why the question was not put, verbatim - REQUIRED beside 'not-asked' (the writer refuses that word without it) and optional beside the other three, where it is the orchestrator's own note on the answer. Absent means no basis was given, never that one was not needed."
         }
       }
     },
@@ -1534,6 +1575,27 @@
             "null"
           ],
           "description": "One-line impact summary."
+        },
+        "noChange": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "A close whose answer was that NOTHING NEEDED TO CHANGE - the one done task allowed no `commit`, written by `/audit:task done --no-change --reason`. `reason` is why, verbatim; `examinedAt` is the HEAD SHA the task was examined at, which is what the claim was measured against, and null when git could not name one (the writer says so). `/audit:doctor`'s done-with-no-SHA warning reads this block to leave such a task out, and names it on a line of its own instead. Absent on every close that landed a commit.",
+          "additionalProperties": true,
+          "properties": {
+            "reason": {
+              "type": "string",
+              "description": "Why nothing needed to change, in the operator's words."
+            },
+            "examinedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "HEAD SHA at the close; null when git could not be asked."
+            }
+          }
         }
       }
     },

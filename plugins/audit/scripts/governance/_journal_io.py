@@ -581,9 +581,120 @@ def month_of(ts):
     return str(ts)[:7] if len(str(ts)) >= 7 else time.strftime("%Y-%m", time.gmtime())
 
 
-def file_for(directory, ts, actor, fallback=None):
-    return os.path.join(directory, "%s.%s.jsonl"
-                        % (month_of(ts), writer_id(actor, fallback=fallback)))
+# The part of a writer id that names a LINKED WORKTREE, after the session's.
+WORKTREE_MARK = "wt-"
+
+
+# The per-worktree key's file, kept in the worktree's OWN git dir: git gives
+# every linked worktree a private one (`.git/worktrees/<name>`), so the key is
+# the worktree's whatever `stateDir` says - a shared absolute stateDir would
+# otherwise hand every worktree one token.
+WORKTREE_TOKEN_FILE = "audit-journal-writer"
+
+# `worktree_key`'s POSITIVE answers per resolved git root, each with the stat
+# of the worktree's `.git` file it was read under. Every append asks, and a
+# manifest edit appends several rows in one hook process, so a key is kept -
+# but only while that `.git` file is the same file: a worktree removed and
+# added back at the same path gets a new `.git` file and a fresh git dir with
+# no token, and a long-lived process (the panel server) must see that. A None
+# is never kept, so a transient failure is asked again. Measured 2026-09-26, 40
+# appends in a linked worktree per run, four runs each at two different times
+# of a loaded machine: before, medians of 11.0, 12.0, 17.2 and 16.8 ms per row
+# (range 10.0-32.9); after, 0.18-0.20 ms (range 0.15-18.9 - the maximum is the
+# first append of a run, which still asks git).
+_WORKTREE_KEYS = {}
+
+
+def worktree_key(project, config=None):
+    """`wt-<8 hex>` when the project's repository checkout is a LINKED git
+    worktree, else None.
+
+    ONE WRITER PER FILE is what keeps a journal merge free of conflicts, and the
+    writer id used to be the session alone - so every worktree a session drove
+    appended the same basename, and merging two of those branches met one file
+    whose same-second rows said different things.
+
+    GIT ANSWERS WHICH CHECKOUT THIS IS, asked where the config's `gitRoot` says
+    the repository is: a linked worktree's `--git-dir` differs from its
+    `--git-common-dir`, and a main checkout's - and a submodule's - do not.
+    Reading `<project>/.git` instead missed every project whose gitRoot is a
+    subdirectory and took a submodule for a worktree. The key is a random token
+    in that worktree's own git dir, so it names no path or machine and no two
+    worktrees can share it.
+
+    None - the session-keyed name every earlier release wrote - for a main
+    checkout, so an existing file goes on growing; and, as the stated limit,
+    when git cannot be asked or the token cannot be stored, where two
+    worktrees of one session do share that name again."""
+    mod = _config_mod()
+    config = load_config(project) if config is None else config
+    try:
+        where = (str(mod.git_root_dir(mod.Path(project), config or {}))
+                 if mod is not None else str(project))
+        memo = os.path.realpath(where)
+    except Exception:
+        return None
+    dotgit = os.path.join(where, ".git")
+    if os.path.isdir(dotgit):
+        return None                # a main checkout: git's own directory
+    try:
+        st = os.stat(dotgit)
+        stamp = (st.st_ino, st.st_mtime_ns, st.st_size)
+    except OSError:
+        stamp = None               # no `.git` here: ask git, keep nothing
+    held = _WORKTREE_KEYS.get(memo)
+    if stamp is not None and held is not None and held[0] == stamp:
+        return held[1]
+    key = _worktree_key_uncached(where)
+    if key and stamp is not None:
+        _WORKTREE_KEYS[memo] = (stamp, key)
+    else:
+        _WORKTREE_KEYS.pop(memo, None)
+    return key
+
+
+def _worktree_key_uncached(where):
+    """`worktree_key`'s answer for the git root `where`, asked of git."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "-C", where, "rev-parse", "--git-dir",
+                              "--git-common-dir"], capture_output=True,
+                             text=True, timeout=5)
+    except Exception:
+        return None
+    lines = [ln.strip() for ln in out.stdout.splitlines()] \
+        if out.returncode == 0 else []
+    if len(lines) != 2:
+        return None
+    git_dir = os.path.realpath(os.path.join(where, lines[0]))
+    common = os.path.realpath(os.path.join(where, lines[1]))
+    if git_dir == common:
+        return None
+    path = os.path.join(git_dir, WORKTREE_TOKEN_FILE)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            held = fh.read().strip()
+        if _TOKEN_RE.match(held):
+            return WORKTREE_MARK + held[:8]
+    except Exception:
+        pass
+    minted = os.urandom(8).hex()
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(minted + "\n")
+    except Exception:
+        return None
+    return WORKTREE_MARK + minted[:8]
+
+
+def file_for(directory, ts, actor, fallback=None, worktree=None):
+    """`<YYYY-MM>.<writer>.jsonl`, the writer being the session (or the
+    fallback) and, in a linked worktree, `worktree_key`'s answer after it:
+    `<YYYY-MM>.<writer>.wt-<8 hex>.jsonl`."""
+    writer = writer_id(actor, fallback=fallback)
+    if worktree:
+        writer = "%s.%s" % (writer, worktree)
+    return os.path.join(directory, "%s.%s.jsonl" % (month_of(ts), writer))
 
 
 # --- the plugin's own appends, declared to the guard -------------------
@@ -835,7 +946,11 @@ def session_index(project, config=None):
                 stamps.append(str(row["ts"]))
         writer = writer_of(os.path.basename(path))
         known = set(sids) | set(esids)
-        mine = bool(env) and (env in known or writer == env_writer)
+        # A worktree-keyed file is `<session writer>.wt-<key>`: still the
+        # session's, named one worktree further.
+        mine = bool(env) and (env in known or writer == env_writer
+                              or writer.startswith("%s.%s" % (env_writer,
+                                                             WORKTREE_MARK)))
         entry = {"file": where, "writer": writer, "rows": len(rows),
                  "first": min(stamps) if stamps else None,
                  "last": max(stamps) if stamps else None,
@@ -1322,7 +1437,8 @@ def _append(project, entry, config=None):
     # append neither reads nor creates state it will not use.
     path = file_for(directory, row["ts"], row["actor"],
                     fallback=None if has_session(row["actor"])
-                    else writer_token(project, config))
+                    else writer_token(project, config),
+                    worktree=worktree_key(project, config))
 
     # The state the write produced, so a later change with no row to explain it is
     # visible. Resolved against the project, since `target` is repo-relative.

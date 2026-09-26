@@ -301,16 +301,111 @@ def lock_dir(project):
 # else can be refused by.
 FIXED_NAMES = ("index", "usage")
 
+# The namespace user tooling takes this directory's locks under -- an e2e guard
+# driving one backend from several worktrees of one clone is the shape it is for.
+# The prefix is what keeps it apart from the plugin's names: every reader that
+# decides something from a name keys on `index`, `usage` or a `phase-` prefix, and
+# none of them can match a name that begins with this one. `collect()` is the
+# reader that lists EVERY name - `audit-lock.py status`, `/audit:status` and
+# `/audit:doctor` show user locks beside the plugin's own, by name.
+#
+# A USER LOCK EXCLUDES BY HOLDER, NOT BY SESSION. Parallel subagents in different
+# worktrees share one session id and one pid, so the re-entry answer the plugin's
+# own names get would hand the second run a lock the first is still using; for a
+# `user-` name a second acquire is refused like any other.
+USER_PREFIX = "user-"
+USER_NAME_MAX = 64
+_USER_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 
-def valid_name(name):
-    """A name in `FIXED_NAMES`, or `phase-<id>` with the id restricted so it
-    cannot escape the dir."""
+# The rules, stated once: the refusal prints this and `commands/worktree.md`
+# points at it. LOWER CASE ONLY because the lock directory sits on a
+# case-folding filesystem by default on macOS and Windows, so
+# two spellings differing in case would be two names and one file. NO DOT so a
+# name cannot end in `.lock` and list as something it is not, and so no name
+# reaches a filesystem that strips a trailing one.
+USER_NAME_RULES = (
+    "`user-<name>`, where <name> is 1-%d characters of a-z, 0-9, `-` and `_`, "
+    "begins and ends with a letter or digit, and is not itself a lock name - "
+    "not `index`, `usage`, `phase-<id>` or another `user-` name"
+    % (USER_NAME_MAX,))
+
+
+_ASCII_ID = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+
+
+def is_plugin_name(name):
+    """A name the plugin itself issues: one of `FIXED_NAMES`, or `phase-<id>`
+    with the id restricted to ASCII `[A-Za-z0-9._-]` so it cannot escape the dir.
+
+    ASCII, not `str.isalnum()`, which admits letters of every script - and a
+    filesystem may normalise those, so two ids could meet in one file.
+    """
     if name in FIXED_NAMES:
         return True
     if not name.startswith("phase-"):
         return False
     rest = name[len("phase-"):]
-    return bool(rest) and all(c.isalnum() or c in "._-" for c in rest)
+    return bool(rest) and all(c in _ASCII_ID for c in rest)
+
+
+def is_user_name(name):
+    """`user-<name>` under `USER_NAME_RULES`.
+
+    The part after the prefix may not be a lock name in its own right. It could
+    never EQUAL one -- the prefix sees to that -- but `user-index` would list as
+    the index to anyone reading `status`, and that is the spoof this refuses.
+    """
+    if not name.startswith(USER_PREFIX):
+        return False
+    rest = name[len(USER_PREFIX):]
+    if not rest or len(rest) > USER_NAME_MAX:
+        return False
+    if not all(c in _USER_ALPHABET or c in "-_" for c in rest):
+        return False
+    if rest[0] not in _USER_ALPHABET or rest[-1] not in _USER_ALPHABET:
+        return False
+    return not valid_name(rest)
+
+
+def valid_name(name):
+    """A name the plugin issues, or a user tool's `user-<name>`."""
+    return is_plugin_name(name) or is_user_name(name)
+
+
+def name_refusal(name):
+    """The line a refused name gets, from acquire and release alike."""
+    return ("[audit-lock] bad lock name %r -- expected one of %s, or `phase-<id>`,"
+            " or for user tooling %s"
+            % (name, ", ".join("`%s`" % (n,) for n in FIXED_NAMES),
+               USER_NAME_RULES))
+
+
+def _listed(ld, name):
+    """Whether `name`'s own spelling is a file in `ld` - asked of the listing,
+    because `os.path.exists` answers yes for a variant where case folds."""
+    try:
+        return (name + ".lock") in os.listdir(ld)
+    except OSError:
+        return False
+
+
+def case_variant(ld, name):
+    """A lock already in `ld` whose name differs from `name` only in case.
+
+    On a case-folding filesystem - macOS and Windows by default - the two are one
+    file, so `phase-P1` and `phase-p1` would share a claim there and not on
+    Linux. Refusing the second spelling everywhere makes the answer the same on
+    every platform. None when there is no such lock.
+    """
+    want = (name + ".lock").lower()
+    try:
+        names = os.listdir(ld)
+    except OSError:
+        return None
+    for other in sorted(names):
+        if other.lower() == want and other != name + ".lock":
+            return other[:-len(".lock")]
+    return None
 
 
 def read_lock(path):
@@ -730,14 +825,21 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         out("[audit-lock] not a git repository: %s" % project)
         return E_ERR
     if not valid_name(name):
-        out("[audit-lock] bad lock name %r -- expected one of %s, or `phase-<id>`"
-            % (name, ", ".join("`%s`" % (n,) for n in FIXED_NAMES)))
+        out(name_refusal(name))
         return E_USAGE
     try:
         os.makedirs(ld, exist_ok=True)
     except OSError as exc:
         out("[audit-lock] cannot create %s: %s" % (ld, exc))
         return E_ERR
+    variant = case_variant(ld, name)
+    if variant:
+        out("[audit-lock] %s is refused: a lock named %s already exists -- the two differ "
+            "only in case, and a case-folding filesystem stores them as one file"
+            % (name, variant))
+        out("             Refused on every platform, so two runs cannot hold one "
+            "claim on Linux that they would share on macOS or Windows.")
+        return E_LIVE
 
     sid, _own = _identity(session, pid)
     holder = _holder_pid(pid, handed_off)
@@ -779,7 +881,7 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
 
         current = read_lock(path)
         mine = held_by_us(current, session=session, pid=pid)
-        if mine["ours"]:
+        if mine["ours"] and not is_user_name(name):
             # RE-ENTRY IS ANSWERED BEFORE ANYTHING IS WAITED FOR. A command that
             # holds this lock and calls another command that takes it would
             # otherwise spend the whole bound waiting for itself and then be
@@ -895,7 +997,17 @@ def release(project, name, session=None, pid=None, force=False, out=print):
         out("[audit-lock] not a git repository: %s" % project)
         return E_ERR
     if not valid_name(name):
-        out("[audit-lock] bad lock name %r" % name)
+        out(name_refusal(name))
+        return E_USAGE
+    # REFUSED ONLY WHERE THE UNLINK WOULD HIT THE OTHER SPELLING: the exact name
+    # is not in the directory, a variant is, so the filesystem folds case and
+    # `path` IS that variant's file. With the exact name listed the two are two
+    # files, and this one - `--force` included - is released like any other.
+    variant = case_variant(ld, name)
+    if variant and not _listed(ld, name):
+        out("[audit-lock] %s differs only in case from the lock %s, which this "
+            "case-folding filesystem stores as the same file -- refused so that "
+            "releasing one spelling cannot remove the other" % (name, variant))
         return E_USAGE
     path = os.path.join(ld, name + ".lock")
     if not os.path.exists(path):

@@ -309,7 +309,7 @@ L2:
   _evidence_io -> _journal_io, _locks, _manifest_io, _output
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
-  _id_shape -> _branch, _manifest_vocab, _output
+  _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
@@ -343,7 +343,7 @@ L4:
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
-  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
+  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -372,9 +372,9 @@ L7:
   audit-journal -> _evidence_io, _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
+  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -2829,8 +2829,12 @@ index lock by building an argv and calling `main()` through `_panel_write._lockm
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
-`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` — turning the
-library's answers into exit codes —
+`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` with an ASCII
+id (a spelling that differs only in case from a held lock is refused, so the answer does not
+depend on whether the filesystem folds case), and for tooling that is not the plugin's a
+namespaced `user-<name>` under `_locks.USER_NAME_RULES`, whose own part may never be a lock name
+itself and which excludes by holder, never answering re-entry — turning the library's answers
+into exit codes —
 a live holder is **waited out** for a bounded window and then refused (exit 3); one that is
 not alive can be seized with `--takeover` (exit 4), because the old "older than 60 minutes =
 crashed" rule was wrong in both directions. `--wait` overrides the window, and zero is the
@@ -2861,6 +2865,37 @@ and `refs/stash`); every manifest state the phase COMMITTED still validates (eac
 index and shards reassembled through `git show` and run back through `_manifest_rules`); a
 `risk: "high"` task ran on neither a declared nor a metered `haiku`; and `phase.baseRef` is
 an ancestor of the parent `_branch.parent_branch` resolves.
+
+Every breach is built with `found(line, subject, sha, local)`, `result()` refuses one that was not,
+and `test__invariants.py` walks this file's syntax tree so a bare sentence fails CI: the sentence is
+what a reader is shown and the `keys` beside it — the subject that broke the rule and the commit it
+is recorded against, resolved to the full id through git — are what a baseline matches, so a
+reworded template or a count that moves between runs changes the output and never the match. A
+validator finding's subject is `_manifest_rules.finding_subject`: the CODE of the rule that raised
+it, its locus and the ids it quotes, with the sentence and any quoted allowed-values list taken
+out. Every validator finding is built with `_output.finding(code, text)` — a `str` subclass, so
+every caller that prints, joins or compares findings reads it unchanged and only this reader asks
+for `.code` — and `test__output.py`'s `fc` cases follow every call `validate()` reaches, across
+modules, and fail a finding site built without a code (an append, an extend or `+=` of a list or
+comprehension, an assignment of one, or a list returned in place), or two sites sharing one. The
+ADO hierarchy findings carry `_ado_parent`'s own rule code (`crossrefs.ado_parents.A1`...). An
+allowed-values list leaves the key bracketed or spelled `one of 'a', 'b'`, and a finding with no
+`: ` keys on the dotted path it opens with. The clone id is published by linking a finished
+sibling onto its name, and a baseline write with a local breach and no readable id is refused. The live
+pairing re-check keeps only the rows naming this phase's own tasks (`own_pairing_findings`).
+
+**The baseline** (`invariants-baseline.json` beside the manifest) lives here rather than in the
+command because two surfaces give a verdict over these checks, and `counted_breaches` is the one
+answer both read. `apply_baseline` compares on `(phase, check, subject, sha, clone)` — `clone`
+set only on a local entry — and sets an entry
+aside, with the reason, when this run could not have seen it again — its phase was not examined,
+its check had a gap, or it was read from another clone's own evidence (a breach marked `local` — a
+reflog, the stash, a remote-tracking ref, the usage ledger — carries the id of the clone that
+wrote it, and goes stale only there); only the rest can be reported as no longer matching, each
+with what git says about its commit. `write_baseline` refuses while a phase it covers is in flight,
+takes the `index` lock around its read-then-write and refuses a hold it did not take itself, keeps
+every set-aside entry, and returns what it removed. The baseline is a human's commit outside any phase commit,
+since each of the plugin's commit classes would breach its own scope by carrying it.
 
 `audit-state-scope` and `index-scope` sit next to `commit-scope` rather than at the end
 because each asks that check's question about a different commit, and the three allow-lists
@@ -3016,7 +3051,12 @@ has started (a branch, a `baseRef` or a recorded commit). `--json` for the whole
 one breach, 2 usage error or unreadable manifest — and a missing basis is deliberately exit 0
 with the word in the output, because sign-off deletes the phase branch and a gate that fired
 on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
-`/audit:status --gate --fail-on invariant-breach`.
+`/audit:status --gate --fail-on invariant-breach`. `--write-baseline` records the current
+breaches in `invariants-baseline.json` beside the manifest, and `--baseline FILE` names another
+file; once one exists the CLI prints only the breaches it does not hold, counts the ones it does,
+and exits 1 only on a new one. Everything about the baseline itself — its keys, what is set aside,
+the in-flight refusal, the lock — is `_invariants`', which is what lets the gate give the same
+verdict.
 
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
 Everything the two **commit-a-narrow-allow-list** commands share, so that neither holds a second
@@ -3708,6 +3748,26 @@ with no `fixedIn`, and journals `task.reopen`. It refuses a task that is not don
 phase is signed off - done, or awaiting its merge - because that verdict is not re-decided, and a
 stored `done` over an open task is a finding every later verb refuses on.
 
+`done --no-change --reason TEXT` is the one close without a SHA, for a task whose answer was that
+nothing needed to change: `commit` stays null and `outcome.noChange` records the reason and the HEAD
+it was examined at (`_examined_head`; null, and said, when git cannot name one), which is the block
+`_commit_trail.no_change_close` answers from for the doctor's no-SHA warning as well. `--intent
+not-asked --intent-basis TEXT` records an intent question deliberately not put; `_done_flags_refusal`
+refuses the word without its basis and every combination of the two closes' flags that names both or
+neither, and `_status_facts.intent_unanswered` is what sign-off and `/audit:status` list.
+
+`move <taskId> --to <phaseId>`, `block <taskId> --reason TEXT` and `note <taskId> --text TEXT` are
+the hand edits operators kept making. `move` allocates with `_allocate_id` - what `next-id task`
+prints - rewrites every reference through `_id_refs.rename`, writes `movedFrom`, and writes every
+phase whose body changed plus the index through `_write_plan`, which snapshots all of them before
+the first write so a refusal restores all of them. A second move nests the first as
+`movedFrom.previous`; `_manifest_io.moved_from_ids` walks that chain for `_id_shape.next_task_id`,
+which never mints one of those ids again, and for `_evidence_io.subject_aliases`, through which the
+doctor and `reconcile` join runs recorded under an old id to the live task. `block` writes `status` and `blockedReason`
+(cleared by the next `start`, whose row keeps it as the value it moved from); `note` appends one
+`{at, text}` entry to `notes[]`, the one addition a started task takes. Each journals its own row -
+`task.move`, `task.block`, `task.note`.
+
 `settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
 `status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its
 shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled back on findings,
@@ -3728,8 +3788,8 @@ written and read with.
 
 `next-id bug|prop|task --phase <id>` prints the id a hand-written record takes - a bug
 (`commands/bug.md`), a parked proposal (`init.md`, `sync.md`), a bug's fix task or a moved task
-(`bug.md`, `task.md` -> move) are the records the model still writes by hand, and so the ids it used
-to compute by hand as max+1. It reads the same allocator every scripted writer does, suffix and
+(`bug.md`) are the records the model still writes by hand, and so the ids it used to compute by
+hand as max+1; a moved task no longer is one - `move` takes the same allocator's answer in process. It reads the same allocator every scripted writer does, suffix and
 reservations included, and writes nothing. Not `phase`: a phase is minted only by `add-phase`, which
 writes it under the lock, where a task's phase is fixed before its id is asked for.
 ### `plugins/audit/scripts/usage/audit-usage.py`

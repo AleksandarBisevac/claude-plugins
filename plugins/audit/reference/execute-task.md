@@ -31,8 +31,12 @@ not need to.
    the phase's manifest file (the shard when sharded), under the lock, revalidated and journaled.
    **If the increment would take `attempts` past `maxAttempts` (default 3), it REFUSES rather than
    spawn** — that transition still owes an ADO echo and a human, neither of which the verb can
-   supply — so on that refusal do NOT spawn: set `task.status = "blocked"` yourself and surface it
-   to the human. A task entering `blocked` gets the **ADO echo** (`reference/orchestrator.md` → **ADO echo**).
+   supply — so on that refusal do NOT spawn: set the task blocked through the verb,
+   `audit-task.py block <taskId> --reason "<attempts exhausted: the last red gate's reason>"`,
+   and surface it to the human. The verb writes `status` and `blockedReason` with a `task.block`
+   row; nothing refuses a hand edit of the status, but only the verb records why. A task entering
+   `blocked` gets the **ADO echo** (`reference/orchestrator.md` → **ADO echo**), which the verb
+   does not send.
 3. **Spawn the plugin's executor agent** via the `Agent` tool —
    `subagent_type: "audit:audit-executor"`, `model = task.model`, and **`description` starting with
    the task id** (e.g. `"P3.2 shard writer"`). The id prefix is what makes token metering exact:
@@ -314,7 +318,11 @@ not need to.
      produced nothing usable — it died, timed out, or returned no parseable `intent` — do not
      guess: omit `--intent` entirely.** An omitted flag and a recorded `diverges` are opposite
      facts, and a guessed `matches` filling the gap is exactly the failure this call exists to
-     close.
+     close. **When you deliberately did not ask** — a change too small to review, or a close
+     with no diff at all (`done --no-change`) — say so rather than omitting the flag:
+     `--intent not-asked --intent-basis "<why the question was not put>"`. The verb refuses
+     that word without its basis, and sign-off lists every done task with NO answer, which a
+     deliberate `not-asked` is not.
 
      None of this blocks the commit and that is deliberate: `run-test-gate.py` is the one
      measurement that decides whether a task is done, and a cheap per-task reviewer that could
@@ -387,7 +395,8 @@ not need to.
      over a file; a red against HEAD is `stamp-verification.py red`'s job. Put this in every subagent prompt.
    - **No usable return** (the subagent died, timed out, or came back with no parseable outcome / no
      file changes) is a **failure**, not a success — handle it exactly like a test failure in step 4
-     (leave `in_progress`, do not commit; retry until `attempts >= maxAttempts`, then `blocked`).
+     (leave `in_progress`, do not commit; retry until `attempts >= maxAttempts`, then `blocked`
+     through `audit-task.py block`, as step 2 says).
 4. On the subagent's return:
    - **success** (all gates green):
      a. **Risk gate first:** if `task.risk == "high"`, **stop and ask the human to confirm**
@@ -556,8 +565,10 @@ not need to.
      that refuses the edit refuses it again. So the record is the whole remedy, and
      **nothing grades it** — no gate reads `task.redFirst` today — which is exactly why the
      word and its verbatim basis have to be on the record rather than in your report.
-   - **test failure** (gates RAN and are red) → leave `status = "in_progress"` (or `"blocked"` if attempts
-     exhausted), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not commit.
+   - **test failure** (gates RAN and are red) → leave `status = "in_progress"` (or, if attempts are
+     exhausted, set it blocked through `audit-task.py block <taskId> --reason "<the red gate's
+     reason>"`), put the reason in `task.outcome.technical`, and report it. Do not mark done, do not
+     commit.
      A transition to `blocked` gets the **ADO echo** (`reference/orchestrator.md` → **ADO echo**).
    - **infrastructure failure** (gates could NOT run: missing command, runner crash before tests,
      zero tests collected where `tests.add` expects some, a filter that selected no test file, a
