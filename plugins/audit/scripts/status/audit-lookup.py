@@ -297,11 +297,14 @@ def brief_lookup(manifest, task_id):
 
 # --- run ---------------------------------------------------------------------
 # The step fields `run_lookup` reports, in the order the row already carries
-# them - `_evio.STEP_KEYS` minus the internal retry bookkeeping this question
-# does not owe an answer about. `failing`/`failingSuites` cross through EXACTLY
-# as `_evio._step` bounded them at write time (`MAX_FAILING`/`MAX_PATHS`),
-# never re-cut here - a second cut would be a second, possibly disagreeing,
-# opinion about where the line is.
+# them - `_evio.STEP_KEYS` minus `ran`, `measured`, `timeoutSeconds`,
+# `teardown`, `suiteReader` and the retry bookkeeping (`retriedAfterSignal`/
+# `retryBasis`): each of those is a fact about how or whether a step was
+# measured or retried, not a fact this lookup's caller is asking for.
+# `failing`/`failingSuites` cross through EXACTLY as `_evio._step` bounded
+# them at write time (`MAX_FAILING`/`MAX_PATHS`), never re-cut here - a
+# second cut would be a second, possibly disagreeing, opinion about where
+# the line is.
 _RUN_STEP_KEYS = ("name", "exit", "durationMs", "outcome",
                   "failing", "failingBasis", "failingSuites", "failingSuitesBasis")
 

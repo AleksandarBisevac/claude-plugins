@@ -1132,7 +1132,7 @@ def no_verdict_signature(exit_code, text, command=None):
 
 
 # --- what a count may be ADDED to, and what each step COST ---------------------
-# P46.5, reported from a live audit. A project's `meta.buildCommands` mapped one
+# Reported from a live audit. A project's `meta.buildCommands` mapped one
 # entry to a plain runner invocation and another to the SAME runner with coverage
 # on. The gate ran both, so the identical checks executed twice, and the TOTAL it
 # printed was the suite counted twice - which the operator and the reviewer both
@@ -3003,7 +3003,7 @@ def _render_verdict(res, out):
     # have to open the ledger to learn that nothing here ran a suite at all.
     # `suiteReader`, NEVER `measured`: a `pre-commit`-shaped step that measured
     # real hook counts is not a test suite, which is exactly the conflation
-    # `suiteReader` exists to refuse (`P78.5`). A STATEMENT, not a refusal -
+    # `suiteReader` exists to refuse. A STATEMENT, not a refusal -
     # `GATE GREEN` still prints under it, and `reference/orchestrator.md`'s
     # banners are unchanged. `excludedGateKeys` is computed once in `main`
     # (the one arithmetic `phase_gate_default` owns) and carried on `res`,
@@ -3623,7 +3623,7 @@ def main(argv, out=print):
     # AN EXECUTOR'S OWN TESTS, THROUGH THE RUNNER RATHER THAN BARE BASH - the
     # one path whose whole output never has to reach the caller's context,
     # because this file's own render is already bounded and a log on disk
-    # takes the rest. Named `--own` and not `--also`: `P74`'s `--also
+    # takes the rest. Named `--own` and not `--also`: `--also
     # <phase,...>` is a DIFFERENT flag on this same parser, and the two must
     # never collide.
     p.add_argument("--own", dest="own", action="store_true")
@@ -3879,7 +3879,7 @@ def main(argv, out=print):
     # are `_invariants`' and not `meta.phaseGate`'s, so naming an exclusion
     # here would describe a declaration this run was never measured against.
     # `_phases.phase_gate_default` is the ONE answer to "what a gate built
-    # TODAY from meta.phaseGate would drop" (P78.2/P78.3) - and that is NOT
+    # TODAY from meta.phaseGate would drop" - and that is NOT
     # the same claim as "was not run here". `meta.phaseGate.exclude` can be
     # edited after a phase's `testGate` was written, so a phase whose
     # `testGate` still carries a now-excluded key RUNS that key regardless -

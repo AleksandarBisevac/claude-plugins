@@ -883,7 +883,7 @@
     {
       "id": "P78.13-msc",
       "title": "The gate-economy mean divides by the runs that carried a duration",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review finding (med). Constraint: check_gate_economy computes mean = gate_cost_ms(rows, name) / ran, where gate_cost_ms sums durationMs only over steps that carry one while ran counts every matching step, so a history that mixes measured and unmeasured runs dilutes the mean downward and can hide a gate that is over meta.gateBudgetMs on the runs actually measured. Rule: divide by the number of steps that contributed a durationMs. Prefer one shared answer: a helper in _evidence_io beside gate_cost_ms that returns the measured count (or the sum and the count together), used by check_gate_economy, never a second walk written in _doctor_trail. The row keeps naming unmeasured runs as unmeasured and never folds them into the OK count. Red-first: a gate with two measured runs over budget and two unmeasured runs warns (mutation: divide by ran -> red). Allow case: an all-measured history under budget stays OK; the existing total-vs-mean pin stays green. Also remove any plan or task id cited in a comment this phase added to these files; state the constraint instead.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -914,18 +914,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9a560c620727",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io: one walk _gate_cost_walk returning total and measured count; gate_cost_ms rebuilt on it (byte-identical for its readers) and gate_cost_measured added. check_gate_economy divides by the measured count; no measured run joins the unmeasured list. Cases dge9, ev47, ev48; redFirst proved at HEAD; mutation dividing by ran red. Gate run 2026-09-26T11:32:46Z.8c04b0 green; reviewer matches. Resolves sign-off finding P78-R2.",
+        "descriptive": "The gate-economy mean divides by the runs that carried a duration, so a partly measured history can no longer hide a gate that is over budget."
       },
       "startedAt": "2026-09-26T11:22:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T11:39:19Z",
+      "verifiedBy": [
+        "dge9",
+        "ev47",
+        "ev48"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T11:32:46Z.8c04b0",
         "status": "passed",
         "at": "2026-09-26T11:32:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9a560c620727",
+        "at": "2026-09-26T11:39:19Z"
       }
     },
     {

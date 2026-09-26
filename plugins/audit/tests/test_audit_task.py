@@ -50,7 +50,7 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # sharded/single), j (--json + journal row), h (A4 heal at this write site),
 # n (named-manifest project resolution), c (cancel), p (add-phase, both
 # layouts), w (the _waiting_on index), u (usage errors), sc (scope), rt
-# (retarget, extended by P78.4's rt10-rt18 for --gate-drop/--gate-set),
+# (retarget, extended by rt10-rt18 for --gate-drop/--gate-set),
 # gc (the empty gate a task could not reach), jf (the prior state
 # the trail attests), ag (the empty gate at CREATION), fn (the files row for a
 # change that did not happen), sf (the three task fields `scope` did not
@@ -61,17 +61,17 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
 # reads),
-# pd (P43.2, the `done` verb: the close, and the SHA that makes it a record),
-# tw (P46.2: the tree the caller stands in against the tree the verb writes),
+# pd (the `done` verb: the close, and the SHA that makes it a record),
+# tw (the tree the caller stands in against the tree the verb writes),
 # sd (seed: the smallest honest plan, written where none was),
-# gm (P55.19: the marker inside the gap window, and a cause the check tested
-# for rather than one it did not), bn (P55.20: a shard write naming the
-# phase's own branch against the one the caller stands on), ix (P55.21: the
+# gm (the marker inside the gap window, and a cause the check tested
+# for rather than one it did not), bn (a shard write naming the
+# phase's own branch against the one the caller stands on), ix (the
 # index left dirty beside a shard, and the tool that lands it),
-# dg (P78.3: a gate-only task's `files` arm narrows only to a suite path, and
+# dg (a gate-only task's `files` arm narrows only to a suite path, and
 # a new phase's gate puts `meta.phaseGate.always` first and drops only what
-# `meta.phaseGate.exclude` names), pg (P78.3: the same phase-gate derivation,
-# driven through `add-phase` itself), ff (P78.8: `add --failing-from <runId>`
+# `meta.phaseGate.exclude` names), pg (the same phase-gate derivation,
+# driven through `add-phase` itself), ff (`add --failing-from <runId>`
 # gates a fix task on the suites a red sign-off run's own steps NAMED as
 # failing).
 def _cases(check):
@@ -6973,7 +6973,8 @@ def _cases(check):
               code == 0 and not [ln for ln in txt.splitlines()
                                  if "directory" in ln and ln.startswith("WARNING")])
 
-        # ---- (rv) P76 review findings --------------------------------------------
+        # ---- (rv) review findings: a bug's derived state must survive a
+        # close that changed nothing -------------------------------------------
         # R1: a no-change close on a bug's FIX TASK would derive the bug `fixed`
         # with no fixedIn - a bug marked fixed with no fix commit, which the
         # release guard then stops counting as open.
@@ -7299,21 +7300,22 @@ def _cases(check):
               and "meta.phaseGate.exclude" in txt
               and "phase gate runs no suite" in txt)
 
-        # pg4: ABSENT phaseGate = TODAY - locked to the literal, now that P78.3
-        # (which made this derivation call `phase_gate_default` at all) is
-        # itself the committed HEAD this suite runs against. This case used to
-        # capture its expected value by loading HEAD's OWN `_phase_gate` text
-        # dynamically and running it - the right proof while HEAD still held
-        # the PRE-fix code, so a hand-derived expectation could not be an
-        # inference from the same function being tested. Once P78.3 landed,
-        # HEAD's `_phase_gate` IS this module's, so that comparison had become
-        # `M._phase_gate` read back at itself (and broke outright: the
-        # extracted function text called `_phases.phase_gate_default`, a name
-        # that exists in THIS module's namespace and not in the bare one the
-        # extracted text was `exec`'d into - `NameError: name '_phases' is not
-        # defined`). The mutation this case exists to catch (building the
-        # default from SORTED keys) was proved live during P78.3's own
-        # red-first pass; the literal here is what stays to keep proving it.
+        # pg4: ABSENT phaseGate = TODAY - locked to the literal, now that the
+        # derivation this case checks (calling `phase_gate_default` at all) is
+        # itself part of the committed HEAD this suite runs against. This case
+        # used to capture its expected value by loading HEAD's OWN
+        # `_phase_gate` text dynamically and running it - the right proof
+        # while HEAD still held the PRE-fix code, so a hand-derived
+        # expectation could not be an inference from the same function being
+        # tested. Once that derivation landed, HEAD's `_phase_gate` IS this
+        # module's, so that comparison had become `M._phase_gate` read back at
+        # itself (and broke outright: the extracted function text called
+        # `_phases.phase_gate_default`, a name that exists in THIS module's
+        # namespace and not in the bare one the extracted text was `exec`'d
+        # into - `NameError: name '_phases' is not defined`). The mutation
+        # this case exists to catch (building the default from SORTED keys)
+        # was proved live during that derivation's own red-first pass; the
+        # literal here is what stays to keep proving it.
         import types
         _pg4_args = types.SimpleNamespace(gate=None, gate_clear=False)
         _pg4_manifest = {"meta": {

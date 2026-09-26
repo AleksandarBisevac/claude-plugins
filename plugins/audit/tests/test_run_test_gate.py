@@ -354,7 +354,7 @@ Time:        0.149 s
 Ran all test suites matching src/features/projects/syntax.
 """
 
-# --- P78.5 fixtures: an ordinary assertion failure, one runner at a time -------
+# --- fixtures: an ordinary assertion failure, one runner at a time ------------
 # `failing_lines`/`jest_failures` already answer "which CHECK failed" from these
 # - the bullet title alone, per `_jest_failure_name`. What none of them answer is
 # which FILE that check lives in, which is the suite path on the `FAIL` header
