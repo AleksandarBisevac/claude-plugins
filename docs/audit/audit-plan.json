@@ -473,7 +473,7 @@
     {
       "id": "P73",
       "title": "The trail names each commit from inside it",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P73.json"
     },
     {
@@ -503,13 +503,13 @@
     {
       "id": "P78",
       "title": "A phase gate that says where it came from and what it cost",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P78.json"
     },
     {
       "id": "P79",
       "title": "The derived sign-off gate, in shadow first",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P79.json"
     },
     {
@@ -523,6 +523,18 @@
       "title": "Selection miss learns, flaky is muted",
       "status": "pending",
       "shard": "phases/P81.json"
+    },
+    {
+      "id": "P82",
+      "title": "red-first names the task's own case by its label, and reads only the runner that ran",
+      "status": "pending",
+      "shard": "phases/P82.json"
+    },
+    {
+      "id": "P83",
+      "title": "the history and secrets guards close the residuals SECURITY.md states as open",
+      "status": "done",
+      "shard": "phases/P83.json"
     }
   ],
   "fileIndex": {
@@ -640,6 +652,20 @@
       "P79.7",
       "P80.12",
       "P81.8",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
+      "P78.15-msc",
+      "P82.1",
+      "P83.1",
+      "P83.2",
+      "P79.11-5bh",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm",
       "P74.2-qq5",
       "P74.3-qq5",
       "P74.4-qq5",
@@ -680,7 +706,8 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P79.11-5bh"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -764,7 +791,19 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P73.1",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
+      "P78.1",
+      "P78.5",
+      "P78.10",
+      "P78.7",
+      "P79.8-5bh"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -801,7 +840,12 @@
       "P72.8-ttl",
       "P80.11",
       "P75.2-j5h",
-      "P77.2"
+      "P77.2",
+      "P83.1",
+      "P83.2",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -967,6 +1011,9 @@
       "P75.2-j5h",
       "P76.1",
       "P76.2",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P79.10-5bh",
       "P74.1",
       "P74.2-qq5",
       "P74.3-qq5"
@@ -1010,7 +1057,8 @@
       "P50.5",
       "P79.7",
       "P77.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P79.11-5bh"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -1133,7 +1181,8 @@
       "P57.1"
     ],
     "plugins/audit/commands/resume.md": [
-      "P7.1"
+      "P7.1",
+      "P73.1"
     ],
     "plugins/audit/commands/review.md": [
       "P7.1",
@@ -1205,7 +1254,8 @@
       "P81.5",
       "P76.1",
       "P76.3-6qa",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P79.10-5bh"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -1260,7 +1310,12 @@
       "P72.6-ttl",
       "P76.4-6qa",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.1",
+      "P83.2",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1300,7 +1355,11 @@
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P83.1",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -1327,7 +1386,11 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.2",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -1417,7 +1480,13 @@
       "P77.1",
       "P77.3-6u9",
       "P77.5-6u9",
-      "P78.11"
+      "P78.11",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1434,7 +1503,8 @@
       "P69.4-j6r",
       "P79.7",
       "P81.8",
-      "P76.1"
+      "P76.1",
+      "P73.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1489,7 +1559,8 @@
       "P80.12",
       "P81.8",
       "P76.1",
-      "P72.3-ttl"
+      "P72.3-ttl",
+      "P78.11"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -1506,7 +1577,9 @@
       "P75.2-j5h",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P78.15-msc",
+      "P79.11-5bh"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1545,7 +1618,8 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P79.12-5bh"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -1750,6 +1824,13 @@
       "P72.5-ttl",
       "P76.3-6qa",
       "P76.4-6qa",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
+      "P78.13-msc",
       "P74.3-qq5",
       "P74.8-qq5",
       "P74.9-qq5"
@@ -1762,7 +1843,13 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -1782,7 +1869,14 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P73.2-9h1",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1808,7 +1902,12 @@
       "P71.1",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -1830,7 +1929,9 @@
       "P41.7",
       "P48.1",
       "P53.6",
-      "P72.4-ttl"
+      "P72.4-ttl",
+      "P73.2-9h1",
+      "P73.3-9h1"
     ],
     "plugins/audit/scripts/governance/audit-lock.py": [
       "P34.2",
@@ -1851,7 +1952,11 @@
       "P34.4",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1864,7 +1969,12 @@
       "P68.2-v4q",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
@@ -1872,6 +1982,11 @@
       "P71.3-zso",
       "P71.4-zso",
       "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
       "P74.3-qq5"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
@@ -1920,14 +2035,17 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P74.8-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P78.14-msc",
+      "P79.9-5bh"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
       "P77.1",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P82.1"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -2012,7 +2130,10 @@
       "P79.1",
       "P80.1",
       "P75.4-j5h",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P78.12-msc",
+      "P79.10-5bh",
+      "P79.12-5bh"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -2128,7 +2249,8 @@
       "P81.5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P79.10-5bh"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2367,7 +2489,8 @@
       "P81.6",
       "P77.2",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P78.13-msc"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2407,7 +2530,8 @@
       "P56.3",
       "P69.3",
       "P78.10",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P78.14-msc"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -2558,7 +2682,11 @@
       "P72.6-ttl",
       "P76.4-6qa",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.1",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -2644,7 +2772,8 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P78.13-msc"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -2669,6 +2798,13 @@
       "P74.3-qq5",
       "P76.3-6qa",
       "P76.4-6qa",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
+      "P78.13-msc",
       "P74.8-qq5",
       "P74.9-qq5"
     ],
@@ -2707,7 +2843,13 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -2723,7 +2865,13 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -2781,7 +2929,10 @@
       "P79.1",
       "P80.1",
       "P75.4-j5h",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P78.12-msc",
+      "P79.10-5bh",
+      "P79.12-5bh"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -2831,7 +2982,9 @@
       "P75.5-j5h",
       "P77.2",
       "P77.3-6u9",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P79.2",
+      "P79.3"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -2907,7 +3060,8 @@
       "P75.4-j5h",
       "P75.5-j5h",
       "P76.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P79.4"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -2928,7 +3082,13 @@
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5",
       "P71.2-zso",
-      "P71.4-zso"
+      "P71.4-zso",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2993,7 +3153,9 @@
       "P41.7",
       "P53.6",
       "P59.13",
-      "P72.4-ttl"
+      "P72.4-ttl",
+      "P73.2-9h1",
+      "P73.3-9h1"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
@@ -3088,7 +3250,9 @@
       "P81.5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P78.14-msc",
+      "P79.10-5bh"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3131,7 +3295,11 @@
       "P34.4",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -3140,7 +3308,12 @@
       "P68.2-v4q",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
@@ -3148,6 +3321,7 @@
       "P71.3-zso",
       "P71.4-zso",
       "P73.1",
+      "P73.3-9h1",
       "P74.3-qq5"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
@@ -3199,7 +3373,11 @@
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P83.1",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -3219,7 +3397,11 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P83.2",
+      "P83.3-wkm",
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -3365,7 +3547,9 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P74.8-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P78.14-msc",
+      "P79.9-5bh"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -3379,7 +3563,8 @@
       "P77.1",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P82.1"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -3467,7 +3652,13 @@
       "P66.3-x3g",
       "P66.4-x3g",
       "P72.4-ttl",
-      "P73.1"
+      "P73.1",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
@@ -3553,16 +3744,20 @@
       "P56.2"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
-      "P79.2"
+      "P79.2",
+      "P79.8-5bh"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
-      "P79.2"
+      "P79.2",
+      "P79.8-5bh"
     ],
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
-      "P79.3"
+      "P79.3",
+      "P79.8-5bh"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
-      "P79.3"
+      "P79.3",
+      "P79.8-5bh"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5"
@@ -3882,6 +4077,31 @@
       "taskId": "P69.1",
       "fixedIn": "91c7891",
       "notes": null
+    },
+    {
+      "id": "BUG-12",
+      "title": "The widened history-guard and secrets-guard reading (P83) still has the gaps its third phase review found; handed to a human maintainer",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-09-26T21:53:59Z",
+      "reportedBy": null,
+      "description": "P83 closed every residual SECURITY.md listed for guard-history-rewrite and guard-secrets-read and over-refuses nothing main allows, and its third phase review measured that nothing main refuses now passes. The same review found gaps inside the phase's own wider reading - three med (an interpreter exempted from here-string grading in shapes where it still reads its program from stdin; the word `in` inside a case arm reopening pattern mode; three shapes the narrowings dropped: a process substitution whose command tees into a hook, a bare hook name after a cd into the hooks directory, a variable program behind a wrapper option that takes a value) and three low (two shapes missing from SECURITY.md's not-followed list, perl open coverage narrower than the CHANGELOG says, missing allow twins). The automated session was stopped by a safety classifier while writing the fix, so it is handed to a human maintainer, as F512 was. Full findings with resolutions: quality-gates-internal/probes/fr15-16/reviews/review-P83c.json; red tests already written: quality-gates-internal/probes/fr15-16/p83-handoff/p83.5-red-tests.patch.",
+      "repro": [
+        "Apply p83-handoff/p83.5-red-tests.patch on main after P83 lands",
+        "python3 plugins/audit/tests/test_guard_history_rewrite.py --selftest",
+        "python3 plugins/audit/tests/test__config.py --selftest"
+      ],
+      "expected": "Every case in the patch passes, with each deny case beside an allow case, and SECURITY.md's not-followed list stating exactly what remains.",
+      "actual": "The patch's deny cases for the dropped shapes and the wrapper-option program fail; the listed documentation gaps stand.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "SECURITY.md"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "Lane: human maintainer (the automated executor and the orchestrator were both stopped by a safety classifier on this work). Release is blocked while this is open unless the user ships over it with #release-with-bugs."
     }
   ],
   "deferred": {

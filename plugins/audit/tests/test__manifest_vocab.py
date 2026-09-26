@@ -836,6 +836,50 @@ def _cases(check):
           and M.VIEW_SEGS["archived"] == ("archived",)
           and M.VIEW_SEGS["all"] == M.SEGMENTS)
 
+    # --- the phase-gate default and 'runs no suite' words --------------------
+    check("mv48 `gate-only-no-suite` and `failing-from-run` are in GATE_BASIS - "
+          "a word `phase_gate_suite_gap` and a future ledger-backed derivation "
+          "write that the validator's vocabulary does not know is a basis "
+          "nothing can grade: %r" % (sorted(M.GATE_BASIS),),
+          "gate-only-no-suite" in M.GATE_BASIS
+          and "failing-from-run" in M.GATE_BASIS)
+    check("mv49 ...and `gate-only-no-suite` is an ANSWER rather than an "
+          "unnarrowed default, the same standing `phase-no-spelling` has: a "
+          "phase gate that runs no suite has nothing path-scoped to narrow "
+          "FROM, so carrying it verbatim is not the thing the wide-gate "
+          "warning exists to catch: %r" % (sorted(M.GATE_BASIS_ANSWERED),),
+          "gate-only-no-suite" in M.GATE_BASIS_ANSWERED
+          # `failing-from-run` is NOT an answer - it is written
+          # `failing-from-run:<runId>` and a reader compares the word before
+          # the colon, so the bare word never appears as a task's own
+          # `gateBasis` value and has no business in the ANSWERED set.
+          and "failing-from-run" not in M.GATE_BASIS_ANSWERED)
+
+    # --- P79.1: the derived sign-off gate's vocabulary -----------------------
+    check("mv50 `coupling` is a KNOWN_META key and `testGateBasis` and "
+          "`testGateDerived` are KNOWN_PHASE keys - the typo-catcher's whole "
+          "involvement with the three new fields: %r"
+          % ({"coupling in KNOWN_META": "coupling" in M.KNOWN_META,
+              "testGateBasis in KNOWN_PHASE": "testGateBasis" in M.KNOWN_PHASE,
+              "testGateDerived in KNOWN_PHASE":
+                  "testGateDerived" in M.KNOWN_PHASE},),
+          "coupling" in M.KNOWN_META
+          and "testGateBasis" in M.KNOWN_PHASE
+          and "testGateDerived" in M.KNOWN_PHASE)
+    check("mv51 `derived` and `derived-empty` are `PHASE_GATE_BASIS` words - "
+          "the phase-level twin of `GATE_BASIS`, kept SEPARATE so a task can "
+          "never claim a derivation only a phase goes through: %r"
+          % (sorted(getattr(M, "PHASE_GATE_BASIS", ())),),
+          "derived" in getattr(M, "PHASE_GATE_BASIS", ())
+          and "derived-empty" in getattr(M, "PHASE_GATE_BASIS", ())
+          and "wide: importers resolved to the full suite"
+              in getattr(M, "PHASE_GATE_BASIS", ()))
+    check("mv52 ...and neither phase-only word leaked into the TASK vocabulary "
+          "- `GATE_BASIS` is what `audit-task.py` writes to a task's own "
+          "`tests.gateBasis`, and a phase word appearing there would let a "
+          "task claim a derivation no task ever runs through",
+          "derived" not in M.GATE_BASIS and "derived-empty" not in M.GATE_BASIS)
+
 
 def _selftest():
     return _harness.run(_cases)

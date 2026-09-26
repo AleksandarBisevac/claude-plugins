@@ -6,8 +6,8 @@ The commands around the audit trail: append a row, verify the chain, show it, ar
     audit-journal.py verify   [--json]      (the trail AND the evidence ledger)
     audit-journal.py show     [--limit N] [--json] [--target <path>]
     audit-journal.py archive  [--before YYYY-MM]
-    audit-journal.py merge    --file <journal file> [--ours F --theirs F]
-                              [--dry-run] [--json]
+    audit-journal.py merge    --file <journal or evidence file>
+                              [--ours F --theirs F] [--dry-run] [--json]
     audit-journal.py sessions [--json]
       (every command takes --project DIR; default the current directory)
 
@@ -20,8 +20,9 @@ The ledger carried no chain at all until it was given the trail's, so the record
 of the MEASUREMENT -- the file a green gate points at -- was the one file here a
 string replace could edit with nothing reporting a finding. Each record prints its
 own verdict and the exit code is non-zero when EITHER has findings; `cmd_verify`
-carries why that is one command rather than two. Every other subcommand on this
-page is the journal's alone.
+carries why that is one command rather than two. `merge` resolves a file of
+either record, by one implementation (`_journal_io.merge_rows`); every other
+subcommand on this page is the journal's alone.
 
 `merge` is the verb a journal conflict needs and did not have. One writer
 on two branches is ordinary while a phase is paused, and the per-writer file
@@ -30,7 +31,11 @@ shared prefix and two tails, which cannot be resolved by editing because each
 divergent row's hash covers a `prev` only its own side has. With no verb the
 resolution keeps one tail and loses the other in a second parent nobody reads
 again. It defaults to the two sides git already has (index stages 2 and 3 of
-`--file`), so during a conflict it needs nothing but the path.
+`--file`), so during a conflict it needs nothing but the path. An evidence
+ledger file is chained the same way and diverged the same way before the
+per-worktree writer key, so `--file` may name one: it is merged with the same
+refusals and the same re-chain, and recorded by a journal row rather than by a
+marker in the ledger (`_evidence_io.ACTION_MERGED` says why).
 
 `sessions` answers the question a per-session file NAME cannot: which
 session wrote which file. The name carries the id the writer supplied, and the
@@ -614,13 +619,19 @@ def cmd_merge(args, out):
     # then written to that stray path. The live journal was untouched, `verify`
     # passed over a directory the file was not in, and `journal_files` cannot
     # see it, so every surface agreed nothing had happened.
-    if not in_journal(project, path, config):
+    # THE DIRECTORY DECIDES WHICH RECORD THIS IS, and so which marker it gets:
+    # a journal file carries its own `journal.merge` row, a ledger file is
+    # recorded by a journal row naming it, and nothing else is a chained file.
+    evidence = _evidence_io.in_evidence(project, path, config)
+    if not in_journal(project, path, config) and not evidence:
         out("[audit-journal] --file must name a file inside the journal "
-            "directory (%s), and %r resolves to %s. A bare basename copied out "
-            "of git's conflict message resolves against the project root, "
-            "where a merge written under it is a file no reader of the trail "
-            "ever looks at. Pass the path git printed, relative to the project "
-            "root." % (journal_dir(project, config), target, path))
+            "directory (%s) or the evidence directory (%s), and %r resolves to "
+            "%s. A bare basename copied out of git's conflict message resolves "
+            "against the project root, where a merge written under it is a "
+            "file no reader of the trail ever looks at. Pass the path git "
+            "printed, relative to the project root."
+            % (journal_dir(project, config),
+               _evidence_io.evidence_dir(project, config), target, path))
         return 2
     if bool(args.ours) != bool(args.theirs):
         out("[audit-journal] --ours and --theirs go together: pass both to "
@@ -652,10 +663,20 @@ def cmd_merge(args, out):
     for label, pair in (("ours", sides[0]), ("theirs", sides[1])):
         if pair[1]:
             torn.append(label)
-    res = merge_rows(sides[0][0], sides[1][0], name,
-                     actor={"author": args.author, "sessionId": args.session,
-                            "via": MERGE_VIA},
-                     torn=tuple(torn))
+    actor = {"author": args.author, "sessionId": args.session,
+             "via": MERGE_VIA}
+    if evidence:
+        # THE PLAN'S MOVED IDS, because a run recorded under a task's old id and
+        # one under its new id are ONE subject to every reader. Unreadable means
+        # unknown, and then no same-second tie in the ledger is ordered.
+        aliases, alias_why = _evidence_io.plan_aliases(project, config)
+        res = _evidence_io.merge_rows(sides[0][0], sides[1][0], name,
+                                      torn=tuple(torn), aliases=aliases)
+        if alias_why:
+            res["notes"] = list(res["notes"]) + [alias_why]
+    else:
+        res = merge_rows(sides[0][0], sides[1][0], name, actor=actor,
+                         torn=tuple(torn))
     # THE RESULT IS GRADED AGAINST THE FILE IT WOULD REPLACE, and the
     # verdict joins the OTHER refusals rather than getting a shape of its own:
     # same `REFUSED:` line, same closing sentence, same exit code, and the
@@ -695,12 +716,13 @@ def cmd_merge(args, out):
     # report the same operation. It used to sit inside the human-readable tail,
     # which is how `--json` came to describe a write it had returned before
     # making.
-    written, error = False, None
+    written, error, found = False, None, {}
     if res["ok"]:
         merged = merge_text(res["rows"])
         side_rows = list(sides[0][0]) + list(sides[1][0])
 
         def grade(text, unreadable):
+            found["text"] = text
             return _target_faults(name, text, unreadable, merged, side_rows,
                                   from_index)
 
@@ -719,6 +741,10 @@ def cmd_merge(args, out):
             return 1
         for line in res["refusals"]:
             out("REFUSED: " + line)
+        # A note can be the reason for a refusal - an unread plan is why a
+        # ledger tie was refused rather than ordered - so it is said here too.
+        for line in res["notes"]:
+            out("NOTE: " + line)
         out("\n[audit-journal] nothing written: %d refusal(s) in %s. A merge "
             "that dropped or reordered a row would be worse than the conflict "
             "it replaces, so it refuses rather than guessing."
@@ -731,6 +757,20 @@ def cmd_merge(args, out):
         _journal_io.record_plugin_write(project, config,
                                         _journal_io.CLI_JOURNAL_WRITER,
                                         path)
+    # A LEDGER MERGE IS RECORDED IN THE JOURNAL, after the write so the row's
+    # `stateHash` is the merged bytes - and only when the bytes changed: a
+    # re-run over a file already resolved writes the same bytes and has
+    # nothing new to record.
+    res["recorded"], res["recordedIn"] = None, None
+    if evidence and written and found.get("text") != merge_text(res["rows"]):
+        landed = _evidence_io.record_merge(project, path, res, actor=actor,
+                                           config=config)
+        res["recorded"] = bool(landed)
+        # NAMED, because the row is the re-chained ledger's anchor and has to
+        # be committed WITH it: a merge commit holding the ledger without it is
+        # a clone whose newest row for the file records bytes it no longer has.
+        res["recordedIn"] = (_journal_io.repo_relative_or_token(project, landed)
+                             if landed else None)
     if args.as_json:
         out(_merge_json(res, args.dry_run, written, error))
         return 1 if error is not None else 0
@@ -746,6 +786,17 @@ def cmd_merge(args, out):
     if error is not None:
         out("[audit-journal] could not write %s: %s" % (path, error))
         return 1
+    if res["recorded"] is True:
+        out("[audit-journal] the merge of %s is recorded in the journal as an "
+            "`%s` row naming it, which also anchors the re-chained bytes - it "
+            "is in %s, and that file has to be committed WITH the ledger: "
+            "`git add` both" % (name, _evidence_io.ACTION_MERGED,
+                                res["recordedIn"]))
+    elif res["recorded"] is False:
+        out("[audit-journal] the merge of %s was written and the journal row "
+            "recording it could NOT be, so nothing in the trail says it was "
+            "re-chained and `verify` will report the file as an edit it never "
+            "saw" % (name,))
     # THE BASIS AND NOT THE HABIT. "both inputs are in git" is half of what
     # makes re-chaining auditable rather than a rewrite, and it is only true of
     # the sides that CAME from the index. Said unconditionally it would be a

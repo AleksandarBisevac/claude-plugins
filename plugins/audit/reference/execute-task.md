@@ -72,6 +72,16 @@ not need to.
      default** — `executor_gate_policy` returns `None` for it; stop and ask the human rather than
      guessing which reading a typo meant. This changes only what the SUBAGENT does before it hands
      back — the recorded run two steps below is unconditional and is what becomes evidence either way.
+     **The `own-tests` reading runs through the script, never bare Bash:**
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
+         <manifestPath> <phaseId> --task <taskId> --own --quiet
+     ```
+     `--own` writes no row and no pointer, ever — it is the executor's own quick check, through
+     the same bracket and coverage answer as the recorded run, with its whole output kept on disk
+     at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`) rather than spent in the
+     subagent's context. Tell it the finished command in the spawn prompt rather than leaving it
+     to compose its own.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.
@@ -249,6 +259,15 @@ not need to.
      session may hold the phase lock — and that is a designed state, not an error: the run is
      recorded either way, and `--reconcile` catches the plan up later. Do not retry the gate to
      chase a refused pointer.
+
+     **A gate expected to outlast the Bash tool's foreground bound runs under
+     `run_in_background`, and its verdict is read from the ledger, never from a truncated
+     terminal.** The command above is unchanged; what changes is that you do not wait on its own
+     terminal to scroll to the end. `evidence: recorded <runId>` is written **before** the banner
+     prints, so the row is durable the moment the background job has one to show — read it back
+     with `scripts/status/audit-lookup.py <manifestPath> run <runId>` (the id off that line) or
+     `run latest --task <taskId>` when the id was not kept, exactly as
+     `reference/orchestrator.md`'s **Answering one question about the trail** describes.
    - **Then ask the reviewer the intent question — one call per task, and only when the gate
      you just ran came back green.** A red gate already has its answer and the task goes back
      through step 2; there is nothing to bind a claim to yet. Spawn
@@ -374,6 +393,10 @@ not need to.
        where it still is.
      - `task.redFirst` when it is set, so a proof that could not be MADE is not walked into
        the same refusal twice.
+     - the `raw log:` path the last attempt's own `--own` run printed, when this session still
+       has it — the whole of that run's output, which the terminal never carried in the first
+       place, so a retry told only the gate entry that failed re-derives the reason for itself
+       unless the log's path travels with it.
 
      **What the gate records is the failing gate ENTRY, never the failing test.** `GATE RED`
      names entries, the row's `failed` list is those same names, and `_evidence_io.row_for()`
@@ -526,7 +549,8 @@ not need to.
           python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" \
               <manifestPath> <phaseId>
           ```
-          commits the index **alone**, under the lock, and refuses rather than committing nothing
+          commits the index and the one journal file holding the row that names the commit, and
+          **nothing else**, under the lock, and refuses rather than committing nothing
           or committing it beside work that does not belong with it. Its name used to reach a human
           only inside `commit-task-work.py`'s refusal — after a task commit had already been turned
           away for staging the index — which is too late for a caller who commits by hand instead:
@@ -550,7 +574,13 @@ not need to.
           receives a plan referring to runs it does not have. `verify-invariants.py`'s
           `evidence-committed` is what says so afterwards. One file per writer per month, so
           parallel phases never conflict on either — one writer on two BRANCHES still can, and
-          `audit-journal.py merge` is what resolves that without recomputing anything a row says.
+          `audit-journal.py merge --file <journal or evidence file>` is what resolves that without
+          recomputing anything a row says: one implementation for both records, the same
+          refusals, and a same-second tie ordered by content only when its rows touch different
+          targets (a journal row's `target`; for a run, every key a ledger reader files it under,
+          the plan's moved task ids included), with the order written down -
+          in the journal file's `journal.merge` row, or for a ledger file in an `evidence.merge`
+          journal row naming it, because every row in the ledger is read as a recorded run.
         - **The explicit pathspec is the script's, and it is what makes the gate's
           `TREE CHANGED OUTSIDE THIS WORK` line affordable.** **The index does not arrive empty**:
           a previous task's `git mv` leaves paths staged, and a bare `git commit` sweeps every one
@@ -592,7 +622,11 @@ not need to.
           script deliberately does not: the SHA is only knowable after the commit it makes and the
           shard is inside that commit, so writing it there would need a second commit or the amend
           this document forbids. It leaves an `audit.task.committed` journal row in the meantime,
-          so the gap between the commit and this write is not a commit nothing points at.
+          so the gap between the commit and this write is not a commit nothing points at. That
+          row is INSIDE the commit it names: it is written first, keyed by a nonce the commit
+          message carries as its `Audit-Row` trailer, and `git log --grep "Audit-Row: <nonce>"`
+          finds the commit from it. A commit refused after the row was written leaves an
+          `audit.commit.withdrawn` row naming the nonce.
           **Do NOT write `bugs[]` by hand.** A bug materialized into this task (`bug.taskId` ↔
           `task.bugId`) reads as **fixed** once the task is `done` — the rollup derives it (with
           `fixedIn` = this `task.commit`) — and `/audit:task done` stores both values on the bug in

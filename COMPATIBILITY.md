@@ -156,6 +156,32 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   precedence, or ceasing to read a verdict as sign-off, is a major. What is not promised is the
   wording surfaces use for the state in between ("sign-off due"), under the standing exclusion
   for a command's wording below.
+- **`meta.phaseGate` and `meta.gateBudgetMs` are under the same promise, and absence keeps
+  meaning today's behaviour byte-for-byte.** With no `meta.phaseGate` at all, a new phase's
+  default gate is every `meta.buildCommands` key, in `buildCommands` order — exactly what
+  `/audit:phase add` wrote before either key existed. `phaseGate.always` alone only REORDERS that
+  default, putting the named keys first; it drops nothing on its own. With no `phaseGate.exclude`,
+  nothing is dropped from the default either. With no `meta.gateBudgetMs`, nothing is graded on
+  cost — `/audit:doctor`'s gate-economy row says so as an OK, never as silence. **A task's derived
+  gate reading `meta.phaseGate.always` when its own files name no suite to narrow to
+  (`tests.gateBasis: gate-only-no-suite`) moves no promise on this list either**: a NEW task's
+  derived gate has never been a promised value — only a manifest key a release *reads* is, and
+  the derivation this adds is one more shape that reading takes.
+- **`meta.phaseGate.mode`, `meta.coupling`, `phase.testGateDerived` and `phase.testGateBasis` are
+  under the same promise, and each absence is its own documented reading, never a gap.**
+  **`mode` absent means no PHASE-level derivation is ever computed** — `always`/`exclude` alone
+  still shape the wide gate exactly as they did before either key existed, and no narrower gate
+  is ever asked for. **`meta.coupling` absent means no learned arm contributes** — a derivation
+  still runs on `tests.add`, the import-graph listing, changed files and the last recorded
+  failure alone, which is exactly today's behaviour for a plan that has never coupled a test to
+  a source by hand. **`phase.testGateDerived` absent means `run-test-gate.py` prints no NARROWED
+  line and grades no derived-mismatch `could-not-run`** — a run against a phase that has never
+  derived a gate reads exactly as it did before either key existed. **`phase.testGateBasis`
+  absent means the undeclared default** — the same reading `tests.gateBasis` carries at task
+  scope: nothing has narrowed the gate and there is no reason string to read.
+  `derive-phase-gate.py` writes `testGateBasis` together with `testGateDerived`, so the two
+  are absent or present as a pair. Ceasing to read any of the
+  four, or reversing what its absence means, is a major.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is

@@ -419,6 +419,57 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    and mirror `gitRoot` into `.claude/audit.config.json`) so the orchestrator can commit its status
    history; note this to the user.
 
+   **Write `meta.phaseGate` alongside `meta.buildCommands`, in the same step.** `mode` is
+   `"shadow"`, always — the derived gate is recorded beside the wide one for every phase this
+   run mints, never in place of it; nothing here ever writes `"enforce"`. `always` carries every
+   lint/typecheck/build-family key recon already found (never a test-family one — those are what
+   the derivation narrows, not what rides along unconditionally). `smoke` carries a tagged e2e
+   key when recon found one, else absent. `derived` — `{runner, spelling, listing, verifiedOn}` —
+   is written **only for a runner whose listing recon actually RAN and saw real work without
+   executing a single test.** `derived.runner` names the `meta.buildCommands` key; `derived.spelling`
+   is that runner's path-scoped RUN command, carrying a literal `{paths}` placeholder;
+   `derived.listing` is `{related, all}` — `listing.related` is the command, also carrying
+   `{paths}`, that LISTS the suites related to those paths without running them, and `listing.all`
+   lists every suite this runner would collect with no path filter. A candidate whose listing
+   command recon never ran, or ran and executed suites rather than merely naming them, gets no
+   `derived` block at all — a `runner`/`spelling`/`listing` this run cannot back with a real
+   observation is a guess dressed as a derivation. `derived.verifiedOn` is `{command, answer}` —
+   the version command this step actually ran for that runner, and its output verbatim, never a
+   remembered string — so a later mismatch on a different machine has a real answer to compare
+   against rather than a guess.
+
+   **The runner table below is what recon reads before drafting a listing command**, each claim
+   dated to the runner's own documentation as of 2026-09-25 rather than assumed current:
+
+   - **Jest**, 30 and later — `--listTests`/`--findRelatedTests` list without executing. Every
+     version since 28 exits 1 on zero matches unless `--passWithNoTests` is also passed, which is
+     why both listing commands this step drafts carry that flag; an unmapped TypeScript path
+     alias is an edge this listing cannot see through.
+   - **Vitest**, major version 5 — `vitest list --filesOnly` lists without executing; the 2.x
+     through 4.x line executes every file it is given instead, so a listing drafted for those
+     versions is really a run and recon must not draft one. `--related` transforms every module
+     on the import path, and there is no rerun-last-failed flag to draft alongside it.
+   - **Playwright**, 1.46 and later — `--list --reporter=json` lists without executing, but it
+     still loads every spec file to build that list, so a shared fixture pulls the whole suite
+     into scope regardless of which spec named it.
+   - **Cypress** — its `run` command carries no listing mode at all; recon drafts no `derived`
+     block for it.
+   - **Nx and Turborepo** — their list flags name projects or tasks, never individual tests, and
+     a shallow clone reads as everything having changed.
+   - **pytest** — `--collect-only -qq` lists without executing, but it imports every module it
+     collects, and it exits 5 when collection finds nothing to run.
+   - **Go, Gradle, .NET** — each has its own list-only flag for the runner recon actually
+     detected; draft the one the pinned version's own documentation names, never a remembered
+     spelling from a different one.
+   - **Any runner with no non-executing listing mode** gets `derived.listing` written `null` —
+     never a listing command that would really run the suite it claims only to name.
+
+   **Offer, never impose, reporter settings for the executor's OWN run** — `vitest --silent=passed-only`,
+   `jest --silent`, `playwright`'s `line` or `dot` reporter — the same AskUserQuestion, multi-select,
+   nothing-pre-selected shape step 3 already uses for offering this repository's own bar. No proposed
+   command carries a retry flag; a retry is `run-test-gate.py`'s own decision at run time, never
+   something a drafted command bakes in.
+
 ## 6. Present & approve (the gate)
 
 Nothing synthesized has touched disk yet. Print the proposed plan, plain ASCII:

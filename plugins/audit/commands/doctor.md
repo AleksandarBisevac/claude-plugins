@@ -208,5 +208,45 @@ is broken, and a run that exits 0 today still exits 0 with these rows present.
 card shows — and it writes, so it is not a flag here. If a user asks to clean that file,
 point them there rather than reaching for this command.
 
+## The `gate economy` row, after `gate patterns`
+
+`gate patterns` asks whether a gate ever fails; this row asks the question a never-failed gate
+still owes an answer to — what it costs — and grades ONLY the gates `gate patterns` would
+already call a candidate to drop, because a gate that has failed at least once earns its keep
+whatever it costs. **With no `meta.gateBudgetMs` declared, this is an OK row saying so, never
+silence**: the budget is opt-in, and a plan that never declared one has not been told its gates
+are cheap — it has been told nothing. Past the floor `gate patterns` already needs, a gate whose
+mean recorded cost exceeds the budget is named on a WARNING, never a FINDING, with the same
+remedies every time: `/audit:phase retarget <phaseId> --gate-drop <entry>` for each phase not yet
+signed off whose `testGate` still carries it, adding the entry to `meta.phaseGate.exclude` so the
+next phase this plan mints does not inherit it, and — when the entry is also named in
+`meta.phaseGate.always`, which outranks `exclude` — taking it out of `always` too, or the exclude
+alone will not stick. It **never** grades an unmeasured step as cheap: a step that carried no
+recorded `durationMs` is named on its own line rather than folded into the count that passed.
+Like every row in this section, a WARNING here changes nothing about the exit code.
+
+## The `shadow recall` row — whether the derived gate would have caught what actually failed
+
+Read only when `meta.phaseGate.mode` is set. It computes two different recalls over every
+shadow run recorded in the evidence ledger — never written anywhere, re-derived from the ledger
+each time — asking Meta's own predictive-test-selection definitions: **test recall** is
+suite-weighted (of every failing suite seen across every shadow run, what share did the derived
+set list — `sum(listed) / sum(full)`); **change recall** is run-weighted (of every RED shadow run,
+what share had at least one failing suite the derived set listed at all). The two disagree on
+purpose — a history where every run caught at least one of several failing suites reads as a
+perfect per-run share while the suite-weighted figure is lower, and only the second tells an
+operator whether the derived set gives REAL coverage.
+
+**No `meta.phaseGate.mode`** is an OK row saying so — nothing is derived, so there is nothing to
+grade recall over. **A mode declared with no shadow run recorded yet** is also an OK row: "none
+recorded" is the honest answer for a project that has not hit a real failure since deriving
+began, not a gap in what this check could establish. **An unreadable ledger** is a WARNING naming
+that it could not be read — never folded into "no shadow runs", because a torn row or a directory
+this check cannot list is a different problem from a project with a clean trail. Past all three,
+it is a WARNING carrying both percentages and the raw counts behind each, with one remedy
+whatever the numbers say: set `meta.phaseGate.mode` to `"enforce"` once this recall is enough for
+this project — nothing switches it for you, because no threshold here decides that judgement
+call.
+
 Do not modify anything. Related: `/audit:status`, `/audit:init`, `/audit:panel`,
 `/audit:usage`, `/audit:layout`, `/audit:logs`.

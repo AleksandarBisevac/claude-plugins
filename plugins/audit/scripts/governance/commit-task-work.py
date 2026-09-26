@@ -16,7 +16,8 @@ Prose cannot refuse. This can.
 
 THE THIRD SCOPED COMMIT, AND THE SHAPE IS ITS SIBLINGS'. `commit-audit-state.py`
 carries the RECORD of a run and never the work; `commit-manifest-index.py`
-carries the shared index and nothing else; this one carries the WORK. Each
+carries the shared index and the one journal file holding the row that names
+the commit, and nothing else; this one carries the WORK. Each
 derives its own allow-list and none of them shares a builder, because a shared
 builder taking a flag would be one function holding three safety properties -
 the shape in which a widened list stops being noticed. What they do share is
@@ -90,6 +91,14 @@ second commit or an amend, and `orchestrator.md` forbids the amend. The SHA is
 printed instead and `/audit:task done <taskId> --commit <sha>` records it, riding
 along with the next commit exactly as step 4c already says. Two verbs, one each
 for the thing git owns and the thing the plan owns.
+
+THE ROW NAMING THE COMMIT IS INSIDE IT. `audit.task.committed` - and, for an
+override, the row recording it - is written before the commit, keyed by the
+nonce the commit message carries as its `Audit-Row` trailer, and carried by the
+commit through the journal directory on the allow-list
+(`_scoped_commit.commit_with_rows`). An override whose row cannot be written is
+refused before anything is staged, so no commit goes over its gate unrecorded;
+a commit refused after the rows were written leaves a row withdrawing them.
 
 NEVER AN EMPTY COMMIT. Nothing staged means no commit and a line saying so,
 because a stream of empty commits is how a record stops being read.
@@ -300,8 +309,11 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                            "committed - proceeding without it" % (label,))
             continue
         if not os.path.exists(absolute):
-            skipped.append("%s does not exist yet, so there is nothing of it to "
-                           "stage" % (label,))
+            # A journal that does not exist yet is created by the row this
+            # commit writes and carried from there, so it is not a skip.
+            if not (label == JOURNAL_LABEL and _journal_io.enabled(config)):
+                skipped.append("%s does not exist yet, so there is nothing of it "
+                               "to stage" % (label,))
             continue
         if rel not in [c[0] for c in candidates]:
             candidates.append((rel, label, True, False))
@@ -449,15 +461,18 @@ def verdict_binding(manifest_path, phase, task, project, config=None,
     return answer
 
 
-def override_row(project, task_id, phase_id, sha, verdict, reason, config=None):
+def override_row(project, task_id, phase_id, nonce, verdict, reason,
+                 config=None):
     """The trail row a commit made over its verdict leaves. Returns the file, or False.
 
-    It names the commit, the run it went over (when there was one) and the
-    operator's reason, so the override is findable by any of the three.
+    It names the commit - by `nonce`, the commit's `Audit-Row` trailer, since it
+    is written before the commit and carried by it - the run it went over (when
+    there was one) and the operator's reason, so the override is findable by
+    any of them.
     """
     config = _journal_io.load_config(project) if config is None else config
-    details = {"commit": sha, "taskId": str(task_id), "phaseId": str(phase_id),
-               "reason": reason}
+    details = {_invariants.NONCE_KEY: nonce, "taskId": str(task_id),
+               "phaseId": str(phase_id), "reason": reason}
     row = verdict.get("row") or {}
     if row.get("runId"):
         details["runId"] = str(row["runId"])
@@ -466,8 +481,10 @@ def override_row(project, task_id, phase_id, sha, verdict, reason, config=None):
         "actor": {"sessionId": _journal_io.env_session_id(),
                   "via": "commit-task-work"},
         "target": str(task_id),
-        "summary": "%s was committed as %s over the verdict that refused it: %s"
-                   % (task_id, sha[:12], verdict.get("sentence")),
+        "summary": "%s was committed as the commit carrying `%s` over the "
+                   "verdict that refused it: %s"
+                   % (task_id, _scoped_commit.row_trailer(nonce),
+                      verdict.get("sentence")),
         "details": details,
     }, config=config)
 
@@ -500,8 +517,12 @@ def commit_message(task_id, subject, manifest):
     return paragraphs
 
 
-def record_row(project, task_id, phase_id, sha, config=None):
+def record_row(project, task_id, phase_id, nonce, config=None):
     """Anchor the commit in the trail. Returns the file the row landed in, or False.
+
+    WRITTEN BEFORE THE COMMIT AND CARRIED BY IT, so it names the commit by
+    `nonce`, the value of the commit's `Audit-Row` trailer: the SHA does not
+    exist yet, and a row inside a commit cannot hold the hash of that commit.
 
     A ROW BEFORE `/audit:task done` RUNS, which is what it is for. The durable
     record of a task commit is `task.commit` in the plan, written by that verb
@@ -523,10 +544,11 @@ def record_row(project, task_id, phase_id, sha, config=None):
         "actor": {"sessionId": _journal_io.env_session_id(),
                   "via": "commit-task-work"},
         "target": str(task_id),
-        "summary": "%s's work was committed as %s - the files the task declares, "
-                   "the phase's manifest file and the records beside them"
-                   % (task_id, sha[:12]),
-        "details": {"commit": sha, "taskId": str(task_id),
+        "summary": "%s's work was committed as the commit carrying `%s` - the "
+                   "files the task declares, the phase's manifest file and the "
+                   "records beside them"
+                   % (task_id, _scoped_commit.row_trailer(nonce)),
+        "details": {_invariants.NONCE_KEY: nonce, "taskId": str(task_id),
                     "phaseId": str(phase_id)},
     }, config=config)
 
@@ -630,14 +652,35 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     if verdict["state"] == "no-gate":
         skipped = skipped + [verdict["sentence"]]
 
-    done = _scoped_commit.stage_and_commit(
+    def rows(nonce):
+        """The rows naming this commit, written before it: the anchor, and the
+        override's when there is one - which the commit REQUIRES, so a failed
+        one refuses before anything is staged."""
+        anchor = record_row(project, task_id, phase_id, nonce, config=config)
+        files = [anchor] if anchor else []
+        if not overriding:
+            return files, ""
+        recorded = override_row(project, task_id, phase_id, nonce, verdict,
+                                override, config=config)
+        if not recorded:
+            return files, (
+                "the journal row recording the override could NOT be written, "
+                "so this commit would go over its gate with nothing in the "
+                "trail saying so - nothing was committed. The verdict: %s"
+                % (verdict["sentence"],))
+        return files + [recorded], ""
+
+    done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
         commit_message(task_id, subject, manifest),
-        lambda paths: foreign_refusal(paths, targets))
+        lambda paths: foreign_refusal(paths, targets), rows,
+        lambda nonce, why: _scoped_commit.withdraw(
+            project, config, nonce, "commit-task-work",
+            {"taskId": task_id, "phaseId": phase_id}, why))
     if not done["committed"]:
         answer = _scoped_commit.answer(skipped, staged=done["staged"],
                                        foreign=done["foreign"],
-                                       refused=done["refused"])
+                                       refused=done["refused"], done=done)
         answer["verdict"] = verdict
         return E_FAIL, answer
     sha = done["sha"]
@@ -646,8 +689,10 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         # nothing is undone, with the exit code saying it needs a look.
         answer = _scoped_commit.answer(skipped, committed=True, commit=sha,
                                        staged=done["staged"],
-                                       refused=done["refused"])
+                                       refused=done["refused"],
+                                       journalled=done["journalled"], done=done)
         answer["verdict"] = verdict
+        answer["overridden"] = overriding
         return E_FAIL, answer
     if not sha:
         # The commit exists and this process cannot name it. A failure rather than
@@ -656,29 +701,16 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         # against no commit at all.
         return E_FAIL, _scoped_commit.answer(
             skipped, committed=True, staged=done["staged"],
+            journalled=done["journalled"], done=done,
             refused="%s, so nothing can name it to `/audit:task done`"
                     % (done["refused"],))
 
-    journalled = bool(record_row(project, task_id, phase_id, sha, config=config))
     answer = _scoped_commit.answer(skipped, committed=True, commit=sha,
-                                   staged=done["staged"], journalled=journalled)
+                                   staged=done["staged"],
+                                   journalled=done["journalled"], done=done)
     answer["verdict"] = verdict
-    if not overriding:
-        return E_OK, answer
-    answer["overridden"] = True
-    if override_row(project, task_id, phase_id, sha, verdict, override,
-                    config=config):
-        return E_OK, answer
-    # THE COMMIT HAPPENED AND ITS OVERRIDE IS ON NO RECORD. Exit 1 with the SHA
-    # still reported, the unnamed-SHA arm's reason: the operator is owed the one
-    # fact the flag promised, and a success here would be a commit over a red
-    # verdict that nothing points at.
-    answer["refused"] = ("committed %s over the verdict that refused it, and the "
-                         "journal row recording the override could NOT be "
-                         "written - nothing in the trail says this commit went "
-                         "over its gate. The verdict: %s"
-                         % (sha[:12], verdict["sentence"]))
-    return E_FAIL, answer
+    answer["overridden"] = overriding
+    return E_OK, answer
 
 
 def main(argv, out=print):
