@@ -3,8 +3,8 @@
 Cases for `governance/commit-manifest-index.py` — the verb that lands the shared
 index without taking a phase's work with it.
 
-WHAT THIS FILE IS ABOUT, in one line: the commit carries the INDEX and nothing
-else. Every case that proves it carried the index is paired with one that proves
+WHAT THIS FILE IS ABOUT, in one line: the commit carries the INDEX and the journal
+file holding the row that names the commit, and nothing else. Every case that proves it carried the index is paired with one that proves
 it left the shard and the source alone, because either half on its own also
 passes for a command that committed everything, or for one that committed
 nothing. The pairs are asserted against a FRESH CLONE checked out at the commit

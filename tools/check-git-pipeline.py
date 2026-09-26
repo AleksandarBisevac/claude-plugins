@@ -1715,7 +1715,20 @@ def check_index_commit_carries_only_the_index(fx):
 
 def check_squashed_index_commit_is_a_gap(fx):
     """A real `git merge --squash` of a branch holding a work commit and an
-    index commit is reported as a gap naming the squash, never as a breach.
+    index commit is reported as a gap naming the squash, never as a breach."""
+    return _squashed_index_commit(fx, scoped_first=False)
+
+
+def check_squash_ending_in_the_trailer_is_a_gap(fx):
+    """...and so is one of a branch holding the index commit FIRST and work
+    after it, whose squash message therefore ENDS with the index commit's
+    trailer: only the subject header tells that squash from the commit it
+    absorbed."""
+    return _squashed_index_commit(fx, scoped_first=True)
+
+
+def _squashed_index_commit(fx, scoped_first):
+    """The squash check, the scoped commit made before or after the work.
 
     THE CLAIM ONLY GIT CAN MAKE: that the squash message git writes carries the
     index commit's trailer, so the row resolves to the squash commit - whose
@@ -1731,16 +1744,23 @@ def check_squashed_index_commit_is_a_gap(fx):
         git(fx, "add", "-A")
         git(fx, "commit", "-q", "-m", "fixture: the sharded layout")
         git(fx, "checkout", "-q", "-b", "squash-side")
-        with io.open(os.path.join(fx["root"], work.replace("/", os.sep)), "w",
-                     encoding="utf-8") as fh:
-            fh.write("export const work = 1\n")
-        git(fx, "add", "--", work)
-        git(fx, "commit", "-q", "-m", "fix(P1.1): audit - the work")
+
+        def the_work():
+            with io.open(os.path.join(fx["root"], work.replace("/", os.sep)),
+                         "w", encoding="utf-8") as fh:
+                fh.write("export const work = 1\n")
+            git(fx, "add", "--", work)
+            git(fx, "commit", "-q", "-m", "fix(P1.1): audit - the work")
+
+        if not scoped_first:
+            the_work()
         index = read_manifest(fx)
         index["fileIndex"]["src/widened.ts"] = ["P1.1"]
         write_manifest(fx, index)
         code, out = script(fx, "commit-manifest-index.py", MANIFEST_REL, "P1",
                            "--project", ".")
+        if scoped_first:
+            the_work()
 
         def scope():
             manifest = _invariants._mio.load_manifest(
@@ -1755,13 +1775,17 @@ def check_squashed_index_commit_is_a_gap(fx):
         git(fx, "merge", "-q", "--squash", "squash-side")
         git(fx, "commit", "-q", "--no-edit")
         squash = git(fx, "rev-parse", "HEAD")[1].strip()
+        body = git(fx, "log", "-1", "--format=%B")[1].strip().splitlines()
+        ends = bool(body) and body[-1].strip().startswith("Audit-Row: ")
         after = scope()
         ok = (code == 0 and on_side["verdict"] == _invariants.CLEAN
+              and ends == scoped_first
               and after["breaches"] == [] and after["examined"] == 0
               and any(squash[:12] in g for g in after["gaps"]))
-        return ok, ("index commit exit %r (%s); on the branch %r; after the "
-                    "squash %s: %r breaches %r gaps %r"
-                    % (code, (out or "").strip()[:120], on_side["verdict"],
+        return ok, ("index commit exit %r (%s); on the branch %r; squash "
+                    "message ends with the trailer %r; after the squash %s: %r "
+                    "breaches %r gaps %r"
+                    % (code, (out or "").strip()[:120], on_side["verdict"], ends,
                        squash[:12], after["verdict"], after["breaches"],
                        after["gaps"]))
     finally:
@@ -1971,6 +1995,9 @@ CHECKS = (
     ("g23 an index commit squash-merged together with work is a gap naming the "
      "squash commit, never a breach over the work it absorbed",
      check_squashed_index_commit_is_a_gap),
+    ("g24 ...and so is a squash of the index commit FIRST and work after it, "
+     "whose message ends with the trailer - only the subject header stops it",
+     check_squash_ending_in_the_trailer_is_a_gap),
 )
 
 

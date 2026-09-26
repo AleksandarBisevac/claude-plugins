@@ -115,6 +115,41 @@
         "file": "plugins/audit/scripts/governance/commit-audit-state.py",
         "issue": "The added comments write the scoped-commit cardinality into prose ('all three scoped commits share', 'two of the three lists', 'one of the three'). The lint does not match this shape, so it is author-enforced under CLAUDE.md. `_deps` already derives the writer set (every file defining COMMIT_TYPE and COMMIT_SCOPE), so these sentences go stale when a fourth class is added.",
         "resolution": "fix task P73.4-9h1"
+      },
+      {
+        "id": "P73-T1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "No test enforces the header half of the new grading rule. I ran the mutation on a scratch export of HEAD (scratchpad/p73c/mut.py): `scoped = header is None or carrier[\"inLast\"]`, with the pycache purged. It survives test__invariants, test_commit_manifest_index, test_commit_audit_state, test__evidence_io and check-git-pipeline (g23 is still `ok`, exit 0). The reason: every absorbing fixture squashe",
+        "resolution": "fix task P73.5-9h1"
+      },
+      {
+        "id": "P73-T2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "No test covers the audit-state half of the fix. Two mutations survive every suite: dropping `header=STATE_HEADER` from audit_state_commits, and dropping the `absorbed_gaps` line in audit_state_scope. Today the behaviour is right. Probe P10 squash-merges a work commit plus an audit-state commit and gets `no-basis` with a gap naming the squash. But nothing would notice if it regressed. Both scope ch",
+        "resolution": "fix task P73.5-9h1"
+      },
+      {
+        "id": "P73-T3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "The gap sentence claims more than the check observed. It always says 'commit X absorbed [the commit the row names] ... so the commit the row named is not in this history'. All the check knows is that X's subject does not open with the header, or that the trailer is not in X's last paragraph. I probed two cases where the sentence is false. (a) A genuine scoped commit whose message gains a trailing ",
+        "resolution": "fix task P73.5-9h1"
+      },
+      {
+        "id": "P73-T4",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md",
+        "issue": "'(`_scoped_commit.commit_with_rows`, shared by all three scoped commits)' was added in this phase. It is the same counted-prose class as S7, which P73.4 reworded only in .py comments. The lint does not match this shape, so it is author-enforced under CLAUDE.md, and `_deps` already derives the writer set.",
+        "resolution": "fix task P73.5-9h1"
+      },
+      {
+        "id": "P73-T5",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_commit_manifest_index.py",
+        "issue": "The suite's own 'what this file is about' line still says 'the commit carries the INDEX and nothing else'. That is the S2/R3 class, left in the suite of the very command whose contract changed. Claim 3's grep covered the guide, reference/, commands/, README and governance/, but not tests/. cmi13 at :431 ('it is the index alone') is correct, because stage_targets' list really is the index by itself",
+        "resolution": "fix task P73.5-9h1"
       }
     ]
   },
@@ -372,6 +407,64 @@
         "test__evidence_io em14",
         "check-git-pipeline g23"
       ]
+    },
+    {
+      "id": "P73.5-9h1",
+      "title": "Round-3 review findings: the subject-header half of absorbed-carrier grading is tested, and the gap says which test failed",
+      "status": "in_progress",
+      "description": "Round-3 phase review findings, all to be fixed. Orchestrator decisions: (T1) add it14 - a side branch with the index commit FIRST and a work commit after it, squashed, so the trailer ends the squash message and only the subject header stops a breach - plus the same shape as a real-git case in check-git-pipeline, both proven red by an only-inLast mutation. (T2) cases for the audit-state half: STATE_HEADER grading and the gap line in audit_state_scope, each proven red. (T3) the gap names which test the carrier failed (subject header, or trailer outside the last paragraph) and says 'not in this history' only when no scoped carrier for that row resolved; a case for a genuine commit with an appended note paragraph and one for a row with both a squash and a reachable scoped commit. (T4, T5) the counted guide sentence and the stale test docstring reworded.\nR1 (med) plugins/audit/scripts/governance/_invariants.py:627-628 (the `subject.startswith(header)` half of `scoped`); plugins/audit/tests/test__invariants.py:1688-1771 (it10-it13); tools/check-git-pipeline.py:1716-1778 (g23): No test enforces the header half of the new grading rule. I ran the mutation on a scratch export of HEAD (scratchpad/p73c/mut.py): `scoped = header is None or carrier[\"inLast\"]`, with the pycache purged. It survives test__invariants, test_commit_manifest_index, test_commit_audit_state, test__evidence_io and check-git-pipeline (g23 is still `ok`, exit 0). The reason: every absorbing fixture squashes a branch whose index commit is the NEWEST commit. git's SQUASH_MSG lists commits newest first, so the trailer never lands in the last paragraph, and the inLast test alone makes the carrier absorbed. The case only the header decides is a side branch holding the index commit and then work (a follow-up fix after the index commit). I probed it (scratchpad/p73c/probe_carriers.py, P6): the index commit's indented trailer ends the squash message, so inLast is true, and only the subject 'Squashed commit of the following:' keeps the squash from being graded as a breach. Claim 2's '7/7 rows red' has no row for this half. -> Add an it14 with the P6 shape (index commit, then a work commit, then `git merge --squash`) and assert a gap naming the squash and no breach. Prove it red with the mutation above.\nR2 (low) plugins/audit/scripts/governance/_invariants.py:672-675 (audit_state_commits header=STATE_HEADER), 706 (audit_state_scope gaps.extend(absorbed_gaps...)): No test covers the audit-state half of the fix. Two mutations survive every suite: dropping `header=STATE_HEADER` from audit_state_commits, and dropping the `absorbed_gaps` line in audit_state_scope. Today the behaviour is right. Probe P10 squash-merges a work commit plus an audit-state commit and gets `no-basis` with a gap naming the squash. But nothing would notice if it regressed. Both scope checks share recorded_commits, but each one wires its own header and its own gap line. -> Add the audit-state twin of it10: a squash of a work commit plus a trailer-carrying audit-state commit, asserting a gap naming the squash and no breach. Prove it red with each of the two mutations.\nR3 (low) plugins/audit/scripts/governance/_invariants.py:648-658 (absorbed_gaps sentence): The gap sentence claims more than the check observed. It always says 'commit X absorbed [the commit the row names] ... so the commit the row named is not in this history'. All the check knows is that X's subject does not open with the header, or that the trailer is not in X's last paragraph. I probed two cases where the sentence is false. (a) A genuine scoped commit whose message gains a trailing paragraph that is not a trailer. P3 is a commit-msg hook that appends a note; P4 is an amend or reword that adds a note. Grading is lost, and the operator is told the commit is not in this history when X IS that commit. (b) P8: a genuine carrier is also reachable and was graded (examined 1, verdict partial), yet the sentence still says the commit is not in this history. The direction is loud in both: never `clean`, never a hidden pass. These keep grading: `--amend --signoff`, a Gerrit-style `interpret-trailers` hook, `cherry-pick -x`, amend `--no-edit`, a trailer with no co-author (P1, P2, P3b, P5 are all clean with examined 1). The writers' final paragraph is a conforming trailer block (`git interpret-trailers --parse` on 9df3c9c5 returns both lines), so git's own trailer appenders join it rather than starting a new paragraph. -> Say what was observed: which of the two tests failed, taken from the carrier (a subject lacking the header, or a trailer outside the last paragraph). Say 'absorbed' only as the most common cause. Say 'the commit the row named is not in this history' only when no scoped carrier resolved for that nonce. When one did (P8), say that commit was graded and name the extra carrier. Consider a case for (a), so a future loosening is a decision rather than an accident.\nR4 (low) PLUGIN-BUILD-GUIDE.md:3158: '(`_scoped_commit.commit_with_rows`, shared by all three scoped commits)' was added in this phase. It is the same counted-prose class as S7, which P73.4 reworded only in .py comments. The lint does not match this shape, so it is author-enforced under CLAUDE.md, and `_deps` already derives the writer set. -> 'shared by every scoped commit'.\nR5 (low) plugins/audit/tests/test_commit_manifest_index.py:6-7: The suite's own 'what this file is about' line still says 'the commit carries the INDEX and nothing else'. That is the S2/R3 class, left in the suite of the very command whose contract changed. Claim 3's grep covered the guide, reference/, commands/, README and governance/, but not tests/. cmi13 at :431 ('it is the index alone') is correct, because stage_targets' list really is the index by itself before `carry` widens it. -> Reword to 'the INDEX and the journal file holding the row that names the commit, and nothing else'.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "tools/check-git-pipeline.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: repro that FAILS on current code - a gap for a genuine commit with an appended note paragraph says it is not in this history"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T09:50:02Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T04:55:13Z"

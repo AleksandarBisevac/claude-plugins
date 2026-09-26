@@ -569,9 +569,12 @@ def recorded_commits(project, phase_id, action, noun, config=None,
     A CARRIER IS NOT ALWAYS THE COMMIT. With `header` given, a commit carrying
     the trailer is returned in `shas` only when its subject opens with `header`
     and the trailer is in its last paragraph; any other carrier - a squash, a
-    commit that absorbed the scoped one - is in `absorbed` as `(nonce, sha)`,
-    graded by nobody and reported as a gap, because its file list is not the
-    scoped commit's and grading it would be a breach nothing made.
+    commit that absorbed the scoped one - is in `absorbed`, graded by nobody and
+    reported as a gap, because its file list need not be the scoped commit's
+    and grading it would be a breach nothing made. Each entry is
+    `{"nonce", "sha", "failed", "graded"}`: which of the two tests the carrier
+    failed (`"header"`, `"last"`), and the scoped commits that DID resolve for
+    that row, so the gap can say what was observed rather than a cause.
 
     FOUND THROUGH THE JOURNAL AND NOWHERE ELSE, because there is nowhere else:
     neither an audit-state commit nor a manifest-index commit is a `task.commit`,
@@ -623,13 +626,21 @@ def recorded_commits(project, phase_id, action, noun, config=None,
         return None, 0, why, [], []
     absorbed = []
     for nonce in pending:
+        graded, others = [], []
         for carrier in found.get(nonce, []):
-            scoped = header is None or (carrier["subject"].startswith(header)
-                                        and carrier["inLast"])
-            if not scoped:
-                absorbed.append((nonce, carrier["sha"]))
-            elif carrier["sha"] not in shas:
+            failed = [] if header is None else (
+                ([] if carrier["subject"].startswith(header) else ["header"])
+                + ([] if carrier["inLast"] else ["last"]))
+            if failed:
+                others.append({"nonce": nonce, "sha": carrier["sha"],
+                               "failed": failed})
+                continue
+            graded.append(carrier["sha"])
+            if carrier["sha"] not in shas:
                 shas.append(carrier["sha"])
+        for other in others:
+            other["graded"] = list(graded)
+            absorbed.append(other)
     return (shas, unnamed, "", [n for n in pending if not found.get(n)],
             absorbed)
 
@@ -646,15 +657,40 @@ def unresolved_gap(unresolved, noun):
 
 
 def absorbed_gaps(absorbed, noun, header):
-    """One gap per commit that carries a row's trailer without BEING the commit
-    the row names, naming it: its files are not graded as that commit's."""
-    return ["the row keyed %s names %s that commit %s absorbed - it carries the "
-            "`%s` trailer but its subject does not open with `%s` or the trailer "
-            "is not in its last paragraph (a squash merge, most often) - so the "
-            "commit the row named is not in this history, and %s's files are "
-            "not graded as its" % (nonce, noun, sha[:12], ROW_TRAILER, header,
-                                   sha[:12])
-            for nonce, sha in absorbed]
+    """One gap per commit that carries a row's trailer and was not graded as
+    the commit the row names, saying which test it failed and what that leaves.
+
+    OBSERVED, NOT DIAGNOSED. The check knows only that the carrier's subject
+    does not open with `header`, or that the trailer is not in its last
+    paragraph; a squash merge absorbing the scoped commit is the common cause,
+    a note appended after the trailer block is another, and the sentence names
+    the cause as the likely one rather than as the fact. "Not in this history"
+    is said only when no scoped carrier resolved for the row; when one did, that
+    commit was graded and is named."""
+    out = []
+    for entry in absorbed:
+        failed = entry.get("failed") or []
+        tests = []
+        if "header" in failed:
+            tests.append("its subject does not open with `%s`" % (header,))
+        if "last" in failed:
+            tests.append("the trailer is not in its last paragraph")
+        why = " and ".join(tests)
+        graded = entry.get("graded") or []
+        if graded:
+            tail = ("The row resolved to %s, graded as %s; %s's files were "
+                    "not" % (", ".join(sha[:12] for sha in graded), noun,
+                             entry["sha"][:12]))
+        else:
+            tail = ("No carrier of it passed both tests, so the commit the "
+                    "row names is not in this history as a commit of its own, "
+                    "and %s's files are not graded as its" % (entry["sha"][:12],))
+        out.append("commit %s carries the `%s` trailer of the row keyed %s but "
+                   "was not graded as %s: %s - most often a squash merge that "
+                   "absorbed it, or a note added after the trailer. %s"
+                   % (entry["sha"][:12], ROW_TRAILER, entry["nonce"], noun, why,
+                      tail))
+    return out
 
 
 STATE_NOUN = "an audit-state commit"

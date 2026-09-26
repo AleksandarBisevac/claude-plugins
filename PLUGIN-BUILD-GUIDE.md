@@ -3155,7 +3155,7 @@ configures, and a fixed spelling no manifest can move is exactly what this buys.
 `audit.state.committed` journal row whose `details` carry `commitNonce` and `phaseId`, ends the
 commit message with an `Audit-Row: <nonce>` trailer, and stages the row with the rest — so the
 row is in the commit it names and the run leaves no trail behind (`_scoped_commit.commit_with_rows`,
-shared by all three scoped commits). A row inside a commit cannot hold that commit's SHA, which is
+shared by every scoped commit). A row inside a commit cannot hold that commit's SHA, which is
 why it holds the nonce; `_invariants.audit_state_scope()` resolves it with `git log --grep`, which a
 rebase does not break. A commit refused after the row was written — a hook, git itself — leaves an
 `audit.commit.withdrawn` row naming the nonce, and a reader drops a withdrawn nonce instead of

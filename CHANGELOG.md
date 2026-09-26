@@ -305,7 +305,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   commit carrying a row's trailer is now graded as the scoped commit only when its subject opens
   with the class's header (`_invariants.INDEX_HEADER` / `STATE_HEADER`, pinned equal to each
   writer's own type and scope) and the trailer is a line of its last paragraph, indented or not.
-  Any other carrier is a gap naming the absorbing commit - never graded, and never a pass. The
+  Any other carrier is a gap naming it and the test it failed - the header, or the trailer's
+  place - never graded, and never a pass; it says the named commit is not in this history only
+  when no carrier of the row passed both tests, and names the graded one when one did. This
+  holds for a squash whose message ends with the index commit's trailer (the index commit made
+  before the work), where only the subject header tells the two apart. The
   index commit's breach sentence and the docs now say it carries the index and the journal file
   holding its row; the ledger merge names the shard that would not parse, when it is a shard.
 - **`audit-journal.py merge` resolves the evidence ledger too.** The ledger is hash-chained with

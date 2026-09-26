@@ -1686,24 +1686,46 @@ def _parent_is_main(manifest):
 
 
 # --- a row whose commit another commit absorbed ---------------------------------
-def _squashed_side(tmp, name, message=None):
-    """A clean side branch - a work commit, then an index commit carrying its
-    own row - squash-merged onto the phase branch. Returns (fx, squash sha)."""
+def _squashed_side(tmp, name, message=None, scoped_first=False, kind="index"):
+    """A clean side branch - a work commit and a scoped commit carrying its own
+    row - squash-merged onto the phase branch. Returns (fx, squash sha).
+
+    `scoped_first` puts the scoped commit BEFORE the work: git lists squashed
+    commits newest first, so its trailer then ENDS the squash message and only
+    the subject header tells the squash from the commit it absorbed. `kind` is
+    "index" (a manifest-index commit) or "state" (an audit-state commit)."""
     root = os.path.join(tmp, name)
     os.makedirs(root)
     fx = build(root)
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
     _git(root, "checkout", "-q", "-b", "side")
-    _write(os.path.join(root, "src", "a.py"), "a = 42\n")
-    _git(root, "add", "--", "src/a.py")
-    _git(root, "commit", "-q", "-m", "fix(P1.2): audit - work")
-    index = _mio.read_json(fx["manifest"])
-    index["fileIndex"]["src/widened.py"] = ["P1.2"]
-    _write_json(fx["manifest"], index)
-    _nonce_row(root, M.ACTION_INDEX_COMMITTED, "5a5a000000000001",
-               "docs/audit/audit-plan.json")
-    _commit_carrying(root, ["docs/audit/audit-plan.json", "docs/audit/journal"],
-                     "chore(audit-index): phase P1 - fixture", "5a5a000000000001")
+
+    def work():
+        _write(os.path.join(root, "src", "a.py"), "a = 42\n")
+        _git(root, "add", "--", "src/a.py")
+        _git(root, "commit", "-q", "-m", "fix(P1.2): audit - work")
+
+    def scoped():
+        if kind == "state":
+            _evidence_file(fx["audit"], "failed")
+            _nonce_row(root, M.ACTION_STATE_COMMITTED, "5a5a000000000001",
+                       "docs/audit/evidence")
+            _commit_carrying(root, ["docs/audit/evidence", "docs/audit/journal"],
+                             "chore(audit-state): phase P1 - fixture",
+                             "5a5a000000000001")
+            return
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/widened.py"] = ["P1.2"]
+        _write_json(fx["manifest"], index)
+        _nonce_row(root, M.ACTION_INDEX_COMMITTED, "5a5a000000000001",
+                   "docs/audit/audit-plan.json")
+        _commit_carrying(root, ["docs/audit/audit-plan.json",
+                                "docs/audit/journal"],
+                         "chore(audit-index): phase P1 - fixture",
+                         "5a5a000000000001")
+
+    for step in ((scoped, work) if scoped_first else (work, scoped)):
+        step()
     _git(root, "checkout", "-q", branch)
     _git(root, "merge", "-q", "--squash", "side")
     if message is None:
@@ -1766,6 +1788,85 @@ def _carrier_cases(check):
               "%r / examined %r / %r"
               % (scope["verdict"], scope["examined"], scope["gaps"]),
               scope["verdict"] == M.CLEAN and scope["examined"] == 1)
+
+        # THE ORDER ONLY THE HEADER DECIDES: the index commit first and work
+        # after it, so the squash message ENDS with the index commit's trailer.
+        fx, squash = _squashed_side(tmp, "squash-scoped-first",
+                                    scoped_first=True)
+        body = _git(fx["root"], "log", "-1", "--format=%B").strip()
+        scope = _check(_phase_answer(fx), "index-scope")
+        check("it14 a squash whose message ENDS with the index commit's trailer "
+              "- the index commit first, then work - is still a gap naming the "
+              "squash and no breach: its subject lacks the class header, and "
+              "that is the only thing telling it from the commit it absorbed: "
+              "%r / %r / last line %r"
+              % (scope["breaches"], scope["gaps"], body.splitlines()[-1:]),
+              body.splitlines()[-1].strip().startswith(M.ROW_TRAILER)
+              and scope["breaches"] == [] and scope["examined"] == 0
+              and any(squash[:12] in g for g in scope["gaps"]))
+
+        # THE AUDIT-STATE HALF, which wires its own header and its own gap line.
+        fx, squash = _squashed_side(tmp, "squash-state", kind="state")
+        state = _check(_phase_answer(fx), "audit-state-scope")
+        check("it15 an audit-state commit squash-merged together with work is a "
+              "gap naming the squash and no breach, as the index half is: "
+              "%r / %r / %r"
+              % (state["verdict"], state["breaches"], state["gaps"]),
+              state["breaches"] == [] and state["examined"] == 0
+              and any(squash[:12] in g for g in state["gaps"]))
+
+        # A GENUINE COMMIT WHOSE MESSAGE GAINED A NOTE after its trailer block.
+        root = os.path.join(tmp, "noted")
+        os.makedirs(root)
+        fx = build(root)
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/widened.py"] = ["P1.2"]
+        _write_json(fx["manifest"], index)
+        _nonce_row(root, M.ACTION_INDEX_COMMITTED, "7c7c000000000003",
+                   "docs/audit/audit-plan.json")
+        _git(root, "add", "--", "docs/audit/audit-plan.json",
+             "docs/audit/journal")
+        _git(root, "commit", "-q", "-m", "chore(audit-index): phase P1 - fixture",
+             "-m", "%s: 7c7c000000000003" % (M.ROW_TRAILER,),
+             "-m", "a note a commit-msg hook appended")
+        noted = _head(root)
+        scope = _check(_phase_answer(fx), "index-scope")
+        gap = " ".join(scope["gaps"])
+        check("it16 a genuine index commit whose message gained a paragraph after "
+              "its trailer is not graded, and the gap says WHICH test it failed - "
+              "the trailer is not in its last paragraph - naming it, and does "
+              "not claim its subject lacks the header: %r" % (scope["gaps"],),
+              scope["breaches"] == [] and noted[:12] in gap
+              and "not in its last paragraph" in gap
+              and "subject does not open" not in gap)
+
+        # A ROW WITH A SCOPED COMMIT THAT RESOLVED *AND* A SECOND CARRIER.
+        root = os.path.join(tmp, "both")
+        os.makedirs(root)
+        fx = build(root)
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"]["src/widened.py"] = ["P1.2"]
+        _write_json(fx["manifest"], index)
+        _nonce_row(root, M.ACTION_INDEX_COMMITTED, "8d8d000000000004",
+                   "docs/audit/audit-plan.json")
+        genuine = _commit_carrying(root, ["docs/audit/audit-plan.json",
+                                          "docs/audit/journal"],
+                                   "chore(audit-index): phase P1 - fixture",
+                                   "8d8d000000000004")
+        _git(root, "commit", "-q", "--allow-empty", "-m",
+             "Squashed commit of the following:", "-m",
+             "    chore(audit-index): phase P1 - fixture\n\n"
+             "    %s: 8d8d000000000004" % (M.ROW_TRAILER,))
+        extra = _head(root)
+        scope = _check(_phase_answer(fx), "index-scope")
+        gap = " ".join(scope["gaps"])
+        check("it17 when the row's scoped commit resolved and was graded and a "
+              "SECOND commit also carries its trailer, the gap names both - the "
+              "graded one as graded - and does not say the commit is not in this "
+              "history: %r / examined %r" % (scope["gaps"], scope["examined"]),
+              scope["examined"] == 1 and extra[:12] in gap
+              and genuine[:12] in gap and "not in this history" not in gap
+              and "subject does not open" in gap)
     finally:
         _harness.remove_tree(tmp)
 
