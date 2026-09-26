@@ -296,6 +296,41 @@ def _cases(check):
         check("f1 warn payload serializes",
               verdict == "warn" and json.loads(blob)["hookSpecificOutput"][
                   "additionalContext"].startswith("[tdd-reminder]"))
+
+        # (tf) A LINKED WORKTREE IS NOT OUTSIDE THE REPOSITORY. The reminder
+        #      read `within_root` alone, so every edit an executor made in a
+        #      phase worktree beside the checkout was "outside" and silent - and
+        #      the plan it would have consulted was the main tree's anyway.
+        _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "tdd-worktree-")
+        if not _tf_ok:
+            check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
+            _tf_sd = Path(_tf["root"]) / "state"
+            _tf_all = dict(cfg, tddReminder=dict(
+                _config.DEFAULTS["tddReminder"], inProgressPolicy="skip-all"))
+
+            def _tf_decide(rel, sid, use_cfg):
+                ok, got = _harness.attempt(
+                    M.decide, {"tool_name": "Edit", "session_id": sid,
+                               "cwd": _tf["main"], "tool_input": {
+                                   "file_path": os.path.join(_tf["wt"], rel)}},
+                    cfg=use_cfg, state_dir=_tf_sd, now=t0)
+                return got if ok else ("EXC", got)
+            _v = _tf_decide("src/undeclared.ts", "tdd-tf-1", cfg)
+            check("tf1 a source edit in a linked worktree gets the reminder - "
+                  "it is this project's source, one tree over",
+                  _v[0] == "warn", repr(_v))
+            _v = _tf_decide("src/app.ts", "tdd-tf-2", _tf_all)
+            check("tf2 ...and the WORKTREE's plan is the one asked: under "
+                  "skip-all its running task covers src/app.ts, which the main "
+                  "tree's plan does not declare",
+                  _v[0] == "silent" and "covered" in _v[1], repr(_v))
+            _v = _tf_decide("src/other.ts", "tdd-tf-3", _tf_all)
+            check("tf3 ...while the file only the MAIN tree's plan covers is "
+                  "not silenced in the worktree - the direction that fails if "
+                  "both plans were read", _v[0] == "warn", repr(_v))
+            os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
     finally:
         # In `finally` because `_harness.run` now CATCHES an escaping exception and
         # carries on printing: a leaked CLAUDE_PROJECT_DIR would then be read by

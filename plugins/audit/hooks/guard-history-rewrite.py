@@ -166,6 +166,13 @@ import _config  # noqa: E402  (hooks resolve scripts/ by basename through here)
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
 EVAL_WRAPPERS = ("eval",)
 
+# Programs that run their argument's text as a program read from a here-string
+# (`sh <<<'...'`, `python3 <<<'...'`): the word is graded as a command, through
+# the same door as a shell's `-c`. A shell's word is shell; an interpreter's is
+# code, read the way the heredoc body fed to it is.
+HERESTRING_READERS = SHELLS + ("python", "python3", "node", "nodejs", "ruby",
+                               "perl", "php", "deno", "bun")
+
 # Global options that take a SEPARATE value, so the value cannot be mistaken for
 # the verb: `git -C <path> rebase` is a rebase, and `<path>` is not the verb.
 GLOBAL_VALUE_OPT = ("-C", "-c", "--git-dir", "--work-tree", "--namespace",
@@ -226,8 +233,19 @@ def shell_words(command):
     into unbalanced halves, `shlex` would raise, and every multi-line commit
     message would land in the conservative text fallback.
     """
+    pieces, parsed = _shell_pieces(command)
+    return ([None if sep else piece for piece, sep in pieces], parsed)
+
+
+def _shell_pieces(command):
+    """(pieces, parsed) - `shell_words` before the separators lose their
+    spelling: each piece is (text, is_separator). `git_calls` needs to know
+    WHICH separator ends a command, because a pipe hands the command's output
+    to whatever is on its far side and a `;` does not."""
     try:
-        lex = shlex.shlex(command or "", posix=True)
+        # The shell removes backslash-newline before it reads a word, so this
+        # does too: kept, the escaped newline split one pipeline into two.
+        lex = shlex.shlex(_config.join_continuations(command or ""), posix=True)
         lex.whitespace_split = True
         lex.commenters = ""          # `shlex.split(comments=False)` does this too
         lex.whitespace = " \t\r"     # `\n` stays IN the token, for _SEP_SPLIT
@@ -239,7 +257,7 @@ def shell_words(command):
         for piece in _SEP_SPLIT.split(word):
             if not piece:
                 continue
-            out.append(None if _SEP_ONLY.match(piece) else piece)
+            out.append((piece, bool(_SEP_ONLY.match(piece))))
     return (out, True)
 
 
@@ -310,8 +328,104 @@ def help_requested(args):
     return False
 
 
+# The verb of a `git` that `xargs` runs with no verb on its own command line:
+# the verb arrives on stdin, which this guard cannot read. A value, not an
+# absence, because `echo stash | xargs git` is an operation this hook cannot
+# name - refused while a plan exists, like a stash (see `decide`).
+STDIN_VERB = "<stdin>"
+
+
+def _quoted_substitutions(text):
+    """The bodies of every `$(...)` and backquote INSIDE DOUBLE QUOTES in
+    `text` - commands the shell runs that the lexer returns as one word.
+
+    `echo "$(git stash)"` came back from `shlex` as the single word
+    `$(git stash)`, split at its parentheses into `git stash` with a space in
+    it, which is not the word `git`: the stash ran unread, and so did
+    `eval "$(echo ...)"` and `sh -c "$(echo ...)"`. An unquoted substitution
+    needs none of this - its parentheses are separators already. A single-
+    quoted one is literal text and is skipped.
+
+    -> the bodies, or None when a substitution never closes - an unreadable
+    command, which the caller hands to the raw-text reading rather than
+    reading as one that runs nothing. Quotes and escapes INSIDE `$( )` are
+    tracked, so a quoted `)` does not end it early."""
+    out, quote, i, n = [], None, 0, len(text)
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            i += 1
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == '"':
+            quote = None if quote == '"' else '"'
+            i += 1
+            continue
+        if ch == "'" and quote is None:
+            quote = "'"
+            i += 1
+            continue
+        if quote == '"' and text.startswith("$(", i):
+            j = _substitution_end(text, i + 2)
+            if j is None:
+                return None
+            out.append(text[i + 2:j])
+            i = j + 1
+            continue
+        if quote == '"' and ch == "`":
+            j = text.find("`", i + 1)
+            if j < 0:
+                return None
+            out.append(text[i + 1:j])
+            i = j + 1
+            continue
+        i += 1
+    return out
+
+
+def _substitution_end(text, start):
+    """The index of the `)` that closes a `$(` whose body starts at `start`, or
+    None when it never closes. Parentheses count only outside quotes, and a
+    backslash escapes the character after it, which is how the shell reads the
+    body too."""
+    depth, quote, j, n = 1, None, start, len(text)
+    while j < n:
+        ch = text[j]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+        elif ch == "\\":
+            j += 1
+        elif quote == '"':
+            if ch == '"':
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return None
+
+
 def git_invocations(command, depth=0):
-    """[(verb, [args]), ...] for every `git` this command RUNS, or None.
+    """[(verb, [args]), ...] for every `git` this command RUNS, or None - the
+    `git_calls` answer without the directory each one runs in."""
+    calls = git_calls(command, depth)
+    return None if calls is None else [(verb, args) for verb, args, _d in calls]
+
+
+def git_calls(command, depth=0):
+    """[(verb, [args], dir), ...] for every `git` this command RUNS, or None.
+    `dir` is the `-C` value the invocation names, joined when there are
+    several, or None - the directory git runs in is part of what it does.
 
     None means the command could not be parsed - the signal for the text
     fallback. An empty LIST means it parsed and runs no git, which is the
@@ -332,10 +446,40 @@ def git_invocations(command, depth=0):
     what makes it impossible for one arm to forget, and the recursion below
     re-enters the same door, so no nesting depth is graded by a different rule.
     """
-    words, parsed = shell_words(runnable(command))
+    text = runnable(command)
+    pieces, parsed = _shell_pieces(text)
     if not parsed:
         return None
+    words = [None if sep else piece for piece, sep in pieces]
     out = []
+    # A here-string's word fed to a shell or an interpreter is the program it
+    # runs: `sh <<<'git stash'` is a stash spelled as one quoted word.
+    for at, (piece, sep) in enumerate(pieces):
+        if not (sep and piece == "<<<") or depth >= _MAX_NEST:
+            continue
+        if at + 1 >= len(pieces) or pieces[at + 1][1]:
+            continue
+        start = at
+        while start > 0 and not pieces[start - 1][1]:
+            start -= 1
+        if start < at and program_name(pieces[start][0]) in HERESTRING_READERS:
+            nested = git_calls(pieces[at + 1][0], depth + 1)
+            if nested is None:
+                return None
+            out.extend(nested)
+    # A substitution inside double quotes is one word to the lexer and a
+    # command to the shell, so its body is read as one. A body this cannot
+    # read makes the whole command unreadable (None), which sends every arm to
+    # its raw-text reading - never to a reading that contributes nothing.
+    if depth < _MAX_NEST:
+        inners = _quoted_substitutions(_config.join_continuations(text))
+        if inners is None:
+            return None
+        for inner in inners:
+            nested = git_calls(inner, depth + 1)
+            if nested is None:
+                return None
+            out.extend(nested)
     index, total = 0, len(words)
     while index < total:
         word = words[index]
@@ -348,7 +492,7 @@ def git_invocations(command, depth=0):
             while scan < total and words[scan] is not None:
                 if _is_shell_command_flag(words[scan]) and scan + 1 < total \
                         and words[scan + 1]:
-                    nested = git_invocations(words[scan + 1], depth + 1)
+                    nested = git_calls(words[scan + 1], depth + 1)
                     out.extend(nested or [])
                     break
                 scan += 1
@@ -360,28 +504,41 @@ def git_invocations(command, depth=0):
             scan = index + 1
             while scan < total and words[scan] is not None:
                 if not words[scan].startswith("-"):
-                    out.extend(git_invocations(words[scan], depth + 1) or [])
+                    out.extend(git_calls(words[scan], depth + 1) or [])
                     break
                 scan += 1
         if program != "git":
             index += 1
             continue
         index += 1
+        cdir = None
         while index < total and words[index] is not None \
                 and words[index].startswith("-"):
-            takes_value = words[index] in GLOBAL_VALUE_OPT
+            opt = words[index]
+            takes_value = opt in GLOBAL_VALUE_OPT
             index += 1
             if takes_value and index < total and words[index] is not None:
+                if opt == "-C":
+                    cdir = (words[index] if cdir is None
+                            else os.path.join(cdir, words[index]))
                 index += 1
         if index >= total or words[index] is None:
-            continue                       # `git` with no verb after it
+            # `git` with no verb after it - unless `xargs` runs it, in which
+            # case the verb comes from stdin and is an operation unread.
+            start = index - 1
+            while start > 0 and words[start - 1] is not None:
+                start -= 1
+            if "xargs" in [program_name(w) for w in words[start:index]
+                           if w is not None]:
+                out.append((STDIN_VERB, [], cdir))
+            continue
         verb = words[index]
         index += 1
         args = []
         while index < total and words[index] is not None:
             args.append(words[index])
             index += 1
-        out.append((verb, args))
+        out.append((verb, args, cdir))
     return out
 
 
@@ -677,6 +834,27 @@ def recorded_shas(root, cfg):
     return out
 
 
+def reset_targets(command):
+    """[(target, index)] for EVERY `git reset --hard` this command runs - the
+    index is the call's position in `git_calls(command)`, which `call_trees`
+    pairs with its tree, or None when the command will not parse and the
+    raw-text reading answered. Every reset is graded: the second of
+    `git reset --hard && git reset --hard HEAD~5` orphans commits the first
+    never touched."""
+    calls = git_calls(command)
+    if calls is None:
+        target = reset_target(command)
+        return [] if target is None else [(target, None)]
+    out = []
+    for index, call in enumerate(calls):
+        verb, args = call[0], call[1]
+        if verb != "reset" or not _has_option(args, "--hard") \
+                or help_requested(args):
+            continue
+        out.append((next((a for a in args if not a.startswith("-")), ""), index))
+    return out
+
+
 def reset_target(command):
     """The ref a `git reset --hard` names, or "" when it names none.
 
@@ -729,6 +907,73 @@ def orphaned_by(root, git_root, target, shas):
     return lost
 
 
+def command_roots(project, trees):
+    """The trees whose plans this command's git invocations answer to: the
+    project first, then each linked worktree of it that one of them runs in.
+
+    WHERE GIT RUNS IS PART OF WHAT IT DOES. `git -C <dir>` runs in `<dir>`,
+    resolved from wherever the shell stands; the shell stands where the
+    payload's `cwd` says, moved by any `cd` the command makes first
+    (`_config.effective_cwd`, the reading `guard-secrets-read` places its write
+    targets with). `_config.tree_for` then says whose tree each directory is.
+    The recorded SHAs a worktree's plan holds are the commits ITS tasks made,
+    which the project's copy does not carry until a merge - reading only the
+    project's let a rebase of the worktree branch orphan them unrefused.
+
+    The project stays first whatever the command did, and the union is the
+    conservative direction for a guard: a commit recorded in either plan is
+    one this command may not orphan. A `-C` value or a `cd` this cannot read
+    adds no tree, which leaves the project's plan standing - never fewer
+    trees than before this existed. `trees` is `call_trees`' answer."""
+    roots = [project]
+    for _call, tree in trees:
+        if tree is not None and all(
+                not _config._same_dir(tree, r) for r in roots):
+            roots.append(tree)
+    return roots
+
+
+def call_trees(data, cfg, project, command, calls):
+    """[(call, the linked worktree it runs in, or None for the project)] -
+    one entry per git invocation, in written order.
+
+    Refs resolve per working tree (`HEAD`, `HEAD~1`, `ORIG_HEAD`), so the tree
+    a reset or an amend is asked about is ITS OWN, not the first one the
+    command reached: in `git -C <a> status; git -C <b> reset --hard HEAD~1`
+    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve places the call
+    in no worktree (None), which is the project - the reading before this
+    existed. An unparseable command (`calls` None) is one call where the shell
+    stands."""
+    base = _config.effective_cwd(runnable(command), (data or {}).get("cwd"))
+    base = base or (data or {}).get("cwd") or ""
+    out = []
+    for call in (calls if calls is not None else [(None, None, None)]):
+        cdir = call[2]
+        if cdir is None:
+            where = base
+        elif not _config.resolvable_destination(cdir):
+            where = ""
+        elif os.path.isabs(cdir) or not base:
+            where = cdir
+        else:
+            where = os.path.join(base, cdir)
+        tree = None
+        if where:
+            placed = _config.tree_for(data, where, cfg, project=project)
+            if placed["moved"] and placed["inside"]:
+                tree = placed["root"]
+        out.append((call, tree))
+    return out
+
+
+def _tree_of_verb(trees, project_git, match):
+    """The git root to ask about the first invocation `match` accepts."""
+    for call, tree in trees:
+        if call[0] is not None and match(call):
+            return tree if tree is not None else project_git
+    return None
+
+
 def decide(data):
     """("deny", reason) or ("allow", "").
 
@@ -747,8 +992,17 @@ def decide(data):
     if not command.strip():
         return ("allow", "")
 
-    root = _config.repo_root(data)
-    cfg = _config.load(root)
+    home = _config.tree_for(data, _config.PROJECT_ONLY)
+    root, cfg = home["project"], home["cfg"]
+
+    # A command that parses and runs no git has nothing any arm below could
+    # refuse - every arm reads `git_calls` - so it is answered before a
+    # manifest is opened or a tree is placed.
+    calls = git_calls(command)
+    if calls == []:
+        return ("allow", "")
+    trees = call_trees(data, cfg, root, command, calls)
+    roots = command_roots(root, trees)
 
     # THE STASH ARM IS DECIDED BEFORE THE SHA CHECK, and the ordering is the
     # difference between the two halves of this hook rather than a preference.
@@ -758,15 +1012,28 @@ def decide(data):
     # runs first and the stat only behind it, because this hook is on every
     # Bash call and `tools/bench-hooks.py --gate` is what keeps it cheap.
     moves = moving_stash(command)
-    if moves and plan_present(root, cfg):
+    if moves and any(plan_present(r, cfg) for r in roots):
         return ("deny", _stash_reason(moves))
+    if any(c[0] == STDIN_VERB for c in (calls or [])) \
+            and any(plan_present(r, cfg) for r in roots):
+        return ("deny", "`xargs git` takes its verb from stdin, which this "
+                        "guard cannot read, so it cannot tell a `git log` from a "
+                        "`git stash` or a force-push. Put the verb on the "
+                        "command line (`xargs git log ...`) and it is graded "
+                        "like any other git command.")
 
-    shas = recorded_shas(root, cfg)
+    shas = []
+    for r in roots:
+        shas.extend(s for s in recorded_shas(r, cfg) if s not in shas)
     if not shas:
         # Nothing to protect. Said here rather than left implicit: the guard is
         # inert on a repo with no trail, and that is an answer, not a miss.
         return ("allow", "")
-    git_root = _config.git_root_dir(root, cfg)
+    # Refs resolve per working tree, so each question below is asked in the
+    # tree of the invocation it is about (`call_trees`); an unparseable
+    # command falls back to the first worktree it reaches, else the project.
+    project_git = _config.git_root_dir(root, cfg)
+    fallback_git = roots[1] if len(roots) > 1 else project_git
 
     why = always_refused(command)
     if why:
@@ -779,13 +1046,16 @@ def decide(data):
                 "so the manifest stops claiming a commit that will not exist."
                 % (why, len(shas)))
 
-    target = reset_target(command)
-    if target is not None:
+    for target, index in reset_targets(command):
         if target == "":
             # The common, legitimate case, and the one this guard exists to keep
             # working: no ref means no branch pointer moves.
-            return ("allow", "")
-        lost = orphaned_by(root, git_root, target, shas)
+            continue
+        reset_git = fallback_git
+        if index is not None and calls and index < len(trees):
+            tree = trees[index][1]
+            reset_git = tree if tree is not None else project_git
+        lost = orphaned_by(root, reset_git, target, shas)
         if lost:
             names = ", ".join("%s (%s)" % (t, s[:12]) for t, s in lost[:3])
             return ("deny",
@@ -798,6 +1068,10 @@ def decide(data):
 
     if amend_requested(command):
         import subprocess
+        git_root = _tree_of_verb(
+            trees, project_git,
+            lambda c: c[0] == "commit" and _has_option(c[1], "--amend")
+            and not help_requested(c[1])) or fallback_git
         head = ""
         try:
             out = subprocess.run(["git", "-C", git_root or root, "rev-parse", "HEAD"],

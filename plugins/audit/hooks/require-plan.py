@@ -701,25 +701,26 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     commit_state = event == "PostToolUse"
 
     ti = data.get("tool_input", {}) or {}
-    root = _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
     if is_mcp:
         # The config has to be loaded before the target can be resolved: which
         # paths are the plan and which extensions are source both come out of it.
         # An edit tool keeps its cheaper order below.
-        file_path, why = _mcp_plan_target(ti, root, cfg)
+        home = _config.tree_for(data, _config.PROJECT_ONLY, cfg)
+        cfg = home["cfg"]
+        file_path, why = _mcp_plan_target(ti, home["project"], cfg)
         if file_path is None:
             return ("allow", why)
     else:
         file_path = ti.get("file_path", "") or ti.get("notebook_path", "")
         if not file_path:
             return ("allow", "no file_path")
+    tree = _config.tree_for(data, file_path, cfg)
+    root, cfg = tree["project"], tree["cfg"]
     threshold = int(cfg.get("trivialLineThreshold") or 80)
     manifest_rel = cfg.get("manifestPath") or "docs/audit/audit-plan.json"
     exempt = cfg.get("exemptGlobs") or []
     sd = state_dir if state_dir is not None else _config.state_dir(root, cfg)
     ld = logs_dir if logs_dir is not None else _config.logs_dir(root, cfg)
-    rel = _rel_path(root, file_path)
 
     # 1b. OUT OF SCOPE IS NOT UNPLANNED. `rel` is os.path.relpath, so a file
     #     outside the consuming repository arrives here as
@@ -745,7 +746,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     nothing here even recorded that a decision was skipped.
     #
     #     So a miss here asks a SECOND, more expensive question before
-    #     concluding anything: `_config.path_tree` asks git whether
+    #     concluding anything: `_config.tree_for` (through `path_tree`) asks git whether
     #     `file_path` sits inside a linked worktree of THIS repository. Three
     #     answers, and only one of them is new:
     #       * a linked worktree of this project -> re-root onto ITS toplevel
@@ -767,31 +768,19 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     Paid for only on this rarer path: the ordinary edit, inside the tree
     #     the session started in, is answered by `within_root` with no process
     #     started at all, exactly as before.
-    if not _config.within_root(root, file_path):
-        placement = _config.path_tree(file_path, root, cfg)
-        if not placement["placed"]:
-            return ("block", _CANNOT_PLACE % (file_path, placement["basis"]))
-        if placement["root"] != str(root):
-            # `placement["root"]` is git's OWN spelling of the worktree's
-            # toplevel (`--show-toplevel`), which git always answers fully
-            # resolved - so pairing it with `file_path` exactly as the tool
-            # payload spelled it can leave a symlinked path component on only
-            # one side of the subtraction. `_rel_path` is a bare
-            # `os.path.relpath`, with no symlink resolution of its own (that
-            # is `within_root`'s job, not this one's), so an unresolved
-            # `file_path` against a resolved root does not cancel down to the
-            # short relative path a manifest's `files` entry actually holds -
-            # it comes back as a `../..` climb back OUT of the worktree,
-            # which no `files` entry could ever match. Resolving `file_path`
-            # here, once, is what keeps both sides of that subtraction in the
-            # same spelling; the messages below still quote the ORIGINAL
-            # `file_path` the tool call named, only `rel` is computed this way.
-            root = Path(placement["root"])
-            rel = _rel_path(root, os.path.realpath(str(file_path)))
-        else:
-            return ("allow",
-                    "outside the repository at %s (%s): %s"
-                    % (root, placement["basis"], file_path))
+    #
+    #     `tree_for` resolves `file_path` before it subtracts the worktree's
+    #     toplevel, because git answers that toplevel fully resolved and a
+    #     symlinked component on one side only would come back as a `../..`
+    #     climb no `files` entry could match. The messages below still quote
+    #     the ORIGINAL `file_path`; only `rel` is computed that way.
+    if not tree["placed"]:
+        return ("block", _CANNOT_PLACE % (file_path, tree["basis"]))
+    if not tree["inside"]:
+        return ("allow",
+                "outside the repository at %s (%s): %s"
+                % (root, tree["basis"], file_path))
+    root, rel = tree["root"], tree["rel"]
 
     # 2a. the manifest itself, its lockfile and its phase shards ARE the plan —
     #     never gated, even when a custom manifestPath falls outside the exempt

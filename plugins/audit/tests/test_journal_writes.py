@@ -443,11 +443,11 @@ def _cases(check):
         entries = M.post_entries(payload("Edit", man_rel, sid="pp-4"), cfg=cfg,
                                  root=pproj)
         sign = [e for e in entries if e.get("action") == "phase.signoff"]
-        check("h6 a phase flipped to done yields a phase.signoff row carrying "
-              "mergedAt",
-              len(sign) == 1 and sign[0]["details"] == {
-                  "phaseId": "P1", "from": "in_progress", "to": "done",
-                  "mergedAt": "2026-08-11T01:00:00Z"}, repr(sign))
+        check("h6 a phase whose stored status is flipped to done, with no "
+              "verdict recorded, is NOT signed off - the flip is on the edit row, "
+              "and a sign-off comes only from the verdict and the merge (h6b-h6d)",
+              sign == [] and any("status in_progress->done" in e.get("summary", "")
+                                 for e in entries), repr(entries))
 
         # A verdict written with no `status` beside it - a plan signed off before
         # the verb stored the derived status, or by hand - reaches done by
@@ -522,10 +522,13 @@ def _cases(check):
                        if e.get("action") == "phase.signoff"])
         _body = M.semantic_diff(manifest_doc(status="done"),
                                 manifest_doc(status="done", phase_status="done"))
-        check("h6h SECOND DIRECTION: the same flip on a phase BODY (it carries its "
-              "tasks) still derives one",
-              len([e for e in (_body or {}).get("events", [])
-                   if e.get("action") == "phase.signoff"]) == 1, repr(_body))
+        check("h6h ...and the same flip on a phase BODY (it carries its tasks) "
+              "derives none either - a stored-status flip is not a sign-off, "
+              "though it is still recorded as the change it is",
+              _body is not None
+              and any(c["field"] == "status" for c in _body["changes"])
+              and not [e for e in _body.get("events", [])
+                       if e.get("action") == "phase.signoff"], repr(_body))
 
         # A completion the journal ALREADY holds - brought in by a merge with the
         # branch's trail - is not recorded again; one it does not hold always is.
@@ -1048,11 +1051,13 @@ def _cases(check):
         _f8_rel = "docs/audit/phases/P4.json"
         _f8_abs = os.path.join(fproj, _f8_rel)
         f_write({"id": "P4", "title": "p", "status": "in_progress",
+                 "branch": "audit/p4", "review": {"status": "passed"},
                  "tasks": [{"id": "P4.1", "title": "t", "status": "in_progress",
                             "commit": None, "completedAt": None}]}, _f8_abs)
         M.pre_cache(f_edit("f-8", _f8_rel), cfg=cfg, root=fproj)
         f_write({"id": "P4", "title": "p", "status": "done",
                  "mergedAt": "2026-08-25T04:00:00Z",
+                 "branch": "audit/p4", "review": {"status": "passed"},
                  "tasks": [{"id": "P4.1", "title": "t", "status": "done",
                             "commit": None,
                             "completedAt": "2026-08-25T04:00:00Z"}]}, _f8_abs)
@@ -1591,6 +1596,353 @@ def _cases(check):
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # (tf) A WORKTREE'S PLAN IS RECORDED IN THE WORKTREE'S JOURNAL. The recorder
+    # spelled every path from CLAUDE_PROJECT_DIR, so a write to a linked
+    # worktree's manifest was "not a manifest path" and a phase finished in a
+    # worktree left no task.complete / task.commit anywhere - the rows the
+    # dedupe reads back after a merge, and the rows `verify` explains a moved
+    # plan with.
+    _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "journal-wt-")
+    if not _tf_ok:
+        check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
+    else:
+        _prev_tf = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
+        _tf_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        _tf_man = os.path.join(_tf["wt"], _tf["manifest_rel"])
+        # Through getattr so a build without it is a failing case, not a
+        # suite that stops at the first reference.
+        _tf_post_rows = getattr(M, "post_rows", None)
+
+        def _tf_finish(task_id, commit):
+            with open(_tf_man, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+            for ph in doc["phases"]:
+                for t in ph["tasks"]:
+                    if t["id"] == task_id:
+                        t.update(status="done", commit=commit,
+                                 completedAt="2026-09-25T10:00:00Z")
+            with open(_tf_man, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, indent=2)
+        try:
+            _tf_edit = {"tool_name": "Edit", "session_id": "tf-e",
+                        "cwd": _tf["main"],
+                        "tool_input": {"file_path": _tf_man, "new_string": "x"}}
+            M.pre_cache(_tf_edit, cfg=_tf_cfg)
+            _tf_finish("P48.1", "a" * 40)
+            _ok, _ents = _harness.attempt(M.post_entries, _tf_edit, cfg=_tf_cfg)
+            _acts = [e.get("action") for e in _ents] if _ok else _ents
+            check("tf1 an Edit of a linked worktree's manifest derives the "
+                  "completion rows, as the same edit in the project does",
+                  _ok and _acts == ["manifest.edit", "task.complete",
+                                    "task.commit"], repr(_acts))
+            _tf_edit2 = dict(_tf_edit, session_id="tf-e3")
+            M.pre_cache(_tf_edit2, cfg=_tf_cfg)
+            _tf_finish("P48.1", "c" * 40)
+            _ok, _rows = _harness.attempt(_tf_post_rows, _tf_edit2, cfg=_tf_cfg)
+            check("tf2 ...and every row is bound for the WORKTREE's journal - "
+                  "the trail rides the branch that did the work",
+                  _ok and _rows and all(
+                      _config._same_dir(r, _tf["wt"]) for r, _e in _rows)
+                  and all(e.get("target") == _tf["manifest_rel"]
+                          for _r, e in _rows), repr([r for r, _e in _rows])
+                  if _ok else _rows)
+            # The Bash lane an agent takes: its shell starts in the session's
+            # directory, so the payload names the MAIN checkout and only the
+            # command's own `cd` says which tree it wrote.
+            _tf_bash = {"tool_name": "Bash", "session_id": "tf-b",
+                        "cwd": _tf["main"], "tool_input": {
+                            "command": "cd %s && python3 audit-task.py done "
+                                       "P41.1" % _tf["wt"]}}
+            M.pre_cache(_tf_bash, cfg=_tf_cfg)
+            _tf_finish("P41.1", "b" * 40)
+            _ok, _rows = _harness.attempt(_tf_post_rows, _tf_bash, cfg=_tf_cfg)
+            _got = ([(e.get("action"), (e.get("details") or {}).get("taskId"))
+                     for _r, e in _rows] if _ok else _rows)
+            check("tf3 a Bash call that walked into the worktree with `cd` "
+                  "derives the completion of the task it finished THERE",
+                  _ok and ("task.complete", "P41.1") in _got
+                  and ("task.commit", "P41.1") in _got, repr(_got))
+            check("tf4 ...into the worktree's journal, and the main tree - "
+                  "whose own P41.1 never moved - is credited with nothing",
+                  _ok and _rows and all(
+                      _config._same_dir(r, _tf["wt"]) for r, _e in _rows),
+                  repr([r for r, _e in _rows]) if _ok else _rows)
+            # The same lane standing still: without the `cd` the command is in
+            # the main tree, and the main tree's plan did not move.
+            _tf_still = dict(_tf_bash, session_id="tf-s",
+                             tool_input={"command": "python3 x.py"})
+            M.pre_cache(_tf_still, cfg=_tf_cfg)
+            _ok, _rows = _harness.attempt(_tf_post_rows, _tf_still, cfg=_tf_cfg)
+            check("tf5 a Bash call that never left the main checkout sweeps the "
+                  "main tree only - the worktree's plan is not every command's "
+                  "business", _ok and _rows == [], repr(_rows))
+            # post_entries keeps its contract: the entries alone.
+            _ok, _ents = _harness.attempt(M.post_entries, dict(
+                _tf_edit, session_id="tf-e2"), cfg=_tf_cfg)
+            check("tf6 post_entries still returns entries alone, whatever tree "
+                  "they are bound for", _ok and isinstance(_ents, list)
+                  and all(isinstance(e, dict) for e in _ents), repr(_ents)[:200])
+        finally:
+            if _prev_tf is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
+
+    # (sg) A SIGN-OFF IS RECORDED BY WHAT SIGNS OFF, AND A ROW BY WHO WROTE IT.
+    # Measured: after the orchestrator stored the derived `done` on its phase
+    # bodies, a DIFFERENT session's hook, on an unrelated Bash call, derived 147
+    # rows under its own session - 105 of them phase.signoff. Two defects: a
+    # stored-status flip was read as a sign-off, and the sweep derived rows from
+    # a digest a peer's write had moved.
+    sg = tempfile.mkdtemp(prefix="journal-signoff-")
+    try:
+        sg_rel = "docs/audit/audit-plan.json"
+        sg_abs = os.path.join(sg, sg_rel)
+        os.makedirs(os.path.dirname(sg_abs))
+        sg_cfg = _config._deep_merge(_config.DEFAULTS, {})
+
+        def sg_doc(stored="in_progress", verdict=None, task="done"):
+            ph = {"id": "P1", "title": "p", "status": stored,
+                  "tasks": [{"id": "P1.1", "title": "t", "status": task,
+                             "commit": "a" * 40, "completedAt": "X"}]}
+            if verdict:
+                ph["review"] = {"status": verdict}
+            return {"meta": {"version": 3}, "phases": [ph]}
+
+        def sg_write(doc):
+            with open(sg_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+
+        def sg_bash(sid, command="ls"):
+            return {"tool_name": "Bash", "session_id": sid, "cwd": sg,
+                    "tool_input": {"command": command}}
+
+        def sg_whole(sid, write=None):
+            """One whole call's rows, Pre's and Post's, in that order - the
+            answer does not depend on which pass a row is written in."""
+            M.pre_cache(sg_bash(sid), cfg=sg_cfg, root=sg)
+            rows = []
+            if write is not None:
+                sg_write(write)
+            return rows + M.post_entries(sg_bash(sid), cfg=sg_cfg, root=sg)
+
+        def sg_call(sid, write=None):
+            """One whole tool call: Pre, the command's own write, Post."""
+            M.pre_cache(sg_bash(sid), cfg=sg_cfg, root=sg)
+            if write is not None:
+                sg_write(write)
+            return M.post_entries(sg_bash(sid), cfg=sg_cfg, root=sg)
+
+        sg_write(sg_doc(verdict="passed"))
+        sg_call("sg-peer")                       # the observer has looked once
+        # ANOTHER session stores the derived done - the settle - between the
+        # observer's calls, and ITS hook records the write; then the observer
+        # runs something unrelated.
+        sg_write(sg_doc(stored="done", verdict="passed"))
+        _journal_io.append(sg, {"action": "manifest.edit", "target": sg_rel,
+                                "summary": "P1: status in_progress->done",
+                                "actor": {"sessionId": "the-peer",
+                                          "via": "hook"}}, sg_cfg)
+        _sg1 = sg_whole("sg-peer")
+        check("sg1 a write another session made between this session's calls "
+              "derives NOTHING here - not a manifest.edit and not a sign-off: "
+              "the row belongs to whoever wrote it, under their session",
+              _sg1 == [], repr([(e.get("action"), e.get("summary"))
+                                for e in _sg1]))
+        _sg1b = sg_call("sg-peer", write=sg_doc(stored="done", verdict="passed",
+                                                task="done"))
+        check("sg1b ...and the absorbed write is not re-derived on the call "
+              "after it either", _sg1b == [], repr(_sg1b))
+        # ...and a write between calls that NO trail row explains - an editor,
+        # a terminal, a background job - is absorbed too: this hook records only
+        # what its own call wrote. That move is not lost: `audit-journal verify`
+        # warns that the file "has changed since the last row that recorded it",
+        # and the doctor reports that warning as out-of-band drift.
+        sg_write(sg_doc(stored="in_progress", verdict="pending", task="in_progress"))
+        sg_call("sg-bg")
+        sg_write(sg_doc(stored="in_progress", verdict="pending", task="done"))
+        _rows5 = sg_whole("sg-bg")
+        check("sg5 a move between calls with no trail row derives nothing here - "
+              "it is not this call's write", _rows5 == [], repr(_rows5))
+        _v5 = _journal_io.verify(sg)
+        check("sg5b ...and verify is what reports it: the tracked file changed "
+              "since the last row that recorded it",
+              any("has changed since the last row that recorded it" in w
+                  for w in _v5.get("warnings", [])), repr(_v5.get("warnings")))
+        # A HAND flip of the stored status, made by this call, is a hand edit.
+        sg_write(sg_doc(stored="in_progress"))
+        sg_call("sg-hand")
+        _sg2 = sg_call("sg-hand", write=sg_doc(stored="done"))
+        check("sg2 a hand flip of `status` to done by this call's own write is "
+              "recorded as the edit it is, and is NOT a sign-off - nothing "
+              "signed the phase off",
+              [e.get("action") for e in _sg2] == ["manifest.edit"]
+              and "status in_progress->done" in _sg2[0].get("summary", ""),
+              repr([(e.get("action"), e.get("summary")) for e in _sg2]))
+        # The signoff verb's write: a verdict on a finished branchless phase.
+        sg_write(sg_doc(verdict="pending"))
+        sg_call("sg-verb")
+        _sg3 = sg_call("sg-verb", write=sg_doc(verdict="passed"))
+        check("sg3 SECOND DIRECTION: the verdict itself, written by this call, "
+              "still yields exactly ONE phase.signoff",
+              [e.get("action") for e in _sg3].count("phase.signoff") == 1,
+              repr([e.get("action") for e in _sg3]))
+        # ...and the settle that follows it, by the same session, adds none.
+        _sg4 = sg_call("sg-verb", write=sg_doc(stored="done", verdict="passed"))
+        check("sg4 storing the derived done after the verdict - the settle - is "
+              "not a second sign-off", "phase.signoff" not in
+              [e.get("action") for e in _sg4], repr(_sg4))
+
+        def _signoffs(old, new):
+            d = M.semantic_diff(old, new) or {}
+            return [e for e in d.get("events", [])
+                    if e.get("action") == "phase.signoff"]
+        _hand = sg_doc(stored="done", verdict="pending")
+        check("sg6 a hand flip BEFORE the verdict does not swallow it: stored "
+              "done with the review pending, then the verdict, is ONE sign-off",
+              len(_signoffs(_hand, sg_doc(stored="done", verdict="passed"))) == 1)
+        _br_old = sg_doc(stored="done", verdict="passed")
+        _br_old["phases"][0]["branch"] = "audit/p1"
+        _br_new = json.loads(json.dumps(_br_old))
+        _br_new["phases"][0]["mergedAt"] = "2026-09-25T12:00:00Z"
+        check("sg7 ...and stored done with a branch, then the merge stamp, is "
+              "ONE sign-off, carrying the merge",
+              [e["details"]["mergedAt"] for e in _signoffs(_br_old, _br_new)]
+              == ["2026-09-25T12:00:00Z"])
+        check("sg8 SECOND DIRECTION: the hand flip itself, before any verdict, "
+              "is none", _signoffs(sg_doc(stored="in_progress", verdict="pending"),
+                                   _hand) == [])
+    finally:
+        shutil.rmtree(sg, ignore_errors=True)
+
+    # (so) EACH CALL RECORDS ONLY WHAT IT WROTE, in every arrival order of the
+    # Posts, and leaves no pending state behind a call whose Post never comes.
+    so = tempfile.mkdtemp(prefix="journal-own-writes-")
+    so_prev = {k: os.environ.get(k)
+               for k in ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID")}
+    os.environ["CLAUDE_PROJECT_DIR"] = so
+    os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+    try:
+        so_rel = "docs/audit/audit-plan.json"
+        so_abs = os.path.join(so, so_rel)
+        os.makedirs(os.path.dirname(so_abs))
+        so_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        so_state = os.path.join(so, str(so_cfg["stateDir"]))
+
+        def so_doc(task="in_progress", tag="0"):
+            """A plan whose bytes and completion stamp differ per `tag`."""
+            return {"meta": {"version": 3}, "phases": [
+                {"id": "P1", "title": "p-" + tag, "status": "in_progress",
+                 "tasks": [{"id": "P1.1", "title": "t", "status": task,
+                            "commit": None, "completedAt":
+                            "2026-09-26T11:0%s:00Z" % tag if task == "done"
+                            else None}]}]}
+
+        def so_write(doc):
+            with open(so_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+
+        def so_data(sid, agent=None, event="PostToolUse"):
+            d = {"tool_name": "Bash", "session_id": sid, "cwd": so,
+                 "hook_event_name": event, "tool_input": {"command": "ls"}}
+            if agent is not None:
+                d["agent_id"] = agent
+            return d
+
+        def so_pre(sid, agent=None):
+            M.pre_cache(so_data(sid, agent, "PreToolUse"), cfg=so_cfg, root=so)
+
+        def so_post(sid, agent=None):
+            d = so_data(sid, agent)
+            M._append_rows(d, M.post_rows(d, cfg=so_cfg, root=so))
+
+        def so_mark():
+            return set(r.get("hash") for r in _journal_io.read_all(so))
+
+        def so_since(mark):
+            return [r for r in _journal_io.read_all(so)
+                    if r.get("hash") not in mark]
+
+        def so_completions(rows, stamp):
+            return [r for r in rows if r.get("action") == "task.complete"
+                    and (r.get("details") or {}).get("completedAt") == stamp]
+
+        # so1: a Pre whose Post never comes leaves no state and no row.
+        so_write(so_doc(tag="1"))
+        so_pre("nopost")
+        so_post("nopost")
+        so_write(so_doc(task="done", tag="1"))  # moved by a writer with no hook
+        _m1 = so_mark()
+        so_pre("nopost")                        # ...and this call never Posts
+        _left = [n for n in os.listdir(so_state) if n.startswith("journal-pending-")]
+        check("so1 a move whose writer never runs a Post leaves NO pending "
+              "file and no row - nothing waits on a Post that may never come",
+              _left == [] and so_since(_m1) == [], repr((_left, so_since(_m1))))
+
+        # so2/so3: the writer's Post before, and after, the observer's call.
+        for _cid, _tag, _late in (("so2", "2", False), ("so3", "3", True)):
+            so_write(so_doc(tag=_tag))
+            so_pre("obs" + _tag)
+            so_post("obs" + _tag)
+            _mark = so_mark()
+            so_pre("peer" + _tag)
+            so_write(so_doc(task="done", tag=_tag))     # the peer's command
+            so_pre("obs" + _tag)
+            if not _late:
+                so_post("peer" + _tag)
+            so_post("obs" + _tag)
+            if _late:
+                so_post("peer" + _tag)
+            _tc = so_completions(so_since(_mark), "2026-09-26T11:0%s:00Z" % _tag)
+            check("%s the writer's own task.complete is written exactly once, "
+                  "under its session, whether its Post lands %s the observer's "
+                  "call - the observer records nothing" % (
+                      _cid, "after" if _late else "before"),
+                  [r["actor"].get("sessionId") for r in _tc] == ["peer" + _tag]
+                  and not [r for r in so_since(_mark)
+                           if r["actor"].get("sessionId") == "obs" + _tag],
+                  repr([(r.get("action"), r["actor"]) for r in so_since(_mark)]))
+
+        # so4/so5: two agents of ONE session, in both orders.
+        for _cid, _tag, _late in (("so4", "4", False), ("so5", "5", True)):
+            so_write(so_doc(tag=_tag))
+            for _ag in ("agent-a", "agent-b"):
+                so_pre("sess" + _tag, _ag)
+                so_post("sess" + _tag, _ag)
+            _mark = so_mark()
+            so_pre("sess" + _tag, "agent-a")
+            so_write(so_doc(task="done", tag=_tag))     # agent A's command
+            so_pre("sess" + _tag, "agent-b")
+            if not _late:
+                so_post("sess" + _tag, "agent-a")
+            so_post("sess" + _tag, "agent-b")
+            if _late:
+                so_post("sess" + _tag, "agent-a")
+            _new = so_since(_mark)
+            _tc = so_completions(_new, "2026-09-26T11:0%s:00Z" % _tag)
+            check("%s two agents of one session: the writing agent's "
+                  "task.complete is written once, under it, whether its Post "
+                  "lands %s the other agent's" % (_cid, "after" if _late
+                                                  else "before"),
+                  [r["actor"].get("agent") for r in _tc] == ["agent-a"]
+                  and not [r for r in _new if r["actor"].get("agent") == "agent-b"],
+                  repr([(r.get("action"), r["actor"]) for r in _new]))
+
+        # so6: a subagent whose id sanitises to nothing is still its own writer.
+        check("so6 a subagent whose agent_id is only punctuation keeps a "
+              "baseline of its own, apart from the orchestrator's",
+              M._slot_path(so, so_cfg, so_data("s6", "!!!"), so_rel)
+              != M._slot_path(so, so_cfg, so_data("s6"), so_rel),
+              repr(M._slot_path(so, so_cfg, so_data("s6", "!!!"), so_rel)))
+    finally:
+        for k, v in so_prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(so, ignore_errors=True)
 
     # (p) the sidecar's state dir is self-ignoring
     tmp_i = tempfile.mkdtemp(prefix="jw-ignore-")

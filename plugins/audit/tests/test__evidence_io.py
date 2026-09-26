@@ -1768,6 +1768,81 @@ def _cases(check):
           M.gate_cost_ms([{"steps": [{"name": "lint", "exit": 0}]}], "lint")
           is None)
 
+    _worktree_ledger_cases(check)
+
+
+def _worktree_ledger_cases(check):
+    """(ew) THE LEDGER'S WRITER IS THE SESSION AND THE WORKTREE, like the trail's.
+
+    The evidence file was named by session alone, so a session appending runs in
+    two linked worktrees wrote one basename in both branches, and merging them met
+    a conflict `audit-journal merge` cannot resolve - it reads the journal
+    directory only. Measured merging main into a phase branch."""
+    import _invariants
+    ok, pair = _harness.attempt(_harness.worktree_pair, "evidence-io-wt-")
+    if not ok:
+        check("ew0 the worktree fixture builds (%s)" % (pair,), False)
+        return
+    main, wt_a = pair["main"], pair["wt"]
+    wt_b = os.path.join(pair["root"], "main-B")
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false"]
+
+    def run_git(cwd, *argv):
+        return subprocess.run(git + list(argv), cwd=cwd, capture_output=True,
+                              text=True, timeout=30)
+    run_git(main, "worktree", "add", "-q", wt_b, "-b", "chore/b")
+    sid = "dddddddd-0000-4000-8000-00000000000d"
+
+    def run(run_id, task):
+        return {"v": 1, "runId": run_id, "ts": "2026-09-25T10:00:00Z",
+                "scope": "task", "taskId": task, "phaseId": task.split(".")[0],
+                "status": "passed", "steps": [], "failed": [],
+                M.REUSE_KEY: "key-" + task}
+    in_a = M.append_row(wt_a, run("run-a", "P48.1"), session_id=sid)
+    in_b = M.append_row(wt_b, run("run-b", "P41.1"), session_id=sid)
+    in_m = M.append_row(main, run("run-m", "P41.1"), session_id=sid)
+    check("ew1 two linked worktrees driven by ONE session append their runs to "
+          "two different ledger files",
+          os.path.basename(in_a) != os.path.basename(in_b),
+          repr((in_a, in_b)))
+    check("ew2 ...and the main checkout keeps the session-keyed name",
+          os.path.basename(in_m) == "2026-09.%s.jsonl"
+          % _journal_io.writer_id({"sessionId": sid}), repr(in_m))
+    ev_rel = os.path.relpath(M.evidence_dir(main), main).replace(os.sep, "/")
+    for tree, msg in ((wt_a, "a"), (wt_b, "b"), (main, "m")):
+        run_git(tree, "add", "-A", ev_rel)
+        run_git(tree, "commit", "-qm", msg)
+    merges = [run_git(main, "merge", "--no-edit", "-q", br)
+              for br in ("chore/p48", "chore/b")]
+    check("ew3 merging both worktree branches into main raises no evidence "
+          "conflict", all(m.returncode == 0 for m in merges),
+          repr([(m.returncode, m.stdout[-200:]) for m in merges]))
+    read = M.read_rows(main)
+    check("ew4 every name is read: read_rows walks all three files, and the "
+          "merged ledger verifies",
+          read["files"] == 3 and sorted(r["runId"] for r in read["rows"])
+          == ["run-a", "run-b", "run-m"] and M.verify(main)["ok"],
+          repr((read["files"], M.verify(main).get("findings"))))
+    check("ew5 the reuse lookup finds a run recorded in a worktree-keyed file, "
+          "by its task", (M.reusable_run(read["rows"], "task", {"taskId": "P48.1",
+                          "phaseId": "P48"}, "key-P48.1", ("passed",))
+                          or {}).get("runId") == "run-a")
+    shared_cfg = dict(_journal_io.load_config(wt_a),
+                      stateDir=os.path.join(pair["root"], "one-shared-state"))
+    sa = M.append_row(wt_a, run("run-sa", "P48.1"), session_id="s" + sid[1:],
+                      config=shared_cfg)
+    sb = M.append_row(wt_b, run("run-sb", "P41.1"), session_id="s" + sid[1:],
+                      config=dict(shared_cfg))
+    check("ew7 two worktrees sharing ONE absolute stateDir still write two "
+          "ledger files - the key lives in each worktree's own git dir",
+          os.path.basename(sa) != os.path.basename(sb), repr((sa, sb)))
+    committed, gaps = _invariants._committed_run_ids(main, ev_rel)
+    check("ew6 ...and evidence-committed reads the committed worktree-keyed "
+          "files as it reads the old one", not gaps
+          and {"run-a", "run-b", "run-m"} <= set(committed),
+          repr((sorted(committed), gaps)))
+
 
 def _selftest():
     return _harness.run(_cases)
