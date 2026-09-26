@@ -4245,6 +4245,7 @@ def _cases(check):
     _harness.stage(check, "rv0 the remedy-line block", _remedy_cases)
     _harness.stage(check, "dg0 the record-before-render block", _record_order_cases)
     _harness.stage(check, "xg0 the excluded/no-suite block", _excluded_cases)
+    _harness.stage(check, "ow0 the --own block", _own_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -5105,6 +5106,173 @@ def _excluded_cases(check):
           and excluded_line[0]
           == "  excluded: coverage - meta.phaseGate.exclude declares them "
              "out of this phase's gate; they were not run here")
+
+
+def _own_cases(check):
+    """`--own`: an executor's own tests, through the runner rather than bare
+    Bash - the bounded render reaches the caller, the whole raw output
+    reaches a local log file nobody's context ever sees, and nothing here
+    is ever recorded.
+    """
+    root = _harness.fixture_root("run-test-gate-own-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    big_n = _ev_io.MAX_FAILING + 20
+    big_script = os.path.join(root, "big_fail.py")
+    with open(big_script, "w") as fh:
+        fh.write("import sys\n"
+                 "N = %d\n" % (big_n,)
+                 + "for i in range(N):\n"
+                   "    print('FAILED tests/test_a.py::test_%d - "
+                   "AssertionError' % i)\n"
+                   "print('=== %d failed in 0.01s ===' % N)\n"
+                   "sys.exit(1)\n")
+    entry = "%s tests/test_a.py" % (_step(sys.executable, big_script),)
+
+    def _plan(gate, add=None, files=None, gate_basis="declared",
+             task_id="P1.1"):
+        mp = os.path.join(root, "audit-plan.json")
+        tests = {"gateBasis": gate_basis}
+        if gate is not None:
+            tests["gate"] = gate
+        if add is not None:
+            tests["add"] = add
+        task = {"id": task_id, "title": "t", "status": "in_progress",
+               "tests": tests}
+        if files is not None:
+            task["files"] = files
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 2, "buildCommands": {
+                "lint": "true"}},
+                "phases": [{"id": "P1", "title": "p", "status":
+                            "in_progress", "testGate": ["lint"],
+                            "tasks": [task]}]}, fh)
+        return mp
+
+    mp = _plan([entry], add=["tests/test_a.py: covers a"])
+
+    def _run_own(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--own",
+                      "--task", "P1.1"] + list(extra), out=lines.append)
+        return code, lines
+
+    code, lines = _run_own("--quiet")
+    named = [ln for ln in "\n".join(lines).splitlines()
+            if "tests/test_a.py::test_" in ln]
+    log_lines = [ln for ln in lines if ln.strip().startswith("raw log:")]
+    check("tk1 THE REPRO/RED-FIRST: a fake runner printing far more lines "
+          "than the bound, through `--own --quiet`, renders no more than "
+          "the bounded failing lines - never the %d this step actually "
+          "printed: %r" % (big_n, (len(named), len(log_lines))),
+          code == M.E_FAIL and len(named) == _ev_io.MAX_FAILING
+          and len(log_lines) == 1)
+    log_path = log_lines[0].split("raw log:", 1)[1].strip()
+    with open(log_path, encoding="utf-8") as fh:
+        log_text = fh.read()
+    check("tk1b ...and the LOG holds every line the bounded render dropped: "
+          "%r" % (log_text.count("FAILED tests/test_a.py::test_"),),
+          log_text.count("FAILED tests/test_a.py::test_") == big_n)
+
+    own2_lines = []
+    own2_code = M.main([mp, "P1", "--project-dir", root, "--own"],
+                       out=own2_lines.append)
+    check("own2 ALLOW: `--own` requires `--task` - an executor's own tests "
+          "are a task's claim, never a phase's, and the sentence names "
+          "THAT reason rather than merely refusing by some other path: %r"
+          % (own2_lines,),
+          own2_code == M.E_ASK
+          and any("--own requires --task" in ln for ln in own2_lines))
+    own3_lines = []
+    own3_code = M.main([mp, "P1", "--project-dir", root, "--own", "--task",
+                       "P1.1", "--record"], out=own3_lines.append)
+    check("own3 ALLOW: `--own` refuses `--record` - this run writes no row "
+          "and no pointer, ever, and the sentence names `--record` rather "
+          "than refusing by some other path: %r" % (own3_lines,),
+          own3_code == M.E_ASK
+          and any("--own refuses --record" in ln for ln in own3_lines))
+    own4_lines = []
+    own4_code = M.main([mp, "P1", "--project-dir", root, "--own", "--task",
+                       "P1.1", "--reconcile"], out=own4_lines.append)
+    check("own4 ALLOW: `--own` refuses `--reconcile` - there is no pointer "
+          "from this path for it to repair, and the sentence names "
+          "`--reconcile`: %r" % (own4_lines,),
+          own4_code == M.E_ASK
+          and any("--own refuses --reconcile" in ln for ln in own4_lines))
+
+    gate_only_mp = _plan(None, gate_basis="cleared", task_id="P1.1")
+    go_lines = []
+    go_code = M.main([gate_only_mp, "P1", "--project-dir", root, "--own",
+                      "--task", "P1.1"], out=go_lines.append)
+    check("own5 A GATE-ONLY TASK HEARS THE IDENTICAL SENTENCE: nothing of "
+          "its own points at its own tests, whether that is because it "
+          "declared no entries at all or because every entry it declared "
+          "got filtered out - exit 2, naming the task and its gateBasis: %r"
+          % (go_lines,),
+          go_code == M.E_ASK
+          and any("P1.1 declares no gate entry pointed at its own "
+                  "tests.add paths (tests.gateBasis=cleared)" in ln
+                  and "nothing of its own to run" in ln
+                  for ln in go_lines))
+
+    log_dir = os.path.dirname(log_path)
+    check("own6 the log directory carries the .gitignore marker "
+          "`ensure_local_dir` drops - self-ignoring the moment it exists, "
+          "whatever the repository's own `.gitignore` does or does not say: "
+          "%r" % (log_dir,),
+          os.path.isfile(os.path.join(log_dir, ".gitignore"))
+          and open(os.path.join(log_dir, ".gitignore")).read().strip()
+          .endswith("*"))
+    check("own7 ABSENT `logsDir` MEANS THE CONFIG DEFAULT: no config file "
+          "exists in this fixture project at all, and the log still lands "
+          "under `.claude/logs/gate-raw` - the same default "
+          "`hooks/_config.DEFAULTS['logsDir']` names: %r" % (log_dir,),
+          log_dir.replace("\\", "/").endswith(
+              ".claude/logs/gate-raw"))
+
+    before_rows = _ev_io.read_rows(root)["rows"]
+    _run_own()
+    after_rows = _ev_io.read_rows(root)["rows"]
+    check("own8 NOTHING IS RECORDED: the ledger carries exactly as many "
+          "rows after an `--own` run as before it - no row, and so no "
+          "pointer either, whatever the plan's own testEvidence says: %r"
+          % ((len(before_rows), len(after_rows)),),
+          len(before_rows) == 0 and len(after_rows) == 0)
+
+    # --- own_gate_of, at the unit level: what gets kept and what does not --
+    shared_mp_manifest = {
+        "meta": {"version": 2, "buildCommands": {"lint": "true",
+                                                  "test": "pytest -q"}},
+        "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                    "testGate": ["lint", "test"], "tasks": [
+                        {"id": "P1.1", "title": "own", "status":
+                         "in_progress",
+                         "tests": {"gateBasis": "declared",
+                                  "gate": ["test", entry,
+                                          "%s tests/other.py"
+                                          % (_step(sys.executable,
+                                                  big_script),)],
+                                  "add": ["tests/test_a.py: covers a"]}},
+                        {"id": "P1.2", "title": "borrowed", "status":
+                         "in_progress"}]}]}
+    own_kept, own_source, own_err = M.own_gate_of(
+        shared_mp_manifest, "P1", "P1.1")
+    check("own9 A `meta.buildCommands` KEY IS NEVER KEPT, whatever it is "
+          "spelled - `test` names a build step this task's own claim "
+          "cannot narrow, so only the LITERAL command pointed at "
+          "`tests/test_a.py` survives, and the entry pointed at "
+          "`tests/other.py` (not this task's own path) is dropped too: %r"
+          % (own_kept,),
+          own_err is None and own_source == "task" and len(own_kept) == 1
+          and own_kept[0][0] == entry)
+    borrowed_kept, borrowed_source, borrowed_err = M.own_gate_of(
+        shared_mp_manifest, "P1", "P1.2")
+    check("own10 A TASK MEASURED BY ITS PHASE'S GATE HAS NOTHING OF ITS "
+          "OWN, by definition - `own_gate_of` refuses it exactly as it "
+          "refuses a task whose every entry got filtered out, never by "
+          "falling back to the phase's gate: %r" % (borrowed_err,),
+          borrowed_kept is None and borrowed_source is None
+          and "P1.2 declares no gate entry" in (borrowed_err or ""))
 
 
 def _reuse_cases(check):

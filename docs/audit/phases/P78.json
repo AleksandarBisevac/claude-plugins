@@ -391,7 +391,7 @@
     {
       "id": "P78.6",
       "title": "The sign-off run prints what meta.phaseGate.exclude kept out and whether any step ran a suite; SAME SUITE names its retarget; the row-before-summary order is pinned",
-      "status": "in_progress",
+      "status": "done",
       "description": "(1) _render_verdict prints, under each SAME SUITE COUNTED ONCE group of a PHASE-scope run, one more line per group member after the first in gate order: 'remedy: python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py\" retarget <phaseId> --gate-drop <entry> <manifestPath>' (spelled the way close-phase.py's finishCommand spells a script call, never through __file__). The render needs the phase id, the manifest path and whose gate ran: carry them on the result main already builds (res['subject'], res['gateSource']) plus the manifest path, rather than handing a manifest to run_gate. Under --task, or when gateSource is task, no remedy is printed and the group line is unchanged: a task gate is corrected with scope, whose narrowing rules decide, and a phase retarget there would drop the wrong declaration. (2) A pin, no behaviour change: main already calls _record_run before render/render_quiet (P70 run-test-gate.py main: the res['recorded'] = _record_run(...) line precedes the final render), so a run cut off after recording still leaves its row. A case drives main with a fake runner and an out that raises on the first verdict banner, and asserts the ledger holds the row and 'evidence: recorded <runId>' was printed before the banner (dg22; mutation: move the record below the render -> red). Red-first for (1): the duplicated gate prints the remedy naming coverage, and RUNNING that printed command (argv split, against the fixture manifest) leaves testGate [test]; allow cases: a task-scope run with the same duplication prints no remedy; two steps of equal count over DIFFERENT suites print neither line (sc5 stays green). Blocked on L1.d because the case executes the printed retarget --gate-drop. (3) THE GATE PRINTS THE DECLARED NARROWING. A PHASE-scope run prints, under its header, 'excluded: <keys> - meta.phaseGate.exclude declares them out of this phase's gate; they were not run here', naming each buildCommands key the plan's exclude lists that this phase's testGate does not carry. When exclude is declared and no step of the run carries a suiteReader other than 'none' (L1.e's observation), it prints 'PHASE GATE RAN NO SUITE: the counts reader recognised no test runner's summary in any step (<steps>); meta.phaseGate.exclude declares <keys> out of this gate' above the verdict banners. This is a statement, never a refusal, and the banners orchestrator.md routes on stay unchanged. Red-first: exclude [coverage] prints the excluded line; a run of a lint-only gate under that exclude prints the PHASE GATE RAN NO SUITE line (mutation: read measured instead of suiteReader -> red on a pre-commit-shaped lint step that measured checks). Allow case: a plan with no exclude prints neither line.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -425,28 +425,44 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3cac7da17870",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate: under SAME SUITE COUNTED ONCE each later member gets a runnable retarget --gate-drop remedy (phase scope only, the graded_by rule); at phase scope an excluded line lists phaseGate.exclude keys this run did not run (filtered against the resolved commands after the first review diverged on exactly this: a stale testGate key would have been named as not run), and PHASE GATE RAN NO SUITE reads suiteReader, never measured; dg22 pins record-before-render. Cases rv1-rv4, dg22, xg1-xg4; redFirst proved by HEAD revert and six live mutations. Earlier red row 2026-09-26T09:23:14Z.7daf7e failed lint on a dead variable in xg1 (removed). Gate run 2026-09-26T09:47:44Z.e5693e green; re-review matches.",
+        "descriptive": "A phase gate that ran a suite twice now prints the command that drops the duplicate, and a phase gate that excluded or never ran a test suite says so, naming only what this run actually skipped."
       },
       "startedAt": "2026-09-26T08:56:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T09:49:08Z",
+      "verifiedBy": [
+        "rv1",
+        "rv2",
+        "rv3",
+        "rv4",
+        "dg22",
+        "xg1",
+        "xg2",
+        "xg3",
+        "xg4"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T09:47:44Z.e5693e",
         "status": "passed",
         "at": "2026-09-26T09:47:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3cac7da17870",
+        "at": "2026-09-26T09:49:08Z"
       }
     },
     {
       "id": "P78.7",
       "title": "run-test-gate --own --quiet: the executor's own tests, unrecorded, whole output in a local log",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Constraint: executor.runsGate own-tests tells the executor to run the tests task.tests.add names, and today it does that through bare Bash, whose whole output enters its context. The runner's own render is already bounded (_render_steps prints at most _evidence_io.MAX_FAILING failing lines per step) and --quiet already exists (render_quiet), so the fix is a runner path, not a new renderer. Rule: --own requires --task and refuses --record and --reconcile (exit 2, each named). Commands: the task's OWN gate through P71's _manifest_io.gate_entries(phase, task) with source 'task' (a task measured by its phase's gate has nothing of its own), keeping entries that are not meta.buildCommands keys and whose paths (_manifest_phases.gate_entry_paths) all lie among the task's tests.add paths (_manifest_phases.tests_add_path per entry). None left -> exit 2 '<taskId> declares no gate entry pointed at its own tests.add paths (tests.gateBasis=<basis>) - there is nothing of its own to run', which is also what a gate-only task hears. The run goes through run_gate unchanged (bracket, counts, coverage), writes no row and no pointer, and asks no reuse lookup. The whole output of every step goes to <logsDir>/gate-raw/<runId>.log (runId from _evidence_io.new_run_id()), the directory made through the hooks config's ensure_local_dir and logs_dir (reached with _loader.load_hooks_config()), which drops a self-ignoring .gitignore. NOT under the evidence directory: it defaults under the manifest's directory, and ensure_local_dir's own docstring says never to make a self-ignoring directory there. The log is written after run_gate returns, outside the tree bracket, and the render prints 'raw log: <path>' before the verdict. run_gate keeps a step's text only when a caller asks (a keep_text argument), so ordinary runs pay nothing. Red-first (tk1): a fake runner printing far more lines than the bound, through --own --quiet, renders no more than the step lines, MAX_FAILING failing lines per step and the verdict lines, while the log holds every line; mutation: print the step text -> red. Allow cases: --own --record refused; a gate-only task refused with the sentence; the log directory carries the .gitignore marker. Absent logsDir means the config default.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
-        "plugins/audit/tests/test_run_test_gate.py"
+        "plugins/audit/tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -472,16 +488,21 @@
       "dependsOn": [
         "P78.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T09:49:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T10:52:33Z.da4e95",
+        "status": "passed",
+        "at": "2026-09-26T10:52:33Z"
+      }
     },
     {
       "id": "P78.8",

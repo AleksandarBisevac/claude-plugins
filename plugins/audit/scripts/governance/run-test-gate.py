@@ -100,6 +100,7 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -137,6 +138,9 @@ import _manifest_phases as _phases  # noqa: E402  (subject_of/is_suite_path/gate
 #                                  than copied)
 import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one spelling
 #                           the terminal and the rendered report both print it in)
+import _loader  # noqa: E402  (load_hooks_config: logs_dir/ensure_local_dir, for --own's
+#                              raw log - the same self-ignoring local directory every
+#                              hook already makes state and logs under)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 
@@ -2109,6 +2113,75 @@ def gate_of(manifest, phase_id, task_id=None):
     return _resolved(entries, build, preamble), source, None
 
 
+def own_gate_of(manifest, phase_id, task_id):
+    """`(commands, source, error)` for `--own` - the SAME shape `gate_of`
+    returns, so `main` can hand it to the identical downstream code, but a
+    narrower question: not "what measures this task" but "which of the
+    entries that measure it are pointed at nothing but ITS OWN `tests.add`
+    paths".
+
+    A TASK MEASURED BY ITS PHASE'S GATE HAS NOTHING OF ITS OWN, by
+    definition - `_mio.gate_entries` already answers `source == "phase"`
+    for exactly that case, and this asks for no filtering there: the phase's
+    gate is everybody's, an executor's OWN tests are a narrower claim than
+    any of it can make.
+
+    EVERY KEPT ENTRY CLEARS TWO GATES. It must not be a bare
+    `meta.buildCommands` KEY (`entry in build`) - a key resolves to
+    whatever that build step runs today, and "today" is not this task's
+    claim to make either, however the key happens to be spelled
+    (`e2e.spec` reads path-shaped and is not one). And every path
+    `_manifest_phases.gate_entry_paths` finds in it must be one of this
+    task's own declared `tests.add` paths (`tests_add_path` per entry) -
+    an entry naming ITS test AND ANOTHER'S is not this task's alone to
+    claim either, and an entry naming NO path at all (`gate_entry_paths`
+    empty) is not "pointed at" anything and is dropped for the same reason
+    a bare key is.
+
+    NONE LEFT IS AN ERROR, not the ordinary empty-gate state `gate_of`
+    reports as itself: `--own` asked a narrower question and got no for an
+    answer, which is not the same fact as a task or phase that declares no
+    gate at all - a gate-only task hears the identical sentence, because it
+    is in the identical state: nothing of its own points at its own tests.
+    """
+    phases = [p for p in (manifest.get("phases") or [])
+              if isinstance(p, dict) and p.get("id") == phase_id]
+    if not phases:
+        return None, None, "no phase %r in this manifest" % (phase_id,)
+    tasks = [t for t in (phases[0].get("tasks") or [])
+             if isinstance(t, dict) and t.get("id") == task_id]
+    if not tasks:
+        return None, None, "no task %r in phase %r" % (task_id, phase_id)
+    task = tasks[0]
+    build = ((manifest.get("meta") or {}).get("buildCommands") or {})
+    if not isinstance(build, dict):
+        build = {}
+    preamble = (manifest.get("meta") or {}).get("nodePreamble")
+    entries, source = _mio.gate_entries(phases[0], task)
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    add_paths = set(p for p in
+                    (_phases.tests_add_path(e)
+                     for e in (tests.get("add") or [])
+                     if isinstance(e, str))
+                    if p is not None)
+    kept = []
+    if source == "task":
+        for entry in entries:
+            if entry in build:
+                continue
+            paths = _phases.gate_entry_paths(entry)
+            if paths and all(p in add_paths for p in paths):
+                kept.append(entry)
+    if kept:
+        return _resolved(kept, build, preamble), "task", None
+    basis = tests.get("gateBasis")
+    basis = basis if isinstance(basis, str) and basis.strip() else "unset"
+    return None, None, (
+        "%s declares no gate entry pointed at its own tests.add paths "
+        "(tests.gateBasis=%s) - there is nothing of its own to run"
+        % (task_id, basis))
+
+
 # --- a verdict already measured on these bytes --------------------------------
 # WHAT MAKES TWO GATE RUNS THE SAME RUN. Three things, and the identity is the
 # digest of all three together:
@@ -2635,7 +2708,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
-             recorded=None, task_scope=False):
+             recorded=None, task_scope=False, keep_text=False):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -2649,6 +2722,21 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
 
     `task_scope` is whether the work under test is one task, which is the only
     scope a gate can be too WIDE for (`suite_breadth`).
+
+    `keep_text` IS OFF BY DEFAULT AND COSTS NOTHING WHEN IT IS: an ordinary
+    run reads a step's output to decide what happened and lets Python free
+    it, exactly as it always has. `--own` is the one caller that needs every
+    line of it AFTER this function returns - for a local log file, never for
+    the row this run does not write - so it is asked for by name rather than
+    kept on every run on the chance somebody wants it. `res["stepText"]` is
+    ALWAYS on the row, `None` unless `keep_text` asked - the same shape
+    `cancelledBy` already uses, and for the reason spelled beside that key
+    below: a value written only conditionally, on a separate line, would
+    change WHICH AST NODE this function returns, and this function's own
+    return is what a producer/consumer scan (`_deps.dict_key_contracts`)
+    reads to know this dict exists at all. When it is a list, it is
+    `[(name, text)]` for every step that ran, in order, text UNREDACTED:
+    the log this feeds is never committed.
     """
     runner = runner or _shell
     before = _tree_stamp.porcelain(project)
@@ -2676,6 +2764,13 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # list that can be off by one is a list that would attribute one step's
     # paths to another.
     step_named = []
+    # STRICTLY PARALLEL TO `steps` TOO, and unlike `texts` it skips NOTHING -
+    # `--own`'s log is meant to hold every step's whole output, verdict or
+    # not, which is the one thing the bounded render never shows at all.
+    # Built only when asked (`keep_text`): an ordinary run has nowhere this
+    # would go and no reason to hold every byte of every step in memory for
+    # the length of the run.
+    step_text = [] if keep_text else None
     cancelled_by = None
     try:
         for name, command in commands:
@@ -2716,6 +2811,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # attempt was ended by a signal, so only the second can speak here.
             if not step.get("outcome"):
                 texts.append(text or "")
+            if step_text is not None:
+                step_text.append((name, text or ""))
             # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
             # come apart. Scraped per step rather than sliced out of the joined
             # text below, because which STEP printed a path is the whole
@@ -2827,6 +2924,17 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # arrive with no basis at all.
             "cancelledBy": cancelled_by,
             "overlap": overlap, "coverageBasis": cbasis,
+            # ALWAYS PRESENT TOO, None UNLESS `keep_text` ASKED - the SAME
+            # shape as `cancelledBy` and for the same reason: a key that
+            # appeared on the literal only when a caller opted in could not
+            # be told apart, by anything that scans this function's OWN
+            # return statement (`_deps.dict_key_contracts`'s producer scan
+            # included), from a key this function never writes at all. An
+            # `if:` guard building the key on a separate line would make
+            # this return a `Name` rather than a `Dict` node and drop
+            # `run_gate` out of that scan in silence - the exact failure
+            # the scan exists to catch, turned against its own subject.
+            "stepText": step_text,
             "failed": failed}
 
 
@@ -3419,6 +3527,62 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
             "boundary": since["at"], "boundaryWritten": bool(since["written"])}
 
 
+def _own_log_dir(manifest_path, project_dir):
+    """The directory `--own`'s raw log lands in, made and self-ignoring.
+
+    `_evidence_io.project_config_for` is the SAME resolution the evidence
+    ledger already uses - a project-dir override, else `CLAUDE_PROJECT_DIR`,
+    else the manifest's OWN directory - asked again here so the log and the
+    evidence it is deliberately NOT part of are sited by one rule and not
+    two that could disagree about where "this manifest's project" is.
+
+    NOT UNDER THE EVIDENCE DIRECTORY, on purpose: that directory is
+    COMMITTED (`_evidence_io`'s own module docstring), and this log is
+    exactly the opposite kind of artifact - the whole, unredacted output of
+    every step, on the operator's own machine, for as long as they want it
+    there. `hooks/_config.ensure_local_dir`'s own docstring says as much:
+    never call it on `docs/audit`, because the journal there is tracked on
+    purpose. `logs_dir` is the config's own answer to "where does a plugin
+    that is NOT the journal put a local file", and `ensure_local_dir` is
+    what makes the directory self-ignoring the moment it exists, so a repo
+    whose own `.gitignore` has never heard of this path is still safe.
+    """
+    log_project, log_config = _ev.project_config_for(manifest_path, project_dir)
+    hooks_cfg = _loader.load_hooks_config()
+    return hooks_cfg.ensure_local_dir(
+        hooks_cfg.logs_dir(Path(log_project), log_config) / "gate-raw")
+
+
+def _write_own_log(manifest_path, project_dir, step_text):
+    """Write every step's WHOLE output to `<logsDir>/gate-raw/<runId>.log`;
+    return the path.
+
+    ONE FILE PER RUN, named by `_evidence_io.new_run_id()` - the same
+    generator a recorded run's `runId` comes from, reused here for the one
+    property that matters to a log file and not to a ledger row: a name
+    nothing else on this machine is writing to right now. Nothing here
+    reads it back and nothing here writes a ledger row beside it; the id is
+    spent once, on a filename, and forgotten.
+
+    UNREDACTED, DELIBERATELY: `failing_lines` and `_step`'s own redaction
+    exist because the row they bound is COMMITTED and goes to a client. This
+    file is neither - it is the operator's own machine, self-ignored the
+    moment `ensure_local_dir` makes its directory - so the one copy of the
+    truth an executor can still ask for is not the one with the paths
+    filed off it.
+    """
+    directory = _own_log_dir(manifest_path, project_dir)
+    run_id = _ev.new_run_id()
+    path = directory / ("%s.log" % (run_id,))
+    with open(str(path), "w", encoding="utf-8", errors="replace") as fh:
+        for name, text in step_text:
+            fh.write("=== %s ===\n" % (name,))
+            fh.write(text or "")
+            if text and not text.endswith("\n"):
+                fh.write("\n")
+    return str(path)
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -3456,10 +3620,37 @@ def main(argv, out=print):
     # want the inventory either; a human bisecting a red run still gets it,
     # because nothing here changes what `render` alone does.
     p.add_argument("--quiet", dest="quiet", action="store_true")
+    # AN EXECUTOR'S OWN TESTS, THROUGH THE RUNNER RATHER THAN BARE BASH - the
+    # one path whose whole output never has to reach the caller's context,
+    # because this file's own render is already bounded and a log on disk
+    # takes the rest. Named `--own` and not `--also`: `P74`'s `--also
+    # <phase,...>` is a DIFFERENT flag on this same parser, and the two must
+    # never collide.
+    p.add_argument("--own", dest="own", action="store_true")
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_ASK if exc.code else E_OK
+    if args.own:
+        # THREE REFUSALS, EACH NAMED, BEFORE ANYTHING ELSE IS ASKED. `--task`
+        # is not optional: an executor's own tests are a TASK's claim, never
+        # a phase's, and `own_gate_of` has no phase-scope reading to fall
+        # back to. `--record` and `--reconcile` are refused because there is
+        # nothing here that either one could act on - this run writes no row
+        # and no pointer, so recording one is not merely skipped, it is a
+        # flag asking for a write this path never makes.
+        if args.task is None:
+            out("[run-test-gate] --own requires --task - an executor's own "
+                "tests are a task's claim, never a phase's")
+            return E_ASK
+        if args.record:
+            out("[run-test-gate] --own refuses --record - this run writes "
+                "no row and no pointer, ever")
+            return E_ASK
+        if args.reconcile:
+            out("[run-test-gate] --own refuses --reconcile - there is no "
+                "pointer from this path for it to repair")
+            return E_ASK
     project = args.project_dir or os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(args.manifest))))
     try:
@@ -3482,7 +3673,10 @@ def main(argv, out=print):
             out("  %d unreadable row(s) were skipped - a torn line is counted "
                 "here rather than dropped in silence" % (report["unreadable"],))
         return E_FAIL if report["refused"] else E_OK
-    commands, source, err = gate_of(manifest, args.phase, args.task)
+    if args.own:
+        commands, source, err = own_gate_of(manifest, args.phase, args.task)
+    else:
+        commands, source, err = gate_of(manifest, args.phase, args.task)
     if err:
         out("[run-test-gate] %s" % err)
         return E_ASK
@@ -3529,37 +3723,49 @@ def main(argv, out=print):
     # row this run writes has to carry, so a `--no-reuse` run computes one too -
     # a forced measurement that recorded no identity would leave the next run
     # nothing to match, which turns one operator's override into everybody's.
+    #
+    # `--own` ASKS NONE OF THIS. It writes no row, ever, so there is no
+    # identity for a LATER run to match and no earlier row here to repeat -
+    # `reuse_identity` and the lookup it feeds are both a cost this run has
+    # no question to spend them on.
     started = time.monotonic()
-    identity = reuse_identity(project, args.manifest, manifest, commands, owns)
-    if identity.get("unexcluded"):
-        # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
-        # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
-        # the tree's content identity and could not, for one of these; the
-        # identity below still includes the path as source, so it will keep
-        # changing on every recorded run and no repeat will ever fire for it.
-        for path, why in identity["unexcluded"]:
-            out("[run-test-gate] %s is a path this plugin writes, but it %s - "
-                "so it stays inside the content identity rather than being "
-                "left out of it, and a run that changes it can never be "
-                "matched by a later one." % (path, why))
-    prior = None
-    if identity.get("grading"):
-        # THE ONE SUBJECT THIS IDENTITY CANNOT SPEAK FOR. Driven before this
-        # line existed: a gate whose single entry validates the plan reported
-        # GREEN over a plan that no longer validated, because the plan is among
-        # the paths the identity leaves out. The refusal is printed rather than
-        # silent, and it names the entry - an operator who sees a gate measure
-        # every time is owed the reason, or the next reader removes the cache.
-        for name, path in identity["grading"]:
-            out("[run-test-gate] %s names %s, which this identity leaves out, so "
-                "this run is MEASURED and not repeated. Whether the command reads "
-                "that path is not established here; naming it is enough, because "
-                "the other way round is a verdict that no longer describes the "
-                "thing it graded" % (name, path))
-    elif not args.no_reuse:
-        prior = _ev.reusable_run(_ev.read_rows(project)["rows"], source,
-                                 subject_ids(args.phase, args.task, source),
-                                 identity["key"], REUSABLE_STATUS)
+    if args.own:
+        identity = {"key": None,
+                    "basis": "--own is never recorded, so nothing here is "
+                             "ever repeated"}
+        prior = None
+    else:
+        identity = reuse_identity(project, args.manifest, manifest, commands,
+                                  owns)
+        if identity.get("unexcluded"):
+            # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
+            # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
+            # the tree's content identity and could not, for one of these; the
+            # identity below still includes the path as source, so it will keep
+            # changing on every recorded run and no repeat will ever fire for it.
+            for path, why in identity["unexcluded"]:
+                out("[run-test-gate] %s is a path this plugin writes, but it %s - "
+                    "so it stays inside the content identity rather than being "
+                    "left out of it, and a run that changes it can never be "
+                    "matched by a later one." % (path, why))
+        prior = None
+        if identity.get("grading"):
+            # THE ONE SUBJECT THIS IDENTITY CANNOT SPEAK FOR. Driven before this
+            # line existed: a gate whose single entry validates the plan reported
+            # GREEN over a plan that no longer validated, because the plan is among
+            # the paths the identity leaves out. The refusal is printed rather than
+            # silent, and it names the entry - an operator who sees a gate measure
+            # every time is owed the reason, or the next reader removes the cache.
+            for name, path in identity["grading"]:
+                out("[run-test-gate] %s names %s, which this identity leaves out, so "
+                    "this run is MEASURED and not repeated. Whether the command reads "
+                    "that path is not established here; naming it is enough, because "
+                    "the other way round is a verdict that no longer describes the "
+                    "thing it graded" % (name, path))
+        elif not args.no_reuse:
+            prior = _ev.reusable_run(_ev.read_rows(project)["rows"], source,
+                                     subject_ids(args.phase, args.task, source),
+                                     identity["key"], REUSABLE_STATUS)
     if prior is not None:
         res = reused_result(identity, prior, _elapsed_ms(started))
     else:
@@ -3572,7 +3778,8 @@ def main(argv, out=print):
             res = run_gate(project, commands, owns=owns, timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
                                                        args.manifest)[0],
-                           task_scope=args.task is not None)
+                           task_scope=args.task is not None,
+                           keep_text=args.own)
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no
@@ -3582,6 +3789,18 @@ def main(argv, out=print):
         # had its chance to rewrite one.
         res[_ev.REUSE_KEY] = identity["key"]
         res["reuseBasis"] = identity["basis"]
+    # THE LOG IS WRITTEN HERE - AFTER `run_gate` RETURNS, OUTSIDE ITS TREE
+    # BRACKET, and only for `--own`. `res.pop`, not a peek: the render below
+    # takes only the bounded step lines, `_evidence_io.MAX_FAILING` failing
+    # lines per step and the verdict - `stepText` carries the WHOLE thing,
+    # and leaving it on `res` would put it in `--json` too, which is exactly
+    # the unbounded reach this whole feature exists to close off.
+    raw_log_path = None
+    if args.own:
+        step_text = res.pop("stepText", None)
+        if step_text is not None:
+            raw_log_path = _write_own_log(args.manifest, args.project_dir,
+                                          step_text)
     # `gateSource` IS RECORDED AND `subject` IS NOT, and the split is the rule
     # about a cached claim rather than an oversight. Provenance is not
     # recoverable from the row - `_evidence_io.row_for` carries the reasoning -
@@ -3649,6 +3868,12 @@ def main(argv, out=print):
     # is open, so it is derived rather than guessed. Printed before the table so
     # it is read with the verdict rather than after the reader has left.
     out("  covers:   %s" % (runtime_claim(manifest),))
+    # BEFORE THE VERDICT, so the reader who wants every line never has to
+    # scroll past a red banner to find where they are - and printed only
+    # when the log was actually written, which is the shape every other
+    # optional line in this function already takes.
+    if raw_log_path is not None:
+        out("  raw log: %s" % (raw_log_path,))
     # THE GATE PRINTS THE DECLARED NARROWING, under its header and phase-scope
     # only - a task-scope run is narrowed by its OWN tests.gate, whose rules
     # are `_invariants`' and not `meta.phaseGate`'s, so naming an exclusion
