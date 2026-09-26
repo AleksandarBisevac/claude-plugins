@@ -276,6 +276,42 @@ def _cases(check):
           [M.tests_add_path(v) for v in (None, 7, "", "   ", [])]
           == [None] * 5)
 
+    # --- what a runner printed AS A TEST IT RAN, moved here from
+    # `run-test-gate.py` (_TEST_MARKS, _TEST_DIRS, _subject_of, _segments,
+    # _is_suite_path) and from `audit-task.py` (_gate_entry_paths), beside
+    # `tests_add_path` above - the same filename bound, asked of a different
+    # field by two entry points that cannot import one another. -------------
+    check("sp1 `is_suite_path` is public here and gained ONE widening in the "
+          "move: a pytest `test_` PREFIX outside a test directory reads as a "
+          "suite path too - the plan gate's own default `exemptGlobs` already "
+          "grants `**/test_*.*` a test-file reading, and this file had none "
+          "at all: %r" % (getattr(M, "is_suite_path", None),),
+          hasattr(M, "is_suite_path")
+          and M.is_suite_path("pkg/test_orders.py") is True)
+    check("sp2 ...and the widening is CLASSIFICATION ONLY: `subject_of` stays "
+          "SUFFIX-only, because a bare prefix would re-spell a path onto "
+          "another file's stem, and an ordinary `testing.py` outside a test "
+          "directory still reads as ordinary source - the ALLOW pair this "
+          "widening must not touch",
+          hasattr(M, "subject_of") and hasattr(M, "is_suite_path")
+          and M.subject_of("pkg/test_orders.py") is None
+          and M.is_suite_path("src/testing.py") is False)
+    check("sp3 `gate_entry_paths` moved here too, beside the filename bound "
+          "it shares with `tests_add_path` - a gate entry's flags, selectors "
+          "and shard fractions read as what they are and not as paths: %r"
+          % (getattr(M, "gate_entry_paths", None),),
+          hasattr(M, "gate_entry_paths")
+          and M.gate_entry_paths("npm test -- src/a.test.ts")
+          == ["src/a.test.ts"]
+          and M.gate_entry_paths("yarn test --shard 1/4") == [])
+    check("sp4 `TEST_MARKS`, `TEST_DIRS` and `path_segments` are public here "
+          "too - the whole group `run-test-gate.py` used to carry under a "
+          "leading underscore, MOVED rather than copied",
+          hasattr(M, "TEST_MARKS") and ".test" in M.TEST_MARKS
+          and hasattr(M, "TEST_DIRS") and "tests" in M.TEST_DIRS
+          and hasattr(M, "path_segments")
+          and M.path_segments("src/a/b.py") == ["src", "a"])
+
     # THE RULE, driven through the WALK it now rides - one phase carrying the
     # same offending entry at four statuses, so what separates the verdicts is
     # the status and nothing else about the task.
@@ -933,6 +969,62 @@ def _cases(check):
                                  "previous": {"id": "P2.1", "phase": "P2"}})])])
     check("mo6 SECOND DIRECTION: a clean chain draws neither: %r" % (w,),
           not [x for x in w if "live task" in x or "both" in x])
+
+    # --- the one phase-gate default -------------------------------------------
+    check("pg1 `phase_gate_default` exists and puts `always` FIRST, then every "
+          "OTHER buildCommands key in buildCommands order: %r"
+          % (getattr(M, "phase_gate_default", None)
+             and M.phase_gate_default(
+                 {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+                  "phaseGate": {"always": ["lint"]}}),),
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+               "phaseGate": {"always": ["lint"]}})["entries"]
+          == ["lint", "test", "coverage"])
+    check("pg2 ...and `exclude` naming every key with no `always` empties the "
+          "default - the mutation to prove this is watched, not merely "
+          "asserted (skip the empty check -> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+               "phaseGate": {"exclude": ["test", "lint", "coverage"]}})
+              ["entries"] == [])
+    check("pg3 ...and with NO meta.phaseGate at all, the default is every "
+          "buildCommands key, in buildCommands order - byte-identical to "
+          "before this field existed (mutation: sort the keys -> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"zeta": "x", "alpha": "y", "mid": "z"}})
+              ["entries"] == ["zeta", "alpha", "mid"])
+    check("pg4 `phase_gate_suite_gap` answers the CERTAIN arm with no evidence "
+          "at all: a default emptied by `exclude` with no `always` runs no "
+          "suite, whatever the ledger says",
+          hasattr(M, "phase_gate_suite_gap")
+          and M.phase_gate_suite_gap(
+              {"meta": {"buildCommands":
+                        {"test": "x", "lint": "y", "coverage": "z"},
+                        "phaseGate":
+                        {"exclude": ["test", "lint", "coverage"]}}})
+              is not None
+          and "phase gate runs no suite" in M.phase_gate_suite_gap(
+              {"meta": {"buildCommands":
+                        {"test": "x", "lint": "y", "coverage": "z"},
+                        "phaseGate":
+                        {"exclude": ["test", "lint", "coverage"]}}}))
+    check("pg5 ...and WITHOUT exclude the default is today's set, so the gap "
+          "is never asked - a manifest with no phaseGate at all draws no "
+          "'runs no suite' sentence",
+          hasattr(M, "phase_gate_suite_gap")
+          and M.phase_gate_suite_gap(
+              {"meta": {"buildCommands": {"test": "x"}}}) is None)
+    check("pg6 a blank-string buildCommands key never enters the default gate, "
+          "with no meta.phaseGate at all (mutation: drop the build_keys filter "
+          "-> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"": "x", "lint": "y"}})["entries"]
+          == ["lint"])
 
 
 def _selftest():

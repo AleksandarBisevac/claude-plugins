@@ -17,7 +17,8 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
-                [--dry-run] [--project-dir DIR] [--takeover] [--json]
+                [--failing-from RUNID] [--dry-run] [--project-dir DIR]
+                [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
@@ -50,7 +51,9 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
-                [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT|-]
+                [--gate CMD ... | --gate-clear | --gate-set entry ...
+                 | --gate-drop entry ...]
+                [--area a,b] [--outcome TEXT|-]
                 [--rename TITLE|-]
                 [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
   audit-task.py seed ["<phase title>"] [manifest]
@@ -282,6 +285,14 @@ import _manifest_rules as _rules  # noqa: E402  (tests_add_path: the ONE answer 
 #                                            the shape grades the same field this verb
 #                                            writes - two parses would be two opinions
 #                                            about what `commit_scope` then judges)
+import _manifest_phases as _phases  # noqa: E402  (gate_entry_paths: the same filename
+#                                            bound asked of a gate entry instead of a
+#                                            `tests.add` one. A downward edge, L7 -> L2,
+#                                            kept separate from the `_rules` edge above
+#                                            because `run-test-gate.py`'s `--own` reads
+#                                            the identical function and a second copy
+#                                            here is exactly what an entry point cannot
+#                                            import out of the other)
 import _commit_trail          # noqa: E402  (is a SHA still in this clone? A downward
 #                                            edge, L7 -> L1, and the ONE answer the
 #                                            doctor and `repair-commits.py` already
@@ -974,13 +985,22 @@ def stdin_notes_key(args):
 def _gate_contradiction(args):
     """The refusal line for `--gate` with `--gate-clear`, or None.
 
-    ONE SENTENCE, THREE VERBS. `add`, `scope` and `retarget` all take both flags
+    ONE SENTENCE, THREE VERBS. `add`, `scope` and `seed` all take both flags
     off the same global parser and the rule is one rule about one field: two
     answers to one question, and guessing which the caller meant is how a task
     ends up gated on a command nobody asked for. `scope` and `retarget` each
-    carried their own copy of the sentence; `add` needed a third when it learned
-    to read the flag, and three copies of a refusal is how one of them
+    carried their own copy of the sentence; `add` needed a third when it
+    learned to read the flag, and three copies of a refusal is how one of them
     eventually stops matching the other two.
+
+    RETARGET ASKS THE WIDER VERSION, `_retarget_gate_contradiction`, NOT THIS
+    ONE -- `gate_set` and `gate_drop` are declared on the shared parser but
+    live in `VERB_FLAGS["retarget"]` alone, and `vf6` (the call-graph closure
+    the manifest test suite derives `VERB_FLAGS` against) would read a call to
+    a FOUR-flag version here as every verb reaching all four fields, which
+    none but `retarget` actually may. Two functions, not one parametrized by a
+    caller nobody passes a different value from, is what keeps `add`, `scope`
+    and `seed`'s derived flag sets equal to their declared ones.
 
     Every caller asks it in the SAME POSITION -- under the lock, after the target
     has been resolved and before anything is mutated -- so the order a caller
@@ -989,6 +1009,23 @@ def _gate_contradiction(args):
     if args.gate and args.gate_clear:
         return ("[audit-task] --gate and --gate-clear say opposite things about "
                 "the same field -- pass one")
+    return None
+
+
+def _retarget_gate_contradiction(args):
+    """The refusal line for two of `--gate` / `--gate-clear` / `--gate-set` /
+    `--gate-drop` together, or None -- `retarget`'s own superset of
+    `_gate_contradiction`, for the reason that function's docstring gives.
+    """
+    present = [flag for flag, given in (
+        ("--gate", bool(args.gate)),
+        ("--gate-clear", bool(args.gate_clear)),
+        ("--gate-set", args.gate_set is not None),
+        ("--gate-drop", bool(args.gate_drop)),
+    ) if given]
+    if len(present) > 1:
+        return ("[audit-task] %s say opposite things about the same field -- "
+                "pass one" % " and ".join(present))
     return None
 
 
@@ -2083,27 +2120,13 @@ def _waiting_on(assembled, node):
 
 
 # --- the add -------------------------------------------------------------------
-def _gate_entry_paths(entry):
-    """Every file path a gate entry NAMES, in the order they appear in it.
-
-    THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
-    token instead of the leading one. `_rules.tests_add_path` is the ONE answer
-    to "does this string name a file", and a gate entry is the other
-    place a path has to be recognized inside free text -- a second spelling of
-    the filename bound would be two opinions about the same token, and the one
-    that drifted would either miss a suite or read `--selectProjects` as a path.
-
-    A token has to carry an extension or be a dotfile to count, which is what
-    keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
-    """
-    if not isinstance(entry, str):
-        return []
-    found = []
-    for token in entry.split():
-        path = _rules.tests_add_path(token)
-        if path:
-            found.append(path)
-    return found
+# A THIN ALIAS, NOT A COPY: `_manifest_phases.gate_entry_paths` is the SAME
+# question `tests.add` is asked (`_rules.tests_add_path` above), asked of each
+# whitespace-separated token in a gate entry instead of the leading one - and
+# `run-test-gate.py`'s `--own` narrowing reads the identical function. Two
+# entry points needing one answer could only have copied it before this moved;
+# now both alias one body.
+_gate_entry_paths = _phases.gate_entry_paths
 
 
 def _is_shared_key(entry, build):
@@ -2175,7 +2198,143 @@ def _repointed(entries, build, paths):
     return out
 
 
-def _task_gate(args, phase, assembled, add_paths, files):
+def _failing_from_lookup(project, phase, run_id):
+    """`(row, refusal)` for `--failing-from <run_id>` -- the evidence row a
+    failed-first fix task derives its gate from, or the reason it cannot.
+    Exactly one of the two is not `None`.
+
+    THE RUNID IS LOOKED UP, NEVER PARSED. `_evidence_io.row_by_run` is the one
+    lookup this project keeps for exactly this question, because the schema
+    calls a runId opaque -- reading structure into one here would be a second,
+    silently different answer to a question `row_by_run` already answers.
+
+    THREE THINGS HAVE TO BE TRUE OF THE ROW, each refused by naming the actual
+    value rather than a generic "no such run": it must EXIST (a mistyped runId
+    is told there is no such run, never handed the ordinary derivation in
+    silence); it must be scoped to THIS PHASE (a task's own run, or another
+    phase's, cannot license a gate narrowed to suites this phase never ran);
+    and it must carry `status: "failed"` (a fix task opened from a run that
+    PASSED is not failed-first, and the sentence names the status the row
+    actually holds, never merely "not failed").
+    """
+    try:
+        rows = _evidence_io.read_rows(project)["rows"]
+    except Exception as exc:
+        return None, ("[audit-task] --failing-from %s: the evidence ledger "
+                      "could not be read (%s)" % (run_id, exc))
+    row = _evidence_io.row_by_run(rows, run_id)
+    if row is None:
+        return None, ("[audit-task] --failing-from %s: no run with this id is "
+                      "in the evidence ledger" % (run_id,))
+    phase_id = phase.get("id")
+    if row.get("scope") != "phase" or str(row.get("phaseId")) != str(phase_id):
+        subject = ("task %s" % row.get("taskId") if row.get("scope") == "task"
+                  else "phase %s" % row.get("phaseId")
+                  if row.get("scope") == "phase" else
+                  "scope %r" % (row.get("scope"),))
+        return None, (
+            "[audit-task] --failing-from %s is %s's run, not phase %s's -- a "
+            "fix task's gate can only be narrowed to suites THIS phase's own "
+            "run named as failing" % (run_id, subject, phase_id))
+    if row.get("status") != "failed":
+        return None, (
+            "[audit-task] --failing-from %s is not a FAILED run (status: %s) "
+            "-- a failed-first fix task needs a red run to point its gate at"
+            % (run_id, row.get("status")))
+    return row, None
+
+
+def _named_failing_suites(row):
+    """Every suite file `--failing-from`'s ROW named as failing, in the order
+    its failed steps carry them, deduplicated.
+
+    A STEP COUNTS AS FAILED THE SAME WAY `run-test-gate.failed_steps` READS
+    ONE -- restated here rather than imported, because `run-test-gate.py` and
+    this file are peer entry points and neither imports the other: it ran to
+    completion (a non-zero exit) and carries no no-verdict `outcome`, since a
+    timed-out step's exit code is an artefact of the kill that stopped it and
+    reading that as a named failure would point a gate at a suite that never
+    finished.
+
+    ONLY A `failingSuitesBasis` THAT SAYS THE RUNNER NAMED THEM COUNTS.
+    `run-test-gate.failing_suites` falls back to a capped tail of the step's
+    own output when no runner it recognises wrote a summary, and a tail
+    excerpt is not a list of failing tests -- learning suites off it would be
+    a fix task's gate narrowed to whatever lines happened to scroll past last.
+    """
+    suites = []
+    for step in (row.get("steps") or []):
+        if not isinstance(step, dict):
+            continue
+        if step.get("exit") in (0, None) or step.get("outcome"):
+            continue
+        if "named as failing" not in (step.get("failingSuitesBasis") or ""):
+            continue
+        for path in step.get("failingSuites") or []:
+            if path not in suites:
+                suites.append(path)
+    return suites
+
+
+def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
+                        meta, phase):
+    """The three ordinary defaults (`tests.add`, `files`, the phase's wide
+    gate), gate-only's own suite-filtered arm included -- split out of
+    `_task_gate` so a `--failing-from` call that cannot narrow anything falls
+    through to EXACTLY this, with the reason it fell through said beside it
+    rather than the phase's own gate handed back unexplained.
+    """
+    if shape is None:
+        return wide, ("the phase's testGate, wide -- no sibling task in %s "
+                      "declares a path-scoped gate entry to read this "
+                      "project's spelling off" % (phase.get("id"),)), \
+            "phase-no-spelling"
+    if add_paths:
+        return (_repointed(shape, build, add_paths),
+                "narrowed to this task's tests.add paths, in %s's spelling"
+                % (owner,), "tests.add")
+    if files:
+        if mode == "gate-only":
+            suite_files = [p for p in files if _phases.is_suite_path(p)]
+            if suite_files:
+                return (_repointed(shape, build, suite_files),
+                        "narrowed to this task's files, in %s's spelling"
+                        % (owner,), "files")
+            always = _phases.phase_gate_default(
+                meta if isinstance(meta, dict) else {})["always"]
+            if always:
+                return (list(always),
+                        "meta.phaseGate.always -- this task's files name no "
+                        "suite path to narrow %s's gate at" % (owner,),
+                        "gate-only-no-suite")
+            passthrough = [e for e in shape
+                          if _is_shared_key(e, build) or not _gate_entry_paths(e)]
+            return (passthrough,
+                    "%s's gate entries that name no path, carried through -- "
+                    "this task's files name no suite path to narrow %s's gate "
+                    "at" % (owner, owner), "gate-only-no-suite")
+        return (_repointed(shape, build, files),
+                "narrowed to this task's files, in %s's spelling" % (owner,),
+                "files")
+    return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
+                  "task names no file to point a gate at" % (owner,)), \
+        "phase-no-paths"
+
+
+def _task_gate_setup(phase, assembled):
+    """`(wide, meta, build, shape, owner)` -- the pieces every arm past
+    `--gate`/`--gate-clear` needs, shared by `_task_gate` and
+    `_failing_from_task_gate` so the two keep exactly one copy of them rather
+    than two that could drift.
+    """
+    wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
+    meta = assembled.get("meta") if isinstance(assembled, dict) else None
+    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
+    shape, owner = _path_scoped_sibling(phase, build)
+    return wide, meta, build, shape, owner
+
+
+def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
     """`(gate, basis, source)` -- the new task's `tests.gate`, the sentence
     saying which of the three defaults produced it, and the ONE WORD that says
     the same thing to a rule.
@@ -2213,6 +2372,27 @@ def _task_gate(args, phase, assembled, add_paths, files):
     the only way it goes -- a false red is noticed the same day and a false green
     is never noticed at all. So the third default is reached with a reason naming
     what was missing, never with silence.
+
+    A GATE-ONLY TASK NARROWS ONLY TO A SUITE. Arm 2 above reads every kind of
+    `files` entry for a tdd or regression task, because `tests.add` already
+    proved the task creates a real test file -- but a gate-only task names no
+    case at all, so a source file among its `files` is not evidence the
+    project's suite-running command has anything of this task's to run. When
+    `mode` is `"gate-only"` and none of `files` is a suite path
+    (`_manifest_phases.is_suite_path`), narrowing to it would point the gate at
+    a command that runs nothing this task touched -- a green bought on work
+    nobody wrote. The gate is `meta.phaseGate.always` when the plan declares
+    one, else the sibling's own shared keys and path-less entries, carried
+    through exactly as `_repointed` already leaves them -- never the phase's
+    wide `testGate`, which is the wide gate an operator already gets warned
+    about running every attempt.
+
+    `seed`'s the only OTHER caller, and this is the version it gets: no
+    `--failing-from` arm, on purpose. `_failing_from_task_gate` is that arm's
+    entire home, so `seed`'s own call-graph closure (`vf6`'s equality check)
+    never comes to read `args.failing_from` at all -- a phase `seed` mints
+    has no sibling task yet to point a failed-first gate through in the first
+    place.
     """
     if args.gate:
         return list(args.gate), "from --gate", "declared"
@@ -2231,29 +2411,75 @@ def _task_gate(args, phase, assembled, add_paths, files):
         # caller saying nothing should grade this task is answering the question
         # the three defaults below exist to answer, not choosing among them.
         return [], "from --gate-clear", "cleared"
-    wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
-    meta = assembled.get("meta") if isinstance(assembled, dict) else None
-    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
-    shape, owner = _path_scoped_sibling(phase, build)
-    if shape is None:
-        return wide, ("the phase's testGate, wide -- no sibling task in %s "
-                      "declares a path-scoped gate entry to read this "
-                      "project's spelling off" % (phase.get("id"),)), \
-            "phase-no-spelling"
-    if add_paths:
-        return (_repointed(shape, build, add_paths),
-                "narrowed to this task's tests.add paths, in %s's spelling"
-                % (owner,), "tests.add")
-    if files:
-        return (_repointed(shape, build, files),
-                "narrowed to this task's files, in %s's spelling" % (owner,),
-                "files")
-    return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
-                  "task names no file to point a gate at" % (owner,)), \
-        "phase-no-paths"
+    wide, meta, build, shape, owner = _task_gate_setup(phase, assembled)
+    return _ordinary_task_gate(shape, owner, wide, build, add_paths, files,
+                               mode, meta, phase)
 
 
-def _build_task(task_id, title, args, phase, assembled):
+def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
+                            failing_row):
+    """`(gate, basis, source)` for `add` ALONE -- `_task_gate` plus the
+    failed-first `--failing-from` arm, kept in its own function rather than
+    folded into `_task_gate` so `seed` (which shares every other arm) never
+    reads `args.failing_from` in its own call-graph closure; `vf6` grades that
+    closure against `VERB_FLAGS`, and `seed`'s row does not list the flag.
+
+    ASKED BETWEEN `--gate-clear` AND THE THREE ORDINARY DEFAULTS, never
+    instead of them: `--gate`/`--gate-clear` still answer first, exactly as
+    they do for every other verb. `failing_row` is a CALLER-VALIDATED evidence
+    row -- `_failing_from_lookup` already refused the call if it could not be
+    one -- so this function does no refusing, only derivation, the same split
+    `_locked_retarget` and `_retarget_gate_now` keep for `--gate-drop`/
+    `--gate-set`.
+
+    When the row's failed steps NAMED at least one suite
+    (`_named_failing_suites`) and the phase has a path-scoped spelling to
+    point them through, the gate is those suites UNIONED with this task's own
+    `tests.add` paths, in the sibling's spelling -- the union because a fix
+    task may still be asked to write a NEW case beside the failure it
+    repairs, and dropping that path would buy a green the task never earned.
+    Source word `failing-from-run:<runId>` (`_manifest_vocab.GATE_BASIS`'s own
+    spelling for it) -- a reader compares the word before the colon and looks
+    the runId up, never parsing further.
+
+    THE FALL-THROUGH NEVER REACHES AN EMPTY GATE. A row whose failed steps
+    named no suite (a tail excerpt is not a list of failing tests) or a phase
+    with no path-scoped sibling to narrow through falls to
+    `_ordinary_task_gate` exactly as a call with no `--failing-from` would,
+    with the reason it fell through said FIRST in the returned sentence --
+    never silence, and never the empty gate as though `--failing-from` were a
+    second spelling of `--gate-clear`.
+    """
+    if args.gate:
+        return list(args.gate), "from --gate", "declared"
+    if args.gate_clear:
+        return [], "from --gate-clear", "cleared"
+    wide, meta, build, shape, owner = _task_gate_setup(phase, assembled)
+    if not args.failing_from:
+        return _ordinary_task_gate(shape, owner, wide, build, add_paths,
+                                   files, mode, meta, phase)
+    if shape is not None:
+        suites = _named_failing_suites(failing_row) if failing_row else []
+        if suites:
+            union = _union_paths(suites, add_paths)
+            return (_repointed(shape, build, union),
+                    "narrowed to the suite(s) run %s named as failing, "
+                    "union with this task's tests.add paths, in %s's "
+                    "spelling" % (args.failing_from, owner),
+                    "failing-from-run:%s" % (args.failing_from,))
+        why = ("run %s's failed steps named no suite as failing (a tail "
+               "excerpt is not a list of failing tests)"
+               % (args.failing_from,))
+    else:
+        why = ("no sibling task in %s declares a path-scoped gate entry to "
+               "narrow --failing-from %s against"
+               % (phase.get("id"), args.failing_from))
+    gate, basis, source = _ordinary_task_gate(
+        shape, owner, wide, build, add_paths, files, mode, meta, phase)
+    return gate, "%s, so falling through: %s" % (why, basis), source
+
+
+def _build_task(task_id, title, args, phase, assembled, failing_row=None):
     """`(task, unnamed, gateBasis)` -- the new task, fully template-initialized
     (every field from the conventions' New task template, exactly once, in
     _TEMPLATE_KEYS order), the `tests.add` entries that named no file, and the
@@ -2279,8 +2505,8 @@ def _build_task(task_id, title, args, phase, assembled):
     # sat immediately above the parse of `--tests-add`, so the input a narrow
     # gate needs was produced one line too late and thrown away.
     files = _union_paths(_split_csv(args.files), add_paths)
-    gate, gate_basis, gate_source = _task_gate(args, phase, assembled,
-                                               add_paths, files)
+    gate, gate_basis, gate_source = _failing_from_task_gate(
+        args, phase, assembled, add_paths, files, mode, failing_row)
     task = {
         "id": task_id,
         "title": title,
@@ -2390,10 +2616,17 @@ def _locked_add(args, project, config, mpath, title, out):
     if refusal:
         out(refusal)
         return E_USAGE
+    failing_row = None
+    if args.failing_from:
+        failing_row, refusal = _failing_from_lookup(project, phase,
+                                                    args.failing_from)
+        if refusal:
+            out(refusal)
+            return E_USAGE
 
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
-                                                assembled)
+                                                assembled, failing_row)
     # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
     # SPELLING. A schema-legal `a/b.py:12-34` is a real, existing `a/b.py`, and
     # `os.path.exists` asked of the raw string can only ever say no -- reporting
@@ -4514,12 +4747,43 @@ def _phase_gate(args, assembled):
         return list(args.gate), "from --gate"
     meta = assembled.get("meta")
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
-    if isinstance(build, dict):
-        keys = [k for k in build.keys() if isinstance(k, str) and k.strip()]
-        if keys:
-            return keys, "from meta.buildCommands"
+    if not isinstance(build, dict):
+        return [], "the manifest declares no meta.buildCommands"
+    keys = [k for k in build.keys() if isinstance(k, str) and k.strip()]
+    if not keys:
         return [], "meta.buildCommands is empty"
-    return [], "the manifest declares no meta.buildCommands"
+    # `phase_gate_default` IS THE DERIVATION -- `always` is an ORDER and never a
+    # narrowing (an entry named in both `always` and `exclude` stays IN), and
+    # `exclude` is the only declared way to drop a buildCommands key. Asking it
+    # here rather than re-reading `meta.phaseGate` a second time is what keeps
+    # this resolver, the validator's shape warnings and the sign-off run from
+    # ever disagreeing about what "today's default" means.
+    default = _phases.phase_gate_default(meta if isinstance(meta, dict) else {})
+    entries, always, excluded = (default["entries"], default["always"],
+                                 default["excluded"])
+    if not entries:
+        # CERTAIN, EVEN WITH NO EVIDENCE: `exclude` removed every buildCommands
+        # key and `always` put none back, so there is nothing left to have run
+        # whatever a future ledger says. `phase_gate_suite_gap` names the same
+        # cause for the validator's own warning, printed among the post-write
+        # warnings a moment after this basis is written.
+        return [], ("meta.phaseGate.exclude drops every meta.buildCommands key "
+                   "(%s)%s -- the new phase's gate is empty"
+                   % (_output.some_of(excluded, render=repr),
+                      " and meta.phaseGate.always adds none back" if not always
+                      else ""))
+    if not always and not excluded:
+        # BYTE-IDENTICAL TO TODAY: no `meta.phaseGate` at all is `always` and
+        # `exclude` both empty, so `entries` is exactly `keys` in buildCommands
+        # order -- the sentence a phase without the field has always gotten.
+        return entries, "from meta.buildCommands"
+    if not excluded:
+        return entries, "from meta.buildCommands, meta.phaseGate.always first"
+    return entries, (
+        "from meta.buildCommands%s; excluded by meta.phaseGate.exclude: %s -- "
+        "declared out of this phase's gate, and the sign-off run prints it too"
+        % (", meta.phaseGate.always first" if always else "",
+           _output.some_of(excluded, render=repr)))
 
 
 def _build_phase(pid, title, args, gate):
@@ -4951,8 +5215,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
     the operation this verb exists to replace.
 
     THE EMPTY GATE NEEDS ITS OWN FLAG HERE TOO, for a reason that is NOT
-    `retarget`'s. That verb appends to `testGate`, so the append itself left the
-    empty gate unspellable; this one REPLACES `tests.gate` outright. The gap is
+    `retarget`'s. That verb replaces `testGate` too, so the replacement itself
+    still left the empty gate unspellable; this one REPLACES `tests.gate`
+    outright. The gap is
     in the values: no `--gate` VALUE says "none" - `--gate ""` writes a gate
     holding an empty command, which is a gate that cannot run rather than the
     absence of one. Measured live: a phase retargeted to `testGate: []` because
@@ -5490,6 +5755,61 @@ def _locked_scope(args, project, config, mpath, tid, out):
     return 0
 
 
+_EMPTY_GATE_REFUSAL = ("[audit-task] an empty gate is --gate-clear, which says "
+                      "so")
+
+
+def _retarget_gate_now(args, current):
+    """`(now, refusal)` -- the phase's NEXT `testGate`, or the refusal line,
+    for whichever ONE of `--gate` / `--gate-clear` / `--gate-set` /
+    `--gate-drop` is present. Exactly one of the two return values is not
+    `None`; the caller already asked `_gate_contradiction` that at most one of
+    the four is present at all, so this never has to choose between them.
+
+    `--gate` AND `--gate-set` ARE ONE OPERATION, kept in this one function
+    rather than each carrying its own emptiness rule: both REPLACE the gate
+    outright, `--gate` one value per repeat of the flag, `--gate-set` several
+    values under one flag. `--gate-set` is the stricter of the two on purpose
+    -- an ALL-BLANK value set is refused the same way an empty one is, where
+    plain `--gate ""` still writes the odd literal gate it always has, because
+    `--gate-set`'s whole reason to exist is a caller who wants to name several
+    entries at once, and a caller who typed nothing but blanks almost always
+    meant the empty gate and not a gate of blank commands.
+
+    `--gate-drop` is the other operation, narrowing the CURRENT gate by name --
+    the only one of the four that reads `current` at all. Every named entry
+    must already be in it (refused by name otherwise, with the gate as it
+    stands, so a typo is not silently a no-op), and a drop that would leave
+    nothing is the same empty-gate refusal as the other three: the state is
+    reached through `--gate-clear` alone, which SAYS it is choosing that,
+    rather than through an operation that arrives there as a side effect of
+    what it dropped.
+    """
+    if args.gate_clear:
+        return [], None
+    if args.gate_set is not None:
+        now = [g for g in args.gate_set if isinstance(g, str)]
+        if not now or all(not g.strip() for g in now):
+            return None, _EMPTY_GATE_REFUSAL
+        return now, None
+    if args.gate:
+        return list(args.gate), None
+    if args.gate_drop:
+        missing = [g for g in args.gate_drop if g not in current]
+        if missing:
+            return None, (
+                "[audit-task] --gate-drop names %s, which %s not in this "
+                "phase's testGate (%s)"
+                % (_output.some_of(missing, render=repr),
+                   "is" if len(missing) == 1 else "are", json.dumps(current)))
+        drop = set(args.gate_drop)
+        now = [g for g in current if g not in drop]
+        if not now:
+            return None, _EMPTY_GATE_REFUSAL
+        return now, None
+    return None, None
+
+
 def _locked_retarget(args, project, config, mpath, pid, out):
     """Correct a phase's gate, area, outcome or description, under lock.
 
@@ -5507,7 +5827,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     is a phase sign-off signs on review alone. That is a designed state, it
     validates clean, and `/audit:phase add --gate` can reach it for a NEW phase.
     An imported phase could not, which is what made a guessed gate a trap rather
-    than a default: `--gate` appends, so without an explicit clear there is no
+    than a default: `--gate` replaces, so without an explicit clear there is no
     spelling for "there is nothing here that can prove this".
 
     NOT PAST SIGN-OFF. A done or cancelled phase - and one whose verdict is
@@ -5566,15 +5886,17 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             "of what this branch was cut for." % (pid, node.get("branch")))
         return E_USAGE
 
-    contradiction = _gate_contradiction(args)
+    contradiction = _retarget_gate_contradiction(args)
     if contradiction:
         out(contradiction)
         return E_USAGE
-    if not (args.gate or args.gate_clear or args.area is not None
+    if not (args.gate or args.gate_clear or args.gate_set is not None
+            or args.gate_drop or args.area is not None
             or args.outcome or args.description or args.rename):
-        out("[audit-task] retarget needs one of --gate / --gate-clear / --area / "
-            "--outcome / --description / --rename -- a call that changes nothing "
-            "is a lock taken for no reason")
+        out("[audit-task] retarget needs one of --gate / --gate-clear / "
+            "--gate-set / --gate-drop / --area / --outcome / --description / "
+            "--rename -- a call that changes nothing is a lock taken for no "
+            "reason")
         return E_USAGE
 
     changes = []
@@ -5583,9 +5905,12 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         if was != now:
             changes.append({"id": pid, "field": field, "from": was, "to": now})
 
-    if args.gate or args.gate_clear:
+    if args.gate or args.gate_clear or args.gate_set is not None or args.gate_drop:
         was = list(node.get("testGate") or [])
-        now = [] if args.gate_clear else list(args.gate)
+        now, refusal = _retarget_gate_now(args, was)
+        if refusal:
+            out(refusal)
+            return E_USAGE
         _moved("testGate", was, now)
         node["testGate"] = now
     if args.area is not None:
@@ -6410,7 +6735,7 @@ VERB_FLAGS = {
     # afterwards is its own verb and its own refusals.
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
-            "tests_add", "gate", "gate_clear", "dry_run"),
+            "tests_add", "gate", "gate_clear", "dry_run", "failing_from"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -6430,8 +6755,8 @@ VERB_FLAGS = {
              "intent_basis", "no_change", "reason"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
-    "retarget": ("gate", "gate_clear", "area", "outcome", "description",
-                 "rename"),
+    "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
+                 "outcome", "description", "rename"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
     # tag or rename -- only the one pair every gate-bearing verb offers, for a
     # caller who already knows the real command.
@@ -6520,15 +6845,28 @@ def build_parser():
     p.add_argument("--tests-add", dest="tests_add", action="append",
                    default=None)
     p.add_argument("--gate", action="append", default=None)
-    # `retarget` AND `scope`, and the two need it for different reasons that
-    # reach the same state. On a phase `--gate` APPENDS, so without an explicit
-    # clear there is no spelling for the empty gate at all; on a task `--gate`
-    # replaces, and the gap is that no VALUE of it spells "none" - `--gate ""`
-    # writes a gate holding an empty command, which is a gate that cannot run
-    # rather than the absence of one. `_phase_gate` documents the empty gate as
-    # a designed state, and it is what a wrongly-guessed gate needs.
+    # `retarget` AND `scope`, for the SAME reason: `--gate` REPLACES on both a
+    # phase and a task, and the gap is that no VALUE of it spells "none" -
+    # `--gate ""` writes a gate holding an empty command, which is a gate that
+    # cannot run rather than the absence of one. `_phase_gate` documents the
+    # empty gate as a designed state, and it is what a wrongly-guessed gate
+    # needs.
     p.add_argument("--gate-clear", dest="gate_clear",
                    action="store_true")
+    # `retarget` only (`VERB_FLAGS["retarget"]`). `--gate-drop` names entries to
+    # REMOVE one at a time (`append`, so it can repeat); `--gate-set` REPLACES
+    # the whole gate, which is `--gate`'s own operation under a name that takes
+    # several values without the repeated-flag spelling `--gate` already uses
+    # for the same thing. `nargs="*"` and not `"+"`: a caller who passes NO
+    # value is answering "the empty gate", which is THIS verb's own refusal
+    # ("an empty gate is --gate-clear, which says so") -- argparse's own usage
+    # error for a starved `"+"` would answer instead, in argparse's words and
+    # not this project's.
+    p.add_argument("--gate-drop", dest="gate_drop", action="append",
+                   default=None,
+                   help="retarget: drop one testGate entry (repeatable)")
+    p.add_argument("--gate-set", dest="gate_set", nargs="*", default=None,
+                   help="retarget: replace testGate with these entries")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None, help=_PROSE_HELP)
     p.add_argument("--verdict", default=None, choices=list(_mio.SIGNOFF_VERDICTS),
@@ -6587,6 +6925,15 @@ def build_parser():
     p.add_argument("--dry-run", dest="dry_run", action="store_true", default=False,
                    help="add: build the task and validate the plan with it, and "
                         "write nothing - no manifest, no journal row")
+    # `add` only. A FAILED-FIRST fix task: point the new task's gate at the
+    # suites a red sign-off run's own steps NAMED as failing, rather than at
+    # the ordinary tests.add/files/phase-wide chain. The runId is opaque and
+    # looked up through `_evidence_io.row_by_run`, never parsed -- see
+    # `_failing_from_lookup`'s docstring for the three things the row must be.
+    p.add_argument("--failing-from", dest="failing_from", default=None,
+                   metavar="RUNID",
+                   help="add: point the new task's gate at the suites this "
+                        "run's own steps named as failing")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p

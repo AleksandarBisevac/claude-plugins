@@ -7,6 +7,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **A phase's gate has a declared default and a declared way to narrow it: `meta.phaseGate`.**
+  `/audit:phase add` (and a task's own derivation) used to default to every `meta.buildCommands`
+  key with no way to keep one out short of retargeting every phase by hand afterward.
+  `{always, exclude}` fixes the DEFAULT rather than one phase's gate: `always` puts named keys
+  first, `exclude` leaves named keys out (an entry in both stays IN — `always` outranks
+  `exclude`), and absence is today's behaviour exactly. `meta.gateBudgetMs` is the matching
+  advisory cost budget, read by `/audit:doctor`'s new gate-economy row against a gate that has
+  never failed, naming the entries costing more than the budget and the retarget/exclude/always
+  remedy for each.
+- **`/audit:doctor`'s gate-economy row**, printed after `gate patterns`: a gate `gate patterns`
+  already calls a candidate to drop, graded on its recorded cost against `meta.gateBudgetMs`. No
+  budget declared is an OK row saying so; an unmeasured step is named on its own line rather than
+  folded into a passing count.
+- **`/audit:phase retarget --gate-drop <entry>` and `--gate-set <entry> ...`.** `--gate-set`
+  replaces a phase's gate with an explicit list and refuses the empty one (`--gate-clear` is the
+  declared route to that); `--gate-drop` removes one named entry from the current gate rather than
+  restating the rest of it. `--gate` still REPLACES the gate outright, as it always has.
+- **`PHASE GATE RAN NO SUITE` and the `excluded:` line.** A phase-scope gate run now says when
+  none of the steps it actually ran carries a recognised test runner's summary
+  (`suiteReader`), and names only the `meta.buildCommands` keys `meta.phaseGate.exclude` left out
+  of THIS run — never the whole declared list, so a phase whose `testGate` still runs a
+  since-excluded key is not told it skipped a suite it in fact ran. Neither line moves the exit
+  code; `validate-manifest.py` gains the matching 'phase gate runs no suite' warning.
+  `tests.gateBasis` gains `gate-only-no-suite`, for a `gate-only` task whose own files name no
+  suite path to narrow to.
+- **`/audit:task add --failing-from <runId>`** gates a fix task on the suite(s) a red run's own
+  steps NAMED as failing, unioned with whatever the task also declares in `--tests-add`, in the
+  phase's path-scoped spelling. `tests.gateBasis` records `failing-from-run:<runId>`; a run that
+  named no suite falls through to the ordinary derivation, with the reason printed first.
+- **`run-test-gate.py <m> <P> --task <T> --own [--quiet]`** runs a task's own tests through the
+  same bracket and coverage answer as the recorded run, writes no row and no pointer, ever, and
+  keeps its whole output on disk at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`)
+  rather than spending a subagent's context on it. `--record` and `--reconcile` are refused
+  alongside it — there is nothing here for either to act on.
+- **`audit-lookup.py <manifest> run <runId|latest> [--phase <id> | --task <id>] [--json]`** —
+  the bounded evidence-ledger row a background gate's verdict is read back from, never re-derived
+  from a truncated terminal. A gate expected to outlast the Bash tool's foreground bound runs
+  under `run_in_background`; the row is written before the run's own banner prints
+  (`evidence: recorded <runId>`), so the verdict is durable the moment that line exists.
 - **`stamp-verification.py red` proves a red-first without touching the shared tree.** The executor
   brief used to prove a red by undoing the fix in the working tree for the length of the run, which a
   host refused beside a sibling's uncommitted work. `red --manifest M --task T -- <cmd>` checks HEAD
@@ -365,6 +404,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   writers' rows instead of declining it, since a row inside its commit ends the loop that declining
   existed to prevent. An `--override-verdict` whose row cannot be written is refused before
   anything is staged, where it used to commit and then report the missing row.
+- **A correction to the `1.4.1` entry below: `/audit:phase retarget --gate` has always REPLACED
+  a phase's gate, never appended to it.** That released entry said `--gate` appends; it did not,
+  then or now — `--gate-clear` is the load-bearing half precisely because `--gate` replaces, so an
+  emptied gate needed its own spelling. History stays as written; this line is the correction, not
+  an edit of it.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path

@@ -164,6 +164,7 @@ _anchor_row = _trail._anchor_row
 check_journal = _trail.check_journal
 check_task_restarts = _trail.check_task_restarts
 check_gate_patterns = _trail.check_gate_patterns
+check_gate_economy = _trail.check_gate_economy
 
 _hours_between = _completions._hours_between
 check_completions = _completions.check_completions
@@ -239,6 +240,11 @@ def diagnose(project, deep=False):
     # never before them.
     check_task_restarts(rep, project, cfg)
     check_gate_patterns(rep, project, manifest_rel, cfg)
+    # Directly after: the same evidence-ledger tally, graded on cost rather
+    # than on whether it ever failed - see check_gate_economy's own docstring
+    # for why it is restricted to the entries the row above already calls a
+    # candidate to drop.
+    check_gate_economy(rep, project, manifest_rel, manifest, cfg)
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=deep)
     check_evidence_pointers(rep, project, manifest)

@@ -72,6 +72,16 @@ not need to.
      default** — `executor_gate_policy` returns `None` for it; stop and ask the human rather than
      guessing which reading a typo meant. This changes only what the SUBAGENT does before it hands
      back — the recorded run two steps below is unconditional and is what becomes evidence either way.
+     **The `own-tests` reading runs through the script, never bare Bash:**
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
+         <manifestPath> <phaseId> --task <taskId> --own --quiet
+     ```
+     `--own` writes no row and no pointer, ever — it is the executor's own quick check, through
+     the same bracket and coverage answer as the recorded run, with its whole output kept on disk
+     at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`) rather than spent in the
+     subagent's context. Tell it the finished command in the spawn prompt rather than leaving it
+     to compose its own.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.
@@ -249,6 +259,15 @@ not need to.
      session may hold the phase lock — and that is a designed state, not an error: the run is
      recorded either way, and `--reconcile` catches the plan up later. Do not retry the gate to
      chase a refused pointer.
+
+     **A gate expected to outlast the Bash tool's foreground bound runs under
+     `run_in_background`, and its verdict is read from the ledger, never from a truncated
+     terminal.** The command above is unchanged; what changes is that you do not wait on its own
+     terminal to scroll to the end. `evidence: recorded <runId>` is written **before** the banner
+     prints, so the row is durable the moment the background job has one to show — read it back
+     with `scripts/status/audit-lookup.py <manifestPath> run <runId>` (the id off that line) or
+     `run latest --task <taskId>` when the id was not kept, exactly as
+     `reference/orchestrator.md`'s **Answering one question about the trail** describes.
    - **Then ask the reviewer the intent question — one call per task, and only when the gate
      you just ran came back green.** A red gate already has its answer and the task goes back
      through step 2; there is nothing to bind a claim to yet. Spawn
@@ -374,6 +393,10 @@ not need to.
        where it still is.
      - `task.redFirst` when it is set, so a proof that could not be MADE is not walked into
        the same refusal twice.
+     - the `raw log:` path the last attempt's own `--own` run printed, when this session still
+       has it — the whole of that run's output, which the terminal never carried in the first
+       place, so a retry told only the gate entry that failed re-derives the reason for itself
+       unless the log's path travels with it.
 
      **What the gate records is the failing gate ENTRY, never the failing test.** `GATE RED`
      names entries, the row's `failed` list is those same names, and `_evidence_io.row_for()`

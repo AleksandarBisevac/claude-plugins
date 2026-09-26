@@ -74,6 +74,8 @@ _output.install_path()
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
 import _evidence_io  # noqa: E402  (the ledger tally, at layer 2)
+import _fmt  # noqa: E402  (human_duration, at layer 1)
+import _manifest_io  # noqa: E402  (signoff_recorded, declared_gate_entries, layer 1)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -913,6 +915,48 @@ def check_task_restarts(rep, project, config=None):
              "show` reads them back, or open the task and read `attempts`")
 
 
+def _read_gate_rows(project, manifest_rel):
+    """`(eproject, econfig, rows)` off the evidence ledger the manifest at
+    `manifest_rel` points to, or `(None, None, None)` plus the exception text
+    - the ONE read `check_gate_patterns` and `check_gate_economy` both open
+    with, so neither can resolve the ledger a different way the day
+    `project_config_for` learns a new rule."""
+    manifest_path = os.path.join(project, manifest_rel or
+                                 "docs/audit/audit-plan.json")
+    try:
+        eproject, econfig = _evidence_io.project_config_for(
+            manifest_path, project_dir=project)
+        rows = _evidence_io.read_rows(eproject, econfig).get("rows") or []
+        return eproject, econfig, rows, None
+    except Exception as exc:
+        return None, None, None, exc
+
+
+def _gate_tally_classes(rows, names):
+    """Classify every gate `name` in `names` by ONE reading of
+    `_evidence_io.gate_tally` - the per-name tally loop `check_gate_patterns`
+    and `check_gate_economy` both need, walked once so a second walk can
+    never disagree with the first about which names are thin, which never
+    failed and which did.
+
+    `{"thin": [name, ...], "never_failed": [(name, ran), ...],
+      "failed": [name, ...]}`. "thin" is below `MIN_HISTORY_RUNS` - not
+    established either way, in `names` order. "failed" is past the floor
+    with at least one recorded failure - never folded into a never-failed
+    claim by either caller. "never_failed" is past the floor with zero
+    recorded failures, `(name, ran)` in `names` order."""
+    thin, never_failed, failed = [], [], []
+    for name in names:
+        ran, failed_n = _evidence_io.gate_tally(rows, name)
+        if ran < _evidence_io.MIN_HISTORY_RUNS:
+            thin.append(name)
+        elif failed_n == 0:
+            never_failed.append((name, ran))
+        else:
+            failed.append(name)
+    return {"thin": thin, "never_failed": never_failed, "failed": failed}
+
+
 def check_gate_patterns(rep, project, manifest_rel, config=None):
     """Has any gate run enough times to say it has never once failed?
 
@@ -927,13 +971,8 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     here either - a gate that has run fewer times than the floor a verdict
     needs is NOT ESTABLISHED, named as such, and never folded into either the
     clean OK or the never-failed warning."""
-    manifest_path = os.path.join(project, manifest_rel or
-                                 "docs/audit/audit-plan.json")
-    try:
-        eproject, econfig = _evidence_io.project_config_for(
-            manifest_path, project_dir=project)
-        rows = _evidence_io.read_rows(eproject, econfig).get("rows") or []
-    except Exception as exc:
+    eproject, econfig, rows, exc = _read_gate_rows(project, manifest_rel)
+    if exc is not None:
         rep.warn("gate patterns", "could not read the evidence ledger: %s"
                  % (exc,))
         return
@@ -945,14 +984,11 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
                  "run a phase gate to start recording; a pattern needs "
                  "repeated runs past the floor")
         return
-    never_failed, thin = [], []
-    for name in names:
-        ran, failed = _evidence_io.gate_tally(rows, name)
-        if ran < _evidence_io.MIN_HISTORY_RUNS:
-            thin.append(name)
-        elif failed == 0:
-            never_failed.append("%s (ran %d)" % (name, ran))
-    if never_failed:
+    classes = _gate_tally_classes(rows, names)
+    thin = classes["thin"]
+    if classes["never_failed"]:
+        never_failed = ["%s (ran %d)" % (name, ran)
+                        for name, ran in classes["never_failed"]]
         rep.warn("gate patterns",
                  "past the floor and never failed once, which is a "
                  "candidate to drop rather than keep paying for: %s"
@@ -980,6 +1016,131 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     rep.ok("gate patterns",
            "%d gate(s) checked past the floor; none goes without a failure"
            % (checked,))
+
+
+def _gate_economy_remedies(name, phases, phase_gate_always):
+    """The commands that stop the NEXT doctor run from finding `name` again.
+
+    One `/audit:phase retarget <id> --gate-drop <name>` per phase not yet
+    signed off whose `testGate` still carries it (a signed-off phase's gate
+    already ran what it is going to run - retargeting it changes nothing a
+    reader can act on), plus the line that stops a phase that does not exist
+    yet from getting `name` in the first place: a NEW phase's gate is built
+    by `_manifest_phases.phase_gate_default` off `meta.phaseGate.exclude`, so
+    retargeting every phase already on the plan is not enough to keep the
+    next one from repeating this. `meta.phaseGate.always` OUTRANKS
+    `exclude` there (`phase_gate_default`'s own rule: always puts a key back
+    IN even when exclude names it), so an entry still listed in `always`
+    would keep coming back with the exclude line alone - named as its own
+    remedy rather than silently assumed fixed."""
+    out = [
+        "/audit:phase retarget %s --gate-drop %s" % (phase.get("id"), name)
+        for phase in (phases or [])
+        if isinstance(phase, dict) and not _manifest_io.signoff_recorded(phase)
+        and name in _manifest_io.declared_gate_entries(phase.get("testGate"))
+    ]
+    out.append("add it to meta.phaseGate.exclude")
+    if name in (phase_gate_always or []):
+        out.append("take it out of meta.phaseGate.always")
+    return out
+
+
+def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
+    """Has any gate that never fails also gotten too expensive to keep
+    paying for?
+
+    `check_gate_patterns` names a gate that never catches anything; this
+    asks the other question a state can never answer - not "did it ever
+    fail" but "what did it cost" - and grades ONLY the entries the pattern
+    check would already call a candidate to drop, because a gate that has
+    failed at least once earns its keep whatever it costs.
+
+    NO `meta.gateBudgetMs` MEANS NOTHING IS GRADED ON COST, said as an OK
+    row rather than silence: the budget is an opt-in declaration
+    (`_manifest_phases._check_phase_gate`), and a plan that never declared
+    one has not been told its gates are cheap - it has been told nothing.
+
+    MEAN, NEVER TOTAL. `_evidence_io.gate_cost_ms` sums every recorded run;
+    dividing by the number of runs that actually contributed a `durationMs`
+    (`_evidence_io.gate_cost_measured`) is what makes the number comparable
+    to a budget written for one run, and comparing the total instead would
+    flag an entry that has simply run MANY times at a perfectly ordinary
+    cost each. `gate_tally`'s `ran` is NOT that denominator - it counts
+    every matching step whether or not it carries a `durationMs`, so a
+    history mixing measured and unmeasured runs would dilute `total / ran`
+    downward and could hide a gate that is over budget on the runs actually
+    measured.
+
+    UNMEASURED IS NOT CHEAP. A step that never carried a `durationMs` -
+    `gate_cost_ms` returning `None` - says nothing about what it costs, and
+    folding that silence into the OK count would be the same overclaim
+    `gate_cost_ms`'s own docstring refuses: absent means unmeasured, never
+    zero. Named on its own line instead.
+
+    A REMEDY THAT NAMES A COMMAND, not only a fact: `_gate_economy_remedies`
+    is what turns "this costs too much" into something an operator can run.
+
+    ADVISORY, ALWAYS - like every check in this module's second half, this
+    grades a repeated pattern rather than a single moment, and a WARNING
+    here changes nothing about the exit code."""
+    meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    budget = meta.get("gateBudgetMs")
+    if isinstance(budget, bool) or not isinstance(budget, int) or budget <= 0:
+        rep.ok("gate economy",
+               "no budget declared (meta.gateBudgetMs), so no gate entry is "
+               "graded on cost")
+        return
+    eproject, econfig, rows, exc = _read_gate_rows(project, manifest_rel)
+    if exc is not None:
+        rep.warn("gate economy", "could not read the evidence ledger: %s"
+                 % (exc,))
+        return
+    names = _evidence_io.gate_names_seen(rows)
+    if not names:
+        rep.warn("gate economy",
+                 "no evidence rows recorded yet, so no gate entry can be "
+                 "graded on cost",
+                 "run a phase gate to start recording; cost is only graded "
+                 "past the floor a pattern needs")
+        return
+    classes = _gate_tally_classes(rows, names)
+    phase_gate = meta.get("phaseGate")
+    phase_gate = phase_gate if isinstance(phase_gate, dict) else {}
+    always = [a for a in (phase_gate.get("always") or []) if isinstance(a, str)]
+    phases = (manifest or {}).get("phases") or []
+    over, graded, unmeasured = [], 0, []
+    for name, ran in classes["never_failed"]:
+        total = _evidence_io.gate_cost_ms(rows, name)
+        measured = _evidence_io.gate_cost_measured(rows, name)
+        if total is None or not measured:
+            unmeasured.append(name)
+            continue
+        graded += 1
+        mean = total / float(measured)
+        if mean > budget:
+            over.append((name, ran, mean))
+    if over:
+        lines, fixes = [], []
+        for name, ran, mean in over:
+            lines.append(
+                "%s (ran %d, mean %s, budget %s)"
+                % (name, ran, _fmt.human_duration(int(round(mean))),
+                   _fmt.human_duration(budget)))
+            fixes.append("%s: %s" % (name, "; ".join(
+                _gate_economy_remedies(name, phases, always))))
+        rep.warn("gate economy",
+                 "past the floor, never failed, and costing more than the "
+                 "declared budget: %s" % ("; ".join(lines),),
+                 " | ".join(fixes))
+        return
+    detail = ("%d gate(s) checked past the floor and never failed; none "
+             "costs more than the %s budget" % (graded,
+                                                 _fmt.human_duration(budget)))
+    if unmeasured:
+        detail += ("; %d unmeasured (no recorded durationMs): %s"
+                   % (len(unmeasured), ", ".join(unmeasured)))
+    rep.ok("gate economy", detail)
 
 
 # --- cli ------------------------------------------------------------------------

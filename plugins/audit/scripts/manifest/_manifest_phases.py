@@ -222,6 +222,182 @@ def _comma_joined_gate(entries, build_keys, where, field):
     return out
 
 
+# --- what a NEW phase's gate defaults to -------------------------------------------
+def _phase_gate_lists(meta):
+    """`(always, exclude, build_keys)` - the validated pieces `phase_gate_default`
+    and `_check_phase_gate` both read, asked ONCE so the two cannot disagree
+    about what counts as a non-blank string.
+    """
+    meta = meta if isinstance(meta, dict) else {}
+    build = meta.get("buildCommands")
+    build_keys = ([k for k in build.keys() if isinstance(k, str) and k.strip()]
+                  if isinstance(build, dict) else [])
+    gate = meta.get("phaseGate")
+    gate = gate if isinstance(gate, dict) else {}
+    always = [a for a in _safe_list(gate.get("always"))
+              if isinstance(a, str) and a.strip()]
+    exclude = [e for e in _safe_list(gate.get("exclude"))
+               if isinstance(e, str) and e.strip()]
+    return always, exclude, build_keys
+
+
+def phase_gate_default(meta):
+    """`{entries, always, rest, excluded, basis}` - what a NEW phase's gate
+    starts as, read by `/audit:phase add` now and by a future task-level
+    derivation alike - the ONE answer, so neither can quietly disagree with
+    the other about what "today's default" means.
+
+    `entries` = `always` in declared order, then every OTHER `buildCommands`
+    key in buildCommands order, minus `exclude`. `always` COMES FIRST because
+    that is the one thing a caller declared outright; `rest` preserves
+    buildCommands order rather than sorting it, because a plan's own ordering
+    is the only one this project has ever produced and there is no reason to
+    prefer another.
+
+    ALWAYS IS ALWAYS. An entry named in both lists is not dropped: `exclude`
+    is the declared way to keep a key OUT, and `always` is a stronger,
+    later-read declaration that puts a key back IN - so an author who lists
+    the same key in both gets the key, not the absence of one. `_check_phase_gate`
+    is what warns about the overlap; this function only resolves it.
+
+    ABSENT MEANS TODAY'S BEHAVIOUR EXACTLY: with no `phaseGate` at all, `always`
+    and `exclude` are both empty, so `entries` is every `buildCommands` key, in
+    buildCommands order, byte-identical to what `/audit:phase add` wrote before
+    this field existed.
+    """
+    always, exclude, build_keys = _phase_gate_lists(meta)
+    always_set = set(always)
+    exclude_set = set(exclude) - always_set
+    rest = [k for k in build_keys
+            if k not in always_set and k not in exclude_set]
+    excluded = [k for k in build_keys if k in exclude_set]
+    entries = list(always) + rest
+    if not build_keys:
+        basis = "no meta.buildCommands key exists to default a gate from"
+    elif not always and not exclude:
+        basis = ("no meta.phaseGate: default is every buildCommands key, in "
+                 "buildCommands order")
+    elif not excluded:
+        basis = ("meta.phaseGate.always puts %d key(s) first (%s); every "
+                 "other buildCommands key follows in buildCommands order"
+                 % (len(always), _output.some_of(always, render=repr))
+                 if always else
+                 "meta.phaseGate.exclude names no key meta.buildCommands "
+                 "actually declares, so the default is unchanged")
+    else:
+        basis = ("meta.phaseGate.exclude drops %d buildCommands key(s) (%s)%s"
+                 % (len(excluded), _output.some_of(excluded, render=repr),
+                    " after meta.phaseGate.always puts %d first (%s)"
+                    % (len(always), _output.some_of(always, render=repr))
+                    if always else ""))
+    return {"entries": entries, "always": always, "rest": rest,
+            "excluded": excluded, "basis": basis}
+
+
+def phase_gate_suite_gap(manifest, suite_keys=None):
+    """The 'phase gate runs no suite' warning, or None when the gate still runs one.
+
+    EVALUATED ONLY WHEN `exclude` IS NON-EMPTY - without it the default is
+    today's set, and today's set has always been trusted to run something.
+
+    TWO ARMS, and only the first needs no evidence. A default EMPTY after
+    exclusion (`exclude` removed every `buildCommands` key and `always` added
+    none) is CERTAIN: there is no key left to have run, whatever the ledger
+    says, so this arm fires from the plan alone. The second arm needs
+    `suite_keys` - `{running, silent, unknown}`, computed from the evidence
+    ledger by the counts reader (`run-test-gate.summary_reader`, recorded per
+    step as `suiteReader`) - because a wide key like `npm test` is not
+    test-shaped by its spelling and this function must not guess one from the
+    other: with no default key recorded as `running`, it names the keys left
+    after `exclude` as not established rather than as certainly silent.
+    `suite_keys=None` (the pure validator's call, with no evidence in hand)
+    answers only the certain arm.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    _always, exclude, _build_keys = _phase_gate_lists(meta)
+    if not exclude:
+        return None
+    default = phase_gate_default(meta)
+    if not default["entries"]:
+        return ("phase gate runs no suite: meta.phaseGate.exclude removes "
+                "every meta.buildCommands key and meta.phaseGate.always adds "
+                "none")
+    if suite_keys is None:
+        return None
+    running = set((suite_keys or {}).get("running") or [])
+    if any(k in running for k in default["entries"]):
+        return None
+    return ("phase gate runs no suite as far as the ledger shows: %s are "
+            "left after meta.phaseGate.exclude"
+            % (_output.some_of(default["entries"]),))
+
+
+def _check_phase_gate(manifest, warnings):
+    """WARNINGS for `meta.phaseGate` and `meta.gateBudgetMs` - additive, never
+    a finding (`COMPATIBILITY.md` -> Validation stays additive): both fields
+    are new, so a shape a validator does not like is named rather than
+    refused.
+
+    THE 'RUNS NO SUITE' SENTENCE IS NOT HERE. `phase_gate_suite_gap` is asked
+    directly by `_manifest_rules._check_meta`, with no evidence, so the pure
+    validator emits its certain arm only - this function is the SHAPE checks
+    that do not need the ledger at all.
+    """
+    meta = manifest.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    if "phaseGate" in meta:
+        gate = meta.get("phaseGate")
+        if gate is not None and not isinstance(gate, dict):
+            warnings.append("meta.phaseGate: must be an object with `always` "
+                            "and/or `exclude`, got %s" % (type(gate).__name__,))
+        elif isinstance(gate, dict):
+            for field in ("always", "exclude"):
+                raw = gate.get(field)
+                if raw is None:
+                    continue
+                if not isinstance(raw, list):
+                    warnings.append("meta.phaseGate.%s: must be an array of "
+                                    "buildCommands keys, got %s"
+                                    % (field, type(raw).__name__))
+                    continue
+                bad = [e for e in raw if not (isinstance(e, str) and e.strip())]
+                if bad:
+                    warnings.append("meta.phaseGate.%s: every entry must be "
+                                    "a non-blank string (%d bad: %s)"
+                                    % (field, len(bad),
+                                       _output.some_of(bad, render=repr)))
+            always, exclude, build_keys = _phase_gate_lists(meta)
+            if build_keys:
+                for field, entries in (("always", always), ("exclude", exclude)):
+                    warnings.extend(_comma_joined_gate(
+                        entries, build_keys, "meta.phaseGate", field))
+                    unknown = [e for e in entries if e not in build_keys]
+                    if unknown:
+                        warnings.append(
+                            "meta.phaseGate.%s names %s, which %s not a "
+                            "buildCommands key - meta.buildCommands declares "
+                            "%s" % (field, _output.some_of(unknown, render=repr),
+                                    "is" if len(unknown) == 1 else "are",
+                                    _output.some_of(sorted(build_keys))))
+            both = sorted(set(always) & set(exclude))
+            if both:
+                warnings.append(
+                    "meta.phaseGate: %s in both `always` and `exclude` - "
+                    "always is always, so %s stays in the default gate"
+                    % (_output.some_of(both, render=repr),
+                       "it" if len(both) == 1 else "they"))
+    if "gateBudgetMs" in meta:
+        budget = meta.get("gateBudgetMs")
+        if isinstance(budget, bool) or not isinstance(budget, int):
+            warnings.append("meta.gateBudgetMs: must be a positive integer, "
+                            "got %s" % (type(budget).__name__,))
+        elif budget <= 0:
+            warnings.append("meta.gateBudgetMs: must be greater than 0 (got "
+                            "%s) - omit the key entirely for 'no budget'"
+                            % (budget,))
+
+
 def _check_phase_intent(phase, pwhere, build_keys):
     """Warnings for a phase whose gate or outcome says less than it should.
 
@@ -540,6 +716,104 @@ def tests_add_repair(entry):
     if len(mentioned) > 1:
         return (REPAIR_AMBIGUOUS, None)
     return (REPAIR_REWRITE, "%s: %s" % (mentioned[0], entry.strip()))
+
+
+# --- what a runner printed AS A TEST IT RAN --------------------------------------
+# Moved here from `run-test-gate.py` (`_TEST_MARKS`, `_TEST_DIRS`, `_subject_of`,
+# `_segments`, `_is_suite_path`) and from `audit-task.py` (`_gate_entry_paths`),
+# beside `tests_add_path` above for the reason that group is here at all: "is
+# this string a path" and "is this path a test file" are the SAME filename bound,
+# asked of two different fields by two different entry points, and an entry
+# point cannot import another - so the gate-only narrowing in `audit-task.py`
+# and `--own` in `run-test-gate.py` could each only ever reach it by copying.
+# Both files keep the historic underscored names as thin aliases
+# (`_is_suite_path = _phases.is_suite_path`, and so on), so no caller and no
+# case that already existed had to change its spelling.
+
+# The suffixes a test file carries in front of its extension, across the
+# runners this is asked about. Used to relate `src/foo.test.ts` to `src/foo.ts`
+# and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
+TEST_MARKS = (".test", ".spec", "_test", "_spec", "-test", "-spec")
+
+
+def subject_of(path):
+    """The file a TEST path is about, or None when the path is not test-shaped.
+
+    `tests/foo.spec.ts` -> `foo`, `src/foo.test.ts` -> `foo`, `src/foo.ts` -> None.
+    The basename alone, because the two live in different directories as often as
+    not - `src/foo.ts` tested from `tests/foo.spec.ts` is the ordinary layout.
+
+    DELIBERATELY NARROW. `_PATHISH` above can over-match harmlessly because a
+    spurious path only ADDS overlap and overlap is reported rather than enforced.
+    That reasoning does NOT carry here: a false overlap tells the reader their work
+    was exercised when it was not, which is the exact false comfort `NO OVERLAP`
+    exists to prevent. So this fires only on a path that really is spelled like a
+    test, and only onto a file whose stem it matches exactly.
+    """
+    base = str(path or "").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    for mark in TEST_MARKS:
+        if stem.endswith(mark) and len(stem) > len(mark):
+            return stem[:-len(mark)]
+    return None
+
+
+# ...and the directory names a suite lives in when its FILE NAME does not say so.
+# `__tests__/order.ts` is jest's own layout and carries no `.test` mark at all, so
+# `subject_of` cannot see it. Read for the CLASSIFICATION only and never for the
+# match - a directory is far too weak to re-spell a path onto another file's stem,
+# which is the thing `subject_of` guards.
+TEST_DIRS = frozenset((
+    "__tests__", "__test__", "test", "tests", "spec", "specs", "e2e",
+))
+
+
+def path_segments(path):
+    """A path's directory segments, POSIX-spelled, without its basename."""
+    return str(path or "").replace("\\", "/").split("/")[:-1]
+
+
+def is_suite_path(path):
+    """Whether the runner printed this as a TEST IT RAN rather than as a file it
+    processed.
+
+    THREE READINGS, and the second and third are why this is not `subject_of`
+    under another name: a suite says so in its FILE NAME (`order.test.ts`), in
+    the basename PREFIX pytest's own convention uses (`test_orders.py`, which
+    carries none of `TEST_MARKS`), or in its DIRECTORY (`__tests__/order.ts`,
+    jest's own layout, which carries no mark either). `subject_of` may use only
+    the first, because it re-spells a path onto another file's stem and neither
+    a bare prefix nor a directory is strong enough to justify that - the plan
+    gate's own default `exemptGlobs` already reads `**/test_*.*` as a test file,
+    and classifying is the weaker job, so it may read the weaker signal.
+    """
+    base = str(path or "").rsplit("/", 1)[-1]
+    return (subject_of(path) is not None
+            or base.startswith("test_")
+            or any(seg in TEST_DIRS for seg in path_segments(path)))
+
+
+def gate_entry_paths(entry):
+    """Every file path a gate entry NAMES, in the order they appear in it.
+
+    THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
+    token instead of the leading one. `tests_add_path` is the ONE answer to
+    "does this string name a file", and a gate entry is the other
+    place a path has to be recognized inside free text -- a second spelling of
+    the filename bound would be two opinions about the same token, and the one
+    that drifted would either miss a suite or read `--selectProjects` as a path.
+
+    A token has to carry an extension or be a dotfile to count, which is what
+    keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
+    """
+    if not isinstance(entry, str):
+        return []
+    found = []
+    for token in entry.split():
+        path = tests_add_path(token)
+        if path:
+            found.append(path)
+    return found
 
 
 # --- the walk --------------------------------------------------------------------

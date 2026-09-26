@@ -37,6 +37,7 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-task imports it)
 import _manifest_rules as _rules                   # noqa: E402  (the validator, to ask what a written plan warns about)
 import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis words the validator grades against)
+import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an alias, not a second body)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
@@ -49,7 +50,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # sharded/single), j (--json + journal row), h (A4 heal at this write site),
 # n (named-manifest project resolution), c (cancel), p (add-phase, both
 # layouts), w (the _waiting_on index), u (usage errors), sc (scope), rt
-# (retarget), gc (the empty gate a task could not reach), jf (the prior state
+# (retarget, extended by rt10-rt18 for --gate-drop/--gate-set),
+# gc (the empty gate a task could not reach), jf (the prior state
 # the trail attests), ag (the empty gate at CREATION), fn (the files row for a
 # change that did not happen), sf (the three task fields `scope` did not
 # reach), sn (the task with no `tests` object), qg (add-phase's empty gate),
@@ -59,13 +61,19 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
 # reads),
-# pd (P43.2, the `done` verb: the close, and the SHA that makes it a record),
-# tw (P46.2: the tree the caller stands in against the tree the verb writes),
+# pd (the `done` verb: the close, and the SHA that makes it a record),
+# tw (the tree the caller stands in against the tree the verb writes),
 # sd (seed: the smallest honest plan, written where none was),
-# gm (P55.19: the marker inside the gap window, and a cause the check tested
-# for rather than one it did not), bn (P55.20: a shard write naming the
-# phase's own branch against the one the caller stands on), ix (P55.21: the
-# index left dirty beside a shard, and the tool that lands it).
+# gm (the marker inside the gap window, and a cause the check tested
+# for rather than one it did not), bn (a shard write naming the
+# phase's own branch against the one the caller stands on), ix (the
+# index left dirty beside a shard, and the tool that lands it),
+# dg (a gate-only task's `files` arm narrows only to a suite path, and
+# a new phase's gate puts `meta.phaseGate.always` first and drops only what
+# `meta.phaseGate.exclude` names), pg (the same phase-gate derivation,
+# driven through `add-phase` itself), ff (`add --failing-from <runId>`
+# gates a fix task on the suites a red sign-off run's own steps NAMED as
+# failing).
 def _cases(check):
     import contextlib
     import io
@@ -1948,9 +1956,10 @@ def _cases(check):
         # ---- (rt) a plan can be CORRECTED, not only created ------------------
         # `init` and `pull sprint` synthesize a phase and choose its `testGate`;
         # until `retarget` that choice was unreachable, and one wrong choice made
-        # the phase unable to pass its own sign-off. `--gate` APPENDS, so the
+        # the phase unable to pass its own sign-off. `--gate` REPLACES, so the
         # empty gate - which `_phase_gate` documents as a designed state, sign-off
-        # on review alone - had no spelling at all after import.
+        # on review alone - had no spelling at all after import: no VALUE of
+        # `--gate` means "none".
         rt_proj, rt_mp = mk("p-retarget", base_manifest())
         code, txt = run(["retarget", "P3", "--gate", "test",
                          "--project-dir", rt_proj])
@@ -1961,8 +1970,8 @@ def _cases(check):
         code, txt = run(["retarget", "P3", "--gate-clear",
                          "--project-dir", rt_proj])
         _rtp = _mio.load_manifest(rt_mp)["phases"][2]
-        check("rt2 ...and --gate-clear reaches the EMPTY gate, which `--gate` "
-              "cannot because it appends - the designed state a guessed gate "
+        check("rt2 ...and --gate-clear reaches the EMPTY gate, which no `--gate` "
+              "VALUE can spell - the designed state a guessed gate "
               "took away, and the report SAYS what it means rather than leaving "
               "silence to read as breakage: %r" % (txt[-90:],),
               code == 0 and _rtp.get("testGate") == []
@@ -2108,6 +2117,90 @@ def _cases(check):
         check("rt8 a call that changes nothing is refused rather than taking the "
               "index lock for it: %r" % (txt[:70],),
               code == 2 and "retarget needs one of" in txt)
+
+        # ---- (rt10-18) retarget --gate-drop and --gate-set, one write each ---
+        # `--gate-set` is `--gate`'s own REPLACE operation under a name that
+        # takes several values under one flag instead of one value per repeat;
+        # `--gate-drop` is the other operation, narrowing the CURRENT gate by
+        # name. Both go through `_locked_retarget`, one lock, one
+        # revalidate-or-roll-back, one `phase.retarget` journal row.
+        def _gs_manifest():
+            m = base_manifest()
+            m["phases"][2]["testGate"] = ["test", "coverage"]
+            return m
+        gs_proj, gs_mp = mk("p-gate-drop-set", _gs_manifest())
+        import _journal_io
+
+        def gs_gate():
+            return _mio.load_manifest(gs_mp)["phases"][2].get("testGate")
+
+        code, txt = run(["retarget", "P3", "--gate-drop", "coverage",
+                         "--project-dir", gs_proj])
+        _gs_rows = [r for r in _journal_io.read_all(gs_proj)
+                   if r.get("action") == "phase.retarget"]
+        check("rt10 RED-FIRST: --gate-drop coverage on a phase gated "
+              "[test, coverage] writes [test] with ONE phase.retarget journal "
+              "row - today's parser does not declare the flag at all, so "
+              "argparse refuses the call outright instead of writing anything: "
+              "%r" % ((code, gs_gate(), len(_gs_rows)),),
+              code == 0 and gs_gate() == ["test"] and len(_gs_rows) == 1)
+        code, txt = run(["retarget", "P3", "--gate-drop", "test",
+                         "--project-dir", gs_proj])
+        check("rt11 dropping the ONLY remaining entry is refused with the "
+              "empty-gate sentence rather than silently emptied - that state is "
+              "reached through --gate-clear alone, which SAYS it is choosing "
+              "it: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-drop", "nope",
+                         "--project-dir", gs_proj])
+        check("rt12 --gate-drop naming an entry NOT in the phase's testGate is "
+              "refused, naming the missing entry and the gate as it stands - a "
+              "typo is not silently a no-op: %r" % (txt[:130],),
+              code == 2 and "nope" in txt and '["test"]' in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set",
+                         "--project-dir", gs_proj])
+        check("rt13 RED-FIRST: --gate-set with NO value is refused with the "
+              "SAME empty-gate sentence, not argparse's own usage error for a "
+              "starved flag: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set", "", "  ",
+                         "--project-dir", gs_proj])
+        check("rt14 SECOND DIRECTION: --gate-set of all-BLANK values is refused "
+              "the same way as no values at all - a caller who typed nothing "
+              "but blanks almost always meant the empty gate: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set", "lint",
+                         "--project-dir", gs_proj])
+        check("rt15 ALLOW CASE: --gate-set lint REPLACES the gate outright, "
+              "the same operation --gate performs under a name that takes "
+              "several values at once - declared, not narrowed or guessed: %r"
+              % (gs_gate(),),
+              code == 0 and gs_gate() == ["lint"])
+        code, txt = run(["retarget", "P3", "--gate-set", "typecheck", "test",
+                         "--project-dir", gs_proj])
+        check("rt16 --gate-set takes SEVERAL values under one flag, unlike "
+              "--gate's repeated spelling of the same operation: %r"
+              % (gs_gate(),),
+              code == 0 and gs_gate() == ["typecheck", "test"])
+        code, txt = run(["retarget", "P3", "--gate-drop", "test", "--gate-set",
+                         "lint", "--project-dir", gs_proj])
+        check("rt17 --gate-drop with --gate-set is refused exactly as --gate "
+              "with --gate-clear is - two answers to one question, and "
+              "guessing which was meant is the fault this closes: %r"
+              % (txt[:90],),
+              code == 2 and "opposite things" in txt
+              and gs_gate() == ["typecheck", "test"])
+        code, txt = run(["retarget", "P1", "--gate-drop", "test",
+                         "--project-dir", gs_proj])
+        check("rt18 a DONE phase refuses --gate-drop too, by the SAME "
+              "past-sign-off rule --gate-clear already uses, unchanged: %r"
+              % (txt[:90],),
+              code == 2 and "was given against the gate it had" in txt)
+
         # THE OTHER half of the pending rule: an attempted task keeps an
         # outcome describing work judged under the scope it had.
         #
@@ -2136,10 +2229,11 @@ def _cases(check):
         # `scope` its `--gate`, and `scope` did not take the clear - so a phase
         # could say "nothing here can prove this" and a task could not. THE
         # REASON DIFFERS FROM `retarget`'s, which is why the same flag needed its
-        # own justification: that verb APPENDS to `testGate`, so the append is
-        # what left the empty gate unspellable, while this one REPLACES
-        # `tests.gate` outright. The gap here is in the values - no `--gate`
-        # VALUE says "none". Measured live: a phase retargeted to `testGate: []`
+        # own justification: that verb REPLACES `testGate` too, so the
+        # replacement is what left the empty gate unspellable, and this one
+        # REPLACES `tests.gate` outright as well. The gap here is in the
+        # values - no `--gate` VALUE says "none". Measured live: a phase
+        # retargeted to `testGate: []`
         # left its pending tasks holding the `["lint"]` inherited at creation,
         # and the only routes to the phase's own new state were a rescope mid-run
         # or the hand edit `commands/task.md` forbids.
@@ -5224,14 +5318,18 @@ def _cases(check):
 
         codetg, txttg = run(
             ["add", "Cache the facet counts", "--phase", "P1",
-             "--project-dir", tg_proj, "--files", "src/search/facets.ts"])
+             "--project-dir", tg_proj, "--files",
+             "src/search/facets.test.ts"])
         check("tg2 DEFAULT TWO: no case named, so the task's `files` go in "
               "instead - same spelling, same sibling, and the basis says which "
-              "of the two it was: %r"
+              "of the two it was. A SUITE PATH, deliberately: a gate-only task "
+              "narrows only to a file `is_suite_path` accepts, so this fixture "
+              "has to stay one for `tg2` to keep testing this arm rather than "
+              "the gate-only-no-suite one `dg` below covers: %r"
               % ((tg_gate("P1.3"), codetg),),
               codetg == 0
-              and tg_gate("P1.3") == ["lint",
-                                      "npm test -- src/search/facets.ts"]
+              and tg_gate("P1.3") == [
+                  "lint", "npm test -- src/search/facets.test.ts"]
               and "narrowed to this task's files, in P1.1's spelling" in txttg)
 
         codetg, txttg = run(
@@ -5367,6 +5465,13 @@ def _cases(check):
               and M._gate_entry_paths("lint") == []
               and M._gate_entry_paths("pytest tests/.coveragerc") \
                   == ["tests/.coveragerc"])
+        check("tg13 `_gate_entry_paths` is an ALIAS of `_manifest_phases."
+              "gate_entry_paths`, not a second body - `is`, not merely "
+              "behaviour equal, because a re-pasted copy would pass tg11 "
+              "and still be the copy an entry point cannot import out of "
+              "run-test-gate.py",
+              getattr(M, "_gate_entry_paths", None)
+              is getattr(_phases, "gate_entry_paths", object()))
 
         # ---- (gb) the derivation's arm, recorded where a rule can read it -----
         # The basis above is a SENTENCE: printed once, then gone. So a narrow
@@ -6868,7 +6973,8 @@ def _cases(check):
               code == 0 and not [ln for ln in txt.splitlines()
                                  if "directory" in ln and ln.startswith("WARNING")])
 
-        # ---- (rv) P76 review findings --------------------------------------------
+        # ---- (rv) review findings: a bug's derived state must survive a
+        # close that changed nothing -------------------------------------------
         # R1: a no-change close on a bug's FIX TASK would derive the bug `fixed`
         # with no fixedIn - a bug marked fixed with no fix commit, which the
         # release guard then stops counting as open.
@@ -7044,6 +7150,334 @@ def _cases(check):
               "span at the end of the text leaves it as mechanically as one at the "
               "start: %s" % (txt,),
               code == 2 and "Likely COMMAND SUBSTITUTION" in txt)
+
+        # ---- (dg) a gate-only task narrows only to a SUITE PATH ----------------
+        # `tests.add` already proves a tdd/regression task creates a real test
+        # file, so its `files` arm stays unfiltered (dg3, unchanged from
+        # today) - but a gate-only task names no case at all, and a source
+        # file among its `files` is not evidence the sibling's suite-running
+        # command has anything of THIS task's to run. RED-FIRST on today's
+        # code: before this fix, dg1 below reads back
+        # `["vitest run src/Button.tsx README.md"]` with basis `"files"`, the
+        # sibling's spelling pointed at two files it never tested.
+        def dg_manifest():
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"lint": "eslint .",
+                                           "typecheck": "tsc --noEmit",
+                                           "test": "vitest run"},
+                         "phaseGate": {"always": ["lint", "typecheck"]}},
+                "phases": [
+                    {"id": "P1", "title": "UI", "status": "in_progress",
+                     "testGate": ["lint", "typecheck", "test"],
+                     "tasks": [
+                         {"id": "P1.1", "title": "seed", "status": "done",
+                          "files": ["src/a.ts"],
+                          "tests": {"mode": "gate-only", "add": [],
+                                    "expectRedFirst": False,
+                                    "gate": ["vitest run src/a.test.ts"]}}]},
+                ],
+                "fileIndex": {"src/a.ts": ["P1.1"]},
+                "bugs": [],
+            }
+
+        dg_proj, dg_mp = mk("dg-gate", dg_manifest())
+
+        def dg_tests(tid):
+            return (task_in(dg_mp, tid) or {}).get("tests") or {}
+
+        codedg, txtdg = run(
+            ["add", "New button", "--phase", "P1", "--project-dir", dg_proj,
+             "--files", "src/Button.tsx,README.md"])
+        check("dg1 RED-FIRST: a gate-only task whose files name NO suite path "
+              "gets `meta.phaseGate.always`, with basis `gate-only-no-suite` - "
+              "never the sibling's spelling pointed at two source files "
+              "nothing here tested: %r"
+              % ((dg_tests("P1.2").get("gate"), dg_tests("P1.2").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.2").get("gate") == ["lint", "typecheck"]
+              and dg_tests("P1.2").get("gateBasis") == "gate-only-no-suite")
+
+        # ALLOW CASE: a suite path AMONG the files still narrows the gate, in
+        # the sibling's spelling - the arm this fix must not disable outright.
+        codedg, txtdg = run(
+            ["add", "New button, tested", "--phase", "P1",
+             "--project-dir", dg_proj, "--files",
+             "src/Button.tsx,src/Button.test.tsx"])
+        check("dg2 ALLOW CASE: a suite path among the files still narrows the "
+              "gate, in the sibling's spelling: %r"
+              % ((dg_tests("P1.3").get("gate"), dg_tests("P1.3").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.3").get("gate")
+              == ["vitest run src/Button.test.tsx"]
+              and dg_tests("P1.3").get("gateBasis") == "files")
+
+        # ALLOW CASE: a REGRESSION task's `files` arm is unfiltered, exactly as
+        # today - `tests.add`'s invariant already covers it, this fix is
+        # gate-only's alone.
+        codedg, txtdg = run(
+            ["add", "Fix a regression", "--phase", "P1",
+             "--project-dir", dg_proj, "--tests-mode", "regression",
+             "--files", "src/Button.tsx"])
+        check("dg3 ALLOW CASE: a regression task keeps today's unfiltered "
+              "`files` arm even with only a source file named: %r"
+              % ((dg_tests("P1.4").get("gate"), dg_tests("P1.4").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.4").get("gate") == ["vitest run src/Button.tsx"]
+              and dg_tests("P1.4").get("gateBasis") == "files")
+
+        # ---- (pg) a NEW PHASE's gate: always FIRST, exclude the only drop ------
+        pg_always = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "npm test",
+                                       "lint": "npm run lint"},
+                     "phaseGate": {"always": ["lint"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj, pg_mp = mk("pg-always", pg_always)
+        code, txt = run(["add-phase", "Docs", "--outcome", "shipped",
+                         "--project-dir", pg_proj])
+
+        def pg_gate(mp, title):
+            found = [p for p in _mio.load_manifest(mp)["phases"]
+                    if p.get("title") == title]
+            return found[0].get("testGate") if found else None
+
+        check("pg1 RED-FIRST: `meta.phaseGate.always` puts a key FIRST and every "
+              "OTHER buildCommands key still follows, in buildCommands order - "
+              "`always` is an ORDER and never a narrowing, so `test` does not "
+              "vanish: %r" % (pg_gate(pg_mp, "Docs"),),
+              code == 0 and pg_gate(pg_mp, "Docs") == ["lint", "test"]
+              and "meta.phaseGate.always first" in txt)
+
+        pg_exclude = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "npm test",
+                                       "lint": "npm run lint",
+                                       "coverage": "npm run coverage"},
+                     "phaseGate": {"exclude": ["coverage"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj2, pg_mp2 = mk("pg-exclude", pg_exclude)
+        code, txt = run(["add-phase", "Docs2", "--outcome", "shipped",
+                         "--project-dir", pg_proj2])
+        check("pg2 RED-FIRST: `meta.phaseGate.exclude` drops the buildCommands "
+              "key it names from a NEW phase's gate, and the basis names the "
+              "exclusion - today's code writes `coverage` in anyway and the "
+              "basis names no exclusion at all: %r"
+              % ((pg_gate(pg_mp2, "Docs2"), txt.splitlines()[2]
+                  if len(txt.splitlines()) > 2 else txt),),
+              code == 0 and pg_gate(pg_mp2, "Docs2") == ["test", "lint"]
+              and "coverage" not in (pg_gate(pg_mp2, "Docs2") or [])
+              and "excluded by meta.phaseGate.exclude" in txt
+              and "coverage" in txt)
+
+        # pg3: EXCLUDE-TO-NOTHING - `meta.phaseGate.exclude` names every
+        # buildCommands key and `always` adds none back, so the derived
+        # default has nothing left. Today's code (which never reads `exclude`
+        # at all) would write both keys in anyway; this is CERTAIN even with
+        # no evidence in hand (`phase_gate_suite_gap`'s first arm), which is
+        # why the validator's warning fires from the plan alone.
+        pg_nothing = {
+            "meta": {"version": 2,
+                     "buildCommands": {"lint": "npm run lint",
+                                       "test": "npm test"},
+                     "phaseGate": {"exclude": ["lint", "test"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj3, pg_mp3 = mk("pg-nothing", pg_nothing)
+        code, txt = run(["add-phase", "Docs3", "--outcome", "shipped",
+                         "--project-dir", pg_proj3])
+        check("pg3 RED-FIRST EXCLUDE-TO-NOTHING: `meta.phaseGate.exclude` "
+              "naming EVERY buildCommands key, with no `always`, writes an "
+              "EMPTY gate - the basis names `meta.phaseGate.exclude` as the "
+              "cause, and the post-write warnings carry `phase_gate_suite_gap`'s "
+              "'phase gate runs no suite' line, since nothing here can prove "
+              "this phase done: %r"
+              % ((pg_gate(pg_mp3, "Docs3"),
+                  [ln for ln in txt.splitlines() if "WARNING" in ln]),),
+              code == 0 and pg_gate(pg_mp3, "Docs3") == []
+              and "meta.phaseGate.exclude" in txt
+              and "phase gate runs no suite" in txt)
+
+        # pg4: ABSENT phaseGate = TODAY - locked to the literal, now that the
+        # derivation this case checks (calling `phase_gate_default` at all) is
+        # itself part of the committed HEAD this suite runs against. This case
+        # used to capture its expected value by loading HEAD's OWN
+        # `_phase_gate` text dynamically and running it - the right proof
+        # while HEAD still held the PRE-fix code, so a hand-derived
+        # expectation could not be an inference from the same function being
+        # tested. Once that derivation landed, HEAD's `_phase_gate` IS this
+        # module's, so that comparison had become `M._phase_gate` read back at
+        # itself (and broke outright: the extracted function text called
+        # `_phases.phase_gate_default`, a name that exists in THIS module's
+        # namespace and not in the bare one the extracted text was `exec`'d
+        # into - `NameError: name '_phases' is not defined`). The mutation
+        # this case exists to catch (building the default from SORTED keys)
+        # was proved live during that derivation's own red-first pass; the
+        # literal here is what stays to keep proving it.
+        import types
+        _pg4_args = types.SimpleNamespace(gate=None, gate_clear=False)
+        _pg4_manifest = {"meta": {
+            "version": 2,
+            "buildCommands": {"test": "npm test", "lint": "npm run lint",
+                              "coverage": "npm run coverage"}}}
+        _pg4_got = M._phase_gate(_pg4_args, _pg4_manifest)
+        check("pg4 ABSENT phaseGate = TODAY: with no `meta.phaseGate` at all, "
+              "the gate is every buildCommands key in ITS OWN declared order "
+              "(`test, lint, coverage`), never sorted, with basis 'from "
+              "meta.buildCommands': %r" % (_pg4_got,),
+              _pg4_got == (["test", "lint", "coverage"],
+                          "from meta.buildCommands"))
+
+        # ---- (ff) a fix task opened after a red run is gated on ITS failing --
+        # suites -- `add --failing-from <runId>`. `_named_failing_suites`'s own
+        # rule: only a step whose `failingSuitesBasis` says the runner NAMED
+        # them counts; a tail excerpt is not a list of failing tests.
+        import _evidence_io as _ff_ev
+
+        def ff_manifest():
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"lint": "eslint .",
+                                           "test": "vitest run"}},
+                "phases": [
+                    {"id": "P1", "title": "Cart", "status": "in_progress",
+                     "testGate": ["lint", "test"],
+                     "tasks": [{
+                         "id": "P1.1", "title": "seed", "status": "done",
+                         "files": ["src/a.ts"],
+                         "tests": {"mode": "gate-only", "add": [],
+                                  "expectRedFirst": False,
+                                  "gate": ["lint",
+                                          "vitest run src/a.test.ts"]}}]},
+                    {"id": "P2", "title": "Elsewhere", "status": "pending",
+                     "testGate": ["lint", "test"], "tasks": []},
+                ],
+                "fileIndex": {"src/a.ts": ["P1.1"]},
+                "bugs": [],
+            }
+
+        ff_proj, ff_mp = mk("ff-failing-from", ff_manifest())
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-VITEST", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/cart.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                             "named as failing, read from "
+                                             "vitest's FAIL <file> line(s)")}]})
+
+        def ff_tests(tid):
+            return (task_in(ff_mp, tid) or {}).get("tests") or {}
+
+        codeff, txtff = run(
+            ["add", "Fix the cart total", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-VITEST",
+             "--tests-add", "src/cart2.test.ts: covers the new branch too"])
+        check("ff1 RED-FIRST (dg21): a fixture ledger row with a failed step "
+              "whose failingSuites names ['src/cart.test.ts'] (named basis) "
+              "and a sibling spelled 'vitest run src/a.test.ts' give the new "
+              "task 'vitest run src/cart.test.ts <its tests.add path>' and "
+              "gateBasis failing-from-run:<runId> - today's parser does not "
+              "know --failing-from at all, so this exits 2 rather than 0: %r"
+              % ((codeff, ff_tests("P1.2").get("gate"),
+                  ff_tests("P1.2").get("gateBasis")),),
+              codeff == 0
+              and ff_tests("P1.2").get("gate")
+              == ["lint",
+                  "vitest run src/cart.test.ts src/cart2.test.ts"]
+              and ff_tests("P1.2").get("gateBasis")
+              == "failing-from-run:RUN-VITEST")
+
+        # ---- MUTATION GUARD: a JEST-shaped row, `failing` carries CHECK -----
+        # names, never a suite path - reading suites off it instead of
+        # `failingSuites` would put a check's own title where a file path
+        # belongs.
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-JEST", "ts": "2026-09-01T00:05:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failing": ["renders the cart > totals an empty cart"],
+                      "failingSuites": ["src/cart.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) jest named "
+                                             "as failing, read from jest's "
+                                             "FAIL <path> header(s)")}]})
+        codeff, txtff = run(
+            ["add", "Fix on a jest-shaped row", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-JEST"])
+        check("ff2 MUTATION GUARD (dg21): the suite is read off "
+              "`failingSuites`, a FILE, never off `failing`, a CHECK's own "
+              "title with no path in it at all: %r"
+              % (ff_tests("P1.3").get("gate"),),
+              codeff == 0
+              and ff_tests("P1.3").get("gate")
+              == ["lint", "vitest run src/cart.test.ts"])
+
+        # ---- ALLOW CASE: a TAIL basis falls through, printing why ----------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-TAIL", "ts": "2026-09-01T00:10:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuitesBasis": (
+                          "no runner this gate can count recognised, so no "
+                          "suite file could be named")}]})
+        codeff, txtff = run(
+            ["add", "Fix from a tail-only row", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-TAIL",
+             "--tests-add", "src/tail.test.ts: the case this task writes"])
+        check("ff3 ALLOW CASE: a row with a TAIL basis (no runner named a "
+              "suite) falls through to the task's tests.add gate, with the "
+              "reason PRINTED rather than an empty gate - the gate is never "
+              "empty just because --failing-from could not narrow anything: "
+              "%r" % ((codeff, ff_tests("P1.4").get("gate"),
+                       ff_tests("P1.4").get("gateBasis")),),
+              codeff == 0
+              and ff_tests("P1.4").get("gate")
+              == ["lint", "vitest run src/tail.test.ts"]
+              and ff_tests("P1.4").get("gateBasis") == "tests.add"
+              and "named no suite as failing" in txtff)
+
+        # ---- ALLOW CASE: an unknown runId is refused, exit 2 ----------------
+        codeff, txtff = run(
+            ["add", "Fix an id nobody recorded", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "NO-SUCH-RUN"])
+        check("ff4 ALLOW CASE: an unknown runId is refused exit 2, naming NO "
+              "run rather than handing back the ordinary derivation in "
+              "silence: %r" % (txtff[:120],),
+              codeff == 2 and "no run with this id" in txtff
+              and task_in(ff_mp, "P1.5") is None)
+
+        # ---- ALLOW CASE: a PASSED row is refused, exit 2 --------------------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-GREEN", "ts": "2026-09-01T00:15:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "passed", "steps": []})
+        codeff, txtff = run(
+            ["add", "Fix from a green run", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-GREEN"])
+        check("ff5 ALLOW CASE: a run that PASSED is refused exit 2, naming its "
+              "actual status - a fix task opened from a passed run is not "
+              "failed-first: %r" % (txtff[:120],),
+              codeff == 2 and "not a FAILED run" in txtff and "passed" in txtff
+              and task_in(ff_mp, "P1.5") is None)
+
+        # ---- ALLOW CASE: a row scoped to a DIFFERENT phase is refused -------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-OTHER", "ts": "2026-09-01T00:20:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/other.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                             "named as failing, read from "
+                                             "vitest's FAIL <file> line(s)")}]})
+        codeff, txtff = run(
+            ["add", "Fix P1 from P2's run", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-OTHER"])
+        check("ff6 ALLOW CASE: a row scoped to a DIFFERENT phase is refused - "
+              "a fix task's gate can only narrow to suites THIS phase's own "
+              "run named as failing: %r" % (txtff[:140],),
+              codeff == 2 and "not phase P1's" in txtff
+              and task_in(ff_mp, "P1.5") is None)
 
     finally:
         _harness.remove_tree(tmp)

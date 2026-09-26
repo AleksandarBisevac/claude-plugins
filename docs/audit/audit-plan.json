@@ -503,7 +503,7 @@
     {
       "id": "P78",
       "title": "A phase gate that says where it came from and what it cost",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P78.json"
     },
     {
@@ -658,6 +658,7 @@
       "P73.5-9h1",
       "P73.6-9h1",
       "P73.7-9h1",
+      "P78.15-msc",
       "P82.1",
       "P83.1",
       "P83.2"
@@ -778,7 +779,11 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P78.1",
+      "P78.5",
+      "P78.10",
+      "P78.7"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1505,7 +1510,8 @@
       "P80.12",
       "P81.8",
       "P76.1",
-      "P72.3-ttl"
+      "P72.3-ttl",
+      "P78.11"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -1517,7 +1523,8 @@
       "P79.7",
       "P80.12",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P78.15-msc"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1755,7 +1762,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P78.13-msc"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1948,7 +1956,8 @@
       "P80.4",
       "P81.3",
       "P81.4",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P78.14-msc"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2041,7 +2050,8 @@
       "P79.1",
       "P80.1",
       "P75.4-j5h",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P78.12-msc"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -2378,7 +2388,8 @@
       "P81.6",
       "P77.2",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P78.13-msc"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2416,7 +2427,8 @@
       "P56.3",
       "P69.3",
       "P78.10",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P78.14-msc"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -2647,7 +2659,8 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P78.13-msc"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -2676,7 +2689,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P78.13-msc"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -2795,7 +2809,8 @@
       "P79.1",
       "P80.1",
       "P75.4-j5h",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P78.12-msc"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -3096,7 +3111,8 @@
       "P76.1",
       "P72.3-ttl",
       "P76.3-6qa",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P78.14-msc"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3373,7 +3389,8 @@
       "P80.4",
       "P81.3",
       "P81.4",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P78.14-msc"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"

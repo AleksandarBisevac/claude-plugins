@@ -372,8 +372,15 @@ MAX_FAILING = 10
 # the terms the plan declared. The basis travels with the word because the second
 # attempt may have run under a lowered worker bound or under the same one, and
 # those are different claims about what was measured.
+# `failingSuites`/`failingSuitesBasis` ARE THE SAME TWO RULES `failing` OBEYS,
+# for the same reason: they are the other value a runner's own output wrote,
+# so both the redaction rule and the row-cannot-be-widened rule land on them
+# in `_step` and nowhere else. `suiteReader` needs neither - it is one of the
+# vocabulary words this plugin composes, never a runner's own bytes, so it
+# crosses unredacted exactly like `outcome` does.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
+             "failingSuites", "failingSuitesBasis", "suiteReader",
              "retriedAfterSignal", "retryBasis")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
               "scopeListDigest", "dirtyDigest", "dirtyBasis")
@@ -488,6 +495,17 @@ def _step(project, step, published):
             # answered by the same map that answers one in `cwd`.
             out[key] = [redacted_text(project, line)
                         for line in step[key][:MAX_FAILING]]
+            continue
+        if key == "failingSuites":
+            # THE SAME PAIR OF RULES, over a PATH rather than a line of prose:
+            # bounded by `MAX_PATHS` (`run-test-gate.failing_suites` already
+            # states its own cut in `failingSuitesBasis` when it truncates
+            # there - this is the BACKSTOP, for a caller that did not), and
+            # redacted through `repo_relative_or_token` exactly as `_paths`
+            # redacts `treeMutated` and `overlap` - this row is committed, and
+            # an absolute suite path names somebody's machine.
+            out[key] = [repo_relative_or_token(project, p)
+                        for p in step[key][:MAX_PATHS]]
             continue
         out[key] = step[key]
     command = step.get("command")
@@ -987,7 +1005,8 @@ def ledger_files(project, config=None):
 
 
 def read_rows(project, config=None):
-    """`{"rows", "files", "unreadable"}` - every recorded run, and what was lost.
+    """`{"rows", "files", "unreadable", "unreadableFiles"}` - every recorded run,
+    and what was lost.
 
     A TORN LINE IS COUNTED, not merely skipped. `usage_ledger.read_ledger` drops
     one in silence, which is right for telemetry and wrong here: silence about a
@@ -1001,26 +1020,43 @@ def read_rows(project, config=None):
     never returned: same bytes, two opinions about what a row even is. What stays
     local is the RULE -- the trail forgives a torn tail as a crash, and this
     counts it, because a lost measurement is not a lost note.
+
+    `unreadableFiles` NAMES THE PATH, ADDITIVELY. `unreadable` has always been a
+    bare count, which is enough for a boundary that only needs to know something
+    was lost (`since_boundary`) - but a reader asking a QUESTION about the
+    ledger's own content (`validate-manifest.py`'s 'phase gate runs no suite')
+    has to say WHICH file it could not trust, not merely how many lines. One
+    path per FILE that contributed to `unreadable` (a file unreadable outright,
+    or carrying an unparseable line, or a torn tail), deduplicated, in the order
+    `ledger_files` returns them.
     """
     config = _journal_io.load_config(project) if config is None else config
     rows, unreadable, files = [], 0, 0
+    unreadable_files = []
     for path in ledger_files(project, config):
         files += 1
+        lost_here = False
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
         except Exception:
             unreadable += 1
+            unreadable_files.append(path)
             continue
         parsed, torn = _journal_io.rows_from_text(text)
         for obj in parsed:
             if obj.get("_unparseable"):
                 unreadable += 1
+                lost_here = True
             else:
                 rows.append(obj)
         if torn:
             unreadable += 1
-    return {"rows": rows, "files": files, "unreadable": unreadable}
+            lost_here = True
+        if lost_here:
+            unreadable_files.append(path)
+    return {"rows": rows, "files": files, "unreadable": unreadable,
+           "unreadableFiles": unreadable_files}
 
 
 # --- folding history into a tally, never into a verdict ------------------------
@@ -1103,12 +1139,14 @@ def gate_last_caught(rows, name):
     return caught[-1] if caught else None
 
 
-def gate_cost_ms(rows, name):
-    """Total recorded run time (ms) for the named gate across `rows`, summed
-    over every matching step that carries one. `None` when not one step did --
-    absent means UNMEASURED, never zero, which is `phase_budgets`' rule read
-    for a run's own cost rather than for the plan's declared one."""
-    total, seen = 0, False
+def _gate_cost_walk(rows, name):
+    """`(total, measured)` for the named gate across `rows`, walked ONCE --
+    the total ms summed over every matching step that carries a `durationMs`,
+    beside a count of exactly those steps. `gate_cost_ms` and
+    `gate_cost_measured` both read this one walk rather than each summing and
+    counting for itself, so a future step key can never make the sum and the
+    count disagree about which steps contributed."""
+    total, measured = 0, 0
     for row in (rows or []):
         for step in (row.get("steps") or []):
             if not (isinstance(step, dict) and step.get("name") == name):
@@ -1116,8 +1154,28 @@ def gate_cost_ms(rows, name):
             duration = step.get("durationMs")
             if isinstance(duration, (int, float)) and not isinstance(duration, bool):
                 total += duration
-                seen = True
-    return total if seen else None
+                measured += 1
+    return total, measured
+
+
+def gate_cost_ms(rows, name):
+    """Total recorded run time (ms) for the named gate across `rows`, summed
+    over every matching step that carries one. `None` when not one step did --
+    absent means UNMEASURED, never zero, which is `phase_budgets`' rule read
+    for a run's own cost rather than for the plan's declared one."""
+    total, measured = _gate_cost_walk(rows, name)
+    return total if measured else None
+
+
+def gate_cost_measured(rows, name):
+    """How many recorded runs of the named gate across `rows` carried a
+    `durationMs` -- the denominator a MEAN must divide by. `gate_tally`'s
+    `ran` counts every matching step whether or not it carries one, so a
+    history that mixes measured and unmeasured runs dilutes `total / ran`
+    toward zero and can hide a gate that is over budget on the runs actually
+    measured; this is the count that keeps the two questions from being
+    answered as if they were one."""
+    return _gate_cost_walk(rows, name)[1]
 
 
 def gate_names_seen(rows):
@@ -1707,6 +1765,78 @@ def latest_by_subject(rows, aliases=None):
         if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
             best[key] = row
     return best
+
+
+def row_by_run(rows, run_id):
+    """The row carrying `runId == run_id`, newest by `ts`; `None` when none do.
+
+    BESIDE `latest_by_subject` AND NOT A SPECIAL CASE OF IT, because the
+    question a caller already holding a `runId` asks is different: it does not
+    need to know whose subject the run belonged to, only to find the run again
+    - a retry's own row, a fixture a failed-first fix task was opened from. NEWEST
+    BY `ts`, not by file order, for `latest_by_subject`'s own reason: nothing
+    here declares `runId` unique across every writer this project's worktrees
+    keep, so a second row claiming the same id is read as a later one rather
+    than as an error neither caller can act on.
+    """
+    if not run_id:
+        return None
+    best = None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("runId") or "") != str(run_id):
+            continue
+        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
+            best = row
+    return best
+
+
+def suite_keys(rows):
+    """`{"running", "silent", "unknown"}` - every step NAME, sorted into what its
+    OWN recorded `suiteReader` says across every row that ever carried it.
+
+    THE ONE LEDGER ANSWER `_manifest_phases.phase_gate_suite_gap` NEEDS for its
+    second arm: a default gate key like `npm test` is not test-shaped by its
+    spelling, so whether it runs a suite has to come from what was actually
+    recorded rather than from guessing at the name.
+
+    RUNNING beats every other reading for a name: one row recording `jest` for
+    `"test"` is enough to call `"test"` a suite-running key forever, because a
+    name that ran a suite even once has answered the question this asks.
+    SILENT is a name that carried `suiteReader` in every row it ever appeared
+    in and never once as anything but `"none"`. UNKNOWN is a name that appears
+    ONLY in rows recorded before the field existed - `suiteReader` absent
+    outright, never `"none"`, which is exactly the distinction the field was
+    written rather than left absent to preserve: treating an absent field as
+    `"none"` would call a step this gate never looked at SILENT, which is a
+    stronger claim than this ledger can make about it.
+
+    A NAME SEEN BOTH WAYS IS NOT UNKNOWN. The moment any row records the field
+    for a name, that name has an answer this ledger CAN give, and it is
+    RUNNING or SILENT - unknown is reserved for a name the field has never once
+    reached.
+    """
+    running, has_field, no_field = set(), set(), set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        for step in row.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            name = step.get("name")
+            if not name:
+                continue
+            if "suiteReader" not in step:
+                no_field.add(name)
+                continue
+            has_field.add(name)
+            if step.get("suiteReader") != "none":
+                running.add(name)
+    silent = has_field - running
+    unknown = no_field - has_field - running
+    return {"running": sorted(running), "silent": sorted(silent),
+           "unknown": sorted(unknown)}
 
 
 def _same_subject(row, ids):
