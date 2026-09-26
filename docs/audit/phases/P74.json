@@ -721,7 +721,7 @@
     {
       "id": "P74.7-qq5",
       "title": "close-phase writes the landing stamp into the copy that survives, whatever manifest path it is given",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reported while landing P78: `close-phase.py <wt>/docs/audit/audit-plan.json P78 --project <wt> --dry-run` printed \"cleanup is not finished. From <main>, run: close-phase.py <wt>/docs/audit/audit-plan.json P78 --project .\". Run as printed from main, it merged with --ff-only, then wrote mergedAt and the derived status into the WORKTREE's shard and re-mirrored the WORKTREE's index stub - the copy removed moments later - so the worktree removal refused on those writes, while its phase.merged journal row went into MAIN's journal. The rule: the landing stamp is written to the manifest of the tree the merge lands in (the parent branch's checkout), never to a copy inside the phase's own worktree, whatever path is passed; and the dry-run's follow-up command names that surviving manifest. Red-first: close-phase given the worktree's manifest from the main checkout writes nothing under the worktree, stamps main's copies, and the worktree removal succeeds; plus the printed follow-up names main's manifest.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -752,6 +752,54 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T15:32:09Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P74.8-qq5",
+      "title": "run-test-gate's crowd line counts only runs that truly shared a window, not one that started the second the last one ended",
+      "status": "pending",
+      "description": "Reported while recording P79's wave-3 task gates (runs 15:49:37Z.28e86c, 15:50:39Z.3d1d04, 15:51:38Z.ea5bd0): the crowd line \"N other gate run(s) shared this window\" fires on runs recorded strictly one after the other. `_evidence_io._overlaps` is inclusive at both endpoints while `ts` and `startedAt` are whole seconds, so a run that starts in the same second the previous row was written always counts as overlapping. Decide overlap so that a run which began when the other had already ended does not count: compare half-open at the end (a run ending at second t and one starting at t are sequential), and where the rows carry sub-second or ordering evidence use it; if whole-second data cannot tell, say that in the line rather than asserting a shared window. Red-first both directions: back-to-back runs are not a crowd; two runs whose windows genuinely overlap by a second or more still are.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - a run starting in the second the previous run's row was written is reported as overlapping it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P74.7-qq5"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

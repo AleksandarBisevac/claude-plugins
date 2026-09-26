@@ -58,6 +58,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phase
     --project <projectDir> --dry-run
 ```
 
+**The landing is stamped in the tree the merge lands in** - the parent branch's checkout - whatever
+manifest path is passed: `mergedAt`, the derived status and the index stub go to that tree's copy,
+never to the one inside the phase's own worktree, which is removed moments later. A follow-up the
+preview prints (run from the main tree when this one stands inside the worktree) names that
+surviving manifest. When the parent branch is checked out in no worktree and the manifest given is
+the phase worktree's own copy, the landing has no surviving copy to stamp: close-phase refuses
+before merging (exit 2), naming the branch - check it out in a worktree, or run close-phase from
+its checkout - so the ref never moves without the record of the landing.
+
 **If `--confirm-high-risk "<your words>"` is present:** the human is answering the high-risk gate
 **before** the run instead of during it. Run this FIRST, before the preflight, and print its output
 verbatim — in your own reply, inside a fenced block:

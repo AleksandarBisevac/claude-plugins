@@ -1001,13 +1001,133 @@ def _composed_cases(check):
         _harness.remove_tree(root)
 
 
+def _worktree_fixture(root):
+    """(main manifest, worktree dir, worktree manifest, git) - main on `main`, the
+    phase on `audit/p1-demo` in a linked worktree the plugin created (its marker
+    written), signed off, one commit ahead."""
+    git = _fixture_git(root)
+    git("init", "-q", "-b", "main")
+    meta = {"developmentBranch": "main"}
+    mpath = _write_plan(root, meta, [_signed_phase("P1", "audit/p1-demo")])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    wt = root + "-wt"
+    git("worktree", "add", "-q", "-b", "audit/p1-demo", wt)
+    wgit = _fixture_git(wt)
+    with open(os.path.join(wt, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    wgit("add", "-A")
+    wgit("commit", "-q", "-m", "work")
+    admin = wgit("rev-parse", "--git-dir").stdout.decode().strip()
+    admin = admin if os.path.isabs(admin) else os.path.join(wt, admin)
+    with open(os.path.join(admin, W.PROVENANCE_FILE), "w") as fh:
+        json.dump({"createdBy": W.PROVENANCE_MARK, "phaseId": "P1",
+                   "branch": "audit/p1-demo"}, fh)
+    return mpath, wt, os.path.join(wt, "docs", "audit", "audit-plan.json"), git
+
+
+def _merged_at(path):
+    with open(path) as fh:
+        return [p.get("mergedAt") for p in json.load(fh)["phases"]
+                if p.get("id") == "P1"][0]
+
+
+def _surviving_copy_cases(check):
+    """The landing stamp goes to the manifest of the tree the merge lands in, never
+    to the copy inside the phase's own worktree - whichever path was passed."""
+    for label, use_wt in (("worktree", True), ("main", False)):
+        root = _harness.fixture_root("closephase-survivor-%s" % (label,))
+        wt = None
+        try:
+            mpath, wt, wt_mpath, git = _worktree_fixture(root)
+            lines = []
+            code = M.main([wt_mpath if use_wt else mpath, "P1", "--project", root],
+                          out=lines.append)
+            text = "\n".join(lines)
+            removed = not os.path.isdir(wt)
+            if label == "worktree":
+                check("sv1 given the WORKTREE's manifest from the main checkout, the "
+                      "stamp lands in main's copy and nothing is written under the "
+                      "worktree, so its removal succeeds: exit %r, main mergedAt %r, "
+                      "worktree removed %r, %s"
+                      % (code, _merged_at(mpath), removed, text[-400:]),
+                      code == M.E_OK and bool(_merged_at(mpath)) and removed)
+            else:
+                check("sv2 SECOND DIRECTION: given main's own manifest the landing is "
+                      "unchanged - main's copy stamped, the worktree removed: exit %r, "
+                      "main mergedAt %r, worktree removed %r"
+                      % (code, _merged_at(mpath), removed),
+                      code == M.E_OK and bool(_merged_at(mpath)) and removed)
+        finally:
+            _harness.remove_tree(root)
+            if wt and os.path.isdir(wt):
+                _harness.remove_tree(wt)
+    root = _harness.fixture_root("closephase-survivor-followup")
+    wt = None
+    here = os.getcwd()
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        lines = []
+        os.chdir(wt)
+        try:
+            M.main([wt_mpath, "P1", "--project", wt, "--dry-run"], out=lines.append)
+        finally:
+            os.chdir(here)
+        text = "\n".join(lines)
+        follow = [ln.strip() for ln in lines if "close-phase.py" in ln]
+        check("sv3 a dry-run standing inside the worktree prints a follow-up naming the "
+              "SURVIVING manifest - main's - never the worktree's copy: %r" % (follow,),
+              len(follow) == 1 and "docs/audit/audit-plan.json" in follow[0]
+              and os.path.realpath(wt) not in follow[0] and wt not in follow[0]
+              and ("From %s," % (os.path.realpath(root),) in text
+                   or "From %s," % (root,) in text))
+        check("sv4 ...and the preview wrote nothing anywhere: %r"
+              % (_merged_at(mpath),), _merged_at(mpath) is None
+              and _merged_at(wt_mpath) is None)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+
+def _no_survivor_cases(check):
+    """The parent checked out in NO worktree, and the manifest inside the phase's own
+    worktree: the landing has no surviving copy to stamp, so close-phase stops
+    before the ref-only fast-forward - the ref and the stamp cannot disagree."""
+    root = _harness.fixture_root("closephase-no-survivor")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        git("checkout", "-q", "-b", "other")
+        before = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        after = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        check("ns1 with `main` checked out nowhere and the manifest inside the phase's "
+              "worktree, close-phase refuses BEFORE merging - exit 2, `main` unmoved, "
+              "no stamp in the worktree copy, the worktree kept - naming the branch "
+              "and the step that fixes it: exit %r, main moved %r, %s"
+              % (code, before != after, text[:400]),
+              code == M.E_USAGE and before == after
+              and _merged_at(wt_mpath) is None and os.path.isdir(wt)
+              and "no surviving copy" in text
+              and "check out main in a worktree" in text)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+
 def _selftest():
     def body(check):
+        _no_survivor_cases(check)
         _cases(check)
         _parked_cases(check)
         _landed_cases(check)
         _main_tree_cases(check)
         _composed_cases(check)
+        _surviving_copy_cases(check)
     return _harness.run(body)
 
 

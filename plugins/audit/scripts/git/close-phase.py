@@ -59,7 +59,9 @@ Exit codes:
      blocked. The refusal names the path or ref that has to change - a branch that
      is its own parent, or a phase that records no branch whose composed name is
      not one, included: git answered, and it is the command that has to change
-  2  usage error -- the manifest will not load, or there is no such phase
+  2  usage error -- the manifest will not load, or there is no such phase, or the
+     parent is checked out in no worktree while the manifest given is the phase
+     worktree's own copy: the landing would have no surviving copy to stamp
   3  NOT A FAST-FORWARD -- the parent moved while the phase ran. Nothing was written.
      Its own sentinel because it is the normal case on a team repo and the
      orchestrator has a human question for it; folded into 1 it would be
@@ -761,14 +763,24 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
     copy was written and carry on, because a merge that happened must not be reported
     as not having happened.
     """
-    tree = (observation or {}).get("parentTree")
+    observation = observation or {}
+    # THE TREE THE PASSED PATH SITS IN, read off the worktree list rather than
+    # assumed to be the git root: run from the main checkout with the WORKTREE's
+    # manifest, the git root is main while the path is the worktree's copy - and a
+    # stamp written there dirtied the tree the cleanup was about to remove.
+    source = _tree_holding(observation.get("trees") or [], manifest_path)
+    base = (source or {}).get("path") or git_root
+    tree = observation.get("parentTree")
     if (the_plan or {}).get("merge", {}).get("mode") != "in-parent-worktree" \
             or not tree or not tree.get("path"):
         return manifest_path, project, ""
-    if _wt.same_tree(tree.get("path"), git_root):
+    if _wt.same_tree(tree.get("path"), base):
         return manifest_path, project, ""
     try:
-        rel = os.path.relpath(os.path.abspath(manifest_path), git_root)
+        # Both sides RESOLVED: git prints a worktree's real path, and a caller's
+        # path through a symlinked prefix (`/var` for `/private/var`) would
+        # otherwise read as outside the tree it is in.
+        rel = os.path.relpath(os.path.realpath(manifest_path), os.path.realpath(base))
     except Exception as exc:
         return manifest_path, project, "%s" % (exc,)
     if rel.startswith(".."):
@@ -792,6 +804,34 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
             "%s does not carry phase %s, so the stamp stays in the copy this run "
             "was pointed at" % (moved, phase_id))
     return moved, tree.get("path"), ""
+
+
+def no_survivor_refusal(observation, manifest_path, parent):
+    """The refusal owed when the landing has no surviving copy to stamp, or None.
+
+    With `parent` checked out in NO worktree the merge is a ref-only fast-forward,
+    and a manifest inside the phase's own worktree is the copy the cleanup removes.
+    No other checkout is the landing's either - another branch's plan is not this
+    one's. So the run stops before the merge: a moved ref with no record of the
+    landing is the disagreement this refuses to create."""
+    if (observation or {}).get("parentTree") is not None:
+        return None
+    phase_tree = (observation or {}).get("phaseTree")
+    if not phase_tree or phase_tree.get("isMain") \
+            or not _wt.within_tree(phase_tree.get("path"), manifest_path):
+        return None
+    return ("the landing has no surviving copy to stamp - %r is checked out in no "
+            "worktree, and %s is the phase worktree's own copy, which the cleanup "
+            "removes: check out %s in a worktree, or run close-phase from its "
+            "checkout" % (parent, manifest_path, parent))
+
+
+def _tree_holding(trees, path):
+    """The worktree record `path` sits in - the deepest when records nest - or None."""
+    holding = [t for t in trees if t.get("path") and not t.get("prunable")
+               and _wt.within_tree(t.get("path"), path)]
+    holding.sort(key=lambda t: len(os.path.realpath(t.get("path"))))
+    return holding[-1] if holding else None
 
 
 def _phase_present(manifest_path, phase_id):
@@ -1018,6 +1058,10 @@ def main(argv, out=print):
     the_plan = plan(observation, names["branch"], names["parent"],
                     names["policy"], want_worktree=args.remove_worktree,
                     want_branch=args.delete_branch, no_ff=args.no_ff)
+    refusal = no_survivor_refusal(observation, args.manifest, names["parent"])
+    if refusal:
+        out("[close-phase] REFUSED: %s. Nothing was merged or written." % (refusal,))
+        return E_USAGE
     def _stamp():
         """Persist `phase.mergedAt`, and report what happened in answer fields.
 
@@ -1073,9 +1117,16 @@ def main(argv, out=print):
         # reads `__file__` outside the pinned preamble (`depth_sensitive_paths()`
         # fails the file that does), and a hard path would be wrong for the reader
         # anyway - they are running an installed plugin, not this checkout.
+        # ...NAMING THE SURVIVING MANIFEST, not the path this run was handed: that
+        # path is the worktree's copy, and a stamp through it lands in the tree the
+        # follow-up exists to remove.
+        survivor = surviving_copy(args.manifest, project, git_root, observation,
+                                  the_plan, phase_id=args.phase)[0]
+        shown = (os.path.relpath(os.path.realpath(survivor), os.path.realpath(tree))
+                 if _wt.within_tree(tree, survivor) else survivor)
         answer["finishCommand"] = (
             'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" %s %s '
-            '--project .' % (args.manifest, args.phase))
+            '--project .' % (shown.replace(os.sep, "/"), args.phase))
 
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))

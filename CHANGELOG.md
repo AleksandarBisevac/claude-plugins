@@ -343,6 +343,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`close-phase.py` stamps the landing in the tree the merge lands in, whatever manifest path it
+  was given.** Run from the main checkout with the WORKTREE's manifest - the command its own
+  dry-run printed - it merged, then wrote `mergedAt`, the derived status and the index stub into
+  the worktree's copy, so the worktree removal refused on those writes while the journal row went
+  to main. The stamp now goes to the parent branch's checkout the merge landed in, and the
+  printed follow-up names that manifest. With the parent checked out in no worktree and the
+  manifest inside the phase's own worktree there is no surviving copy, so it refuses before the
+  ref-only fast-forward (exit 2), naming the branch to check out.
 - **`close-phase.py` run from the main worktree standing on the phase branch** lands it, and now
   prints the two commands that free the branch there - `git switch <parent>` (or `--detach` when
   another worktree holds the parent, saying it leaves a detached HEAD), then `git branch -d
