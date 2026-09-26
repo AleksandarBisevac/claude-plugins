@@ -884,6 +884,81 @@ def failing_lines(text, limit):
                   "it and NOT a list of failing checks" % (name, len(tail)))
 
 
+# vitest's own `FAIL  <file> > <suite> > <name>` line under `Failed Tests`. The
+# cross beside it in the file tree (`× <file> > <name>`) carries no `FAIL` word
+# at all and is deliberately NOT read here - `failing_lines` reads both because
+# either spelling names a failing CHECK, but only this one names a FILE.
+_VITEST_FAIL_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)", re.M)
+
+
+def failing_suites(text):
+    """`(paths, basis)` - the SUITE FILES a runner named as failing.
+
+    `failing_lines` ALREADY ANSWERS "WHICH CHECK", NEVER "WHICH FILE", and the
+    two are not the same question: a jest bullet's title is the assertion's own
+    name (`_jest_failure_name`), and it carries no path at all unless the suite
+    failed to run entirely. A red row that names only the check leaves a reader
+    unable to point a failed-first fix task, the derived gate's last-failed arm
+    or the shadow recall at anything - they all need the FILE.
+
+    THREE READERS, one per runner whose own failure lines NAME a file: jest's
+    `FAIL <path>` header (`_JEST_SUITE_HEADER`, `FAIL` only - a `PASS` header is
+    not a failure), vitest's `FAIL <file> > ...` line, and pytest's path before
+    `::` on a `FAILED`/`ERROR` line. Read off `summary_reader`'s own name, the
+    same runner identity `failing_lines` uses, so the two can never disagree
+    about which runner this output is.
+
+    EVERY PATH IS ASKED TWO MORE QUESTIONS before it counts: `_is_suite_path`
+    (a runner can print a source file it merely PROCESSED, and that is not a
+    suite), and `_VENDOR_DIRS` (a dependency nobody's task declares is not
+    evidence about anybody's work, and jest especially prints its whole
+    `node_modules` path when a suite crashes on import).
+
+    `(None, basis)` FOR EVERY WAY THIS CAN COME UP EMPTY, and NEVER `([], ...)`
+    - the same rule `failing_lines` follows and for the same reason: a reader
+    who cannot tell an empty answer from nothing-to-tell would read a runner
+    that named no file as a runner that found nothing wrong. mocha NUMBERS its
+    failures and never names a file at all; an unrecognised runner answers the
+    same way for the same reason `failing_lines` falls to a tail instead of
+    a name. The basis says `named as failing` only when the paths came off the
+    runner's OWN failure lines - a learner can refuse anything else.
+    """
+    body = text or ""
+    name, _joined, _words = summary_reader(body)
+    if name == "jest":
+        raw = [header.group(1)
+               for header in (_JEST_SUITE_HEADER.match(line)
+                              for line in _ANSI.sub("", body).splitlines())
+               if header and header.group(0).strip().startswith("FAIL")]
+        source = "jest's FAIL <path> header(s)"
+    elif name == "vitest":
+        raw = _VITEST_FAIL_LINE.findall(body)
+        source = "vitest's FAIL <file> line(s)"
+    elif name == "pytest":
+        raw = [match.group(1).split("::", 1)[0]
+               for match in _FAILURE_READERS["pytest"].finditer(body)]
+        source = "pytest's FAILED/ERROR line(s)"
+    elif name is not None:
+        return None, ("%s's failure lines name no file, only the check that "
+                      "failed" % (name,))
+    else:
+        return None, ("no runner this gate can count recognised, so no suite "
+                      "file could be named")
+    kept = _distinct(
+        p for p in raw
+        if _is_suite_path(p)
+        and not any(seg in _VENDOR_DIRS for seg in _segments(p)))
+    if not kept:
+        return None, "%s named no path this gate reads as a suite file" % (name,)
+    if len(kept) > _ev.MAX_PATHS:
+        cut = kept[:_ev.MAX_PATHS]
+        return cut, ("%d of the %d suite file(s) %s named as failing, read "
+                     "from %s; the rest are not carried"
+                     % (len(cut), len(kept), name, source))
+    return kept, ("the %d suite file(s) %s named as failing, read from %s"
+                 % (len(kept), name, source))
+
+
 # --- did the runner get to the end of its run ---------------------------------
 # The END-OF-RUN reports a machine-readable reporter writes, for runners whose
 # exit status may itself be a count. Deliberately a WEAKER question than
@@ -2480,6 +2555,15 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # the outcome arms below, and not among them, because it takes part in none
     # of them - it says what was measured, never what the run is worth.
     step["measured"] = measured_state(step["ran"])
+    # ON EVERY STEP, PASSING ONES INCLUDED - the name `summary_reader` gave this
+    # output, or `none` when it recognised no test runner's summary at all.
+    # WRITTEN RATHER THAN LEFT ABSENT so that a step recorded BEFORE this field
+    # existed (the key simply missing) stays distinguishable from one this gate
+    # looked at and could not place: `_evidence_io.suite_keys` reads exactly that
+    # difference. A wrapper's own line tally (`_STEP_WORDS`) is read by `ran`,
+    # never by this - `pre-commit run --all-files` measures hooks, and a hook
+    # list is not a suite whatever `ran` says it counted.
+    step["suiteReader"] = summary_reader(text)[0] or "none"
     # THIS SITS BETWEEN THE TWO FOR A REASON. The wrapper's own facts
     # outrank it: a timed-out step was killed by OUR teardown, so its `-15` is
     # this process's signal and not the OS ending the run, and reading it here
@@ -2536,6 +2620,17 @@ def observed_step(name, command, code, text, facts, duration_ms):
     if step["exit"] != 0:
         step["failing"], step["failingBasis"] = failing_lines(text,
                                                               _ev.MAX_FAILING)
+        # NEVER ON A `could-not-run` STEP. A killed jest worker's `FAIL`
+        # header is not a failing TEST - `jest_worker_signal` already read
+        # exactly that report and answered `could-not-run` with it, and
+        # naming that suite here again would tell a failed-first fix task or
+        # the derived gate's last-failed arm to grade a suite nothing
+        # measured.
+        if step.get("outcome") != CANNOT_RUN:
+            suites, suites_basis = failing_suites(text)
+            if suites is not None:
+                step["failingSuites"] = suites
+                step["failingSuitesBasis"] = suites_basis
     return step
 
 

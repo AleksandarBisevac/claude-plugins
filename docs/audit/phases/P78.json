@@ -236,7 +236,7 @@
     {
       "id": "P78.4",
       "title": "retarget --gate-drop and --gate-set, one write each",
-      "status": "in_progress",
+      "status": "done",
       "description": "audit-task.py retarget <phaseId> gains --gate-drop <entry> (repeatable, argparse append) and --gate-set <entry> [<entry> ...] (nargs='*', so an empty set reaches this verb's own refusal rather than argparse's usage error). Both go through _locked_retarget: one lock, one revalidate-or-roll-back, one phase.retarget row through _journal_retarget with the same changes shape. --gate-drop: every named entry must be in the phase's testGate (refuse exit 2 naming the missing entry and the gate as it stands); a drop that would leave the gate empty is refused exit 2 with 'an empty gate is --gate-clear, which says so'. --gate-set: replaces the gate; empty or all-blank refused exit 2 with the same sentence (dg11). FACT TO FIX ALONG THE WAY: retarget's existing --gate already REPLACES the gate (_locked_retarget: now = [] if args.gate_clear else list(args.gate)) while commands/phase.md says '--gate appends' and commands/task.md says 'That verb *appends* to testGate'; measured on a scratch plan, retarget P2 --gate typecheck turned ['lint', 'test'] into ['typecheck']. So --gate-set is the multi-value spelling of the replace --gate already performs: resolve both into the same now list through one helper, give an all-blank --gate the same empty refusal, and correct both documents to say replaces. _gate_contradiction(args) refuses any two of --gate, --gate-set, --gate-clear, --gate-drop together, asked in the same position every verb asks it. Add gate_drop and gate_set to VERB_FLAGS['retarget'] (the vf group grades the table against the dispatch), to build_parser, to commands/phase.md's argument-hint and retarget section, and to the /audit:phase row of the plugin README (_refs.command_flag_drift fails a hinted flag the row omits). Red-first: the drop writes [test] and one journal row; dropping the only entry is refused with the sentence (mutation: allow it -> red); --gate-set with no value refused with the sentence (mutation: nargs='+' -> red because argparse's message differs); allow case: --gate-set lint writes [lint]. A drop on a signed-off phase is refused by the existing past-sign-off rule, unchanged.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -271,18 +271,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2e57871f9b2b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "retarget gains --gate-drop (repeatable) and --gate-set (nargs '*', refuses an empty or blank set with the empty-gate sentence); one derivation _retarget_gate_now, one phase.retarget journal row; _retarget_gate_contradiction covers the four flags for retarget only (the shared two-flag _gate_contradiction stays, which vf6 requires). The 'appends' misdescription fixed at nine sites in audit-task.py, phase.md, task.md, README.md and test prose. Also fixed pg4 (committed in P78.3), which read git show HEAD and broke once P78.3 became HEAD; it is now a literal. Cases rt10-rt18; redFirst proved at HEAD plus rt11 and rt13 live mutations. Gate run 2026-09-26T08:42:07Z.74a960 green; reviewer matches; one low finding (a released CHANGELOG entry repeats 'appends') carried to sign-off.",
+        "descriptive": "retarget can now drop one gate entry or set the whole gate in a single validated write, and every document and comment now says what --gate really does: it replaces the gate."
       },
       "startedAt": "2026-09-26T08:13:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T08:51:46Z",
+      "verifiedBy": [
+        "rt10",
+        "rt11",
+        "rt12",
+        "rt13",
+        "rt14",
+        "rt15",
+        "rt16",
+        "rt17",
+        "rt18"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T08:42:07Z.74a960",
         "status": "passed",
         "at": "2026-09-26T08:42:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2e57871f9b2b",
+        "at": "2026-09-26T08:51:46Z"
       }
     },
     {
@@ -336,9 +351,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-26T08:43:09Z.f42072",
+        "runId": "2026-09-26T08:54:14Z.71d49d",
         "status": "passed",
-        "at": "2026-09-26T08:43:09Z"
+        "at": "2026-09-26T08:54:14Z"
       }
     },
     {
@@ -480,7 +495,7 @@
     {
       "id": "P78.9",
       "title": "The doctor names a gate entry that never failed and costs more than meta.gateBudgetMs",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Constraint: _doctor_trail.check_gate_patterns already reads 'never failed past the floor' off _evidence_io.gate_tally / gate_names_seen and MIN_HISTORY_RUNS; a second function computing that tally would be a second reading of one ledger. Rule: extract the per-name tally loop into one helper both call, and add check_gate_economy(rep, project, manifest_rel, manifest, config=None) to plugins/audit/scripts/status/_doctor_trail.py (the module holding the ledger-reading checks; _doctor_policy compares declarations against the machine and reads no ledger), wired in audit-doctor.py right after check_gate_patterns. No meta.gateBudgetMs: an OK row 'no budget declared (meta.gateBudgetMs), so no gate entry is graded on cost'. With one: for each entry name past the floor with no failure whose MEAN cost (gate_cost_ms / ran; None means unmeasured, never zero) exceeds the budget, a WARNING naming the entry, its runs, the mean (_fmt.human_duration) and the budget, with the remedy '/audit:phase retarget <phaseId> --gate-drop <entry>' for each phase not yet signed off whose testGate carries it, and, so new phases leave it out, 'add it to meta.phaseGate.exclude' - plus 'take it out of meta.phaseGate.always' when it is listed there, because always only orders the default and wins over exclude. An entry below the floor is named as not established and folded into neither answer; otherwise an OK row saying how many entries were graded. Advisory: the exit status is unchanged and nothing refuses. Red-first: a ledger fixture where an entry passes on every run past the floor at a mean above the budget produces the warning and the remedy; mutation: compare the TOTAL instead of the mean -> red on an allow fixture whose total exceeds the budget and whose mean does not. Allow cases: the same history with no budget -> the no-budget OK row; an entry that failed once -> not named; steps carrying no durationMs -> named as unmeasured, not as cheap. test_audit_doctor.py pins the wiring order. Blocked on L1.d because the remedy it prints must be a command that exists.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -513,14 +528,14 @@
         "P78.2",
         "P78.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T08:51:55Z",
       "completedAt": null,
       "verifiedBy": []
     },

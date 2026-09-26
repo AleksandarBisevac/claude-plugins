@@ -354,6 +354,50 @@ Time:        0.149 s
 Ran all test suites matching src/features/projects/syntax.
 """
 
+# --- P78.5 fixtures: an ordinary assertion failure, one runner at a time -------
+# `failing_lines`/`jest_failures` already answer "which CHECK failed" from these
+# - the bullet title alone, per `_jest_failure_name`. What none of them answer is
+# which FILE that check lives in, which is the suite path on the `FAIL` header
+# above the bullet and is dropped on the floor today.
+JEST_CART_FAIL = """\
+FAIL src/cart.test.ts
+  ● cart > rejects a negative quantity
+
+    expected true to be false
+
+Tests:       1 failed, 3 passed, 4 total
+"""
+# vitest prints the failing file TWICE - once beside a cross in the file tree,
+# once again as `FAIL  <file> > <suite> > <name>` under `Failed Tests`. Only the
+# second is read here: the first carries no `FAIL` word at all.
+VITEST_CART_FAIL = """\
+❯ src/cart.test.ts (5)
+   × cart > rejects a negative quantity
+FAIL  src/cart.test.ts > cart > rejects a negative quantity
+ Tests  1 failed | 4 passed (5)
+"""
+PYTEST_CART_FAIL = """\
+FAILED tests/test_cart.py::test_negative - AssertionError
+=== 1 failed, 2 passed in 0.12s ===
+"""
+# mocha NUMBERS its failures and names only the check - no suite path is ever
+# on the line, so this runner is recognised and still answers (None, ...).
+MOCHA_CART_FAIL = """\
+  4 passing (23ms)
+  1 failing
+
+  1) cart rejects a negative quantity:
+     AssertionError: expected true to be false
+"""
+# A `FAIL` header naming only a vendored path - the one case where a real jest
+# header exists and still names nothing this gate may attribute to the work.
+JEST_VENDOR_ONLY_FAIL = """\
+FAIL node_modules/some-pkg/dist/index.test.js
+  ● x
+
+Tests:       1 failed, 0 passed, 1 total
+"""
+
 
 def _step(python, script, *args):
     """One gate step that runs `script` and nothing else - quoted, no operators.
@@ -4197,6 +4241,7 @@ def _cases(check):
     _harness.stage(check, "nv0 the no-verdict block", _no_verdict_cases)
     _harness.stage(check, "ce0 the empty-and-retry block",
                    _empty_and_retry_cases)
+    _harness.stage(check, "sf0 the suite-files block", _suite_files_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -4711,6 +4756,108 @@ def _empty_and_retry_cases(check):
           "sits directly under it: %r" % ([z_lines[i:i + 2] for i in z_at],),
           z_code == M.E_FAIL and len(z_at) == 1
           and z_lines[z_at[0] + 1].strip().startswith("graded by:"))
+
+
+def _suite_files_cases(check):
+    """`failing_suites` names the FILE a failing check lives in, which `failing`
+    (the check's own name) cannot - and `suiteReader` records, on every step,
+    whether this gate could even tell a test suite from a hook list.
+    """
+    def _obs(code, text, command="gate"):
+        return M.observed_step("gate", command, code, text, {}, 1)
+
+    named, basis = M.failing_lines(JEST_CART_FAIL, _ev_io.MAX_FAILING)
+    suites, s_basis = M.failing_suites(JEST_CART_FAIL)
+    check("sf1 THE FAULT, READ DIRECTLY: an ordinary jest assertion failure "
+          "records the bullet TITLE in `failing` and the suite it lives in "
+          "NOWHERE - `failing_suites` is the reader that answers the second "
+          "question: %r" % ((named, suites, s_basis),),
+          named == ["cart > rejects a negative quantity"]
+          and "cart > rejects a negative quantity" not in " ".join(
+              suites or [])
+          and suites == ["src/cart.test.ts"]
+          and "jest" in s_basis and "named as failing" in s_basis)
+
+    v_suites, v_basis = M.failing_suites(VITEST_CART_FAIL)
+    check("sf2 vitest: the FILE PART of `FAIL <file> > <suite> > <name>`, "
+          "never the cross line beside it in the file tree (it carries no "
+          "`FAIL` word at all): %r" % ((v_suites, v_basis),),
+          v_suites == ["src/cart.test.ts"] and "vitest" in v_basis)
+
+    p_suites, p_basis = M.failing_suites(PYTEST_CART_FAIL)
+    check("sf3 pytest: the path BEFORE `::` on its FAILED/ERROR line(s): %r"
+          % ((p_suites, p_basis),),
+          p_suites == ["tests/test_cart.py"] and "pytest" in p_basis)
+
+    m_suites, m_basis = M.failing_suites(MOCHA_CART_FAIL)
+    check("sf4 mocha is a RECOGNISED runner whose failure lines name only the "
+          "check, never a file - so this is `(None, <a basis saying so>)`, "
+          "never an empty list that would read as nothing failed: %r"
+          % ((m_suites, m_basis),),
+          m_suites is None and "mocha" in m_basis)
+
+    u_suites, u_basis = M.failing_suites(
+        "building object files\nmake: *** [build/parse.o] Error 1\n")
+    check("sf5 a runner NONE of the readers recognises answers `(None, ...)` "
+          "too, and the basis says so rather than naming a runner: %r"
+          % ((u_suites, u_basis),),
+          u_suites is None and "no runner" in u_basis)
+
+    vend_suites, vend_basis = M.failing_suites(JEST_VENDOR_ONLY_FAIL)
+    check("sf6 a `FAIL` header naming ONLY a vendored path is not a suite this "
+          "work owns - `_VENDOR_DIRS` filters it out, and the empty result "
+          "reads as `(None, ...)` and never as an empty list: %r"
+          % ((vend_suites, vend_basis),),
+          vend_suites is None and "node_modules" not in (vend_basis or ""))
+
+    mixed = _obs(1, JEST_KILLED_AND_RED, "jest")
+    check("sf7 a real assertion failure beside a killed worker is a VERDICT, "
+          "so the step's `failingSuites` names BOTH suites - the broken one "
+          "and the one jest reports as killed: %r" % (mixed.get("failingSuites"),),
+          mixed.get("outcome") is None
+          and set(mixed.get("failingSuites") or [])
+          == {"src/features/projects/broken.test.js", JEST_KILLED_SUITE})
+
+    killed = _obs(1, JEST_WORKER_KILLED, "jest")
+    check("sf8 THE OUTCOME GUARD: a jest run whose ONLY failures are workers "
+          "the OS killed is `could-not-run`, and a killed worker's `FAIL` "
+          "header is not a failing TEST - so the step carries NEITHER "
+          "`failingSuites` nor `failingSuitesBasis` at all: %r"
+          % (sorted(k for k in killed if k.startswith("failingSuite")),),
+          killed.get("outcome") == M.CANNOT_RUN
+          and "failingSuites" not in killed
+          and "failingSuitesBasis" not in killed)
+
+    passing = _obs(0, "Tests:       4 passed, 4 total\n", "jest")
+    check("sf9 ALLOW: a step that simply passed carries neither key either - "
+          "the guard above is `exit != 0`, not `outcome is None`, so a green "
+          "step never gains a `failingSuites` of its own: %r"
+          % (sorted(k for k in passing if k.startswith("failingSuite")),),
+          "failingSuites" not in passing and "failingSuitesBasis" not in passing)
+
+    jest_step = _obs(1, JEST_CART_FAIL, "jest")
+    vitest_step = _obs(1, VITEST_CART_FAIL, "vitest run src/cart.test.ts")
+    precommit_step = _obs(
+        0, "check yaml................................................"
+           ".............Passed\n", "pre-commit run --all-files")
+    unknown_step = _obs(1, "building object files\nError 1\n", "make check")
+    check("sf10 EVERY STEP RECORDS `suiteReader`, passing ones included - the "
+          "name the counts reader gave its output, or `none` when it "
+          "recognised no test runner's summary at all: %r"
+          % ((jest_step.get("suiteReader"), vitest_step.get("suiteReader"),
+              precommit_step.get("suiteReader"),
+              unknown_step.get("suiteReader")),),
+          jest_step.get("suiteReader") == "jest"
+          and vitest_step.get("suiteReader") == "vitest"
+          and precommit_step.get("suiteReader") == "none"
+          and unknown_step.get("suiteReader") == "none")
+
+    check("sf11 A `pre-commit` WRAPPER'S OWN LINE TALLY IS NOT A SUITE: "
+          "`suiteReader` is read off `summary_reader`, never off `measured` "
+          "or `ran` - a hook list that `_STEP_WORDS` counts perfectly well is "
+          "still `none` here: %r" % (precommit_step.get("measured"),),
+          precommit_step.get("measured") is not None
+          and precommit_step.get("suiteReader") == "none")
 
 
 def _reuse_cases(check):

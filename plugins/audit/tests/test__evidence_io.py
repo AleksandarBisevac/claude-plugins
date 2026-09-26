@@ -379,6 +379,116 @@ def _cases(check):
                         published=["pytest -q"]
                         )["observations"]["coverageBasis"] is None)
 
+        # --- ef8-ef10: THE OTHER FIELD A RUNNER'S OWN OUTPUT WROTE -------------
+        # `failingSuites`/`failingSuitesBasis` are `failing`'s own two rules
+        # (STEP_KEYS, redaction, a bound the writer trusts from nobody) asked of
+        # a PATH instead of a line of prose - a suite file is exactly the shape
+        # `treeMutated` and `overlap` already answer that question for.
+        _suite_leak = os.path.join(tmp, "elsewhere", "cart.test.ts")
+        _fs_step = dict(RESULT["steps"][0])
+        _fs_step["failingSuites"] = ["src/cart.test.ts", _suite_leak]
+        _fs_step["failingSuitesBasis"] = ("the 2 suite file(s) jest named as "
+                                          "failing, read from jest's FAIL "
+                                          "<path> header(s)")
+        _with_fs = dict(RESULT)
+        _with_fs["steps"] = [_fs_step]
+        _rfs = M.row_for(plain, _with_fs, "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("ef8 `failingSuites` CROSSES INTO THE ROW beside `failing`, "
+              "which is what `STEP_KEYS` decides: %r"
+              % (_rfs["steps"][0].get("failingSuites"),),
+              "failingSuites" in M.STEP_KEYS and "failingSuitesBasis" in M.STEP_KEYS
+              and _rfs["steps"][0]["failingSuites"][0] == "src/cart.test.ts"
+              and "jest" in _rfs["steps"][0]["failingSuitesBasis"])
+        check("ef9 ...and a path OUTSIDE the repository is tokenised on the way "
+              "in, by the same redactor `treeMutated` uses - this row is "
+              "committed, and a suite path naming somebody's machine is the "
+              "same leak one door over: %r" % (_rfs["steps"][0]["failingSuites"],),
+              _journal_io.OUTSIDE_TOKEN in _rfs["steps"][0]["failingSuites"]
+              and not any(x.startswith(tmp)
+                         for x in _rfs["steps"][0]["failingSuites"]))
+
+        _over_fs = dict(RESULT)
+        _over_fs["steps"] = [dict(RESULT["steps"][0], failingSuites=[
+            "src/s%d.test.ts" % (n,) for n in range(M.MAX_PATHS + 5)],
+            failingSuitesBasis="a caller that did not cut its own list")]
+        _rofs = M.row_for(plain, _over_fs, "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("ef10 ...and CUT BY THE WRITER at `MAX_PATHS`, never trusted "
+              "from the caller - the same backstop `failing`'s `ef3` holds: %r"
+              % (len(_rofs["steps"][0]["failingSuites"]),),
+              len(_rofs["steps"][0]["failingSuites"]) == M.MAX_PATHS)
+
+        # --- suiteReader and suite_keys, the ledger's own answer to "was a
+        # test suite even run" for a gate key that is not test-shaped by name.
+        def _row_with(steps, run_id="R-sk", ts="2026-09-01T00:00:00Z"):
+            r = dict(RESULT, steps=steps)
+            return M.row_for(plain, r, "task", {"taskId": "P1.2"},
+                             dict(IDENT, runId=run_id, ts=ts),
+                             published=["pytest -q"])
+
+        sk_rows = [
+            _row_with([dict(RESULT["steps"][0], name="lint",
+                            suiteReader="none")]),
+            _row_with([dict(RESULT["steps"][0], name="test",
+                            suiteReader="jest")]),
+            _row_with([dict(RESULT["steps"][0], name="test",
+                            suiteReader="none")]),
+            _row_with([{k: v for k, v in RESULT["steps"][0].items()}]),
+        ]
+        # the fourth row's step is named the same as `RESULT["steps"][0]`
+        # ("unit") and carries NO `suiteReader` at all - unknown, unless some
+        # OTHER row answers for that name too.
+        sk = M.suite_keys(sk_rows)
+        check("sk1 a name recorded RUNNING even once is RUNNING - one row "
+              "naming `jest` for `test` settles the question for that name, "
+              "whatever another row recorded beside it: %r" % (sk,),
+              sk["running"] == ["test"])
+        check("sk2 a name that carried the field and was NEVER anything but "
+              "`none` is SILENT: %r" % (sk,),
+              sk["silent"] == ["lint"])
+        check("sk3 a name recorded ONLY in rows from before this field "
+              "existed - the key absent outright, never `none` - is UNKNOWN: "
+              "%r" % (sk,),
+              sk["unknown"] == ["unit"])
+
+        _sk_absent_then_running = [
+            _row_with([{k: v for k, v in RESULT["steps"][0].items()}]),
+            _row_with([dict(RESULT["steps"][0], suiteReader="jest")]),
+        ]
+        check("sk4 SECOND DIRECTION: a name seen BOTH ways - once with no "
+              "field, once running - is not unknown. The moment any row "
+              "answers for a name, `unknown` no longer names it: %r"
+              % (M.suite_keys(_sk_absent_then_running),),
+              M.suite_keys(_sk_absent_then_running)["unknown"] == []
+              and M.suite_keys(_sk_absent_then_running)["running"] == ["unit"])
+
+        check("sk5 ALLOW: no rows at all answers every key with an empty "
+              "list rather than raising - a plan with no ledger yet has "
+              "asked a real question and gotten a real, empty answer: %r"
+              % (M.suite_keys([]),),
+              M.suite_keys([]) == {"running": [], "silent": [], "unknown": []})
+
+        rb_rows = [
+            _row_with([RESULT["steps"][0]], run_id="R-old",
+                      ts="2026-09-01T00:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-new",
+                      ts="2026-09-02T00:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-new",
+                      ts="2026-09-03T00:00:00Z"),
+        ]
+        check("rr1 `row_by_run` finds the row carrying that `runId`, newest "
+              "by `ts` when more than one writer recorded the same id: %r"
+              % (M.row_by_run(rb_rows, "R-new") or {}).get("ts"),
+              (M.row_by_run(rb_rows, "R-new") or {}).get("ts")
+              == "2026-09-03T00:00:00Z")
+        check("rr2 ALLOW: an id no row carries answers None, never the newest "
+              "row in the list - a caller asking for a run that was never "
+              "recorded must not be handed somebody else's",
+              M.row_by_run(rb_rows, "R-does-not-exist") is None
+              and M.row_by_run([], "R-new") is None
+              and M.row_by_run(rb_rows, None) is None)
+
         # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
         # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
         # `no-checks` off `ranTotal` -- but a run a stop signal cut short keeps

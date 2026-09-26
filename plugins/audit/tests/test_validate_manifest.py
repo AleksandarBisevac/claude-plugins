@@ -242,6 +242,7 @@ def _cases(record):
     try:
         _cases_output(record, path2)
         _cases_test_evidence(record, path2)
+        _cases_gate_evidence(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -471,6 +472,106 @@ def _cases_test_evidence(record, path):
            "The misspelt run is what stops that equality being a validator "
            "answering the same thing to everything: %r / %r" % (bare, meta_ok),
            bare == (0, [], []) and meta_ok == bare and meta_typo != bare)
+
+
+def _cases_gate_evidence(record, path):
+    """The EVIDENCE ARM of 'phase gate runs no suite' - the sentence `validate()`
+    cannot print on its own, because it is handed the assembled manifest and
+    not the ledger beside it.
+
+    `_check_meta` already asks the CERTAIN arm with no evidence at all
+    (`c26` above pins it): a default left EMPTY after `meta.phaseGate.exclude`
+    is a warning regardless. This command is the caller that has the PATH, so
+    it is the one that can read the ledger and ask the second arm - only when
+    the certain one stayed quiet, and only when `exclude` names something at
+    all, so an ordinary plan with no `phaseGate` never pays for a ledger read.
+    """
+    plan = _valid_manifest()
+    plan["meta"]["buildCommands"] = {"lint": "eslint .", "test": "pytest -q"}
+    plan["meta"]["phaseGate"] = {"exclude": ["test"]}
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    project = os.path.dirname(os.path.abspath(path))
+    evidence_dir = os.path.join(project, "evidence")
+    os.makedirs(evidence_dir, exist_ok=True)
+    ledger_path = os.path.join(evidence_dir, "2026-09.gate-evidence-cases.jsonl")
+
+    def _write_ledger(step):
+        with open(ledger_path, "w", encoding="utf-8") as fh:
+            if step is not None:
+                fh.write(json.dumps({"steps": [step]}) + "\n")
+
+    def _warnings():
+        code, text = _run([path])
+        return code, [ln for ln in text.splitlines()
+                      if ln.startswith("WARNING: ")]
+
+    saved_env = os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    try:
+        _write_ledger({"name": "lint", "suiteReader": "none"})
+        code_silent, w_silent = _warnings()
+        record("c31 THE REPRO: a phase gate whose only surviving key "
+               "(`lint`) never once recorded a suite in the ledger prints "
+               "'phase gate runs no suite as far as the ledger shows' - the "
+               "arm `validate()` alone cannot reach: %r"
+               % ([x for x in w_silent if "no suite" in x],),
+               code_silent == 0
+               and any("phase gate runs no suite as far as the ledger shows"
+                       in x and "lint" in x for x in w_silent))
+
+        _write_ledger({"name": "lint", "suiteReader": "jest"})
+        code_running, w_running = _warnings()
+        record("c32 ALLOW: the same plan with the ledger recording `jest` "
+               "for `lint` prints no such warning - the arm is a claim about "
+               "the LEDGER and not about the plan's shape alone: %r"
+               % ([x for x in w_running if "no suite" in x],),
+               code_running == 0
+               and not any("no suite" in x for x in w_running))
+
+        os.remove(ledger_path)
+        code_none, w_none = _warnings()
+        record("c33 ...and NO ledger at all reads the same as a ledger that "
+               "never ran the key - the certain arm already covers 'exclude "
+               "removed everything'; this is 'something is left, and as far "
+               "as recording goes it has never run': %r"
+               % ([x for x in w_none if "no suite" in x],),
+               code_none == 0
+               and any("no suite" in x for x in w_none))
+
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        with open(ledger_path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"steps": [{"name": "lint",
+                                            "suiteReader": "none"}]}) + "\n")
+            fh.write("{not json, a torn line\n")
+        code_torn, w_torn = _warnings()
+        record("c35 AN UNREADABLE LEDGER IS SAID, NEVER READ AS 'NO SUITE' - "
+               "a torn/unparseable line draws its OWN distinct warning naming "
+               "the ledger file, and NOT the 'runs no suite' sentence: a "
+               "partial read is not a partial answer to this question, "
+               "because the missing row could as easily have been the one "
+               "recording `jest`: %r" % (w_torn,),
+               code_torn == 0
+               and any("could not be fully read" in x
+                      and "gate-evidence-cases.jsonl" in x
+                      and "not 'phase gate runs no suite'" in x
+                      for x in w_torn)
+               and not any(x.startswith("WARNING: phase gate runs no suite")
+                          for x in w_torn))
+
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(_valid_manifest(), fh)
+        code_plain, w_plain = _warnings()
+        record("c34 ALLOW: a plan with no `meta.phaseGate` at all never asks "
+               "the ledger question in the first place - no `no suite` "
+               "warning, whatever a ledger sitting beside it might say: %r"
+               % ([x for x in w_plain if "no suite" in x],),
+               code_plain == 0 and not any("no suite" in x for x in w_plain))
+    finally:
+        if saved_env is not None:
+            os.environ["CLAUDE_PROJECT_DIR"] = saved_env
+        import shutil                                              # noqa: E402
+        shutil.rmtree(evidence_dir, ignore_errors=True)
 
 
 def _selftest():
