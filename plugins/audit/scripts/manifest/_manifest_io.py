@@ -526,6 +526,63 @@ def recorded_attempt(task):
     return value
 
 
+def gate_entries(phase, task=None):
+    """`(entries, source)` - the gate entries that measure `task`, and WHOSE.
+
+    The task's own `tests.gate` when it declares one, else the phase's
+    `testGate`; `source` is `"task"` or `"phase"` accordingly. A gate cleared on
+    purpose (`gate_cleared`) is the task's own EMPTY answer. Otherwise ABSENT, EMPTY
+    AND ALL-BLANK ARE ONE ANSWER: a task with no `tests` block, one with
+    `tests.gate: []` and one whose entries are all blank strings declare no gate
+    and fall back, so the three cannot come to disagree about one question. Only
+    non-blank string entries are returned, which is what a gate may run.
+
+    HERE, AT THE BOTTOM LAYER, BECAUSE EVERY READER OF "WHICH GATE MEASURES
+    THIS" MUST GIVE ONE ANSWER: `run-test-gate` (which resolves the entries into
+    the commands it runs), `commit-task-work` (which binds a commit to that
+    gate's verdict), the panel's gate badge, the report's gate-configured read
+    and the demo generator. Entry points cannot import one another, and a second
+    spelling of the fallback is how a task the runner measures by its phase's
+    gate would read to another surface as gateless.
+
+    The entries are returned as declared, unresolved: resolving them through
+    `meta.buildCommands` is the runner's job.
+    """
+    if isinstance(task, dict):
+        tests = task.get("tests")
+        own = declared_gate_entries(tests.get("gate") if isinstance(tests, dict)
+                                    else None)
+        if own or gate_cleared(tests):
+            return own, "task"
+    phase = phase if isinstance(phase, dict) else {}
+    return declared_gate_entries(phase.get("testGate")), "phase"
+
+
+def gate_cleared(tests):
+    """Whether a task's `tests` block records its gate as cleared ON PURPOSE.
+
+    `--gate-clear` writes `tests.gateBasis: cleared`, and that empty gate is the
+    caller's recorded decision: the task is measured by NO gate of its own, and
+    the phase's `testGate` grades it at sign-off. It is the one exception to
+    absent, empty and all-blank falling back to the phase - an empty gate that
+    was chosen is an answer, not a missing one."""
+    return isinstance(tests, dict) and tests.get("gateBasis") == "cleared"
+
+
+def declared_gate_entries(entries):
+    """ONE gate declaration (`testGate` or `tests.gate`) as the entries that will
+    run: non-blank strings, in order.
+
+    A non-list is [], a non-string entry is dropped (nothing resolves it and
+    nothing runs it), and a blank string is dropped too - `["lint", ""]` and
+    `["lint"]` run the same commands. Order is KEPT: entries run in the order
+    they are written. `gate_entries` reads both declarations through this, and so
+    does the validator's comparison of a task's gate with its phase's.
+    """
+    return [e for e in (entries if isinstance(entries, list) else [])
+            if isinstance(e, str) and e.strip()]
+
+
 # --- readiness ------------------------------------------------------------------
 # The statuses that mean the work will not move again. `cancelled` is the second
 # one and it arrived later, which is exactly how the rule ended up written three

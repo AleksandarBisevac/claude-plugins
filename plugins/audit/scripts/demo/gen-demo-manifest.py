@@ -1744,10 +1744,10 @@ def _evidence_specs(manifest):
             tstatus = task.get("status")
             if tstatus not in ("done", "in_progress", "blocked"):
                 continue
-            entries = ((task.get("tests") or {}).get("gate")
-                       or phase.get("testGate") or [])
-            resolved = [(e, build.get(e, e)) for e in entries
-                        if isinstance(e, str) and e.strip()]
+            # WHICH GATE is `_manifest_io.gate_entries`' answer, the one the
+            # runner the demo imitates resolves by.
+            entries, _source = _mio.gate_entries(phase, task)
+            resolved = [(e, build.get(e, e)) for e in entries]
             if not resolved:
                 continue                    # the ungated task: nothing to record
             owns = list(task.get("files") or [])
@@ -1786,13 +1786,16 @@ def _evidence_specs(manifest):
                                             "%s-a%d" % (ids["taskId"], attempt),
                                             red=resolved[0][0],
                                             overlap=overlap)))
-        if pstatus == "done" and phase.get("testGate") and phase.get("mergedAt"):
+        # The phase's own declaration through the one normaliser: an all-blank
+        # `testGate` runs nothing, so it earns no sign-off run.
+        phase_gate = _mio.declared_gate_entries(phase.get("testGate"))
+        if pstatus == "done" and phase_gate and phase.get("mergedAt"):
             owns = sorted(set(f for t in (phase.get("tasks") or [])
                               for f in (t.get("files") or [])))
             out.append(("phase", {"phaseId": phase.get("id")},
                         _at(phase.get("mergedAt"), -1), None,
                         _run_result([(e, build.get(e, e))
-                                     for e in phase["testGate"]],
+                                     for e in phase_gate],
                                     owns, phase.get("baseRef"),
                                     "%s-signoff" % (phase.get("id"),),
                                     overlap=owns)))

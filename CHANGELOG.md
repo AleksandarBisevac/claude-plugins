@@ -154,6 +154,57 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   advises an abandoned user lock by its own `--takeover` path.
 
 ### Changed
+- **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the
+  evidence the orchestrator records one step earlier, so a task whose last gate went red, or whose
+  declared files were edited after a green one, committed as if it had passed. It now refuses
+  unless the task's newest evidence row (the rows carrying its task id, so a task measured by its
+  phase's gate counts and a sign-off run does not) is `passed`, was measured under the gate the
+  task declares now, and its `testedState.scopeDigest` still matches the declared files being
+  committed; the refusal says whether the declared list or the files' contents moved, and a
+  verdict the recorder repeated is graded against the run it names. "The gate declared now" is the
+  row's steps and their dropped count and a new `gateDigest` on the row - the entries beside what
+  `meta.buildCommands` resolves them to - so a build-command edit after a green is a changed gate.
+  A task whose gate was cleared, or whose own gate and phase gate are both empty, commits and says
+  it is bound to no verdict, in a sentence that says which - unless a red was recorded under its
+  gate after the last green: neither emptying the gate nor the `empty-gate` row `--record` writes
+  for it retires that red, only a green or an override with its reason. With no such red the
+  `empty-gate` row binds, and the same row under a gate that declares entries now is refused as a
+  changed gate.
+  An unparseable evidence line refuses only when it could be this task's row, and
+  names its file and line. `--override-verdict "<reason>"` commits anyway and writes an
+  `audit.task.verdict-overridden` journal row naming the commit, the run and the reason, and is
+  refused while the journal is off. `reference/execute-task.md` step 4c says so.
+- **The declared-work digest a gate row records is taken over a normalised scope.** A
+  `:line-range` entry is hashed as the file it names and a directory as the files git lists under
+  it - both used to hash as "missing" on every run, so an edit after a green gate compared as
+  agreement - and the paths the recorder itself writes (the manifest, its shards, the ledger, the
+  trail) are left out, so a task declaring its own manifest file is not made stale by its own
+  recording. A declared directory git lists no file under is hashed as a defined empty entry
+  rather than making the digest unanswerable on every run. Rows gain
+  `testedState.scopeListDigest`, the digest of the declared list. **A row
+  recorded before this upgrade for a task declaring a `:line-range` entry, a directory or its
+  manifest file reads as stale** and needs its gate recording again.
+- **Which gate measures a task is one function, `_manifest_io.gate_entries()`.** `run-test-gate`,
+  `commit-task-work`, the panel's gate badge, the report's gate-configured read, the demo
+  generator and the validator's wide-gate check each had their own reading; the report counted
+  an all-blank task gate as a gate and the demo generator did not fall back from one to the
+  phase's. At phase scope the report's evidence view and the demo generator now read a phase's
+  own `testGate` through `_manifest_io.declared_gate_entries()` too, so an all-blank one is no gate
+  there either.
+- **All three scoped commits stage, commit and undo through one sequence.** `commit-audit-state`
+  and `commit-manifest-index` now stage each path by what git holds for it, commit with the
+  allow-list as the pathspec (`commit-audit-state` committed the whole index), refuse a record
+  path git ignores by name, and put the index back as they found it on any refusal after staging,
+  where they used to leave it staged. The index read they share lists both halves of a staged
+  rename, so a rename from outside either allow-list into it is refused naming its source. A
+  directory git ignores as a whole but holding tracked files is staged through its tracked
+  members instead of refused asking for `-f`; a directory holding nothing git would commit is
+  skipped and named rather than failing the commit's pathspec; the index restore works in a SHA-256
+  repository; and the one commit a pathspec cannot make - a file taken out of the index and then
+  ignored - is a real `git commit` against a temporary index built from the HEAD read before
+  staging, so it carries exactly the allowed paths and runs the project's `pre-commit` and
+  `commit-msg` hooks like any other commit; if HEAD moved underneath it the command exits 1 naming
+  both SHAs and resets nothing.
 - **One `redFirst` vocabulary.** The reviewer graded with `not-applicable` and `not-proved` while
   the executor and the schema said `proved|could-not-prove|not-attempted`, and the reviewer brief
   misquoted what the executor sends. The schema enum is now the one source: the reviewer echoes the
@@ -247,6 +298,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
+  the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
+  only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path
+  only HEAD holds now stays out of the staging call and inside the commit's pathspec, which records
+  the rename or the deletion; and a staged rename whose source a task does not declare is refused by
+  name instead of read as clean, because the shared index read now lists both halves.
+- **`commit-task-work` could not commit a tracked file under a gitignored directory, and its
+  refusal left that file staged.** `git add --` naming such a file exits 1 and stages it anyway.
+  Index entries are now staged with `git add -u --`, and only a path git does not track is subject
+  to the ignore rule - refused by name (`ignored; -f is yours to decide`) before anything is staged,
+  including when it is the only thing uncommitted, where the command used to report "nothing
+  uncommitted". `-f` is never passed. A file taken out of the index with `git rm --cached` and then
+  ignored is committed as the deletion it is. Any refusal after staging now puts the allowed paths'
+  index entries back from a snapshot taken before it - an entry staged at its own bytes, a
+  conflict's stages and an intent-to-add path included - so a failed staging or a commit a hook
+  refuses leaves the index as it was found, and a conflict resolved in the tree is staged rather
+  than refused.
 - **`/audit:doctor`'s `running plugin` row no longer stays yellow over a dead session's stamp.** It
   counted every stamp not naming this copy as drift and never read the stamp's age, so one ended
   session's file - which state GC keeps for days - held the row at WARNING while every newer stamp

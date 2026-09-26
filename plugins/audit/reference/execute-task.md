@@ -440,9 +440,49 @@ not need to.
         It stages the task's own `files`, the phase's manifest file, the journal and the evidence,
         commits them with an explicit pathspec, and **names any staged path outside that list
         instead of sweeping it in**. Read the exit code: **0** it committed (the SHA is printed) or
-        there was nothing to commit and it said which; **1** git refused, or the index already held
-        paths this commit may not carry, each one named — unstage them, or declare them with
-        `/audit:task scope`; **2** the manifest will not load, or there is no such task.
+        there was nothing to commit and it said which; **1** git refused (a commit hook, or a
+        partial commit git will not make during a merge), the index already held paths this commit
+        may not carry, each one named — unstage them, or declare them with `/audit:task scope`,
+        which widens the scope and so means **recording the gate again** before this commit — a
+        declared file git ignores was named (`ignored; -f is yours to decide`: the script never
+        forces one in), a record path git ignores was named (un-ignore it), the index could not be
+        read to be put back, or the task's verdict refused the commit; **2** the manifest will not
+        load, there is no such task, or an override carries no reason.
+
+        **The commit is bound to the gate you recorded above, and the script enforces it.** It
+        reads the task's newest evidence row — the rows carrying its task id, so a task measured
+        by its phase's gate under `--task` counts and a sign-off run does not — and refuses unless
+        that row is `passed`, was measured under the gate the task declares now (the row's steps
+        and the count of steps it dropped, against `tests.gate` or the phase's, and the row's
+        `gateDigest` — so a `meta.buildCommands` edit that changes what an entry runs is a changed
+        gate too), and its `testedState.scopeDigest` still matches the declared files it is about
+        to commit. So the order of this step is load-bearing: record the gate, then commit, and
+        **any edit to a declared file, any change to the declared scope and any change to the gate
+        or to what its entries resolve to after the gate ran means recording it again** — the
+        refusal names the run, says whether the declared LIST or the files' CONTENTS moved, and
+        gives the command to run. The digest is taken the same way on both sides: a `:line-range`
+        entry is hashed as its file, a directory as the files git lists under it (a directory git
+        lists nothing under as a defined empty entry), and the paths
+        the recorder itself writes (the manifest, its shards, the ledger, the trail) are left
+        out. A verdict the recorder repeated rather than re-measured is graded against the run it
+        names. A ledger line that will not parse refuses unless it names another task's id, and
+        the refusal names the file and line (`audit-journal.py verify` shows it). A task nothing
+        can measure — its task gate cleared on purpose (`gateBasis: cleared`), or its own
+        `tests.gate` and its phase's `testGate` both empty — commits and the output says it is
+        bound to no verdict, and says which of the two it is (a cleared task gate is still graded
+        by the phase's `testGate` at sign-off). **A red recorded under the gate after the last
+        green refuses that commit**, and neither emptying the gate nor the `empty-gate` row
+        `--record` then writes retires it: only a green, or `--override-verdict` with a reason,
+        does. With no such red, the `empty-gate` row is the gate's recorded answer and binds it;
+        the same row under a gate that declares entries now is refused as a gate changed after the
+        measurement, so record the gate again.
+        `--override-verdict "<reason>"` commits over a refusal and writes an
+        `audit.task.verdict-overridden` journal row naming the commit, the run and the reason; it
+        is refused while `journal.enabled` is false. An override is a human's call, like the risk
+        gate in (a): do not pass it to get a red task committed. **Nothing stops you passing it** —
+        the script cannot tell who typed the reason — so the journal row is the whole of the
+        control, and it is what a reader checks afterwards (`audit-journal.py show --target
+        <taskId>`).
 
         **Do not compose these git commands yourself.** This was the one git operation this
         document described in prose and nothing scripted, and prose cannot refuse: four scope
@@ -453,12 +493,25 @@ not need to.
 
         What the script does for you, so you know what you are no longer responsible for: the
         `<gitRoot>/` prefix and any `:line-range` suffix are stripped; a declared path outside the
-        git root, or one that is neither in the working tree nor tracked (the red-first case a
-        task names before writing it), is **reported and passed over** rather than failing the
-        commit; the manifest **index** is refused with a sentence of its own; and the staged list
-        is read back after staging as well as before it. `verify-invariants.py`'s `commit-scope`
-        re-derives the same allow-list from git afterwards, so these commits are graded by
-        something that did not make them.
+        git root, or one that is neither in the working tree, the index nor HEAD (the red-first
+        case a task names before writing it), is **reported and passed over** rather than failing
+        the commit; a declared path only HEAD still holds — the source of a staged `git mv`, or a
+        staged `git rm` — is committed as the rename or deletion it is, and so is a file taken out
+        of the index with `git rm --cached` and then ignored (that one commit is a real
+        `git commit` against a temporary index built from the HEAD read before staging, so it
+        carries exactly the allowed paths and runs the project's `pre-commit` and `commit-msg`
+        hooks like every other commit; a hook that refuses leaves your index as it was, and if
+        HEAD moved underneath the script refuses, names both SHAs and resets nothing); a tracked file under
+        a gitignored directory is staged as the tracked file it is, and so are the tracked files of
+        a declared directory git ignores as a whole; a conflict resolved in the working tree is
+        resolved by the staging, as plain `git add` would; the manifest **index** is refused with a
+        sentence of its own; the staged list is read back after staging as well as before it; and
+        any refusal after staging puts the allowed paths' index entries back as they were found —
+        an entry you had staged at its own bytes, a conflict's stages and an intent-to-add path
+        included, in a SHA-256 repository as in a SHA-1 one; stat data and a skip-worktree bit are
+        not restored.
+        `verify-invariants.py`'s `commit-scope` re-derives the same allow-list from git
+        afterwards, so these commits are graded by something that did not make them.
 
         The rest of this step is still yours:
         - **A widened scope cannot pair with `fileIndex` at this commit, and that is
@@ -510,13 +563,16 @@ not need to.
           `task.commit` and `phase.signoff` rows from your manifest writes — whichever tool made them,
           a shell command inside a `Bash` call included — NEVER append those actions by hand (two
           writers means duplicate rows and a doctor that cannot trust the count).
-        - **And re-`git add` anything `git mv` moved.** `git mv` stages the file at its **pre-edit**
-          content, so a task that moves a file and then edits it commits the OLD bytes unless the new
-          path is added again. **No gate can catch this**, and that is why it is called out here
-          rather than left to one: `run-test-gate.py` measures the WORKING TREE, and this defect
-          lives in the INDEX — the tests pass on the files you have while the commit carries files
-          nobody ran. A live run came within one commit of shipping a shared module importing a
-          feature while the manifest recorded the opposite.
+        - **Declare BOTH halves of anything `git mv` moved.** `git mv` stages the file at its
+          **pre-edit** content, so a task that moves a file and then edits it would commit the OLD
+          bytes if the new path were not added again. The script re-stages every declared index
+          entry at its working-tree bytes, and it commits the source through its pathspec — but
+          only for paths the task declares: an undeclared source is refused as a staged path this
+          commit may not carry. **No gate can catch a hand commit getting this wrong**:
+          `run-test-gate.py` measures the WORKING TREE, and this defect lives in the INDEX — the
+          tests pass on the files you have while the commit carries files nobody ran. A live run
+          came within one commit of shipping a shared module importing a feature while the
+          manifest recorded the opposite.
         - The message is `<meta.commit.type>(<taskId>): audit - <your --subject>`, and
           `meta.commit.coauthor` is appended as its own paragraph when set — the script composes
           both. What is yours is the **subject**: say what the task did, in a few words.

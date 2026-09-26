@@ -2030,11 +2030,6 @@ def _resolved(entries, build, preamble=None):
             for e, command in declared_gate(entries, build)]
 
 
-def gate_cleared(tests):
-    """Whether a task's `tests` block records its gate as cleared on purpose."""
-    return isinstance(tests, dict) and tests.get("gateBasis") == "cleared"
-
-
 def gate_of(manifest, phase_id, task_id=None):
     """`(commands, source, error)` -- the gate to run, and WHOSE it is.
 
@@ -2066,18 +2061,18 @@ def gate_of(manifest, phase_id, task_id=None):
     # Read beside `buildCommands` because it is the same kind of declaration: what a
     # gate entry becomes before a shell sees it.
     preamble = (manifest.get("meta") or {}).get("nodePreamble")
+    task = None
     if task_id is not None:
         tasks = [t for t in (phases[0].get("tasks") or [])
                  if isinstance(t, dict) and t.get("id") == task_id]
         if not tasks:
             return None, None, "no task %r in phase %r" % (task_id, phase_id)
-        tests = tasks[0].get("tests")
-        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
-        resolved = _resolved(entries, build, preamble)
-        if resolved or gate_cleared(tests):
-            return resolved, "task", None
-    return (_resolved(phases[0].get("testGate") or [], build, preamble),
-            "phase", None)
+        task = tasks[0]
+    # WHICH DECLARATION is `_manifest_io.gate_entries`' answer, shared with
+    # `commit-task-work`, which binds a task commit to this gate's verdict and
+    # has to agree about whose gate that is.
+    entries, source = _mio.gate_entries(phases[0], task)
+    return _resolved(entries, build, preamble), source, None
 
 
 # --- a verdict already measured on these bytes --------------------------------
@@ -2586,7 +2581,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
-             task_scope=False):
+             recorded=None, task_scope=False):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -2607,7 +2602,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # rewrites the very files it checks, so a fingerprint taken after the run
     # would describe what the gate PRODUCED rather than what it was asked to
     # judge. Both digests are spent from `before`, above the first command.
-    state = _tree_stamp.tested_state(project, owns, before)
+    # `recorded` is the paths the recorder writes (`_evidence_io.recorded_paths`),
+    # left out of the scope digest because the pointer lands in one of them after
+    # this is taken; `commit-task-work` grades the row with the same set.
+    state = _tree_stamp.tested_state(project, owns, before, excluded=recorded)
     started = time.monotonic()
     # THE WALL CLOCK BESIDE THE MONOTONIC ONE, and both are needed for different
     # questions. `started` measures how long this run took and is immune to a
@@ -3490,6 +3488,8 @@ def main(argv, out=print):
         previous = _arm_interrupt()
         try:
             res = run_gate(project, commands, owns=owns, timeout=args.timeout,
+                           recorded=_ev.recorded_paths(project,
+                                                       args.manifest)[0],
                            task_scope=args.task is not None)
         finally:
             _disarm_interrupt(previous)
@@ -3508,6 +3508,11 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    # The resolved gate, as a digest the row carries: what `commit-task-work`
+    # compares so a `meta.buildCommands` edit after a green is a changed gate.
+    res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
+        [name for name, _command in (commands or [])],
+        (manifest.get("meta") or {}).get("buildCommands"))
     # STRICTLY AFTER THE VERDICT, and that placement is the whole of it: the
     # evidence file, the journal and the manifest all live inside the repository
     # this run has just described with `git status --porcelain`, so a write above
