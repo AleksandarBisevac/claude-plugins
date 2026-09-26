@@ -222,7 +222,7 @@ def scope_digest(project, owns, excluded=None):
         return None, ("the work under test declares no files, so there is "
                       "nothing to fingerprint")
     drop = _outside(excluded)
-    files, left_out = set(), []
+    files, hollow, left_out = set(), set(), []
     for rel in declared:
         if drop(rel):
             left_out.append(rel)
@@ -233,11 +233,20 @@ def scope_digest(project, owns, excluded=None):
                 return None, ("git would not list the files under the declared "
                               "directory %s, so the declared work cannot be "
                               "fingerprinted" % (rel,))
-            files.update(m for m in members if not drop(m))
+            kept = [m for m in members if not drop(m)]
+            # A DIRECTORY GIT LISTS NOTHING UNDER is a defined entry, `[dir,
+            # []]`: its absence of files is the state under test, and a digest
+            # over nothing would be None on both sides and never agree.
+            if not kept:
+                hollow.add(rel)
+            files.update(kept)
             continue
         files.add(rel)
     entries, missing = [], 0
-    for rel in sorted(files):
+    for rel in sorted(files | hollow):
+        if rel in hollow and rel not in files:
+            entries.append([rel, []])
+            continue
         absolute = os.path.join(project, rel)
         digest = _journal_io.file_hash(absolute)
         if digest is None and os.path.lexists(absolute):
@@ -246,8 +255,13 @@ def scope_digest(project, owns, excluded=None):
         if digest is None:
             missing += 1
         entries.append([rel, digest])
+    counted = len(entries) - len(hollow)
     basis = ("%d declared file(s); %d read, %d missing"
-             % (len(entries), len(entries) - missing, missing))
+             % (counted, counted - missing, missing))
+    if hollow:
+        basis = ("%s; %d declared director(ies) git lists no file under, "
+                 "hashed as empty: %s" % (basis, len(hollow),
+                                          _output.some_of(sorted(hollow))))
     if left_out:
         basis = ("%s; %d declared path(s) this recorder writes itself were left "
                  "out: %s" % (basis, len(left_out), _output.some_of(left_out)))

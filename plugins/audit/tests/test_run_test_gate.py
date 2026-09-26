@@ -4485,6 +4485,42 @@ def _no_verdict_cases(check):
           p_code == M.E_FAIL
           and not any("graded by" in ln for ln in p_lines))
 
+    # --- the breadth clause, end to end ---------------------------------------
+    # `coverage()` is pinned directly by br1-br3; these pin that `main` hands it
+    # `task_scope` at all, which is a keyword a merge can drop without any of
+    # those going red.
+    wide_suites = ["src/features/projects/s%02d.test.ts" % i for i in range(12)]
+    wide_out = os.path.join(root, "wide.txt")
+    with open(wide_out, "w") as fh:
+        fh.write("".join(" PASS  %s\n" % s for s in wide_suites)
+                 + "Tests:       12 passed, 12 total\n")
+    wide_mp = os.path.join(root, "wide-plan.json")
+    with open(wide_mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "wide": _step(sys.executable, say, wide_out, "0")}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["wide"], "tasks": [
+                            {"id": "P1.1", "title": "one suite's worth",
+                             "status": "in_progress",
+                             "files": ["src/features/projects/s00.ts",
+                                       wide_suites[0]]}]}]}, fh)
+
+    def _wide(*extra):
+        lines = []
+        M.main([wide_mp, "P1", "--project-dir", root, "--no-reuse"]
+               + list(extra), out=lines.append)
+        return "\n".join(lines)
+    at_task = _wide("--task", "P1.1")
+    at_phase = _wide()
+    check("br4 `main` under --task asks the breadth question: a run naming "
+          "suites the task neither declares nor is named after prints exactly "
+          "ONE `breadth:` clause: %r" % (at_task.count("breadth:"),),
+          at_task.count("breadth:") == 1)
+    check("br5 ...and the same run at phase scope prints none, so the clause is "
+          "the task scope's and not the run's: %r"
+          % (at_phase.count("breadth:"),),
+          at_phase.count("breadth:") == 0 and "wide" in at_phase)
+
 
 def _empty_and_retry_cases(check):
     """An EMPTY answer is a recorded one, a jest kill is retried on the terms

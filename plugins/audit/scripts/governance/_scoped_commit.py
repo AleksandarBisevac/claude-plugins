@@ -36,8 +36,10 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__scoped_commit.py`.
 """
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -66,10 +68,11 @@ import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside")
 
 
 # --- asking git ---------------------------------------------------------------
-def run_git(git_root, args, timeout=60, stdin=None):
+def run_git(git_root, args, timeout=60, stdin=None, index_file=None):
     """(code, stdout, stderr), or (None, "", why) when git could not be asked.
 
-    `stdin` is bytes fed to git, for `update-index --index-info`.
+    `stdin` is bytes fed to git, for `update-index --index-info`; `index_file`
+    points git at a temporary index (`GIT_INDEX_FILE`) instead of the real one.
 
     NOT `_commit_trail._git`, which `_invariants` reuses one module over, and the
     difference is the reason rather than an oversight: that runner sends stderr to
@@ -80,10 +83,14 @@ def run_git(git_root, args, timeout=60, stdin=None):
     to the reads below, whose `why` sentence would then carry an empty bracket
     where the reason belongs.
     """
+    env = None
+    if index_file is not None:
+        env = dict(os.environ)
+        env["GIT_INDEX_FILE"] = index_file
     try:
         done = subprocess.run(["git", "-C", git_root] + list(args),
                               input=stdin, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, timeout=timeout)
+                              stderr=subprocess.PIPE, timeout=timeout, env=env)
     except Exception as exc:
         return None, "", "git could not be run (%s)" % (exc,)
     return (done.returncode,
@@ -188,9 +195,15 @@ def uncommitted(git_root, allowed):
 #     tracking a file it keeps. A pathspec commit reads the working tree for its
 #     paths and so records nothing for it (`git commit -- <path>` answers
 #     "nothing added to commit"); only the INDEX holds that deletion, so a commit
-#     carrying one is made from the index - see `stage_and_commit`.
+#     carrying one is made from the index - see `commit_from_index`;
+#   * TRACKED_DIR - a directory on disk holding index entries. Its tracked
+#     members take `git add -u --` and its untracked ones that git does not
+#     ignore take `git add --`, named one by one: a directory gitignored AS A
+#     WHOLE is not reported by `check-ignore` (exit 1 for `gen`, `/gen`,
+#     `gen/**`, `gen/*`), and `git add -- gen` refuses it asking for `-f`.
 IN_INDEX = "index"
 ON_DISK = "disk"
+TRACKED_DIR = "tracked-dir"
 HEAD_ONLY = "head"
 DELETED_ON_DISK = "deleted-kept"
 IGNORED = "ignored"
@@ -243,10 +256,11 @@ def in_head(git_root, paths):
 def classify(git_root, entries):
     """`{rel: kind}` for `(rel, on_disk)` pairs; a path git holds nowhere is absent.
 
-    An EXACT index entry is `IN_INDEX`; a path on disk that is not one - an
-    untracked file, or a directory - is `ON_DISK` unless git ignores it, and an
-    ignored one is `DELETED_ON_DISK` when HEAD still holds it and `IGNORED`
-    otherwise. A path not on disk is `IN_INDEX` when the index still holds it (an
+    An EXACT index entry is `IN_INDEX`; a directory on disk holding index
+    entries is `TRACKED_DIR`; any other path on disk - an untracked file, or a
+    directory with nothing tracked in it - is `ON_DISK` unless git ignores it,
+    and an ignored one is `DELETED_ON_DISK` when HEAD still holds it and
+    `IGNORED` otherwise. A path not on disk is `IN_INDEX` when the index still holds it (an
     unstaged deletion) and `HEAD_ONLY` when only HEAD does.
 
     EVERY UNCERTAIN ANSWER IS THE ONE THAT SKIPS NOTHING, which is the loud
@@ -268,6 +282,8 @@ def classify(git_root, entries):
         if on_disk:
             if rel in exact:
                 kinds[rel] = IN_INDEX
+            elif rel in held:
+                kinds[rel] = TRACKED_DIR
             else:
                 loose.append(rel)
         elif rel in held:
@@ -278,7 +294,19 @@ def classify(git_root, entries):
         ignored = named(git_root, ["check-ignore"], loose, nul=False) or []
         hidden = [rel for rel in loose if rel in ignored]
         kept = (in_head(git_root, hidden) or set()) if hidden else set()
+        # A DIRECTORY holding nothing tracked and nothing `git add` would take
+        # - empty, or only ignored files - has nothing of it to commit, and as a
+        # pathspec it fails the whole commit ("did not match any file(s)"). So
+        # it is left unclassified, which its caller reports as a skip.
+        dirs = [rel for rel in loose if rel not in ignored
+                and os.path.isdir(os.path.join(git_root, rel))]
+        fresh = (named(git_root, ["ls-files", "--others", "--exclude-standard"],
+                       dirs) if dirs else [])
+        empty = set() if fresh is None else set(
+            d for d in dirs if not covering(fresh, [d]))
         for rel in loose:
+            if rel in empty:
+                continue
             if rel not in ignored:
                 kinds[rel] = ON_DISK
             else:
@@ -294,11 +322,26 @@ def classify(git_root, entries):
 def stage(git_root, paths, kinds):
     """`""` when every path was staged by the call its kind needs, else git's words.
 
-    Two calls at most, `git add -u` for index entries and `git add` for paths
-    only on disk; a `HEAD_ONLY` or `DELETED_ON_DISK` path is in neither.
+    `git add -u` for index entries and for the tracked members of a
+    `TRACKED_DIR`, and `git add` for paths only on disk and for the untracked
+    members of a `TRACKED_DIR` that git does not ignore - listed by
+    `ls-files --others --exclude-standard`, so the ignore rule is applied by git
+    and never forced past. A `HEAD_ONLY` or `DELETED_ON_DISK` path is in none.
     """
-    for argv, kind in ((["add", "-u", "--"], IN_INDEX), (["add", "--"], ON_DISK)):
-        group = [rel for rel in paths if kinds.get(rel) == kind]
+    dirs = [rel for rel in paths if kinds.get(rel) == TRACKED_DIR]
+    fresh = []
+    if dirs:
+        fresh = named(git_root, ["ls-files", "--others", "--exclude-standard"],
+                      dirs)
+        if fresh is None:
+            return "git would not list the untracked files under %s" % (
+                ", ".join(dirs),)
+    calls = ((["add", "-u", "--"],
+              [rel for rel in paths if kinds.get(rel) in (IN_INDEX,
+                                                          TRACKED_DIR)]),
+             (["add", "--"],
+              [rel for rel in paths if kinds.get(rel) == ON_DISK] + fresh))
+    for argv, group in calls:
         if not group:
             continue
         code, out, err = run_git(git_root, argv + group)
@@ -328,10 +371,31 @@ def ignored_records(kinds):
 # What a refusal after staging says when the index was put back, and the other
 # sentence when it could not be. Different repairs: one leaves nothing to undo,
 # the other names what is still staged.
-INDEX_RESTORED = "the git index was put back exactly as it was found"
+# SAID AS NARROWLY AS IT IS TRUE: what comes back is each allowed path's
+# entries, stages and intent-to-add flag. `--index-info` writes no stat data and
+# no skip-worktree or assume-unchanged bit, so "exactly as it was found" would
+# claim more than the restore does.
+INDEX_RESTORED = ("the allowed paths' index entries - their stages and "
+                  "intent-to-add flags - were put back as they were found")
 INDEX_NOT_RESTORED = ("and the git index could NOT be put back (%s), so what "
                       "this command staged is still staged: %s")
-_REMOVE = "0 %s\t%%s\0" % ("0" * 40,)
+
+# The length of an object id, by the repository's object format. A removal line
+# for `--index-info` carries a zero id, and one of the wrong length is
+# "malformed index info" - so a sha1-length id restores nothing in a SHA-256
+# repository.
+_OID_LENGTH = {"sha1": 40, "sha256": 64}
+
+
+def _zero_oid(git_root):
+    """The all-zero object id for this repository's object format.
+
+    `rev-parse --show-object-format` names the format; a git too old to answer
+    predates SHA-256 repositories, so sha1's length is the right one there.
+    """
+    code, out, _err = run_git(git_root, ["rev-parse", "--show-object-format"])
+    fmt = out.strip() if code == 0 else "sha1"
+    return "0" * _OID_LENGTH.get(fmt, 40)
 
 
 def snapshot(git_root, paths):
@@ -370,13 +434,16 @@ def restore(git_root, snap, paths):
     path's stages) and the snapshot's entries are written back through
     `update-index --index-info`, so an entry the operator had staged at its own
     bytes, a conflict's three stages and an intent-to-add path come back as
-    they were, and a path this command added is gone again.
+    they were, and a path this command added is gone again. Stat data and the
+    skip-worktree / assume-unchanged bits are not restored; `INDEX_RESTORED`
+    says only what is.
     """
     current = named(git_root, ["ls-files"], paths)
     if current is None:
         return "git would not list the index to put it back"
     ita = set(snap["ita"])
-    feed = "".join(_REMOVE % (p,) for p in sorted(set(current)))
+    zero = _zero_oid(git_root)
+    feed = "".join("0 %s\t%s\0" % (zero, p) for p in sorted(set(current)))
     feed += "".join("%s\0" % (e,) for e in snap["entries"]
                     if e.split("\t", 1)[-1] not in ita)
     code, out, err = run_git(git_root, ["update-index", "-z", "--index-info"],
@@ -416,23 +483,110 @@ def _read_back(git_root, snap, paths, refuse_foreign):
     return "", []
 
 
+def commit_from_index(git_root, paths, paragraphs, head):
+    """`(sha, why)` - a commit of `head` plus the index's entries under `paths`,
+    and nothing else. `sha` is set when a commit was made, `why` when this
+    refuses; BOTH are set when the commit was made and HEAD had moved under it.
+
+    FOR THE ONE COMMIT A PATHSPEC CANNOT MAKE. A `DELETED_ON_DISK` deletion is
+    held only by the index, and a bare `git commit` carries the whole index -
+    anything a sibling session staged between the read-back and the commit
+    included. So the tree is built in a TEMPORARY index (`GIT_INDEX_FILE`):
+    `read-tree` HEAD, the real index's entries under `paths` written over it
+    (a path the real index no longer holds is removed), and then a real
+    `git commit` run against that index. It is a real commit on purpose: the
+    project's `pre-commit` and `commit-msg` hooks run on it exactly as on every
+    other path - a project whose hook is its quality gate keeps that gate - and
+    a hook that refuses leaves the real index untouched, because git only ever
+    wrote the temporary one. The real index already holds exactly these entries
+    for `paths`, so it needs no update afterwards.
+
+    BOUND TO THE HEAD READ BEFORE STAGING, twice. The temporary index is built
+    from `head`; if HEAD is already elsewhere just before the commit, nothing
+    is committed. After it, the new commit's first parent must be `head`; if a
+    commit landed in between, this refuses and names both SHAs, and resets
+    nothing - the commit is there, and undoing it is a decision for whoever
+    reads the refusal, not for this function.
+    """
+    if not head:
+        return "", ("HEAD could not be read before staging, so a commit built "
+                    "against it cannot be checked for having moved")
+    tmp = tempfile.mkdtemp(prefix="audit-index-")
+    index_file = os.path.join(tmp, "index")
+    try:
+        code, out, err = run_git(git_root, ["read-tree", head],
+                                 index_file=index_file)
+        if code != 0:
+            return "", "git would not read HEAD into a temporary index (%s)" % (
+                (err or out).strip()[:200],)
+        code, real, err = run_git(git_root, ["ls-files", "-s", "-z", "--"]
+                                  + list(paths))
+        code2, held, err2 = run_git(git_root, ["ls-files", "-z", "--"]
+                                    + list(paths), index_file=index_file)
+        if code != 0 or code2 != 0:
+            return "", "git would not list the entries to commit (%s)" % (
+                (err or err2).strip()[:200],)
+        zero = _zero_oid(git_root)
+        feed = "".join("0 %s\t%s\0" % (zero, p)
+                       for p in sorted(set(f for f in held.split("\0") if f)))
+        feed += "".join("%s\0" % (e,) for e in real.split("\0") if e)
+        code, out, err = run_git(git_root, ["update-index", "-z",
+                                            "--index-info"],
+                                 stdin=feed.encode("utf-8"),
+                                 index_file=index_file)
+        if code != 0:
+            return "", "git would not build the temporary index (%s)" % (
+                (err or out).strip()[:200],)
+        code, now, _err = run_git(git_root, ["rev-parse", "--verify", "-q",
+                                             "HEAD"])
+        if code != 0 or now.strip() != head:
+            return "", ("HEAD moved from %s to %s before the commit, so nothing "
+                        "was committed" % (head, now.strip() or "nothing"))
+        argv = ["commit", "-q"]
+        for paragraph in paragraphs:
+            argv.extend(["-m", paragraph])
+        code, out, err = run_git(git_root, argv, index_file=index_file)
+        if code != 0:
+            return "", "git refused the commit (%s)" % (
+                (err or out).strip()[:200],)
+        code, sha, err = run_git(git_root, ["rev-parse", "HEAD"])
+        code2, parent, _err2 = run_git(git_root, ["rev-parse", "HEAD^"])
+        sha, parent = sha.strip(), parent.strip()
+        if code != 0 or not sha:
+            return "", ("the commit was made and git would not print its SHA "
+                        "(%s)" % ((err or "").strip()[:200],))
+        if code2 != 0 or parent != head:
+            return sha, ("the commit %s was made on %s and not on %s, the HEAD "
+                         "read before staging - a commit landed in between, so "
+                         "this one may undo it. Nothing was reset: inspect "
+                         "both and decide" % (sha, parent or "nothing", head))
+        return sha, ""
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
     """Stage `paths` by kind, read the index back, commit; undo on any failure.
 
     Returns `{"committed", "sha", "staged", "refused", "foreign"}`. `refused` is
-    empty exactly when a commit was made and named; every refusal reached before
-    the commit has put the index back and says so. `refuse_foreign(foreign)` is
+    empty exactly when a commit was made and named, and set beside `committed`
+    and `sha` in the one case a commit was made and then refused (its HEAD had
+    moved, `commit_from_index`); every refusal reached before the commit has put
+    the index back and says so. `refuse_foreign(foreign)` is
     the caller's sentence for a path that arrived through the staging, because
     each command words its own allow-list.
 
     AN EXPLICIT PATHSPEC, which is not redundant with the read-back: the index
     does not arrive empty, and a bare `git commit` carries whatever else is in it
     even after both reads passed. The one exception is a `DELETED_ON_DISK` path,
-    whose deletion only the index holds; a commit carrying one is made from the
-    index, after the read-back is taken a third time, immediately before it.
+    whose deletion only the index holds, and that commit is built by
+    `commit_from_index` against the HEAD read here, before anything was staged.
     """
     out = {"committed": False, "sha": "", "staged": [], "refused": "",
            "foreign": []}
+    code, head_out, _err = run_git(git_root, ["rev-parse", "--verify", "-q",
+                                              "HEAD"])
+    head = head_out.strip() if code == 0 else ""
     snap, why = snapshot(git_root, paths)
     if why:
         out["refused"] = why
@@ -454,17 +608,20 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
                                   "git would not list the staged paths (%s)"
                                   % ((staged_err or staged_out).strip()[:200],))
         return out
-    out["staged"] = lines(staged_out)
+    out["staged"] = [p for p in lines(staged_out) if under_any(p, paths)]
+    if any(kinds.get(p) == DELETED_ON_DISK for p in paths):
+        sha, why = commit_from_index(git_root, paths, paragraphs, head)
+        if why and not sha:
+            out["refused"] = restored(git_root, snap, paths, why)
+            return out
+        # A commit made on a HEAD that moved is committed AND refused: the
+        # caller reports the SHA and exits non-zero, and nothing is undone.
+        out["committed"], out["sha"], out["refused"] = True, sha, why
+        return out
     argv = ["commit"]
     for paragraph in paragraphs:
         argv.extend(["-m", paragraph])
-    if any(kinds.get(p) == DELETED_ON_DISK for p in paths):
-        out["refused"], out["foreign"] = _read_back(git_root, snap, paths,
-                                                    refuse_foreign)
-        if out["refused"]:
-            return out
-    else:
-        argv.extend(["--"] + list(paths))
+    argv.extend(["--"] + list(paths))
     code, c_out, c_err = run_git(git_root, argv)
     if code is None or code != 0:
         out["refused"] = restored(git_root, snap, paths,

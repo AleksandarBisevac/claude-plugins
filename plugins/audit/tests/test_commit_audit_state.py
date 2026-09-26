@@ -750,6 +750,30 @@ def _staging_cases(check, repos):
           and TI._git(fx["root"], "ls-files", "-s") == found
           and _scoped_commit.INDEX_RESTORED in text)
 
+    # A RECORD DIRECTORY GIT IGNORES AS A WHOLE, HOLDING A TRACKED FILE.
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    root = fx["root"]
+    TI._git(root, "add", "-f", "--", EVIDENCE_REL)
+    TI._git(root, "commit", "-q", "-m", "fixture: the evidence, tracked",
+            "--", EVIDENCE_REL)
+    with io.open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as fh:
+        fh.write("docs/audit/evidence\n")
+    TI._git(root, "add", "--", ".gitignore")
+    TI._git(root, "commit", "-q", "-m", "fixture: ignore the evidence", "--",
+            ".gitignore")
+    with io.open(os.path.join(root, EVIDENCE_REL), "a", encoding="utf-8") as fh:
+        fh.write('{"v":1,"runId":"another"}\n')
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    check("cas33 a record DIRECTORY git ignores as a whole, holding a tracked "
+          "edited file, is committed with it - `git add -- <dir>` refuses such "
+          "a directory asking for -f, which this command never passes: "
+          "%r / %r" % (code, text),
+          code == 0 and after != before and EVIDENCE_REL in TI._git(
+              root, "show", "--name-only", "--pretty=format:", after))
+
 
 def _selftest():
     return _harness.run(_cases)

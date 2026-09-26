@@ -96,10 +96,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   phase's gate counts and a sign-off run does not) is `passed`, was measured under the gate the
   task declares now, and its `testedState.scopeDigest` still matches the declared files being
   committed; the refusal says whether the declared list or the files' contents moved, and a
-  verdict the recorder repeated is graded against the run it names. A task whose gate was cleared,
-  or whose own gate and phase gate are both empty, commits and says it is bound to no verdict -
-  unless its newest recorded verdict is red; the `empty-gate` row `--record` writes for such a gate
-  binds it, and the same row under a gate that declares entries now is refused as a changed gate.
+  verdict the recorder repeated is graded against the run it names. "The gate declared now" is the
+  row's steps and their dropped count and a new `gateDigest` on the row - the entries beside what
+  `meta.buildCommands` resolves them to - so a build-command edit after a green is a changed gate.
+  A task whose gate was cleared, or whose own gate and phase gate are both empty, commits and says
+  it is bound to no verdict, in a sentence that says which - unless a red was recorded under its
+  gate after the last green: neither emptying the gate nor the `empty-gate` row `--record` writes
+  for it retires that red, only a green or an override with its reason. With no such red the
+  `empty-gate` row binds, and the same row under a gate that declares entries now is refused as a
+  changed gate.
   An unparseable evidence line refuses only when it could be this task's row, and
   names its file and line. `--override-verdict "<reason>"` commits anyway and writes an
   `audit.task.verdict-overridden` journal row naming the commit, the run and the reason, and is
@@ -109,20 +114,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   it - both used to hash as "missing" on every run, so an edit after a green gate compared as
   agreement - and the paths the recorder itself writes (the manifest, its shards, the ledger, the
   trail) are left out, so a task declaring its own manifest file is not made stale by its own
-  recording. Rows gain `testedState.scopeListDigest`, the digest of the declared list. **A row
+  recording. A declared directory git lists no file under is hashed as a defined empty entry
+  rather than making the digest unanswerable on every run. Rows gain
+  `testedState.scopeListDigest`, the digest of the declared list. **A row
   recorded before this upgrade for a task declaring a `:line-range` entry, a directory or its
   manifest file reads as stale** and needs its gate recording again.
 - **Which gate measures a task is one function, `_manifest_io.gate_entries()`.** `run-test-gate`,
   `commit-task-work`, the panel's gate badge, the report's gate-configured read, the demo
   generator and the validator's wide-gate check each had their own reading; the report counted
   an all-blank task gate as a gate and the demo generator did not fall back from one to the
-  phase's.
+  phase's. At phase scope the report's evidence view and the demo generator now read a phase's
+  own `testGate` through `_manifest_io.declared_gate_entries()` too, so an all-blank one is no gate
+  there either.
 - **All three scoped commits stage, commit and undo through one sequence.** `commit-audit-state`
   and `commit-manifest-index` now stage each path by what git holds for it, commit with the
   allow-list as the pathspec (`commit-audit-state` committed the whole index), refuse a record
   path git ignores by name, and put the index back as they found it on any refusal after staging,
   where they used to leave it staged. The index read they share lists both halves of a staged
-  rename, so a rename from outside either allow-list into it is refused naming its source.
+  rename, so a rename from outside either allow-list into it is refused naming its source. A
+  directory git ignores as a whole but holding tracked files is staged through its tracked
+  members instead of refused asking for `-f`; a directory holding nothing git would commit is
+  skipped and named rather than failing the commit's pathspec; the index restore works in a SHA-256
+  repository; and the one commit a pathspec cannot make - a file taken out of the index and then
+  ignored - is a real `git commit` against a temporary index built from the HEAD read before
+  staging, so it carries exactly the allowed paths and runs the project's `pre-commit` and
+  `commit-msg` hooks like any other commit; if HEAD moved underneath it the command exits 1 naming
+  both SHAs and resets nothing.
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
   names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
   the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the

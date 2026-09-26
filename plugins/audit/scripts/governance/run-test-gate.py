@@ -3649,6 +3649,11 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    # The resolved gate, as a digest the row carries: what `commit-task-work`
+    # compares so a `meta.buildCommands` edit after a green is a changed gate.
+    res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
+        [name for name, _command in (commands or [])],
+        (manifest.get("meta") or {}).get("buildCommands"))
     # STRICTLY AFTER THE VERDICT, and that placement is the whole of it: the
     # evidence file, the journal and the manifest all live inside the repository
     # this run has just described with `git status --porcelain`, so a write above

@@ -902,9 +902,10 @@ def _verdict_cases(check, repos):
     _set_task(fx, gate=[], phase_gate=[])
     code, text = _run(fx)
     check("ctw50 a task whose gate is EMPTY - its own and its phase's - commits, "
-          "and the output says the commit is bound to no verdict: the recorder "
-          "writes no row for an empty gate, so requiring one would block the "
-          "task for ever, and saying nothing would read as a green: %r / %r"
+          "and the output says the commit is bound to no verdict. No row is "
+          "recorded in THIS fixture - the gate was never run - and an empty "
+          "gate needs none to commit, while saying nothing would read as a "
+          "green: %r / %r"
           % (code, text),
           code == 0 and _const('NO_GATE') in text)
     _scope_cases(check, repos)
@@ -929,7 +930,11 @@ def _empty_gate_cases(check, repos):
           % (recorded.get("status"), text),
           recorded.get("status") == _const("VERDICT_EMPTY_GATE")
           and code == 0 and _head(fx) != before
-          and _const("NO_GATE") in text)
+          and _const("CLEARED_GATE").split("%s")[0] in text)
+    check("ctw70b ...and its sentence is the CLEARED one: the fixture's phase "
+          "declares a `testGate`, so 'nor its phase's `testGate` declares an "
+          "entry' would be false here: %r" % (text,),
+          "nor its phase's" not in text and "testGate" in text)
 
     # ...AND THE SAME ROW UNDER A GATE THAT HAS ENTRIES NOW.
     fx = repos.make()
@@ -951,6 +956,185 @@ def _empty_gate_cases(check, repos):
           "an unknown verdict: %r / %r"
           % (_const("VERDICT_EMPTY_GATE"), RTG.EMPTY_GATE),
           _const("VERDICT_EMPTY_GATE") == RTG.EMPTY_GATE)
+    _retired_red_cases(check, repos)
+    _gate_identity_cases(check, repos)
+    _kept_deletion_hook_cases(check, repos)
+
+
+def _hook(fx, name, body):
+    """Install `.git/hooks/<name>` with `body` and point git at it."""
+    hooks = os.path.join(fx["root"], ".git", "hooks")
+    if not os.path.isdir(hooks):
+        os.makedirs(hooks)
+    _write(os.path.join(hooks, name), "#!/bin/sh\n%s\n" % (body,))
+    os.chmod(os.path.join(hooks, name), 0o755)
+    TI._git(fx["root"], "config", "core.hooksPath", hooks)
+
+
+def _kept_deletion(fx):
+    """A declared file taken out of the index with `git rm --cached` and then
+    ignored - the one path whose commit is built in a temporary index."""
+    _ignored_dir(fx)
+    _set_task(fx, files=[OWNED, IGN_TRACKED])
+    TI._git(fx["root"], "rm", "-q", "--cached", "--", IGN_TRACKED)
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx)
+
+
+def _kept_deletion_hook_cases(check, repos):
+    # A HOOK THAT REFUSES, ON THE TEMPORARY-INDEX PATH.
+    fx = repos.make()
+    _kept_deletion(fx)
+    _hook(fx, "pre-commit", "exit 1")
+    found = _index_entries(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw80 on the kept-deletion path the project's `pre-commit` hook RUNS "
+          "and can refuse: nothing is committed, and the real index is exactly "
+          "as it was found - the refusal happened against the temporary one: "
+          "%r / %r" % (code, text),
+          code == 1 and _head(fx) == before and _index_entries(fx) == found)
+
+    # ...AND A HOOK WHOSE SIDE EFFECT SHOWS IT RAN.
+    fx = repos.make()
+    _kept_deletion(fx)
+    marker = os.path.join(fx["root"], "hook-ran.txt")
+    _hook(fx, "pre-commit", "echo pre-commit >> \"%s\"" % (marker,))
+    _hook(fx, "commit-msg", "echo commit-msg >> \"%s\"" % (marker,))
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    check("ctw81 ...and a hook that lets it through has visibly run - both "
+          "`pre-commit` and `commit-msg` left their mark - on a commit that "
+          "still carries exactly the deletion and the declared work: %r / %r"
+          % (_read(marker), text),
+          code == 0 and after != before
+          and _read(marker) == "pre-commit\ncommit-msg\n"
+          and ("D\t%s" % (IGN_TRACKED,)) in _name_status(fx, after))
+
+
+def _retired_red_cases(check, repos):
+    # A RED, THEN THE GATE CLEARED, THEN RECORDED: the empty-gate row is the
+    # newest row, and it must not retire the red.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=["false"])
+    _gate(fx)
+    _set_task(fx, gate=[], basis="cleared")
+    _gate(fx)
+    newest = _newest_row(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw73 a red, then the gate cleared, then `--record`, then the commit "
+          "is REFUSED - the empty-gate row is the newest row, and a red recorded "
+          "under entries after the last green is retired only by a green or by "
+          "an override with its reason: %r / %r"
+          % (newest.get("status"), text),
+          newest.get("status") == _const("VERDICT_EMPTY_GATE")
+          and code == 1 and "after the last green" in text
+          and _head(fx) == before)
+    # ...AND A RED THAT A GREEN ALREADY RETIRED.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=["false"])
+    _gate(fx)
+    _set_task(fx, gate=["test"])
+    _gate(fx)
+    _set_task(fx, gate=[], basis="cleared")
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw74 SECOND-DIRECTION CASE: a red, then a green, then the gate "
+          "cleared and recorded commits - the green retired the red before the "
+          "gate was emptied: %r / %r" % (code, text),
+          code == 0 and _const("CLEARED_GATE").split("%s")[0] in text)
+
+
+def _set_build(fx, name, command):
+    """Rewrite one `meta.buildCommands` entry in the fixture's index."""
+    index = _mio.read_json(fx["manifest"])
+    index.setdefault("meta", {}).setdefault("buildCommands", {})[name] = command
+    TI._write_json(fx["manifest"], index)
+
+
+def _gate_identity_cases(check, repos):
+    # WHAT AN ENTRY RUNS, CHANGED AFTER A GREEN.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    _set_build(fx, "test", "true && true")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw75 a `meta.buildCommands` edit that changes what an entry RUNS, "
+          "made after a green, is a changed gate and refused - the entry's name "
+          "held still while the gate became a different one: %r / %r"
+          % (code, text),
+          code == 1 and "measured under the gate" in text
+          and _head(fx) == before)
+
+    # A ROW THAT DROPPED STEPS FOR LENGTH, UNDER A GATE WIDENED PAST THEM. The
+    # row is written by the recorder and then given the count a row with more
+    # steps than it keeps carries; its gate digest is removed, so only the step
+    # comparison is under test.
+    def _dropped_row(gate_now):
+        fx = repos.make()
+        _dirty_work(fx)
+        _gate(fx)
+        newest = _newest_row(fx)
+
+        def _dropped(row):
+            row["stepsDropped"] = 1
+            row.pop("gateDigest", None)
+            return row
+        _rewrite_row(fx, newest.get("runId"), _dropped)
+        _set_task(fx, gate=gate_now)
+        return _run(fx)
+    code, text = _dropped_row(["test", "x", "y"])
+    check("ctw76 a row that kept ONE step and dropped one is a gate of two, and "
+          "it does not bind a gate of three - comparing only the kept steps "
+          "ignored the count: %r / %r" % (code, text),
+          code == 1 and "measured under the gate" in text)
+    code, text = _dropped_row(["test", "x"])
+    check("ctw77 SECOND-DIRECTION CASE: the same row binds a gate of two whose "
+          "first entry is the step it kept: %r / %r" % (code, text),
+          code == 0 and "committed" in text)
+
+    # AN IGNORED DIRECTORY, DECLARED WHOLE, THAT HOLDS A TRACKED FILE.
+    fx = repos.make()
+    _ignored_dir(fx)
+    _set_task(fx, files=[OWNED, IGNORED_DIR])
+    _write(os.path.join(fx["root"], IGN_TRACKED), "v2\n")
+    _write(os.path.join(fx["root"], IGN_UNTRACKED), "stays untracked\n")
+    _write(os.path.join(fx["root"], OWNED), "a = 2\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    check("ctw78 a declared DIRECTORY git ignores as a whole, holding a tracked "
+          "edited file, is committed with that file - `check-ignore` does not "
+          "report such a directory, and `git add -- <dir>` refuses it asking "
+          "for -f - while the untracked file beside it stays out, never "
+          "forced: %r / %r" % (code, text),
+          code == 0 and after != before
+          and IGN_TRACKED in _carried(fx, after)
+          and IGN_UNTRACKED not in _carried(fx, after)
+          and TI._git(fx["root"], "ls-files", "--", IGN_UNTRACKED).strip() == "")
+
+    # A DECLARED DIRECTORY GIT LISTS NOTHING UNDER.
+    fx = repos.make()
+    _write(os.path.join(fx["root"], ".gitignore"), "*.log\n")
+    TI._git(fx["root"], "add", "--", ".gitignore")
+    TI._git(fx["root"], "commit", "-q", "-m", "fixture: ignore logs", "--",
+            ".gitignore")
+    os.makedirs(os.path.join(fx["root"], "hollow"))
+    _write(os.path.join(fx["root"], "hollow", "only.log"), "ignored\n")
+    _set_task(fx, files=["hollow"])
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw79 a declared directory git lists no file under is a DEFINED "
+          "entry of the digest, not an unanswerable one - otherwise every "
+          "re-record of such a task is refused and the override is the only "
+          "way on: %r / %r" % (code, text),
+          code == 0 and "not established" not in text)
 
 
 # --- helpers for editing a recorded ledger -------------------------------------

@@ -246,6 +246,14 @@ def stage_targets(manifest, phase, manifest_path, project, git_root, config=None
     # `kinds` is how each path is staged, `_scoped_commit.classify`'s answer;
     # every path here exists on disk, which is what the loop above required.
     kinds = _scoped_commit.classify(git_root, [(rel, True) for rel in paths])
+    # A directory `classify` leaves unclassified holds no file git would
+    # commit, and as a pathspec it would fail the whole commit.
+    for rel in [p for p in paths if p not in kinds]:
+        skipped.append("%s is a directory holding no file git would commit, so "
+                       "there is nothing of it to stage" % (rel,))
+    paths = [p for p in paths if p in kinds]
+    if journal not in paths:
+        journal = None
     return {"paths": paths, "journal": journal, "skipped": skipped,
             "kinds": kinds}
 
@@ -468,6 +476,10 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
         return E_FAIL, _answer(skipped, staged=staged, foreign=done["foreign"],
                                refused=done["refused"])
     sha = done["sha"]
+    if sha and done["refused"]:
+        # Committed on a HEAD that moved underneath: reported, never undone.
+        return E_FAIL, _answer(skipped, committed=True, commit=sha,
+                               staged=staged, refused=done["refused"])
     if not sha:
         # The commit exists and this process cannot name it. A failure rather
         # than a success with a blank field: the journal row is the only handle

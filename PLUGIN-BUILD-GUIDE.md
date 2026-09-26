@@ -325,7 +325,7 @@ L3:
   _ado_fetch -> _ado_drift, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
-  _evidence_view -> _evidence_io, _output, _report_html, _status_facts
+  _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
@@ -2972,14 +2972,24 @@ its source), and the one answer shape and renderer the commands print.
 
 **How each path is staged, and how the index is put back.** `classify()` asks git what it holds
 for each allowed path and `stage()` stages it accordingly — `git add -u --` for an index entry,
-`git add --` for a path only on disk, neither for a path only HEAD holds (a staged rename's source,
-a staged deletion) — and `stage_and_commit()` is the whole sequence: snapshot the allowed paths'
-index entries (`ls-files -s`, every stage of a conflict kept, intent-to-add read from `status
---porcelain=v2`), stage, read back, commit with the list as the pathspec, and on any refusal put
-the entries back through `update-index --index-info`. The one commit made without a pathspec is
-one carrying a file taken out of the index with `git rm --cached` and then ignored: a pathspec
-commit reads the working tree and records nothing for it, so the read-back is taken a third time
-immediately before that commit instead.
+`git add --` for a path only on disk, both for a directory holding tracked files (its tracked
+members with `-u`, its untracked ones git does not ignore by name, because a directory gitignored
+as a whole is not reported by `check-ignore` and `git add -- <dir>` refuses it), neither for a path
+only HEAD holds (a staged rename's source, a staged deletion) — and `stage_and_commit()` is the
+whole sequence: snapshot the allowed paths' index entries (`ls-files -s`, every stage of a conflict
+kept, intent-to-add read from `status --porcelain=v2`), stage, read back, commit with the list as
+the pathspec, and on any refusal put the entries back through `update-index --index-info`, whose
+removal lines carry a zero id as long as the repository's object format's (SHA-1 or SHA-256).
+Stat data and the skip-worktree bit are not restored, and the sentence it prints says only what is.
+The one commit a pathspec cannot make is one carrying a file taken out of the index with `git rm
+--cached` and then ignored — a pathspec commit reads the working tree and records nothing for it —
+and `commit_from_index()` builds that one in a temporary index (`read-tree` of the HEAD read
+before staging, the allowed entries over it) and runs a real `git commit` with `GIT_INDEX_FILE`
+pointing at it, so it carries exactly the allow-list and the project's `pre-commit` and
+`commit-msg` hooks run on it as on every other commit; a refusing hook leaves the real index
+untouched. HEAD is checked against the one read before staging just before the commit, and the new
+commit's first parent after it; a mismatch there is refused with both SHAs named, and nothing is
+reset.
 
 **No command can import another** — nothing may import a hyphenated entry point — so this
 module is the only place they meet, and a second spelling of a refusal rule is how one commit
@@ -3147,14 +3157,22 @@ a record path git ignores is refused in words of its own. A refusal after stagin
 paths' index entries back from a snapshot taken before it.
 
 **Bound to the verdict it was measured under.** It refuses unless the task's newest evidence row
-(the rows carrying its task id) is `passed`, was measured under the gate the task declares now,
-and its `testedState.scopeDigest` — `_tree_stamp.scope_digest()` of the declared files, with the
-scope normalised once (`declared_scope()`: line suffixes stripped, directories expanded to the
-files git lists) and the recorder's own paths left out on both sides — still matches the files
-being committed; `scopeListDigest` beside it tells a changed declared list from changed contents.
-HEAD and the dirty-path digest are not compared, because a sibling commit between a task's gate and
-its commit moves both. A task whose own gate and whose phase's gate are both empty commits and says
-it is bound to no verdict, unless its newest recorded verdict is red. An unparseable ledger line
+(the rows carrying its task id) is `passed`, was measured under the gate the task declares now
+(the row's steps, their dropped count and `gateDigest` — the entries beside what
+`meta.buildCommands` resolves them to, `_evidence_io.gate_digest()`), and its
+`testedState.scopeDigest` still matches the files being committed. That digest is
+`_tree_stamp.scope_digest()`: the scope is normalised once by `declared_scope()` (line suffixes
+stripped), `scope_digest()` expands a directory into the files git lists under it (one it lists
+nothing under is hashed as a defined empty entry), and the recorder's own paths are left out on both
+sides; `scopeListDigest` beside it tells a changed declared list from changed contents. HEAD and
+the dirty-path digest are not compared, because a sibling commit between a task's gate and its
+commit moves both. A task nothing can measure — its task gate cleared on purpose
+(`gateBasis: cleared`), or its own `tests.gate` and its phase's `testGate` both empty — commits and
+says it is bound to no verdict, in a sentence that says which of the two it is, unless a red was
+recorded under its gate after the last green: the `empty-gate` row `--record` writes for such a gate
+does not retire that red, and only a green or an override with its reason does. The same row under
+a gate that declares entries now is refused as a gate changed after the measurement. An unparseable
+ledger line
 refuses unless it names another task. `--override-verdict <reason>` commits anyway and writes an
 `audit.task.verdict-overridden` journal row; it is refused while the journal is off. Which gate
 measures a task is `_manifest_io.gate_entries()` — the one answer `run-test-gate.py`, the panel's

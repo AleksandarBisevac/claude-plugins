@@ -773,6 +773,24 @@ def _cases(check):
         _ungated["%dx%d" % (_np, _nt)] = (
             [p["id"] for p in _no_gate],
             sorted(p["id"] for p in _no_gate if p["id"] in _ran))
+    # ...and a phase whose gate is ALL BLANK declares none either: the one
+    # normaliser (`_manifest_io.declared_gate_entries`) drops a blank entry, so
+    # a sign-off row fed one would record a run of a command nobody declared.
+    _blank = M.generate(n_phases=12, n_tasks=6, seed=11)
+    # A phase the fixture DOES record a sign-off run for, so the case is about
+    # the blank gate and not about a phase that earned no run anyway.
+    _with_signoff = set(i.get("phaseId") for _s, i, _t, _a, _r
+                        in M._evidence_specs(_blank) if _s == "phase")
+    _signed = [p for p in _blank["phases"] if p.get("id") in _with_signoff]
+    for _p in _signed[:1]:
+        _p["testGate"] = ["  "]
+    _blank_runs = [(_s, i) for _s, i, _t, _a, _r in M._evidence_specs(_blank)
+                   if _s == "phase" and _signed
+                   and i.get("phaseId") == _signed[0]["id"]]
+    check("a signed-off phase whose testGate is ALL BLANK earns no sign-off run "
+          "in the fixture - it declares no gate, exactly as the runner reads "
+          "it: %r" % (_blank_runs,),
+          bool(_signed) and _blank_runs == [])
     check("the phase that declares no gate is one the fixture records NO run "
           "against, at every size - a gateless phase with runs in the ledger "
           "would publish a plan its own record contradicts: %r" % (_ungated,),

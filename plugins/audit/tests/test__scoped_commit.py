@@ -284,6 +284,117 @@ def _staging_cases(check, tmp, outside):
           found_status.startswith("1 .A ")
           and _git(repo, "status", "--porcelain=v2", "--",
                    "keep/ita.txt") == found_status)
+    _review2_cases(check, tmp)
+
+
+def _review2_cases(check, tmp):
+    # AN IGNORED DIRECTORY, DECLARED WHOLE, HOLDING A TRACKED FILE.
+    repo = _repo(tmp, "ignored-dir")
+    _write(os.path.join(repo, "gen", "a.txt"), "v1\n")
+    _write(os.path.join(repo, ".gitignore"), "gen\n")
+    _git(repo, "add", "--", ".gitignore")
+    _git(repo, "add", "-f", "--", "gen/a.txt")
+    _git(repo, "commit", "-q", "-m", "tracked under an ignored dir")
+    _write(os.path.join(repo, "gen", "a.txt"), "v2\n")
+    _write(os.path.join(repo, "gen", "new.txt"), "untracked\n")
+    kinds = M.classify(repo, [("gen", True)])
+    done = M.stage_and_commit(repo, ["gen"], kinds, ["x"], lambda f: "foreign")
+    shown = _git(repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
+    check("sc20 a directory git ignores AS A WHOLE, holding a tracked edited "
+          "file, stages that file - `check-ignore` does not report the "
+          "directory and `git add -- gen` refuses it - and its untracked "
+          "member stays out, never forced: %r / %r" % (kinds, done),
+          kinds == {"gen": M.TRACKED_DIR}
+          and done["committed"] and not done["refused"] and shown == ["gen/a.txt"]
+          and _git(repo, "ls-files", "--", "gen/new.txt").strip() == "")
+
+    # THE KEPT-DELETION COMMIT, BUILT IN A TEMPORARY INDEX.
+    repo = _repo(tmp, "kept-deletion")
+    _write(os.path.join(repo, "f.cfg"), "cfg\n")
+    _git(repo, "add", "--", "f.cfg")
+    _git(repo, "commit", "-q", "-m", "cfg")
+    _git(repo, "rm", "-q", "--cached", "--", "f.cfg")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    # A path somebody else staged in the meantime, which nothing allows.
+    _write(os.path.join(repo, "keep", "b.txt"), "sibling\n")
+    _git(repo, "add", "--", "keep/b.txt")
+    sha, why = M.commit_from_index(repo, ["f.cfg"], ["drop f.cfg"], head)
+    shown = _git(repo, "show", "--name-status", "--pretty=format:",
+                 "HEAD").split("\n")
+    check("sc21 a commit made from the index for a kept deletion carries EXACTLY "
+          "the allow-list - a path a sibling staged meanwhile does not ride "
+          "along, and stays staged for its owner: %r / %r" % (why, shown),
+          why == "" and sha and [ln for ln in shown if ln.strip()]
+          == ["D\tf.cfg"]
+          and "keep/b.txt" in _git(repo, "diff", "--cached", "--name-only"))
+    # The sibling's own commit moves HEAD to a tree the stale one does not
+    # hold, so a commit built on the stale HEAD would undo it.
+    _git(repo, "commit", "-q", "-m", "sibling", "--", "keep/b.txt")
+    moved = _git(repo, "rev-parse", "HEAD").strip()
+    sha2, why2 = M.commit_from_index(repo, ["f.cfg"], ["again"], head)
+    check("sc22 ...and it refuses BEFORE committing when HEAD is no longer the "
+          "HEAD it read - a commit built from the stale tree would undo the "
+          "commits that moved it: %r" % (why2,),
+          sha2 == "" and "before the commit" in why2
+          and _git(repo, "rev-parse", "HEAD").strip() == moved)
+
+    # A COMMIT LANDING BETWEEN THE CHECK AND THE COMMIT. Simulated at the one
+    # moment it can happen: the runner makes a sibling commit just before it
+    # hands `git commit` on.
+    repo = _repo(tmp, "moved-head")
+    _write(os.path.join(repo, "f.cfg"), "cfg\n")
+    _git(repo, "add", "--", "f.cfg")
+    _git(repo, "commit", "-q", "-m", "cfg")
+    _git(repo, "rm", "-q", "--cached", "--", "f.cfg")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    real_run = M.run_git
+    sibling = {}
+
+    def _racing(git_root, args, **kwargs):
+        if list(args[:1]) == ["commit"] and not sibling:
+            tree = _git(repo, "rev-parse", "HEAD^{tree}").strip()
+            sibling["sha"] = _git(repo, "commit-tree", tree, "-p", head,
+                                  "-m", "sibling").strip()
+            _git(repo, "update-ref", "HEAD", sibling["sha"], head)
+        return real_run(git_root, args, **kwargs)
+    M.run_git = _racing
+    try:
+        sha, why = M.commit_from_index(repo, ["f.cfg"], ["drop f.cfg"], head)
+    finally:
+        M.run_git = real_run
+    check("sc24 a commit made on a HEAD that moved after the check is REPORTED - "
+          "its SHA, the HEAD it landed on and the HEAD read before staging all "
+          "named - and nothing is reset: %r" % (why,),
+          sha and why and sibling.get("sha") in why and head in why
+          and sha in why
+          and _git(repo, "rev-parse", "HEAD").strip() == sha)
+
+    # A SHA-256 REPOSITORY.
+    repo = os.path.join(tmp, "sha256")
+    os.makedirs(repo)
+    made = subprocess.run(["git", "-C", repo, "init", "-q",
+                           "--object-format=sha256"],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if made.returncode != 0:
+        _harness.skip(check, "sc23 an index restore in a SHA-256 repository",
+                      "this git cannot create a sha256 repository",
+                      made.returncode != 0)
+        return
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "Fixture")
+    _write(os.path.join(repo, "a.txt"), "a\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    found = _git(repo, "ls-files", "-s")
+    snap, why = M.snapshot(repo, ["a.txt", "b.txt"])
+    _write(os.path.join(repo, "a.txt"), "changed\n")
+    _write(os.path.join(repo, "b.txt"), "new\n")
+    _git(repo, "add", "--", "a.txt", "b.txt")
+    why_back = M.restore(repo, snap, ["a.txt", "b.txt"])
+    check("sc23 an index in a SHA-256 repository is put back too - the removal "
+          "line's zero id is as long as the repository's object ids, and a "
+          "sha1-length one is 'malformed index info' there: %r" % (why_back,),
+          why == "" and why_back == "" and _git(repo, "ls-files", "-s") == found)
 
 
 def _selftest():

@@ -52,6 +52,7 @@ This module carries no `--selftest` of its own; its cases live in
 """
 import binascii
 import calendar
+import hashlib
 import os
 import sys
 import time
@@ -296,6 +297,27 @@ STARTED_KEY = "startedAt"
 # recorded on the row rather than re-derived, because it is a statement about the
 # tree AT THAT MOMENT and the moment is gone.
 REUSE_KEY = "reuseKey"
+
+# The row key for `gate_digest`'s answer.
+GATE_DIGEST_KEY = "gateDigest"
+
+
+def gate_digest(entries, build):
+    """`sha256:<hex>` over the gate as declared and resolved, or None for no entries.
+
+    Each entry beside what it resolves to through `meta.buildCommands` (an entry
+    naming none is its own command), in declared order, and WITHOUT
+    `meta.nodePreamble` - that is the machine's prelude, not the gate. ONE
+    SPELLING for the recorder that writes it and the committer that compares it,
+    so the two cannot come to hash one gate two ways.
+    """
+    names = _mio.declared_gate_entries(list(entries or []))
+    if not names:
+        return None
+    build = build if isinstance(build, dict) else {}
+    pairs = [[name, build.get(name, name)] for name in names]
+    return "sha256:" + hashlib.sha256(
+        _journal_io.canonical(pairs).encode("utf-8")).hexdigest()
 
 # A run with more steps than this is a build, not a gate; more paths than this is
 # a rewrite, not a diff. Both cuts are COUNTED beside the list they cut, because a
@@ -578,6 +600,12 @@ def row_for(project, result, scope, ids, identity, published=None):
     # `phase` beside a `taskId`, which is a shape two opposite readings both fit.
     if result.get("gateSource") is not None:
         row["gateSource"] = str(result["gateSource"])
+    # WHAT THE GATE WAS, resolved: a digest of every entry beside the command it
+    # resolves to (`gate_digest`), so a reader can tell a gate whose entries kept
+    # their names while `meta.buildCommands` changed what they run. Written only
+    # when the writer computed one.
+    if result.get(GATE_DIGEST_KEY) is not None:
+        row[GATE_DIGEST_KEY] = str(result[GATE_DIGEST_KEY])
     # THE IDENTITY THE NEXT RUN COMPARES ITSELF AGAINST. It is not derivable from
     # anything else on the row and it never will be: `testedState` holds a digest
     # of WHICH paths were dirty, which is silent about their contents, so a

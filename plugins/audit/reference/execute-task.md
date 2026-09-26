@@ -412,23 +412,29 @@ not need to.
         reads the task's newest evidence row — the rows carrying its task id, so a task measured
         by its phase's gate under `--task` counts and a sign-off run does not — and refuses unless
         that row is `passed`, was measured under the gate the task declares now (the row's steps
-        against `tests.gate`, or the phase's), and its `testedState.scopeDigest` still matches the
-        declared files it is about to commit. So the order of this step is load-bearing: record
-        the gate, then commit, and **any edit to a declared file, any change to the declared
-        scope and any change to the gate after the gate ran means recording it again** — the
+        and the count of steps it dropped, against `tests.gate` or the phase's, and the row's
+        `gateDigest` — so a `meta.buildCommands` edit that changes what an entry runs is a changed
+        gate too), and its `testedState.scopeDigest` still matches the declared files it is about
+        to commit. So the order of this step is load-bearing: record the gate, then commit, and
+        **any edit to a declared file, any change to the declared scope and any change to the gate
+        or to what its entries resolve to after the gate ran means recording it again** — the
         refusal names the run, says whether the declared LIST or the files' CONTENTS moved, and
         gives the command to run. The digest is taken the same way on both sides: a `:line-range`
-        entry is hashed as its file, a directory as the files git lists under it, and the paths
+        entry is hashed as its file, a directory as the files git lists under it (a directory git
+        lists nothing under as a defined empty entry), and the paths
         the recorder itself writes (the manifest, its shards, the ledger, the trail) are left
         out. A verdict the recorder repeated rather than re-measured is graded against the run it
         names. A ledger line that will not parse refuses unless it names another task's id, and
         the refusal names the file and line (`audit-journal.py verify` shows it). A task nothing
         can measure — its task gate cleared on purpose (`gateBasis: cleared`), or its own
         `tests.gate` and its phase's `testGate` both empty — commits and the output says it is
-        bound to no verdict, unless its newest recorded verdict is a red one: emptying a gate
-        does not retire it. The `empty-gate` row `--record` writes for such a gate is its recorded
-        answer and binds it; the same row under a gate that declares entries now is refused as a
-        gate changed after the measurement, so record the gate again.
+        bound to no verdict, and says which of the two it is (a cleared task gate is still graded
+        by the phase's `testGate` at sign-off). **A red recorded under the gate after the last
+        green refuses that commit**, and neither emptying the gate nor the `empty-gate` row
+        `--record` then writes retires it: only a green, or `--override-verdict` with a reason,
+        does. With no such red, the `empty-gate` row is the gate's recorded answer and binds it;
+        the same row under a gate that declares entries now is refused as a gate changed after the
+        measurement, so record the gate again.
         `--override-verdict "<reason>"` commits over a refusal and writes an
         `audit.task.verdict-overridden` journal row naming the commit, the run and the reason; it
         is refused while `journal.enabled` is false. An override is a human's call, like the risk
@@ -450,13 +456,19 @@ not need to.
         case a task names before writing it), is **reported and passed over** rather than failing
         the commit; a declared path only HEAD still holds — the source of a staged `git mv`, or a
         staged `git rm` — is committed as the rename or deletion it is, and so is a file taken out
-        of the index with `git rm --cached` and then ignored; a tracked file under a gitignored
-        directory is staged as the tracked file it is; a conflict resolved in the working tree is
+        of the index with `git rm --cached` and then ignored (that one commit is a real
+        `git commit` against a temporary index built from the HEAD read before staging, so it
+        carries exactly the allowed paths and runs the project's `pre-commit` and `commit-msg`
+        hooks like every other commit; a hook that refuses leaves your index as it was, and if
+        HEAD moved underneath the script refuses, names both SHAs and resets nothing); a tracked file under
+        a gitignored directory is staged as the tracked file it is, and so are the tracked files of
+        a declared directory git ignores as a whole; a conflict resolved in the working tree is
         resolved by the staging, as plain `git add` would; the manifest **index** is refused with a
         sentence of its own; the staged list is read back after staging as well as before it; and
         any refusal after staging puts the allowed paths' index entries back as they were found —
         an entry you had staged at its own bytes, a conflict's stages and an intent-to-add path
-        included.
+        included, in a SHA-256 repository as in a SHA-1 one; stat data and a skip-worktree bit are
+        not restored.
         `verify-invariants.py`'s `commit-scope` re-derives the same allow-list from git
         afterwards, so these commits are graded by something that did not make them.
 

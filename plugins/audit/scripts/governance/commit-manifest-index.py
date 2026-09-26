@@ -498,6 +498,11 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
                                              foreign=done["foreign"],
                                              refused=done["refused"])
     sha = done["sha"]
+    if sha and done["refused"]:
+        # Committed on a HEAD that moved underneath: reported, never undone.
+        return E_FAIL, _scoped_commit.answer(skipped, committed=True, commit=sha,
+                                             staged=staged,
+                                             refused=done["refused"])
     if not sha:
         # The commit exists and this process cannot name it. A failure rather than
         # a success with a blank field: the journal row is the only handle anything

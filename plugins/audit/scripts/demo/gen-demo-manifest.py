@@ -1765,13 +1765,16 @@ def _evidence_specs(manifest):
                                             "%s-a%d" % (ids["taskId"], attempt),
                                             red=resolved[0][0],
                                             overlap=overlap)))
-        if pstatus == "done" and phase.get("testGate") and phase.get("mergedAt"):
+        # The phase's own declaration through the one normaliser: an all-blank
+        # `testGate` runs nothing, so it earns no sign-off run.
+        phase_gate = _mio.declared_gate_entries(phase.get("testGate"))
+        if pstatus == "done" and phase_gate and phase.get("mergedAt"):
             owns = sorted(set(f for t in (phase.get("tasks") or [])
                               for f in (t.get("files") or [])))
             out.append(("phase", {"phaseId": phase.get("id")},
                         _at(phase.get("mergedAt"), -1), None,
                         _run_result([(e, build.get(e, e))
-                                     for e in phase["testGate"]],
+                                     for e in phase_gate],
                                     owns, phase.get("baseRef"),
                                     "%s-signoff" % (phase.get("id"),),
                                     overlap=owns)))

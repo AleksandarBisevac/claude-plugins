@@ -596,6 +596,15 @@ def _scope_cases(check):
           and M.scope_list_digest(["src/mine.py"]) != M.scope_list_digest(
               ["src/mine.py", "src/theirs.py"])
           and M.scope_list_digest([]) is None)
+    os.makedirs(os.path.join(repo, "hollow"))
+    hollow, hbasis = M.scope_digest(repo, ["hollow"])
+    _write(os.path.join(repo, "hollow", "now.py"), "n = 1\n")
+    filled, _fb = M.scope_digest(repo, ["hollow"])
+    check("tss6 a declared directory git lists NO file under is a defined entry "
+          "- the digest exists, and it moves once a file appears there. A None "
+          "on both sides would grade `unanswerable` on every comparison: %r"
+          % (hbasis,),
+          hollow is not None and filled is not None and hollow != filled)
     # A PATH ON DISK WHOSE BYTES CANNOT BE READ: a dangling symlink is one that
     # every platform with `os.symlink` can make without privileges.
     dangling = os.path.join(repo, "src", "gone.py")

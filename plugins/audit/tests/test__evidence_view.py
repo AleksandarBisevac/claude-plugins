@@ -378,6 +378,15 @@ def _cases(check):
           "phase with a gate against P2.1 in a phase without one",
           _report_html.tev_configured({}, plan["phases"][0]) is True
           and _report_html.tev_configured({}, plan["phases"][1]) is False)
+    _blank_phase = {"id": "PB", "testGate": ["  ", ""]}
+    _real_phase = {"id": "PR", "testGate": ["x"]}
+    check("ev6e a phase whose OWN testGate is all blank is 'No gate configured' "
+          "at phase scope - the runner never runs a blank entry, and the phase "
+          "read counted one as a gate where the task read did not",
+          M._view_for(_blank_phase, _blank_phase, "phase", {}, [])["label"]
+          == "No gate configured"
+          and M._view_for(_real_phase, _real_phase, "phase", {},
+                          [])["label"] != "No gate configured")
 
     # --- history ---------------------------------------------------------------
     check("ev7 the runs before this one are attached, newest first, and the "

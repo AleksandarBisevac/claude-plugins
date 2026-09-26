@@ -73,10 +73,13 @@ between this task's gate and its commit moves both, and that is the ordinary
 parallel run rather than stale work. A task nothing can measure - a task gate
 cleared on purpose (`gateBasis: cleared`), or its own `tests.gate` and its
 phase's `testGate` both empty (`_manifest_io.gate_entries`) - commits and says
-it is bound to no verdict, unless its newest recorded verdict is a red one; the
-`empty-gate` row `--record` writes for such a gate is its recorded answer and
+it is bound to no verdict, in a sentence that says which of the two it is,
+unless a red was recorded under its gate after the last green - neither
+emptying the gate nor the `empty-gate` row `--record` then writes retires that
+red. With no such red, the `empty-gate` row is the gate's recorded answer and
 binds it, and the same row under a gate that has entries now is a gate changed
-after the measurement and is refused.
+after the measurement and is refused. "Measured under the gate" is the row's
+steps, their dropped count, and its `gateDigest` of what each entry resolves to.
 `--override-verdict <reason>` commits anyway and leaves a journal row naming the
 run it went over and the reason; it is refused while the journal is off, because
 an override recorded nowhere is a gate quietly removed.
@@ -233,6 +236,13 @@ NO_GATE = ("no gate measures this task - neither its own `tests.gate` nor its "
            "phase's `testGate` declares an entry, so this commit is bound to no "
            "verdict; sign-off rests on review alone")
 
+# A task whose gate was cleared ON PURPOSE (`gateBasis: cleared`). Its own
+# sentence, because the phase may still declare entries - `NO_GATE` would be
+# false there. `%s` says what grades it at sign-off.
+CLEARED_GATE = ("its task gate was cleared on purpose (`gateBasis: cleared`), "
+                "so no gate of its own measures it and this commit is bound to "
+                "no verdict; %s")
+
 # The command that shows an unreadable ledger line for what it is.
 VERIFY_COMMAND = "audit-journal.py verify"
 
@@ -309,8 +319,16 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     kinds = _scoped_commit.classify(
         git_root, [(rel, on_disk) for rel, _name, on_disk, _mine in candidates])
     paths, declared, ignored, ignored_records = [], [], [], []
-    for rel, name, _on_disk, mine in candidates:
+    for rel, name, on_disk, mine in candidates:
         kind = kinds.get(rel)
+        if kind is None and on_disk:
+            skipped.append("%s is a directory holding no file git would "
+                           "commit - nothing tracked, and nothing untracked "
+                           "that git does not ignore - so there is nothing of "
+                           "it to commit"
+                           % ("%s %s" % (DECLARED_LABEL, name) if mine
+                              else name,))
+            continue
         if kind is None:
             skipped.append("%s %s is neither in the working tree nor tracked by "
                            "git, so there is nothing of it to commit yet"
@@ -448,24 +466,38 @@ def unreadable_lines(project, task_id, config=None):
     return blocking, excused
 
 
-def _gate_mismatch(measured, entries, source):
+def _gate_mismatch(measured, entries, source, build=None):
     """The sentence a verdict measured under a different gate earns, or None.
 
     THE ROW'S STEPS ARE ITS GATE: `run-test-gate` runs every declared entry in
     order and records one step per entry under the entry's name, so the names in
     order are the declaration it was measured under. A row that dropped steps for
-    length is compared on the steps it kept. `gateSource` is compared too when
-    the row has one: the same names measured as a task gate and as its phase's
-    fallback are different claims.
+    length is compared on the steps it kept AND on the count it dropped, so a
+    gate widened past the kept steps is still a different gate. `gateSource` is
+    compared when the row has one - the same names measured as a task gate and
+    as its phase's fallback are different claims - and so is `gateDigest`, the
+    entries beside what `meta.buildCommands` resolves each to: a name that held
+    still while its command changed is a different gate too.
     """
     recorded = [str(s.get("name")) for s in (measured.get("steps") or [])
                 if isinstance(s, dict)]
     now = list(entries)
-    if measured.get("stepsDropped"):
-        now = now[:len(recorded)]
+    dropped = measured.get("stepsDropped")
+    dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
+    same_steps = (recorded == now[:len(recorded)]
+                  and len(recorded) + dropped == len(now))
     was_source = measured.get("gateSource")
-    if recorded == now and (was_source is None or was_source == source):
+    was_digest = measured.get(_evidence_io.GATE_DIGEST_KEY)
+    same_digest = (was_digest is None
+                   or was_digest == _evidence_io.gate_digest(entries, build))
+    if same_steps and same_digest and (was_source is None
+                                       or was_source == source):
         return None
+    if same_steps and not same_digest:
+        return ("it was measured under the gate [%s] as `meta.buildCommands` "
+                "resolved it then, and the same entries resolve to different "
+                "commands now - a verdict about a different gate is not this "
+                "gate's verdict" % (", ".join(recorded),))
     return ("it was measured under the gate [%s]%s, and the task declares "
             "[%s] (%s gate) now - a verdict about a different gate is not this "
             "gate's verdict"
@@ -474,14 +506,70 @@ def _gate_mismatch(measured, entries, source):
                ", ".join(entries), source))
 
 
-def verdict_binding(manifest_path, phase, task, project, config=None):
+def _red_after_green(rows):
+    """The newest row measured under entries that is not `passed`, recorded
+    after the last `passed` one - or None when every such red was retired.
+
+    `rows` are one task's rows; an `empty-gate` row is not measured under
+    entries and retires nothing. With no green at all, every red counts.
+    """
+    ordered = sorted(rows, key=lambda r: str(r.get("ts") or ""))
+    greens = [i for i, r in enumerate(ordered)
+              if r.get("status") == VERDICT_PASSED]
+    tail = ordered[greens[-1] + 1:] if greens else ordered
+    reds = [r for r in tail
+            if r.get("status") not in (VERDICT_PASSED, VERDICT_EMPTY_GATE)]
+    return reds[-1] if reds else None
+
+
+def _empty_gate_binding(task, phase, rows, newest, run, notes):
+    """`verdict_binding`'s answer for a task no gate measures NOW.
+
+    WHICH EMPTY GATE IS SAID IN ITS OWN WORDS: a task gate cleared on purpose
+    (`gateBasis: cleared`) is graded at sign-off by its phase's `testGate` when
+    that has entries, so `NO_GATE`'s "nor its phase's" would be false for it.
+
+    A RED RECORDED UNDER ENTRIES AFTER THE LAST GREEN IS NOT RETIRED by emptying
+    the gate, nor by the `empty-gate` row `--record` writes once it is empty:
+    that row says the gate is empty, not that the red was answered. Only a green,
+    or an override with its reason, retires it. With no such red, the newest row
+    - a green or the empty-gate record - is named beside the sentence.
+    """
+    task_id = str(task.get("id"))
+    red = _red_after_green(rows)
+    if red is not None:
+        return {"state": "refused", "row": red, "notes": notes, "sentence": (
+            "%s declares no gate now, and a red was recorded under its gate "
+            "after the last green - `%s`, run %s at %s. Neither emptying the "
+            "gate nor the `%s` row recording it retires that red: record a "
+            "green on a gate, or commit over it with a reason"
+            % (task_id, red.get("status"), red.get("runId"), red.get("ts"),
+               VERDICT_EMPTY_GATE))}
+    if _mio.gate_cleared(task.get("tests")):
+        phase_gate = _mio.declared_gate_entries(
+            (phase or {}).get("testGate"))
+        sentence = CLEARED_GATE % (
+            "the phase's `testGate` grades it at sign-off" if phase_gate else
+            "the phase's `testGate` is empty too, so sign-off rests on review "
+            "alone",)
+    else:
+        sentence = NO_GATE
+    if newest is not None:
+        sentence = "%s (the newest verdict recorded for it is %s, `%s`)" % (
+            sentence, run, newest.get("status"))
+    return {"state": "no-gate", "sentence": sentence, "row": newest,
+            "notes": notes}
+
+
+def verdict_binding(manifest_path, phase, task, project, config=None,
+                    manifest=None):
     """`{"state", "sentence", "row", "notes"}` - whether the task's newest verdict
     binds this commit.
 
     `state` is `"bound"` (a `passed` row measured under the gate declared now,
     whose declared-work digest matches the declared files now), `"no-gate"`
-    (nothing declares a gate, and the newest row, if any, is `passed` or the
-    `empty-gate` record of that empty gate) or `"refused"`;
+    (nothing declares a gate, and no red was recorded under it after the last
+    green - `_empty_gate_binding`) or `"refused"`;
     `sentence` says which, naming the run; `row` is the newest row for the task
     when there is one, so an override can name it; `notes` are ledger lines that
     will not parse and were passed over, said rather than absorbed.
@@ -492,8 +580,8 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
     id and is not this task's verdict. `_evidence_io._same_subject` is that rule.
 
     THE LEDGER IS READ BEFORE THE GATE IS: a task whose gate was emptied after it
-    went red still has that red as its newest verdict, and "nothing measures
-    this task" would be false while it sits there.
+    went red still has that red on the record, and "nothing measures this task"
+    would be false while it sits there unanswered.
 
     A REPEATED VERDICT IS GRADED AGAINST THE RUN THAT MEASURED IT. A row the
     recorder repeated carries no `testedState` of its own and names its source
@@ -502,6 +590,7 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
     """
     config = _journal_io.load_config(project) if config is None else config
     entries, source = _mio.gate_entries(phase, task)
+    build = ((manifest or {}).get("meta") or {}).get("buildCommands")
     task_id, phase_id = str(task.get("id")), str(phase.get("id"))
     record = ("run `run-test-gate.py %s %s --task %s --record` on the work, then "
               "commit" % (manifest_path, phase_id, task_id))
@@ -526,24 +615,7 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
     run = ("run %s at %s" % (newest.get("runId"), newest.get("ts"))
            if newest else "")
     if not entries:
-        # An empty-gate row is what the recorder writes for exactly this state,
-        # so it binds here alongside a green; any other word is a verdict the
-        # emptied gate does not retire.
-        if newest is not None and newest.get("status") not in (
-                VERDICT_PASSED, VERDICT_EMPTY_GATE):
-            return {"state": "refused", "row": newest, "notes": notes,
-                    "sentence": (
-                        "%s declares no gate now, and its newest recorded "
-                        "verdict is `%s` (%s) - emptying a gate does not "
-                        "retire the red it last answered. Record a green on "
-                        "a gate, or commit over it with a reason"
-                        % (task_id, newest.get("status"), run))}
-        sentence = NO_GATE
-        if newest is not None:
-            sentence = "%s (the newest verdict recorded for it is %s, `%s`)" % (
-                NO_GATE, run, newest.get("status"))
-        return {"state": "no-gate", "sentence": sentence, "row": newest,
-                "notes": notes}
+        return _empty_gate_binding(task, phase, rows, newest, run, notes)
     if newest is None:
         return {"state": "refused", "row": None, "notes": notes, "sentence": (
             "no gate verdict is recorded for %s, and its gate declares entries "
@@ -554,7 +626,7 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
         return {"state": "refused", "row": newest, "notes": notes, "sentence": (
             "%s's newest verdict is `%s` (%s), but %s; %s"
             % (task_id, VERDICT_EMPTY_GATE, run,
-               _gate_mismatch(newest, entries, source), record))}
+               _gate_mismatch(newest, entries, source, build), record))}
     if newest.get("status") != VERDICT_PASSED:
         return {"state": "refused", "row": newest, "notes": notes, "sentence": (
             "%s's newest gate verdict is `%s` (%s), and a task commit is bound "
@@ -573,7 +645,7 @@ def verdict_binding(manifest_path, phase, task, project, config=None):
                         "%s's newest verdict (%s) repeats run %s, which is not "
                         "in the ledger, so the tree it was measured on is not "
                         "established - %s" % (task_id, run, origin, record))}
-    mismatch = _gate_mismatch(measured, entries, source)
+    mismatch = _gate_mismatch(measured, entries, source, build)
     if mismatch:
         return {"state": "refused", "row": newest, "notes": notes, "sentence": (
             "%s's newest verdict is `%s` (%s), but %s; %s"
@@ -800,7 +872,8 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         return E_OK, _scoped_commit.answer(skipped, quiet=NOTHING_UNCOMMITTED)
 
     # THE VERDICT, still before staging: a refusal here has nothing to undo.
-    verdict = verdict_binding(manifest_path, phase, task, project, config=config)
+    verdict = verdict_binding(manifest_path, phase, task, project, config=config,
+                              manifest=manifest)
     skipped = skipped + list(verdict.get("notes") or [])
     overriding = verdict["state"] == "refused" and override is not None
     if verdict["state"] == "refused" and not overriding:
@@ -831,6 +904,14 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         answer["verdict"] = verdict
         return E_FAIL, answer
     sha = done["sha"]
+    if sha and done["refused"]:
+        # Committed on a HEAD that moved underneath: the SHA is reported and
+        # nothing is undone, with the exit code saying it needs a look.
+        answer = _scoped_commit.answer(skipped, committed=True, commit=sha,
+                                       staged=done["staged"],
+                                       refused=done["refused"])
+        answer["verdict"] = verdict
+        return E_FAIL, answer
     if not sha:
         # The commit exists and this process cannot name it. A failure rather than
         # a success with a blank field: `/audit:task done` needs the SHA, and a
