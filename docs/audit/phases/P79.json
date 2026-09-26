@@ -171,7 +171,7 @@
     {
       "id": "P79.3",
       "title": "derive-phase-gate.py: observe, derive, record - beside the wide gate in shadow, as the gate in enforce",
-      "status": "in_progress",
+      "status": "done",
       "description": "New entry point plugins/audit/scripts/governance/derive-phase-gate.py <manifest> <phaseId> [--dry-run] [--brief] [--json] [--project-dir DIR] [--takeover]. It gathers the observations and hands them to _gate_derive.derive, so the runner never derives: it measures what the phase declares. No meta.phaseGate.mode -> prints that nothing is derived and why, exit 0, writes nothing. Observations: the version answer (derived.verifiedOn.command, run once, output compared verbatim); the related and all listings (subprocess, meta.nodePreamble applied the way run-test-gate._resolved applies it, {paths} filled with the shell-quoted union of the tasks' files, each timed; a listing never executes a test); the paths changed since phase.baseRef from git (absent baseRef: arm skipped with the reason); the newest red phase-scope row from _evidence_io.read_rows; the exempt verdict of each touched file from the plan gate's exemptGlobs (hooks config through _loader.load_hooks_config()). WRITE under the index lock with snapshot, validate before and after, and roll-back through _panel_write exactly as set-priority.py does (acquire_index_lock, snapshot/restore, _cores()[0].validate, _journalmod() for the row), into the phase's shard: mode enforce -> testGate, testGateBasis, testGateDerived; mode shadow -> testGateDerived and testGateBasis only, testGate untouched (the wide gate still signs). One journal row phase.gateDerived {phaseId, mode, changes, basis}. Output in the shape tools/verify.sh --affected uses: 'DERIVED sign-off gate for <P>: always <entries> | <spelling> over <k> test file(s) [tests.add a, coupling b, importers c of <full> listed, changed d, last failed e] | smoke <sentence>. Recorded on phase.testGateBasis.' or 'DERIVED sign-off gate for <P> could not be bounded: <reason>. The wide gate runs (<keys>). Nothing was narrowed.' - every number computed at run time. --brief prints the reviewer's basis line only: 'derived: <listed> of <full>; couplings: <j>; smoke: <sentence>; basis: <testGateBasis>; derived at <at>' - never a path list or runner output (tk2). --dry-run computes and prints and writes nothing. Red-first in test_derive_phase_gate.py, inside a _harness.fixture_root() git repo with fake listing commands: shadow mode leaves testGate unchanged and writes testGateDerived (mutation: write testGate in shadow -> red); enforce writes testGate, testGateBasis and testGateDerived and one journal row; a differing version answer skips the importers arm with the line (dg23 end to end); a written plan that fails validation is rolled back byte for byte; --brief output carries no path and no failing text (tk2, widen-only: a mutation appending the test list -> red); no mode -> nothing written. Layer entry in _deps.LAYERS, PATH_PREAMBLE, safe_stdio() first, migrated --selftest, PLUGIN-BUILD-GUIDE.md tree line and section.",
       "files": [
         "plugins/audit/scripts/governance/derive-phase-gate.py",
@@ -207,18 +207,42 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "90085cc32aca2c91868f29e8b59b9f68fdc84bc2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "derive-phase-gate.py (layer 7) gathers the version answer, the listings, git changes since baseRef, the newest red phase row and exempt verdicts, hands them to _gate_derive.derive, and writes testGate/testGateBasis/testGateDerived per mode through _panel_write with a phase.gateDerived journal row; LAYERS entry, PATH_PREAMBLE, guide tree line, section and the couple/uncouple span. INTENT DIVERGES (task review, confirmed by the orchestrator against the schema and the description): _gather_facts runs meta.phaseGate.derived.runner as the FULL listing and derived.spelling as the RELATED listing, while the schema defines the listings as derived.listing.related / derived.listing.all and the description asks for 'the related and all listings'; spelling is the path-scoped RUN command. A schema-correct manifest therefore never runs its listings, and the suite stubs listing: {} so it never exercises the schema's contract. The schema and the description agree, so the code is the half that diverges - fixed by a sign-off task. Also carried: the full listing is not timed (med); stamp stale from sibling edits, scopeDigest agrees (low); preExisting: _gate_derive._importers_arm returns no reason for a listing that exits 0 with zero paths. redFirst: executor could-not-prove (the --introduces classifier does not read a missing entry point's red); reviewer graded proved from the named pre-implementation run and live mutations. inheritedTests not-asked - selftests is the whole sweep.",
+        "descriptive": "New derive-phase-gate.py computes a phase's sign-off gate from what the phase declares and observes, records it with its basis (beside the wide gate in shadow mode, as the gate in enforce mode), and prints the DERIVED line, a one-line reviewer basis under --brief, or JSON."
       },
       "startedAt": "2026-09-26T13:09:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T16:02:25Z",
+      "verifiedBy": [
+        "dp1",
+        "dp2",
+        "dp2b",
+        "dp2c",
+        "dp-full",
+        "dp3",
+        "dp3b",
+        "dp23",
+        "dp23b",
+        "dp-brief",
+        "dp-brief-dry",
+        "dp-rollback",
+        "dp-smoke",
+        "dp-smoke-skip",
+        "dp-nospelling",
+        "dp-usage",
+        "e1",
+        "g1"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T15:51:38Z.ea5bd0",
         "status": "passed",
         "at": "2026-09-26T15:51:38Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "90085cc32aca2c91868f29e8b59b9f68fdc84bc2",
+        "at": "2026-09-26T16:02:25Z"
       }
     },
     {
@@ -422,7 +446,7 @@
     {
       "id": "P79.7",
       "title": "Docs: init 5.4 runner table, sign-off step 2a, the reviewer's basis line, the boundary sentence",
-      "status": "pending",
+      "status": "in_progress",
       "description": "commands/init.md step 5.4 (assemble the candidate manifest): write meta.phaseGate with mode 'shadow', always (the lint/typecheck/build keys recon found), smoke (a tagged e2e key when there is one), and derived ONLY for a runner whose listing recon RAN and saw work without executing a test, with the pass-with-no-tests flag in both listing commands and verifiedOn = the version command and its output. Carry the design's runner table as claims about each tool with the documentation date the design records: Jest 30+ --listTests --findRelatedTests (exit 1 on no match since v28 without --passWithNoTests; an unmapped TS paths alias is an invisible edge), Vitest 5 'vitest list --filesOnly' (2.x-4.x executes files; related transforms every module on the path; no rerun-last-failed), Playwright 1.46+ '--list --reporter=json' (loads every file; a shared fixture means the whole suite), Cypress (no listing in run), Nx and Turborepo (list projects or tasks, not tests; a shallow clone means everything changed), pytest --collect-only -qq (imports modules; exit 5 on none), Go/Gradle/.NET list flags; a runner with no non-executing listing gets listing null. Offer, never impose, reporter settings for the executor's own run (vitest --silent=passed-only, jest --silent, playwright line/dot); no retries in proposed commands. reference/phase-signoff.md step 2a: when meta.phaseGate.mode is set run derive-phase-gate.py <m> <P> before step 2's run-test-gate.py --record, read the DERIVED line, and route the NARROWED and 'DERIVED RUN NAMED k OF N' lines; the reviewer's sign-off brief carries the derive-phase-gate.py --brief line and the runId only (tk2), never the listing or runner output. agents/audit-reviewer.md: what that line means and that the reviewer never re-runs the suite. manifest-conventions.md: the coupling.learned, coupling.dropped and phase.gateDerived journal actions and their details. commands/doctor.md: the recall row. README Test evidence: the derived gate, shadow first, and the boundary 'selected by import graph and recorded couplings only' (dg4). COMPATIBILITY.md: mode absent = no derivation; coupling absent = no learned arm; testGateDerived absent = no NARROWED line. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/commands/init.md",
@@ -460,16 +484,21 @@
         "P79.5",
         "P79.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T16:02:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T16:12:16Z.c9a986",
+        "status": "passed",
+        "at": "2026-09-26T16:12:16Z"
+      }
     }
   ],
   "startedAt": "2026-09-26T11:54:49Z"

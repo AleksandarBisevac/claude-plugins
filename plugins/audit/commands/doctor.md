@@ -225,5 +225,28 @@ alone will not stick. It **never** grades an unmeasured step as cheap: a step th
 recorded `durationMs` is named on its own line rather than folded into the count that passed.
 Like every row in this section, a WARNING here changes nothing about the exit code.
 
+## The `shadow recall` row — whether the derived gate would have caught what actually failed
+
+Read only when `meta.phaseGate.mode` is set. It computes two different recalls over every
+shadow run recorded in the evidence ledger — never written anywhere, re-derived from the ledger
+each time — asking Meta's own predictive-test-selection definitions: **test recall** is
+suite-weighted (of every failing suite seen across every shadow run, what share did the derived
+set list — `sum(listed) / sum(full)`); **change recall** is run-weighted (of every RED shadow run,
+what share had at least one failing suite the derived set listed at all). The two disagree on
+purpose — a history where every run caught at least one of several failing suites reads as a
+perfect per-run share while the suite-weighted figure is lower, and only the second tells an
+operator whether the derived set gives REAL coverage.
+
+**No `meta.phaseGate.mode`** is an OK row saying so — nothing is derived, so there is nothing to
+grade recall over. **A mode declared with no shadow run recorded yet** is also an OK row: "none
+recorded" is the honest answer for a project that has not hit a real failure since deriving
+began, not a gap in what this check could establish. **An unreadable ledger** is a WARNING naming
+that it could not be read — never folded into "no shadow runs", because a torn row or a directory
+this check cannot list is a different problem from a project with a clean trail. Past all three,
+it is a WARNING carrying both percentages and the raw counts behind each, with one remedy
+whatever the numbers say: set `meta.phaseGate.mode` to `"enforce"` once this recall is enough for
+this project — nothing switches it for you, because no threshold here decides that judgement
+call.
+
 Do not modify anything. Related: `/audit:status`, `/audit:init`, `/audit:panel`,
 `/audit:usage`, `/audit:layout`, `/audit:logs`.

@@ -191,6 +191,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   POSIX-shell recipe that runs under sh, bash and zsh - a test runs it under each where installed,
   and skips Git Bash on Windows, whose `$$` is not the pid the lock probes - and `/audit:doctor`
   advises an abandoned user lock by its own `--takeover` path.
+- **A phase's sign-off gate can be DERIVED from what its own tasks already declare, rather than
+  running the wide gate every time: `meta.phaseGate.mode` and `derive-phase-gate.py`.** With
+  `mode` set to `"shadow"` or `"enforce"`, `derive-phase-gate.py <manifestPath> <phaseId>` narrows
+  a path-scoped sibling task's own gate to a test-file set built from that task's `tests.add`, any
+  `meta.coupling` entry whose sources overlap the phase's touched files, an import-graph listing
+  (verified against the runner's own version answer, so a listing checked on one machine is never
+  trusted on another), the paths changed since `phase.baseRef`, and the newest recorded failure's
+  named suites — writing the result on `phase.testGateDerived` and `phase.testGateBasis`.
+  **`shadow` records the derived gate beside the wide one and changes nothing about what signs a
+  phase off; `enforce` runs the derived gate instead.** `run-test-gate.py` reads what
+  `derive-phase-gate.py` wrote: an `enforce`-mode run prints a `NARROWED sign-off` line and, when
+  the derived step's own output did not name every suite the phase recorded, reads that step as
+  `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES` basis rather than trusting its
+  exit code; a `shadow`-mode run over a real failure prints how many of the failing suites the
+  derived set would have listed. `meta.coupling` is learned and dropped by
+  `audit-task.py couple --test <path> --sources <path,path> --basis-run <runId> --basis-head <sha>`
+  and `uncouple --test <path>`, journaled as `coupling.learned`/`coupling.dropped`; a derivation
+  run is journaled as `phase.gateDerived`. `/audit:doctor`'s new shadow-recall row reads the
+  evidence ledger for two recall figures over every shadow run — suite-weighted test recall and
+  run-weighted change recall — as the basis for deciding when a shadow phase is ready for
+  `"enforce"`; nothing switches the mode for you.
 
 ### Changed
 - **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the

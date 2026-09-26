@@ -1504,6 +1504,20 @@ returns, so a red-then-green cycle inside the subagent records the green run and
 before it. Red-first stays an instruction in `reference/orchestrator.md`, and this record
 does not promote it.
 
+**The derived gate.** With `meta.phaseGate.mode` set, `scripts/governance/derive-phase-gate.py`
+computes a phase's sign-off gate from what the phase's own tasks already declare — their
+`tests.add` entries, an import-graph listing verified against the runner's own version, which
+test files changed since the phase's `baseRef`, the newest recorded failure, and any
+`meta.coupling` entry a touched file's sources match — and records the result on
+`phase.testGateDerived`/`phase.testGateBasis`. **`mode: "shadow"` is where every phase starts**:
+the derived gate is written beside the wide `testGate` for comparison, and sign-off still runs
+the wide gate — nothing narrows what actually signs a phase off until an operator sets
+`mode: "enforce"`. Whatever it narrows to, the basis it prints for a real narrowing is one fixed
+sentence: **"selected by import graph and recorded couplings only"** — never a claim that it also
+looked at what the phase's own tasks touched, or at anything else `derive-phase-gate.py` was not
+handed as a fact to read. `/audit:doctor`'s shadow-recall row is how an operator decides when a
+shadow phase's recall is good enough to flip that switch.
+
 ## Azure DevOps (optional)
 
 > The detailed field guide — setup walkthrough, every key with an example, recipes

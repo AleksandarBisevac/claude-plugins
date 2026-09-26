@@ -70,6 +70,16 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    own commit, its own gate run and its own evidence row. Widening a finished task would make it
    claim a file its recorded commit never staged, and its `outcome` describe a run that did not
    happen.
+2a. **When `meta.phaseGate.mode` is set, derive before you gate.** Run this first, before the
+   `run-test-gate.py --record` call below:
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/derive-phase-gate.py" <manifestPath> <phaseId>
+   ```
+   Read the `DERIVED sign-off gate for <phaseId>: ...` line it prints (or the "could not be
+   bounded" line, when no sibling task carries a path-scoped gate for it to repoint) before
+   moving to step 2. This is what writes `phase.testGateDerived` and `phase.testGateBasis` —
+   `run-test-gate.py` reads them, it never derives them itself.
+
 2. **`testGateGreen`** — run the gate **through the script**, not by hand:
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
@@ -77,6 +87,18 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    ```
    (the script applies `meta.nodePreamble` itself). All commands must pass **after** any
    review-driven changes. Tests are the final signer. Surface manual items as human action items.
+
+   **Route on the two lines a derived gate adds, after the verdict.** In `shadow` mode, over a
+   run that measured a real failure, a `shadow: derived would have listed N of M failing
+   suite(s)` line reports what the derived set would have caught — advisory, and it moves
+   nothing: the wide gate just run is still the phase's whole answer. In `enforce` mode, a
+   `NARROWED sign-off: this run measured the DERIVED gate (N of M listed checks; basis on
+   phase.testGateBasis)` line says the run you just took as evidence measured the narrower set
+   and not the wide one — read `phase.testGateBasis` for why. And when the derived step's own
+   output did not name every suite `phase.testGateDerived` listed, the step reads
+   `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES: ...` basis: that run answered
+   a narrower question than the phase recorded, so its exit code is not this run's verdict —
+   re-derive and re-run, the same repair as any other `could-not-run`, never a retry on the task.
 
    **A red sign-off gate's fix is a NEW TASK, gated on what this run named as failing** — the
    same rule step 1 states for a review finding, and the same reason: sign-off has no running
