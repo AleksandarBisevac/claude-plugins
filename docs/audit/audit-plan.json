@@ -485,7 +485,7 @@
     {
       "id": "P75",
       "title": "verify-invariants reports what is new, and user tooling can share the cross-worktree lock",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P75.json"
     },
     {
