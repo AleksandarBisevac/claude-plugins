@@ -1,7 +1,7 @@
 {
   "id": "P73",
   "title": "The trail names each commit from inside it",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "a scoped commit carries the journal row that names it, so a phase can end with a clean tree, and every reader of those rows resolves the commit they name",
   "testGate": [
@@ -19,7 +19,7 @@
   ],
   "baseRef": "10a3e3daf8c679f3e8773a94ad71bdb992d8a4a9",
   "branch": "audit/p73-the-trail-names-each-commit-fr",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T12:09:04Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
