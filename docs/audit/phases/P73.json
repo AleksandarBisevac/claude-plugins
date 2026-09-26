@@ -94,7 +94,7 @@
     {
       "id": "P73.2-9h1",
       "title": "audit-journal merge resolves the evidence ledger too, and a same-second tie over disjoint targets is ordered rather than refused",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The evidence ledger is hash-chained like the journal and, before per-worktree writer keys, was appended on two branches under one name; audit-journal merge reads only the journal directory, so every such conflict was resolved by hand (interleave by timestamp, re-chain with the journal's row_hash). Give the evidence ledger the same merge verb the journal has - one implementation for both directories, the same refusals (a same-second tie that disagrees, a torn tail, a rewritten shared prefix), the same re-chain and a marker the evidence schema accepts (or a documented reason there is none) - and let a same-second tie whose rows touch disjoint targets be ordered deterministically instead of refused, with the order it chose written in the marker.",
       "files": [
         "plugins/audit/scripts/governance/audit-journal.py",
@@ -105,7 +105,9 @@
         "plugins/audit/tests/test__evidence_io.py",
         "tools/check-git-pipeline.py",
         "plugins/audit/reference/execute-task.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -132,14 +134,14 @@
       "dependsOn": [
         "P73.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T07:31:51Z",
       "completedAt": null,
       "verifiedBy": []
     }

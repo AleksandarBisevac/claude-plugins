@@ -298,6 +298,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`audit-journal.py merge` resolves the evidence ledger too.** The ledger is hash-chained with
+  the journal's own chain and, before the per-worktree writer key, was appended on two branches
+  under one name, but `merge --file` accepted only a journal file, so every ledger conflict was
+  resolved by hand - interleaved by timestamp and re-chained with the journal's `row_hash`. A
+  `--file` in the evidence directory is now merged by the same `_journal_io.merge_rows`, with the
+  same refusals (a same-second tie that disagrees, a torn tail, a row that no longer hashes to
+  its contents, no shared prefix) and the same re-chain. No marker row is written into the
+  ledger, whose every row is read as a recorded run; the merge is recorded by an `evidence.merge`
+  journal row naming the file, whose `stateHash` also anchors the re-chained bytes. For both
+  records, a same-second tie whose rows touch disjoint targets - a journal row's `target`, a run's
+  task or phase - is now ordered by content, identically whichever side is ours, instead of
+  refused, and the order is written in the merge's record; a tie on one target, or on a row that
+  names none, is still refused.
 - **A scoped commit carries the journal row that names it, so a phase can end with a clean tree.**
   `commit-task-work`, `commit-audit-state` and `commit-manifest-index` each appended the row naming
   their commit AFTER making it, so the row was never inside it: every run left the trail dirty on a

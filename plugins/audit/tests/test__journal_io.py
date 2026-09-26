@@ -2375,6 +2375,63 @@ def _cases(check):
 
     with_env(None, lambda: _merge_cases(check))
     _gone_cases(check)
+    _tie_order_cases(check)
+
+
+# --- mt: a same-second tie over disjoint targets is ordered, not refused ---------
+def _chained(name, rows):
+    """`rows` as one chained file named `name` - both sides of a divergence are
+    whole files, so each is chained from the genesis on its own."""
+    return M._rechain([dict(r) for r in rows], name)[0]
+
+
+def _row(ts, action, target, summary):
+    return {"v": 1, "ts": ts, "action": action, "target": target,
+            "summary": summary, "actor": {"via": "hook"}, "stateHash": None}
+
+
+def _tie_order_cases(check):
+    name = "2026-05.s-tie.jsonl"
+    base = [_row("2026-05-01T00:00:00Z", "manifest.edit", "docs/a.json", "b1")]
+    stamp = "2026-05-02T00:00:00Z"
+    ours = _chained(name, base + [_row(stamp, "manifest.edit", "docs/a.json",
+                                       "ours at the second")])
+    theirs = _chained(name, base + [_row(stamp, "config.edit", "docs/c.json",
+                                         "theirs at the second")])
+    res = M.merge_rows(ours, theirs, name)
+    swapped = M.merge_rows(theirs, ours, name)
+    order = [r.get("summary") for r in res["rows"][:-1]]
+    check("mt1 a same-second tie whose rows touch DISJOINT targets is ordered "
+          "rather than refused, and the order is the same whichever side is "
+          "called ours - so both branches resolving the conflict write one "
+          "file: %r / %r" % (order, res["refusals"]),
+          res["ok"] and swapped["ok"] and len(order) == 3
+          and order == [r.get("summary") for r in swapped["rows"][:-1]])
+    marker = (res["rows"] or [{}])[-1]
+    check("mt2 ...and the order it chose is WRITTEN in the marker row, naming "
+          "the timestamp and which rows went first: %r"
+          % (marker.get("summary"),),
+          marker.get("action") == M.MERGE_ACTION
+          and stamp in (marker.get("summary") or "")
+          and "1 same-second tie(s)" in (marker.get("summary") or "")
+          and res["ordered"] and res["ordered"][0]["ts"] == stamp)
+
+    same = _chained(name, base + [_row(stamp, "task.cancel", "docs/a.json",
+                                       "theirs on the same target")])
+    refused = M.merge_rows(ours, same, name)
+    check("mt3 the ALLOW direction is narrow: a tie on ONE target is still "
+          "refused, because there the order is what the file says happened: "
+          "%r" % (refused["refusals"],),
+          not refused["ok"] and not refused["rows"]
+          and len(refused["refusals"]) == 1
+          and stamp in refused["refusals"][0])
+
+    blank = _chained(name, base + [_row(stamp, "config.edit", "",
+                                        "theirs names no target")])
+    unknown = M.merge_rows(ours, blank, name)
+    check("mt4 ...and so is a tie where either row names NO target: an "
+          "unknown target is never proven disjoint: %r" % (unknown["refusals"],),
+          not unknown["ok"] and len(unknown["refusals"]) == 1)
 
 
 def _gone_cases(check):

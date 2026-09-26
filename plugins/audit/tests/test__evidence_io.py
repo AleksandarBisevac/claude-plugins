@@ -1821,6 +1821,7 @@ def _cases(check):
           is None)
 
     _worktree_ledger_cases(check)
+    _merge_ledger_cases(check)
 
 
 def _worktree_ledger_cases(check):
@@ -1894,6 +1895,50 @@ def _worktree_ledger_cases(check):
           "files as it reads the old one", not gaps
           and {"run-a", "run-b", "run-m"} <= set(committed),
           repr((sorted(committed), gaps)))
+
+
+
+# --- em: a ledger file that diverged, merged by the journal's one merge ----------
+def _em_run(run_id, ts, task):
+    return {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+            "taskId": task, "phaseId": "P1", "status": "passed",
+            "steps": [], "failed": []}
+
+
+def _merge_ledger_cases(check):
+    name = "2026-06.s-em.jsonl"
+    base = [_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1")]
+    ours = M.chain_file(base + [_em_run("run-o", "2026-06-02T10:00:00Z",
+                                        "P1.1")], name)
+    theirs = M.chain_file(base + [_em_run("run-t", "2026-06-02T10:00:00Z",
+                                          "P1.2")], name)
+    res = M.merge_rows(ours, theirs, name)
+    check("em1 a ledger merge adds NO row - every row in the ledger is read "
+          "as a recorded run - and what it returns verifies as this file's "
+          "chain: %r" % ([r.get("runId") for r in res["rows"]],),
+          res["ok"] and len(res["rows"]) == 3
+          and all(r.get("runId") for r in res["rows"])
+          and not M.verify_rows(res["rows"], name)["findings"])
+    check("em2 ...and a same-second tie between runs of DIFFERENT subjects is "
+          "ordered, with the order kept for the record of the merge: %r"
+          % (res["ordered"],),
+          len(res["ordered"]) == 1 and res["ordered"][0]["ts"]
+          == "2026-06-02T10:00:00Z" and "2026-06-02T10:00:00Z" in res["summary"])
+    same = M.chain_file(base + [_em_run("run-t", "2026-06-02T10:00:00Z",
+                                        "P1.1")], name)
+    refused = M.merge_rows(ours, same, name)
+    check("em3 the target a run touches is the subject it measured: two runs "
+          "of ONE task in one second are refused, because their order is which "
+          "verdict is newest: %r" % (refused["refusals"],),
+          not refused["ok"] and len(refused["refusals"]) == 1
+          and "task P1.1" in refused["refusals"][0])
+    check("em4 ...and a run that names neither a task nor a phase touches no "
+          "known target, so it is never taken for disjoint: %r"
+          % ([M.merge_target(r) for r in ({"taskId": "P1.1"},
+                                          {"phaseId": "P1"}, {})],),
+          M.merge_target({"taskId": "P1.1", "phaseId": "P1"}) == "task P1.1"
+          and M.merge_target({"phaseId": "P1"}) == "phase P1"
+          and M.merge_target({}) == "")
 
 
 def _selftest():

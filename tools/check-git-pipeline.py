@@ -1707,6 +1707,73 @@ def check_index_commit_carries_only_the_index(fx):
         write_manifest(fx, manifest_body())
 
 
+def _ledger_append(fx, rel, run_id, ts, task):
+    """One run appended to the ledger file `rel`, chained by the product's own
+    `chain_onto` - the link a recorded run gets, not one spelled here."""
+    import _evidence_io
+    import _journal_io
+    path = os.path.join(fx["root"], rel.replace("/", os.sep))
+    directory = os.path.dirname(path)
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
+    tail = [r for r in _journal_io.read_file(path)[0]
+            if not r.get("_unparseable")] if os.path.exists(path) else []
+    row = _evidence_io.chain_onto(
+        {"v": 1, "runId": run_id, "ts": ts, "scope": "task", "taskId": task,
+         "phaseId": "P1", "status": "passed", "steps": [], "failed": []},
+        tail, os.path.basename(path))
+    with io.open(path, "a", encoding="utf-8") as fh:
+        fh.write(_journal_io.canonical(row) + "\n")
+
+
+def check_evidence_ledger_merge(fx):
+    """A ledger file two branches appended to conflicts in a real `git merge`,
+    and `audit-journal.py merge --file` resolves it from the index stages.
+
+    THE CLAIM ONLY GIT CAN MAKE: that the two stages git leaves for a ledger
+    file are what the verb reads, and that the file it writes verifies as a
+    chain and completes the merge. Both branches append at the SAME second on
+    different tasks, so the result also rests on the tie being ordered rather
+    than refused.
+    """
+    import _evidence_io
+    import _journal_io
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    rel = "docs/audit/evidence/2026-06.s-pipe.jsonl"
+    try:
+        _ledger_append(fx, rel, "run-base", "2026-06-01T10:00:00Z", "P1.1")
+        git(fx, "add", "--", rel)
+        git(fx, "commit", "-q", "-m", "fixture: a ledger file", "--", rel)
+        git(fx, "checkout", "-q", "-b", "ledger-side")
+        _ledger_append(fx, rel, "run-side", "2026-06-02T10:00:00Z", "P1.2")
+        git(fx, "commit", "-q", "-am", "fixture: the side branch's run")
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        _ledger_append(fx, rel, "run-main", "2026-06-02T10:00:00Z", "P1.1")
+        git(fx, "commit", "-q", "-am", "fixture: this branch's run")
+        code, out = git(fx, "merge", "-q", "--no-edit", "ledger-side")
+        if code == 0:
+            return False, "the fixture did not conflict: %s" % (out or "")[:200]
+        code, out = script(fx, "audit-journal.py", "merge", "--file", rel,
+                           "--project", ".")
+        rows = [r for r in _journal_io.read_file(os.path.join(
+            fx["root"], rel.replace("/", os.sep)))[0]
+            if not r.get("_unparseable")]
+        verdict = _evidence_io.verify_rows(rows, os.path.basename(rel))
+        git(fx, "add", "--", rel)
+        done, done_out = git(fx, "commit", "-q", "--no-edit")
+        ok = (code == 0 and [r.get("runId") for r in rows][:1] == ["run-base"]
+              and sorted(r.get("runId") for r in rows)
+              == ["run-base", "run-main", "run-side"]
+              and not verdict["findings"] and done == 0)
+        return ok, ("merge exit %r (%s); rows %r; chain findings %r; the merge "
+                    "commit exit %r (%s)"
+                    % (code, (out or "").strip()[:200],
+                       [r.get("runId") for r in rows], verdict["findings"],
+                       done, (done_out or "").strip()[:120]))
+    finally:
+        _cleanup(fx, found, "ledger-side", files=(rel,))
+
+
 CHECKS = (
     ("g1  branch resolution reads the repository's git identity",
      check_branch_identity),
@@ -1785,6 +1852,10 @@ CHECKS = (
     ("g21 an index commit lands the shared file and the row naming it, leaves "
      "the shard behind, and the row still names it after a real rebase",
      check_index_commit_carries_only_the_index),
+    ("g22 a ledger file two branches appended to conflicts in a real merge, and "
+     "`audit-journal.py merge` resolves it from the index into a chain that "
+     "verifies and completes the merge",
+     check_evidence_ledger_merge),
 )
 
 

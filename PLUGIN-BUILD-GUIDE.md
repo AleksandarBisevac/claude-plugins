@@ -1668,7 +1668,7 @@ the `journal.merge` marker row is required for the benign reading — so no chec
 either, and the warning's job is to send a human to read the extra rows. `_doctor_trail`'s
 `journal_warning_advice` is where that is worded for an operator.
 
-**`merge` is the verb a journal conflict needs and did not have.** One writer on two
+**`merge` is the verb a journal conflict needs and did not have** (and an evidence ledger's, since it is chained the same way). One writer on two
 BRANCHES is ordinary while a phase is paused, and the per-writer file split does not separate
 them — so a landing phase produces one file with a shared prefix and two tails, which cannot
 be resolved by editing, because each divergent row's hash covers a `prev` only its own side

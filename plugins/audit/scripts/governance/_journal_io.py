@@ -1630,8 +1630,32 @@ def _common_prefix(ours, theirs):
     return shared
 
 
-def _tie_faults(ours_tail, theirs_tail):
-    """(refusals, identical) for rows the two tails place at the SAME timestamp.
+def row_target(row):
+    """What a journal row touched: its `target`, or "" when it names none.
+
+    The question a same-second tie is ordered by. "" is NOT a target, so a row
+    that names none can never be proven disjoint from another and its tie is
+    refused as before.
+    """
+    return str(row.get("target") or "") if isinstance(row, dict) else ""
+
+
+def _disjoint(mine, yours, target_of):
+    """True when every row of both groups names a target and no target is in both.
+
+    A row with no target is unknown, and unknown is never disjoint: the order
+    this licenses is only safe for rows that provably touch different things.
+    """
+    left = [target_of(r) for r in mine]
+    right = [target_of(r) for r in yours]
+    if not all(left) or not all(right):
+        return False
+    return not (set(left) & set(right))
+
+
+def _tie_faults(ours_tail, theirs_tail, target_of=None):
+    """(refusals, identical, ordered) for rows the two tails place at the SAME
+    timestamp.
 
     WHY A TIE IS A REFUSAL AND NOT A COIN TOSS. Timestamp order is the only order
     a merge has -- the chain order of each tail is real but the two tails have no
@@ -1645,20 +1669,43 @@ def _tie_faults(ours_tail, theirs_tail):
     the one answer that guesses nothing. The count is returned so the caller can
     say it out loud rather than leave it to be discovered.
 
+    A TIE WHOSE ROWS TOUCH DISJOINT TARGETS IS ORDERED, NOT REFUSED. Two rows
+    about different things written in the same second by two writers have no
+    recorded order, and none is needed: neither can change what the other
+    records, so either order is a true reading and the only harm is choosing
+    one invisibly. The order is therefore DETERMINISTIC - the side whose rows'
+    sorted contents compare lower goes first, a rule that does not depend on
+    which side is called ours, so both branches resolving the conflict produce
+    the same file - and it is RETURNED in `ordered`, each entry
+    `{"ts", "first", "firstRows", "thenRows"}`, for the marker to say. `target_of`
+    names what a row touched (`row_target` for the journal); a row it answers ""
+    for is never disjoint from anything.
+
     CROSS-SIDE ONLY. Two rows within one tail sharing a timestamp are already in a
     recorded order that the chain fixes, and this must not disturb it."""
+    target_of = target_of or row_target
     ours_at, theirs_at = {}, {}
     for row in ours_tail:
-        ours_at.setdefault(str(row.get("ts") or ""), []).append(row_content(row))
+        ours_at.setdefault(str(row.get("ts") or ""), []).append(row)
     for row in theirs_tail:
-        theirs_at.setdefault(str(row.get("ts") or ""), []).append(row_content(row))
-    refusals, identical = [], 0
+        theirs_at.setdefault(str(row.get("ts") or ""), []).append(row)
+    refusals, identical, ordered = [], 0, []
     for stamp in sorted(set(ours_at) & set(theirs_at)):
-        mine, yours = sorted(ours_at[stamp]), sorted(theirs_at[stamp])
+        mine = sorted(row_content(r) for r in ours_at[stamp])
+        yours = sorted(row_content(r) for r in theirs_at[stamp])
         if mine == yours:
             # Both sides' rows, because both are KEPT: a count of one side would
             # under-report what the note is about by half.
             identical += len(mine) + len(yours)
+            continue
+        if _disjoint(ours_at[stamp], theirs_at[stamp], target_of):
+            first = "ours" if mine < yours else "theirs"
+            lead, follow = (mine, yours) if first == "ours" else (yours, mine)
+            ordered.append({"ts": stamp, "first": first,
+                            "firstRows": [_summarise_row(c, target_of)
+                                          for c in lead],
+                            "thenRows": [_summarise_row(c, target_of)
+                                         for c in follow]})
             continue
         refusals.append(
             "both copies carry a row at %s and they do not say the same thing, "
@@ -1667,25 +1714,27 @@ def _tie_faults(ours_tail, theirs_tail):
             "cannot separate these -- resolve it by hand rather than letting "
             "this pick one."
             % (stamp or "(no timestamp)",
-               _output.some_of([_summarise_row(c) for c in mine]),
-               _output.some_of([_summarise_row(c) for c in yours])))
-    return refusals, identical
+               _output.some_of([_summarise_row(c, target_of) for c in mine]),
+               _output.some_of([_summarise_row(c, target_of) for c in yours])))
+    return refusals, identical, ordered
 
 
-def _summarise_row(content):
+def _summarise_row(content, target_of=None):
     """`action(target)` for one canonical row content -- what a refusal names it by.
 
     Deliberately NOT the whole row: a refusal is read in a terminal, and the two
     fields that tell a reader which write they are looking at are the action and
-    what it touched."""
+    what it touched. A row with no `action` - an evidence row - is named by its
+    `runId`, and what it touched is `target_of`'s answer."""
     try:
         obj = json.loads(content)
     except Exception:
         return "(unreadable row)"
-    return "%s(%s)" % (obj.get("action") or "?", obj.get("target") or "")
+    what = obj.get("action") or obj.get("runId") or "?"
+    return "%s(%s)" % (what, (target_of or row_target)(obj))
 
 
-def _merge_tails(ours, theirs):
+def _merge_tails(ours, theirs, theirs_first=()):
     """The two tails interleaved by timestamp, each side's OWN order preserved.
 
     A MERGE AND NEVER A SORT, and the difference is the whole guarantee. A sort
@@ -1695,12 +1744,15 @@ def _merge_tails(ours, theirs):
     is the failure this verb exists to avoid. Two pointers can only ever advance,
     so each side comes out in exactly the order it went in.
 
-    A tie takes from `ours` first. That is safe rather than arbitrary because a
-    tie whose contents differ was already refused by `_tie_faults`: the only ties
-    reaching here say the same thing, so the two orders are the same reading."""
+    A tie takes from `ours` first unless its timestamp is in `theirs_first`.
+    That is safe rather than arbitrary: a tie whose contents differ on a shared
+    target was already refused by `_tie_faults`, a tie that says the same thing
+    reads the same in either order, and a tie over disjoint targets was given
+    its order there, by a rule that does not depend on which side is which."""
     out, i, j = [], 0, 0
     while i < len(ours) and j < len(theirs):
-        if str(theirs[j].get("ts") or "") < str(ours[i].get("ts") or ""):
+        mine, yours = str(ours[i].get("ts") or ""), str(theirs[j].get("ts") or "")
+        if yours < mine or (yours == mine and yours in theirs_first):
             out.append(theirs[j])
             j += 1
         else:
@@ -1731,7 +1783,33 @@ def _rechain(rows, name):
     return out, relinked
 
 
-def _merge_marker(rows, name, actor, counts):
+def order_sentence(ordered):
+    """What a merge says about the same-second ties it ORDERED, or "".
+
+    The count first and then, per timestamp, which rows it put first, so the
+    order a merge chose is written down rather than left for a reader to
+    re-derive - and a summary cut to its bound still says how many it chose."""
+    if not ordered:
+        return ""
+    return (" %d same-second tie(s) over disjoint targets ordered by content, "
+            "not refused: %s." % (len(ordered), "; ".join(
+                "at %s, %s before %s" % (o["ts"], ", ".join(o["firstRows"]),
+                                         ", ".join(o["thenRows"]))
+                for o in ordered)))
+
+
+def merge_summary(rows, name, counts, ordered=()):
+    """The sentence a merge is recorded under - in its marker row for the
+    journal, and in the journal row naming an evidence file it merged."""
+    return ("re-chained %d row(s) of %s after a divergence: %d shared, %d from "
+            "one copy, %d from the other. Row contents unchanged; only "
+            "`prev`/`hash` recomputed. Inputs %s / %s.%s"
+            % (len(rows), name, counts["shared"], counts["oursOnly"],
+               counts["theirsOnly"], counts["oursDigest"],
+               counts["theirsDigest"], order_sentence(ordered)))
+
+
+def _merge_marker(rows, name, actor, counts, ordered=()):
     """The row a merge leaves IN the file it merged, or None when there is nothing
     to record.
 
@@ -1751,19 +1829,22 @@ def _merge_marker(rows, name, actor, counts):
     marker = _normalise({
         "action": MERGE_ACTION, "target": "",
         "ts": latest if latest > now else now,
-        "summary": ("re-chained %d row(s) of %s after a divergence: %d shared, "
-                    "%d from one copy, %d from the other. Row contents "
-                    "unchanged; only `prev`/`hash` recomputed. Inputs %s / %s."
-                    % (len(rows), name, counts["shared"], counts["oursOnly"],
-                       counts["theirsOnly"], counts["oursDigest"],
-                       counts["theirsDigest"])),
+        "summary": merge_summary(rows, name, counts, ordered),
         "actor": actor if isinstance(actor, dict) else {"via": MERGE_VIA}})
     marker["stateHash"] = None
     return marker
 
 
-def merge_rows(ours, theirs, name, actor=None, torn=()):
-    """The UNION of two divergent copies of ONE journal file, re-chained.
+def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
+               marker=True):
+    """The UNION of two divergent copies of ONE hash-chained file, re-chained.
+
+    ONE IMPLEMENTATION FOR BOTH CHAINED RECORDS. The evidence ledger is chained
+    with this module's `row_hash` and `genesis_prev`, so a ledger file that
+    diverged is merged here too: `_evidence_io.merge_rows` passes its own
+    `target_of` (what a recorded run measured) and `marker=False`, because no
+    row may be added to the ledger that is not a recorded run - the reason is
+    written beside that function.
 
     `ours` and `theirs` are row lists as `read_file`/`rows_from_text` return them;
     `name` is the basename the chain is seeded from (`genesis_prev`), which is why
@@ -1771,7 +1852,11 @@ def merge_rows(ours, theirs, name, actor=None, torn=()):
     names the sides whose last line was partial. Returns
 
         {"ok", "refusals", "notes", "rows", "shared", "oursOnly", "theirsOnly",
-         "relinked", "divergent", "identical", "name"}
+         "relinked", "divergent", "identical", "ordered", "summary", "name"}
+
+    `ordered` lists the same-second ties over disjoint targets and the order
+    each was given (`_tie_faults`); `summary` is the sentence the merge is
+    recorded under, "" when nothing was re-chained.
 
     and `rows` is EMPTY whenever `ok` is false -- a refusal never also hands back
     a half-built answer for a caller to use by accident.
@@ -1784,8 +1869,9 @@ def merge_rows(ours, theirs, name, actor=None, torn=()):
     THE THREE REFUSALS IT EXISTS FOR, each with its own case next door:
       * a row that does not hash to its own contents (`_merge_input_faults`) --
         the input was already broken and re-chaining would hide it;
-      * two rows at one timestamp saying different things (`_tie_faults`) --
-        nothing records which came first;
+      * two rows at one timestamp saying different things about one target, or
+        about a target either does not name (`_tie_faults`) -- nothing records
+        which came first, and here the order would matter;
       * no shared prefix at all -- two files that never had a common past are not
         a divergence, and unioning them would invent a history for both.
 
@@ -1797,7 +1883,8 @@ def merge_rows(ours, theirs, name, actor=None, torn=()):
     refusals.extend(_merge_input_faults(theirs, "theirs" in torn, "theirs", name))
     out = {"ok": False, "refusals": refusals, "notes": [], "rows": [],
            "shared": 0, "oursOnly": 0, "theirsOnly": 0, "relinked": 0,
-           "divergent": False, "identical": 0, "name": name}
+           "divergent": False, "identical": 0, "ordered": [], "summary": "",
+           "name": name}
     if refusals:
         return out
     shared = _common_prefix(ours, theirs)
@@ -1807,8 +1894,8 @@ def merge_rows(ours, theirs, name, actor=None, torn=()):
             "the two copies share no leading row at all, so this is not one "
             "file that diverged -- it is two unrelated chains. Their first rows "
             "are %s and %s. A union of those would invent a common past for "
-            "both." % (_summarise_row(row_content(ours[0])),
-                       _summarise_row(row_content(theirs[0]))))
+            "both." % (_summarise_row(row_content(ours[0]), target_of),
+                       _summarise_row(row_content(theirs[0]), target_of)))
         return out
     ours_tail, theirs_tail = ours[shared:], theirs[shared:]
     out["oursOnly"], out["theirsOnly"] = len(ours_tail), len(theirs_tail)
@@ -1819,11 +1906,12 @@ def merge_rows(ours, theirs, name, actor=None, torn=()):
             "only order a merge has between the two copies -- there is nowhere "
             "to put them: %s"
             % (len(undated),
-               _output.some_of([_summarise_row(row_content(r))
+               _output.some_of([_summarise_row(row_content(r), target_of)
                                 for r in undated])))
         return out
-    ties, identical = _tie_faults(ours_tail, theirs_tail)
+    ties, identical, ordered = _tie_faults(ours_tail, theirs_tail, target_of)
     out["identical"] = identical
+    out["ordered"] = ordered
     if ties:
         out["refusals"].extend(ties)
         return out
@@ -1838,16 +1926,19 @@ def merge_rows(ours, theirs, name, actor=None, torn=()):
             % ("ours" if not theirs_tail else "theirs", MERGE_ACTION))
         return out
     out["divergent"] = True
-    union = list(ours[:shared]) + _merge_tails(ours_tail, theirs_tail)
+    first = set(o["ts"] for o in ordered if o["first"] == "theirs")
+    union = list(ours[:shared]) + _merge_tails(ours_tail, theirs_tail, first)
     chained, relinked = _rechain(union, name)
+    counts = {"shared": shared, "oursOnly": out["oursOnly"],
+              "theirsOnly": out["theirsOnly"],
+              "oursDigest": rows_digest(ours), "theirsDigest": rows_digest(theirs)}
+    out["summary"] = merge_summary(chained, name, counts, ordered)
     # The marker is chained ON rather than re-chained WITH, so `relinked` stays a
     # count of rows whose link actually moved. A new row has no old hash to
     # differ from, and including it would have reported one more re-linked row
     # than the merge touched.
-    marker = _merge_marker(chained, name, actor, {
-        "shared": shared, "oursOnly": out["oursOnly"],
-        "theirsOnly": out["theirsOnly"],
-        "oursDigest": rows_digest(ours), "theirsDigest": rows_digest(theirs)})
+    marker = (_merge_marker(chained, name, actor, counts, ordered) if marker
+              else None)
     if marker is not None:
         marker["prev"] = chained[-1]["hash"]
         marker["hash"] = row_hash(marker)
@@ -1860,6 +1951,8 @@ def merge_rows(ours, theirs, name, actor=None, torn=()):
             "%d row(s) sit at a timestamp both copies used and say the same "
             "thing; BOTH copies are kept, because dropping one is a guess that "
             "two identical rows were one event" % (identical,))
+    if ordered:
+        out["notes"].append(order_sentence(ordered).strip())
     return out
 
 

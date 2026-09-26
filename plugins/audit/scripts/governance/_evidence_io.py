@@ -821,6 +821,61 @@ def verify_rows(rows, basename):
     return out
 
 
+# --- merging a ledger file that diverged ----------------------------------------
+# ONE MERGE FOR BOTH CHAINED RECORDS. A ledger file appended on two branches under
+# one name - which every file was before the per-worktree writer key - conflicts
+# exactly as a journal file does, and is resolved by `_journal_io.merge_rows`
+# with the same refusals and the same re-chain: this chain IS the journal's.
+#
+# NO MARKER ROW IN THE LEDGER, and the reason is the readers. Every row in this
+# directory is read as a RECORDED RUN - `read_rows`, `latest_by_subject`, the gate
+# tallies, `earliest_recorded`, the verdict a task commit is bound to - so a row
+# recording a merge would be counted as a run with no status by each of them. The
+# merge is recorded in the JOURNAL instead (`ACTION_MERGED`), in a row whose
+# target is the merged file: its `stateHash` is the file's new bytes, which is
+# also what keeps the journal's anchor from reporting the re-chained file as an
+# edit it never saw.
+ACTION_MERGED = "evidence.merge"
+
+
+def merge_target(row):
+    """What a recorded run MEASURED: its task, or its phase for a phase run.
+
+    The target a same-second tie is ordered by. Runs of different subjects in
+    one second are independent measurements; runs of the same subject are not,
+    and their order is which verdict is newest - so that tie is refused.
+    """
+    if not isinstance(row, dict):
+        return ""
+    if row.get("taskId"):
+        return "task %s" % (row["taskId"],)
+    if row.get("phaseId"):
+        return "phase %s" % (row["phaseId"],)
+    return ""
+
+
+def merge_rows(ours, theirs, name, torn=()):
+    """`_journal_io.merge_rows` for one ledger file: the runs' own targets, and
+    no marker row (the section above says why)."""
+    return _journal_io.merge_rows(ours, theirs, name, torn=torn,
+                                  target_of=merge_target, marker=False)
+
+
+def record_merge(project, path, result, actor=None, config=None):
+    """The journal row recording a ledger merge. Returns the file, or False.
+
+    Written AFTER the merged file, so its `stateHash` is the merged bytes.
+    Fail-soft like every append; the caller says when it could not be written.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    return _journal_io.append_from_cli(project, {
+        "action": ACTION_MERGED,
+        "actor": actor if isinstance(actor, dict) else {"via": "merge"},
+        "target": repo_relative_or_token(project, path),
+        "summary": result.get("summary") or "",
+    }, config=config)
+
+
 # --- writing and reading ------------------------------------------------------
 def append_row(project, row, session_id=None, config=None):
     """Append one row, chained onto the file's tail; return the file it landed in.
