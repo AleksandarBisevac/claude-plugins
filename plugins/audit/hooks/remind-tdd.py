@@ -202,8 +202,8 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     if not file_path:
         return ("silent", "no file_path")
 
-    root = _config.repo_root(data)
-    cfg = cfg if cfg is not None else _config.load(root)
+    tree = _config.tree_for(data, file_path, cfg)
+    root, cfg = tree["project"], tree["cfg"]
     tr = _config.tdd_reminder(cfg)
     if not tr.get("enabled", True):
         return ("silent", "disabled")
@@ -211,7 +211,6 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     sd = state_dir if state_dir is not None else _config.state_dir(root, cfg)
     session_id = str(data.get("session_id", "") or "no-session")
     ts = now if now is not None else time.time()
-    rel = _config.rel_path(root, file_path)
 
     # 0. Outside the consuming repository. This hook decides nothing, so the
     #    defect here is not a refusal but a CLAIM: `rel` is os.path.relpath, so
@@ -225,9 +224,17 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     #    Decided before the test-file branch, not after: an out-of-repo file
     #    named like a test must not record `testTouched` either, or a stray
     #    `/tmp/x.test.ts` would satisfy the reminder for the whole session.
-    if not _config.within_root(root, file_path):
+    #
+    #    A LINKED WORKTREE OF THIS REPOSITORY IS NOT OUTSIDE IT. `tree_for`
+    #    re-roots onto the worktree, so the path is spelled from the tree that
+    #    holds it and step 4 reads the plan that tree runs - the reminder was
+    #    silent for every edit an executor made in a phase worktree.
+    if not tree["inside"]:
         return ("silent",
-                "outside the repository at %s: %s" % (root, file_path))
+                "outside the repository at %s (%s): %s"
+                % (root, tree["basis"], file_path))
+    rel = tree["rel"]
+    plan_root = tree["root"]
 
     # 1. Test file → record the touch BEFORE any warn logic.
     if _config.matches_exempt(rel, tr.get("testGlobs")):
@@ -256,7 +263,8 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     policy = tr.get("inProgressPolicy") or "skip-gate-only"
     if policy != "warn-always":
         manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
-        covering = _config.in_progress_task_map(root, manifest_rel).get(rel, [])
+        covering = _config.in_progress_task_map(plan_root,
+                                                 manifest_rel).get(rel, [])
         if policy == "skip-all" and covering:
             return ("silent", "covered by in_progress task: %s" % rel)
         if policy == "skip-gate-only" and any(

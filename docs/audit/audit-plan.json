@@ -467,7 +467,7 @@
     {
       "id": "P72",
       "title": "Every hook judges the tree the work is in, and blames only what it can show",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P72.json"
     },
     {
@@ -584,6 +584,13 @@
       "P70.3-fos",
       "P71.1",
       "P72.1",
+      "P72.2-ttl",
+      "P72.3-ttl",
+      "P72.4-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl",
+      "P72.7-ttl",
+      "P72.8-ttl",
       "P73.1",
       "P75.1",
       "P76.2",
@@ -681,6 +688,12 @@
       "P54.1",
       "P54.3",
       "P67.2",
+      "P72.1",
+      "P72.2-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl",
+      "P72.7-ttl",
+      "P72.8-ttl",
       "P80.11"
     ],
     "docs/audit/audit-plan.json": [
@@ -795,7 +808,8 @@
       "P80.10",
       "P80.12",
       "P81.2",
-      "P81.8"
+      "P81.8",
+      "P72.3-ttl"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -1006,13 +1020,19 @@
       "P63.13",
       "P72.1",
       "P69.3",
-      "P77.2"
+      "P77.2",
+      "P72.2-ttl",
+      "P72.3-ttl",
+      "P72.4-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
       "P4.3",
       "P15.4",
-      "P72.1"
+      "P72.1",
+      "P72.8-ttl"
     ],
     "plugins/audit/hooks/guard-bash-writes.py": [
       "P4.2",
@@ -1024,7 +1044,8 @@
       "P41.7",
       "P51.3",
       "P54.2",
-      "P72.1"
+      "P72.1",
+      "P72.2-ttl"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -1057,7 +1078,10 @@
       "P55.16",
       "P59.3",
       "P62.2",
-      "P72.1"
+      "P72.1",
+      "P72.2-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -1079,7 +1103,13 @@
       "P66.3-x3g",
       "P66.4-x3g",
       "P66.5-x3g",
-      "P72.1"
+      "P72.1",
+      "P72.3-ttl",
+      "P72.4-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl",
+      "P72.7-ttl",
+      "P72.8-ttl"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -1194,7 +1224,8 @@
       "P69.4-j6r",
       "P76.1",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P72.3-ttl"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -1270,7 +1301,9 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P72.2-ttl",
+      "P72.5-ttl"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1396,7 +1429,8 @@
       "P41.4",
       "P41.7",
       "P48.1",
-      "P53.6"
+      "P53.6",
+      "P72.4-ttl"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -1631,6 +1665,7 @@
       "P66.2-x3g",
       "P66.3-x3g",
       "P66.4-x3g",
+      "P72.4-ttl",
       "P73.1"
     ],
     "docs/handbook.html": [
@@ -1665,7 +1700,9 @@
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P72.4-ttl",
+      "P72.5-ttl"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -1779,7 +1816,10 @@
       "P55.11",
       "P55.13",
       "P50.5",
-      "P50.8"
+      "P50.8",
+      "P72.1",
+      "P72.2-ttl",
+      "P72.5-ttl"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -1853,7 +1893,8 @@
       "P32.9",
       "P36.2",
       "P37.2",
-      "P43.4"
+      "P43.4",
+      "P72.2-ttl"
     ],
     "plugins/audit/tests/test_gate_parity.py": [
       "P19.2",
@@ -1866,7 +1907,8 @@
       "P31.6",
       "P51.3",
       "P54.2",
-      "P72.1"
+      "P72.1",
+      "P72.2-ttl"
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
@@ -1914,6 +1956,7 @@
       "P53.10",
       "P50.8",
       "P59.13",
+      "P72.8-ttl",
       "P77.2",
       "P78.9",
       "P79.6",
@@ -2046,7 +2089,10 @@
       "P55.16",
       "P59.3",
       "P62.2",
-      "P72.1"
+      "P72.1",
+      "P72.2-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -2106,7 +2152,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P72.3-ttl"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -2160,7 +2207,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P72.3-ttl"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -2243,7 +2291,13 @@
       "P66.4-x3g",
       "P66.5-x3g",
       "P72.1",
-      "P69.3"
+      "P69.3",
+      "P72.3-ttl",
+      "P72.4-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl",
+      "P72.7-ttl",
+      "P72.8-ttl"
     ],
     "test_journal_writes.py: a write made by the session's first Bash call is recorded, not swallowed by the seeding pass": [
       "P22.12"
@@ -2369,14 +2423,20 @@
       "P29.2",
       "P32.8",
       "P38.3",
-      "P72.1"
+      "P72.1",
+      "P72.2-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl"
     ],
     "plugins/audit/tests/test_guard_history_rewrite.py": [
       "P29.2",
       "P32.8",
       "P38.3",
       "P59.13",
-      "P72.1"
+      "P72.1",
+      "P72.2-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -2391,7 +2451,12 @@
       "P47.5",
       "P53.2",
       "P53.6",
-      "P61.3"
+      "P61.3",
+      "P72.4-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl",
+      "P72.7-ttl",
+      "P72.8-ttl"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -2402,7 +2467,12 @@
       "P41.7",
       "P40.3",
       "P47.5",
-      "P61.3"
+      "P61.3",
+      "P72.4-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl",
+      "P72.7-ttl",
+      "P72.8-ttl"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -2430,7 +2500,9 @@
       "P80.3",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P72.4-ttl",
+      "P72.5-ttl"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2520,7 +2592,10 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P72.1",
+      "P72.2-ttl",
+      "P72.5-ttl"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1",
@@ -2553,6 +2628,8 @@
       "P55.5",
       "P56.5",
       "P59.13",
+      "P72.4-ttl",
+      "P72.5-ttl",
       "P78.5",
       "P79.5",
       "P80.3",
@@ -2679,7 +2756,8 @@
       "P41.4",
       "P41.7",
       "P53.6",
-      "P59.13"
+      "P59.13",
+      "P72.4-ttl"
     ],
     ".claude/skills/writing-css/SKILL.md": [
       "P35.1"
@@ -2690,6 +2768,7 @@
       "P48.4",
       "P53.5",
       "P53.10",
+      "P72.8-ttl",
       "P77.2",
       "P78.9",
       "P79.6",
@@ -2747,7 +2826,12 @@
       "P63.8",
       "P63.10",
       "P72.1",
-      "P69.3"
+      "P69.3",
+      "P72.2-ttl",
+      "P72.3-ttl",
+      "P72.4-ttl",
+      "P72.5-ttl",
+      "P72.6-ttl"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2856,7 +2940,8 @@
       "P63.8"
     ],
     "tools/check-committed-pii.py": [
-      "P51.4"
+      "P51.4",
+      "P72.5-ttl"
     ],
     "plugins/audit/scripts/manifest/_warning_groups.py": [
       "P51.5",
@@ -2984,7 +3069,8 @@
       "P59.13",
       "P69.2",
       "P69.4-j6r",
-      "P76.1"
+      "P76.1",
+      "P72.8-ttl"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
@@ -3119,7 +3205,8 @@
     "plugins/audit/scripts/status/_doctor_completions.py": [
       "P69.2",
       "P69.4-j6r",
-      "P76.1"
+      "P76.1",
+      "P72.8-ttl"
     ],
     "plugins/audit/COMPATIBILITY.md": [
       "P69.3"
@@ -3164,6 +3251,9 @@
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11"
+    ],
+    "plugins/audit/tests/_harness.py": [
+      "P72.1"
     ]
   },
   "bugs": [

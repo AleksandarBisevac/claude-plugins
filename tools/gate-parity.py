@@ -1628,6 +1628,10 @@ AUDITED_EXEMPTIONS = {
     "PANEL_ROUTE_READERS": ("reason", "panel_route_violations"),
     "PANEL_ROUTE_UNREACHED": ("reason", "panel_route_violations"),
     "TOOL_FIXTURE_BASENAMES": ("live", "tool_basename_drift"),
+    # The hook scopes that read the project's plan on purpose. The lint that
+    # reads the table reports a row naming no finding as stale, and a row with
+    # no reason excuses nothing.
+    "HOOK_TREE_EXEMPT": ("live", "hook_tree_violations"),
     # ...and the two whose instrument is a CASE rather than a function. This tree's
     # suites lint other files' source, so an auditor living in one is not a lesser
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a

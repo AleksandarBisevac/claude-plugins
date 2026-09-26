@@ -1632,6 +1632,42 @@ def _cases(check):
         finally:
             _harness.remove_tree(str(wtroot))
 
+    # (tf) THE WORKTREE'S OWN PLAN DECIDES, and only a fixture whose two plans
+    # DISAGREE can show it: wt1's worktree carries the main tree's committed
+    # manifest, so a gate that judged it against the main tree blocked it for
+    # the same reason and stayed green. Here the trees run different phases.
+    _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "require-plan-wt-")
+    if not _tf_ok:
+        check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
+    else:
+        _tf_prev = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
+        try:
+            def _tf_edit(rel, sid):
+                data = payload("Edit", os.path.join(_tf["wt"], rel),
+                               new_string=big, old_string="export const a = 1;\n",
+                               sid=sid)
+                data["cwd"] = _tf["main"]
+                ok, got = _harness.attempt(
+                    M.decide, data, cfg=dict(_config.DEFAULTS),
+                    state_dir=Path(_tf["root"]) / "state",
+                    logs_dir=Path(_tf["root"]) / "logs", event="PreToolUse")
+                return got if ok else ("EXC", got)
+            _v = _tf_edit("src/app.ts", "tf-1")
+            check("tf1 a worktree file the WORKTREE's running task declares is "
+                  "allowed - the main tree's plan does not declare it",
+                  _v[0] == "allow", repr(_v))
+            _v = _tf_edit("src/other.ts", "tf-2")
+            check("tf2 ...and one only the MAIN tree's task declares is refused "
+                  "in the worktree, naming the worktree's phase",
+                  _v[0] == "block" and "P48" in _v[1] and "P41" not in _v[1],
+                  repr(_v))
+        finally:
+            if _tf_prev is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _tf_prev
+
     # (m) AN MCP SERVER'S WRITE TOOL IS THE SAME WRITE. It reaches no edit-tool
     # matcher, so a filesystem server's `write_file` used to walk past this gate
     # while `Edit` of the same path was refused - the disagreement `sed -i` had,

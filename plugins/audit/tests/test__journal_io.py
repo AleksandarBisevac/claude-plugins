@@ -2526,6 +2526,185 @@ def _gone_cases(check):
           and "git log --diff-filter=D -- docs/audit/journal/2026-01.a.jsonl"
           in _gw12)
 
+    _worktree_writer_cases(check)
+
+
+def _worktree_writer_cases(check):
+    """(wk) ONE WRITER PER FILE, AND A SESSION DRIVING TWO WORKTREES IS TWO.
+
+    The per-writer layout keeps journal merges conflict-free only while each file
+    has one writer, and the writer id was the session alone: every worktree a
+    session drove appended the same basename, and merging two of those branches
+    refused a file whose same-second rows said different things. Measured merging
+    main into a phase branch, resolved by hand."""
+    import subprocess
+    ok, pair = _harness.attempt(_harness.worktree_pair, "journal-io-wt-")
+    if not ok:
+        check("wk0 the worktree fixture builds (%s)" % (pair,), False)
+        return
+    main, wt_a = pair["main"], pair["wt"]
+    wt_b = os.path.join(pair["root"], "main-B")
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false"]
+    subprocess.run(git + ["worktree", "add", "-q", wt_b, "-b", "chore/b"],
+                   cwd=main, check=True, capture_output=True, timeout=30)
+    sid = "cccccccc-0000-4000-8000-00000000000c"
+
+    def row(project, what):
+        return M.append(project, {"action": "task.start", "target": "",
+                                  "summary": what,
+                                  "actor": {"sessionId": sid, "via": "cli"}})
+    in_a, in_b, in_main = row(wt_a, "a"), row(wt_b, "b"), row(main, "m")
+    check("wk1 two linked worktrees driven by ONE session append to two "
+          "different files - the writer is the session AND the worktree",
+          bool(in_a) and bool(in_b)
+          and os.path.basename(in_a) != os.path.basename(in_b),
+          repr((in_a, in_b)))
+    check("wk2 ...while the main checkout keeps the session-keyed name every "
+          "earlier release wrote, so an existing file goes on growing",
+          bool(in_main) and os.path.basename(in_main)
+          == "%s.%s.jsonl" % (time.strftime("%Y-%m", time.gmtime()),
+                              M.writer_id({"sessionId": sid})),
+          repr(in_main))
+    check("wk3 the worktree files still name the session they belong to - "
+          "the session's writer id is the file's writer's first part",
+          bool(in_a) and M.writer_of(os.path.basename(in_a)).startswith(
+              M.writer_id({"sessionId": sid}) + "."),
+          repr(in_a))
+    check("wk4 a second row from the same worktree lands in the SAME file - "
+          "the key is stable, not per append",
+          row(wt_a, "a2") == in_a)
+    old_env = os.environ.get(M.ENV_SESSION_VAR)
+    os.environ[M.ENV_SESSION_VAR] = sid
+    try:
+        idx = M.session_index(wt_a)
+    finally:
+        if old_env is None:
+            os.environ.pop(M.ENV_SESSION_VAR, None)
+        else:
+            os.environ[M.ENV_SESSION_VAR] = old_env
+    check("wk5 the session index calls a worktree-keyed file the session's own",
+          any(os.path.basename(in_a) == os.path.basename(f) for f in idx["mine"]),
+          repr(idx["mine"]))
+    # Both branches commit their journal and merge into main: no conflict.
+    for tree, msg in ((wt_a, "a"), (wt_b, "b")):
+        subprocess.run(git + ["add", "-A", "docs/audit/journal"], cwd=tree,
+                       check=True, capture_output=True, timeout=30)
+        subprocess.run(git + ["commit", "-qm", msg], cwd=tree, check=True,
+                       capture_output=True, timeout=30)
+    subprocess.run(git + ["add", "-A", "docs/audit/journal"], cwd=main,
+                   check=True, capture_output=True, timeout=30)
+    subprocess.run(git + ["commit", "-qm", "m"], cwd=main, check=True,
+                   capture_output=True, timeout=30)
+    merges = [subprocess.run(git + ["merge", "--no-edit", "-q", br], cwd=main,
+                             capture_output=True, text=True, timeout=30)
+              for br in ("chore/p48", "chore/b")]
+    check("wk6 merging both worktree branches into main raises no journal "
+          "conflict", all(m.returncode == 0 for m in merges),
+          repr([(m.returncode, m.stdout[-200:]) for m in merges]))
+    _files = sorted(set(r.get("_file") for r in M.read_all(main)))
+    check("wk8 every reader that walks the trail - read_all, and through it the "
+          "record-key dedup and the session index - reads the worktree-keyed "
+          "names beside the old one",
+          len(_files) == 3
+          and sum(1 for f in _files if "." + M.WORKTREE_MARK in f) == 2,
+          repr(_files))
+    # wk9-wk11: WHICH checkout is a linked worktree is git's answer, and the key
+    # lives in that worktree's own git dir - so neither the config's gitRoot nor
+    # a shared stateDir can make two worktrees one writer.
+    nested = os.path.join(pair["root"], "nested")
+    os.makedirs(os.path.join(nested, ".claude"))
+    with open(os.path.join(nested, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"gitRoot": "repo"}, fh)
+    subprocess.run(git + ["worktree", "add", "-q", os.path.join(nested, "repo"),
+                          "-b", "chore/nested"], cwd=main, check=True,
+                   capture_output=True, timeout=30)
+    ncfg = M.load_config(nested)
+    check("wk9 a project whose gitRoot is a linked worktree gets a worktree key "
+          "- git is asked where the gitRoot says the repository is",
+          bool(M.worktree_key(nested, ncfg)), repr(M.worktree_key(nested, ncfg)))
+    shared = {"stateDir": os.path.join(pair["root"], "one-shared-state")}
+    ka, kb = M.worktree_key(wt_a, shared), M.worktree_key(wt_b, shared)
+    check("wk10 two worktrees configured with ONE absolute stateDir still get "
+          "two keys - the key is kept in each worktree's own git dir",
+          bool(ka) and bool(kb) and ka != kb, repr((ka, kb)))
+    check("wk11 SECOND DIRECTION: the main checkout gets no key, whatever the "
+          "config says", M.worktree_key(main, shared) is None)
+    # wk12/wk13: the key is asked of git once per git root in a process, and
+    # a caller that hands no config still gets the project's gitRoot honoured.
+    import subprocess as _sp
+    _real_run = _sp.run
+    _git_calls = []
+
+    def _counting_run(argv, *a, **k):
+        if list(argv[:1]) == ["git"] and "rev-parse" in argv:
+            _git_calls.append(tuple(argv))
+        return _real_run(argv, *a, **k)
+    _sp.run = _counting_run
+    try:
+        _keys = [M.worktree_key(wt_b) for _i in range(5)]
+    finally:
+        _sp.run = _real_run
+    check("wk12 five appends' keys for one worktree ask git ONCE - the answer "
+          "is kept per git root for the process",
+          len(set(_keys)) == 1 and _keys[0] and len(_git_calls) <= 1,
+          repr((_keys, len(_git_calls))))
+    check("wk13 a caller that hands NO config gets the project's own - its "
+          "gitRoot subdirectory is honoured", bool(M.worktree_key(nested)),
+          repr(M.worktree_key(nested)))
+    # wk14/wk15: only a positive answer is kept, and it is revalidated against
+    # the worktree's `.git` file, so a worktree removed and added back at the
+    # same path - a fresh git dir with no token - gets a fresh key.
+    _before = M.worktree_key(wt_b)
+    subprocess.run(git + ["worktree", "remove", "--force", wt_b], cwd=main,
+                   check=True, capture_output=True, timeout=30)
+    subprocess.run(git + ["worktree", "add", "-q", wt_b, "-b", "chore/b-again"],
+                   cwd=main, check=True, capture_output=True, timeout=30)
+    _after = M.worktree_key(wt_b)
+    check("wk14 a worktree removed and added back at the same path gets a NEW "
+          "key - the kept answer is checked against its `.git` file",
+          bool(_before) and bool(_after) and _before != _after,
+          repr((_before, _after)))
+    _real_run2 = _sp.run
+    _calls2 = []
+
+    def _count2(argv, *a, **k):
+        if list(argv[:1]) == ["git"]:
+            _calls2.append(tuple(argv))
+        return _real_run2(argv, *a, **k)
+    _sp.run = _count2
+    try:
+        _main_keys = [M.worktree_key(main) for _i in range(3)]
+    finally:
+        _sp.run = _real_run2
+    check("wk15 a main checkout - a `.git` DIRECTORY - is answered None with no "
+          "git process at all", _main_keys == [None] * 3
+          and _calls2 == [], repr((_main_keys, _calls2)))
+    _later = os.path.join(pair["root"], "later-wt")
+    os.makedirs(_later)
+    _none_first = M.worktree_key(_later)
+    os.rmdir(_later)
+    subprocess.run(git + ["worktree", "add", "-q", _later, "-b", "chore/later"],
+                   cwd=main, check=True, capture_output=True, timeout=30)
+    _then = M.worktree_key(_later)
+    _real_uncached = M._worktree_key_uncached
+    M._WORKTREE_KEYS.clear()
+    M._worktree_key_uncached = lambda where: None       # git failed, once
+    try:
+        _failed = M.worktree_key(wt_a)
+    finally:
+        M._worktree_key_uncached = _real_uncached
+    _recovered = M.worktree_key(wt_a)
+    check("wk17 a failed answer for a real worktree is not kept either: the "
+          "next call asks again and gets the key",
+          _failed is None and bool(_recovered), repr((_failed, _recovered)))
+    check("wk16 a None is never kept: a path that was not a worktree when first "
+          "asked, and is one now, gets its key",
+          _none_first is None and bool(_then), repr((_none_first, _then)))
+    check("wk7 ...and the merged trail verifies",
+          M.verify(main)["ok"], repr(M.verify(main).get("findings")))
+
 
 def _selftest():
     return _harness.run(_cases)

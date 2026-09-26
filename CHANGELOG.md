@@ -241,6 +241,72 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **The README said ids "never collide" because they are allocated under the index lock.** The lock
   is per clone; two branches can mint the same `max+1` id, and the sentence now says so. The same
   documents' "no manifest conflict" promise is scoped to a phase RUN, which is the case it held for.
+- **Every hook judges a linked worktree's work against that worktree's plan.** Only `require-plan`
+  re-rooted onto a worktree beside the checkout. `guard-secrets-read` skipped a `sed -i` or
+  `python3 -c` write into a worktree file, or refused it naming the main checkout's running phase;
+  the capability policy read the main checkout's live areas; `remind-tdd` was silent; `guard-edits`
+  let a worktree's journal and bypass state be edited by hand; the journal recorder filed no
+  `task.complete` / `task.commit` for a task finished in a worktree; spend was `unattributed`; and the
+  history guard read the main checkout's recorded SHAs for a rebase of the worktree branch. One
+  helper, `_config.tree_for`, now places each path (and each Bash command, where its shell stood after
+  any `cd`) in its tree, and `_deps.hook_tree_violations()` fails the build on a hook that reads the
+  plan beside `repo_root` (or an alias of it), or beside a `tree_for` asked only for `PROJECT_ONLY`
+  with no target placed; the one scope that reads the project's plan on purpose is declared with
+  its reason. The config and the session's own state stay with the project.
+- **The bash-write guard blamed a shell command for journal rows the plugin wrote.** A peer
+  session's hook rows, a plugin script's rows and a merge's journal files each drew "that shell
+  command wrote into the append-only audit journal". The verdict is read from the bytes now: a file
+  identical to its version at a `MERGE_HEAD` or `ORIG_HEAD` git wrote inside the window (and not a
+  truncation of HEAD's own version) is the merge's, rows that chain onto the
+  committed tail with verifying hashes, a plugin `via` and a fresh stamp are named as the plugin's
+  writer, and everything else keeps the tamper notice. A peer session's claim file is still not read.
+- **The history guard keeps refusing prose that names `git stash`, on purpose.** An exemption
+  for text emitters' arguments and a data reading of a piped heredoc's far side were both tried
+  in this release and both removed: each fix of them opened another pass (a later pipe stage, an
+  interpreter option set in the environment, a comment ending in a backslash, a file run by name
+  or by git itself). Every `git` word counts, and a piped heredoc body is graded as shell. The
+  need the field report named is met without either: feed the heredoc to the script directly,
+  `python3 x.py --technical - <<'EOF'`, which is data. An unquoted delimiter whose body carries
+  `$(…)` or a backquote is graded wherever the body goes.
+- **Commands the history and secret guards did not read.** The rest of a heredoc's own line after
+  its marker (`cat <<'EOF' && …`) was dropped with the body; a here-string (`<<<`) was read as a
+  heredoc and the lines after it dropped; a heredoc head that ran its body through a wrapper, an
+  option value or process substitution (`env python3 -W ignore -`, `bash <(cat)`) was read as
+  data; a `$(…)` inside double quotes was one word, so `echo "$(git stash)"` and
+  `eval "$(echo …)"` ran unread (quotes inside it are now tracked, and an inner body that will
+  not parse sends the command to the raw-text reading); a here-string fed to a shell or an
+  interpreter (`sh <<<'…'`) was never read; only the first `git reset --hard` of a command was
+  graded; and `xargs git` took its verb from stdin unseen - it is refused while a plan exists. A
+  reset or amend reaching several worktrees now resolves its refs in the tree it runs in, and a
+  backslash-newline is joined as the shell joins it, except inside a comment.
+- **A session's journal hook recorded other sessions' writes, and read a stored status as a
+  sign-off.** After the orchestrator stored its phases' derived statuses, a different session's
+  next unrelated Bash call derived rows from the manifest digest it saw move - 105 of them
+  `phase.signoff` - and filed them under itself. The Bash and MCP lanes now refresh their
+  baseline before each call, so a call derives rows only from what moved while it ran; and
+  `phase.signoff` is derived from the derivation's inputs on both sides of a write (the verdict,
+  and with a branch the merge stamp), never from a `status` flipped by hand or stored to match the
+  derivation - so a hand flip made before the verdict no longer swallows it. Such a flip is still
+  recorded, as the edit it is. A move made between calls is absorbed, whoever made it: the hook
+  records only what its own call wrote, and each agent of a session keeps its own baseline, so
+  one agent's Pre cannot swallow another's write. A move no row explains (an editor, a terminal,
+  a background job) is not lost: `audit-journal verify` warns that the file "has changed since the
+  last row that recorded it", and `/audit:doctor` reports that warning as out-of-band drift; a task
+  closed from the CLI records its own `task.done` row, which the doctor accepts as the receipt.
+- **One session's worktrees shared a journal file.** The writer id was the session alone, so
+  every linked worktree a session drove appended the same `<month>.<session>.jsonl`, and merging
+  two of those branches met a file whose same-second rows disagreed. A linked worktree now writes
+  `<month>.<session>.wt-<key>.jsonl`, the key taken from the worktree's own writer token; a main
+  checkout keeps the name it always had, and every reader still reads both. The evidence ledger
+  had the same defect - and `audit-journal merge` reads the journal directory only, so its
+  conflict had no resolver - and is keyed the same way. Whether a checkout is a linked worktree
+  is git's answer, asked where `gitRoot` points, and the key is kept in the worktree's own git
+  dir, so a `gitRoot` subdirectory or a shared absolute `stateDir` no longer collapses it.
+  **Limit:** when git cannot be asked, or the key cannot be stored there, the session-keyed name
+  is used. A main checkout is answered from its `.git` directory with no git process; a
+  worktree's key is kept in the process only while its `.git` file is the same file, so one
+  removed and added back at the same path gets a new key; a caller that passes no config gets
+  the project's own.
 
 ## [3.0.1] - 2026-09-18
 

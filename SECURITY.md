@@ -184,17 +184,80 @@ defect as one that fires on a read. `--help` and `-h` are reads for the same
 reason. A shell's `-c` argument and `eval`'s argument *are* commands and are
 parsed as such, so an interpreter is not a way around it.
 
-Two residuals, both stated rather than left to be discovered. A **heredoc body is
-not a quoted argument**: the lexer splits `<<'EOF'` at the `<` and reads the body
-as bare words, so `cat <<'EOF' > NOTES.md` naming one of these commands is
-refused. That is deliberate — whether a heredoc body is data or a script depends
-on what consumes it, and `sh <<EOF` is a script — and the cost is that writing one
-of these rules into a file through a heredoc needs an editor or an `echo` instead.
-And a command that cannot be tokenized at all (an unbalanced quote) falls back to
-the older raw-text patterns, which over-refuse quoted text. Both are the
-conservative direction, which is the only direction a guard may fail in when it
-cannot read its input. The general residual is the one this document opens with:
-text inspection is bypassable in principle.
+**Every `git` word counts, prose included, and that over-refusal is deliberate.** This
+is not a command-position reader: `git` is an invocation wherever it sits in a command,
+so `echo attempt used git stash` and `grep git stash notes.md` are refused as a stash.
+An exemption for the arguments of text emitters was tried and removed — each fix of it
+opened another way through (a later pipe, a comment ending in a backslash, a file run
+by name or by git itself), and a fail-loud guard keeps only what it can prove. Write
+the rule into a file with an editor. A shell's `-c` argument, `eval`'s argument, a
+here-string fed to a shell or an interpreter as the first word of its command
+(`sh <<<'…'`), and a `$(…)` or backquote — including one inside double quotes, which
+the lexer returns as a single word, with quotes tracked inside it — are read as
+commands of their own; a substitution this cannot read makes the whole command
+unreadable, which sends it to the raw-text patterns rather than to a reading that
+contributes nothing. A backslash-newline is joined before the command is read, except
+inside a comment: an unquoted `#` starting a word runs to the end of its line, and the
+next line is a command of its own. Each of these readings has limits, and the list
+of open residuals below says where. `xargs git` with no verb
+on its own command line takes the verb from stdin, which this guard cannot read, and
+is refused while a plan exists. Every `git reset --hard` in a command is graded, not
+the first.
+
+**A heredoc body is graded by what consumes it** (`_config.split_heredocs`, which
+`guard-secrets-read` shares). A body on its way into a file, or into a program that
+is not an interpreter or a shell (`git commit -F -`), is data — and so is a body fed
+straight to a script FILE run by python or node with no interpreter option before it,
+`python3 x.py --technical - <<'EOF'`, which is how an outcome is handed to a plugin
+script. A body fed to a shell or any other interpreter invocation is graded — read by
+the program in command position of the heredoc's head, past a wrapper that runs its
+argument (`env`, `sudo`, `xargs`, `timeout`, `nice`, …), so an option in front of `-`
+does not turn a program into data; process or command substitution anywhere in the
+head grades it as shell. **A body PIPED onward is graded as shell, whatever the far
+side** — a data reading of the far side was tried and removed, because every
+allow-list of it missed a spelling that runs the body. So `cat <<'EOF' | python3
+x.py -` naming these rules in its body is refused; feed the heredoc to the script
+directly instead. A heredoc line that continues with a backslash is graded as shell.
+The rest of the heredoc's own line after the marker is command text and is graded,
+and a here-string (`<<<`) is not read as a heredoc. **An unquoted delimiter keeps the
+shell in the body**: with `<<EOF` the shell performs `$(…)` and backquote
+substitution inside the body before any consumer reads it, so such a body is graded
+whatever its destination. And a command that cannot be tokenized at all (an
+unbalanced quote) falls back to the older raw-text patterns, which over-refuse quoted
+text — the conservative direction, which is the only direction a guard may fail in
+when it cannot read its input. The general residual is the one this document opens
+with: text inspection is bypassable in principle.
+
+**Open residuals of the history guard and `guard-secrets-read`, stated rather than
+left to be found.** Each is open; none of them lets through a command the 036e98e
+base refused:
+
+- an interpreter program that starts git from inside its own code (a Python or
+  Node body that runs a subprocess) is read as code, not searched for git — the
+  guard reads shell text, and a program's own calls are the general residual above;
+- the line-continuation join decides whether a `#` starts a comment from the raw
+  character before it, not from the word the shell has assembled, so a `#` that
+  follows an escape can be misjudged as a comment - in the history guard, and in
+  `guard-secrets-read`'s text-emitter reading, which uses the same join;
+- a here-string's reader is recognised only as the first word of its command, not
+  behind a wrapper that runs its argument, which the heredoc reader already handles;
+- a `case` pattern's `)` inside a double-quoted substitution ends the substitution
+  early, so the rest of its body is read as quoted text;
+- a git command quoted as one phrase and sent to a shell or into a git hook file is
+  one word, and is not read as git;
+- the secret-read arm of `guard-secrets-read` does not join line continuations
+  before reading a path, and a here-string fed to an interpreter is not graded as
+  inline evaluation there.
+
+**The plan a git command answers to is the one of the tree it runs in.** `git -C
+<dir>`, a `cd` before it, or the payload's own directory names each invocation's
+tree, and the recorded SHAs and the plan-present test are read from those trees'
+manifests as well as the project's — the union, because a commit recorded in either
+is one the command may not orphan. A linked worktree's plan records the commits its
+tasks made before any merge brings them to the main checkout, so reading only the
+project's let a rebase of the worktree branch orphan them unrefused. Refs resolve per
+working tree, so the ancestry of a reset and the HEAD of an amend are asked in the
+tree that invocation runs in.
 
 ### When the plan gate actually blocks (0.20.0)
 
@@ -317,13 +380,37 @@ by the path git prints. The manifest rule asks the same question for the same re
 `rel_path` normalises and enough `..` walks an unresolvable word onto the literal it compares
 against.
 
+**A linked worktree of the project is not outside it, and every hook that reads the plan says
+so.** `_config.tree_for` is the one question they ask before a manifest, a shard, the lock or
+the journal is read: a path inside the project is the project, answered with no process; a path
+outside it that git places in a linked worktree of this same repository is judged against **that
+worktree's** plan, spelled from its own root; anything else is out of scope as above. The
+config and the session's own state — bypass flags, baselines, throttles, the usage ledger —
+stay with the project directory, because they belong to the session rather than to a tree. So
+`sed -i` into a worktree file is refused naming the worktree's running phase (it used to be
+skipped, or refused naming the main checkout's), the capability policy's live areas, the TDD
+reminder, the append-only journal protection and the journal recorder all follow the same file
+to the same tree, and a task finished in a worktree leaves its `task.complete` / `task.commit`
+rows in that worktree's journal. A Bash command is placed where its shell stood — the payload's
+directory, moved by a `cd` the command makes first. `_deps.hook_tree_violations()` fails the
+build on a hook scope that resolves `_config.repo_root` (or a name bound to it) and reads the
+plan's tree, directly or through a helper of its own file — and on one that asks `tree_for`
+only for `PROJECT_ONLY`, places no target anywhere it reaches, and reads the plan, which is the
+same defect spelled differently. The one scope that does that on purpose,
+`guard-bash-writes`' `decide`, is declared in `_deps.HOOK_TREE_EXEMPT` with its reason, and a
+row there that stops matching is itself a finding. **The residual**, which the containment shortcut makes: a
+linked worktree placed *under* the project directory is judged as part of the project. The
+default exempt globs cover `.claude/**`, where the harness puts its own agent worktrees; one
+elsewhere under the project is judged against the project's plan. `guard-bash-writes` still
+watches the project's tree alone and declines a command from another tree with a notice (see
+bypass class 1 below).
+
 `remind-tdd` asks the same question for a reason worth stating separately: its nudge is a
 CLAIM about a file rather than a decision about one, and it was also spending the session's
 throttle on a tree it does not govern, which silenced the next reminder that was deserved.
-This is the same posture `guard-bash-writes` already takes toward a command that ran in
-another tree, and the practical consequence is the same: a session whose project directory
-is one checkout does not gate edits into a *different* one, and opening the session in the
-tree being edited is what restores coverage. That guard's *edit* branch asks the same
+A linked worktree of the project is not such a tree (the paragraph above): its edits get the
+reminder, worded by the worktree's own plan. A *different repository* is, and there opening
+the session in the tree being edited is what restores coverage. `guard-bash-writes`'s *edit* branch asks the same
 question now, and it is a retention rule rather than a gate: an out-of-tree Edit used to be
 appended to its per-session `toolEdited` list under relpath's `../..` spelling, where no
 `git status` line from the watched tree could ever equal it. Nothing read it and nothing
@@ -561,6 +648,26 @@ point:
   the change declared in its `BASELINE` with a reason.
 - Hand edits to the journal are refused by `guard-edits.py`. `journal.enabled:
   false` turns the whole thing off.
+- **A shell command is blamed for a journal file only when the bytes do not show
+  another writer.** `guard-bash-writes` reports every journal file that goes dirty
+  after a Bash call, and it used to call each one a shell write into the trail unless
+  THIS session's sidecar claimed it — so a peer session's hook rows, a plugin script
+  whose state landed in another directory, and a merge were all reported as tampering.
+  The verdict is read from the content now, once per file, and each names its
+  evidence: bytes identical to the file at `MERGE_HEAD` or `ORIG_HEAD` are the merge's
+  (or the reset's or rebase's) — but only when git wrote that ref inside this pass's
+  window, since `ORIG_HEAD` outlives the operation that set it, and never when the
+  bytes are HEAD's own version with rows cut off the end; new rows that leave the committed bytes untouched,
+  chain onto the committed tail with hashes that verify (`_journal_io`'s own algorithm),
+  carry `via` hook, cli or panel and are stamped inside the window are **the plugin's
+  own**, named by session or writer. Anything else — a rewritten row, a broken chain,
+  another `via`, a stale stamp, no git to ask what is committed — keeps the tamper
+  notice. **What this does not claim:** a row forged with the public algorithm, a
+  plugin `via` and a fresh stamp is taken for the plugin's; the notice is a PostToolUse
+  report and was never a lock, and `verify` plus the review of the commit remain what
+  closes that door. A peer session's sidecar is still not read, for the reason it
+  never was: honouring its claim would pass a real `sed` into a file that session had
+  once appended to.
 
 So it is a smoke detector, not a vault: it makes a quiet change loud, and an
 accident visible. If your threat model includes an adversary with write access to
