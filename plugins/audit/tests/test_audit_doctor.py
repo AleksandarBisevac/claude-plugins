@@ -194,6 +194,20 @@ def _cases(check):
               levels(rep, "running plugin") == ["WARNING"]
               and "NOT ESTABLISHED" in detail(rep, "running plugin"),
               detail(rep, "running plugin"))
+        # check_gate_economy is the same evidence ledger check_gate_patterns
+        # already reads, graded on cost instead of on whether it ever failed
+        # - the two answer questions close enough to be read together, and
+        # `audit-doctor.py` wires it directly after for that reason. The
+        # repro this pins: BEFORE check_gate_economy existed, this row was
+        # simply absent, so the case fails on current code with no
+        # `gate economy` in `names` at all.
+        check("the gate-economy row is wired into diagnose() and sits "
+              "directly after the gate-patterns row it grades a different "
+              "question about: %r"
+              % (names[max(0, names.index("gate patterns")):][:2]
+                 if "gate patterns" in names else names,),
+              "gate patterns" in names and "gate economy" in names
+              and names.index("gate economy") == names.index("gate patterns") + 1)
         # An absent ledger DIRECTORY used to read "<path> exists but
         # holds no rows yet" - a diagnostic asserting the existence of a
         # directory nothing ever created. Missing and empty are two branches.

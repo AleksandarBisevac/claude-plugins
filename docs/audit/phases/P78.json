@@ -486,7 +486,7 @@
     {
       "id": "P78.8",
       "title": "A fix task opened after a red sign-off run is gated on that run's failing suites",
-      "status": "in_progress",
+      "status": "done",
       "description": "audit-task.py add gains --failing-from <runId>. _task_gate reads the ledger (_evidence_io.read_rows then _evidence_io.row_by_run) before its ordinary defaults: the row must exist, be scope phase for the target phase and carry status failed, else exit 2 naming which (the runId is looked up, never parsed). From its failed steps take failingSuites whose failingSuitesBasis says the runner named them; union them with this task's own tests.add paths; point the sibling spelling (_path_scoped_sibling, _repointed) at them; source word failing-from-run:<runId>, sentence naming the run and the suites. This is the failed-first re-run that does not depend on a runner cache (vitest has no rerun-last-failed, jest --onlyFailures needs its cache, Playwright reads .last-run.json). When the row names no suite (a tail basis, or a runner that prints no file) or the phase records no path-scoped spelling, fall through to the ordinary tests.add -> files -> phase-no-paths chain and print why: never an empty gate (dg21). The whole sign-off gate still runs once at the end, unchanged. Add failing_from to VERB_FLAGS['add'], build_parser, commands/task.md's argument-hint and add section, and the /audit:task README row (_refs.command_flag_drift). Red-first (dg21): a fixture ledger row with a failed step whose failingSuites is ['src/cart.test.ts'] (named basis) and a sibling spelled 'vitest run src/a.test.ts' give the new task 'vitest run src/cart.test.ts <its tests.add path>' and gateBasis failing-from-run:<runId>; mutation: read suites off the failing lines instead of failingSuites -> red on a jest-shaped row. Allow cases: a row with a tail basis falls through to the task's tests.add gate with the printed reason (mutation: return [] -> red); an unknown runId and a passed row are refused exit 2.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -520,18 +520,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d39707986c8e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "add --failing-from <runId>: _failing_from_lookup reads the row via row_by_run and refuses unless it exists, is this phase's and failed; _named_failing_suites takes failingSuites only where the basis says named as failing; the gate is those suites plus tests.add through the sibling spelling, basis failing-from-run:<runId>; a tail-only row falls through with the reason. _task_gate split so seed never reads the flag (vf6). Docs in task.md and README. Cases ff1-ff6; redFirst proved at HEAD plus two live mutations. Gate run 2026-09-26T09:31:44Z.d3213b green (an earlier red row failed lint on a sibling's file); reviewer matches, no findings.",
+        "descriptive": "A fix task opened after a red sign-off run can be gated on exactly the suites that run named as failing, instead of a guessed or wide gate."
       },
       "startedAt": "2026-09-26T08:56:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T09:39:46Z",
+      "verifiedBy": [
+        "ff1",
+        "ff2",
+        "ff3",
+        "ff4",
+        "ff5",
+        "ff6"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T09:31:44Z.d3213b",
         "status": "passed",
         "at": "2026-09-26T09:31:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d39707986c8e",
+        "at": "2026-09-26T09:39:46Z"
       }
     },
     {
