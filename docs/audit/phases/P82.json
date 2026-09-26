@@ -391,7 +391,7 @@
     {
       "id": "P82.6-fye",
       "title": "red-first refuses the proof whenever HEAD's run and the task's run cannot be matched case for case",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-4 review (review-P82d.json, probes probe12/probe13) found false proveds in the measured mechanism. The rule for all of them: a false proved must be impossible, so any case the two runs cannot be matched one to one is a refusal, never a credit. (F1) refuse when any case HEAD's run named is printed by the task's run in no label form (a label carrying a per-run value no longer lines up), and when a label is printed more often by the task's run than by HEAD's while one of those prints is a failure (F4: an edited case plus a new passing case of the same label). (F2) refuse when HEAD's run collected no case while a declared test file exists at HEAD, and when HEAD's run is red and may have stopped early (pytest 'stopping after' / 'Interrupted:', or a stop-first flag in the command: -x, --exitfirst, --maxfail, --sw, --stepwise, -f, --failfast). (F3) a declared test path that exists at HEAD but is absent from the working tree - a rename or a delete - makes the case set not comparable: refuse, and remove a deleted declared file from the throwaway so HEAD's put-back is exact. (F5) unittest names are qualified by class. (F6) HEAD's copies are restored byte for byte (git checkout HEAD -- <files>, or raw bytes). (F7) every git call of the put-back and the new-file check runs under the one deadline. (F8) _held_by_head's docstring and the guide name every limit that remains, all of them in the could-not-prove direction; the commit claim that said so falsely is corrected in this task's record. Each shape from probe12/probe13 as a red case, with the allow cases sr50, sr67, sr74, sr88, sr93, sr94 still proving.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -424,14 +424,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9bfb0d7c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "compare_runs requires every HEAD case to reappear; ambiguous lines settled by a fix run; early-stopped or empty HEAD runs refused; byte-exact put-back under the deadline.",
+        "descriptive": "Red-first proof now refuses whenever the previous and the new test run cannot be matched case for case, so it cannot credit a test that already existed."
       },
       "startedAt": "2026-09-26T17:39:38Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T20:57:07Z",
+      "verifiedBy": [
+        "test_stamp_verification sr98",
+        "test_stamp_verification sr100",
+        "test_stamp_verification sr101",
+        "test_stamp_verification sr102",
+        "test_stamp_verification sr104",
+        "test_stamp_verification sr105"
+      ]
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"
