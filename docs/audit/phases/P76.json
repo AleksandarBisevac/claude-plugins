@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P76-R1",
@@ -79,9 +79,10 @@
         "issue": "`_SUBSTITUTION_SHAPES` names only a leading space and a doubled space as the shapes a substituted backtick span leaves 'on its own'. A span at the end of the text (\"fix `make`\") leaves trailing whitespace just as mechanically. That case is labelled 'whitespace after the last word' and gets the 'cannot tell' line, so the docstring's and task.md's claim about which shapes substitution produces by it",
         "resolution": "fix task P76.3-6qa"
       }
-    ]
+    ],
+    "outcome": "matches; three review passes, every finding fixed in P76.3-P76.4"
   },
-  "summary": null,
+  "summary": "audit-task gains the verbs field reports were hand-editing for: an intent answer of not-asked with its basis and a reader that lists closed tasks with none; done --no-change for a task whose answer was no change, refused on a bug's fix task so a bug is never fixed without a commit; move, block and note, each under the index lock with a journal row, move reusing the allocator so a moved id is never reissued and its evidence still joining the live task; add --dry-run, JSON refusals under --json, repeatable list flags that explain their separator, a scope whose dirty note means changed bytes, and an argv guard that exempts only a colon starting an identifier. Every fileIndex reader and writer agrees on the path with its line range stripped. Reviewed three times, every finding fixed; merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P76.1",
@@ -334,5 +335,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-25T18:00:40Z"
+  "startedAt": "2026-09-25T18:00:40Z",
+  "testEvidence": {
+    "runId": "2026-09-26T04:12:40Z.5fbc58",
+    "status": "passed",
+    "at": "2026-09-26T04:12:40Z"
+  }
 }
