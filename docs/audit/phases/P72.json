@@ -614,7 +614,7 @@
     {
       "id": "P72.8-ttl",
       "title": "Final-review findings: journal-writes records only its own call, the unexplained move is left to verify, and the worktree key memo revalidates",
-      "status": "in_progress",
+      "status": "done",
       "description": "Final-pass review of P72.7 (review-P72d.json) found the observed-between-calls mechanism still racy after four rounds: a pending move whose Post never comes is never settled, duplicates depend on Post arrival order, the pending file has no lock, and doctor counts an observed task.complete as a receipt. Orchestrator decision, structural: REMOVE the observed-row mechanism and the pending files. journal-writes records only what the call it runs for wrote (the P72.3 absorb-between-calls rule). A move no row explains is already detected where it belongs - audit-journal verify warns that a tracked file 'has changed since the last row that recorded it - an edit the journal never saw' - and a CLI close is recorded by the verb's own task.done row, which doctor accepts; name both in the docstring and the CHANGELOG, and make doctor surface that verify warning if it does not already. Also: the worktree-key memo caches only a positive answer and revalidates it against the worktree's .git file, so a removed and re-added worktree is seen; SECURITY.md's paragraph above the residual list is made consistent with it, the list is headed for both guards, and it claims only that the residuals are open. Red first: a case where a move by a writer with no hook is reported by verify, and the removed rows never appear.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -654,14 +654,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e7278c75",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "observed-row mechanism removed; own-writes rule; memo keeps positive keys revalidated against .git.",
+        "descriptive": "The journal hook no longer guesses who made changes it did not make; unrecorded changes are reported by verify and doctor instead."
       },
       "startedAt": "2026-09-25T22:55:25Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T02:35:16Z",
+      "verifiedBy": [
+        "test_journal_writes sg5b",
+        "test_journal_writes so1",
+        "test_journal_writes so3",
+        "test__journal_io wk14"
+      ]
     }
   ],
   "startedAt": "2026-09-25T14:32:08Z"
