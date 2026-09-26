@@ -771,7 +771,7 @@
     {
       "id": "P74.8-qq5",
       "title": "run-test-gate's crowd line counts only runs that truly shared a window, not one that started the second the last one ended",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reported while recording P79's wave-3 task gates (runs 15:49:37Z.28e86c, 15:50:39Z.3d1d04, 15:51:38Z.ea5bd0): the crowd line \"N other gate run(s) shared this window\" fires on runs recorded strictly one after the other. `_evidence_io._overlaps` is inclusive at both endpoints while `ts` and `startedAt` are whole seconds, so a run that starts in the same second the previous row was written always counts as overlapping. Decide overlap so that a run which began when the other had already ended does not count: compare half-open at the end (a run ending at second t and one starting at t are sequential), and where the rows carry sub-second or ordering evidence use it; if whole-second data cannot tell, say that in the line rather than asserting a shared window. Red-first both directions: back-to-back runs are not a crowd; two runs whose windows genuinely overlap by a second or more still are.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -807,14 +807,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "77a85da3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "overlap_state compares whole-second windows half-open at the end; undecided sub-second boundary runs are named as not knowable.",
+        "descriptive": "The test gate no longer reports runs made one after another as sharing the machine, and says so when the timestamps cannot tell."
       },
       "startedAt": "2026-09-26T17:24:25Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T20:32:04Z",
+      "verifiedBy": [
+        "test__evidence_io wr10",
+        "test__evidence_io wr10b",
+        "test__evidence_io wr10c",
+        "test_run_test_gate gc1",
+        "test_run_test_gate gc2",
+        "test_run_test_gate gc3"
+      ]
     }
   ],
   "startedAt": "2026-09-25T18:00:38Z"
