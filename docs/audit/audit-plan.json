@@ -656,7 +656,8 @@
       "P83.1",
       "P83.2",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -808,7 +809,8 @@
       "P83.1",
       "P83.2",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1257,7 +1259,8 @@
       "P83.1",
       "P83.2",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1300,7 +1303,8 @@
       "P72.6-ttl",
       "P83.1",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -1330,7 +1334,8 @@
       "P77.4-6u9",
       "P83.2",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -2511,7 +2516,8 @@
       "P77.4-6u9",
       "P83.1",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -3129,7 +3135,8 @@
       "P72.6-ttl",
       "P83.1",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -3152,7 +3159,8 @@
       "P77.4-6u9",
       "P83.2",
       "P83.3-wkm",
-      "P83.4-wkm"
+      "P83.4-wkm",
+      "P83.5-wkm"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
