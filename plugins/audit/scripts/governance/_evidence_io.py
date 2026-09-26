@@ -1495,7 +1495,34 @@ def attribution_of(row, rows):
                                          for o in contesting))}
 
 
-def latest_by_subject(rows):
+def subject_aliases(manifest):
+    """`{("task", oldId): ("task", liveId)}` for every id a live task was moved from.
+
+    THE LEDGER KEEPS THE SUBJECT A RUN WAS RECORDED UNDER, and `move` gives the
+    task a new id. Rewriting append-only rows is not on offer, so the readers
+    map through the plan instead: `movedFrom` and the `previous` links inside it
+    are exactly the ids this task used to answer to.
+
+    AN ALIAS ONLY WHERE IT IS UNAMBIGUOUS. An old id a live task holds now is
+    that task's, and aliasing it away would move its own runs onto another; an
+    old id two chains both claim has no single owner. Verb-made plans reach
+    neither (the allocator never mints a chain's id), so both are skipped here
+    rather than guessed at, and `_manifest_phases` warns about each by name.
+    """
+    live = set(str(t.get("id")) for _ph, t in _mio.iter_tasks(manifest or {})
+               if t.get("id"))
+    claims = {}
+    for _ph, task in _mio.iter_tasks(manifest or {}):
+        if not task.get("id"):
+            continue
+        for old in _mio.moved_from_ids(task):
+            claims.setdefault(old, set()).add(str(task.get("id")))
+    return dict((("task", old), ("task", next(iter(owners))))
+                for old, owners in claims.items()
+                if len(owners) == 1 and old not in live)
+
+
+def latest_by_subject(rows, aliases=None):
     """The newest recorded run per `(scope, id)`, keyed for a pointer write.
 
     NEWEST BY `ts` AND NOT BY FILE ORDER. Rows land in one file per writer per
@@ -1506,6 +1533,9 @@ def latest_by_subject(rows):
     A row missing the id its own scope needs is skipped rather than guessed at -
     it cannot be pointed at anything, and inventing a subject for it would put a
     pointer on a task that never ran.
+
+    `aliases` is `subject_aliases(plan)`: a row recorded under a task's old id is
+    keyed under the id the task holds now, so a moved task's runs still join it.
     """
     best = {}
     for row in rows or []:
@@ -1516,6 +1546,7 @@ def latest_by_subject(rows):
         if not scope or not subject or not row.get("runId"):
             continue
         key = (scope, str(subject))
+        key = (aliases or {}).get(key, key)
         current = best.get(key)
         if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
             best[key] = row
@@ -1600,11 +1631,21 @@ def reconcile(project, manifest_path, session_id=None, config=None):
     """
     config = _journal_io.load_config(project) if config is None else config
     read = read_rows(project, config=config)
-    best = latest_by_subject(read["rows"])
+    # A MOVED TASK IS POINTED AT WHERE IT LIVES NOW. Its runs carry the old id and
+    # the old phase; keyed through the plan's `movedFrom`, they aim at the live id,
+    # and the phase is the one that holds it rather than the one the row names.
+    try:
+        plan = _mio.load_manifest(manifest_path)
+    except Exception:
+        plan = {}
+    owner = dict((str(t.get("id")), str(ph.get("id")))
+                 for ph, t in _mio.iter_tasks(plan) if t.get("id"))
+    best = latest_by_subject(read["rows"], aliases=subject_aliases(plan))
     moved, refused, already = [], [], []
     for (scope, subject), row in sorted(best.items()):
         if scope == "task":
-            ids = {"taskId": subject, "phaseId": row.get("phaseId")}
+            ids = {"taskId": subject,
+                   "phaseId": owner.get(subject) or row.get("phaseId")}
         else:
             ids = {"phaseId": subject}
         current = _current_pointer(manifest_path, scope, ids)

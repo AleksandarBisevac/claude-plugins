@@ -981,6 +981,15 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
         if pe.get("id") in unmet and pe.get("status") != "done":
             out.append("       blocked by: %s"
                        % _clip(", ".join(unmet[pe["id"]]), 70))
+        # WHERE SIGN-OFF IS DUE, the done tasks carrying no intent answer - the
+        # question sign-off has to address. Only there: a plan older than the
+        # field has no answer on any finished phase, and listing those would be a
+        # line about history nobody can rewrite.
+        if pe.get("signoffDue"):
+            unanswered = _status_facts.intent_unanswered(ph)
+            if unanswered:
+                out.append("       no intent answer: %s"
+                           % _clip(", ".join(unanswered), 70))
         for r in all_rows.get(pe.get("id")) or []:
             out.append(fmt_row(r))
 

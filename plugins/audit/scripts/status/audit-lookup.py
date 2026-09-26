@@ -73,6 +73,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio  # noqa: E402  (layer 1: the loader, the id indexes)
+import _manifest_vocab as _vocab  # noqa: E402  (layer 1: `_strip_line_suffix`, the one
+#                                             reading of a `files` entry's range suffix)
 import _journal_io  # noqa: E402  (layer 1: the trail this cross-checks against)
 import _evidence_io as _evio  # noqa: E402  (layer 2: project/config resolution)
 
@@ -211,14 +213,24 @@ def _drift_line(payload):
 def file_lookup(manifest, path):
     """`(found, payload_or_message)` for "which task last touched `path`".
 
-    EXACT KEY MATCH ONLY. `fileIndex` is a lookup because the plugin already
-    maintains it as one - `path` must be spelled exactly as a task's `files`
-    entry (and therefore the index key) spells it, project-dir-relative. A
-    path this manifest never declared returns `found=False`; there is no
-    nearest-match fallback, because a lookup that guessed at a similar path
-    would be a search wearing a lookup's name."""
+    EXACT PATH MATCH ONLY. `fileIndex` is a lookup because the plugin already
+    maintains it as one, keyed by the PATH a `files` entry names - a
+    `:line-range` suffix stripped, the way the plan gate, the validator and the
+    writers all read it - so `path` is compared on that same stripped form and
+    kept as typed in the answer. A row an older writer keyed by the raw entry
+    joins the same path. A path this manifest never declared returns
+    `found=False`; there is no nearest-match fallback, because a lookup that
+    guessed at a similar path would be a search wearing a lookup's name."""
     fidx = manifest.get("fileIndex")
-    declaring = fidx.get(path) if isinstance(fidx, dict) else None
+    key = _vocab._strip_line_suffix(path)
+    declaring = []
+    if isinstance(fidx, dict):
+        rows = [fidx.get(key)] + [ids for k, ids in sorted(fidx.items())
+                                  if k != key and _vocab._strip_line_suffix(k) == key]
+        for ids in rows:
+            for tid in (ids if isinstance(ids, list) else []):
+                if tid not in declaring:
+                    declaring.append(tid)
     if not declaring:
         return False, "no task declares %r in fileIndex" % (path,)
     last = declaring[-1]
@@ -226,7 +238,7 @@ def file_lookup(manifest, path):
     return True, {"path": path, "declaringTasks": list(declaring), "last": last,
                   "lastStatus": task.get("status") if task else None,
                   "pointer": "fileIndex[%r][-1] of %d entries in the manifest"
-                            % (path, len(declaring))}
+                            % (key, len(declaring))}
 
 
 def brief_lookup(manifest, task_id):

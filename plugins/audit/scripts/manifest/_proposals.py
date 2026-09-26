@@ -627,7 +627,10 @@ def apply_materialize(manifest, plan, now):
                 continue
             for f in (t.get("files") or []):
                 if isinstance(f, str):
-                    ids = index.setdefault(f, [])
+                    # By the PATH, the key the plan gate, the validator and every
+                    # other writer use: a `:line-range` suffix is part of the
+                    # declaration, not of the row.
+                    ids = index.setdefault(_vocab._strip_line_suffix(f), [])
                     if t.get("id") and t["id"] not in ids:
                         ids.append(t["id"])
         prop["status"] = "materialized"

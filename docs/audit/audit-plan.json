@@ -491,7 +491,7 @@
     {
       "id": "P76",
       "title": "The verbs cover what operators were hand-editing",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P76.json"
     },
     {
@@ -602,7 +602,9 @@
       "P75.2-j5h",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -673,7 +675,10 @@
       "P75.2-j5h",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P76.1",
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "README.md": [
       "P2.3",
@@ -820,7 +825,9 @@
       "P81.2",
       "P81.8",
       "P72.3-ttl",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P76.1",
+      "P76.2"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -949,7 +956,8 @@
       "P7.1",
       "P8.2",
       "P57.1",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P76.3-6qa"
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
@@ -997,14 +1005,16 @@
       "P68.1",
       "P70.1",
       "P69.4-j6r",
-      "P76.1",
       "P76.2",
       "P78.4",
       "P78.8",
       "P78.11",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P76.1",
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -1037,7 +1047,8 @@
       "P72.3-ttl",
       "P72.4-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P76.4-6qa"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1180,9 +1191,9 @@
       "P66.4-x3g",
       "P69.3",
       "P69.4-j6r",
-      "P76.1",
       "P79.7",
-      "P81.8"
+      "P81.8",
+      "P76.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1234,9 +1245,9 @@
       "P64.3",
       "P69.3",
       "P69.4-j6r",
-      "P76.1",
       "P80.12",
       "P81.8",
+      "P76.1",
       "P72.3-ttl"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
@@ -1260,12 +1271,13 @@
       "P61.1",
       "P61.8",
       "P70.1",
-      "P76.1",
       "P77.1",
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P76.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1347,7 +1359,8 @@
       "P63.5",
       "P65.1",
       "P69.3",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P76.3-6qa"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1469,7 +1482,8 @@
       "P63.8",
       "P80.6",
       "P75.2-j5h",
-      "P75.3-j5h"
+      "P75.3-j5h",
+      "P76.1"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -1494,7 +1508,8 @@
       "P79.1",
       "P80.1",
       "P80.7",
-      "P81.1"
+      "P81.1",
+      "P76.1"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1741,7 +1756,9 @@
       "P79.1",
       "P80.1",
       "P81.1",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P76.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -1965,7 +1982,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__areas.py": [
       "P20.6",
@@ -2100,7 +2118,8 @@
       "P75.2-j5h",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P76.3-6qa"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -2179,7 +2198,6 @@
       "P69.3",
       "P69.4-j6r",
       "P74.1",
-      "P76.1",
       "P76.2",
       "P78.1",
       "P78.3",
@@ -2189,7 +2207,10 @@
       "P79.4",
       "P81.2",
       "P81.5",
-      "P72.3-ttl"
+      "P76.1",
+      "P72.3-ttl",
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -2234,7 +2255,6 @@
       "P69.3",
       "P69.4-j6r",
       "P74.1",
-      "P76.1",
       "P76.2",
       "P78.1",
       "P78.3",
@@ -2244,7 +2264,10 @@
       "P79.4",
       "P81.2",
       "P81.5",
-      "P72.3-ttl"
+      "P76.1",
+      "P72.3-ttl",
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -2270,7 +2293,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -2287,7 +2311,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2399,7 +2424,8 @@
       "P77.1",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P76.1"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -2439,7 +2465,8 @@
       "P69.3",
       "P80.6",
       "P75.2-j5h",
-      "P75.3-j5h"
+      "P75.3-j5h",
+      "P76.1"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2468,7 +2495,8 @@
       "P75.2-j5h",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P76.3-6qa"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -2553,7 +2581,9 @@
       "P81.3",
       "P81.4",
       "P72.4-ttl",
-      "P72.5-ttl"
+      "P72.5-ttl",
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2654,13 +2684,15 @@
       "P32.1",
       "P61.2",
       "P61.5",
-      "P61.8"
+      "P61.8",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__proposals.py": [
       "P32.1",
       "P61.2",
       "P61.5",
-      "P61.8"
+      "P61.8",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -2688,7 +2720,9 @@
       "P80.3",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -2700,7 +2734,8 @@
       "P63.5",
       "P63.8",
       "P70.3-fos",
-      "P80.6"
+      "P80.6",
+      "P76.1"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2715,7 +2750,8 @@
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
-      "P80.7"
+      "P80.7",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -2887,7 +2923,8 @@
       "P72.3-ttl",
       "P72.4-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -3068,12 +3105,14 @@
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
       "P69.3",
-      "P78.10"
+      "P78.10",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
       "P69.3",
-      "P78.10"
+      "P78.10",
+      "P76.4-6qa"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -3105,9 +3144,9 @@
       "P69.3",
       "P70.3-fos",
       "P73.1",
-      "P76.1",
       "P77.1",
-      "P78.11"
+      "P78.11",
+      "P76.1"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -3130,7 +3169,8 @@
       "P69.2",
       "P69.4-j6r",
       "P76.1",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P76.3-6qa"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
@@ -3172,11 +3212,13 @@
     "plugins/audit/scripts/manifest/_id_shape.py": [
       "P61.1",
       "P61.8",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P76.3-6qa"
     ],
     "plugins/audit/tests/test__id_shape.py": [
       "P61.1",
-      "P61.8"
+      "P61.8",
+      "P76.3-6qa"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -3269,13 +3311,15 @@
       "P69.2",
       "P69.4-j6r",
       "P76.1",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P76.3-6qa"
     ],
     "plugins/audit/COMPATIBILITY.md": [
       "P69.3"
     ],
     "plugins/audit/scripts/manifest/_commit_trail.py": [
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P76.1"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2"

@@ -2914,13 +2914,14 @@ def _cases(check):
     # THE VACUITY GUARD, and it is not decoration: `_tk_off == {}` is also what an
     # intersection that had gone EMPTY returns, which is how a renamed verb on
     # either side would leave this line green over nothing.
-    check("tk3 ...and the intersection is the script verbs the two docs name, "
-          "with `move` on the hint side alone because it is an Edit procedure "
-          "rather than a script call - enumerated, so a rename on either side "
-          "is a finding rather than a silent skip: %r"
+    check("tk3 ...and the intersection is the script verbs the two docs name - "
+          "`move` among them now that it is a script call rather than an Edit "
+          "procedure - enumerated, so a rename on either side is a finding "
+          "rather than a silent skip: %r"
           % ((_tk_shared, sorted(_tk_flags)),),
-          _tk_shared == ["add", "add-phase", "cancel", "done", "scope", "start"]
-          and "move" in _tk_flags and "move" not in _at_usage)
+          _tk_shared == ["add", "add-phase", "block", "cancel", "done", "move",
+                         "note", "reopen", "scope", "start"]
+          and "move" in _tk_flags and "move" in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time
     # the widening ran - which is worth a comment because the traceback pointed
@@ -3098,7 +3099,8 @@ def _cases(check):
           "copy of the script would each leave pf1 green over nothing at all: %r"
           % ((_pf_verbs, _pf_checked),),
           _pf_checked != [] and "--gate-clear" in _pf_checked
-          and _pf_verbs == ["add", "add-phase", "cancel", "done", "scope"]
+          and _pf_verbs == ["add", "add-phase", "block", "cancel", "done", "move",
+                            "note", "reopen", "scope"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")

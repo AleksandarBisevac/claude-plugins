@@ -223,6 +223,26 @@ def _cases(_record):
     check("sd2 ...and a phase signed off on its parent branch counts as signed off in "
           "the header, off the derived status",
           "1/2 phases signed off" in _sd_txt, _sd_txt[:300])
+    # ni: the done tasks with no intent answer, named where sign-off is due. The
+    # absence was invisible on every surface a phase is judged from; a deliberate
+    # `not-asked` is an answer and stays off the list.
+    _ni = copy.deepcopy(_sd)
+    _ni["phases"][0]["tasks"] += [
+        {"id": "P1.2", "title": "t", "status": "done",
+         "intentCheck": {"answer": "not-asked", "basis": "copy edit",
+                         "commit": None}},
+        {"id": "P1.3", "title": "t", "status": "cancelled"}]
+    _ni["phases"][1]["tasks"].append({"id": "P2.2", "title": "t", "status": "done"})
+    _ni_txt = M.render_status(_ni, M.rollup(_ni, [], []))
+    _ni_rows = [ln.strip() for ln in _ni_txt.splitlines()
+                if "no intent answer" in ln]
+    check("ni1 a sign-off-due phase names its done tasks with no intent answer - "
+          "not the deliberate not-asked, not the cancelled one: %r" % (_ni_rows,),
+          _ni_rows == ["no intent answer: P1.1"])
+    check("ni2 SECOND DIRECTION: a phase already signed off prints no such line "
+          "though its done tasks carry no answer either - the list is the question "
+          "sign-off still owes, and that phase has answered it: %r" % (_ni_rows,),
+          not [r for r in _ni_rows if "P2." in r])
     _txt_ca = M.render_status(m_ca, M.rollup(m_ca, [], []))
     _ca_row = [ln for ln in _txt_ca.splitlines()
                if ln.strip().startswith(_ca_phase["id"] + " ")]

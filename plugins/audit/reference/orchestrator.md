@@ -200,7 +200,12 @@ never hardcode branch names, package ids, skills, or build tools here:
 - **`risk: "high"` tasks**: ALWAYS require explicit human confirmation (AskUserQuestion) before their
   commit — asked at the moment, or pre-given for a named set of task ids and recorded in the trail
   (`reference/execute-task.md`, step 4a) — and must **never** run on `haiku` regardless of `task.model`.
-- **`attempts >= maxAttempts`**: stop retrying, set `task.status = "blocked"`, and surface to the human.
+- **`attempts >= maxAttempts`**: stop retrying, set the task blocked through the verb —
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" block <taskId> --reason "<attempts
+  exhausted: the last red gate's reason>"`, which writes `status` and `blockedReason` under the
+  index lock with a `task.block` row — and surface to the human. Nothing refuses a hand edit of the
+  status; the verb is what records why, and a blocked task with no reason cannot say when it may
+  run again.
 
 ## Readiness rule
 

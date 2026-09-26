@@ -552,6 +552,35 @@ def tests_add_repair(entry):
 
 
 # --- the walk --------------------------------------------------------------------
+def _moved_from_conflicts(task_by_id, task_ids):
+    """WARNINGS for a `movedFrom` chain no verb would have written.
+
+    The allocator never mints an id a chain holds and `move` never reuses one, so
+    a plan made by the verbs cannot reach either shape - but a hand edit can, and
+    the evidence readers join old-id runs to the task whose chain names the id.
+    An old id a LIVE task holds would move that task's own runs onto another;
+    one two chains both claim has no single owner. `_evidence_io.subject_aliases`
+    skips both; this says so where a reader can repair it.
+    """
+    live = set(str(t) for t in task_ids)
+    claims = {}
+    out = []
+    for tid in task_ids:
+        for old in _mio.moved_from_ids(task_by_id.get(tid)):
+            claims.setdefault(old, []).append(str(tid))
+            if old in live:
+                out.append("task %s: movedFrom names %s, which a live task holds - "
+                           "the evidence readers will not join runs through it, "
+                           "and the chain should name the id this task used to "
+                           "have" % (tid, old))
+    for old, owners in sorted(claims.items()):
+        if len(owners) > 1:
+            out.append("movedFrom id %s is claimed by both %s - the evidence "
+                       "readers join it to neither, since a moved id has one "
+                       "owner" % (old, " and ".join(sorted(set(owners)))))
+    return out
+
+
 def _walk_phases(phases, build_keys=()):
     """One pass over every phase and every task: (index, findings, warnings).
 
@@ -880,6 +909,7 @@ def _walk_phases(phases, build_keys=()):
             if task.get("bugId"):
                 task_bug_links.append((twhere, tid, task["bugId"]))
 
+    w.extend(_moved_from_conflicts(task_by_id, task_ids))
     return ({"phase_ids": phase_ids, "task_ids": task_ids,
              "task_by_id": task_by_id, "task_files": task_files,
              "bug_links": task_bug_links}, f, w)

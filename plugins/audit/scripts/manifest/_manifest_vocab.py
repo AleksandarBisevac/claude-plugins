@@ -394,6 +394,10 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # the durable half of the mapping (the other half is the
               # journal's task.move row):
               "movedFrom",
+              # Why a task is `blocked`, beside the status `/audit:task block`
+              # sets, and the append-only `{at, text}` log `/audit:task note`
+              # writes - the one addition a started task still takes:
+              "blockedReason", "notes",
               # The task-level twin of the phase key above: the same $def, the
               # same pointer-not-truth rule, and the same reason no vocabulary
               # for its contents lives here. See the comment on KNOWN_PHASE.
@@ -716,9 +720,17 @@ INLINE_ANCHORS = (
 
 
 # --- the shape checks every level shares -----------------------------------------
+_LINE_SUFFIX = re.compile(r":[0-9][0-9,-]*\Z")
+
+
 def _strip_line_suffix(entry):
-    """`a/b.tsx:291-294,308` -> `a/b.tsx` (same rule as hooks/_config.py)."""
-    return str(entry).replace("\\", "/").split(":", 1)[0]
+    """`a/b.tsx:291-294,308` -> `a/b.tsx` (same rule as hooks/_config.py).
+
+    ONLY A TRAILING `:<digit range>` IS A SUFFIX. Splitting on the first colon
+    turned an absolute Windows entry (`C:\\repo\\a.py`) into `C`, and a colon
+    inside a name into a cut; the digit range is the one shape the schema's
+    `files` suffix takes. The hooks' copy is pinned equal by `mv6b`."""
+    return _LINE_SUFFIX.sub("", str(entry).replace("\\", "/"))
 
 
 def _safe_list(val):

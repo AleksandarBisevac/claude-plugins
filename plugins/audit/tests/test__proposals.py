@@ -268,6 +268,13 @@ def _cases(check):
           and len(out["phases"][0]["tasks"]) == 2, report)
     check("mz17 ...fileIndex gains every task file, keyed by file to task ids",
           out["fileIndex"].get("src/a.py") == ["P5.1"], out["fileIndex"])
+    _mzr = _manifest([_prop("PROP-1", payload=_payload("P5"))])
+    _mzr["proposals"][0]["payload"]["phase"]["tasks"][0]["files"] = ["src/a.py:4-9"]
+    _mzr_out, _r = M.apply_materialize(_mzr, M.plan_for(_mzr, ["PROP-1"]), NOW)
+    check("mz17b ...and a `:line-range` entry is keyed by its PATH, the key every "
+          "other writer and the plan gate use: %r" % (_mzr_out["fileIndex"],),
+          _mzr_out["fileIndex"].get("src/a.py") == ["P5.1"]
+          and "src/a.py:4-9" not in _mzr_out["fileIndex"])
     prop = M.find_proposal(out, "PROP-1")
     check("mz18 ...and the proposal is flipped, not removed: materialized "
           "proposals are history like closed bugs",
