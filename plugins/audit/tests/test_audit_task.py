@@ -66,7 +66,11 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # gm (P55.19: the marker inside the gap window, and a cause the check tested
 # for rather than one it did not), bn (P55.20: a shard write naming the
 # phase's own branch against the one the caller stands on), ix (P55.21: the
-# index left dirty beside a shard, and the tool that lands it).
+# index left dirty beside a shard, and the tool that lands it),
+# dg (P78.3: a gate-only task's `files` arm narrows only to a suite path, and
+# a new phase's gate puts `meta.phaseGate.always` first and drops only what
+# `meta.phaseGate.exclude` names), pg (P78.3: the same phase-gate derivation,
+# driven through `add-phase` itself).
 def _cases(check):
     import contextlib
     import io
@@ -5225,14 +5229,18 @@ def _cases(check):
 
         codetg, txttg = run(
             ["add", "Cache the facet counts", "--phase", "P1",
-             "--project-dir", tg_proj, "--files", "src/search/facets.ts"])
+             "--project-dir", tg_proj, "--files",
+             "src/search/facets.test.ts"])
         check("tg2 DEFAULT TWO: no case named, so the task's `files` go in "
               "instead - same spelling, same sibling, and the basis says which "
-              "of the two it was: %r"
+              "of the two it was. A SUITE PATH, deliberately: a gate-only task "
+              "narrows only to a file `is_suite_path` accepts, so this fixture "
+              "has to stay one for `tg2` to keep testing this arm rather than "
+              "the gate-only-no-suite one `dg` below covers: %r"
               % ((tg_gate("P1.3"), codetg),),
               codetg == 0
-              and tg_gate("P1.3") == ["lint",
-                                      "npm test -- src/search/facets.ts"]
+              and tg_gate("P1.3") == [
+                  "lint", "npm test -- src/search/facets.test.ts"]
               and "narrowed to this task's files, in P1.1's spelling" in txttg)
 
         codetg, txttg = run(
@@ -7052,6 +7060,204 @@ def _cases(check):
               "span at the end of the text leaves it as mechanically as one at the "
               "start: %s" % (txt,),
               code == 2 and "Likely COMMAND SUBSTITUTION" in txt)
+
+        # ---- (dg) a gate-only task narrows only to a SUITE PATH ----------------
+        # `tests.add` already proves a tdd/regression task creates a real test
+        # file, so its `files` arm stays unfiltered (dg3, unchanged from
+        # today) - but a gate-only task names no case at all, and a source
+        # file among its `files` is not evidence the sibling's suite-running
+        # command has anything of THIS task's to run. RED-FIRST on today's
+        # code: before this fix, dg1 below reads back
+        # `["vitest run src/Button.tsx README.md"]` with basis `"files"`, the
+        # sibling's spelling pointed at two files it never tested.
+        def dg_manifest():
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"lint": "eslint .",
+                                           "typecheck": "tsc --noEmit",
+                                           "test": "vitest run"},
+                         "phaseGate": {"always": ["lint", "typecheck"]}},
+                "phases": [
+                    {"id": "P1", "title": "UI", "status": "in_progress",
+                     "testGate": ["lint", "typecheck", "test"],
+                     "tasks": [
+                         {"id": "P1.1", "title": "seed", "status": "done",
+                          "files": ["src/a.ts"],
+                          "tests": {"mode": "gate-only", "add": [],
+                                    "expectRedFirst": False,
+                                    "gate": ["vitest run src/a.test.ts"]}}]},
+                ],
+                "fileIndex": {"src/a.ts": ["P1.1"]},
+                "bugs": [],
+            }
+
+        dg_proj, dg_mp = mk("dg-gate", dg_manifest())
+
+        def dg_tests(tid):
+            return (task_in(dg_mp, tid) or {}).get("tests") or {}
+
+        codedg, txtdg = run(
+            ["add", "New button", "--phase", "P1", "--project-dir", dg_proj,
+             "--files", "src/Button.tsx,README.md"])
+        check("dg1 RED-FIRST: a gate-only task whose files name NO suite path "
+              "gets `meta.phaseGate.always`, with basis `gate-only-no-suite` - "
+              "never the sibling's spelling pointed at two source files "
+              "nothing here tested: %r"
+              % ((dg_tests("P1.2").get("gate"), dg_tests("P1.2").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.2").get("gate") == ["lint", "typecheck"]
+              and dg_tests("P1.2").get("gateBasis") == "gate-only-no-suite")
+
+        # ALLOW CASE: a suite path AMONG the files still narrows the gate, in
+        # the sibling's spelling - the arm this fix must not disable outright.
+        codedg, txtdg = run(
+            ["add", "New button, tested", "--phase", "P1",
+             "--project-dir", dg_proj, "--files",
+             "src/Button.tsx,src/Button.test.tsx"])
+        check("dg2 ALLOW CASE: a suite path among the files still narrows the "
+              "gate, in the sibling's spelling: %r"
+              % ((dg_tests("P1.3").get("gate"), dg_tests("P1.3").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.3").get("gate")
+              == ["vitest run src/Button.test.tsx"]
+              and dg_tests("P1.3").get("gateBasis") == "files")
+
+        # ALLOW CASE: a REGRESSION task's `files` arm is unfiltered, exactly as
+        # today - `tests.add`'s invariant already covers it, this fix is
+        # gate-only's alone.
+        codedg, txtdg = run(
+            ["add", "Fix a regression", "--phase", "P1",
+             "--project-dir", dg_proj, "--tests-mode", "regression",
+             "--files", "src/Button.tsx"])
+        check("dg3 ALLOW CASE: a regression task keeps today's unfiltered "
+              "`files` arm even with only a source file named: %r"
+              % ((dg_tests("P1.4").get("gate"), dg_tests("P1.4").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.4").get("gate") == ["vitest run src/Button.tsx"]
+              and dg_tests("P1.4").get("gateBasis") == "files")
+
+        # ---- (pg) a NEW PHASE's gate: always FIRST, exclude the only drop ------
+        pg_always = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "npm test",
+                                       "lint": "npm run lint"},
+                     "phaseGate": {"always": ["lint"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj, pg_mp = mk("pg-always", pg_always)
+        code, txt = run(["add-phase", "Docs", "--outcome", "shipped",
+                         "--project-dir", pg_proj])
+
+        def pg_gate(mp, title):
+            found = [p for p in _mio.load_manifest(mp)["phases"]
+                    if p.get("title") == title]
+            return found[0].get("testGate") if found else None
+
+        check("pg1 RED-FIRST: `meta.phaseGate.always` puts a key FIRST and every "
+              "OTHER buildCommands key still follows, in buildCommands order - "
+              "`always` is an ORDER and never a narrowing, so `test` does not "
+              "vanish: %r" % (pg_gate(pg_mp, "Docs"),),
+              code == 0 and pg_gate(pg_mp, "Docs") == ["lint", "test"]
+              and "meta.phaseGate.always first" in txt)
+
+        pg_exclude = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "npm test",
+                                       "lint": "npm run lint",
+                                       "coverage": "npm run coverage"},
+                     "phaseGate": {"exclude": ["coverage"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj2, pg_mp2 = mk("pg-exclude", pg_exclude)
+        code, txt = run(["add-phase", "Docs2", "--outcome", "shipped",
+                         "--project-dir", pg_proj2])
+        check("pg2 RED-FIRST: `meta.phaseGate.exclude` drops the buildCommands "
+              "key it names from a NEW phase's gate, and the basis names the "
+              "exclusion - today's code writes `coverage` in anyway and the "
+              "basis names no exclusion at all: %r"
+              % ((pg_gate(pg_mp2, "Docs2"), txt.splitlines()[2]
+                  if len(txt.splitlines()) > 2 else txt),),
+              code == 0 and pg_gate(pg_mp2, "Docs2") == ["test", "lint"]
+              and "coverage" not in (pg_gate(pg_mp2, "Docs2") or [])
+              and "excluded by meta.phaseGate.exclude" in txt
+              and "coverage" in txt)
+
+        # pg3: EXCLUDE-TO-NOTHING - `meta.phaseGate.exclude` names every
+        # buildCommands key and `always` adds none back, so the derived
+        # default has nothing left. Today's code (which never reads `exclude`
+        # at all) would write both keys in anyway; this is CERTAIN even with
+        # no evidence in hand (`phase_gate_suite_gap`'s first arm), which is
+        # why the validator's warning fires from the plan alone.
+        pg_nothing = {
+            "meta": {"version": 2,
+                     "buildCommands": {"lint": "npm run lint",
+                                       "test": "npm test"},
+                     "phaseGate": {"exclude": ["lint", "test"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj3, pg_mp3 = mk("pg-nothing", pg_nothing)
+        code, txt = run(["add-phase", "Docs3", "--outcome", "shipped",
+                         "--project-dir", pg_proj3])
+        check("pg3 RED-FIRST EXCLUDE-TO-NOTHING: `meta.phaseGate.exclude` "
+              "naming EVERY buildCommands key, with no `always`, writes an "
+              "EMPTY gate - the basis names `meta.phaseGate.exclude` as the "
+              "cause, and the post-write warnings carry `phase_gate_suite_gap`'s "
+              "'phase gate runs no suite' line, since nothing here can prove "
+              "this phase done: %r"
+              % ((pg_gate(pg_mp3, "Docs3"),
+                  [ln for ln in txt.splitlines() if "WARNING" in ln]),),
+              code == 0 and pg_gate(pg_mp3, "Docs3") == []
+              and "meta.phaseGate.exclude" in txt
+              and "phase gate runs no suite" in txt)
+
+        # pg4: ABSENT phaseGate = TODAY - captured by RUNNING HEAD's own
+        # `_phase_gate`, never by reading or retyping it. `git show HEAD:...`
+        # gets the pre-fix source; `ast.get_source_segment` pulls out exactly
+        # the `_phase_gate` function's text (HEAD's version calls nothing this
+        # module does not already have - no `_manifest_phases`, no `_output`),
+        # and `exec` runs THAT text in an empty namespace. The fixed module's
+        # own `_phase_gate` is never touched by this, so a bug in one cannot
+        # hide behind an accidental agreement with the other - the expected
+        # value is HEAD's answer, run, not this task's answer read back at
+        # itself.
+        import ast
+        import types
+        _pg4_src = subprocess.run(
+            ["git", "show",
+             "HEAD:plugins/audit/scripts/manifest/audit-task.py"],
+            cwd=_output.REPO_ROOT, capture_output=True, text=True,
+            check=True).stdout
+        _pg4_sha = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=_output.REPO_ROOT,
+            capture_output=True, text=True, check=True).stdout.strip()
+        _pg4_tree = ast.parse(_pg4_src)
+        _pg4_node = next(n for n in ast.walk(_pg4_tree)
+                         if isinstance(n, ast.FunctionDef)
+                         and n.name == "_phase_gate")
+        _pg4_ns = {}
+        exec(compile(ast.get_source_segment(_pg4_src, _pg4_node),
+                    "<HEAD %s _phase_gate>" % (_pg4_sha,), "exec"), _pg4_ns)
+        _HEAD_phase_gate = _pg4_ns["_phase_gate"]
+        _pg4_args = types.SimpleNamespace(gate=None, gate_clear=False)
+        # Deliberately NON-sorted `buildCommands`, so a fix that silently
+        # started building the default from SORTED keys would answer
+        # differently from what this fixture's declared ORDER (and HEAD's own
+        # code) both agree on.
+        _pg4_manifest = {"meta": {
+            "version": 2,
+            "buildCommands": {"test": "npm test", "lint": "npm run lint",
+                              "coverage": "npm run coverage"}}}
+        _pg4_expected = _HEAD_phase_gate(_pg4_args, _pg4_manifest)
+        _pg4_got = M._phase_gate(_pg4_args, _pg4_manifest)
+        check("pg4 ABSENT phaseGate = TODAY: with no `meta.phaseGate` at all, "
+              "this derivation writes exactly what HEAD %s wrote for the SAME "
+              "fixture (run, not read) - a fix that built the default from "
+              "SORTED keys would answer differently from the buildCommands "
+              "ORDER both HEAD and this fixture declare: %r"
+              % (_pg4_sha, (_pg4_got, _pg4_expected)),
+              _pg4_got == _pg4_expected
+              and _pg4_got == (["test", "lint", "coverage"],
+                                "from meta.buildCommands"))
 
     finally:
         _harness.remove_tree(tmp)

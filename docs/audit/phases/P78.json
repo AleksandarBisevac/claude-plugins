@@ -97,7 +97,7 @@
     {
       "id": "P78.2",
       "title": "meta.phaseGate.always/exclude and meta.gateBudgetMs; the one phase-gate default and the one 'runs no suite' rule",
-      "status": "in_progress",
+      "status": "done",
       "description": "The rule this phase holds: no state of a plan may make the sign-off gate run fewer suites than today unless the plan DECLARES it and the gate PRINTS it. Constraint: COMPATIBILITY.md lets a key be added for free only while its absence keeps today's behaviour, and _help.schema_vocab_drift() checks KNOWN_META against the schema, so a key exists in the schema first. Schema, under $defs.meta.properties: phaseGate (object, additionalProperties permissive) with always (non-blank strings meant to be buildCommands keys; they come FIRST in a new phase's default and nothing is dropped because of them) and exclude (buildCommands keys; the ONLY declared way to keep a key out of the default - a coverage key that re-runs the test suite, or an e2e key that belongs at the third place); gateBudgetMs (positive integer, advisory; absent = nothing is graded on cost). Each description says what absence means: no phaseGate = today's default, every buildCommands key in buildCommands order, byte-identical; no exclude = nothing dropped. KNOWN_META += phaseGate, gateBudgetMs. ONE ANSWER FOR THE DEFAULT, used by add-phase now and by the derivation in the next phase: phase_gate_default(meta) in _manifest_phases.py returns {entries, always, rest, excluded, basis}: entries = always in declared order, then every other buildCommands key in buildCommands order, minus exclude. An entry named in both lists stays (always is always) and draws a warning. ONE RULE FOR 'phase gate runs no suite': phase_gate_suite_gap(manifest, suite_keys=None) in the same module, evaluated only when exclude is non-empty (without exclude the default is today's set). A default EMPTY after exclusion returns 'phase gate runs no suite: meta.phaseGate.exclude removes every meta.buildCommands key and meta.phaseGate.always adds none', which needs no evidence. With suite_keys ({running, silent, unknown}, computed from the ledger by L1.e) and no default key in running, it returns 'phase gate runs no suite as far as the ledger shows: <keys> are left after meta.phaseGate.exclude', naming the keys with no recorded run or only pre-field runs as not established. Otherwise it returns None. WHICH PREDICATE DECIDES 'suite-running': the counts reader - run-test-gate.summary_reader (P70 run-test-gate.py:550), the one function that recognises a test runner's own summary line - recorded per step as suiteReader by L1.e. It can only answer from a run's output, so its answer is read back from the ledger rather than guessed from the plan. Not the test-shaped predicate: it classifies paths, and a wide key such as 'npm test' names none. Not the key's spelling: orchestrator.md forbids inferring a test run from a command's spelling. Not steps[].measured: ran_count also tallies a wrapper's hook lines (_STEP_WORDS, pre-commit), so a pre-commit lint reads as measured checks. _manifest_rules._check_meta calls phase_gate_suite_gap(manifest) with no evidence, so the pure validator emits the certain arm only. GATE_BASIS += gate-only-no-suite and failing-from-run (written failing-from-run:<runId>; a reader compares the word before the colon and looks the runId up, never parses it - the schema calls a runId opaque); GATE_BASIS_ANSWERED += gate-only-no-suite; extend the tests.gateBasis description with both words. Other validator WARNINGS, never findings (Validation stays additive): phaseGate not an object; always or exclude not a list of non-blank strings; an always or exclude entry that is not a buildCommands key (name it and the keys); a comma-joined entry (reuse P70's _manifest_phases._comma_joined_gate, never a second copy of that rule); an entry in both lists; gateBudgetMs not a positive integer, or a bool (the budgetUSD rule). SCHEMA_EXEMPTIONS rows in gen-demo-manifest.py for the new fields, with the reason (no rendered surface shows them yet). Red-first in test__manifest_phases.py: always [lint] over buildCommands {test, lint, coverage} gives [lint, test, coverage] (mutation: return always alone -> red); exclude naming every key with no always gives [] and phase_gate_suite_gap returns the certain sentence (mutation: skip the empty check -> red); no phaseGate gives every key in buildCommands order (mutation: sort the keys -> red). In test_validate_manifest.py: exclude-to-nothing warns 'phase gate runs no suite'; always ['lint', 'nope'] warns naming nope; gateBudgetMs true warns. Allow cases: a manifest with no phaseGate gains no new warning; always [lint] alone validates clean, because a reordering is not a narrowing.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -138,24 +138,42 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ddae7d861b84",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Schema meta.phaseGate {always, exclude} and gateBudgetMs; KNOWN_META; GATE_BASIS += gate-only-no-suite, failing-from-run (ANSWERED gets only the first). _manifest_phases: phase_gate_default, phase_gate_suite_gap (certain arm; ledger arm inert until P78.5 passes suite_keys), _check_phase_gate shape warnings reusing _comma_joined_gate. _check_meta wired with no evidence. SCHEMA_EXEMPTIONS rows. Cases pg1-pg5, mv48-mv49, c26-c30; c28 tightened to 'positive integer' because the unknown-key warning satisfied it at HEAD. Warnings are plain strings (fc2 tracks findings only). redFirst proved (shared-tree mutations and stamp-verification red at abb8d81f). Gate run 2026-09-26T07:35:32Z.178afb green; reviewer matches, no findings. Schema not exercised by this gate; the ajv step runs at sign-off.",
+        "descriptive": "A new phase's gate now has one answer: phaseGate.always comes first, every other build key follows in order, only phaseGate.exclude removes one, and an exclusion that leaves nothing is warned as 'phase gate runs no suite'."
       },
       "startedAt": "2026-09-26T05:18:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T07:40:58Z",
+      "verifiedBy": [
+        "pg1",
+        "pg2",
+        "pg3",
+        "pg4",
+        "pg5",
+        "mv48",
+        "mv49",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T07:35:32Z.178afb",
         "status": "passed",
         "at": "2026-09-26T07:35:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ddae7d861b84",
+        "at": "2026-09-26T07:40:58Z"
       }
     },
     {
       "id": "P78.3",
       "title": "A new phase's gate is always first, then every other key, minus exclude; a gate-only task with no test file left gets the always entries",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Derivations in plugins/audit/scripts/manifest/audit-task.py. (1) _phase_gate(args, assembled): after --gate-clear and --gate, the default is _manifest_phases.phase_gate_default(meta)['entries']: meta.phaseGate.always first, then every other buildCommands key in buildCommands order, minus meta.phaseGate.exclude. So always is an ORDER and never a narrowing, and exclude is the only declared way to drop a key. The basis comes from the same call: no phaseGate -> today's 'from meta.buildCommands' exactly, with the same entries in the same order; always only -> 'from meta.buildCommands, meta.phaseGate.always first'; with exclude -> '...; excluded by meta.phaseGate.exclude: <keys> - declared out of this phase's gate, and the sign-off run prints it too'; an empty result -> the empty-gate basis naming meta.phaseGate.exclude as its cause, with the validator's 'phase gate runs no suite' warning printed among the post-write warnings. (2) _task_gate(args, phase, assembled, add_paths, files), for a task whose tests.mode is gate-only ONLY: the files arm points the sibling spelling (_path_scoped_sibling + _repointed) only at the files _manifest_phases.is_suite_path accepts. When none is left, the gate is the always entries: meta.phaseGate.always when declared, else the sibling entries _repointed already copies through unchanged (shared buildCommands keys and entries naming no path), in their order; source word gate-only-no-suite and a sentence naming which of the two it took. Never the phase's wide testGate: that is the wide gate per attempt the validator already warns about. When that list is empty too the gate is empty and _empty_task_gate_note is what prints. tdd and regression tasks keep today's files arm, and --gate / --gate-clear still answer first. Reuse _path_scoped_sibling, _repointed, _empty_task_gate_note, _manifest_phases.is_suite_path; value and basis still come out of one derivation (_build_phase's rule). Red-first (dg18): a gate-only task in a phase whose sibling gate is 'vitest run src/a.test.ts', with files src/Button.tsx and README.md and meta.phaseGate.always [lint, typecheck], gets ['lint', 'typecheck'] and tests.gateBasis gate-only-no-suite. Mutations that must turn it red: return the phase testGate in that arm; drop the is_suite_path filter. Allow cases: the same task with src/Button.test.tsx among its files narrows to 'vitest run src/Button.test.tsx' with basis files; a regression task with only src/Button.tsx keeps today's gate; gb1/gb2 stay green. Red-first for (1), one case per arm. ALWAYS-ONLY: always [lint] over {test, lint, coverage} writes [lint, test, coverage] (mutation: write always alone -> red, because test and coverage vanish). EXCLUDE-TO-NOTHING: exclude naming every key and no always writes [], with a basis naming meta.phaseGate.exclude and the 'phase gate runs no suite' warning printed (mutation: ignore exclude -> red, because the gate is not empty). ABSENT phaseGate = TODAY: the written gate and basis equal what the code this phase starts from writes for the same plan, captured as a fixture (mutation: build the default from sorted keys -> red, because today's order is buildCommands order). House rules as in the repo.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -186,16 +204,21 @@
       "dependsOn": [
         "P78.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T07:40:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T08:07:32Z.b0e773",
+        "status": "passed",
+        "at": "2026-09-26T08:07:32Z"
+      }
     },
     {
       "id": "P78.4",
@@ -247,7 +270,7 @@
     {
       "id": "P78.5",
       "title": "A step records which counts reader recognised it, and a failing step records the suite files its runner named",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Constraint: a red row's steps[].failing holds CHECK NAMES, not suite files: for jest an assertion failure is stored as its bullet title alone (_jest_failure_name returns title), so the suite path is dropped. The failed-first fix-task gate, the derived gate's last-failed arm, the shadow recall and the selection-miss pass all need the failing SUITE files. Rule: a reader failing_suites(text) in run-test-gate.py returns (paths, basis): jest -> the paths on FAIL <path> headers (_JEST_SUITE_HEADER, FAIL only, ANSI stripped as jest_failures does); vitest -> the file part of 'FAIL <file> > ...' lines; pytest -> the path before :: on FAILED/ERROR lines; each path kept only when _manifest_phases.is_suite_path accepts it and it lies under no _VENDOR_DIRS segment; a runner whose failure lines name no file (mocha) or an unrecognised runner -> (None, a basis saying which), never an empty list that reads as nothing failed. observed_step sets failingSuites and failingSuitesBasis on a step that exited non-zero and carries no no-verdict outcome: a killed jest worker's FAIL header is not a failing test (jest_worker_signal), so a could-not-run step carries neither. The basis says 'named as failing' only when the paths came off the runner's own failure lines, the wording failing_lines uses, so a learner can refuse anything else. _evidence_io.py: add both keys to STEP_KEYS; bound the list by MAX_PATHS with the cut counted; redact each path through repo_relative_or_token as _paths does; add row_by_run(rows, run_id) beside latest_by_subject (the newest row by ts carrying that runId, or None) as the one lookup the later readers share. Red-first: test_run_test_gate.py feeds real-shaped jest, vitest and pytest failure output and asserts the suite files; a jest run whose only failures are killed workers carries no failingSuites (mutation: drop the outcome guard -> red); allow case: a passing step carries neither key (mutation: set it on every step -> red). test__evidence_io.py: row_for keeps the keys, cuts at MAX_PATHS with a count and tokenises an absolute path outside the project (mutation: skip the redaction -> red); row_by_run returns None for an unknown id and the newest by ts for a repeated one. SECOND OBSERVATION, THE 'suite-running' ANSWER: observed_step records, on EVERY step (passing ones too), suiteReader = the name summary_reader returns for its output (a _SUMMARY_READERS row: jest, vitest, mocha, pytest), or 'none' when it recognises no test runner's summary. A wrapper's line tally (_STEP_WORDS) is not a suite and records 'none'. 'none' is written rather than left absent so that a step recorded BEFORE this field (key absent) stays distinguishable as unknown. It is recorded because a run's text is not kept and measured cannot tell a test suite from a hook list. _evidence_io: suiteReader joins STEP_KEYS; suite_keys(rows) -> {running: step names with any suiteReader other than 'none', silent: names recorded only with 'none', unknown: names recorded only without the field} - the one ledger answer _manifest_phases.phase_gate_suite_gap takes. validate-manifest.py is the caller that holds the manifest path; its 'The one question validate() cannot be asked' block (main validate-manifest.py:118, the index_only_in_bodies precedent) adds the evidence arm. When meta.phaseGate.exclude is non-empty and phase_gate_suite_gap(manifest) returned nothing (so the certain arm has not already fired inside validate()), it calls it again with _evidence_io.suite_keys over the plan's ledger (_evidence_io.project_config_for, read_rows) and prints the warning returned, through the same _warning_groups collapse. An unreadable ledger is said, never read as 'no suite'. Red-first: a jest step records suiteReader jest and a pre-commit-shaped step records 'none' (mutation: derive it from measured -> red on the pre-commit step); suite_keys puts a key seen only in pre-field rows into unknown (mutation: treat absence as 'none' -> red); validate-manifest over a plan whose exclude leaves [lint], with a ledger where lint only ever recorded 'none', prints 'phase gate runs no suite as far as the ledger shows' (allow: a ledger where the left key recorded jest prints nothing).",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -255,7 +278,8 @@
         "plugins/audit/scripts/manifest/validate-manifest.py",
         "plugins/audit/tests/test_run_test_gate.py",
         "plugins/audit/tests/test__evidence_io.py",
-        "plugins/audit/tests/test_validate_manifest.py"
+        "plugins/audit/tests/test_validate_manifest.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -283,14 +307,14 @@
         "P78.1",
         "P78.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T07:40:58Z",
       "completedAt": null,
       "verifiedBy": []
     },

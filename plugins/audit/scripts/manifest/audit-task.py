@@ -2169,7 +2169,7 @@ def _repointed(entries, build, paths):
     return out
 
 
-def _task_gate(args, phase, assembled, add_paths, files):
+def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
     """`(gate, basis, source)` -- the new task's `tests.gate`, the sentence
     saying which of the three defaults produced it, and the ONE WORD that says
     the same thing to a rule.
@@ -2207,6 +2207,20 @@ def _task_gate(args, phase, assembled, add_paths, files):
     the only way it goes -- a false red is noticed the same day and a false green
     is never noticed at all. So the third default is reached with a reason naming
     what was missing, never with silence.
+
+    A GATE-ONLY TASK NARROWS ONLY TO A SUITE. Arm 2 above reads every kind of
+    `files` entry for a tdd or regression task, because `tests.add` already
+    proved the task creates a real test file -- but a gate-only task names no
+    case at all, so a source file among its `files` is not evidence the
+    project's suite-running command has anything of this task's to run. When
+    `mode` is `"gate-only"` and none of `files` is a suite path
+    (`_manifest_phases.is_suite_path`), narrowing to it would point the gate at
+    a command that runs nothing this task touched -- a green bought on work
+    nobody wrote. The gate is `meta.phaseGate.always` when the plan declares
+    one, else the sibling's own shared keys and path-less entries, carried
+    through exactly as `_repointed` already leaves them -- never the phase's
+    wide `testGate`, which is the wide gate an operator already gets warned
+    about running every attempt.
     """
     if args.gate:
         return list(args.gate), "from --gate", "declared"
@@ -2239,6 +2253,25 @@ def _task_gate(args, phase, assembled, add_paths, files):
                 "narrowed to this task's tests.add paths, in %s's spelling"
                 % (owner,), "tests.add")
     if files:
+        if mode == "gate-only":
+            suite_files = [p for p in files if _phases.is_suite_path(p)]
+            if suite_files:
+                return (_repointed(shape, build, suite_files),
+                        "narrowed to this task's files, in %s's spelling"
+                        % (owner,), "files")
+            always = _phases.phase_gate_default(
+                meta if isinstance(meta, dict) else {})["always"]
+            if always:
+                return (list(always),
+                        "meta.phaseGate.always -- this task's files name no "
+                        "suite path to narrow %s's gate at" % (owner,),
+                        "gate-only-no-suite")
+            passthrough = [e for e in shape
+                          if _is_shared_key(e, build) or not _gate_entry_paths(e)]
+            return (passthrough,
+                    "%s's gate entries that name no path, carried through -- "
+                    "this task's files name no suite path to narrow %s's gate "
+                    "at" % (owner, owner), "gate-only-no-suite")
         return (_repointed(shape, build, files),
                 "narrowed to this task's files, in %s's spelling" % (owner,),
                 "files")
@@ -2274,7 +2307,7 @@ def _build_task(task_id, title, args, phase, assembled):
     # gate needs was produced one line too late and thrown away.
     files = _union_paths(_split_csv(args.files), add_paths)
     gate, gate_basis, gate_source = _task_gate(args, phase, assembled,
-                                               add_paths, files)
+                                               add_paths, files, mode)
     task = {
         "id": task_id,
         "title": title,
@@ -4508,12 +4541,43 @@ def _phase_gate(args, assembled):
         return list(args.gate), "from --gate"
     meta = assembled.get("meta")
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
-    if isinstance(build, dict):
-        keys = [k for k in build.keys() if isinstance(k, str) and k.strip()]
-        if keys:
-            return keys, "from meta.buildCommands"
+    if not isinstance(build, dict):
+        return [], "the manifest declares no meta.buildCommands"
+    keys = [k for k in build.keys() if isinstance(k, str) and k.strip()]
+    if not keys:
         return [], "meta.buildCommands is empty"
-    return [], "the manifest declares no meta.buildCommands"
+    # `phase_gate_default` IS THE DERIVATION -- `always` is an ORDER and never a
+    # narrowing (an entry named in both `always` and `exclude` stays IN), and
+    # `exclude` is the only declared way to drop a buildCommands key. Asking it
+    # here rather than re-reading `meta.phaseGate` a second time is what keeps
+    # this resolver, the validator's shape warnings and the sign-off run from
+    # ever disagreeing about what "today's default" means.
+    default = _phases.phase_gate_default(meta if isinstance(meta, dict) else {})
+    entries, always, excluded = (default["entries"], default["always"],
+                                 default["excluded"])
+    if not entries:
+        # CERTAIN, EVEN WITH NO EVIDENCE: `exclude` removed every buildCommands
+        # key and `always` put none back, so there is nothing left to have run
+        # whatever a future ledger says. `phase_gate_suite_gap` names the same
+        # cause for the validator's own warning, printed among the post-write
+        # warnings a moment after this basis is written.
+        return [], ("meta.phaseGate.exclude drops every meta.buildCommands key "
+                   "(%s)%s -- the new phase's gate is empty"
+                   % (_output.some_of(excluded, render=repr),
+                      " and meta.phaseGate.always adds none back" if not always
+                      else ""))
+    if not always and not excluded:
+        # BYTE-IDENTICAL TO TODAY: no `meta.phaseGate` at all is `always` and
+        # `exclude` both empty, so `entries` is exactly `keys` in buildCommands
+        # order -- the sentence a phase without the field has always gotten.
+        return entries, "from meta.buildCommands"
+    if not excluded:
+        return entries, "from meta.buildCommands, meta.phaseGate.always first"
+    return entries, (
+        "from meta.buildCommands%s; excluded by meta.phaseGate.exclude: %s -- "
+        "declared out of this phase's gate, and the sign-off run prints it too"
+        % (", meta.phaseGate.always first" if always else "",
+           _output.some_of(excluded, render=repr)))
 
 
 def _build_phase(pid, title, args, gate):
