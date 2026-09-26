@@ -1432,6 +1432,18 @@ def is_interpreter(word):
     return bool(_ANY_INTERPRETER.match(_program_of(word)))
 
 
+def is_shell(word):
+    """Whether `word` names a shell program."""
+    return _program_of(word) in _SHELL_PROGRAMS
+
+
+def runs_own_program(words):
+    """Whether an interpreter's words already name the program it runs - a
+    script file, or `-c`/`-e` code - so what arrives on its stdin is input."""
+    return _plain_script_run(words) or any(
+        w in ("-c", "-e", "-E", "-p", "-pe", "-ne") for w in words[1:])
+
+
 def program_candidates(words):
     """(words past the prefix, the words that may be the program run).
 

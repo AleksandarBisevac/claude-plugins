@@ -1095,13 +1095,27 @@ def _interpreter_herestrings(text):
         words = _clause_words(_config.join_continuations(clause))
         if words is None:
             continue
+        # `python3<<<'...'` is one blank-split word; the operator inside it
+        # is still the operator.
+        split = []
+        for word in words:
+            cut = word.find("<<<")
+            split += [word[:cut], word[cut:]] if cut > 0 else [word]
+        words = split
         for at, word in enumerate(words):
             if not word.startswith("<<<"):
                 continue
             body = word[3:] or (words[at + 1] if at + 1 < len(words) else "")
-            _rest, readers = _config.program_candidates(words[:at])
-            if body and any(_config.is_interpreter(w) for w in readers):
-                out.append(body)
+            rest, readers = _config.program_candidates(words[:at])
+            runner = [w for w in readers if _config.is_interpreter(w)]
+            if not body or not runner:
+                continue
+            # An interpreter already running a script or `-c` code reads the
+            # here-string as its input, as the heredoc arm grades a body fed to
+            # a script run.
+            if _config.runs_own_program(rest[rest.index(runner[0]):]):
+                continue
+            out.append(body)
     return out
 
 

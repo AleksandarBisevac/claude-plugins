@@ -699,7 +699,50 @@ def _cases(check):
                  "...and a file named as a git hook is one, whatever directory "
                  "core.hooksPath names"),
                 ("gp43", "echo '" + _G + "' > \"$HOOK\"", "deny",
-                 "...and a target the reading cannot resolve may name one")):
+                 "...and a target the reading cannot resolve may name one"),
+                # Operators count only OUTSIDE quotes, and only a text emitter's
+                # arguments are what its stage prints.
+                ("gp44", 'git commit -m "never ' + _G + ' -> $HOOK output>$TMPDIR"',
+                 "allow", "a quoted `>` in a commit message is text, not a redirect"),
+                ("gp45", "git log --grep '" + _G + "' > \"$TMPDIR/hits.txt\"",
+                 "allow", "...and a read whose argument names the phrase prints "
+                 "the log, not its argument"),
+                ("gp46", "grep -n '" + _G + " drop' SECURITY.md > \"$TMPDIR/g.txt\"",
+                 "allow", "...a search, the same"),
+                ("gp47", "echo '" + _G + "' >| .git/hooks/pre-commit", "deny",
+                 "the clobber redirect is a redirect"),
+                ("gp48", "(echo '" + _G + "') | sh", "deny",
+                 "a group's output piped into a shell"),
+                ("gp49", "{ echo '" + _G + "'; } | bash", "deny",
+                 "...a brace group, the same"),
+                ("gp50", "echo '" + _G + "' | fish", "deny",
+                 "...any shell program, not only the POSIX family"),
+                ("gp51", "echo '" + _G + "' | $SHELL", "deny",
+                 "...and a program named by a variable may be one"),
+                ("gp52", "echo '" + _G + "' | source /dev/stdin", "deny",
+                 "...and sourcing stdin runs it"),
+                ("gp53", "echo '" + _G + "' > >(sh)", "deny",
+                 "a process substitution as the target runs what it is given"),
+                ("gp54", "echo '" + _G + "' > githooks/PRE-COMMIT", "deny",
+                 "a hook name is matched without regard to case"),
+                ("gp55", "echo '" + _G + "' > sub/.husky/h", "deny",
+                 "...and a hook manager's directory anywhere in the path"),
+                ("gp56", "echo '" + _G + "' > hooks/pre-*", "deny",
+                 "...and a glob in the target cannot be resolved"),
+                ("gp57", "echo '" + _G + "' | tee .git/hooks/pre-commit", "deny",
+                 "tee writes its input into the files it names"),
+                ("gp58", "echo '" + _G + "' | tee notes.md", "allow",
+                 "...while tee into a prose file is text"),
+                ("gp59", "echo 'the rule: never " + _G + " -> $HOOK'", "allow",
+                 "an emitter whose quoted text holds a `>` and an expansion "
+                 "writes nowhere"),
+                ("gp60", "(echo '" + _G + "'; true) | sh", "deny",
+                 "...and every stage of a piped group reaches the shell, not "
+                 "only its last"),
+                # A `case` read in command position only; the body is READ.
+                ("gs19", 'echo "$(echo worst case)"; echo stash | xargs git',
+                 "deny", "a bare word `case` in a substitution does not make "
+                 "the command unreadable, so a verb from stdin is still seen")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
@@ -924,12 +967,29 @@ def _cases(check):
                 ("gs17", 'echo "$(case x in x) git push --force origin main;; '
                  'esac)"', "deny", "...a force-push, the same way"),
                 ("gs18", 'echo "$(case x in x) date;; esac)"', "allow",
-                 "...while a case arm that runs no git is nothing to refuse")):
+                 "...while a case arm that runs no git is nothing to refuse"),
+                ("gs20", 'echo "$(case x in (x) ' + _G + ';; esac)"', "deny",
+                 "...and a pattern in its own parentheses reads the same")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
     finally:
         _harness.remove_tree(tmp)
+
+    # --- where a substitution ends -----------------------------------------------
+    # Only a `case` in command position is the keyword, and inside one a
+    # pattern's `)` is not the close.
+    _body = "echo worst case) tail"
+    check("se1 a bare word `case` leaves a substitution readable to its own `)`",
+          M._substitution_end(_body, 0) == _body.index(")"),
+          repr(M._substitution_end(_body, 0)))
+    _body = "case x in x) date;; esac) tail"
+    check("se2 ...while a keyword `case` carries the read past its patterns to "
+          "the `)` after `esac`", M._substitution_end(_body, 0)
+          == _body.index("esac)") + 4, repr(M._substitution_end(_body, 0)))
+    check("se3 ...and one with no `esac` never closes, which is unreadable",
+          M._substitution_end("case x in x) date", 0) is None,
+          repr(M._substitution_end("case x in x) date", 0)))
 
     # --- a git command is judged by the plan of the tree it runs in -----------
     # The recorded SHAs came from CLAUDE_PROJECT_DIR's manifest. A worktree's

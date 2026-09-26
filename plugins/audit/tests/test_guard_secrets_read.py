@@ -177,6 +177,13 @@ def _cases(check):
           bash("env python3 <<< \"print(open('.env').read())\""))
     _expect("b5h4 an innocent here-string to an interpreter allowed", "allow",
           bash("python3 <<< \"print(2+2)\""))
+    _expect("b5h6 a here-string to an interpreter already running a script is "
+          "that script's input", "allow",
+          bash("python3 tools/redact.py <<< \"print(open('.env').read())\""))
+    _expect("b5h7 ...and so is one to node running a script file", "allow",
+          bash("node tools/redact.mjs <<< \"require('fs').readFileSync('.env')\""))
+    _expect("b5h8 a here-string glued to the interpreter's name is read", "block",
+          bash("python3<<<\"print(open('.env').read())\""))
     _expect("b5h5 ...and code-shaped text in a here-string to a program that only "
           "transforms it is data", "allow",
           bash("tr a-z A-Z <<< \"print(open('.env').read())\""))

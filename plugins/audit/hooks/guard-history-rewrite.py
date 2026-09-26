@@ -399,36 +399,186 @@ _GIT_HOOK_NAMES = frozenset((
     "sendemail-validate", "fsmonitor-watchman", "p4-changelist",
     "p4-prepare-changelist", "p4-post-changelist", "p4-pre-submit",
     "post-index-change"))
+# The one kind of program whose arguments ARE what it prints. For any other
+# program an argument naming a git phrase is a search term, a message or a
+# path, and what reaches the far side is the program's own output.
+_TEXT_EMITTERS = ("echo", "printf")
+# Programs that run what arrives on their stdin, beside the shells.
+_STDIN_RUNNERS = ("eval", "source", ".")
 # Programs that run a file named as their argument.
-_FILE_RUNNERS = SHELLS + ("source", ".", "make")
+_FILE_RUNNERS = ("source", ".", "make")
+# Longest first, so `>>` is not read as two `>`.
+_OPERATORS = ("<<<", "&&", "||", ";;", ">>", ">|", ">&", "&>", "|&", "<<", "<&",
+              ";", "|", "&", ">", "<", "(", ")", "\n")
+_REDIRECTS = (">", ">>", ">|", "&>", ">&")
+_GLOB = re.compile(r"[*?\[]")
 
 
-def _stages(pieces):
-    """[{"words", "piped", "targets"}] - one entry per simple command.
+def _op_tokens(text):
+    """[(text, is_operator)] for `text`, or None when a quote never closes.
 
-    A redirect operator does not end its command here: `echo x > f` is one
-    stage whose output target is `f`. `piped` says the stage's output is the
-    next stage's input."""
-    out, cur, targets, want_target = [], [], [], False
-    for piece, sep in pieces:
-        if not sep:
-            if want_target:
-                targets.append(piece)
-                want_target = False
+    OPERATORS COUNT ONLY OUTSIDE QUOTES. The lexer `git_calls` shares splits a
+    separator out of a token wherever it sits, which is the conservative reading
+    for finding a git word - and the wrong one for deciding where a stage's
+    output goes, because a `>` inside a commit message is text. A substitution
+    or a backquote is kept whole inside its word."""
+    out, cur, quote, i, n, has = [], [], None, 0, len(text), False
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
             else:
-                cur.append(piece)
+                cur.append(ch)
+            i += 1
             continue
-        if ">" in piece and "|" not in piece and ";" not in piece:
-            want_target = not piece.endswith("&")
+        if ch == "\\" and i + 1 < n:
+            if text[i + 1] != "\n":
+                cur.append(text[i + 1])
+                has = True
+            i += 2
             continue
-        if "<" in piece and not set(piece) - set("<"):
+        if text.startswith("$(", i):
+            j = _substitution_end(text, i + 2)
+            if j is None:
+                return None
+            cur.append(text[i:j + 1])
+            has = True
+            i = j + 1
             continue
-        piped = "|" in piece and "||" not in piece
-        out.append({"words": cur, "piped": piped, "targets": targets})
-        cur, targets, want_target = [], [], False
-    if cur or targets:
-        out.append({"words": cur, "piped": False, "targets": targets})
+        if ch == "`":
+            j = text.find("`", i + 1)
+            if j < 0:
+                return None
+            cur.append(text[i:j + 1])
+            has = True
+            i = j + 1
+            continue
+        if quote == '"':
+            if ch == '"':
+                quote = None
+            else:
+                cur.append(ch)
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            has = True
+            i += 1
+            continue
+        if ch in " \t\r":
+            if has:
+                out.append(("".join(cur), False))
+                cur, has = [], False
+            i += 1
+            continue
+        op = next((o for o in _OPERATORS if text.startswith(o, i)), None)
+        if op:
+            if has:
+                out.append(("".join(cur), False))
+                cur, has = [], False
+            out.append((op, True))
+            i += len(op)
+            continue
+        cur.append(ch)
+        has = True
+        i += 1
+    if quote:
+        return None
+    if has:
+        out.append(("".join(cur), False))
     return out
+
+
+def _stages(tokens):
+    """[{"words", "targets", "to"}] - one entry per simple command.
+
+    `targets` are the files the stage's output is redirected into (a process
+    substitution is recorded as the target `>(`), and `to` is the index of the
+    stage its output is piped into, or None. A group's (`( ... )`, `{ ...; }`)
+    pipe or redirect applies to every stage inside it."""
+    out = [{"words": [], "targets": [], "to": None}]
+    groups, closed = [], None
+    at = 0
+    while at < len(tokens):
+        text, is_op = tokens[at]
+        cur = out[-1]
+        at += 1
+        if not is_op and text == "{" and not cur["words"]:
+            groups.append(len(out) - 1)
+            continue
+        if not is_op and text == "}" and not cur["words"] and groups:
+            closed = (groups.pop(), len(out) - 1)
+            continue
+        if not is_op:
+            cur["words"].append(text)
+            closed = None
+            continue
+        if text == "(":
+            if cur["words"] or cur["targets"]:
+                out.append({"words": [], "targets": [], "to": None})
+            groups.append(len(out) - 1)
+            continue
+        if text == ")":
+            if groups:
+                closed = (groups.pop(), len(out) - 1)
+            continue
+        members = range(closed[0], closed[1] + 1) if closed else [len(out) - 1]
+        if text in _REDIRECTS:
+            nxt = tokens[at] if at < len(tokens) else None
+            if nxt and nxt == ("(", True):
+                target = ">("
+            elif nxt and not nxt[1]:
+                target = nxt[0]
+                at += 1
+            else:
+                continue
+            if text == ">&" and target.isdigit():
+                continue
+            for m in members:
+                out[m]["targets"].append(target)
+            continue
+        if text in ("<", "<<", "<<<", "<&"):
+            if at < len(tokens) and not tokens[at][1]:
+                at += 1
+            continue
+        if text in ("|", "|&"):
+            for m in members:
+                out[m]["to"] = len(out)
+        out.append({"words": [], "targets": [], "to": None})
+        closed = None
+    return out
+
+
+def _prints_phrases(stage):
+    """The words a text-emitter stage prints, or [] for any other program."""
+    rest, candidates = _config.program_candidates(stage["words"])
+    for word in candidates:
+        if program_name(word) in _TEXT_EMITTERS:
+            return rest[rest.index(word) + 1:] if word in rest else []
+    return []
+
+
+def _runs_input(stage):
+    """Whether the stage runs what arrives on its stdin."""
+    rest, candidates = _config.program_candidates(stage["words"])
+    for word in candidates:
+        name = program_name(word)
+        if _config.is_shell(word) or "$" in word:
+            return True
+        if name in _STDIN_RUNNERS:
+            args = rest[rest.index(word) + 1:] if word in rest else []
+            return not args or args[0] in ("/dev/stdin", "-")
+    return False
+
+
+def _tee_targets(stage):
+    """The files a `tee` stage writes its input into."""
+    rest, candidates = _config.program_candidates(stage["words"])
+    for word in candidates:
+        if program_name(word) == "tee" and word in rest:
+            return [w for w in rest[rest.index(word) + 1:] if not w.startswith("-")]
+    return []
 
 
 def _runs_file(stage, target):
@@ -444,73 +594,104 @@ def _runs_file(stage, target):
     if "make" in programs and os.path.basename(plain).lower() in (
             "makefile", "gnumakefile"):
         return True
-    return any(p in _FILE_RUNNERS for p in programs) and any(
+    return any(_config.is_shell(w) or program_name(w) in _FILE_RUNNERS
+               for w in candidates) and any(
         w in (target, plain, "./" + plain) for w in rest[1:])
 
 
+def _target_runs(target, stages, after):
+    """Whether writing into `target` is running what was written."""
+    if target == ">(" or "$" in target or "`" in target or _GLOB.search(target):
+        return True
+    norm = "/" + target.replace("\\", "/").lower()
+    if "/.git/hooks/" in norm or "/.husky/" in norm \
+            or os.path.basename(norm) in _GIT_HOOK_NAMES:
+        return True
+    return any(_runs_file(later, target) for later in stages[after + 1:])
+
+
 def _output_runs(stages, at):
-    """Whether what stage `at` prints is then RUN: piped into a shell, written
-    into a git hook, written to a path this reading cannot resolve, or written
-    to a file a later stage of the same command runs."""
+    """Whether what stage `at` prints is then RUN: piped into a program that
+    runs its stdin, written (by a redirect or through `tee`) into a git hook,
+    into a target the reading cannot resolve, or into a file a later stage of
+    the same command runs."""
     stage = stages[at]
-    if stage["piped"] and at + 1 < len(stages):
-        _rest, candidates = _config.program_candidates(stages[at + 1]["words"])
-        if any(program_name(w) in SHELLS for w in candidates):
+    targets = list(stage["targets"])
+    to = stage["to"]
+    while to is not None and to < len(stages):
+        receiver = stages[to]
+        if _runs_input(receiver):
             return True
-    for target in stage["targets"]:
-        if "$" in target or "`" in target:
-            return True
-        norm = target.replace("\\", "/")
-        if "/.git/hooks/" in "/" + norm or norm.startswith(".husky/") \
-                or os.path.basename(norm) in _GIT_HOOK_NAMES:
-            return True
-        if any(_runs_file(later, target) for later in stages[at + 1:]):
-            return True
-    return False
+        tees = _tee_targets(receiver)
+        if not tees:
+            break
+        targets += tees + receiver["targets"]
+        to = receiver["to"]
+    return any(_target_runs(t, stages, at) for t in targets)
 
 
 def _substitution_end(text, start):
     """The index of the `)` that closes a `$(` whose body starts at `start`, or
     None when it never closes. Parentheses count only outside quotes, and a
     backslash escapes the character after it, which is how the shell reads the
-    body too."""
+    body too.
+
+    A `case` PATTERN'S `)` IS NOT A CLOSE. While a `case` opened in command
+    position has not met its `esac`, a `)` at the body's own level ends a
+    pattern, so the body is read to its real end rather than cut at the first
+    arm. A `case` that is an ordinary word (`echo worst case`) is not the
+    keyword: only a word in command position counts."""
     depth, quote, j, n = 1, None, start, len(text)
+    cases, word, word_cmd, cmd_pos = 0, [], False, True
     while j < n:
         ch = text[j]
         if quote == "'":
             if ch == "'":
                 quote = None
         elif ch == "\\":
+            if not word:
+                word_cmd = cmd_pos
+            word.append(ch)
             j += 1
         elif quote == '"':
             if ch == '"':
                 quote = None
         elif ch in ("'", '"'):
+            if not word:
+                word_cmd = cmd_pos
+            word.append(ch)
             quote = ch
-        elif ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                return None if _open_case(text[start:j]) else j
+        elif ch in " \t\n;&|()":
+            if word:
+                done = "".join(word)
+                if word_cmd and done == "case":
+                    cases += 1
+                elif word_cmd and done == "esac" and cases:
+                    cases -= 1
+                cmd_pos = done in _OPENS_COMMAND
+                word = []
+            if ch in "\n;&|(":
+                cmd_pos = True
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                if cases and depth == 1:
+                    cmd_pos = True
+                else:
+                    depth -= 1
+                    if depth == 0:
+                        return j
+        else:
+            if not word:
+                word_cmd = cmd_pos
+            word.append(ch)
         j += 1
     return None
 
 
-_QUOTED_SPAN = re.compile(r"'[^']*'|\"(?:[^\"\\\\]|\\\\.)*\"")
-_CASE_WORD = re.compile(r"(?<![\w-])(case|esac)(?![\w-])")
-
-
-def _open_case(body):
-    """Whether `body` holds a `case` with no `esac` after it - which means the
-    `)` that ended it was a case pattern's, not the substitution's close, and
-    the body as cut is not the body the shell runs. Words inside quotes are not
-    keywords. The caller treats that as unreadable, so the command goes to the
-    raw-text reading rather than to a reading of the wrong span."""
-    depth = 0
-    for word in _CASE_WORD.findall(_QUOTED_SPAN.sub(" ", body)):
-        depth += 1 if word == "case" else -1 if depth else 0
-    return depth > 0
+# Reserved words after which the next word is again in command position.
+_OPENS_COMMAND = ("then", "do", "else", "elif", "if", "while", "until", "!",
+                  "{", "time")
 
 
 def git_invocations(command, depth=0):
@@ -570,14 +751,19 @@ def git_calls(command, depth=0):
                 return None
             out.extend(nested)
     # A git command QUOTED AS ONE PHRASE is one word to the lexer, and it is a
-    # command wherever the stage's output is run: each argument of such a stage
-    # is read as a command line of its own, the way a shell's -c argument is.
+    # command wherever a text emitter's output is run: each word the emitter
+    # prints is read as a command line of its own, the way a shell's -c
+    # argument is. The stages are read by their own lexer, which sees an
+    # operator only outside quotes.
     if depth < _MAX_NEST:
-        stages = _stages(pieces)
+        tokens = _op_tokens(_config.join_continuations(text))
+        if tokens is None:
+            return None
+        stages = _stages(tokens)
         for at, stage in enumerate(stages):
             if not _output_runs(stages, at):
                 continue
-            for word in stage["words"][1:]:
+            for word in _prints_phrases(stage):
                 nested = git_calls(word, depth + 1)
                 if nested is None:
                     return None

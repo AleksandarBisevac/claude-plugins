@@ -195,8 +195,8 @@ An exemption for the arguments of text emitters was tried and removed — each f
 opened another way through (a later pipe, a comment ending in a backslash, a file run
 by name or by git itself), and a fail-loud guard keeps only what it can prove. Write
 the rule into a file with an editor. A shell's `-c` argument, `eval`'s argument, a
-here-string fed to a shell or an interpreter as the first word of its command
-(`sh <<<'…'`), and a `$(…)` or backquote — including one inside double quotes, which
+here-string fed to a shell or an interpreter, found past a wrapper that runs its
+argument (`sh <<<'…'`, `env sh <<<'…'`), and a `$(…)` or backquote — including one inside double quotes, which
 the lexer returns as a single word, with quotes tracked inside it — are read as
 commands of their own; a substitution this cannot read makes the whole command
 unreadable, which sends it to the raw-text patterns rather than to a reading that
@@ -223,7 +223,10 @@ allow-list of it missed a spelling that runs the body. So `cat <<'EOF' | python3
 x.py -` naming these rules in its body is refused; feed the heredoc to the script
 directly instead. A heredoc line that continues with a backslash is graded as shell.
 The rest of the heredoc's own line after the marker is command text and is graded,
-and a here-string (`<<<`) is not read as a heredoc. **An unquoted delimiter keeps the
+and a here-string (`<<<`) is not read as a heredoc - in `guard-secrets-read` a
+here-string handed to an interpreter that runs no program of its own is graded as
+inline evaluation, the same capability as `-c`, while one fed to a script run is that
+script's input. **An unquoted delimiter keeps the
 shell in the body**: with `<<EOF` the shell performs `$(…)` and backquote
 substitution inside the body before any consumer reads it, so such a body is graded
 whatever its destination. And a command that cannot be tokenized at all (an
@@ -239,12 +242,15 @@ base refused:
 - an interpreter program that starts git from inside its own code (a Python or
   Node body that runs a subprocess) is read as code, not searched for git — the
   guard reads shell text, and a program's own calls are the general residual above;
-- a git command quoted as one phrase is read as a command only where the stage
-  printing it has its output run - piped into a shell, written into a file named
-  as a git hook or under `.git/hooks/` or `.husky/`, written to a target the
-  reading cannot resolve, or written to a file a later stage of the same command
-  runs. A file run by a LATER command, or a hook directory under another name
-  holding a file not named as a hook, is not followed.
+- a git command quoted as one phrase is read as a command only where a text
+  emitter (`echo`, `printf`) prints it and that output is run - piped into a
+  program that runs its stdin, written by a redirect or through `tee` into a file
+  named as a git hook or under `.git/hooks/` or `.husky/`, into a target the reading
+  cannot resolve (an expansion, a glob, a process substitution), or into a file a
+  later stage of the same command runs. Not followed: a file run by a LATER command,
+  a hook directory under another name holding a file not named as a hook, a file
+  written by another program (`dd`, `cp`, an editor), and a phrase assembled at run
+  time (a `printf` format, a variable).
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's
