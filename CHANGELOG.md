@@ -308,6 +308,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   and goes to the raw-text reading. A git command quoted as one phrase is read as a command where
   the stage printing it has its output run - piped into a shell, written into a git hook, written to
   a target the reading cannot resolve, or written to a file the same command runs.
+- **`guard-secrets-read` reads a secret path split by a line continuation, and a here-string fed to
+  an interpreter.** Its shell-read arm now joins continuations before it reads a verb and a path, as
+  the shell does, and a here-string handed to python or node - behind a wrapper too - is graded by
+  the inline-eval arm, the same capability as `-c`, with a refusal that names the here-string.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path

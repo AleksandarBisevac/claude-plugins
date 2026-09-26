@@ -265,6 +265,8 @@ _EVAL_SHAPE = {
     "-c": "an inline-eval one-liner (python -c / node -e / ruby/perl -e …)",
     "heredoc": ("a heredoc fed to an interpreter's stdin (python3 - <<EOF …), "
                 "which is the same capability as python -c and is graded as one"),
+    "here-string": ("a here-string fed to an interpreter (python3 <<< '…'), "
+                    "which is the same capability as python -c and is graded as one"),
 }
 
 # The write CALL and the path it writes, captured TOGETHER. The old
@@ -1075,7 +1077,32 @@ def _shell_text(cmd):
     every refusal this view gives up is made by a stricter rule one branch down.
     """
     text, _code, shell = _config.split_heredocs(cmd)
-    return "\n".join([text] + shell)
+    # The shell removes a backslash-newline before it reads a word, so a path
+    # or a verb split by one is read joined, as it is run.
+    return "\n".join(_config.join_continuations(part) for part in [text] + shell)
+
+
+def _interpreter_herestrings(text):
+    """The words fed by `<<<` to an interpreter, one per here-string.
+
+    A here-string handed to python or node is the program it runs - the same
+    capability as `-c` - so it is graded by the inline-eval arm. The reader is
+    found past a wrapper that runs its argument, the way a heredoc head is. A
+    clause that will not tokenise contributes nothing here; the shell-text arms
+    above have already read its raw text."""
+    out = []
+    for clause in _clauses(text):
+        words = _clause_words(_config.join_continuations(clause))
+        if words is None:
+            continue
+        for at, word in enumerate(words):
+            if not word.startswith("<<<"):
+                continue
+            body = word[3:] or (words[at + 1] if at + 1 < len(words) else "")
+            _rest, readers = _config.program_candidates(words[:at])
+            if body and any(_config.is_interpreter(w) for w in readers):
+                out.append(body)
+    return out
 
 
 def _runnable_text(cmd):
@@ -2020,6 +2047,8 @@ def _decide_core(data, root, cfg):
         # reputation for firing at random. Reported from a live run, and hit three
         # times in one session here.
         graded += [(b, True, "heredoc") for b in _code_bodies + _shell_bodies]
+        graded += [(b, True, "here-string") for b in
+                   _interpreter_herestrings(_text)]
         for cl, is_eval, how in graded:
             basis = _eval_reads_a_secret(cl, extras) if is_eval else None
             if basis:

@@ -158,6 +158,28 @@ def _cases(check):
           bash("node -e \"console.log(require('fs').readFileSync('.env','utf8'))\""))
     _expect("b5 ruby -e File.read(.env) blocked", "block",
           bash("ruby -e 'puts File.read(\".env\")'"))
+    # A line continuation is removed before the shell reads a word, so a secret
+    # path split by one is still that path.
+    _bsnl = "\\" + "\n"
+    _expect("b5j1 a secret path split by a line continuation is the path", "block",
+          bash("cat .e" + _bsnl + "nv"))
+    _expect("b5j2 ...and so is a read verb split by one", "block",
+          bash("ca" + _bsnl + "t .env"))
+    _expect("b5j3 ...while a continuation in an ordinary listing is nothing",
+          "allow", bash("ls " + _bsnl + " -la"))
+    # A here-string fed to an interpreter is its program, the same capability as
+    # -c/-e; fed to a program that only reads it, it is data.
+    _expect("b5h1 python3 reading a secret through a here-string blocked", "block",
+          bash("python3 <<< \"print(open('.env').read())\""))
+    _expect("b5h2 ...node, the same way", "block",
+          bash("node <<<\"console.log(require('fs').readFileSync('.env','utf8'))\""))
+    _expect("b5h3 ...an interpreter behind a wrapper, the same way", "block",
+          bash("env python3 <<< \"print(open('.env').read())\""))
+    _expect("b5h4 an innocent here-string to an interpreter allowed", "allow",
+          bash("python3 <<< \"print(2+2)\""))
+    _expect("b5h5 ...and code-shaped text in a here-string to a program that only "
+          "transforms it is data", "allow",
+          bash("tr a-z A-Z <<< \"print(open('.env').read())\""))
     _expect("b7 python3 -c read p12 blocked", "block",
           bash("python3 -c \"open('cert.p12','rb').read()\""))
     _expect("b8 python3 -c innocent allowed", "allow", bash("python3 -c \"print(2+2)\""))

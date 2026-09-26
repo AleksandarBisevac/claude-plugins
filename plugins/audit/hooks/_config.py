@@ -1427,6 +1427,11 @@ def _last_command(text):
     return re.split(r"[;&|(\n]", text)[-1].split()
 
 
+def is_interpreter(word):
+    """Whether `word` names an interpreter that runs a program it is handed."""
+    return bool(_ANY_INTERPRETER.match(_program_of(word)))
+
+
 def program_candidates(words):
     """(words past the prefix, the words that may be the program run).
 

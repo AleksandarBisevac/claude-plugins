@@ -244,10 +244,7 @@ base refused:
   as a git hook or under `.git/hooks/` or `.husky/`, written to a target the
   reading cannot resolve, or written to a file a later stage of the same command
   runs. A file run by a LATER command, or a hook directory under another name
-  holding a file not named as a hook, is not followed;
-- the secret-read arm of `guard-secrets-read` does not join line continuations
-  before reading a path, and a here-string fed to an interpreter is not graded as
-  inline evaluation there.
+  holding a file not named as a hook, is not followed.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's
