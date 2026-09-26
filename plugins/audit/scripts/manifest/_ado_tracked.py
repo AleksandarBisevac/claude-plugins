@@ -200,7 +200,7 @@ def declaration_findings(item, where):
         return (findings, warnings)
     _decl, problem = declared(item)
     if problem:
-        findings.append("%s: %s" % (where, problem.split(": ", 1)[-1]))
+        findings.append(_output.finding("tracked.declaration_findings.value", "%s: %s" % (where, problem.split(": ", 1)[-1])))
     return (findings, warnings)
 
 

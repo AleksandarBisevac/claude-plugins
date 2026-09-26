@@ -191,6 +191,37 @@ def some_of(items, budget=None, sep=", ", render=None):
     return sep.join(shown)
 
 
+# --- a finding and the rule that raised it -------------------------------------
+# A validator finding is a SENTENCE to every reader that prints, joins, sorts or
+# compares it, and it must stay one: the CLI, the panel, the gate and the suites all
+# handle findings as strings. What the sentence cannot carry is WHICH RULE raised
+# it, and a reader matching findings across runs - the invariant baseline - needs
+# exactly that, because a sentence is reworded and a vocabulary it quotes grows.
+#
+# SO A FINDING IS A `str` WITH ONE MORE ATTRIBUTE, and that is the reason this is a
+# class where the tree prefers functions: a subclass is the one shape every existing
+# caller keeps reading unchanged, while the code travels with the value into the
+# one reader that asks for it. Anything that rebuilds the text - concatenation,
+# `%`, `.strip()` - gets a plain `str` back and the code is gone, which
+# `finding_code` answers as None rather than guessing.
+class Finding(str):
+    """A validator finding's sentence, carrying `code`: the rule that raised it."""
+
+    code = None
+
+
+def finding(code, text):
+    """The finding `text`, raised by the rule `code` - the one way one is built."""
+    out = Finding(text)
+    out.code = str(code)
+    return out
+
+
+def finding_code(line):
+    """The rule code a finding carries, or None for a plain string."""
+    return getattr(line, "code", None)
+
+
 # --- finding the files to check ------------------------------------------------
 # The directory prefix `test__loader.py` writes its depth probes into. A PREFIX,
 # so `_loader_probe_a` and `_loader_probe_b` are one fact rather than two.

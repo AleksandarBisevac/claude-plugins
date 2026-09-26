@@ -176,6 +176,55 @@
         "file": "commit",
         "issue": "The first review's R13 recurs in the fix. 'each red on the previous commit ... the probe reddens every row', 'full selftest sweep, ruff, vermin, validate', 'the recipe run live in two worktrees ... the second refused' and 'two baseline reads twenty seconds apart, byte-identical' name no command, no exit code and no stamp-verification stamp. The recipe claim cannot be squared with finding 1 unless ",
         "resolution": "fix task P75.3-j5h"
+      },
+      {
+        "id": "P75-T1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "issue": "The validator finding's key is still built from the sentence, and it is neither stable nor distinct. I ran finding_subject over real validate() output on a mutated examples/acme-store manifest. (a) The quoted vocabulary the message lists becomes part of the key: `task P0.1: status 'bogus' not in ['pending', 'in_progress', 'blocked', 'done', 'cancelled']` gives `task P0.1|bogus|pending|in_progress|",
+        "resolution": "fix task P75.4-j5h"
+      },
+      {
+        "id": "P75-T2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "clone_id is sha256(realpath(git common dir))[:16], so it identifies a PATH, not a clone. It fails three ways. (a) The clone MOVES: every local entry written before the move carries the old digest. From then on it is set aside with NOT_COMPARED_LOCAL, 'read from another clone's own evidence ... which this clone does not have', which is false because this is that clone and it has the reflog. It can ",
+        "resolution": "fix task P75.4-j5h"
+      },
+      {
+        "id": "P75-T3",
+        "severity": "med",
+        "file": "plugins/audit/tests/test__refs.py",
+        "issue": "NOT VERIFIED, predicted from reading. The sweep runs this suite on windows-latest, and the commit's evidence (claim 3) is a local run only. There, shutil.which finds Git's MSYS `sh`/`bash`, which test_py_launch.py already drives. Under those shells `$$` is the MSYS pid, not a Windows pid. The recipe records it as `--pid $$`, and judge() (_locks.py:251-257) probes it with OpenProcess on this host. ",
+        "resolution": "fix task P75.4-j5h"
+      },
+      {
+        "id": "P75-T4",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__refs.py",
+        "issue": "A missing shell is reported with a bare `print(\"SKIP lr %s (not installed)\")` + `continue`. The repo's own `_harness.skip(check, label, mechanism, absent)` exists so that a skip is a graded case, and this bypasses it. A green run on a host without zsh therefore looks the same, in the case tally, as one that exercised zsh, and zsh is the whole point of the fix. Whether ubuntu-latest has zsh was not",
+        "resolution": "fix task P75.4-j5h"
+      },
+      {
+        "id": "P75-T5",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__refs.py",
+        "issue": "The test depends on timing and is not fully hermetic. The holder's run is `sleep 3`, so the second recipe's whole python start-up and acquire must finish inside that fixed window. Under a loaded parallel sweep, losing the race gives second=0: a flaky red, not a silent pass. It also adds at least 9 s of serial wall clock (3 s sleep x 3 shells, from reading) to test__refs. `env = dict(os.environ, ..",
+        "resolution": "fix task P75.4-j5h"
+      },
+      {
+        "id": "P75-T6",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__invariants.py",
+        "issue": "ik6 passes when it finds nothing. `bare == []` is asserted with no count of the sites it visited, so renaming the local `breaches` (the only receiver it recognises) would leave it green having inspected no site. Its reach is limited to one naming convention: `breaches.append/extend` on a Name literally called `breaches`, and `result()`'s third POSITIONAL argument. `breaches += [...]`, `result(...,",
+        "resolution": "fix task P75.4-j5h"
+      },
+      {
+        "id": "P75-T7",
+        "severity": "low",
+        "file": "commit",
+        "issue": "R9 is only partly closed. The claims now name commands and exit codes, which R9 asked for. They still carry no `stamp-verification.py` stamp, which R9 also asked for, and the tree is shared with sibling phases. Claim 2's `probe/mutations.py --root W` does not say what W was.",
+        "resolution": "fix task P75.4-j5h"
       }
     ]
   },
@@ -364,6 +413,72 @@
         "test__invariants ik6",
         "test__locks u12"
       ]
+    },
+    {
+      "id": "P75.4-j5h",
+      "title": "Final-review findings: validator findings carry a stable code the baseline keys on, a clone has a real identity, and the recipe test is hermetic",
+      "status": "in_progress",
+      "description": "Final-pass review findings. Orchestrator decisions: (R1) the structurally correct key, deferred once as a refactor: every validator finding carries a stable CODE naming its rule, emitted beside the sentence by one helper, and manifest-revalidated keys on (code, locus, ids) with quoted enumerations excluded - a lint fails any finding site without a code; (R2) the clone identity is a random id written once in the git common dir and part of a local entry's key; (R3) Windows cannot be run from here and CI needs a push that is not authorised, so the recipe is documented as POSIX-shell and its test skips on Windows through the harness with that reason; (R4-R6) skips recorded as harness skips, a sentinel instead of a sleep, ZDOTDIR/BASH_ENV scrubbed, the AST case counts the sites it visited and reaches every append shape; (R7) the report carries the commands, exit codes and the tree.\nR1 (med) plugins/audit/scripts/manifest/_manifest_rules.py:318-342 (finding_subject); plugins/audit/scripts/governance/_invariants.py:1035-1044 (_validator_subject), REWRITE_RULE: The validator finding's key is still built from the sentence, and it is neither stable nor distinct. I ran finding_subject over real validate() output on a mutated examples/acme-store manifest. (a) The quoted vocabulary the message lists becomes part of the key: `task P0.1: status 'bogus' not in ['pending', 'in_progress', 'blocked', 'done', 'cancelled']` gives `task P0.1|bogus|pending|in_progress|blocked|done|cancelled`, and a risk finding gives `task P0.1|extreme|low|med|high`. Adding one status or risk value to the vocabulary is a validator change, not a change to the finding, yet it re-keys every baselined entry of that shape. They are then reported as NEW, the old entries as unmatched, and explain_unmatched says 'it was repaired'. That is the R3 failure mode, now reached through the enum list instead of the wording. (b) The rule is dropped. `task P0.1: blockedBy entry must be a string id, got 5` reduces to the bare locus `task P0.1`, and `phase P0: status 'done' but 1 task(s) are not finished (P0.1)` to `phase P0|done`. Any other finding with the same locus and the same quoted ids at the same full SHA gets the same key. Because the baseline matches on the key, a finding that a NEW validator rule raises against an old commit is absorbed as 'held by the baseline' whenever it shares locus and ids with a baselined one. That is a false green. REWRITE_RULE says 'rewording one matches too, while renaming its locus or ids does not'. It does not mention either case. ik4 uses a reworded message whose quoted fragments are identical, so it cannot see either one. -> Drop list reprs (`[...]`) from `rest` before extracting ids, so an allowed-values enumeration never enters the key. Add a rule token that survives rewording: the field word right after the locus (`status`, `risk`, `blockedBy`, `file`, `missing`), or better, a code that validate() emits beside each finding. Add cases: a status finding keys the same before and after a value is appended to the allowed list, and two findings on one locus from different rules key differently.\nR2 (med) plugins/audit/scripts/governance/_invariants.py:1486-1495 (clone_id), :1510-1511 (baseline_key), :1597-1600 (compare_baseline): clone_id is sha256(realpath(git common dir))[:16], so it identifies a PATH, not a clone. It fails three ways. (a) The clone MOVES: every local entry written before the move carries the old digest. From then on it is set aside with NOT_COMPARED_LOCAL, 'read from another clone's own evidence ... which this clone does not have', which is false because this is that clone and it has the reflog. It can never go stale, and write_baseline removes only `unmatched`, so it is never removed. That is the accumulation R5 asked to end, for any clone that has been moved or renamed. (b) Two clones on DIFFERENT machines at the same absolute path share the id. Devcontainers and Codespaces use `/workspaces/<repo>`, CI uses `/home/runner/work/<r>/<r>`, and same-username layouts do the same. So clone B compares clone A's reflog-, stash- or ledger-derived entry as its own, reports it as 'no longer matching ... it was repaired', and the next --write-baseline drops it. That is the false repair claim NOT_COMPARED_LOCAL exists to prevent. The docstring's 'two clones of one repository do not [share the id]' is untrue there. (c) `clone` is not part of baseline_key. Two clones' local entries with the same subject (e.g. `stash <same message>`, sha None) collapse into one row, and write_baseline re-stamps that row to whichever clone wrote last. -> Make the id a random token persisted in the common dir: write `uuid4().hex` once, atomically, beside `audit-locks/`, the first time a baseline is written, and read it thereafter. Treat an absent token as None, which already sets every local entry aside. The token moves with the clone and differs across machines, and like the digest it carries no path. Include `clone` in the key of local entries. Add cases: the same clone read from a new path still compares its own entries, and two clones at one path do not.\nR3 (med) plugins/audit/tests/test__refs.py:3697-3764 (_lock_recipe_cases), .github/workflows/ci.yml:21-23 (selftests matrix includes windows-latest): NOT VERIFIED, predicted from reading. The sweep runs this suite on windows-latest, and the commit's evidence (claim 3) is a local run only. There, shutil.which finds Git's MSYS `sh`/`bash`, which test_py_launch.py already drives. Under those shells `$$` is the MSYS pid, not a Windows pid. The recipe records it as `--pid $$`, and judge() (_locks.py:251-257) probes it with OpenProcess on this host. So the second acquire most likely sees the holder as gone and exits 4, not 3, or it sees an unrelated live process. Separately, a Windows Python install may not provide `python3` on the MSYS PATH, which gives exit 127. Either way lr2 goes red on the Windows leg. It is also a real limit of the recipe for Git Bash users on Windows, which worktree.md's 'runs unchanged under sh, bash and zsh' does not state. -> Before this lands, run the Windows leg with workflow_dispatch on this SHA. If it goes red, either make the recipe's pid portable (`[ -r /proc/$$/winpid ] && pid=$(cat /proc/$$/winpid) || pid=$$`), or state in worktree.md that it is POSIX-only and record the Windows case with `_harness.skip`, with `absent` read from the mechanism (MSYS `/proc/$$/winpid` present), not from `sys.platform`.\nR4 (low) plugins/audit/tests/test__refs.py:3713-3714 (git-absent return), :3738-3740 (shell SKIP), CHANGELOG.md:123 ('a test runs it under each'): A missing shell is reported with a bare `print(\"SKIP lr %s (not installed)\")` + `continue`. The repo's own `_harness.skip(check, label, mechanism, absent)` exists so that a skip is a graded case, and this bypasses it. A green run on a host without zsh therefore looks the same, in the case tally, as one that exercised zsh, and zsh is the whole point of the fix. Whether ubuntu-latest has zsh was not checked. A missing git returns with NO line at all, so lr2 and lr3 silently vanish. CHANGELOG's 'runs under sh, bash and zsh - a test runs it under each' drops the 'that is installed' qualifier that worktree.md keeps. -> Use `_harness.skip(check, \"lr2 %s\" % shell, \"%s is not on PATH\" % shell, shutil.which(shell) is None)`, and the same for git. Add 'where installed' to the CHANGELOG sentence.\nR5 (low) plugins/audit/tests/test__refs.py:3741-3748, :3721-3724 (env): The test depends on timing and is not fully hermetic. The holder's run is `sleep 3`, so the second recipe's whole python start-up and acquire must finish inside that fixed window. Under a loaded parallel sweep, losing the race gives second=0: a flaky red, not a silent pass. It also adds at least 9 s of serial wall clock (3 s sleep x 3 shells, from reading) to test__refs. `env = dict(os.environ, ...)` passes through `ZDOTDIR` and `BASH_ENV`. `zsh -c` sources `$ZDOTDIR/.zshenv`, and outside the sweep that is `~/.zshenv`. `bash -c` sources `$BASH_ENV`. So an operator's startup file can change PATH, and with it which `python3` the recipe runs, when the suite is run by hand. -> Hold on a sentinel, not a clock: replace the holder's run with `while [ ! -e '<tmp>/go' ]; do sleep 0.05; done`, and have the test create `go` after the second run has returned, with a bounded deadline. In `env`, point `ZDOTDIR` at the scratch dir and drop `BASH_ENV`/`ENV`.\nR6 (low) plugins/audit/tests/test__invariants.py:1272-1293 (ik6): ik6 passes when it finds nothing. `bare == []` is asserted with no count of the sites it visited, so renaming the local `breaches` (the only receiver it recognises) would leave it green having inspected no site. Its reach is limited to one naming convention: `breaches.append/extend` on a Name literally called `breaches`, and `result()`'s third POSITIONAL argument. `breaches += [...]`, `result(..., breaches=...)`, a list under another name that is later passed to result(), and `extend(<generator>)` are not read. Today every site matches the convention, and I found no bare site. -> Also count the matched sites and assert the count equals the number of `found(` calls in the module, or at least that it is non-zero. Read `result`'s `breaches` keyword and any Name passed as its third argument back to its assignments. Alternatively, treat any `.append/.extend` whose receiver is later passed to result() as a site.\nR7 (low) commit 559c5bad message, claims 2-3: R9 is only partly closed. The claims now name commands and exit codes, which R9 asked for. They still carry no `stamp-verification.py` stamp, which R9 also asked for, and the tree is shared with sibling phases. Claim 2's `probe/mutations.py --root W` does not say what W was. -> Attach a `scripts/governance/stamp-verification.py` stamp to the sweep, ruff, vermin and validate runs in the phase record, and name the probe's root.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_ado.py",
+        "plugins/audit/scripts/manifest/_ado_conventions.py",
+        "plugins/audit/scripts/manifest/_ado_fields.py",
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/scripts/manifest/_ado_parent.py",
+        "plugins/audit/scripts/manifest/_ado_tracked.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: repro that FAILS on current code - adding one allowed status value re-keys a baselined manifest-revalidated entry"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T22:54:04Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:39Z"

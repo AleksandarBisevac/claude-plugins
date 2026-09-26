@@ -97,43 +97,43 @@ _TAG_ANY = "*"
 def _check_required_fields(block, findings):
     """`requiredFields`: {work item type: [ADO field reference name, ...]}."""
     if not isinstance(block, dict):
-        findings.append("meta.ado.conventions.requiredFields must be an object "
+        findings.append(_output.finding("conventions.required_fields.meta-ado-conventions", "meta.ado.conventions.requiredFields must be an object "
                         "keyed by work item type, got %s"
-                        % (type(block).__name__,))
+                        % (type(block).__name__,)))
         return
     for wit, fields in sorted(block.items()):
         where = "meta.ado.conventions.requiredFields.%s" % (wit,)
         if not isinstance(fields, list):
-            findings.append("%s must be a list of field reference names, got %s"
-                            % (where, type(fields).__name__))
+            findings.append(_output.finding("conventions.required_fields.list-field-reference", "%s must be a list of field reference names, got %s"
+                            % (where, type(fields).__name__)))
             continue
         bad = [x for x in fields if not isinstance(x, str) or not x.strip()]
         if bad:
-            findings.append("%s: every entry must be a non-empty field reference "
+            findings.append(_output.finding("conventions.required_fields.every-entry-non", "%s: every entry must be a non-empty field reference "
                             "name (%d bad: %s)"
                             % (where, len(bad),
-                               _output.some_of(bad, render=repr)))
+                               _output.some_of(bad, render=repr))))
 
 
 def _check_description_markers(block, findings):
     """`descriptionMustContain`: {work item type: [literal marker, ...]}."""
     if not isinstance(block, dict):
-        findings.append("meta.ado.conventions.descriptionMustContain must be an "
+        findings.append(_output.finding("conventions.description_markers.meta-ado-conventions", "meta.ado.conventions.descriptionMustContain must be an "
                         "object keyed by work item type, got %s"
-                        % (type(block).__name__,))
+                        % (type(block).__name__,)))
         return
     for wit, markers in sorted(block.items()):
         where = "meta.ado.conventions.descriptionMustContain.%s" % (wit,)
         if not isinstance(markers, list):
-            findings.append("%s must be a list of literal markers, got %s"
-                            % (where, type(markers).__name__))
+            findings.append(_output.finding("conventions.description_markers.list-literal-markers", "%s must be a list of literal markers, got %s"
+                            % (where, type(markers).__name__)))
             continue
         bad = [x for x in markers if not isinstance(x, str) or not x.strip()]
         if bad:
-            findings.append("%s: every marker must be a non-empty string "
+            findings.append(_output.finding("conventions.description_markers.every-marker-non", "%s: every marker must be a non-empty string "
                             "(%d bad: %s)"
                             % (where, len(bad),
-                               _output.some_of(bad, render=repr)))
+                               _output.some_of(bad, render=repr))))
 
 
 def _check_tag_vocabulary(block, findings, warnings):
@@ -152,8 +152,8 @@ def _check_tag_vocabulary(block, findings, warnings):
     warning because the silence is what needs naming.
     """
     if not isinstance(block, dict):
-        findings.append("meta.ado.conventions.tagVocabulary must be an object "
-                        "keyed by tag prefix, got %s" % (type(block).__name__,))
+        findings.append(_output.finding("conventions.tag_vocabulary.meta-ado-conventions", "meta.ado.conventions.tagVocabulary must be an object "
+                        "keyed by tag prefix, got %s" % (type(block).__name__,)))
         return
     if not block:
         warnings.append("meta.ado.conventions.tagVocabulary is empty, which "
@@ -162,15 +162,15 @@ def _check_tag_vocabulary(block, findings, warnings):
     for prefix, values in sorted(block.items()):
         where = "meta.ado.conventions.tagVocabulary.%s" % (prefix,)
         if not isinstance(values, list):
-            findings.append("%s must be a list of allowed values, got %s"
-                            % (where, type(values).__name__))
+            findings.append(_output.finding("conventions.tag_vocabulary.list-allowed-values", "%s must be a list of allowed values, got %s"
+                            % (where, type(values).__name__)))
             continue
         bad = [x for x in values if not isinstance(x, str) or not x.strip()]
         if bad:
-            findings.append("%s: every allowed value must be a non-empty string "
+            findings.append(_output.finding("conventions.tag_vocabulary.every-allowed-value", "%s: every allowed value must be a non-empty string "
                             "(%d bad: %s)"
                             % (where, len(bad),
-                               _output.some_of(bad, render=repr)))
+                               _output.some_of(bad, render=repr))))
         # An OPEN axis with values listed beside the `*`: the enumeration is
         # dead, and dead configuration is this module's warning case. Not a
         # finding - the board is admitting everything, which is legal and
@@ -206,8 +206,8 @@ def check_conventions_config(conventions):
     if conventions is None:
         return findings, warnings
     if not isinstance(conventions, dict):
-        findings.append("meta.ado.conventions must be an object or null, got %s"
-                        % (type(conventions).__name__,))
+        findings.append(_output.finding("conventions.conventions_config.meta-ado-conventions", "meta.ado.conventions must be an object or null, got %s"
+                        % (type(conventions).__name__,)))
         return findings, warnings
 
     unknown = sorted(set(conventions) - KNOWN_CONVENTIONS)
@@ -224,9 +224,9 @@ def check_conventions_config(conventions):
         _check_tag_vocabulary(conventions["tagVocabulary"], findings, warnings)
     if "requireParent" in conventions:
         if not isinstance(conventions["requireParent"], bool):
-            findings.append("meta.ado.conventions.requireParent must be true or "
+            findings.append(_output.finding("conventions.conventions_config.meta-ado-conventions-2", "meta.ado.conventions.requireParent must be true or "
                             "false, got %s"
-                            % (type(conventions["requireParent"]).__name__,))
+                            % (type(conventions["requireParent"]).__name__,)))
     return findings, warnings
 
 

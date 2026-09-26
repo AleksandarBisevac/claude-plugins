@@ -106,8 +106,8 @@ def _check_claim(phase, pwhere, findings, warnings):
     if claim is None:
         return
     if not isinstance(claim, dict):
-        findings.append("%s: claim must be an object {sessionId, host, branch, at}, got %s"
-                        % (pwhere, type(claim).__name__))
+        findings.append(_output.finding("phases.claim.claim-object-sessionid", "%s: claim must be an object {sessionId, host, branch, at}, got %s"
+                        % (pwhere, type(claim).__name__)))
         return
     missing = [k for k in CLAIM_KEYS if not claim.get(k)]
     if missing:
@@ -282,14 +282,14 @@ def _check_area_tag(phase, pwhere, findings):
     if area is None or isinstance(area, str):
         return
     if not isinstance(area, list):
-        findings.append("%s: area must be a tag or a list of tags, got %s"
-                        % (pwhere, type(area).__name__))
+        findings.append(_output.finding("phases.area_tag.area-tag-list", "%s: area must be a tag or a list of tags, got %s"
+                        % (pwhere, type(area).__name__)))
         return
     bad = [a for a in area if not isinstance(a, str) or not a.strip()]
     if bad:
-        findings.append("%s: every area tag must be a non-empty string (%d bad: %s)"
+        findings.append(_output.finding("phases.area_tag.every-area-tag", "%s: every area tag must be a non-empty string (%d bad: %s)"
                         % (pwhere, len(bad),
-                           _output.some_of(bad, render=repr)))
+                           _output.some_of(bad, render=repr))))
 
 
 def _check_areas(manifest):
@@ -588,7 +588,7 @@ def _walk_phases(phases, build_keys=()):
 
     for pi, phase in enumerate(phases):
         if not isinstance(phase, dict):
-            f.append("phases[%d]: not an object" % pi)
+            f.append(_output.finding("phases.walk_phases.object", "phases[%d]: not an object" % pi))
             continue
         pid = phase.get("id")
         pwhere = "phase %s" % (pid or ("phases[%d]" % pi))
@@ -607,7 +607,7 @@ def _walk_phases(phases, build_keys=()):
         if pid:
             phase_ids.append(pid)
         if phase.get("status") not in STATUS:
-            f.append("%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS)))
+            f.append(_output.finding("phases.walk_phases.phase-status", "%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS))))
         _check_claim(phase, pwhere, f, w)
         _check_review(phase, pwhere, w)
         _check_area_tag(phase, pwhere, f)
@@ -617,19 +617,19 @@ def _walk_phases(phases, build_keys=()):
         if "budgetUSD" in phase:
             budget = phase.get("budgetUSD")
             if isinstance(budget, bool) or not isinstance(budget, (int, float)):
-                f.append("%s: budgetUSD must be a number, got %s"
-                         % (pwhere, type(budget).__name__))
+                f.append(_output.finding("phases.walk_phases.budgetusd-number", "%s: budgetUSD must be a number, got %s"
+                         % (pwhere, type(budget).__name__)))
             elif budget <= 0:
-                f.append("%s: budgetUSD must be greater than 0 (got %s) — omit the "
-                         "key entirely for 'no budget'" % (pwhere, budget))
+                f.append(_output.finding("phases.walk_phases.budgetusd-greater-than", "%s: budgetUSD must be greater than 0 (got %s) — omit the "
+                         "key entirely for 'no budget'" % (pwhere, budget)))
 
         tasks_val = phase.get("tasks")
         if "tasks" not in phase:
             w.append("%s: no 'tasks' key — the schema requires one (an empty "
                      "phase should carry an empty list)" % pwhere)
         elif not isinstance(tasks_val, list):
-            f.append("%s: tasks must be an array, got %s"
-                     % (pwhere, type(tasks_val).__name__))
+            f.append(_output.finding("phases.walk_phases.tasks-array", "%s: tasks must be an array, got %s"
+                     % (pwhere, type(tasks_val).__name__)))
         # A phase is 'done' only after sign-off, which requires every task done.
         # A done phase with a non-done task is a stale-status slip the schema
         # can't express (e.g. a hand-regenerated roadmap that flipped the phase
@@ -641,14 +641,14 @@ def _walk_phases(phases, build_keys=()):
             not_done = [t.get("id") or "?" for t in _safe_list(tasks_val)
                         if isinstance(t, dict) and t.get("status") not in TERMINAL]
             if not_done:
-                f.append("%s: status 'done' but %d task(s) are not finished (%s) "
+                f.append(_output.finding("phases.walk_phases.status-done-task", "%s: status 'done' but %d task(s) are not finished (%s) "
                          "— a phase is done only after ALL its tasks are done "
                          "or cancelled (sign-off)"
                          % (pwhere, len(not_done),
-                            _output.some_of(not_done)))
+                            _output.some_of(not_done))))
         for ti, task in enumerate(_safe_list(tasks_val)):
             if not isinstance(task, dict):
-                f.append("%s tasks[%d]: not an object" % (pwhere, ti))
+                f.append(_output.finding("phases.walk_phases.object-2", "%s tasks[%d]: not an object" % (pwhere, ti)))
                 continue
             tid = task.get("id")
             twhere = "task %s" % (tid or ("%s.tasks[%d]" % (pwhere, ti)))
@@ -670,12 +670,12 @@ def _walk_phases(phases, build_keys=()):
             # on its own.
             outputs = task.get("outputs")
             if outputs is not None and not isinstance(outputs, list):
-                f.append("%s: outputs must be an array, got %s"
-                         % (twhere, type(outputs).__name__))
+                f.append(_output.finding("phases.walk_phases.outputs-array", "%s: outputs must be an array, got %s"
+                         % (twhere, type(outputs).__name__)))
             for _entry, why in _touts.output_problems(outputs):
-                f.append("%s: outputs %s" % (twhere, why))
+                f.append(_output.finding("phases.walk_phases.outputs", "%s: outputs %s" % (twhere, why)))
             if task.get("status") not in STATUS:
-                f.append("%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS)))
+                f.append(_output.finding("phases.walk_phases.task-status", "%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS))))
             if (phase.get("status") == "pending"
                     and task.get("status") == "in_progress"):
                 # WHAT THIS ESTABLISHED, AND NOT A GUESS AT THE DOCUMENT'S AGE.
@@ -702,10 +702,10 @@ def _walk_phases(phases, build_keys=()):
                              else "so nothing records when the phase began")))
             tests = task.get("tests")
             if "tests" in task and tests is not None and not isinstance(tests, dict):
-                f.append("%s: tests must be an object with a 'mode', got %s"
-                         % (twhere, type(tests).__name__))
+                f.append(_output.finding("phases.walk_phases.tests-object-with", "%s: tests must be an object with a 'mode', got %s"
+                         % (twhere, type(tests).__name__)))
             if isinstance(tests, dict) and tests.get("mode") not in TESTS_MODE:
-                f.append("%s: tests.mode %r not in %s" % (twhere, tests.get("mode"), list(TESTS_MODE)))
+                f.append(_output.finding("phases.walk_phases.tests-mode", "%s: tests.mode %r not in %s" % (twhere, tests.get("mode"), list(TESTS_MODE))))
             # `tdd` + `expectRedFirst` + nothing named is an instruction to
             # prove a red first with no case to prove it with, and nothing said so:
             # a live run met exactly this on the largest security change of a phase,
@@ -763,12 +763,12 @@ def _walk_phases(phases, build_keys=()):
                     # array, so a string here never validated against it. Said
                     # ONCE - iterating a string yields one warning per character,
                     # which is the warning class people learn to skip.
-                    f.append("%s: tests.add must be an array, got %s"
-                             % (twhere, type(add_val).__name__))
+                    f.append(_output.finding("phases.walk_phases.tests-add-array", "%s: tests.add must be an array, got %s"
+                             % (twhere, type(add_val).__name__)))
                 for entry in _safe_list(add_val):
                     if tests_add_path(entry) is not None:
                         continue
-                    f.append("%s: %s, so the `files` union has no path to "
+                    f.append(_output.finding("phases.walk_phases.so-files-union", "%s: %s, so the `files` union has no path to "
                              "carry and commit-scope will refuse the case "
                              "this task says it will create. Write it as "
                              "\"<path>: <what it asserts>\" "
@@ -777,7 +777,7 @@ def _walk_phases(phases, build_keys=()):
                              "`scripts/manifest/repair-tests-add.py <manifest>` "
                              "reports every entry like this one and rewrites "
                              "the ones that already spell their path: "
-                             "%r" % (twhere, TESTS_ADD_UNNAMED_FINDING, entry))
+                             "%r" % (twhere, TESTS_ADD_UNNAMED_FINDING, entry)))
             # THE DERIVED GATE, READ BACK. `/audit:init` step 5.3 narrows a
             # task's `tests.gate` to the paths that task names and reaches the
             # phase's wide gate only as its last arm, with a reason in the
@@ -848,7 +848,7 @@ def _walk_phases(phases, build_keys=()):
                                   "which is a default rather than a choice"
                                   % (gate_basis,))))
             if "risk" in task and task.get("risk") not in RISK:
-                f.append("%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None]))
+                f.append(_output.finding("phases.walk_phases.risk", "%s: risk %r not in %s" % (twhere, task.get("risk"), ["low", "med", "high", None])))
             _check_ado(task, twhere, f)
             _add_parent(task, twhere, f, w)
             # The id-prefix rule (workstream B) -- the hand-move detector.

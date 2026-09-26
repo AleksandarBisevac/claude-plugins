@@ -207,14 +207,14 @@ def _check_meta(manifest):
 
     meta = manifest.get("meta")
     if not isinstance(meta, dict):
-        f.append("meta: missing or not an object")
+        f.append(_output.finding("rules.meta.missing-object", "meta: missing or not an object"))
         return (f, w)
 
     _unknown_keys(meta, KNOWN_META, "meta", w)
     version = meta.get("version")
     if not isinstance(version, int) or isinstance(version, bool):
         # bool is an int subclass in Python — `true` must NOT pass as a version.
-        f.append("meta.version: missing or not an integer")
+        f.append(_output.finding("rules.meta.missing-integer", "meta.version: missing or not an integer"))
     # meta.ado: the whole connector config goes through check_ado_meta --
     # the ONE front door shared with the panel's write_ado, so the CLI
     # and the panel cannot disagree. (It keeps the object-or-null rule
@@ -249,13 +249,13 @@ def _check_branch(manifest):
 
     blk = meta.get("branch")
     if blk is not None and not isinstance(blk, dict):
-        f.append("meta.branch: not an object")
+        f.append(_output.finding("rules.branch.object", "meta.branch: not an object"))
         return (f, w)
     if isinstance(blk, dict):
         _vocab._unknown_keys(blk, KNOWN_BRANCH, "meta.branch", w)
         tmpl = blk.get("template")
         if tmpl is not None and not isinstance(tmpl, str):
-            f.append("meta.branch.template: not a string")
+            f.append(_output.finding("rules.branch.string", "meta.branch.template: not a string"))
             return (f, w)
         # A placeholder nobody substitutes expands to nothing and takes a
         # separator with it — a shorter name than the author meant, and silent.
@@ -268,7 +268,7 @@ def _check_branch(manifest):
 
     mblk = meta.get("merge")
     if mblk is not None and not isinstance(mblk, dict):
-        f.append("meta.merge: not an object")
+        f.append(_output.finding("rules.branch.object-2", "meta.merge: not an object"))
         return (f, w)
     if isinstance(mblk, dict):
         _vocab._unknown_keys(mblk, KNOWN_MERGE, "meta.merge", w)
@@ -279,9 +279,9 @@ def _check_branch(manifest):
                 # as text reads as TRUE and the branch somebody meant to keep is
                 # deleted. There is no reading of a non-boolean here that is safe
                 # to guess at.
-                f.append("meta.merge.%s: not a boolean (%r) - a non-boolean would "
+                f.append(_output.finding("rules.branch.boolean-non-boolean", "meta.merge.%s: not a boolean (%r) - a non-boolean would "
                          "be coerced, and the string 'false' coerces to TRUE"
-                         % (key, mblk[key]))
+                         % (key, mblk[key])))
 
     cfg = _branch.config(meta)
     for phase in (manifest.get("phases") or []):
@@ -298,9 +298,9 @@ def _check_branch(manifest):
         name = _branch.compose(meta, phase, initials="x y")["name"]
         bad = _branch.ref_violations(name)
         if bad:
-            f.append("phases[%s]: the branch name this manifest would produce "
+            f.append(_output.finding("rules.branch.branch-name-manifest", "phases[%s]: the branch name this manifest would produce "
                      "(%r) is not a legal git ref: %s"
-                     % (pid, name, "; ".join(bad)))
+                     % (pid, name, "; ".join(bad))))
     return (f, w)
 
 
@@ -318,28 +318,42 @@ def _check_branch(manifest):
 # A finding's quoted identifiers: `'...'` (the `%r` of a string, and every id or
 # path the messages quote) and `` `...` `` (field names).
 _QUOTED = re.compile(r"'([^']*)'|`([^`]*)`")
+# A quoted enumeration - the allowed values a message lists, `['a', 'b']`. It is
+# the validator's vocabulary, not the finding's subject: one value added to it is
+# a change to the rule's wording, and it must not re-key every finding that
+# quotes it.
+_ENUMERATION = re.compile(r"\[[^\[\]]*\]")
 # An id-shaped bare token - a letter run then a digit (`P1.2`, `BUG-3-k7m`) - for
 # the findings that name their subject unquoted after the locus.
 _BARE_ID = re.compile(r"\b[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9._-]*\b")
 
 
 def finding_subject(line):
-    """A finding's identity with its prose taken out: the locus, then the ids.
+    """A finding's identity with its prose taken out: rule, locus, then ids.
+
+    The RULE is the code `_output.finding` attached where the finding was raised
+    - without it two rules on one locus with the same ids would be one finding,
+    and a new rule's finding would pass as an old one's. A plain string carries
+    none and is keyed `uncoded`, which the lint over the finding sites keeps
+    from happening.
 
     Every finding here opens with the place it is about (`fileIndex['x']`,
     `task P1.1`, `meta.ado.tag`) before `: `, and names what it is about in
     quotes. Those two are what a finding IS; the sentence around them is how it
     is worded today, and a reader matching findings across runs - the invariant
-    baseline - must not treat a reworded message as a different finding. With
-    nothing quoted, the id-shaped tokens after the locus stand in.
+    baseline - must not treat a reworded message as a different finding. A
+    bracketed list is left out: it is the allowed vocabulary, not the subject.
+    With nothing quoted, the id-shaped tokens after the locus stand in.
     """
     locus, sep, rest = str(line).partition(": ")
     if not sep:
         locus, rest = "", str(line)
+    rest = _ENUMERATION.sub(" ", rest)
     ids = [a or b for a, b in _QUOTED.findall(rest)]
     if not ids:
         ids = _BARE_ID.findall(rest)
-    return "|".join([locus.strip()] + ids)
+    return "|".join([str(_output.finding_code(line) or "uncoded"),
+                     locus.strip()] + ids)
 
 
 def validate(manifest):
@@ -355,7 +369,8 @@ def validate(manifest):
     """
     f, w = [], []
     if not isinstance(manifest, dict):
-        return (["manifest root must be a JSON object"], w)
+        return ([_output.finding("rules.validate.root-not-object",
+                                 "manifest root must be a JSON object")], w)
 
     def add(pair):
         """Fold one piece's (findings, warnings) into the two answers."""
@@ -372,7 +387,7 @@ def validate(manifest):
 
     phases = manifest.get("phases")
     if not isinstance(phases, list):
-        f.append("phases: missing or not an array")
+        f.append(_output.finding("rules.validate.missing-array", "phases: missing or not an array"))
         phases = []
 
     build = (manifest.get("meta") or {}).get("buildCommands")

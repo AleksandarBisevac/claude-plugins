@@ -108,10 +108,13 @@ audit_lock release user-e2e --session "e2e-$$" --pid $$ --project <worktreeDir>
 exit "$rc"
 ```
 
-It runs unchanged under `sh`, `bash` and `zsh` — zsh is the macOS default and the shell Claude
-Code's Bash tool uses there. That is why the command is a function and not a variable (zsh does not
-split an unquoted variable into words) and why the exit status is `rc` (`status` is read-only in
-zsh). `test__refs.py` runs this block under each of them that is installed.
+**It is a POSIX-shell recipe.** It runs unchanged under `sh`, `bash` and `zsh` — zsh is the macOS
+default and the shell Claude Code's Bash tool uses there. That is why the command is a function and
+not a variable (zsh does not split an unquoted variable into words) and why the exit status is `rc`
+(`status` is read-only in zsh). `test__refs.py` runs this block under each of them that is
+installed, and records a skip for each that is not. **Git Bash on Windows is not covered**: its
+`$$` is an MSYS pid, not the Windows pid the lock probes for liveness, so a held lock there can read
+as abandoned. The test skips that shell for that reason.
 
 `--wait 30` waits out a live holder for that many seconds before refusing; `0` refuses at once.
 

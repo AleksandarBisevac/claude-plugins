@@ -2814,16 +2814,21 @@ and `test__invariants.py` walks this file's syntax tree so a bare sentence fails
 what a reader is shown and the `keys` beside it — the subject that broke the rule and the commit it
 is recorded against, resolved to the full id through git — are what a baseline matches, so a
 reworded template or a count that moves between runs changes the output and never the match. A
-validator finding's subject is `_manifest_rules.finding_subject`: its locus and the ids it quotes,
-with the sentence taken out. The live
+validator finding's subject is `_manifest_rules.finding_subject`: the CODE of the rule that raised
+it, its locus and the ids it quotes, with the sentence and any quoted allowed-values list taken
+out. Every validator finding is built with `_output.finding(code, text)` — a `str` subclass, so
+every caller that prints, joins or compares findings reads it unchanged and only this reader asks
+for `.code` — and `test__output.py`'s `fc` cases walk every finding site in the validator's modules
+and fail one built without a code, or two sites sharing one. The live
 pairing re-check keeps only the rows naming this phase's own tasks (`own_pairing_findings`).
 
 **The baseline** (`invariants-baseline.json` beside the manifest) lives here rather than in the
 command because two surfaces give a verdict over these checks, and `counted_breaches` is the one
-answer both read. `apply_baseline` compares on `(phase, check, subject, sha)` and sets an entry
+answer both read. `apply_baseline` compares on `(phase, check, subject, sha, clone)` — `clone`
+set only on a local entry — and sets an entry
 aside, with the reason, when this run could not have seen it again — its phase was not examined,
 its check had a gap, or it was read from another clone's own evidence (a breach marked `local` — a
-reflog, the stash, a remote-tracking ref, the usage ledger — carries a digest of the clone that
+reflog, the stash, a remote-tracking ref, the usage ledger — carries the id of the clone that
 wrote it, and goes stale only there); only the rest can be reported as no longer matching, each
 with what git says about its commit. `write_baseline` refuses while a phase it covers is in flight,
 takes the `index` lock around its read-then-write and refuses a hold it did not take itself, keeps

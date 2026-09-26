@@ -60,13 +60,13 @@ pass one and fail the other. Both ask `apply_baseline` which breaches count.
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__invariants.py`.
 """
-import hashlib
 import json
 import os
 import re
 import shutil
 import sys
 import tempfile
+import uuid
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -1451,10 +1451,10 @@ BASELINE_VERSION = 3
 
 # LOCALITY IS PER BREACH, NOT PER CHECK. A reflog, the stash, a remote-tracking
 # ref and the gitignored usage ledger are one clone's evidence, so an entry built
-# from one of them (`found(..., local=True)`) records WHICH clone wrote it, as a
-# digest of that clone's git common dir - a path would name a machine in a
-# committed file. On that clone it is compared like any other entry and can go
-# stale; on any other it is set aside, since that clone never had the evidence.
+# from one of them (`found(..., local=True)`) records WHICH clone wrote it, as the
+# clone's id (`clone_id`), and the id is part of its key. On that clone it is
+# compared like any other entry and can go stale; on any other it is set aside,
+# since that clone never had the evidence.
 
 # The three reasons an entry is set aside rather than compared, each a sentence.
 NOT_COMPARED_PHASE = "its phase was not examined in this run"
@@ -1467,8 +1467,10 @@ NOT_COMPARED_LOCAL = ("it was read from another clone's own evidence (a reflog, 
 REWRITE_RULE = (
     "an entry is matched on its phase, check, subject and full commit SHA - never "
     "on the printed sentence, so a reworded message still matches; a validator "
-    "finding's subject is its locus and the ids it quotes, so rewording one "
-    "matches too, while renaming its locus or ids does not. A rebase, squash "
+    "finding's subject is the code of the rule that raised it, its locus and the "
+    "ids it quotes (an allowed-values list left out), so rewording one or growing "
+    "its vocabulary matches too, while a different rule, locus or id does not. A "
+    "rebase, squash "
     "or amend gives a commit a new SHA, so its breach is listed as NEW and its old "
     "entry as no longer matching - review both, then have a human re-run "
     "--write-baseline")
@@ -1479,20 +1481,47 @@ BASELINE_ABOUT = (
     "a phase it covers is in flight; a human commits it on the development "
     "branch, outside any phase commit - a task, audit-state or manifest-index "
     "commit that staged it would breach its own scope. An entry read from one "
-    "clone's own evidence carries that clone's digest and is compared only "
+    "clone's own evidence carries that clone's id and is compared only "
     "there. %s." % (REWRITE_RULE[0].upper() + REWRITE_RULE[1:],))
 
 
-def clone_id(git_root):
-    """A digest of this clone's git common dir, or None outside a repository.
+CLONE_ID_NAME = "audit-clone-id"
 
-    Every worktree of one clone shares the common dir, so they share the id; two
-    clones of one repository do not.
+
+def clone_id(git_root, create=False):
+    """This clone's id: a random token kept in its git common dir, or None.
+
+    RANDOM AND STORED, NOT DERIVED. A digest of the common dir's path named a
+    PATH: a clone that moved lost its own entries, and two clones at one path on
+    two machines - a devcontainer's `/workspaces/<repo>`, a CI runner's work dir
+    - shared one. A token written once moves with the clone, differs between
+    clones, and names no machine in the committed file. Every worktree of one
+    clone shares the common dir and so the token.
+
+    Written only when `create` is asked - by the baseline write, under the index
+    lock - with an exclusive create, so two first writers cannot mint two ids.
+    None when there is no token yet, which sets every local entry aside.
     """
     ld = _locks.lock_dir(git_root)
     if not ld:
         return None
-    return hashlib.sha256(os.path.dirname(ld).encode("utf-8")).hexdigest()[:16]
+    path = os.path.join(os.path.dirname(ld), CLONE_ID_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            token = fh.read().strip()
+        if token:
+            return token
+    except OSError:
+        pass
+    if not create:
+        return None
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(uuid.uuid4().hex + "\n")
+    except FileExistsError:
+        pass
+    return clone_id(git_root)
 
 
 def baseline_path_for(manifest_path):
@@ -1507,7 +1536,11 @@ def _answers(result):
 
 
 def baseline_key(entry):
-    return (entry["phase"], entry["check"], entry["subject"], entry.get("sha"))
+    """What an entry is matched on. `clone` is part of it for local entries -
+    two clones' breaches with one subject are two entries, never one row
+    re-stamped to whichever clone wrote last - and None for the rest."""
+    return (entry["phase"], entry["check"], entry["subject"], entry.get("sha"),
+            entry.get("clone"))
 
 
 def _fingerprint(phase_id, check, line, key, clone):
@@ -1666,7 +1699,9 @@ def apply_baseline(result, manifest_path, git_root, path=None):
     entries, why = read_baseline(path)
     if why:
         return None, why
-    block = compare_baseline(entries, result, clone_id(git_root))
+    clone = clone_id(git_root)
+    block = compare_baseline(entries, result, clone)
+    block["clone"] = clone
     block["unmatched"] = explain_unmatched(block["unmatched"], git_root)
     block["path"] = path
     block["rewriteRule"] = REWRITE_RULE
@@ -1751,7 +1786,7 @@ def write_baseline(path, result, manifest, git_root):
             previous, why = read_baseline(path)
             if why:
                 return None, why
-        clone = clone_id(git_root)
+        clone = clone_id(git_root, create=True)
         split = compare_baseline(previous, result, clone)
         stale = set(baseline_key(e) for e in split["unmatched"])
         kept = [e for e in previous if baseline_key(e) not in stale]

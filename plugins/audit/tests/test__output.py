@@ -32,6 +32,8 @@ to install the guard - a rule this file is subject to, and satisfies, one line a
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
+import json
 import os
 import re
 import sys
@@ -2421,6 +2423,140 @@ def _cases(check):
           "is - the release and the refusal both hang off that value, and a "
           "`dict` reading disables both while raising nothing: %r" % (_lk_bad,),
           not _lk_bad and len(_lk_callers) >= _lk_floor)
+
+    _finding_code_cases(check)
+
+
+# --- every validator finding carries the code of its rule --------------------
+# (module, the function its findings are reached from - None for every function
+# in the file - and the names its finding lists go by). The five whose root is
+# named are shared with other callers and only part of each file is the
+# validator's, so the walk follows the calls out of that root.
+FINDING_SITES = (
+    ("_manifest_rules.py", None, ("f", "findings")),
+    ("_manifest_phases.py", None, ("f", "findings")),
+    ("_manifest_crossrefs.py", None, ("f", "findings")),
+    ("_manifest_ado.py", None, ("f", "findings")),
+    ("_manifest_vocab.py", None, ("findings",)),
+    ("_ado_conventions.py", "check_conventions_config", ("findings",)),
+    ("_ado_fields.py", "check_fields_config", ("findings",)),
+    ("_areas.py", "validate_registry", ("findings",)),
+    ("_ado_parent.py", "declaration_findings", ("findings", "out")),
+    ("_ado_tracked.py", "declaration_findings", ("findings",)),
+)
+
+
+def _is_finding_call(node):
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "finding"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "_output")
+
+
+def _reached(tree, root):
+    fns = dict((n.name, n) for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef))
+    seen, todo = set(), [root]
+    while todo:
+        name = todo.pop()
+        if name in seen or name not in fns:
+            continue
+        seen.add(name)
+        todo.extend(c.func.id for c in ast.walk(fns[name])
+                    if isinstance(c, ast.Call) and isinstance(c.func, ast.Name))
+    return [fns[n] for n in sorted(seen)]
+
+
+def finding_sites():
+    """`(visited, uncoded, codes)` over every validator finding site.
+
+    A site is an `append` to a finding list, or a finding list returned as a
+    literal. `codes` maps each literal code to the places that raise it.
+    """
+    visited, uncoded, codes = 0, [], {}
+    for base, root, names in FINDING_SITES:
+        path = os.path.join(M.SCRIPTS_DIR, "manifest", base)
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        scopes = [tree] if root is None else _reached(tree, root)
+        seen = set()
+        for scope in scopes:
+            for node in ast.walk(scope):
+                if id(node) in seen:
+                    continue
+                seen.add(id(node))
+                args = []
+                if (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "append"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id in names and node.args):
+                    if (base == "_ado_parent.py" and node.func.value.id == "out"
+                            and not _in_function(scope, node, "_basis_findings")):
+                        continue
+                    args = [node.args[0]]
+                elif (isinstance(node, ast.Return)
+                      and isinstance(node.value, ast.Tuple) and node.value.elts
+                      and isinstance(node.value.elts[0], ast.List)):
+                    args = list(node.value.elts[0].elts)
+                for arg in args:
+                    visited += 1
+                    if not _is_finding_call(arg):
+                        uncoded.append("%s:%d" % (base, arg.lineno))
+                        continue
+                    code = arg.args[0] if arg.args else None
+                    if isinstance(code, ast.Constant) and isinstance(code.value,
+                                                                     str):
+                        codes.setdefault(code.value, []).append(
+                            "%s:%d" % (base, arg.lineno))
+    return visited, uncoded, codes
+
+
+def _in_function(scope, node, name):
+    for fn in ast.walk(scope):
+        if (isinstance(fn, ast.FunctionDef) and fn.name == name
+                and any(n is node for n in ast.walk(fn))):
+            return True
+    return False
+
+
+def _finding_code_cases(check):
+    one = M.finding("rules.x.y", "task P1: bad")
+    check("fc1 a finding IS its sentence to every reader - equal, joined and "
+          "serialised as the plain string - and carries the code beside it: %r"
+          % (M.finding_code(one),),
+          one == "task P1: bad" and json.dumps([one]) == '["task P1: bad"]'
+          and "; ".join([one, one]) == "task P1: bad; task P1: bad"
+          and M.finding_code(one) == "rules.x.y"
+          and M.finding_code("task P1: bad") is None)
+    visited, uncoded, codes = finding_sites()
+    check("fc2 every finding site the validator has - each append to a finding "
+          "list and each finding list returned as a literal - builds its "
+          "finding with _output.finding(code, ...), and the walk VISITED them "
+          "(%d sites; a walk that matched nothing would pass): uncoded %r"
+          % (visited, uncoded), visited > 0 and uncoded == [])
+    shared = dict((c, where) for c, where in codes.items() if len(where) > 1)
+    check("fc3 ...and no literal code names two sites - a code is one rule, so "
+          "a second site under it would let two rules key as one: %r" % (shared,),
+          codes and shared == {})
+    import _manifest_io as _mio
+    import _manifest_rules
+    acme = _mio.load_manifest(os.path.join(M.REPO_ROOT, "examples", "acme-store",
+                                           "audit-plan.json"))
+    task = acme["phases"][0]["tasks"][0]
+    task.update({"status": "bogus", "risk": "extreme", "blockedBy": [5],
+                 "dependsOn": [6, "NOPE"]})
+    acme["fileIndex"]["zzz.py"] = ["P9.9"]
+    acme["phases"][0]["budgetUSD"] = "x"
+    acme.setdefault("meta", {})["ado"] = {"conventions": {"requiredFields": 5},
+                                          "fields": {"x": []}}
+    acme["meta"]["areas"] = {"bad": 5}
+    acme["bugs"] = [{"id": "x"}]
+    found = _manifest_rules.validate(acme)[0]
+    bare = [str(x)[:50] for x in found if not M.finding_code(x)]
+    check("fc4 ...and a manifest broken across every producer module comes back "
+          "from validate() with a code on every finding (%d findings): %r"
+          % (len(found), bare), len(found) > 10 and bare == [])
 
 
 def _selftest():

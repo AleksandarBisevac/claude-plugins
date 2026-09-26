@@ -30,12 +30,14 @@ import ast
 import copy
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _invariants as M                            # noqa: E402
+import _output                                     # noqa: E402
 import _evidence_io                                # noqa: E402
 import _journal_io                                 # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
@@ -1270,27 +1272,14 @@ def _cases(check):
 
         # --- every breach site builds its breach with found() ------------------
         tree = ast.parse(open(M.__file__, encoding="utf-8").read())
-        bare = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            fn = node.func
-            if (isinstance(fn, ast.Attribute) and fn.attr in ("append", "extend")
-                    and isinstance(fn.value, ast.Name)
-                    and fn.value.id == "breaches"):
-                arg = node.args[0] if node.args else None
-                items = ([arg.elt] if isinstance(arg, ast.ListComp)
-                         else list(arg.elts) if isinstance(arg, ast.List)
-                         else [arg])
-                bare.extend(node.lineno for x in items if not _is_found(x))
-            if isinstance(fn, ast.Name) and fn.id == "result" and len(node.args) > 2:
-                arg = node.args[2]
-                if isinstance(arg, ast.List):
-                    bare.extend(node.lineno for x in arg.elts if not _is_found(x))
-        check("ik6 every breach this module appends, extends or passes to "
-              "result() is a found() call - read from the syntax tree, so a bare "
-              "sentence on a path only a live repository reaches fails CI rather "
-              "than an operator's run: lines %r" % (bare,), bare == [])
+        visited, bare = _breach_sites(tree)
+        founds = sum(1 for n in ast.walk(tree) if _is_found(n))
+        check("ik6 every breach this module appends, extends, adds with += or "
+              "passes to result() - under whatever name result() is handed - is "
+              "a found() call, read from the syntax tree so a bare sentence on a "
+              "path only a live repository reaches fails CI: %d site(s) visited, "
+              "%d found() call(s), bare at lines %r" % (visited, founds, bare),
+              bare == [] and visited > 0 and visited == founds)
 
         # --- local evidence goes stale on the clone that wrote it --------------
         def _history(breaches):
@@ -1314,8 +1303,131 @@ def _cases(check):
               "%r" % ([(e["subject"], e["clone"]) for e in stamped],),
               [(e["subject"], e["clone"]) for e in stamped]
               == [("remote r", None), ("stash x", "clone-a")])
+
+        # --- the clone id is a token the clone carries --------------------------
+        home = _harness.fixture_root("clone-id-")
+        try:
+            spot = os.path.join(home, "repo")
+            subprocess.run(["git", "init", "-q", spot], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            before = M.clone_id(spot)
+            minted = M.clone_id(spot, create=True)
+            moved = os.path.join(home, "moved")
+            shutil.move(spot, moved)
+            after_move = M.clone_id(moved)
+            subprocess.run(["git", "init", "-q", spot], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            same_path = M.clone_id(spot, create=True)
+        finally:
+            _harness.remove_tree(home)
+        check("ik12 the clone id is minted only when asked, moves WITH the clone "
+              "- a clone read from a new path is still itself - and a second "
+              "clone made at the SAME path is a different clone: %r"
+              % ((before, minted, after_move, same_path),),
+              before is None and minted and after_move == minted
+              and same_path and same_path != minted
+              and "/" not in minted and home not in minted)
+        pair = [dict(gone, clone="clone-a"), dict(gone, clone="clone-b")]
+        held = M.compare_baseline(pair, _history([
+            M.found("stash", "stash x", local=True)]), "clone-a")
+        check("ik13 two clones' local entries with one subject stay two entries - "
+              "the clone is in the key - so the one this clone wrote matches and "
+              "the other is set aside, not re-stamped: %r"
+              % ((held["matched"], held["notComparedWhy"], held["new"]),),
+              held["matched"] == 1 and held["new"] == []
+              and held["notComparedWhy"] == {M.NOT_COMPARED_LOCAL: 1}
+              and len(set(M.baseline_key(e) for e in pair)) == 2)
+
+        # --- a validator finding's key is its rule, locus and ids --------------
+        acme = _mio.load_manifest(os.path.join(
+            str(_output.REPO_ROOT), "examples", "acme-store",
+            "audit-plan.json"))
+        task = acme["phases"][0]["tasks"][0]
+        task["status"] = "bogus"
+        task["blockedBy"] = [5]
+        task["dependsOn"] = [5]
+        found_now = M._rules.validate(acme)[0]
+        status_line = [x for x in found_now if "'bogus'" in x]
+        widened = [str(x).replace("'cancelled']", "'cancelled', 'parked']")
+                   for x in status_line]
+        widened = [_output.finding(getattr(status_line[0], "code", None), x)
+                   for x in widened] if hasattr(_output, "finding") else widened
+        check("ik9 a status finding keys the SAME after one value is appended to "
+              "the allowed list it quotes - the vocabulary is the validator's, "
+              "not the finding's: %r"
+              % ([M._validator_subject(x) for x in status_line + widened],),
+              len(status_line) == 1
+              and M._validator_subject(status_line[0])
+              == M._validator_subject(widened[0]))
+        same_locus = [x for x in found_now
+                      if "entry must be a string id" in x]
+        keys = set(M._validator_subject(x) for x in same_locus)
+        check("ik10 two findings on ONE locus from different rules key "
+              "differently - a key without the rule would let a new rule's "
+              "finding be absorbed by an old one's baseline entry: %r"
+              % (sorted(keys),),
+              len(same_locus) == 2 and len(keys) == 2)
+        check("ik11 ...and every finding validate() returned carries the code of "
+              "the rule that raised it: %r"
+              % ([str(x)[:40] for x in found_now
+                  if not _output.finding_code(x)],),
+              found_now and all(_output.finding_code(x) for x in found_now))
     finally:
         repos.close()
+
+
+def _breach_sites(tree):
+    """`(visited, bare)` over every place a breach enters a check's answer.
+
+    A breach list is any name a function hands `result()` as its breaches - the
+    third positional argument or `breaches=` - and a site is each item that
+    reaches such a name: an `append`, an `extend` or `+=` of a list, tuple or
+    comprehension, or a list written into the `result()` call itself. An
+    `extend` of anything else cannot be read here and counts as bare.
+    """
+    visited, bare = 0, []
+    for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+        names, literal = set(), []
+        for call in ast.walk(fn):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                    and call.func.id == "result"):
+                continue
+            arg = call.args[2] if len(call.args) > 2 else next(
+                (k.value for k in call.keywords if k.arg == "breaches"), None)
+            if isinstance(arg, ast.Name):
+                names.add(arg.id)
+            elif isinstance(arg, (ast.List, ast.Tuple)):
+                literal.append(arg)
+        items = []
+        for arg in literal:
+            items.extend(arg.elts)
+        for node in ast.walk(fn):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ("append", "extend")
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in names and node.args):
+                arg = node.args[0]
+                if node.func.attr == "append":
+                    items.append(arg)
+                else:
+                    items.extend(_spread(arg))
+            elif (isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add)
+                  and isinstance(node.target, ast.Name)
+                  and node.target.id in names):
+                items.extend(_spread(node.value))
+        for item in items:
+            visited += 1
+            if not _is_found(item):
+                bare.append(getattr(item, "lineno", fn.lineno))
+    return visited, bare
+
+
+def _spread(arg):
+    if isinstance(arg, (ast.List, ast.Tuple)):
+        return list(arg.elts)
+    if isinstance(arg, (ast.ListComp, ast.GeneratorExp)):
+        return [arg.elt]
+    return [arg]
 
 
 def _is_found(node):

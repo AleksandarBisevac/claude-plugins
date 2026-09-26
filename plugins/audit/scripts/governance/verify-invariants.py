@@ -124,7 +124,7 @@ baseline_key = _invariants.baseline_key
 
 
 # --- rendering ----------------------------------------------------------------
-def render_phase(answer, known=None):
+def render_phase(answer, known=None, clone=None):
     """The lines for one phase: a verdict per check, then what it rests on.
 
     `known` is the set of baselined fingerprints, or None when no baseline is
@@ -145,8 +145,9 @@ def render_phase(answer, known=None):
         lines.append("      basis: %s" % (check["basis"],))
         baselined = 0
         for line, key in zip(check["breaches"], check["keys"]):
-            if known is not None and (str(answer["phaseId"]), check["name"],
-                                      key["subject"], key["sha"]) in known:
+            if known is not None and baseline_key(_invariants._fingerprint(
+                    answer["phaseId"], check["name"], line, key,
+                    clone)) in known:
                 baselined += 1
                 continue
             lines.append("      BREACH: %s" % (line,))
@@ -201,7 +202,8 @@ def render(result, single, known=None):
     lines = []
     phases = [result] if single else result["phases"]
     for answer in phases:
-        lines.extend(render_phase(answer, known))
+        lines.extend(render_phase(answer, known,
+                                  (result.get("baseline") or {}).get("clone")))
         lines.append("")
     if not single:
         if result["skipped"]:
@@ -276,7 +278,8 @@ def _baseline_answer(args, result, manifest, git_root):
     # What to hide is what matched, and a matched key is one of this run's own:
     # this run's keys less the new ones, with no second read of the file.
     new = set(baseline_key(e) for e in block["new"])
-    known = set(baseline_key(e) for e in _invariants.fingerprints(result)) - new
+    known = set(baseline_key(e) for e in _invariants.fingerprints(
+        result, block.get("clone"))) - new
     return "baseline", block, known, None
 
 

@@ -96,13 +96,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `_invariants` functions, so the gate and the CLI give one verdict; its JSON keeps the full list
   as `allBreaches`, and its text names the baseline and what it counted on both paths. An entry
   is matched on its phase, check, subject and commit SHA - keys every check now returns beside its
-  sentence, with the SHA resolved to the full id through git and a validator finding reduced to
-  its locus and the ids it quotes - never on the printed sentence, so a reworded message or a
+  sentence, with the SHA resolved to the full id through git and a validator finding keyed on
+  the code of the rule that raised it (every validator finding now carries one, and a lint fails a
+  finding site without it), its locus and the ids it quotes, an allowed-values list left out -
+  never on the printed sentence, so a reworded message or a
   count that moves between runs does not bring the flood back. An entry that no
   longer matches is printed with what git says about its commit and stays in the file; one whose
   check had a gap this run, or whose phase was not examined, is set aside with that reason rather
   than called repaired, and one read from a clone's own evidence (a reflog, the stash, a
-  remote-tracking ref, the gitignored usage ledger) carries a digest of that clone and goes stale
+  remote-tracking ref, the gitignored usage ledger) carries that clone's id - a random token kept
+  in its git common dir, so it moves with the clone and no two clones share it - and goes stale
   only there. A rebase, squash or amend re-reports its breaches as new beside the old
   unmatched entries, and the output says so. `--write-baseline` refuses while a phase it covers is
   in flight, takes the `index` lock around its read-then-write and refuses a hold it did not take
@@ -120,7 +123,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   A user lock excludes by holder: a second acquire from the same session and pid - which is what
   parallel subagents of one Claude Code session look like - is refused rather than answered as
   re-entry. `/audit:worktree` documents it as the lock worktree tooling shares, with a one-shell
-  recipe that runs under sh, bash and zsh - a test runs it under each - and `/audit:doctor`
+  POSIX-shell recipe that runs under sh, bash and zsh - a test runs it under each where installed,
+  and skips Git Bash on Windows, whose `$$` is not the pid the lock probes - and `/audit:doctor`
   advises an abandoned user lock by its own `--takeover` path.
 
 ### Changed
