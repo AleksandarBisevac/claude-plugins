@@ -239,16 +239,12 @@ base refused:
 - an interpreter program that starts git from inside its own code (a Python or
   Node body that runs a subprocess) is read as code, not searched for git — the
   guard reads shell text, and a program's own calls are the general residual above;
-- the line-continuation join decides whether a `#` starts a comment from the raw
-  character before it, not from the word the shell has assembled, so a `#` that
-  follows an escape can be misjudged as a comment - in the history guard, and in
-  `guard-secrets-read`'s text-emitter reading, which uses the same join;
-- a here-string's reader is recognised only as the first word of its command, not
-  behind a wrapper that runs its argument, which the heredoc reader already handles;
-- a `case` pattern's `)` inside a double-quoted substitution ends the substitution
-  early, so the rest of its body is read as quoted text;
-- a git command quoted as one phrase and sent to a shell or into a git hook file is
-  one word, and is not read as git;
+- a git command quoted as one phrase is read as a command only where the stage
+  printing it has its output run - piped into a shell, written into a file named
+  as a git hook or under `.git/hooks/` or `.husky/`, written to a target the
+  reading cannot resolve, or written to a file a later stage of the same command
+  runs. A file run by a LATER command, or a hook directory under another name
+  holding a file not named as a hook, is not followed;
 - the secret-read arm of `guard-secrets-read` does not join line continuations
   before reading a path, and a here-string fed to an interpreter is not graded as
   inline evaluation there.

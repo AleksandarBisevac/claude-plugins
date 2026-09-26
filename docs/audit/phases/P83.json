@@ -1,7 +1,7 @@
 {
   "id": "P83",
   "title": "the history and secrets guards close the residuals SECURITY.md states as open",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "Every shape SECURITY.md lists as an open residual of the history guard and guard-secrets-read, other than a program's own subprocess calls, is refused or graded, each with a deny case beside an allow case, and SECURITY.md's list shrinks to what remains.",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "feda644acc4054f02a51a3baedd00b1c880c74b3",
+  "branch": "audit/p83-the-history-and-secrets-guards",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P83.1",
       "title": "the history guard reads a comment, a here-string, a case body and an emitted hook the way the shell does",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Close four residuals of the history guard and the shared line-continuation join. (1) join_continuations decides whether `#` starts a comment from the raw previous character; carry a word-start flag instead (an unescaped blank, newline or operator sets it; any other character or an escaped pair clears it; a removed backslash-newline leaves it) and treat `#` as a comment only while it is set. (2) A here-string's reader is recognised only as the first word of its command; find it past the same wrapper list the heredoc reader uses. (3) A `case` pattern's `)` inside a double-quoted substitution closes it early; a body holding a `case` with no `esac` before the close is unreadable (the command goes to the raw-text reading). (4) An emitter whose output is written to a redirect target that carries a quote or expansion, lies under a git hooks directory (.git/hooks/, .husky/, core.hooksPath), or is run later in the same command (sh/bash/source/./path/make) stays graded as the git it spells. Each with a deny case red first and an allow case beside it; SECURITY.md's residual list and CHANGELOG updated.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -62,14 +62,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T10:59:58Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -121,5 +121,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-26T10:59:58Z"
 }

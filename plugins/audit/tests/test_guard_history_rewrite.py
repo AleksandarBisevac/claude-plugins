@@ -665,7 +665,41 @@ def _cases(check):
                 ("gp29", "echo stash | xargs git", "deny",
                  "the verb arrives on stdin and cannot be read"),
                 ("gp30", "echo x | xargs git log --oneline", "allow",
-                 "...while a verb on the command line is graded as itself")):
+                 "...while a verb on the command line is graded as itself"),
+                # A git command QUOTED AS ONE PHRASE is one word to the lexer.
+                # Where that word goes decides whether it is a command: into a
+                # shell, into a git hook, or into a file the same command runs.
+                ("gp31", "echo '" + _G + "' | sh", "deny",
+                 "a quoted phrase piped into a shell is the command it spells"),
+                ("gp32", "printf '%s\\n' 'git push --force origin main' | bash",
+                 "deny", "...a force-push, the same way"),
+                ("gp33", "echo '" + _G + "' > .git/hooks/pre-commit", "deny",
+                 "...and written into a git hook, which git runs on the next "
+                 "commit with no second command at all"),
+                ("gp34", "echo '" + _G + "' > .husky/pre-commit", "deny",
+                 "...a hook manager's hook directory, the same"),
+                ("gp35", "echo '" + _G + "' > x; sh x", "deny",
+                 "...and written into a file this same command then runs"),
+                ("gp36", "echo '" + _G + "' > \"$F\"; sh \"$F\"", "deny",
+                 "...including a target the guard cannot resolve"),
+                ("gp37", "echo '" + _G + " is refused here' > notes.md", "allow",
+                 "while a quoted phrase written into a prose file nothing runs "
+                 "is text"),
+                ("gp38", "echo 'the stash was refused' | sh", "allow",
+                 "...and a phrase naming no git command is nothing to refuse, "
+                 "wherever it goes"),
+                ("gp39", "echo '" + _G + "' > docs/pre-commit.md", "allow",
+                 "...a file merely NAMED like a hook, with an extension, is not "
+                 "one git runs"),
+                ("gp40", "echo '" + _G + "' > x; cat x", "allow",
+                 "...and a file the same command only reads is not run"),
+                ("gp41", "echo '" + _G + "' > x && chmod +x x && ./x", "deny",
+                 "...while one it runs by path is"),
+                ("gp42", "echo '" + _G + "' > githooks/pre-push", "deny",
+                 "...and a file named as a git hook is one, whatever directory "
+                 "core.hooksPath names"),
+                ("gp43", "echo '" + _G + "' > \"$HOOK\"", "deny",
+                 "...and a target the reading cannot resolve may name one")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
@@ -695,7 +729,19 @@ def _cases(check):
                  "`git status`"),
                 ("gc7", ": # " + _nl + _G, "deny", "...a stash, the same way"),
                 ("gc8", "git " + _nl + "  stash", "deny",
-                 "a continuation outside a comment is still joined")):
+                 "a continuation outside a comment is still joined"),
+                # A `#` is a comment only where the ASSEMBLED word starts: after
+                # a removed continuation or an escaped blank it is mid-word, and
+                # the line goes on to the next command.
+                ("gc9", "echo x" + _nl + "#;gi" + _nl + "t stash", "deny",
+                 "a stash after a `#` that a removed continuation made mid-word"),
+                ("gc10", "echo a\\ #;gi" + _nl + "t stash", "deny",
+                 "...and after a `#` that follows an escaped blank"),
+                ("gc11", "echo x" + _nl + "#;git push --for" + _nl
+                 + "ce origin main", "deny", "a force-push, the same way"),
+                ("gc12", "echo x # note" + _nl + "git log --oneline", "allow",
+                 "...while a real comment's trailing backslash still ends the "
+                 "line, and the read on the next one is graded as itself")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))
@@ -855,7 +901,30 @@ def _cases(check):
                 ("gs8", "python3 <<< '" + _G + " drop'", "deny",
                  "...and to an interpreter it is code, read the way -c is"),
                 ("gs9", "cat <<< '" + _G + "'", "allow",
-                 "while a here-string to a program that only reads it is data")):
+                 "while a here-string to a program that only reads it is data"),
+                # The reader is found past a wrapper that runs its argument,
+                # the way the heredoc head is read.
+                ("gs10", "env sh <<<'" + _G + "'", "deny",
+                 "a here-string to a shell behind env"),
+                ("gs11", "sudo bash <<< '" + _G + "'", "deny",
+                 "...behind sudo"),
+                ("gs12", "command sh <<< '" + _G + "'", "deny",
+                 "...behind command"),
+                ("gs13", "timeout 5 sh <<<'" + _G + "'", "deny",
+                 "...behind a wrapper with its own operand"),
+                ("gs14", "grep sh <<< '" + _G + "'", "allow",
+                 "...while a shell's NAME as the argument of a program that "
+                 "only reads its input is still data"),
+                ("gs15", "env FOO=1 cat <<< '" + _G + "'", "allow",
+                 "...and so is a reader behind a wrapper that is not a shell "
+                 "or an interpreter"),
+                # A `case` pattern's `)` is not the substitution's close.
+                ("gs16", 'echo "$(case x in x) ' + _G + ';; esac)"', "deny",
+                 "a stash in a case arm inside a double-quoted substitution"),
+                ("gs17", 'echo "$(case x in x) git push --force origin main;; '
+                 'esac)"', "deny", "...a force-push, the same way"),
+                ("gs18", 'echo "$(case x in x) date;; esac)"', "allow",
+                 "...while a case arm that runs no git is nothing to refuse")):
             v, why = _decide(repo, _cmd)
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:120])))

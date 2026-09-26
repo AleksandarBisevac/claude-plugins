@@ -387,6 +387,88 @@ def _quoted_substitutions(text):
     return out
 
 
+# The names git runs as hooks. A file with one of these names is run by git
+# itself on the next matching operation, wherever `core.hooksPath` points, so
+# writing a command into one is running it with no second command at all.
+_GIT_HOOK_NAMES = frozenset((
+    "applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit",
+    "pre-merge-commit", "prepare-commit-msg", "commit-msg", "post-commit",
+    "pre-rebase", "post-checkout", "post-merge", "pre-push", "pre-receive",
+    "update", "proc-receive", "post-receive", "post-update",
+    "reference-transaction", "push-to-checkout", "pre-auto-gc", "post-rewrite",
+    "sendemail-validate", "fsmonitor-watchman", "p4-changelist",
+    "p4-prepare-changelist", "p4-post-changelist", "p4-pre-submit",
+    "post-index-change"))
+# Programs that run a file named as their argument.
+_FILE_RUNNERS = SHELLS + ("source", ".", "make")
+
+
+def _stages(pieces):
+    """[{"words", "piped", "targets"}] - one entry per simple command.
+
+    A redirect operator does not end its command here: `echo x > f` is one
+    stage whose output target is `f`. `piped` says the stage's output is the
+    next stage's input."""
+    out, cur, targets, want_target = [], [], [], False
+    for piece, sep in pieces:
+        if not sep:
+            if want_target:
+                targets.append(piece)
+                want_target = False
+            else:
+                cur.append(piece)
+            continue
+        if ">" in piece and "|" not in piece and ";" not in piece:
+            want_target = not piece.endswith("&")
+            continue
+        if "<" in piece and not set(piece) - set("<"):
+            continue
+        piped = "|" in piece and "||" not in piece
+        out.append({"words": cur, "piped": piped, "targets": targets})
+        cur, targets, want_target = [], [], False
+    if cur or targets:
+        out.append({"words": cur, "piped": False, "targets": targets})
+    return out
+
+
+def _runs_file(stage, target):
+    """Whether `stage` runs the file `target` names."""
+    words = stage["words"]
+    if not words:
+        return False
+    plain = target[2:] if target.startswith("./") else target
+    if words[0] in (target, "./" + plain):
+        return True
+    rest, candidates = _config.program_candidates(words)
+    programs = [program_name(w) for w in candidates]
+    if "make" in programs and os.path.basename(plain).lower() in (
+            "makefile", "gnumakefile"):
+        return True
+    return any(p in _FILE_RUNNERS for p in programs) and any(
+        w in (target, plain, "./" + plain) for w in rest[1:])
+
+
+def _output_runs(stages, at):
+    """Whether what stage `at` prints is then RUN: piped into a shell, written
+    into a git hook, written to a path this reading cannot resolve, or written
+    to a file a later stage of the same command runs."""
+    stage = stages[at]
+    if stage["piped"] and at + 1 < len(stages):
+        _rest, candidates = _config.program_candidates(stages[at + 1]["words"])
+        if any(program_name(w) in SHELLS for w in candidates):
+            return True
+    for target in stage["targets"]:
+        if "$" in target or "`" in target:
+            return True
+        norm = target.replace("\\", "/")
+        if "/.git/hooks/" in "/" + norm or norm.startswith(".husky/") \
+                or os.path.basename(norm) in _GIT_HOOK_NAMES:
+            return True
+        if any(_runs_file(later, target) for later in stages[at + 1:]):
+            return True
+    return False
+
+
 def _substitution_end(text, start):
     """The index of the `)` that closes a `$(` whose body starts at `start`, or
     None when it never closes. Parentheses count only outside quotes, and a
@@ -410,9 +492,25 @@ def _substitution_end(text, start):
         elif ch == ")":
             depth -= 1
             if depth == 0:
-                return j
+                return None if _open_case(text[start:j]) else j
         j += 1
     return None
+
+
+_QUOTED_SPAN = re.compile(r"'[^']*'|\"(?:[^\"\\\\]|\\\\.)*\"")
+_CASE_WORD = re.compile(r"(?<![\w-])(case|esac)(?![\w-])")
+
+
+def _open_case(body):
+    """Whether `body` holds a `case` with no `esac` after it - which means the
+    `)` that ended it was a case pattern's, not the substitution's close, and
+    the body as cut is not the body the shell runs. Words inside quotes are not
+    keywords. The caller treats that as unreadable, so the command goes to the
+    raw-text reading rather than to a reading of the wrong span."""
+    depth = 0
+    for word in _CASE_WORD.findall(_QUOTED_SPAN.sub(" ", body)):
+        depth += 1 if word == "case" else -1 if depth else 0
+    return depth > 0
 
 
 def git_invocations(command, depth=0):
@@ -453,7 +551,9 @@ def git_calls(command, depth=0):
     words = [None if sep else piece for piece, sep in pieces]
     out = []
     # A here-string's word fed to a shell or an interpreter is the program it
-    # runs: `sh <<<'git stash'` is a stash spelled as one quoted word.
+    # runs: `sh <<<'git stash'` is a stash spelled as one quoted word. The
+    # reader is found past a wrapper that runs its argument (`env sh <<<...`),
+    # by the same step the heredoc head is read with.
     for at, (piece, sep) in enumerate(pieces):
         if not (sep and piece == "<<<") or depth >= _MAX_NEST:
             continue
@@ -462,11 +562,26 @@ def git_calls(command, depth=0):
         start = at
         while start > 0 and not pieces[start - 1][1]:
             start -= 1
-        if start < at and program_name(pieces[start][0]) in HERESTRING_READERS:
+        _rest, readers = _config.program_candidates(
+            piece for piece, _sep in pieces[start:at])
+        if any(program_name(word) in HERESTRING_READERS for word in readers):
             nested = git_calls(pieces[at + 1][0], depth + 1)
             if nested is None:
                 return None
             out.extend(nested)
+    # A git command QUOTED AS ONE PHRASE is one word to the lexer, and it is a
+    # command wherever the stage's output is run: each argument of such a stage
+    # is read as a command line of its own, the way a shell's -c argument is.
+    if depth < _MAX_NEST:
+        stages = _stages(pieces)
+        for at, stage in enumerate(stages):
+            if not _output_runs(stages, at):
+                continue
+            for word in stage["words"][1:]:
+                nested = git_calls(word, depth + 1)
+                if nested is None:
+                    return None
+                out.extend(nested)
     # A substitution inside double quotes is one word to the lexer and a
     # command to the shell, so its body is read as one. A body this cannot
     # read makes the whole command unreadable (None), which sends every arm to

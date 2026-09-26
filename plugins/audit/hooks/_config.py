@@ -1427,6 +1427,27 @@ def _last_command(text):
     return re.split(r"[;&|(\n]", text)[-1].split()
 
 
+def program_candidates(words):
+    """(words past the prefix, the words that may be the program run).
+
+    One command's words with leading assignments and wrappers that run their
+    argument (`env`, `sudo`, `timeout 5`, ...) stepped over. Behind no wrapper
+    only the first remaining word is the program; behind one, a wrapper's own
+    operands cannot be told from the program by position (`sudo -u x bash`), so
+    every remaining word is a candidate - the reading that grades rather than
+    drops."""
+    words = list(words)
+    wrapped = False
+    while words and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])
+                     or _program_of(words[0]) in _HEAD_WRAPPERS):
+        wrapped = wrapped or _program_of(words[0]) in _HEAD_WRAPPERS
+        words = words[1:]
+        while wrapped and words and (words[0].startswith("-")
+                                     or words[0].isdigit()):
+            words = words[1:]
+    return (words, words if wrapped else words[:1])
+
+
 def _head_runs_body(head):
     """"shell", "code" or None: what the heredoc HEAD itself does with the body.
 
@@ -1440,16 +1461,7 @@ def _head_runs_body(head):
     None means no word of the head is a program that could run the body."""
     if _HEAD_INDIRECTION.search(head):
         return "shell"
-    words = _last_command(head)
-    wrapped = False
-    while words and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])
-                     or _program_of(words[0]) in _HEAD_WRAPPERS):
-        wrapped = wrapped or _program_of(words[0]) in _HEAD_WRAPPERS
-        words = words[1:]
-        while wrapped and words and (words[0].startswith("-")
-                                     or words[0].isdigit()):
-            words = words[1:]
-    candidates = words[:1] if not wrapped else words
+    words, candidates = program_candidates(_last_command(head))
     for index, word in enumerate(candidates):
         program = _program_of(word)
         if program in _SHELL_PROGRAMS:
@@ -1472,13 +1484,18 @@ def join_continuations(text):
     A COMMENT RUNS TO THE END OF ITS LINE and is copied through untouched: an
     unquoted `#` that starts a word opens it, and a backslash at its end does
     NOT continue the line - bash runs the next line as a command of its own, so
-    joining it would make that command an argument of the one before."""
+    joining it would make that command an argument of the one before.
+
+    WHETHER `#` STARTS A WORD is read from the word being assembled, not from
+    the raw character before it: a removed continuation leaves the word it
+    interrupted open (`x`, backslash-newline, `#y` is the one word `x#y`), and
+    an escaped blank belongs to its word. `at_start` carries that fact."""
     out, quote, i, n = [], None, 0, len(text or "")
     text = text or ""
+    at_start = True
     while i < n:
         ch = text[i]
-        if quote is None and ch == "#" and (i == 0 or text[i - 1] in
-                                            " \t\n;&|()<>"):
+        if quote is None and ch == "#" and at_start:
             end = text.find("\n", i)
             end = n if end < 0 else end
             out.append(text[i:end])
@@ -1495,12 +1512,14 @@ def join_continuations(text):
                 i += 2
                 continue
             out.append(text[i:i + 2])
+            at_start = False
             i += 2
             continue
         if ch == '"':
             quote = None if quote == '"' else '"'
         elif ch == "'" and quote is None:
             quote = "'"
+        at_start = quote is None and ch in " \t\n;&|()<>"
         out.append(ch)
         i += 1
     return "".join(out)

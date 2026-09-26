@@ -298,6 +298,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **The history guard reads four shapes the way the shell does, which SECURITY.md listed as open.**
+  The line-continuation join decided whether `#` opens a comment from the raw character before it,
+  so a `#` that a removed continuation or an escaped blank had made mid-word was read as a comment
+  and the command after it went unread; it now follows the word the shell assembles, in both
+  guards that share the join. A here-string's reader is found past a wrapper that runs its argument
+  (`env sh <<<...`), by the step the heredoc head already used, now one shared function. A `case`
+  pattern's `)` inside a double-quoted substitution no longer closes it: such a body is unreadable
+  and goes to the raw-text reading. A git command quoted as one phrase is read as a command where
+  the stage printing it has its output run - piped into a shell, written into a git hook, written to
+  a target the reading cannot resolve, or written to a file the same command runs.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path
