@@ -29,7 +29,7 @@
     {
       "id": "P82.1",
       "title": "red-first reads a house case by its full label and the unittest reader only on unittest output",
-      "status": "in_progress",
+      "status": "done",
       "description": "stamp-verification.failing_cases takes label.split()[0] as a house case's id, so a label that is a sentence starting with an ordinary word ('the', 'a') gets an id that also exists in HEAD's test file and the task's own case is never recognised; and _UNITTEST_CASE (^(FAIL|ERROR): ) is applied to every output, so a house suite whose PASSING case prints 'ERROR: <path> is not a directory' as expected stdout gets a phantom failing case. Reported on P78.9 (a new house case 'the gate-economy row is wired into diagnose() ...' read could-not-prove, exit 3, while the raw run had exactly that one FAIL line). Fix: a house case is identified by its FULL label, with a leading id-shaped token (letters then digits, e.g. me1, ga9b) used as its id only when present; the task's own case is matched by either; the unittest FAIL:/ERROR: reader applies only when the output is unittest-shaped (a 'Ran N tests' line). Cases both ways: a sentence label proves red, an id-led label is still named by its id, a house run with an expected ERROR: line counts no phantom, a real unittest ERROR: is still counted and not credited as an assertion.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -64,14 +64,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "92485cbf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "failing_cases gates each runner on its tally; house ids only for id-shaped leading tokens, else the full label matched against parsed literals; --case matches id or label.",
+        "descriptive": "Red-first proof now recognises a task's own test whose name is a sentence, and no longer mistakes a passing test's printed error message for a failure."
       },
       "startedAt": "2026-09-26T09:47:10Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T10:55:49Z",
+      "verifiedBy": [
+        "test_stamp_verification sr46",
+        "test_stamp_verification sr49",
+        "test_stamp_verification sr50",
+        "test_stamp_verification sr51",
+        "test_stamp_verification sr54"
+      ]
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"
