@@ -105,7 +105,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   check had a gap this run, or whose phase was not examined, is set aside with that reason rather
   than called repaired, and one read from a clone's own evidence (a reflog, the stash, a
   remote-tracking ref, the gitignored usage ledger) carries that clone's id - a random token kept
-  in its git common dir, so it moves with the clone and no two clones share it - and goes stale
+  in its git common dir, published whole, so it moves with the clone and no two clones share it (a
+  byte copy of the git dir is the same clone); a write with a local breach and no id is refused -
+  and goes stale
   only there. A rebase, squash or amend re-reports its breaches as new beside the old
   unmatched entries, and the output says so. `--write-baseline` refuses while a phase it covers is
   in flight, takes the `index` lock around its read-then-write and refuses a hold it did not take

@@ -323,6 +323,11 @@ _QUOTED = re.compile(r"'([^']*)'|`([^`]*)`")
 # a change to the rule's wording, and it must not re-key every finding that
 # quotes it.
 _ENUMERATION = re.compile(r"\[[^\[\]]*\]")
+# ...and the same vocabulary spelled without brackets: `one of 'a', 'b'`.
+_ONE_OF = re.compile(r"\bone of '[^']*'(?:, '[^']*')*")
+# A finding with no `: ` opens with the path it is about (`meta.ado.fields.x must
+# be ...`); that dotted path is its locus.
+_DOTTED_LOCUS = re.compile(r"^([A-Za-z_][\w-]*(?:\.[\w-]+|\[[^\]]*\])+)\s")
 # An id-shaped bare token - a letter run then a digit (`P1.2`, `BUG-3-k7m`) - for
 # the findings that name their subject unquoted after the locus.
 _BARE_ID = re.compile(r"\b[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9._-]*\b")
@@ -341,14 +346,18 @@ def finding_subject(line):
     `task P1.1`, `meta.ado.tag`) before `: `, and names what it is about in
     quotes. Those two are what a finding IS; the sentence around them is how it
     is worded today, and a reader matching findings across runs - the invariant
-    baseline - must not treat a reworded message as a different finding. A
-    bracketed list is left out: it is the allowed vocabulary, not the subject.
-    With nothing quoted, the id-shaped tokens after the locus stand in.
+    baseline - must not treat a reworded message as a different finding. An
+    allowed-values list is left out, bracketed or spelled `one of 'a', 'b'`: it
+    is the vocabulary, not the subject. With no `: `, a leading dotted path is
+    the locus. With nothing quoted, the id-shaped tokens after the locus stand
+    in.
     """
     locus, sep, rest = str(line).partition(": ")
     if not sep:
-        locus, rest = "", str(line)
-    rest = _ENUMERATION.sub(" ", rest)
+        dotted = _DOTTED_LOCUS.match(str(line))
+        locus = dotted.group(1) if dotted else ""
+        rest = str(line)[dotted.end():] if dotted else str(line)
+    rest = _ONE_OF.sub(" ", _ENUMERATION.sub(" ", rest))
     ids = [a or b for a, b in _QUOTED.findall(rest)]
     if not ids:
         ids = _BARE_ID.findall(rest)

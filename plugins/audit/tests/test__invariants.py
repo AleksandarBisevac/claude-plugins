@@ -1327,6 +1327,37 @@ def _cases(check):
               before is None and minted and after_move == minted
               and same_path and same_path != minted
               and "/" not in minted and home not in minted)
+        home = _harness.fixture_root("clone-id-empty-")
+        try:
+            spot = os.path.join(home, "repo")
+            subprocess.run(["git", "init", "-q", spot], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            common = os.path.dirname(M._locks.lock_dir(spot))
+            with open(os.path.join(common, M.CLONE_ID_NAME), "w") as fh:
+                fh.write("")
+            empty_read = M.clone_id(spot)
+            healed = M.clone_id(spot, create=True)
+            litter = [n for n in os.listdir(common) if n.startswith(".clone-id-")]
+            real_clone_id = M.clone_id
+            M.clone_id = lambda _root, create=False: None
+            try:
+                target = os.path.join(home, "baseline.json")
+                written, why = M.write_baseline(
+                    target, _history([M.found("stash", "stash x", local=True)]),
+                    {"phases": [{"id": "P7", "status": "done"}]}, spot)
+            finally:
+                M.clone_id = real_clone_id
+        finally:
+            _harness.remove_tree(home)
+        check("ik16 an EMPTY token file - a truncation, or a write that never "
+              "landed - reads as no id, and the next minting replaces it instead "
+              "of reading empty for ever; the publish leaves no sibling behind: "
+              "%r" % ((empty_read, healed, litter),),
+              empty_read is None and healed and litter == [])
+        check("ik17 ...and a baseline write with a local breach and no clone id "
+              "is REFUSED, never stored under no clone where every other clone "
+              "would compare it: %r" % (why,),
+              written is None and why and "no id" in why)
         pair = [dict(gone, clone="clone-a"), dict(gone, clone="clone-b")]
         held = M.compare_baseline(pair, _history([
             M.found("stash", "stash x", local=True)]), "clone-a")
@@ -1350,8 +1381,8 @@ def _cases(check):
         status_line = [x for x in found_now if "'bogus'" in x]
         widened = [str(x).replace("'cancelled']", "'cancelled', 'parked']")
                    for x in status_line]
-        widened = [_output.finding(getattr(status_line[0], "code", None), x)
-                   for x in widened] if hasattr(_output, "finding") else widened
+        widened = [_output.finding(_output.finding_code(status_line[0]), x)
+                   for x in widened]
         check("ik9 a status finding keys the SAME after one value is appended to "
               "the allowed list it quotes - the vocabulary is the validator's, "
               "not the finding's: %r"
@@ -1367,6 +1398,34 @@ def _cases(check):
               "finding be absorbed by an old one's baseline entry: %r"
               % (sorted(keys),),
               len(same_locus) == 2 and len(keys) == 2)
+        import _manifest_vocab as _vocab
+        origin_task = {"id": "P1.1", "ado": {"origin": "sideways"}}
+        said_origin = []
+        _vocab._check_ado(origin_task, "task P1.1", said_origin)
+        real_origin = _vocab.ADO_ORIGIN
+        _vocab.ADO_ORIGIN = tuple(real_origin) + ("imported",)
+        try:
+            grown_origin = []
+            _vocab._check_ado(origin_task, "task P1.1", grown_origin)
+        finally:
+            _vocab.ADO_ORIGIN = real_origin
+        check("ik14 an allowed-values list spelled WITHOUT brackets - `one of 'a', "
+              "'b'` - leaves the key too: one value appended to ADO_ORIGIN does "
+              "not re-key the finding: %r"
+              % ([M._validator_subject(x) for x in said_origin + grown_origin],),
+              len(said_origin) == 1 and len(grown_origin) == 1
+              and said_origin[0] != grown_origin[0]
+              and M._validator_subject(said_origin[0])
+              == M._validator_subject(grown_origin[0])
+              and "sideways" in M._validator_subject(said_origin[0]))
+        dotted = [_output.finding("fields.template.object-field-reference",
+                                  "meta.ado.fields.%s must be an object of field "
+                                  "reference name -> literal value, got list"
+                                  % (k,)) for k in ("x", "y")]
+        check("ik15 a finding with no `: ` keys on the dotted path it opens with, "
+              "so two fields' findings under one rule stay two: %r"
+              % ([M._validator_subject(x) for x in dotted],),
+              M._validator_subject(dotted[0]) != M._validator_subject(dotted[1]))
         check("ik11 ...and every finding validate() returned carries the code of "
               "the rule that raised it: %r"
               % ([str(x)[:40] for x in found_now

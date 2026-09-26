@@ -488,7 +488,12 @@ def _check_ado_parents(manifest, phases):
     # split by tier that used to live on these two lines could not see the
     # thing that actually decides it, which is whether an AUTHORED `adoParent`
     # is in the loop at all.
-    findings = [e["message"] for e in result["findings"]]
+    # THE ENTRY'S OWN CODE IS THE RULE. `_ado_parent` already names each
+    # hierarchy rule (A1 self-parent, A2 loop, A3 phase-phase loop), so the
+    # finding carries that and not a second name for the same rule.
+    findings = [_output.finding("crossrefs.ado_parents.%s" % (e["code"],),
+                                e["message"])
+                for e in result["findings"]]
     warnings = list(inv["warnings"])
     warnings.extend(e["message"] for e in result["warnings"])
     warnings.extend(_require_parent_warnings(ado, inv["rows"]))

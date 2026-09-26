@@ -3682,6 +3682,8 @@ _RECIPE_SECTION = "## The lock worktree tooling shares"
 _RECIPE_RUN = "<the run that must be alone>"
 _RECIPE_DIR = "<worktreeDir>"
 _RECIPE_WAIT = "--wait 30"
+# How long a holder waits for its sentinel before giving up: 0.05 s a tick.
+_HOLD_TICKS = 1200
 
 
 def _lock_recipe():
@@ -3728,6 +3730,7 @@ def _lock_recipe_cases(check):
         _harness.skip(check, "lr2", "git is not on PATH", True)
         return
     tmp = tempfile.mkdtemp(prefix="lock-recipe-")
+    holders = []
     try:
         main_tree = os.path.join(tmp, "main")
         linked = os.path.join(tmp, "linked")
@@ -3755,7 +3758,10 @@ def _lock_recipe_cases(check):
         go = os.path.join(tmp, "go")
         # The holder waits on a SENTINEL, not a clock: it holds until this test
         # has seen the second run's answer, however long a loaded sweep takes.
-        hold = "while [ ! -e '%s' ]; do sleep 0.05; done" % (go,)
+        # BOUNDED, so a holder whose test died can never spin on after it: the
+        # loop gives up by itself, and `finally` below also kills it.
+        hold = ("i=0; while [ ! -e '%s' ] && [ \"$i\" -lt %d ]; do sleep 0.05; "
+                "i=$((i+1)); done" % (go, _HOLD_TICKS))
         for shell in ("sh", "bash", "zsh"):
             label = "lr2 %s" % (shell,)
             if shutil.which(shell) is None:
@@ -3776,6 +3782,7 @@ def _lock_recipe_cases(check):
             second = recipe.replace(_RECIPE_DIR, "'%s'" % (linked,)).replace(
                 _RECIPE_RUN, "true").replace(_RECIPE_WAIT, "--wait 0")
             holder = _run_recipe(shell, first, env)
+            holders.append(holder)
             deadline = time.monotonic() + 30
             while not os.path.exists(lock_file) and holder.poll() is None \
                     and time.monotonic() < deadline:
@@ -3795,6 +3802,10 @@ def _lock_recipe_cases(check):
             check("lr3 %s: the lock is gone once the holder finishes, so the "
                   "release ran" % (shell,), not os.path.exists(lock_file))
     finally:
+        for holder in holders:
+            if holder.poll() is None:
+                holder.kill()
+                holder.wait()
         shutil.rmtree(tmp, ignore_errors=True)
 
 

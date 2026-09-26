@@ -2818,8 +2818,13 @@ validator finding's subject is `_manifest_rules.finding_subject`: the CODE of th
 it, its locus and the ids it quotes, with the sentence and any quoted allowed-values list taken
 out. Every validator finding is built with `_output.finding(code, text)` — a `str` subclass, so
 every caller that prints, joins or compares findings reads it unchanged and only this reader asks
-for `.code` — and `test__output.py`'s `fc` cases walk every finding site in the validator's modules
-and fail one built without a code, or two sites sharing one. The live
+for `.code` — and `test__output.py`'s `fc` cases follow every call `validate()` reaches, across
+modules, and fail a finding site built without a code (an append, an extend or `+=` of a list or
+comprehension, an assignment of one, or a list returned in place), or two sites sharing one. The
+ADO hierarchy findings carry `_ado_parent`'s own rule code (`crossrefs.ado_parents.A1`...). An
+allowed-values list leaves the key bracketed or spelled `one of 'a', 'b'`, and a finding with no
+`: ` keys on the dotted path it opens with. The clone id is published by linking a finished
+sibling onto its name, and a baseline write with a local breach and no readable id is refused. The live
 pairing re-check keeps only the rows naming this phase's own tasks (`own_pairing_findings`).
 
 **The baseline** (`invariants-baseline.json` beside the manifest) lives here rather than in the

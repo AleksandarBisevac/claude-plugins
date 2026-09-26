@@ -1496,31 +1496,48 @@ def clone_id(git_root, create=False):
     two machines - a devcontainer's `/workspaces/<repo>`, a CI runner's work dir
     - shared one. A token written once moves with the clone, differs between
     clones, and names no machine in the committed file. Every worktree of one
-    clone shares the common dir and so the token.
+    clone shares the common dir and so the token; a byte copy of the git dir
+    (`cp -r`, a restored backup) copies the token too and is the same clone.
 
-    Written only when `create` is asked - by the baseline write, under the index
-    lock - with an exclusive create, so two first writers cannot mint two ids.
-    None when there is no token yet, which sets every local entry aside.
+    PUBLISHED WHOLE OR NOT AT ALL. The token is written into a sibling and
+    linked onto its name, so the name never holds a partial token and two first
+    writers cannot both win. Minted only when `create` is asked - by the baseline
+    write, under the index lock - and a file that is there but empty, which only
+    an older build or a truncation leaves, is replaced then too. None when there
+    is no readable token, and the baseline write refuses rather than store a
+    local entry under no id.
     """
     ld = _locks.lock_dir(git_root)
     if not ld:
         return None
-    path = os.path.join(os.path.dirname(ld), CLONE_ID_NAME)
+    common = os.path.dirname(ld)
+    path = os.path.join(common, CLONE_ID_NAME)
     try:
         with open(path, "r", encoding="utf-8") as fh:
             token = fh.read().strip()
-        if token:
-            return token
+    except FileNotFoundError:
+        token, present = "", False
     except OSError:
-        pass
-    if not create:
         return None
+    else:
+        present = True
+    if token or not create:
+        return token or None
+    fd, tmp = tempfile.mkstemp(dir=common, prefix=".clone-id-", suffix=".tmp")
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(uuid.uuid4().hex + "\n")
-    except FileExistsError:
-        pass
+        if present:
+            os.replace(tmp, path)
+            tmp = None
+        else:
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                pass                  # another writer published first; read it
+    finally:
+        if tmp is not None and os.path.exists(tmp):
+            os.unlink(tmp)
     return clone_id(git_root)
 
 
@@ -1729,6 +1746,21 @@ def in_flight(manifest, phase_ids):
             and _mio.effective_phase_status(p) not in _mio.TERMINAL]
 
 
+def _is_local(result, entry):
+    """Whether `entry` came from a breach marked local in `result`."""
+    for answer in _answers(result):
+        if str(answer["phaseId"]) != entry["phase"]:
+            continue
+        for check in answer.get("checks") or []:
+            if check["name"] != entry["check"]:
+                continue
+            for key in check["keys"]:
+                if (key["subject"] == entry["subject"]
+                        and key["sha"] == entry.get("sha") and key.get("local")):
+                    return True
+    return False
+
+
 def _stored(entry):
     """An entry as the file holds it - `clone` only where it says something."""
     row = dict((k, entry[k]) for k in ("phase", "check", "subject", "sha",
@@ -1787,6 +1819,14 @@ def write_baseline(path, result, manifest, git_root):
             if why:
                 return None, why
         clone = clone_id(git_root, create=True)
+        local = [e for e in fingerprints(result) if _is_local(result, e)]
+        if clone is None and local:
+            return None, ("%d breach(es) here were read from this clone's own "
+                          "evidence and this clone has no id to record them "
+                          "under (%s in the git common dir could not be read or "
+                          "written) - refused rather than stored under no "
+                          "clone, where every other clone would compare them"
+                          % (len(local), CLONE_ID_NAME))
         split = compare_baseline(previous, result, clone)
         stale = set(baseline_key(e) for e in split["unmatched"])
         kept = [e for e in previous if baseline_key(e) not in stale]

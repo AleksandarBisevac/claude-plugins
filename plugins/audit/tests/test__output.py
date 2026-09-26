@@ -2428,22 +2428,78 @@ def _cases(check):
 
 
 # --- every validator finding carries the code of its rule --------------------
-# (module, the function its findings are reached from - None for every function
-# in the file - and the names its finding lists go by). The five whose root is
-# named are shared with other callers and only part of each file is the
-# validator's, so the walk follows the calls out of that root.
-FINDING_SITES = (
-    ("_manifest_rules.py", None, ("f", "findings")),
-    ("_manifest_phases.py", None, ("f", "findings")),
-    ("_manifest_crossrefs.py", None, ("f", "findings")),
-    ("_manifest_ado.py", None, ("f", "findings")),
-    ("_manifest_vocab.py", None, ("findings",)),
-    ("_ado_conventions.py", "check_conventions_config", ("findings",)),
-    ("_ado_fields.py", "check_fields_config", ("findings",)),
-    ("_areas.py", "validate_registry", ("findings",)),
-    ("_ado_parent.py", "declaration_findings", ("findings", "out")),
-    ("_ado_tracked.py", "declaration_findings", ("findings",)),
-)
+# THE WALK STARTS AT `validate()` AND FOLLOWS THE CALLS, across modules, rather
+# than reading a list of files. A producer is a finding producer because the
+# validator reaches it; a table of modules is the thing that left the ADO
+# hierarchy findings - built in one module and turned into findings in another -
+# outside every file it named.
+VALIDATE_ROOT = ("_manifest_rules", "validate")
+
+
+def _module_paths():
+    out = {}
+    for _rel, path in M.py_files(M.SCRIPTS_DIR):
+        out[os.path.basename(path)[:-3]] = path
+    return out
+
+
+def _module_names(tree, paths):
+    """`{local name: (module, attr or None)}` for the imports and aliases."""
+    names = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name in paths:
+                    names[a.asname or a.name] = (a.name, None)
+        elif isinstance(node, ast.ImportFrom) and node.module in paths:
+            for a in node.names:
+                names[a.asname or a.name] = (node.module, a.name)
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Attribute)
+                and isinstance(node.value.value, ast.Name)
+                and names.get(node.value.value.id, (None, 1))[1] is None):
+            names[node.targets[0].id] = (names[node.value.value.id][0],
+                                         node.value.attr)
+    return names
+
+
+def validator_reach():
+    """`{(module, function): FunctionDef}` - everything `validate()` calls."""
+    paths, trees, reach = _module_paths(), {}, {}
+
+    def tree(mod):
+        if mod not in trees:
+            with open(paths[mod], encoding="utf-8") as fh:
+                trees[mod] = ast.parse(fh.read())
+        return trees[mod]
+
+    todo = [VALIDATE_ROOT]
+    while todo:
+        mod, name = todo.pop()
+        if (mod, name) in reach or mod not in paths:
+            continue
+        top = dict((n.name, n) for n in tree(mod).body
+                   if isinstance(n, ast.FunctionDef))
+        names = _module_names(tree(mod), paths)
+        if name not in top:
+            target = names.get(name)
+            if target and target[1]:
+                todo.append(target)
+            continue
+        reach[(mod, name)] = top[name]
+        for call in ast.walk(top[name]):
+            if not isinstance(call, ast.Call):
+                continue
+            if isinstance(call.func, ast.Name):
+                todo.append((mod, call.func.id))
+            elif (isinstance(call.func, ast.Attribute)
+                  and isinstance(call.func.value, ast.Name)
+                  and names.get(call.func.value.id, (None, 1))[1] is None
+                  and call.func.value.id in names):
+                todo.append((names[call.func.value.id][0], call.func.attr))
+    return reach
 
 
 def _is_finding_call(node):
@@ -2453,71 +2509,85 @@ def _is_finding_call(node):
             and node.func.value.id == "_output")
 
 
-def _reached(tree, root):
-    fns = dict((n.name, n) for n in ast.walk(tree)
-               if isinstance(n, ast.FunctionDef))
-    seen, todo = set(), [root]
-    while todo:
-        name = todo.pop()
-        if name in seen or name not in fns:
-            continue
-        seen.add(name)
-        todo.extend(c.func.id for c in ast.walk(fns[name])
-                    if isinstance(c, ast.Call) and isinstance(c.func, ast.Name))
-    return [fns[n] for n in sorted(seen)]
+def _items(arg):
+    """What a literal list, tuple or comprehension puts into a list."""
+    if isinstance(arg, (ast.List, ast.Tuple)):
+        return list(arg.elts)
+    if isinstance(arg, (ast.ListComp, ast.GeneratorExp)):
+        return [arg.elt]
+    return None
+
+
+def _feeding_functions(reach):
+    """`(module, name)` of every same-module function whose return value a
+    reached function extends straight into `f` or `findings`."""
+    out = set()
+    for (mod, _name), fn in reach.items():
+        for node in ast.walk(fn):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "extend"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in ("f", "findings") and node.args
+                    and isinstance(node.args[0], ast.Call)
+                    and isinstance(node.args[0].func, ast.Name)):
+                out.add((mod, node.args[0].func.id))
+    return out
 
 
 def finding_sites():
-    """`(visited, uncoded, codes)` over every validator finding site.
+    """`(visited, uncoded, codes)` over every finding site `validate()` reaches.
 
-    A site is an `append` to a finding list, or a finding list returned as a
-    literal. `codes` maps each literal code to the places that raise it.
+    A FINDING LIST is `f`, `findings`, or the first half of any `(x, w)` a
+    reached function returns. A SITE is each item that enters one: an `append`,
+    an `extend` or `+=` of a literal list or comprehension, an assignment of
+    one, or a list returned in place. An `extend` of a list another reached
+    function built is a pass-through, and that function's own sites are walked.
     """
     visited, uncoded, codes = 0, [], {}
-    for base, root, names in FINDING_SITES:
-        path = os.path.join(M.SCRIPTS_DIR, "manifest", base)
-        with open(path, encoding="utf-8") as fh:
-            tree = ast.parse(fh.read())
-        scopes = [tree] if root is None else _reached(tree, root)
-        seen = set()
-        for scope in scopes:
-            for node in ast.walk(scope):
-                if id(node) in seen:
-                    continue
-                seen.add(id(node))
-                args = []
-                if (isinstance(node, ast.Call)
-                        and isinstance(node.func, ast.Attribute)
-                        and node.func.attr == "append"
-                        and isinstance(node.func.value, ast.Name)
-                        and node.func.value.id in names and node.args):
-                    if (base == "_ado_parent.py" and node.func.value.id == "out"
-                            and not _in_function(scope, node, "_basis_findings")):
-                        continue
-                    args = [node.args[0]]
-                elif (isinstance(node, ast.Return)
-                      and isinstance(node.value, ast.Tuple) and node.value.elts
-                      and isinstance(node.value.elts[0], ast.List)):
-                    args = list(node.value.elts[0].elts)
-                for arg in args:
-                    visited += 1
-                    if not _is_finding_call(arg):
-                        uncoded.append("%s:%d" % (base, arg.lineno))
-                        continue
-                    code = arg.args[0] if arg.args else None
-                    if isinstance(code, ast.Constant) and isinstance(code.value,
-                                                                     str):
-                        codes.setdefault(code.value, []).append(
-                            "%s:%d" % (base, arg.lineno))
+    reach = validator_reach()
+    feeds = _feeding_functions(reach)
+    for (mod, name), fn in sorted(reach.items()):
+        lists = set(("f", "findings"))
+        for node in ast.walk(fn):
+            if (isinstance(node, ast.Return) and isinstance(node.value, ast.Tuple)
+                    and len(node.value.elts) == 2
+                    and isinstance(node.value.elts[0], ast.Name)):
+                lists.add(node.value.elts[0].id)
+            # A function whose whole return value is extended into a finding
+            # list returns findings under whatever name it builds them in.
+            if ((mod, name) in feeds and isinstance(node, ast.Return)
+                    and isinstance(node.value, ast.Name)):
+                lists.add(node.value.id)
+        items = []
+        for node in ast.walk(fn):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in lists and node.args):
+                if node.func.attr == "append":
+                    items.append(node.args[0])
+                elif node.func.attr == "extend":
+                    items.extend(_items(node.args[0]) or [])
+            elif (isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add)
+                  and isinstance(node.target, ast.Name)
+                  and node.target.id in lists):
+                items.extend(_items(node.value) or [])
+            elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                  and isinstance(node.targets[0], ast.Name)
+                  and node.targets[0].id in lists):
+                items.extend(_items(node.value) or [])
+            elif (isinstance(node, ast.Return)
+                  and isinstance(node.value, ast.Tuple) and node.value.elts):
+                items.extend(_items(node.value.elts[0]) or [])
+        for arg in items:
+            visited += 1
+            where = "%s.%s:%d" % (mod, name, arg.lineno)
+            if not _is_finding_call(arg):
+                uncoded.append(where)
+                continue
+            code = arg.args[0] if arg.args else None
+            if isinstance(code, ast.Constant) and isinstance(code.value, str):
+                codes.setdefault(code.value, []).append(where)
     return visited, uncoded, codes
-
-
-def _in_function(scope, node, name):
-    for fn in ast.walk(scope):
-        if (isinstance(fn, ast.FunctionDef) and fn.name == name
-                and any(n is node for n in ast.walk(fn))):
-            return True
-    return False
 
 
 def _finding_code_cases(check):
@@ -2551,6 +2621,11 @@ def _finding_code_cases(check):
     acme.setdefault("meta", {})["ado"] = {"conventions": {"requiredFields": 5},
                                           "fields": {"x": []}}
     acme["meta"]["areas"] = {"bad": 5}
+    # A declared parent loop: the ADO hierarchy findings are built in one module
+    # and turned into findings in another, the path a list of files missed.
+    acme["meta"]["ado"]["phaseWorkItems"] = False
+    acme["phases"][0].update({"ado": {"id": 501}, "adoParent": {"id": 500}})
+    acme["phases"][1].update({"ado": {"id": 500}, "adoParent": {"id": 501}})
     acme["bugs"] = [{"id": "x"}]
     found = _manifest_rules.validate(acme)[0]
     bare = [str(x)[:50] for x in found if not M.finding_code(x)]
