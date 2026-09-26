@@ -385,7 +385,7 @@ L7:
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _tree_stamp
-  derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _output, _panel_write, _proc_group
+  derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
@@ -3079,6 +3079,46 @@ named failures, the plan gate's exempt verdict per touched file) arrives
 through `facts`, supplied by the caller — no subprocess, no git, inside the
 function itself.
 
+`resolve_shape(phase, build, derived_cfg)` is where the path-scoped shape a
+narrowed gate repoints comes from — a sibling task's own `path_scoped_sibling`
+entries FIRST (evidence the runner already accepted them), and only when none
+exists, `meta.phaseGate.derived.spelling` SECOND, when it carries a literal
+`{paths}` placeholder (ignored, with a printed reason, when it does not).
+Neither existing is `phase-no-spelling`, unchanged. `derive()`'s own result
+carries `shapeSource` — the sibling's task id, or the literal
+`meta.phaseGate.derived.spelling` — so a reader can tell which of the two
+supplied the shape; a spelling-sourced shape is filled by literal `{paths}`
+substitution rather than through `repointed()` (its placeholder is not a
+path-shaped token that function would recognize), the resolved paths
+shell-quoted through `shlex.quote` exactly the way a listing command is.
+
+**`derived-empty` has TWO triggers, and `derive()` is the only place either is
+computed.** The first: `meta.phaseGate.derived.listing.all` ran, exited 0 and
+named no suite (caught by `_full_listing_empty`, before coupling/importers/
+changed/last-failed ever run). The second: the shape came from
+`meta.phaseGate.derived.spelling` and, after every arm has had its turn,
+`test_paths` is still empty — a sibling-sourced shape cannot reach this
+(the same task that supplies it already contributed a path through
+`_tests_add_arm`), but a spelling-sourced one carries no such guarantee, and
+substituting `{paths}` with nothing would make the gate mean either the WHOLE
+suite or NOTHING depending on the runner, silently. Both triggers return
+`attribution: None` alongside `basis: "derived-empty"` — the SAME word, so a
+caller renders the SAME honest wide line regardless of which one fired.
+`attribution` (`{testsAdd, coupling, importers, changed, lastFailed, union}`)
+is `derive()`'s own per-arm breakdown, present ONLY when `narrowed` is true —
+`None` for EVERY wide basis with no exception, `phase-no-spelling` and both
+`derived-empty` triggers and a full-suite resolution alike: a full-suite
+`test_paths` is real (the union of `tests.add` and coupling, computed before
+the importer/changed/last-failed loops even run) but it is not what the wide
+gate runs, so it is not attributed either. `derive-phase-gate.py`'s renderers
+read ONLY this dict, keyed off `result["narrowed"]` and `result["basis"]` —
+never off whether `attribution` happens to be `None`, because a second,
+independent computation of the same arms does not know every widening
+trigger `derive()` knows, and would report a narrowed-looking breakdown for a
+gate that is actually wide the next time a trigger is added. That second
+computation used to exist here, as `derive-phase-gate.py._breakdown()`; it is
+deleted, and `attribution` is the only breakdown this plugin computes.
+
 Four arms, each additive to the test-path set before it is re-pointed through
 the sibling's own spelling: the union of path-scoped paths in each task's OWN
 gate (never a task that fell back to its phase's wide one — that fallback IS
@@ -3749,27 +3789,66 @@ reads git — so this is the one caller that gathers those observations for real
 result to `derive()` unchanged. The runner never derives; it only measures what the phase
 declares.
 
-**`meta.phaseGate.derived.runner` names a `meta.buildCommands` key**, resolved and run alone
-(`meta.nodePreamble` applied exactly the way `run-test-gate._resolved` applies it): that is the
-FULL listing, every suite file the runner would collect. **`meta.phaseGate.derived.spelling` is a
-separate raw template** carrying a `{paths}` placeholder, filled with the shell-quoted union of the
-phase's own tasks' `files`: that is the RELATED listing. Both listings write one line of output per
-path and never execute a test — a listing that ran a suite would make derivation as expensive as
-the thing it exists to narrow. Each subprocess runs through `_proc_group`, the same module
-`run-test-gate.py` and `stamp-verification.py red` share, so a listing that hangs is torn down
-whole rather than left running past this process's own patience.
+**`meta.phaseGate.derived.runner` names a `meta.buildCommands` key** — the test runner this
+phase's gate is stated in terms of, carried through only as the DISPLAY label (`entry`) this
+file's own lines and `testGateDerived` name, never resolved or run for a listing.
+**`meta.phaseGate.derived.spelling` is that runner's own path-scoped RUN command**, carrying a
+`{paths}` placeholder — the SECOND shape source `_gate_derive.resolve_shape` tries, read only
+when no sibling task's own gate carries a path-scoped entry: the sibling's entry is EVIDENCE the
+runner already accepted it, so it wins whenever both exist. `{paths}` is filled by LITERAL
+substitution with the shell-quoted, resolved test paths — never through `repointed()`, because
+the placeholder is not a path-shaped token that function would recognize. A `spelling` with no
+`{paths}` placeholder is ignored, with a printed reason; with neither a sibling nor a usable
+`spelling`, the basis is `phase-no-spelling`, unchanged. The printed lines and `testGateDerived
+.shapeSource` name WHICH source supplied the shape — the sibling task's id, or the literal
+`meta.phaseGate.derived.spelling` — so an operator can go read it. **The two listings
+this file actually runs live under `meta.phaseGate.derived.listing`**: `.all` lists every suite
+file the runner would collect, with no path filter — the FULL listing — and `.related` carries a
+`{paths}` placeholder, filled with the shell-quoted union of the phase's own tasks' `files`, for
+the RELATED listing. Both listings write one line of output per path and never execute a test —
+a listing that ran a suite would make derivation as expensive as the thing it exists to narrow —
+and both are TIMED: `fullListing` and `listing` each carry their own `durationMs` in
+`testGateDerived`. Each subprocess runs through `_proc_group`, the same module `run-test-gate.py`
+and `stamp-verification.py red` share, so a listing that hangs is torn down whole rather than left
+running past this process's own patience.
 
 **`meta.phaseGate.mode` ABSENT means no derivation was ever asked for** — this prints why and
 writes nothing, exit 0, before a single subprocess runs.
 
-**`derived-empty` is not reachable from this runner either**, and that is stated rather than
-merely true: `_gate_derive.derive`'s own docstring explains why its one shape source
-(`path_scoped_sibling`, a sibling task's own path-scoped gate) can never return an empty
-`test_paths` once a shape exists at all, and this file introduces no alternate shape source — it
-reads `meta.phaseGate.derived.runner`/`.spelling` as an ADDITIONAL arm beside
-`path_scoped_sibling`, never a replacement for it. So `shape is None` is still the only way a
-phase has nothing to narrow to, reported as `phase-no-spelling` (already in `derive()`'s own
-vocabulary).
+**A `verifiedOn.command` that cannot be run or exits non-zero is its own printed skip reason**
+("the version command failed"), kept apart from a machine answering a DIFFERENT version:
+folding the first into the second would render as "this machine answers `None`", which reads as
+an actual mismatched answer rather than as no answer at all having been produced.
+
+**`derived-empty` IS reachable from this runner, from TWO triggers, and `_gate_derive.derive()` is
+the ONLY place either is computed.** `meta.phaseGate.derived.listing.all` is the first: an ALL
+listing free to run, exit 0 and name no suite (a sibling-sourced shape can never return an empty
+`test_paths`, so this is what makes the basis reachable at all) — caught before coupling,
+importers, changed or last-failed ever run. `meta.phaseGate.derived.spelling` is the second: when
+the shape came from THAT source and, after every arm has had its turn, `test_paths` is still
+empty, substituting `{paths}` with nothing would make the gate mean either the WHOLE suite or
+NOTHING depending on the runner — so it widens too, with its own reason. Both triggers write the
+SAME basis word and the SAME `attribution: None`.
+
+**A THIRD wide basis, an importer listing resolved to the full suite ("DERIVED = FULL"), gets the
+SAME treatment** — `attribution` is `None` there too: the `test_paths` `derive()` had accumulated
+before deciding the importer listing equalled the full one is real, but it is not what the wide
+gate runs, so a caller reporting it as a per-arm breakdown would be printing a narrowed-looking
+count for a gate that is not narrowed. **This file's renderers
+(`_render_lines`/`_brief_line`/`_testgatederived`) are keyed off `result["narrowed"]` and
+`result["basis"]` — never off whether `result["attribution"]` happens to be `None`**, because a
+second, independent computation of the same arms does not know every widening trigger `derive()`
+knows, and would report a narrowed-looking breakdown for a gate that is actually wide the next
+time one is added — which is why that second computation, `_breakdown()`, calling `_gate_derive`'s
+own arm helpers a SECOND time by hand to answer a question `derive()` already had the answer to,
+is deleted; `attribution` is the only breakdown this plugin computes. The full-suite case's own
+human line is the SAME honest "nothing to narrow to" headline the other two wide bases print,
+with `DERIVED = FULL` and the MEASURED listed-of-full pair (read straight from `facts`, never from
+`attribution`) as advisories — never a fabricated "N test file(s)" count. `testGateDerived.full`
+and `--brief`'s listed/full pair are measured the same way, independent of whether `attribution` is
+present, so they stay correct for a full-suite resolution even though nothing is attributed. A
+RELATED listing that names none while the ALL listing names some is its own printed reason too,
+distinct from a silent "nothing to report" — the importers arm contributes nothing, but says why.
 
 **WRITE, under the index lock, snapshot before, validate after, roll back byte for byte on a
 finding** — the same four-step shape `set-priority.py` and `audit-task.py` already hold, reached

@@ -833,7 +833,7 @@
     {
       "id": "P79.12-5bh",
       "title": "the validator checks the listing commands derive-phase-gate runs",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found by the P79.8-5bh delta review. _manifest_phases._check_phase_gate_derived (added in this phase) validates derived.runner (a buildCommands key) and derived.spelling (carries {paths}) but not derived.listing, which derive-phase-gate.py now actually runs: listing.related must be a non-blank string carrying a literal {paths} placeholder, listing.all a non-blank string with no {paths} requirement, and listing itself an object or null as the schema says. Add a warning for each violation through _output.finding with a stable code in the same family as its siblings, and say what the operator should write. The allow case: a schema-correct listing, and a null or absent listing, stay silent. No plan ids in comments; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -863,18 +863,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "340c68ed5ab851f436f44a9a9cf6c1adee8a3b17",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_phases._check_phase_gate_derived: codes phases.phase_gate_derived.listing-related-shape, -related-placeholder, -all-shape, -all-paths-present; allow cases (schema-correct listing, null or absent listing) stay silent. Cases dl1-dl7. audit-plan.schema.json (scope widened mid-attempt): derived, runner and spelling description strings only - runner is the display label, spelling the declared second shape source. Task reviews: first review matches with three findings (all-with-{paths}, split codes, a duplicate case), fixed in the retry; delta check clean. redFirst proved; inheritedTests not-asked - selftests is the whole sweep.",
+        "descriptive": "The plan validator now warns, with a stable code and the fix to write, when meta.phaseGate.derived.listing.related lacks {paths} or is blank, and when listing.all is blank or carries a {paths} that is never substituted; the schema's runner and spelling descriptions now say what the code does with them."
       },
       "startedAt": "2026-09-26T17:51:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T20:44:55Z",
+      "verifiedBy": [
+        "dl1",
+        "dl2",
+        "dl3",
+        "dl4",
+        "dl5",
+        "dl6",
+        "dl7"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T20:40:33Z.0edc86",
         "status": "passed",
         "at": "2026-09-26T20:40:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "340c68ed5ab851f436f44a9a9cf6c1adee8a3b17",
+        "at": "2026-09-26T20:44:55Z"
       }
     }
   ],

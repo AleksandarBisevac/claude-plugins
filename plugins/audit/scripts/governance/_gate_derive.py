@@ -26,6 +26,7 @@ subprocess and no git: a fixture is a dict, not a checkout.
 """
 
 import os
+import shlex
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -118,6 +119,44 @@ def path_scoped_sibling(phase, build):
                for e in entries):
             return entries, task.get("id")
     return None, None
+
+
+# The second `shape` source the schema itself names (the schema's
+# meta.phaseGate.derived.spelling description):
+# `resolve_shape`'s `source` return is this literal string whenever the shape
+# came from the DECLARED template rather than a sibling's own gate entry, so
+# a caller can tell the two apart without inventing a second flag.
+SPELLING_SOURCE = "meta.phaseGate.derived.spelling"
+
+
+def resolve_shape(phase, build, derived_cfg):
+    """`(shape, source, lines)` -- where THIS phase's path-scoped shape comes
+    from, in the order the schema declares: a sibling task's own path-scoped
+    gate entry FIRST (`source` is that task's id), `meta.phaseGate.derived
+    .spelling` SECOND (`source` is `SPELLING_SOURCE`), or `(None, None, ...)`
+    when neither exists.
+
+    THE SIBLING WINS ON PURPOSE: its entry is EVIDENCE this project's runner
+    already accepted it (`path_scoped_sibling`'s own docstring says why), and
+    a declared `spelling` is unverified by comparison -- read only when no
+    sibling supplies one, never in preference to one that does.
+
+    A `spelling` carrying no literal `{paths}` placeholder is IGNORED, with a
+    printed reason (`lines`) rather than a silent fallback -- the schema says
+    the derivation substitutes the placeholder with the resolved file list,
+    and a template with nowhere to substitute into cannot do that.
+    """
+    shape, owner = path_scoped_sibling(phase, build)
+    if shape is not None:
+        return shape, owner, []
+    derived_cfg = derived_cfg if isinstance(derived_cfg, dict) else {}
+    spelling_tpl = derived_cfg.get("spelling")
+    if not (isinstance(spelling_tpl, str) and spelling_tpl.strip()):
+        return None, None, []
+    if "{paths}" not in spelling_tpl:
+        return None, None, ["spelling: skipped - meta.phaseGate.derived.spelling "
+                            "carries no {paths} placeholder"]
+    return [spelling_tpl], SPELLING_SOURCE, []
 
 
 def repointed(entries, build, paths):
@@ -244,21 +283,52 @@ def _coupling_arm(meta, touched):
     return out
 
 
+def _full_listing_empty(facts):
+    """True when `facts["fullListing"]` RAN, exited 0, and named ZERO suites.
+
+    This is what makes `derived-empty` reachable at all (see `derive()`'s own
+    note): `meta.phaseGate.derived.listing.all` is an ADDITIONAL shape source
+    beside `path_scoped_sibling`, and unlike that one it CAN legitimately come
+    back with nothing to narrow to -- an all-suites listing is free to name no
+    suite (an empty project, a misspelled listing command). `full is None`
+    (no listing configured, or it never ran) answers False, same as a listing
+    that timed out or exited non-zero: none of those says "there is nothing to
+    narrow to", only "this run cannot say".
+    """
+    full = facts.get("fullListing") if isinstance(facts, dict) else None
+    full = full if isinstance(full, dict) else None
+    if full is None or full.get("exit") != 0:
+        return False
+    paths = full.get("paths")
+    return isinstance(paths, list) and len(paths) == 0
+
+
 def _importers_arm(meta, facts):
     """`(paths, full, note)` for the importer-listing arm.
 
-    THREE THINGS HAVE TO HOLD before a listing is trusted at all: a listing has
-    to be RECORDED (`meta.phaseGate.derived.listing`), the machine asking has to
-    answer the SAME version question the listing was verified against (dg23 --
-    a listing verified on one npm/node/etc answer is not evidence on another),
-    and the listing itself has to have exited 0. Any of the three failing skips
-    the arm with the reason named -- never an empty result read as "narrowed to
+    FOUR THINGS HAVE TO HOLD before a listing is trusted at all: a listing has
+    to be RECORDED (`meta.phaseGate.derived.listing`), the version command
+    that was supposed to answer this machine's version has to have RUN AT ALL
+    (a version command that cannot be run or exits non-zero is its own skip
+    reason -- "the version command failed" -- never rendered as a machine
+    answering `None`, which would read as an actual mismatched answer rather
+    than as no answer at all), the machine asking has to answer the SAME
+    version question the listing was verified against (a listing verified on
+    one npm/node/etc answer is not evidence on another), and the
+    listing itself has to have exited 0. Any of the four failing skips the arm
+    with the reason named -- never an empty result read as "narrowed to
     nothing", and never a stale listing trusted in silence.
 
     EQUAL TO THE FULL LISTING MEANS THE WIDE GATE **IS** THE NARROW ANSWER
     (dg1): every suite the runner would collect imports something this phase
     touched, so there is nothing left to narrow away from and pretending
     otherwise would be a guess dressed as a derivation.
+
+    A RELATED listing that named NONE while the ALL listing named SOME is its
+    own printed reason too -- the arm contributes nothing, but silently (a
+    `None` fallthrough) is indistinguishable from "nothing here to report",
+    which is not what happened: the full listing found suites, the related one
+    just did not name any of them.
     """
     gate = meta.get("phaseGate")
     gate = gate if isinstance(gate, dict) else {}
@@ -266,6 +336,8 @@ def _importers_arm(meta, facts):
     derived = derived if isinstance(derived, dict) else None
     if not derived or not isinstance(derived.get("listing"), dict):
         return [], False, None
+    if facts.get("versionCheckFailed"):
+        return [], False, "importers: skipped - the version command failed"
     verified_on = derived.get("verifiedOn")
     verified_on = verified_on if isinstance(verified_on, dict) else {}
     declared_answer = verified_on.get("answer")
@@ -287,16 +359,36 @@ def _importers_arm(meta, facts):
         return [], True, "DERIVED = FULL"
     if listed_set and full_set and listed_set < full_set:
         return listed, False, None
+    if not listed_set and full_set:
+        return [], False, ("importers: skipped - the related listing named no "
+                           "suite while the full listing named %d"
+                           % (len(full_set),))
     return [], False, None
 
 
 def derive(manifest, phase, facts):
-    """`{entries, basis, derived, narrowed, lines}` -- this phase's sign-off
-    gate, computed the way `meta.phaseGate.mode` asks: only the part of the
-    wide default that is NOT `meta.phaseGate.always` is ever replaced, and
-    `meta.phaseGate.exclude` is read through `_phases.phase_gate_default`
-    exactly once, so a fallback can never run fewer suites than
-    `/audit:phase add` would already have written.
+    """`{entries, basis, derived, narrowed, lines, shapeSource, attribution}`
+    -- this phase's sign-off gate, computed the way `meta.phaseGate.mode`
+    asks: only the part of the wide default that is NOT `meta.phaseGate
+    .always` is ever replaced, and `meta.phaseGate.exclude` is read through
+    `_phases.phase_gate_default` exactly once, so a fallback can never run
+    fewer suites than `/audit:phase add` would already have written.
+
+    `attribution` IS THE ONLY BREAKDOWN THIS PLUGIN COMPUTES, and it is
+    `None` whenever `narrowed` is False -- EVERY wide basis, with no
+    exception, including a full-suite resolution (`test_paths` at that point
+    is real, but it is not what the wide gate runs, so reporting it as a
+    breakdown would print a narrowed-looking count for a gate that is not
+    narrowed). A second, independent computation of these same arms does not
+    know every widening trigger this function knows -- a new trigger added
+    here and not there reports a narrowed-looking breakdown for a gate that
+    is actually wide, which is why `derive-phase-gate.py` no longer computes
+    one: `attribution` is part of THIS function's own return, `{testsAdd,
+    coupling, importers, changed, lastFailed, union}` only when `narrowed`
+    is True, and a caller renders ONLY off this dict -- `narrowed` and
+    `basis` decide what a WIDE result means (`derived-empty`'s two triggers,
+    a full-suite resolution, `phase-no-spelling`), never `attribution`'s
+    presence, which is now the same fact stated a second way.
 
     `facts` is the ONLY place an observation may arrive from: `listing` /
     `fullListing` (each `{exit, paths}`), `versionAnswer` (this machine's
@@ -307,21 +399,29 @@ def derive(manifest, phase, facts):
     plan gate's exempt verdict, keyed by path). No argument here ever shells
     out or reads git -- that is the caller's job, once, before this runs.
 
-    `_manifest_vocab.PHASE_GATE_BASIS[1]` ("derived-empty") is NOT a basis this
-    function ever returns, and that is deliberate rather than an oversight: the
-    only `shape` this function knows how to find is `path_scoped_sibling`'s --
-    a TASK's own path-scoped gate -- and the same task that supplies `shape`
-    necessarily contributes at least one path to `_tests_add_arm` through the
-    identical read (`_mio.gate_entries` resolves that task's gate the same way
-    `path_scoped_sibling` inspected it). So `shape is not None` and
-    `test_paths == []` cannot both hold here; a branch written for that
-    combination would be dead code no case could ever prove. The word stays
-    reserved for a CALLER whose shape source can legitimately return zero
-    paths without a task's own gate backing it -- `derive-phase-gate.py`
-    (P79.3), if `meta.phaseGate.derived.runner`/`.spelling` ever becomes an
-    alternate shape (a recorded runner + a `{paths}` template, independent of
-    any task) and its importers listing comes back empty. That caller decides
-    when to write `derived-empty`; this function does not guess at it.
+    `_manifest_vocab.PHASE_GATE_BASIS[1]` ("derived-empty") IS reachable, from
+    TWO triggers, both widening the WHOLE derivation before entries are built
+    and both rendered from the SAME `basis` word by a caller, so an operator
+    reading the human line never has to know which trigger fired to trust
+    what it says: `meta.phaseGate.derived.listing.all` is an ADDITIONAL shape
+    source beside `resolve_shape`'s, and it CAN legitimately come back with
+    nothing to narrow to (an all-suites listing is free to name no suite at
+    all) -- caught by `_full_listing_empty` right after the shape is resolved,
+    before coupling/importers/changed/last-failed ever run. The SECOND
+    trigger is `resolve_shape`'s own SPELLING source: unlike the SIBLING
+    source (the same task that supplies it necessarily contributes at least
+    one path to `_tests_add_arm` through the identical read
+    `path_scoped_sibling` used to find it, so a sibling-sourced shape and
+    `test_paths == []` cannot both hold), a spelling-sourced shape carries no
+    such guarantee -- no task's own gate backs it. So AFTER every arm
+    (tests.add, coupling, importers, changed, last-failed) has had its turn,
+    an empty `test_paths` on the spelling source widens too, with its own
+    reason ("spelling: nothing to substitute...") rather than substituting
+    `{paths}` with nothing: depending on the runner, an empty `pytest ` or
+    `vitest run ` means either the WHOLE suite or NOTHING, and either reading
+    would make the gate mean something other than what it prints. Both
+    triggers return `attribution: None` -- there is nothing to attribute a
+    path to when the whole point of the trigger is that no arm found one.
     """
     meta = manifest.get("meta") if isinstance(manifest, dict) else None
     meta = meta if isinstance(meta, dict) else {}
@@ -340,53 +440,114 @@ def derive(manifest, phase, facts):
         # it from `basis` alone.
         return {"entries": list(default["entries"]),
                 "basis": "meta.phaseGate.mode is not set - no derivation",
-                "derived": False, "narrowed": False, "lines": []}
+                "derived": False, "narrowed": False, "lines": [],
+                "shapeSource": None, "attribution": None}
 
     build = meta.get("buildCommands")
     build = build if isinstance(build, dict) else None
-    shape, owner = path_scoped_sibling(phase, build)
+    derived_cfg = gate.get("derived")
+    shape, shape_source, lines = resolve_shape(phase, build, derived_cfg)
     if shape is None:
         return {"entries": always + list(default["rest"]),
                 "basis": "phase-no-spelling", "derived": True,
-                "narrowed": False, "lines": []}
+                "narrowed": False, "lines": lines, "shapeSource": None,
+                "attribution": None}
 
-    lines = []
+    if _full_listing_empty(facts):
+        # BEFORE ANYTHING ELSE RUNS: an ALL listing that ran, exited 0 and
+        # named no suite is not evidence of anything narrower -- widen with
+        # the reason printed rather than let coupling/importers/changed/
+        # last-failed run against a listing that already said "nothing".
+        return {"entries": always + list(default["rest"]),
+                "basis": _vocab.PHASE_GATE_BASIS[1], "derived": True,
+                "narrowed": False,
+                "lines": lines + ["derived-empty: the ALL listing ran, "
+                                  "exited 0 and named no suite - nothing to "
+                                  "narrow to, widening"],
+                "shapeSource": None, "attribution": None}
+
     touched = _touched_files(phase)
-    test_paths = _tests_add_arm(phase, build)
+    tests_add = _tests_add_arm(phase, build)
+    test_paths = list(tests_add)
+    coupling_new = []
     for path in _coupling_arm(meta, touched):
         if path not in test_paths:
+            coupling_new.append(path)
             test_paths.append(path)
 
     importer_paths, full_suite, importer_note = _importers_arm(meta, facts)
     if importer_note:
         lines.append(importer_note)
     if full_suite:
+        # SAME RULE AS EVERY OTHER WIDE BASIS: `narrowed` is False here, so
+        # `attribution` is `None` here too -- `test_paths` at this point (the
+        # union of `tests.add` and coupling, BEFORE the importer/changed/
+        # last-failed loops even run) is not what the wide gate runs, and a
+        # caller reporting it as a per-arm breakdown would be printing a
+        # narrowed-looking count for a gate that is not narrowed. What IS
+        # measured for this basis -- the related listing's count and the full
+        # listing's count -- lives in `facts`, which the caller already has;
+        # this function is not the one to duplicate it into `attribution`.
         return {"entries": always + list(default["rest"]),
                 "basis": _vocab.PHASE_GATE_BASIS[2],
-                "derived": True, "narrowed": False, "lines": lines}
+                "derived": True, "narrowed": False, "lines": lines,
+                "shapeSource": None, "attribution": None}
+    importer_new = []
     for path in importer_paths:
         if path not in test_paths:
+            importer_new.append(path)
             test_paths.append(path)
 
+    changed_new = []
     for path in (facts.get("changedSince") or []):
         if (isinstance(path, str) and _phases.is_suite_path(path)
                 and path not in test_paths):
+            changed_new.append(path)
             test_paths.append(path)
+    last_failed_new = []
     for path in (facts.get("lastFailedSuites") or []):
         if isinstance(path, str) and path not in test_paths:
+            last_failed_new.append(path)
             test_paths.append(path)
 
-    # NO "test_paths == []" FALLBACK HERE, on purpose -- see the module
-    # docstring's note on `_manifest_vocab.PHASE_GATE_BASIS[1]`
-    # ("derived-empty"): `shape` (above) can only be non-None when some task's
-    # own gate already contributed at least one path to `test_paths`, so this
-    # point in the function can never be reached with an empty set. A branch
-    # written for it would be dead code no case here could ever prove red.
+    # NO "test_paths == []" GUARD HERE for the SIBLING-sourced shape, on
+    # purpose: a sibling's own gate already contributed at least one path to
+    # `test_paths` through `_tests_add_arm` (the identical read
+    # `path_scoped_sibling` used to find the shape in the first place), so
+    # this point in the function can never be reached with an empty set on
+    # THAT source -- a branch written for it would be dead code no case here
+    # could ever prove red. The SPELLING-sourced shape carries no such
+    # guarantee (no task's own gate backs it), so IT gets the guard: an empty
+    # `test_paths` there would substitute `{paths}` with nothing, and
+    # depending on the runner an empty `pytest ` or `vitest run ` means either
+    # the WHOLE suite or NOTHING -- either way a gate that silently means
+    # something other than what it prints, which the phase's own rule forbids
+    # (nothing narrows unless it is declared and printed; anything unbounded
+    # turns wide with the reason printed).
+    if shape_source == SPELLING_SOURCE and not test_paths:
+        return {"entries": always + list(default["rest"]),
+                "basis": _vocab.PHASE_GATE_BASIS[1], "derived": True,
+                "narrowed": False,
+                "lines": lines + ["spelling: nothing to substitute - no arm "
+                                  "named a test path, so the wide gate runs"],
+                "shapeSource": None, "attribution": None}
 
     entries = list(always)
-    for entry in repointed(shape, build, test_paths):
-        if entry not in entries:
-            entries.append(entry)
+    if shape_source == SPELLING_SOURCE:
+        # LITERAL SUBSTITUTION, never `repointed()`: the schema's own
+        # `{paths}` placeholder is not a path-shaped TOKEN `repointed()` would
+        # recognize (`_gate_entry_paths` only counts tokens that already look
+        # like a file), so the template is filled directly with the resolved,
+        # shell-quoted test paths -- the same mechanic
+        # `derive-phase-gate.py._gather_facts` uses for a listing command.
+        quoted = " ".join(shlex.quote(p) for p in test_paths)
+        spelled = shape[0].replace("{paths}", quoted)
+        if spelled not in entries:
+            entries.append(spelled)
+    else:
+        for entry in repointed(shape, build, test_paths):
+            if entry not in entries:
+                entries.append(entry)
 
     smoke = gate.get("smoke")
     if isinstance(smoke, str) and smoke.strip():
@@ -406,7 +567,11 @@ def derive(manifest, phase, facts):
             entries.append(smoke)
 
     return {"entries": entries, "basis": BASIS_NARROWED, "derived": True,
-            "narrowed": True, "lines": lines}
+            "narrowed": True, "lines": lines, "shapeSource": shape_source,
+            "attribution": {"testsAdd": tests_add, "coupling": coupling_new,
+                           "importers": importer_new, "changed": changed_new,
+                           "lastFailed": last_failed_new,
+                           "union": list(test_paths)}}
 
 
 # --- cli ------------------------------------------------------------------------

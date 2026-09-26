@@ -14,15 +14,32 @@ phase-scope evidence row, and the plan gate's own exempt verdict per touched
 file -- and hands the result to `derive()` unchanged. The runner never derives;
 it only measures what the phase declares.
 
-`meta.phaseGate.derived.runner` names a `meta.buildCommands` key: run alone
-(through `meta.buildCommands`, `meta.nodePreamble` applied exactly the way
-`run-test-gate._resolved` applies it), it is the FULL listing -- every suite
-file the runner would collect. `meta.phaseGate.derived.spelling` is a separate
-RAW template carrying a `{paths}` placeholder: filled with the shell-quoted
-union of the phase's own tasks' `files` (never a buildCommands key -- a phase's
-tasks are not one of those), it is the RELATED listing. Both listings write one
-line of output per path and never execute a test -- a listing that ran a suite
-would make derivation as expensive as the thing it exists to narrow.
+`meta.phaseGate.derived.runner` names a `meta.buildCommands` key: the test
+runner this phase's gate is stated in terms of, carried through only as a
+DISPLAY label (the `entry` this file's own lines and `testGateDerived` name),
+never resolved or run for a listing. `meta.phaseGate.derived.spelling` is that
+runner's own path-scoped RUN command, carrying a `{paths}` placeholder -- it
+is the SECOND source `_gate_derive.resolve_shape` tries for the shape a
+narrowed gate repoints, read only when no sibling task's own gate carries a
+path-scoped entry (the sibling always wins -- its entry is evidence the
+runner already accepted it, `spelling` is not). `{paths}` is filled with the
+shell-quoted, resolved test paths by LITERAL substitution, never through
+`repointed()` (the placeholder is not a path-shaped token that function would
+recognize). The TWO LISTINGS this file actually
+runs live under `meta.phaseGate.derived.listing`: `.all` lists every suite
+file the runner would collect, with no path filter -- the FULL listing --and
+`.related` carries a `{paths}` placeholder, filled with the shell-quoted union
+of the phase's own tasks' `files`, for the RELATED listing. Both listings
+write one line of output per path and never execute a test -- a listing that
+ran a suite would make derivation as expensive as the thing it exists to
+narrow -- and both are timed: `fullListing` and `listing` each carry their own
+`durationMs`, and `testGateDerived` records both costs.
+
+A `verifiedOn.command` that cannot be run or exits non-zero is its own printed
+skip reason ("the version command failed"), kept apart from a machine
+answering a DIFFERENT version: rendering the first as "this machine answers
+None" would read as an actual mismatched answer rather than as no answer at
+all having been produced.
 
 WRITE, under the index lock, snapshot before, `_manifest_rules` validate after,
 roll back byte for byte on a finding -- the same four-step shape
@@ -39,19 +56,15 @@ prints why and writes nothing, exit 0, before a single subprocess runs -- an
 operator who has not wired `derived.runner`/`.spelling`/`.verifiedOn` yet pays
 nothing for a listing that would tell them nothing.
 
-`derived-empty` (`_manifest_vocab.PHASE_GATE_BASIS[1]`) IS NOT REACHABLE FROM
-THIS RUNNER EITHER, and that is not an oversight -- see `_gate_derive.derive`'s
-own docstring for why the ONE shape source it knows (`path_scoped_sibling`, a
-sibling task's own path-scoped gate) can never return an empty `test_paths`
-once a shape exists at all. This runner introduces no ALTERNATE shape source
-(the docstring names `meta.phaseGate.derived.runner`/`.spelling` becoming one
-on their own, independent of any task -- which is exactly what this file reads
-them as an ADDITIONAL arm alongside `path_scoped_sibling`, never a replacement
-for it), so the same argument holds here: `shape is None` is still the only way
-this phase has nothing to narrow to, and that is reported as `phase-no-spelling`
-(already in `derive()`'s own vocabulary), not as `derived-empty`. The word stays
-reserved for a caller whose shape source can legitimately return zero paths with
-no task's own gate backing it, which this one is not.
+`derived-empty` (`_manifest_vocab.PHASE_GATE_BASIS[1]`) IS REACHABLE FROM THIS
+RUNNER: `meta.phaseGate.derived.listing.all` is the ADDITIONAL shape source
+`_gate_derive.derive`'s own docstring names -- unlike `path_scoped_sibling`'s
+own shape (a sibling task's own path-scoped gate, which can never return an
+empty `test_paths` once it exists at all), an ALL listing is free to run,
+exit 0, and name no suite. When it does, `derive()` widens the WHOLE
+derivation to basis `derived-empty` with a printed reason, before coupling,
+importers, changed or last-failed ever run -- never an empty result read as
+"narrowed to nothing".
 
 Usage:
   derive-phase-gate.py <manifestPath> <phaseId> [--dry-run] [--brief] [--json]
@@ -105,16 +118,20 @@ _output.install_path()
 import _evidence_io                  # noqa: E402  (read_rows, subject_key -- the
 #                                       newest red phase-scope row)
 import _gate_derive                  # noqa: E402  (derive(): the one PURE
-#                                       computation; the arm helpers this file
-#                                       reuses to REPORT the breakdown derive()
-#                                       itself does not expose)
+#                                       computation, and the ONLY place the
+#                                       per-arm attribution renderers read is
+#                                       computed -- this file never recomputes
+#                                       it)
 import _loader                       # noqa: E402  (load_hooks_config: the plan
 #                                       gate's own exempt-glob answer, asked
 #                                       through the one door scripts/ has into
 #                                       hooks/)
 import _manifest_io as _mio          # noqa: E402  (dual-format loader; index
 #                                       lock write target resolution)
-import _manifest_phases as _phases   # noqa: E402  (PHASE_GATE_MODES, is_suite_path)
+import _manifest_phases as _phases   # noqa: E402  (PHASE_GATE_MODES)
+import _manifest_vocab as _vocab     # noqa: E402  (PHASE_GATE_BASIS: the one
+#                                       "derived-empty" word, read here rather
+#                                       than restated as a literal)
 import _panel_write                  # noqa: E402  (the byte-shape writer, the
 #                                       validator handle, the index lock, the
 #                                       snapshot/rollback pair and the journal
@@ -221,8 +238,6 @@ def _gather_facts(manifest, phase, project, out):
     gate = gate if isinstance(gate, dict) else {}
     derived_cfg = gate.get("derived")
     derived_cfg = derived_cfg if isinstance(derived_cfg, dict) else None
-    build = meta.get("buildCommands")
-    build = build if isinstance(build, dict) else {}
     preamble = meta.get("nodePreamble")
 
     facts, lines = {}, []
@@ -237,27 +252,36 @@ def _gather_facts(manifest, phase, project, out):
     if isinstance(version_cmd, str) and version_cmd.strip():
         res = _spawn(_with_preamble(version_cmd, preamble), project,
                      VERSION_TIMEOUT_SECONDS)
-        facts["versionAnswer"] = res["output"].strip() if res["exit"] == 0 else None
+        if res["exit"] == 0:
+            facts["versionAnswer"] = res["output"].strip()
+        else:
+            # ITS OWN SKIP REASON, never folded into "this machine answers
+            # None": that would read as an actual (mismatched) answer rather
+            # than as no answer at all having been produced.
+            facts["versionCheckFailed"] = True
 
-    runner_key = derived_cfg.get("runner")
-    spelling = derived_cfg.get("spelling")
-    have_runner = isinstance(runner_key, str) and runner_key.strip()
-    have_spelling = isinstance(spelling, str) and "{paths}" in spelling
-    if have_runner and have_spelling:
-        full_cmd = _with_preamble(build.get(runner_key, runner_key), preamble)
+    listing_cfg = derived_cfg.get("listing")
+    listing_cfg = listing_cfg if isinstance(listing_cfg, dict) else None
+    all_cmd_tpl = listing_cfg.get("all") if listing_cfg else None
+    related_tpl = listing_cfg.get("related") if listing_cfg else None
+    have_all = isinstance(all_cmd_tpl, str) and all_cmd_tpl.strip()
+    have_related = isinstance(related_tpl, str) and "{paths}" in related_tpl
+    if have_all and have_related:
+        full_cmd = _with_preamble(all_cmd_tpl, preamble)
         full_res = _spawn(full_cmd, project, LISTING_TIMEOUT_SECONDS)
         facts["fullListing"] = {"exit": full_res["exit"],
-                                "paths": _lines_of(full_res["output"])}
+                                "paths": _lines_of(full_res["output"]),
+                                "durationMs": full_res["durationMs"]}
         touched = _touched_paths(phase)
         quoted = " ".join(shlex.quote(p) for p in touched)
-        related_cmd = _with_preamble(spelling.replace("{paths}", quoted), preamble)
+        related_cmd = _with_preamble(related_tpl.replace("{paths}", quoted), preamble)
         related_res = _spawn(related_cmd, project, LISTING_TIMEOUT_SECONDS)
         facts["listing"] = {"command": related_cmd, "exit": related_res["exit"],
                             "paths": _lines_of(related_res["output"]),
                             "durationMs": related_res["durationMs"]}
     elif derived_cfg:
-        lines.append("importers: skipped - meta.phaseGate.derived carries no "
-                     "usable runner/spelling pair")
+        lines.append("importers: skipped - meta.phaseGate.derived.listing "
+                     "carries no usable related/all pair")
 
     base_ref = phase.get("baseRef") if isinstance(phase, dict) else None
     if isinstance(base_ref, str) and base_ref.strip():
@@ -284,58 +308,6 @@ def _gather_facts(manifest, phase, project, out):
     return facts, lines
 
 
-# --- the breakdown `derive()` computes but does not expose -----------------------
-def _breakdown(manifest, phase, facts):
-    """Which ARM contributed which path, for the human line and `testGateDerived`
-    -- `None` when there is no path-scoped sibling to repoint at all
-    (`phase-no-spelling`), the same question `derive()` itself asks first.
-
-    NOT A SECOND DERIVATION. Every path this returns comes from calling
-    `_gate_derive`'s own arm functions in the SAME order `derive()` applies
-    them, so the two can disagree only if one of them is edited without the
-    other -- and `derive()`'s `entries` stays the one number this file ever
-    signs off on; this is reporting, not a rival computation of the gate
-    itself.
-    """
-    meta = manifest.get("meta") if isinstance(manifest, dict) else {}
-    meta = meta if isinstance(meta, dict) else {}
-    build = meta.get("buildCommands")
-    build = build if isinstance(build, dict) else None
-    shape, _owner = _gate_derive.path_scoped_sibling(phase, build)
-    if shape is None:
-        return None
-    touched = _gate_derive._touched_files(phase)
-    tests_add = _gate_derive._tests_add_arm(phase, build)
-    running = list(tests_add)
-    coupling_new = []
-    for path in _gate_derive._coupling_arm(meta, touched):
-        if path not in running:
-            coupling_new.append(path)
-            running.append(path)
-    importer_paths, full_suite, _note = _gate_derive._importers_arm(meta, facts)
-    importer_new = []
-    if not full_suite:
-        for path in importer_paths:
-            if path not in running:
-                importer_new.append(path)
-                running.append(path)
-    changed_new = []
-    for path in (facts.get("changedSince") or []):
-        if (isinstance(path, str) and _phases.is_suite_path(path)
-                and path not in running):
-            changed_new.append(path)
-            running.append(path)
-    last_failed_new = []
-    for path in (facts.get("lastFailedSuites") or []):
-        if isinstance(path, str) and path not in running:
-            last_failed_new.append(path)
-            running.append(path)
-    return {"testsAdd": tests_add, "coupling": coupling_new,
-            "importers": importer_new, "changed": changed_new,
-            "lastFailed": last_failed_new, "union": running,
-            "fullSuite": full_suite}
-
-
 def _now_iso():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -348,15 +320,49 @@ def _smoke_line(result):
 
 
 # --- rendering the two shapes `tools/verify.sh --affected` reads -----------------
-def _render_lines(phase_id, meta, result, breakdown, facts):
-    """The human lines: one `DERIVED sign-off gate for <P>: ...` or `could not
-    be bounded` line, plus every advisory `_gate_derive.derive` returned."""
-    if breakdown is None:
-        return ["DERIVED sign-off gate for %s could not be bounded: no sibling "
-                "task in this phase carries a path-scoped gate of its own, so "
-                "there is no spelling to repoint at anything narrower. The wide "
-                "gate runs (%s). Nothing was narrowed."
-                % (phase_id, ", ".join(result["entries"]) or "nothing")]
+# BOTH renderers below read ONLY `result` (`_gate_derive.derive()`'s own
+# return) and `facts` -- never a second, independently-computed breakdown. A
+# second, independent computation of the same arms does not know every
+# widening trigger `derive()` knows, so it reports a narrowed-looking
+# breakdown for a gate that is actually wide -- which is why `derive()` is
+# the only place that computation happens, and why the branch below is keyed
+# off `result["narrowed"]` and `result["basis"]` rather than off whether
+# `result["attribution"]` happens to be `None`: the two agree by
+# construction, but a renderer that keys off the WRONG one of them silently
+# stops agreeing the next time a wide trigger is added.
+def _render_lines(phase_id, meta, result, facts):
+    """The human lines: one `DERIVED sign-off gate for <P>: ...`, `could not
+    be bounded` or wide-gate line, plus every advisory `_gate_derive.derive`
+    returned."""
+    if not result.get("narrowed"):
+        basis = result.get("basis")
+        if basis == "phase-no-spelling":
+            out = ["DERIVED sign-off gate for %s could not be bounded: no "
+                  "sibling task in this phase carries a path-scoped gate of "
+                  "its own, and meta.phaseGate.derived.spelling names no "
+                  "usable {paths} template either, so there is nothing to "
+                  "repoint at anything narrower. The wide gate runs (%s). "
+                  "Nothing was narrowed."
+                  % (phase_id, ", ".join(result["entries"]) or "nothing")]
+        else:
+            # `derived-empty` (EITHER trigger) and a FULL-SUITE resolution
+            # all render the SAME honest wide line, keyed off `narrowed`
+            # being False -- never a narrowed-looking count for a gate that
+            # is not narrowed. WHICH basis applies, and why, is still named,
+            # as the advisory lines below (every `result["lines"]` entry,
+            # plus a full-suite resolution's MEASURED listed-of-full count,
+            # which comes from `facts`, never from a per-arm breakdown).
+            out = ["DERIVED sign-off gate for %s: nothing to narrow to - the "
+                  "wide gate runs (%s). Recorded on phase.testGateBasis."
+                  % (phase_id, ", ".join(result["entries"]) or "nothing")]
+        for extra in result.get("lines") or []:
+            out.append("  " + extra)
+        if basis == _vocab.PHASE_GATE_BASIS[2]:
+            listed_count = len((facts.get("listing") or {}).get("paths") or [])
+            full_count = len((facts.get("fullListing") or {}).get("paths") or [])
+            out.append("  listed %d of %d (full)" % (listed_count, full_count))
+        return out
+    attribution = result["attribution"]
     gate = meta.get("phaseGate")
     gate = gate if isinstance(gate, dict) else {}
     always = [a for a in (gate.get("always") or []) if isinstance(a, str)]
@@ -366,11 +372,12 @@ def _render_lines(phase_id, meta, result, breakdown, facts):
     listed_count = len((facts.get("listing") or {}).get("paths") or [])
     line = ("DERIVED sign-off gate for %s: always %s | %s over %d test file(s) "
             "[tests.add %d, coupling %d, importers %d of %d listed, changed %d, "
-            "last failed %d]"
-            % (phase_id, always, entry, len(breakdown["union"]),
-               len(breakdown["testsAdd"]), len(breakdown["coupling"]),
-               len(breakdown["importers"]), listed_count,
-               len(breakdown["changed"]), len(breakdown["lastFailed"])))
+            "last failed %d] (shape: %s)"
+            % (phase_id, always, entry, len(attribution["union"]),
+               len(attribution["testsAdd"]), len(attribution["coupling"]),
+               len(attribution["importers"]), listed_count,
+               len(attribution["changed"]), len(attribution["lastFailed"]),
+               result.get("shapeSource") or "n/a"))
     smoke = _smoke_line(result)
     if smoke:
         line += " | %s" % smoke
@@ -384,40 +391,62 @@ def _render_lines(phase_id, meta, result, breakdown, facts):
     return out
 
 
-def _brief_line(phase_id, meta, result, breakdown, facts, at):
+def _brief_line(phase_id, meta, result, facts, at):
     """The reviewer's ONE-line basis -- never a path, never runner output
     (tk2): every number here is a COUNT, and the only string carried through
-    verbatim is `testGateBasis`, which is a fixed vocabulary word."""
-    if breakdown is None:
-        return ("derived: could not be bounded for %s; basis: %s; derived at %s"
-                % (phase_id, result["basis"], at))
-    listed = len(breakdown["union"])
+    verbatim is `testGateBasis`, which is a fixed vocabulary word. Keyed off
+    `narrowed`/`basis` the same way `_render_lines` is -- a wide gate never
+    prints a per-arm count, MEASURED or otherwise, except the full-suite
+    basis's own listed-of-full pair, which comes straight from `facts`."""
+    if not result.get("narrowed"):
+        basis = result.get("basis")
+        if basis == _vocab.PHASE_GATE_BASIS[1]:
+            note = "derived-empty"
+        elif basis == _vocab.PHASE_GATE_BASIS[2]:
+            listed = len((facts.get("listing") or {}).get("paths") or [])
+            full = len((facts.get("fullListing") or {}).get("paths") or [])
+            return ("derived: full suite (%d of %d); basis: %s; derived at %s"
+                    % (listed, full, result["basis"], at))
+        else:
+            note = "could not be bounded"
+        return ("derived: %s for %s; basis: %s; derived at %s"
+                % (note, phase_id, result["basis"], at))
+    attribution = result["attribution"]
+    listed = len(attribution["union"])
     full = len((facts.get("fullListing") or {}).get("paths") or []) or listed
-    couplings = len(breakdown["coupling"])
+    couplings = len(attribution["coupling"])
     smoke = _smoke_line(result)
     gate = meta.get("phaseGate")
     gate = gate if isinstance(gate, dict) else {}
     if smoke is None:
         smoke = "added" if isinstance(gate.get("smoke"), str) and gate["smoke"].strip() \
             else "n/a"
-    return ("derived: %d of %d; couplings: %d; smoke: %s; basis: %s; derived at %s"
-            % (listed, full, couplings, smoke, result["basis"], at))
+    return ("derived: %d of %d; couplings: %d; smoke: %s; shape: %s; basis: "
+            "%s; derived at %s"
+            % (listed, full, couplings, smoke,
+               result.get("shapeSource") or "n/a", result["basis"], at))
 
 
-def _testgatederived(meta, result, breakdown, facts, at):
+def _testgatederived(meta, result, facts, at):
     gate = meta.get("phaseGate")
     gate = gate if isinstance(gate, dict) else {}
     derived_cfg = gate.get("derived")
     derived_cfg = derived_cfg if isinstance(derived_cfg, dict) else {}
-    doc = {"narrowed": bool(result["narrowed"]), "at": at}
-    if breakdown is not None:
-        doc["tests"] = list(breakdown["union"])
-        doc["full"] = bool(breakdown["fullSuite"])
-        doc["arms"] = {"tests.add": list(breakdown["testsAdd"]),
-                       "coupling": list(breakdown["coupling"]),
-                       "importers": list(breakdown["importers"]),
-                       "changed": list(breakdown["changed"]),
-                       "lastFailed": list(breakdown["lastFailed"])}
+    doc = {"narrowed": bool(result["narrowed"]), "at": at,
+          # MEASURED, not derived from a per-arm breakdown: `full` is True
+          # exactly when the importer arm resolved to the full suite,
+          # regardless of whether `attribution` carries anything -- a wide
+          # gate has no `attribution` at all, full-suite included.
+          "full": result.get("basis") == _vocab.PHASE_GATE_BASIS[2]}
+    attribution = result.get("attribution")
+    if attribution is not None:
+        doc["tests"] = list(attribution["union"])
+        doc["arms"] = {"tests.add": list(attribution["testsAdd"]),
+                       "coupling": list(attribution["coupling"]),
+                       "importers": list(attribution["importers"]),
+                       "changed": list(attribution["changed"]),
+                       "lastFailed": list(attribution["lastFailed"])}
+        doc["shapeSource"] = result.get("shapeSource")
     if derived_cfg.get("runner"):
         doc["entry"] = derived_cfg["runner"]
     if "listing" in facts:
@@ -425,6 +454,9 @@ def _testgatederived(meta, result, breakdown, facts, at):
         doc["listing"] = {"command": facts["listing"].get("command"),
                           "exit": facts["listing"].get("exit"),
                           "durationMs": facts["listing"].get("durationMs")}
+    if "fullListing" in facts:
+        doc["fullListing"] = {"exit": facts["fullListing"].get("exit"),
+                              "durationMs": facts["fullListing"].get("durationMs")}
     always = [a for a in (gate.get("always") or []) if isinstance(a, str)]
     if always:
         doc["always"] = always
@@ -573,11 +605,10 @@ def _locked_run(args, project, config, mpath, phase_id, out):
     facts, fact_lines = _gather_facts(assembled, phase, project, out)
     result = _gate_derive.derive(assembled, phase, facts)
     result["lines"] = list(result.get("lines") or []) + fact_lines
-    breakdown = _breakdown(assembled, phase, facts)
     at = _now_iso()
 
-    human_lines = _render_lines(phase_id, meta, result, breakdown, facts)
-    brief_line = (_brief_line(phase_id, meta, result, breakdown, facts, at)
+    human_lines = _render_lines(phase_id, meta, result, facts)
+    brief_line = (_brief_line(phase_id, meta, result, facts, at)
                  if args.brief else None)
     if not args.as_json:
         for line in human_lines:
@@ -593,8 +624,7 @@ def _locked_run(args, project, config, mpath, phase_id, out):
                             "brief": brief_line}, indent=2, sort_keys=True))
         return E_OK
 
-    fields = {"testGateDerived": _testgatederived(meta, result, breakdown,
-                                                 facts, at),
+    fields = {"testGateDerived": _testgatederived(meta, result, facts, at),
              "testGateBasis": result["basis"]}
     changes = ["testGateDerived", "testGateBasis"]
     if mode == "enforce":

@@ -247,6 +247,221 @@ def _cases(check):
           "importer path beside the sibling's own: %r" % (match_result,),
           match_result["entries"] == ["npm test -- ph.test.ts a.test.ts"])
 
+    # --- dg-empty (tests.add repro): an ALL listing that ran, exited 0 and --
+    # named no suite turns the WHOLE derivation wide with basis derived-empty
+    # and a printed reason, before any other arm runs - red at HEAD, where
+    # `derive()`'s own docstring calls this basis unreachable and no branch
+    # tests `facts["fullListing"]` at all.
+    empty_manifest = _importers_manifest()
+    empty_facts = {"versionAnswer": "v20",
+                  "listing": {"exit": 0, "paths": []},
+                  "fullListing": {"exit": 0, "paths": []}}
+    empty_result = M.derive(empty_manifest, empty_manifest["phases"][0],
+                            empty_facts)
+    check("dg-empty an ALL listing that ran, exited 0 and named no suite "
+          "widens with basis derived-empty and a printed reason (mutation: "
+          "let it narrow instead -> red): %r" % (empty_result,),
+          empty_result["narrowed"] is False
+          and empty_result["basis"] == "derived-empty"
+          and empty_result["entries"] == ["unit", "lint"]
+          and any("derived-empty" in l for l in empty_result["lines"]))
+
+    # --- dg-changed: changedSince adds only suite paths, drops non-suite -----
+    changed_manifest = _manifest(
+        meta={"buildCommands": build, "phaseGate": {"mode": "shadow"}},
+        phase=_phase(tasks=[_sibling(["npm test -- ph.test.ts"])]))
+    changed_facts = {"changedSince": ["src/other.test.ts", "src/plain.ts"]}
+    changed_result = M.derive(changed_manifest, changed_manifest["phases"][0],
+                              changed_facts)
+    check("dg-changed a changedSince path that IS a suite file is added, one "
+          "that is NOT is dropped (mutation: drop the is_suite_path filter -> "
+          "red): %r" % (changed_result["entries"],),
+          changed_result["entries"]
+          == ["npm test -- ph.test.ts src/other.test.ts"])
+
+    # --- dg-lastfailed: lastFailedSuites paths are added and DEDUPED ---------
+    # against a path another arm already added.
+    lastfailed_manifest = _manifest(
+        meta={"buildCommands": build, "phaseGate": {"mode": "shadow"}},
+        phase=_phase(tasks=[_sibling(["npm test -- ph.test.ts"])]))
+    lastfailed_facts = {"changedSince": ["src/dup.test.ts"],
+                       "lastFailedSuites": ["src/dup.test.ts", "src/new.test.ts"]}
+    lastfailed_result = M.derive(lastfailed_manifest,
+                                 lastfailed_manifest["phases"][0],
+                                 lastfailed_facts)
+    check("dg-lastfailed lastFailedSuites paths are added, deduped against an "
+          "already-added changedSince path (mutation: drop the dedupe check "
+          "-> red, `src/dup.test.ts` appearing twice): %r"
+          % (lastfailed_result["entries"],),
+          lastfailed_result["entries"]
+          == ["npm test -- ph.test.ts src/dup.test.ts src/new.test.ts"])
+
+    # --- dg-red: the newest FAILED phase-scope row by ts, never a green ------
+    # row, another phase or another scope.
+    row_failed_old = {"scope": "phase", "phaseId": "P1", "status": "failed",
+                      "ts": "2026-01-01T00:00:00Z", "steps": []}
+    row_failed_new = {"scope": "phase", "phaseId": "P1", "status": "failed",
+                      "ts": "2026-01-02T00:00:00Z", "steps": []}
+    row_green_newest = {"scope": "phase", "phaseId": "P1", "status": "passed",
+                        "ts": "2026-01-03T00:00:00Z", "steps": []}
+    row_other_phase = {"scope": "phase", "phaseId": "P2", "status": "failed",
+                       "ts": "2026-01-04T00:00:00Z", "steps": []}
+    row_task_scope = {"scope": "task", "taskId": "P1.1", "status": "failed",
+                      "ts": "2026-01-05T00:00:00Z", "steps": []}
+    rows = [row_failed_old, row_failed_new, row_green_newest, row_other_phase,
+           row_task_scope]
+    check("dg-red picks the newest FAILED phase-scope row by ts, ignoring a "
+          "later GREEN row and rows for another phase/scope (mutation: pick "
+          "the oldest row instead -> red): %r"
+          % (M.newest_red_phase_row(rows, "P1"),),
+          M.newest_red_phase_row(rows, "P1") == row_failed_new)
+
+    # --- dg-nonerelated: the RELATED listing named NONE while the ALL --------
+    # listing named SOME - the arm contributes nothing, with a printed reason
+    # rather than a silent fallthrough (`_importers_arm`'s final `return [],
+    # False, None` used to answer this with no reason at all).
+    nonerelated_manifest = _importers_manifest()
+    nonerelated_facts = {"versionAnswer": "v20",
+                        "listing": {"exit": 0, "paths": []},
+                        "fullListing": {"exit": 0,
+                                       "paths": ["a.test.ts", "b.test.ts"]}}
+    nonerelated_result = M.derive(nonerelated_manifest,
+                                  nonerelated_manifest["phases"][0],
+                                  nonerelated_facts)
+    check("dg-nonerelated a related listing naming no suite while the full "
+          "listing named some prints its own reason, contributing nothing "
+          "(mutation: fall through with no reason -> red): %r"
+          % (nonerelated_result["lines"],),
+          any("named no suite while the full listing named" in l
+              for l in nonerelated_result["lines"])
+          and nonerelated_result["entries"] == ["npm test -- ph.test.ts"])
+
+    # --- dg-vfail: a version command that FAILED is its own printed reason, --
+    # never folded into "this machine answers None" (a mismatch reading).
+    vfail_manifest = _importers_manifest()
+    vfail_facts = {"versionCheckFailed": True,
+                  "listing": {"exit": 0, "paths": ["a.test.ts"]},
+                  "fullListing": {"exit": 0,
+                                 "paths": ["a.test.ts", "b.test.ts"]}}
+    vfail_result = M.derive(vfail_manifest, vfail_manifest["phases"][0],
+                            vfail_facts)
+    check("dg-vfail a version command that failed skips the importers arm "
+          "with its OWN reason, never 'this machine answers None' (mutation: "
+          "treat it as a mismatch -> red): %r" % (vfail_result["lines"],),
+          any(l == "importers: skipped - the version command failed"
+              for l in vfail_result["lines"])
+          and not any("answers None" in l for l in vfail_result["lines"]))
+
+    # --- dg-spelling (tests.add repro): no sibling path-scoped gate, but a --
+    # declared meta.phaseGate.derived.spelling narrows onto IT instead, with
+    # {paths} filled by the resolved test paths and the source named.
+    spelling_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"spelling": "pytest {paths}"}}},
+        phase=_phase(tasks=[_task("P1.1", tests={"gate": ["lint"]})]))
+    spelling_facts = {"changedSince": ["tests/test_new.py"]}
+    spelling_result = M.derive(spelling_manifest,
+                               spelling_manifest["phases"][0], spelling_facts)
+    check("dg-spelling no path-scoped sibling but a declared spelling narrows "
+          "onto it, {paths} filled with the resolved test paths, and the "
+          "source is named (mutation: drop the spelling fallback -> red): %r"
+          % (spelling_result,),
+          spelling_result["narrowed"] is True
+          and spelling_result["entries"] == ["pytest tests/test_new.py"]
+          and spelling_result["shapeSource"] == "meta.phaseGate.derived.spelling")
+
+    # --- dg-spelling-empty (tests.add repro): a declared spelling, no -------
+    # sibling, and NO arm naming a test path - the wide gate runs, with the
+    # reason printed and basis derived-empty (the most accurate EXISTING
+    # word: it already means "this run computed nothing to narrow to", and a
+    # spelling with nothing to substitute is exactly that, one shape source
+    # over).
+    spelling_empty_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"spelling": "pytest {paths}"}}},
+        phase=_phase(tasks=[_task("P1.1", tests={"gate": ["lint"]})]))
+    spelling_empty_result = M.derive(spelling_empty_manifest,
+                                     spelling_empty_manifest["phases"][0], {})
+    check("dg-spelling-empty a spelling-sourced shape with NO arm naming a "
+          "test path widens to the wide gate, the reason printed and basis "
+          "derived-empty, never an entry with nothing substituted "
+          "(mutation: drop the guard -> red, `pytest ` with an empty "
+          "substitution): %r" % (spelling_empty_result,),
+          spelling_empty_result["narrowed"] is False
+          and spelling_empty_result["basis"] == "derived-empty"
+          and spelling_empty_result["entries"] == ["unit", "lint"]
+          and any("nothing to substitute" in l
+                 for l in spelling_empty_result["lines"])
+          and not any("pytest" in e for e in spelling_empty_result["entries"]))
+
+    # --- dg-spelling-empty-allow: the SAME phase, but ONE tests.add path ----
+    # exists - the spelling-sourced shape narrows onto it as usual.
+    spelling_onepath_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"spelling": "pytest {paths}"}}},
+        phase=_phase(tasks=[_task("P1.1", tests={"gate": ["lint"]})]))
+    spelling_onepath_facts = {"changedSince": ["tests/test_new.py"]}
+    spelling_onepath_result = M.derive(spelling_onepath_manifest,
+                                       spelling_onepath_manifest["phases"][0],
+                                       spelling_onepath_facts)
+    check("dg-spelling-empty-allow the same phase, but ONE arm-named path, "
+          "narrows onto the spelling as usual: %r"
+          % (spelling_onepath_result,),
+          spelling_onepath_result["narrowed"] is True
+          and spelling_onepath_result["entries"] == ["pytest tests/test_new.py"]
+          and spelling_onepath_result["shapeSource"]
+          == "meta.phaseGate.derived.spelling")
+
+    # --- dg-neither: no sibling AND no usable spelling - phase-no-spelling, --
+    # UNCHANGED from before the spelling fallback existed.
+    neither_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"listing": {},
+                                     "verifiedOn": {"command": "node -v",
+                                                   "answer": "v20"}}}},
+        phase=_phase(tasks=[_task("P1.1", tests={"gate": ["lint"]})]))
+    neither_result = M.derive(neither_manifest, neither_manifest["phases"][0], {})
+    check("dg-neither no sibling and no usable spelling - phase-no-spelling, "
+          "unchanged: %r" % (neither_result,),
+          neither_result["basis"] == "phase-no-spelling"
+          and neither_result["narrowed"] is False
+          and neither_result["shapeSource"] is None)
+
+    # --- dg-both: a sibling AND a declared spelling both exist - the SIBLING --
+    # wins (its entry is evidence the runner already accepted it).
+    both_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"spelling": "pytest {paths}"}}},
+        phase=_phase(tasks=[_sibling(["npm test -- ph.test.ts"])]))
+    both_result = M.derive(both_manifest, both_manifest["phases"][0], {})
+    check("dg-both a sibling's own path-scoped gate AND a declared spelling "
+          "both exist - the sibling wins (mutation: prefer the spelling over "
+          "the sibling -> red): %r" % (both_result,),
+          both_result["shapeSource"] == "P1.1"
+          and both_result["entries"] == ["npm test -- ph.test.ts"]
+          and "pytest" not in " ".join(both_result["entries"]))
+
+    # --- dg-spelling-nopaths: a spelling with no {paths} placeholder is -------
+    # ignored, with a printed reason.
+    nopaths_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"spelling": "pytest tests/"}}},
+        phase=_phase(tasks=[_task("P1.1", tests={"gate": ["lint"]})]))
+    nopaths_result = M.derive(nopaths_manifest, nopaths_manifest["phases"][0], {})
+    check("dg-spelling-nopaths a spelling with no {paths} placeholder is "
+          "ignored, with a printed reason, and the basis stays "
+          "phase-no-spelling: %r" % (nopaths_result,),
+          nopaths_result["basis"] == "phase-no-spelling"
+          and nopaths_result["shapeSource"] is None
+          and any("carries no {paths} placeholder" in l
+                 for l in nopaths_result["lines"]))
+
     # --- no path-scoped sibling at all -----------------------------------------
     no_spelling = _manifest(
         meta={"buildCommands": build, "phaseGate": {"mode": "shadow"}},

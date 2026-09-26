@@ -59,8 +59,9 @@ def _manifest(mode, version_answer="v20", base_ref=None, full_spelling=False,
     related_script = _FULL_LIST_SCRIPT if full_spelling else _RELATED_LIST_SCRIPT
     phase_gate = {"mode": mode,
                  "derived": {"runner": "listAll",
-                            "spelling": "%s %s {paths}" % (PY, related_script),
-                            "listing": {},
+                            "listing": {
+                                "related": "%s %s {paths}" % (PY, related_script),
+                                "all": "%s %s" % (PY, _FULL_LIST_SCRIPT)},
                             "verifiedOn": {
                                 "command": "%s %s" % (PY, _VERSION_SCRIPT),
                                 "answer": version_answer}}} if mode else None
@@ -81,7 +82,8 @@ def _manifest(mode, version_answer="v20", base_ref=None, full_spelling=False,
 
 
 def _project(root, mode, version_answer="v20", write_manifest=True,
-            full_spelling=False, smoke=None, sib_files=None, sib_gate=None):
+            full_spelling=False, smoke=None, sib_files=None, sib_gate=None,
+            full_empty=False):
     """A fresh git repository with the three fake observation scripts on it,
     a manifest naming them, and `phase.baseRef` set to the first commit."""
     d = os.path.join(root, "proj-%d" % (len(os.listdir(root)) if
@@ -90,7 +92,8 @@ def _project(root, mode, version_answer="v20", write_manifest=True,
     os.makedirs(os.path.join(d, ".claude"))
     _write_script(d, _VERSION_SCRIPT, "print('v20')\n")
     _write_script(d, _FULL_LIST_SCRIPT,
-                 "print('a.test.ts')\nprint('b.test.ts')\n")
+                 "pass\n" if full_empty
+                 else "print('a.test.ts')\nprint('b.test.ts')\n")
     _write_script(d, _RELATED_LIST_SCRIPT, "print('a.test.ts')\n")
     _git(d, "init", "-q")
     _git(d, "config", "user.email", "t@example.com")
@@ -137,6 +140,35 @@ def _cases(check):
           code1 == 0 and after1 == before
           and "mode is not set" in out1)
 
+    # --- dp-listing (tests.add repro): _gather_facts spawns EXACTLY the -----
+    # declared listing.related ({paths} filled) and listing.all commands, and
+    # never a derived.runner/derived.spelling reading -- red at HEAD, where
+    # the manifest below (no top-level `spelling`, `listing` carrying real
+    # commands) makes the OLD reading find nothing usable and skip the arm
+    # entirely rather than spawn either listing.
+    d11, m11, _base11 = _project(root, mode="shadow")
+    calls = []
+    real_spawn = M._spawn
+
+    def _capture(command, cwd, timeout):
+        calls.append(command)
+        return real_spawn(command, cwd, timeout)
+
+    M._spawn = _capture
+    try:
+        code11, out11 = _run([m11, "P1"])
+    finally:
+        M._spawn = real_spawn
+    expected_related = "%s %s %s" % (PY, _RELATED_LIST_SCRIPT, "src/a.ts")
+    expected_all = "%s %s" % (PY, _FULL_LIST_SCRIPT)
+    check("dp-listing spawns listing.related (paths filled) and listing.all "
+          "verbatim, and the old runner/spelling skip line never appears: %r"
+          % (calls,),
+          code11 == 0
+          and expected_related in calls
+          and expected_all in calls
+          and "runner/spelling pair" not in out11)
+
     # --- dp2: shadow mode writes testGateDerived + testGateBasis, testGate ----
     # UNCHANGED -- this IS the tests.add repro: on a tree with no
     # derive-phase-gate.py at all this case cannot even import M, which is the
@@ -164,6 +196,13 @@ def _cases(check):
           "'DERIVED = FULL': %r" % (out2,),
           "DERIVED = FULL" not in out2
           and ph2.get("testGateDerived", {}).get("full") is not True)
+    check("dp2d fullListing carries its OWN durationMs beside the related "
+          "listing's - both costs are recorded (mutation: drop it -> red): "
+          "%r" % (ph2.get("testGateDerived", {}).get("fullListing"),),
+          isinstance(ph2.get("testGateDerived", {})
+                    .get("fullListing", {}).get("durationMs"), int)
+          and isinstance(ph2.get("testGateDerived", {})
+                        .get("listing", {}).get("durationMs"), int))
 
     # --- dp-full: the related listing resolves to the FULL listing (dg1) -----
     d2f, m2f, _base2f = _project(root, mode="shadow", full_spelling=True)
@@ -177,6 +216,51 @@ def _cases(check):
           and ph2f.get("testGateDerived", {}).get("full") is True
           and ph2f.get("testGateBasis")
           == "wide: importers resolved to the full suite")
+    check("dp-full-honest (round-final repro) a full-suite resolution is NOT "
+          "narrowed - it prints NO 'test file(s)' count (that would be an "
+          "attribution for a gate that is not narrowed), still prints "
+          "'DERIVED = FULL', and carries the MEASURED listed-of-full pair as "
+          "an advisory (mutation: restore a non-None attribution on the "
+          "full-suite branch, or key the render off attribution again -> "
+          "red): %r" % (out2f,),
+          "test file(s)" not in out2f
+          and "DERIVED = FULL" in out2f
+          and "listed 2 of 2 (full)" in out2f
+          and ph2f.get("testGateDerived", {}).get("arms") is None)
+    code2f_brief, out2f_brief = _run([m2f, "P1", "--brief", "--dry-run"])
+    check("dp-full-honest-brief --brief on a full-suite resolution prints "
+          "ONLY measured counts (listed of full), never an attribution: %r"
+          % (out2f_brief,),
+          code2f_brief == 0
+          and "derived: full suite (2 of 2)" in out2f_brief
+          and "couplings" not in out2f_brief)
+
+    # --- dp-empty (tests.add repro): an ALL listing that runs, exits 0 and --
+    # prints nothing turns the derivation wide with basis derived-empty, end
+    # to end through a REAL subprocess.
+    de, me, _basee = _project(root, mode="shadow", full_empty=True)
+    codee, oute = _run([me, "P1"])
+    phe = _raw(me)["phases"][0]
+    check("dp-empty an ALL listing that ran, exited 0 and printed nothing "
+          "writes phase.testGateBasis == derived-empty, prints the GENERIC "
+          "'nothing to narrow to' line (never a fabricated 'N test file(s)') "
+          "plus the SPECIFIC advisory reason (mutation: reintroduce a second "
+          "derivation, or key the render off something other than "
+          "result['basis'] -> red): %r" % (oute,),
+          codee == 0
+          and "nothing to narrow to" in oute
+          and "test file(s)" not in oute
+          and "named no suite" in oute
+          and phe.get("testGateBasis") == "derived-empty")
+    codee_brief, oute_brief = _run([me, "P1", "--brief", "--dry-run"])
+    check("dp-empty-brief --brief prints its own derived-empty NOTE (never "
+          "'could not be bounded'), with no path in it (mutation: let the "
+          "brief basis-check branch fall to 'could not be bounded' -> red): "
+          "%r" % (oute_brief,),
+          codee_brief == 0 and "derived: derived-empty for" in oute_brief
+          and "could not be bounded" not in oute_brief
+          and "a.test.ts" not in oute_brief
+          and "npm test" not in oute_brief)
 
     # --- dp3: enforce mode writes testGate too, plus one journal row ----------
     d3, m3, _base3 = _project(root, mode="enforce")
@@ -298,6 +382,76 @@ def _cases(check):
           code10 == 0 and "could not be bounded" in out10
           and ph10.get("testGateBasis") == "phase-no-spelling"
           and "tests" not in (ph10.get("testGateDerived") or {}))
+
+    # --- dp-spelling-empty (tests.add repro): a BARE derived.spelling, no ----
+    # listing, no sibling and no arm contribution - end to end through a REAL
+    # subprocess, the derived-empty rendering must be the SAME honest wide
+    # line the ALL-listing trigger uses (keyed off result["basis"] alone),
+    # never a fabricated "0 test file(s)".
+    d12, m12, base12 = _project(root, mode="shadow", write_manifest=False)
+    manifest12 = {
+        "meta": {"version": 2, "buildCommands": _build_commands(),
+                "phaseGate": {"mode": "shadow",
+                             "derived": {"spelling": "pytest {paths}"}}},
+        "phases": [{"id": "P1", "title": "P", "status": "pending",
+                   "baseRef": base12,
+                   "tasks": [{"id": "P1.1", "title": "sib", "status": "pending",
+                              "files": ["src/a.ts"],
+                              "tests": {"mode": "gate-only", "gate": ["lint"],
+                                       "gateBasis": "tests.add"}}]}],
+    }
+    with open(m12, "w", encoding="utf-8") as fh:
+        json.dump(manifest12, fh, indent=2)
+    code12, out12 = _run([m12, "P1"])
+    ph12 = _raw(m12)["phases"][0]
+    check("dp-spelling-empty a bare declared spelling with NO listing, no "
+          "sibling and no arm contribution renders the SAME 'nothing to "
+          "narrow to' line as the ALL-listing trigger, never '0 test "
+          "file(s)' (mutation: reintroduce a second derivation, or key the "
+          "render off something other than result['basis'] -> red): %r"
+          % (out12,),
+          code12 == 0
+          and "nothing to narrow to" in out12
+          and "test file(s)" not in out12
+          and "nothing to substitute" in out12
+          and ph12.get("testGateBasis") == "derived-empty")
+    code12b, out12b = _run([m12, "P1", "--brief", "--dry-run"])
+    check("dp-spelling-empty-brief --brief renders its own derived-empty "
+          "note too, with no path and no runner text: %r" % (out12b,),
+          code12b == 0 and "derived: derived-empty for" in out12b
+          and "pytest" not in out12b)
+
+    # --- dp-spelling-space (shlex.quote repro): a changedSince path with a ---
+    # SPACE in it is carried shell-quoted as ONE token in the final spelling
+    # entry - end to end, through a REAL git diff and a REAL subprocess.
+    d13, m13, base13 = _project(root, mode="shadow", write_manifest=False)
+    os.makedirs(os.path.join(d13, "tests"), exist_ok=True)
+    with open(os.path.join(d13, "tests", "my file.test.ts"), "w",
+             encoding="utf-8") as fh:
+        fh.write("// a test file whose NAME carries a space\n")
+    _git(d13, "add", "-A")
+    _git(d13, "commit", "-q", "-m", "add a spaced test path")
+    manifest13 = {
+        "meta": {"version": 2, "buildCommands": _build_commands(),
+                "phaseGate": {"mode": "enforce",
+                             "derived": {"spelling": "pytest {paths}"}}},
+        "phases": [{"id": "P1", "title": "P", "status": "pending",
+                   "baseRef": base13,
+                   "tasks": [{"id": "P1.1", "title": "sib", "status": "pending",
+                              "files": ["src/a.ts"],
+                              "tests": {"mode": "gate-only", "gate": ["lint"],
+                                       "gateBasis": "tests.add"}}]}],
+    }
+    with open(m13, "w", encoding="utf-8") as fh:
+        json.dump(manifest13, fh, indent=2)
+    code13, out13 = _run([m13, "P1"])
+    ph13 = _raw(m13)["phases"][0]
+    check("dp-spelling-space a changedSince path with a SPACE is carried "
+          "shell-quoted as ONE token in the written testGate entry (mutation: "
+          "drop shlex.quote -> red, the raw path splits the command into two "
+          "words): %r" % (ph13.get("testGate"),),
+          code13 == 0
+          and ph13.get("testGate") == ["pytest 'tests/my file.test.ts'"])
 
     # --- dp-usage: unknown phase is an error, never a silent fallback ---------
     d7, m7, _base7 = _project(root, mode="shadow")
