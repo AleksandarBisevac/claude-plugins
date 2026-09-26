@@ -225,10 +225,16 @@ V_COLLECT, V_NO_TALLY, V_NOT_RUN = "collection-error", "no-tally", "could-not-ru
 # the teardown, so the helper's own timeout is the one that fires.
 HOST_BASH_LIMIT = 600
 DEFAULT_TIMEOUT = 480
-# The deadline covers BOTH runs, and each can end in a teardown given
-# `_proc_group.GRACE_SECONDS` twice over, then the throwaway's removal: so the
-# largest `--timeout` accepted leaves that much of the host's limit unspent.
-TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS
+# ONE deadline, `--timeout`, starts before anything runs and covers every git
+# call that builds or reads the throwaway and both runs: each stage gets what the
+# earlier ones left. What happens after the deadline has to fit in the rest of
+# the host's limit, so it is bounded and summed here: one teardown of a timed-out
+# run (`_proc_group.GRACE_SECONDS` for SIGTERM, again for SIGKILL, again for the
+# drain - two runs cannot both time out, the second is only made when the first
+# finished), and the removal's two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
+# Copying files and deleting the temp directory are local and are not budgeted.
+REMOVE_GIT_TIMEOUT = 10
+TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 2 * REMOVE_GIT_TIMEOUT
 MAX_TIMEOUT = HOST_BASH_LIMIT - TEARDOWN_MARGIN
 
 # Every throwaway's temp directory starts with this, which is how a leftover from
@@ -430,16 +436,26 @@ def _under(value, roots):
                for v in spellings for r in roots for sep in ("/", os.sep))
 
 
+# An option string - NODE_OPTIONS, PYTEST_ADDOPTS - is not a path to rewrite, but
+# a runner reads the paths inside it: split on whitespace, `=` and the path-list
+# separator to find them.
+_TOKEN_SPLIT = re.compile(r"[\s=%s]+" % (re.escape(os.pathsep),))
+
+
 def child_env(root, environ=None):
-    """`(env, dropped)` - the environment without what reaches the shared tree.
+    """`(env, dropped, naming)` - the environment without what reaches the shared
+    tree, and the kept variables that still NAME a path under it.
 
     `SCRUBBED_ENV` goes whole; any other variable whose value IS a path under the
     root goes; a path list keeps its other entries and loses the ones under the
     root, so an in-repo `.venv/bin` leaves PATH without taking PATH with it.
-    `dropped` names every variable and every list entry removed."""
+    `dropped` names every variable and every list entry removed. A value that is
+    not itself a path but carries one under the root - an option string such as
+    `--require /repo/test/setup.js` - is kept and listed in `naming`, because a
+    runner reads it as a path into the shared tree and the basis must say so."""
     source = os.environ if environ is None else environ
     roots = [r for r in set((root, os.path.realpath(root))) if r]
-    env, dropped = {}, []
+    env, dropped, naming = {}, [], []
     for key in sorted(source):
         value = source[key]
         if key in SCRUBBED_ENV:
@@ -449,12 +465,14 @@ def child_env(root, environ=None):
         gone = [p for p in parts if _under(p, roots)]
         if not gone:
             env[key] = value
+            if any(_under(tok, roots) for tok in _TOKEN_SPLIT.split(value)):
+                naming.append(key)
         elif len(parts) == 1 or len(gone) == len(parts):
             dropped.append(key)
         else:
             env[key] = os.pathsep.join(p for p in parts if p not in gone)
             dropped.extend("%s entry %s" % (key, p) for p in gone)
-    return env, dropped
+    return env, dropped, naming
 
 
 def _git_env():
@@ -556,13 +574,13 @@ def _names_shared_tree(cmd, root, project):
 
 
 # --- the throwaway tree itself ---
-def leftover_throwaways(root):
+def leftover_throwaways(root, timeout=120):
     """`[{"path", "state", "pid"}]` - registered worktrees whose path carries
     `THROWAWAY_PREFIX`, each graded by the process its `OWNER_FILE` names:
     `running` while that process is alive (a sibling's `red`, still going),
     `left-behind` once it is gone, `unknown` with no owner record. Reported,
     never pruned. A reused pid reads as `running`, the safe direction."""
-    code, listing = _git(root, ["worktree", "list", "--porcelain"])
+    code, listing = _git(root, ["worktree", "list", "--porcelain"], timeout=timeout)
     if code != 0:
         return []
     out = []
@@ -613,9 +631,10 @@ def holder_base(root):
     return None
 
 
-def _build_throwaway(root, path, tests):
+def _build_throwaway(root, path, tests, timeout=120):
     """`(copied, problem)`: HEAD checked out at `path`, the tests laid over it."""
-    code, text = _git(root, ["worktree", "add", "--detach", "--quiet", path, "HEAD"])
+    code, text = _git(root, ["worktree", "add", "--detach", "--quiet", path, "HEAD"],
+                      timeout=timeout)
     if code != 0:
         return [], "git could not build the throwaway tree: %s" % (text,)
     return _lay_over(root, path, tests), None
@@ -645,9 +664,10 @@ def _remove_throwaway(root, holder, path):
     The removal is asked of git whether or not the build got as far as
     registering the tree, because a build that died half way is exactly the
     case in which nobody knows."""
-    _git(root, ["worktree", "remove", "--force", path])
+    _git(root, ["worktree", "remove", "--force", path], timeout=REMOVE_GIT_TIMEOUT)
     shutil.rmtree(holder, ignore_errors=True)
-    code, listing = _git(root, ["worktree", "list", "--porcelain"])
+    code, listing = _git(root, ["worktree", "list", "--porcelain"],
+                         timeout=REMOVE_GIT_TIMEOUT)
     listed = code != 0 or path in listing or os.path.realpath(path) in listing
     return not os.path.exists(holder) and not listed
 
@@ -704,6 +724,9 @@ def red_verdict(run, ctx):
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
+    if ctx.get("naming"):
+        env_clause += ("; kept, naming the shared root: %s - the run may have read "
+                       "shared-tree files through it" % (", ".join(ctx["naming"]),))
     if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
             "status": RED_CANNOT, "at": at,
@@ -791,7 +814,12 @@ def _wants_second(code, text, symbols):
     return verdict == V_COLLECT and any(qualifying_error(text, s) for s in symbols)
 
 
-def _red_scope(args, cmd):
+def _left(deadline):
+    """Whole seconds left before `deadline`; 0 or less when it has passed."""
+    return int(deadline - time.time())
+
+
+def _red_scope(args, cmd, deadline):
     """`(scope, problem)` - everything `red` needs before it builds anything."""
     if not cmd:
         return None, "red needs the test command after `--`"
@@ -820,7 +848,8 @@ def _red_scope(args, cmd):
     if not tests:
         return None, ("task %s declares no test file, so a throwaway at HEAD "
                       "would prove nothing about this task's test" % (args.task,))
-    code, root = _git(os.path.abspath(args.project), ["rev-parse", "--show-toplevel"])
+    code, root = _git(os.path.abspath(args.project), ["rev-parse", "--show-toplevel"],
+                      timeout=max(1, _left(deadline)))
     if code != 0:
         return None, "%s is not inside a git repository: %s" % (args.project, root)
     named = _names_shared_tree(cmd, root, os.path.abspath(args.project))
@@ -847,14 +876,15 @@ def _arm():
 
 def run_red(args, cmd, out):
     """`red`: prove a red in a throwaway tree and print the `redFirst` block."""
-    scope, problem = _red_scope(args, cmd)
+    deadline = time.time() + args.timeout
+    scope, problem = _red_scope(args, cmd, deadline)
     if problem is not None:
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
     root = scope["root"]
-    leftovers = leftover_throwaways(root)
-    env, dropped = child_env(root)
-    _c, head = _git(root, ["rev-parse", "HEAD"])
+    leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
+    env, dropped, naming = child_env(root)
+    _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
     base = holder_base(root)
     if base is None:
         sys.stderr.write("ERROR: every temp directory this machine offers is inside "
@@ -868,20 +898,23 @@ def run_red(args, cmd, out):
             json.dump({"pid": os.getpid()}, fh)
     except OSError:
         pass
-    deadline = time.time() + args.timeout
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None}
     copied = []
     previous = _arm()
     try:
         try:
-            copied, run["problem"] = _build_throwaway(root, path, scope["tests"])
+            copied, run["problem"] = _build_throwaway(
+                root, path, scope["tests"], timeout=max(1, _left(deadline)))
+            if run["problem"] is None and _left(deadline) < 1:
+                run["problem"] = ("the run timed out: building the throwaway spent "
+                                  "the %s-second deadline" % (args.timeout,))
             if run["problem"] is None:
                 run["code"], run["text"], run["problem"] = _run_in(
-                    path, cmd, args.timeout, env)
+                    path, cmd, _left(deadline), env)
             if run["problem"] is None and _wants_second(run["code"], run["text"],
                                                         args.introduces):
                 _lay_over(root, path, scope["implementation"])
-                left = int(deadline - time.time())
+                left = _left(deadline)
                 if left < 1:
                     code2, text2, problem2 = None, "", (
                         "the run timed out: no time was left of the %s-second "
@@ -896,7 +929,7 @@ def run_red(args, cmd, out):
         exit_code, verdict, block, note = red_verdict(run, {
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
-            "symbols": args.introduces, "dropped": dropped})
+            "symbols": args.introduces, "dropped": dropped, "naming": naming})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
@@ -904,7 +937,7 @@ def run_red(args, cmd, out):
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
-               "environment": {"dropped": dropped},
+               "environment": {"dropped": dropped, "naming": naming},
                "throwaway": {"path": path, "head": head, "removed": removed},
                "run": {"argv": cmd, "exit": run["code"],
                        "outputTail": run["text"].splitlines()[-20:],
@@ -919,6 +952,8 @@ def run_red(args, cmd, out):
         out("  at HEAD: %s" % (", ".join(scope["implementation"]) or "(none declared)"))
         out("  from the working tree: %s" % (", ".join(copied) or "(none)"))
         out("  environment: inherited, without %s" % (", ".join(dropped) or "nothing"))
+        if naming:
+            out("  kept, naming the shared root: %s" % (", ".join(naming),))
         for left in leftovers:
             out("  %s: %s" % (leftover_line(left), left["path"]))
         out(note if block is None else "redFirst: %s" % (json.dumps(block),))

@@ -335,6 +335,55 @@
         "test_stamp_verification sr39",
         "test__doctor_trail rh9b"
       ]
+    },
+    {
+      "id": "P77.5-6u9",
+      "title": "Final-review low findings: one deadline covers build and teardown, option strings pointing into the tree are named, and the docs match the rules",
+      "status": "in_progress",
+      "description": "Final review (answer: matches) left five low findings, all to be fixed: the deadline covers the build and teardown and the guide's claim is made true at every accepted --timeout; option-string values carrying a path under the root are named in the basis (not rewritten); the bytecode note says what a matching header does and does not show; execute-task.md's boundary sentence matches the --case rule; the guide's refresh-limit list is derived from the matcher as doctor.md is, and rh10 checks both.\nR1 (low) plugins/audit/scripts/governance/stamp-verification.py:229-232,871,880; PLUGIN-BUILD-GUIDE.md:3533-3535: The 'one deadline' covers only the second run. `deadline` is set before `_build_throwaway`, but the FIRST run still gets the full budget: `_run_in(path, cmd, args.timeout, env)` at :880. Two other costs sit outside the budget as well. The build (`git worktree add`) and the removal (`worktree remove` plus `worktree list`) are git calls, each capped at 120 s. `TEARDOWN_MARGIN = 3 * GRACE_SECONDS` is used up by one timed-out teardown (SIGTERM wait plus SIGKILL wait, 2 x GRACE) plus `drain` (GRACE). So the comment's 'then the throwaway's removal' has no seconds left. At `--timeout 585` (MAX_TIMEOUT), any build time plus a first run that times out, plus removal, goes over HOST_BASH_LIMIT. The guide's 'the helper's own deadline fires before the host kills it' is then false. sr39 passes against the remainder-for-run-2 half and cannot see this half. The default of 480 s leaves room, which is why this is low. -> Give the first run `max(1, int(deadline - time.time()))` as well. Include the build and removal in the budget: either cap those git calls at the time remaining, or add their bound to TEARDOWN_MARGIN and say so in the comment. Otherwise restate the guide sentence as a claim about the default only. Add a case that asserts the first run's timeout is the remainder after the build, for example with a stubbed `_build_throwaway` that sleeps.\nR2 (low) plugins/audit/scripts/governance/stamp-verification.py:423-457 (_under, child_env): The switch from substring matching to path matching reopened a narrower channel, silently. A variable whose value carries an absolute path under the root inside an option string is now KEPT, and it is not named anywhere. Probed: `child_env('/repo/x', {'NODE_OPTIONS': '--require /repo/x/test/setup.js', 'PYTEST_ADDOPTS': '--basetemp=/repo/x/.t -c /repo/x/pytest.ini', ...})` keeps both, and `dropped` does not list them. Such variables point the child in the throwaway back at the shared tree's working-tree files. `--require` loads the working tree's setup, `-c` its ini, and `--basetemp` is a directory pytest empties. So a basis reading 'in a throwaway tree at HEAD ... run without X' can rest on a shared-tree file, and it gives no hint that it does. The docstring's 'text that mentions the root is kept' is honest about intent. What it does not cover is that a runner treats these values as paths. -> Split each non-path-list value on whitespace and `=` and run `_under` over its absolute tokens. Drop a variable that has one, or keep it and add a `kept, naming the shared root: VAR` clause to the basis. Either way, the basis must not be silent about it. Add an sr case with NODE_OPTIONS/PYTEST_ADDOPTS naming a path under the root, next to sr32's NOTE case, which must stay kept.\nR3 (low) plugins/audit/scripts/status/_doctor_setup.py:349-369,398-404; PLUGIN-BUILD-GUIDE.md:2543-2545; CHANGELOG.md:209-210: `_fresh_bytecode` counts a .pyc as Python's own when its header records the published source's mtime and size, and the docs say bytecode 'which Python wrote itself'. A matching header is exactly the condition under which Python EXECUTES a .pyc. It says nothing about whether the body was compiled from that source. The repo's own recorded trap produces a stale body with a matching header: a restore within the same second and at the same size, or `cp -p`/`rsync -t` of an edited-then-restored hook. The line was added to surface that bytecode, and now it is counted and not named. The claim 'Python wrote itself' has no basis in what the code reads. -> For the running interpreter's cache_tag, compare the body: compile the published source to a temp cfile with `py_compile`, using the same source path, and compare the bytes after the 16-byte header. Otherwise compare `marshal.loads(pyc[16:])` with `compile(src, path, 'exec')` over co_code and co_consts recursively. Count only a matching body. Bytecode for another cache_tag, which this interpreter never runs, can stay counted. At minimum, word the count as 'header matches its source (body not verified)'. Add a case where a pyc with a matching header wraps a different body and is named.\nR4 (low) plugins/audit/reference/execute-task.md:116-117: This is a boundary the diff left behind. The orchestrator's reference still defines the helper's own case as '(`--case`, or a case the working tree's test file adds)', that is, --case as an alternative. This commit made `--case` a narrowing that is held to the absent-from-HEAD test (own_failures at stamp-verification.py:529-544; audit-executor.md:113-116 and PLUGIN-BUILD-GUIDE.md:3553-3556 now say so). The one reader that closes a task on the executor's redFirst word is told the old contract. P77.4's `files` does not include execute-task.md. -> Restate as: the task's own is a case present in the working tree's test file and absent from HEAD's, and `--case` narrows to named ids held to that same test. Add execute-task.md to the fix task's files.\nR5 (low) PLUGIN-BUILD-GUIDE.md:2660-2662: Prior finding 8 is only half closed. doctor.md now states the refresh limit as the hooks.json matcher, `Read|Grep|Bash|mcp__.*`. The guide's paragraph on the same row still says 'Edit, Write, Glob and agent calls do not refresh the stamp', the partial list that omits WebFetch, WebSearch, Skill, TodoWrite and the rest. The diff edited the next sentence and left this one. rh10 pins doctor.md only, so nothing sees the second copy. -> Replace the list with the matcher wording, or point at doctor.md. Extend rh10 to read the guide paragraph too, or delete the restatement so there is one copy.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - NODE_OPTIONS naming a file under the shared root survives the scrub unnamed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T03:35:22Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:40Z"

@@ -346,27 +346,71 @@ def _archive_files(clone, sha, sub):
 _CODE_DIRS = ("hooks", "scripts")
 
 
-def _fresh_bytecode(plugin_root, rel, published):
-    """Whether `rel` is a `__pycache__` file Python wrote from a PUBLISHED source
-    and that still matches it: a source-stamped header (flags 0) whose recorded
-    source mtime and size are the cache copy's own `.py`. Hash-stamped or
-    unreadable bytecode is not called fresh - it is named instead."""
+def _header_matches(plugin_root, rel, published):
+    """The published source a `__pycache__` file belongs to when its header is
+    source-stamped (flags 0) and records that source's mtime and size as the
+    cache copy has them, else None. A matching header is exactly the condition
+    under which Python EXECUTES the file - and says nothing about the body."""
     parts = rel.split("/")
     if len(parts) < 2 or parts[-2] != "__pycache__" or not parts[-1].endswith(".pyc"):
-        return False
+        return None
     source = "/".join(parts[:-2] + [parts[-1].split(".")[0] + ".py"])
     if source not in published:
-        return False
+        return None
     try:
         with open(os.path.join(plugin_root, *rel.split("/")), "rb") as fh:
             head = fh.read(16)
         st = os.stat(os.path.join(plugin_root, *source.split("/")))
     except OSError:
-        return False
+        return None
     if len(head) < 16 or int.from_bytes(head[4:8], "little") != 0:
+        return None
+    if (int.from_bytes(head[8:12], "little") == int(st.st_mtime) & 0xFFFFFFFF
+            and int.from_bytes(head[12:16], "little") == st.st_size & 0xFFFFFFFF):
+        return source
+    return None
+
+
+def _body_matches(plugin_root, rel, source):
+    """Whether the bytecode after the header is what THIS interpreter compiles
+    from the published source now - a restore inside one second at one size, or
+    a `cp -p` of an edited-then-restored file, leaves a matching header over a
+    stale body, and only a fresh compile tells the two apart."""
+    import marshal
+    import py_compile
+    import tempfile
+    work = tempfile.mkdtemp(prefix="doctor-pyc-")
+    try:
+        with open(os.path.join(plugin_root, *rel.split("/")), "rb") as fh:
+            have = fh.read()[16:]
+        # The body embeds the path the source was IMPORTED by, which is not always
+        # its plain path (a hook reaching `scripts/` imports `hooks/../scripts/x.py`),
+        # so the fresh compile is given that same recorded name. Loading the code
+        # object executes nothing, and this is a file Python already runs.
+        recorded = marshal.loads(have).co_filename
+        fresh = os.path.join(work, "fresh.pyc")
+        py_compile.compile(os.path.join(plugin_root, *source.split("/")),
+                           cfile=fresh, dfile=recorded, doraise=True)
+        with open(fresh, "rb") as fh:
+            want = fh.read()[16:]
+        return have == want
+    except Exception:
         return False
-    return (int.from_bytes(head[8:12], "little") == int(st.st_mtime) & 0xFFFFFFFF
-            and int.from_bytes(head[12:16], "little") == st.st_size & 0xFFFFFFFF)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _bytecode_kind(plugin_root, rel, published):
+    """`fresh` (header and body match a compile of the published source by this
+    interpreter), `header-only` (another interpreter's file with a matching
+    header, whose body this one cannot compile to compare), or None - named."""
+    source = _header_matches(plugin_root, rel, published)
+    if source is None:
+        return None
+    tag = rel.split("/")[-1].split(".")
+    if len(tag) < 3 or tag[1] != sys.implementation.cache_tag:
+        return "header-only" if len(tag) >= 3 else None
+    return "fresh" if _body_matches(plugin_root, rel, source) else None
 
 
 def _unpublished(plugin_root, published):
@@ -374,7 +418,7 @@ def _unpublished(plugin_root, published):
     hold, sorted, except bytecode Python wrote from a published source that still
     matches it, which is only counted: that is every install's own bytecode, and a
     line naming it on every run is read past. Stale or foreign bytecode is named."""
-    extras, fresh = [], 0
+    extras, fresh, header_only = [], 0, 0
     for sub in _CODE_DIRS:
         for base, dirs, names in os.walk(os.path.join(plugin_root, sub)):
             dirs.sort()
@@ -383,11 +427,14 @@ def _unpublished(plugin_root, published):
                                       plugin_root).replace(os.sep, "/")
                 if rel in published:
                     continue
-                if _fresh_bytecode(plugin_root, rel, published):
+                kind = _bytecode_kind(plugin_root, rel, published)
+                if kind == "fresh":
                     fresh += 1
+                elif kind == "header-only":
+                    header_only += 1
                 else:
                     extras.append(rel)
-    return sorted(extras), fresh
+    return sorted(extras), fresh, header_only
 
 
 def cache_integrity(plugin_root, home):
@@ -399,9 +446,11 @@ def cache_integrity(plugin_root, home):
     and it is not harmless either: `__pycache__/*.pyc` beside a published `.py`
     is what Python executes when its recorded source size and mtime match. So
     every such file under `hooks/` and `scripts/`, where the code that runs
-    lives, is NAMED in `extras` - except bytecode whose header still records its
-    published source's size and mtime, which Python wrote itself and is counted
-    in `freshBytecode`; the verdict stays about the published files.
+    lives, is NAMED in `extras` - except bytecode whose header records its
+    published source AND whose body matches a fresh compile of that source by
+    this interpreter, counted in `freshBytecode`, and another interpreter's
+    bytecode with a matching header, counted apart in `headerOnlyBytecode`
+    because its body is not verified. The verdict stays about published files.
     Unverifiable only when a side is missing: no install record, no recorded
     commit, no clone, or a clone that does not hold the commit."""
     out = {"verdict": "unverifiable", "detail": "", "modified": [], "commit": None}
@@ -437,9 +486,10 @@ def cache_integrity(plugin_root, home):
             same = False
         if not same:
             changed.append(rel)
-    extras, fresh = _unpublished(plugin_root, files)
+    extras, fresh, header_only = _unpublished(plugin_root, files)
     out["extras"] = extras
     out["freshBytecode"] = fresh
+    out["headerOnlyBytecode"] = header_only
     out["commit"] = sha[:12]
     out["basis"] = ("git archive of %s from the marketplace clone at %s, the "
                     "commit installed_plugins.json records for this copy - %s, "
@@ -536,8 +586,14 @@ def check_plugin_files(rep, project, plugin_root=None, integrity=None):
         basis += ("; not compared, because the commit does not publish them - and "
                   "bytecode executes: %s" % (_output.some_of(state["extras"]),))
     if state.get("freshBytecode"):
-        basis += ("; %d bytecode file(s) matching its published source by recorded "
-                  "size and mtime not listed" % (state["freshBytecode"],))
+        basis += ("; %d bytecode file(s) not listed whose header records its "
+                  "published source and whose body matches a fresh compile of it "
+                  "by this interpreter" % (state["freshBytecode"],))
+    if state.get("headerOnlyBytecode"):
+        basis += ("; %d bytecode file(s) for another interpreter not listed: the "
+                  "header records its published source, and the body is not "
+                  "verified - this interpreter cannot compile it to compare"
+                  % (state["headerOnlyBytecode"],))
     if state["verdict"] == "modified":
         rep.warn("plugin files",
                  "the installed plugin's tracked files do NOT match %s (%s): %s. "

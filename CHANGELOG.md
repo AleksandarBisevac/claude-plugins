@@ -206,8 +206,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `run-test-gate.py`. `pytest -q`'s unframed summary is now read as a tally.
 - **The `plugin files` row names unpublished files under `hooks/` and `scripts/`**, bytecode
   included - bytecode beside a published `.py` is what Python executes - instead of calling them
-  harmless; bytecode whose header still matches its published source is counted rather than
-  named. The `redFirst` lint now also refuses a retired word anywhere in the two briefs.
+  harmless; bytecode is counted rather than named only when its header records its published
+  source AND its body matches a fresh compile of that source, since a matching header alone is
+  what makes Python run a stale body. The `redFirst` lint now also refuses a retired word anywhere in the two briefs.
 - **The running-plugin stamp refresh can no longer change `guard-secrets-read`'s verdict.** It ran
   before the decision, and a `stateDir` that was not a string made it raise, which the hook's exit
   0 turned into an allowed read of a secret file. It now runs after the verdict, with everything
@@ -218,7 +219,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--timeout` past the host's limit is refused; `--case` is held to the same absent-from-HEAD test
   as a derived case; pytest collection errors and a bare AttributeError reach `--introduces`'
   second run; a leftover throwaway is `left behind` only when its owning process is gone; and the
-  throwaway is never built under a TMPDIR inside the shared tree.
+  throwaway is never built under a TMPDIR inside the shared tree. The deadline covers the build and
+  the first run too, with the teardown and removal bounded inside the host's limit, and a kept
+  variable that carries a path under the shared root is named in the basis.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,

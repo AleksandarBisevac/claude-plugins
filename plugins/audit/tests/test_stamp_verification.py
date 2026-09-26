@@ -645,13 +645,13 @@ def _process_cases(check):
     marks = _harness.fixture_root("stamp-red-marks-")
     late = os.path.join(marks, "grandchild-wrote")
     began = os.path.join(marks, "grandchild-began")
-    inner = ("import time; open(%r, 'w').close(); time.sleep(3); "
+    inner = ("import time; open(%r, 'w').close(); time.sleep(5); "
              "open(%r, 'w').close()" % (began, late))
     spawn = ("import subprocess, sys, time\n"
              "subprocess.Popen([sys.executable, '-c', %r])\n"
              "time.sleep(30)\n" % (inner,))
-    code_t, got_t = _red(root, man, [py, "-c", spawn], "--timeout", "1")
-    time.sleep(4)
+    code_t, got_t = _red(root, man, [py, "-c", spawn], "--timeout", "3")
+    time.sleep(6)
     check("sr22 a timeout kills the run's whole process GROUP: a grandchild the "
           "test runner started - seen running - does not outlive the throwaway "
           "and write after it: exit=%r began=%r wrote=%r"
@@ -823,7 +823,7 @@ def _final_pass_cases(check):
            "TMPDIR": "/repo/x/.tmp", "PWD": "/repo/x", "SIBLING": "/repo/x-other/lib",
            "NOTE": "see /repo/x for details", "HOME": "/home/me",
            "PYTHONPATH": "/elsewhere"}
-    kept, dropped = M.child_env("/repo/x", environ=env)
+    kept, dropped, _naming = M.child_env("/repo/x", environ=env)
     check("sr32 the scrub is by PATH, not by substring: an in-root PATH entry is "
           "removed while PATH itself survives, a variable whose value IS a path "
           "under the root goes, a sibling directory that merely shares the "
@@ -888,22 +888,24 @@ def _final_pass_cases(check):
           "the helper's own deadline has to fire first: exit=%r" % (big[0],),
           big[0] == M.E_USAGE)
     files = ["src/mine.py", "src/newmod.py", "tests/test_mine.py"]
-    slow = _house_test("import time\ntime.sleep(2)\nfrom newmod import helper_fn",
+    slow = _house_test("import time\ntime.sleep(3)\nfrom newmod import helper_fn",
                        [("new1", "helper_fn() == 2")])
     root_s, man_s = _red_repo("stamp-red-deadline-", slow,
                               extra={"src/newmod.py": "def helper_fn():\n    return 2\n"},
                               files=files)
     started = time.time()
     code_s, got_s = _red(root_s, man_s, [py, "tests/test_mine.py"],
-                         "--introduces", "newmod", "--timeout", "3")
+                         "--introduces", "newmod", "--timeout", "7")
     spent = time.time() - started
     check("sr39 ONE deadline covers both runs: the second run gets what the first "
           "left, so a two-run proof cannot take twice the budget - here the "
           "second run is cut off and the proof is could-not-prove: exit=%r in "
           "%.1f s %r" % (code_s, spent,
                          (got_s.get("redFirst") or {}).get("basis", "")[-140:]),
-          code_s == M.E_CANNOT_PROVE and spent < 3 + 3 * _proc_group.GRACE_SECONDS
-          and "timed out" in (got_s.get("redFirst") or {}).get("basis", ""))
+          code_s == M.E_CANNOT_PROVE and spent < 7 + 3 * _proc_group.GRACE_SECONDS
+          and "timed out" in (got_s.get("redFirst") or {}).get("basis", "")
+          and (got_s.get("run") or {}).get("exit") == 1
+          and (got_s.get("run") or {}).get("second") is not None)
 
     root_t, man_t = _red_repo("stamp-red-tmpdir-",
                               _red_test("import mine", "mine.v == 2"))
@@ -924,6 +926,71 @@ def _final_pass_cases(check):
           and os.listdir(inside) == [] and code_t == M.E_PROVED)
 
 
+def _budget_cases(check):
+    py = sys.executable
+    check("sr41 the margin under the host's limit pays for ONE teardown (two waits "
+          "and a drain) and the throwaway's removal (two git calls, each capped), "
+          "so the largest accepted --timeout still leaves the host room: %r"
+          % ((M.MAX_TIMEOUT, M.TEARDOWN_MARGIN, M.HOST_BASH_LIMIT),),
+          M.MAX_TIMEOUT + M.TEARDOWN_MARGIN == M.HOST_BASH_LIMIT
+          and M.TEARDOWN_MARGIN >= 3 * _proc_group.GRACE_SECONDS
+          + 2 * M.REMOVE_GIT_TIMEOUT)
+    root, man = _red_repo("stamp-red-budget-", _red_test("import mine", "mine.v == 2"))
+    real = M._build_throwaway
+
+    def slow_build(*args, **kwargs):
+        time.sleep(2)
+        return real(*args, **kwargs)
+    M._build_throwaway = slow_build
+    try:
+        started = time.time()
+        code, got = _red(root, man, [py, "-c", "import time; time.sleep(3)"],
+                         "--timeout", "4")
+        spent = time.time() - started
+    finally:
+        M._build_throwaway = real
+    check("sr42 the FIRST run gets what the build left of the deadline, not a "
+          "fresh full timeout - a slow build and a run that fits the timeout on "
+          "its own still end inside it: exit=%r in %.1f s %r"
+          % (code, spent, (got.get("redFirst") or {}).get("basis", "")[-120:]),
+          code == M.E_CANNOT_PROVE
+          and "timed out" in (got.get("redFirst") or {}).get("basis", "")
+          and spent < 4 + 3 * _proc_group.GRACE_SECONDS + 2 * M.REMOVE_GIT_TIMEOUT)
+
+    env = {"NODE_OPTIONS": "--require /repo/x/test/setup.js",
+           "PYTEST_ADDOPTS": "--basetemp=/repo/x/.t -c /repo/x/pytest.ini",
+           "NOTE": "see /repo/x for details", "PLAIN": "--flag value"}
+    kept, dropped, naming = M.child_env("/repo/x", environ=env)
+    check("sr43 an OPTION STRING carrying a path under the shared root is kept - "
+          "it is not a path to rewrite - but NAMED, so a basis resting on a shared "
+          "file says so; a value naming nothing under the root is not listed: "
+          "%r %r" % (naming, dropped),
+          naming == ["NODE_OPTIONS", "NOTE", "PYTEST_ADDOPTS"]
+          and all(k in kept for k in env) and dropped == [])
+    held = os.environ.get("NODE_OPTIONS")
+    os.environ["NODE_OPTIONS"] = "--require %s" % (os.path.join(root, "setup.js"),)
+    try:
+        _c, got_n = _red(root, man, [py, "tests/test_mine.py"])
+    finally:
+        if held is None:
+            os.environ.pop("NODE_OPTIONS", None)
+        else:
+            os.environ["NODE_OPTIONS"] = held
+    check("sr44 ...and the redFirst basis carries it: %r"
+          % ((got_n.get("redFirst") or {}).get("basis", "")[-160:],),
+          "kept, naming the shared root: NODE_OPTIONS"
+          in (got_n.get("redFirst") or {}).get("basis", ""))
+
+    with open(os.path.join(M_PLUGIN, "reference", "execute-task.md"), "r",
+              encoding="utf-8") as fh:
+        ref = " ".join(fh.read().split())
+    check("sr45 execute-task.md states the --case rule the helper enforces: the "
+          "task's own is a case absent from HEAD's test file, and --case narrows "
+          "to ids held to that same test - not an alternative to it",
+          "(`--case`, or a case the working tree's test file adds)" not in ref
+          and "`--case` narrows" in ref and "held to that same test" in ref)
+
+
 def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
@@ -935,6 +1002,7 @@ def _cases(check):
     _harness.stage(check, "sr-own", _own_case_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
+    _harness.stage(check, "sr-budget", _budget_cases)
 
 
 def _selftest():

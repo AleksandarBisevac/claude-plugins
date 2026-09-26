@@ -998,6 +998,17 @@ def _cases(check):
               "tools it misses: %r" % (matcher,),
               len(matcher) == 1 and ("`%s`" % (matcher[0],)) in doc
               and "hooks.json" in doc)
+        with open(os.path.join(_output.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md"), "r",
+                  encoding="utf-8") as fh:
+            guide = fh.read()
+        para = guide[guide.index("**It grades each copy's own age"):]
+        para = para[:para.index("\n\n")]
+        check("rh11 ...and the guide's paragraph on the same row states it the same "
+              "way, from the same matcher, with no partial list of tools left "
+              "beside it - two copies of a limit are one copy and one lie: %r"
+              % (para[-300:],),
+              len(matcher) == 1 and ("`%s`" % (matcher[0],)) in para
+              and "Edit, Write, Glob and agent calls" not in para)
     finally:
         _harness.remove_tree(tmp)
 

@@ -2540,9 +2540,13 @@ copy, byte for byte, and names each file that differs or is missing. A file the 
 the commit does not publish is not compared - there is nothing to compare it with - and it is not
 harmless: `__pycache__/*.pyc` beside a published `.py` is what Python executes when its recorded
 source size and mtime match. So every such file under `hooks/` and `scripts/` is named in the row
-as an extra, beside a verdict that stays about the published files - except bytecode whose header
-still records its published source's size and mtime, which Python wrote itself on the first run
-and is only counted, because a line naming it on every install would be read past. Unverifiable only when a side
+as an extra, beside a verdict that stays about the published files. Bytecode is counted instead
+of named only when BOTH halves check out: its header records the published source's size and
+mtime - the condition under which Python runs it - and its body matches a fresh compile of that
+source by this interpreter, under the file name the body records (a hook reaches `scripts/` by
+`hooks/../scripts/`). A matching header alone says nothing about the body: a restore inside one
+second at one size leaves exactly that. Another interpreter's bytecode with a matching header is
+counted apart, as not body-verified. Unverifiable only when a side
 is missing.
 
 **`check_sandbox` (P0-S) is the same question one layer down**, which is why it sits beside
@@ -2657,9 +2661,10 @@ included - looked superseded. So the stamp's mtime now means the last GUARDED TO
 call inside the throttle pays one `stat`. `split_history` then files a copy other than this one
 as HISTORY only when its newest stamp is older than `IDLE_BOUND_SECONDS`, and the row prints the
 bound with its number; a foreign copy inside it is live, a WARNING that says when it was last
-active and that it may still be running. The limit is stated rather than hidden: Edit, Write,
-Glob and agent calls do not refresh the stamp, so a session doing only those for longer than the
-bound reads as history until its next prompt or refreshing call. History is worded as what the
+active and that it may still be running. The limit is stated rather than hidden: a tool outside
+`guard-secrets-read`'s `hooks.json` matcher, `Read|Grep|Bash|mcp__.*`, refreshes nothing, so a
+session using only such tools, or waiting on its user, for longer than the bound reads as history
+until its next prompt or matched call. History is worded as what the
 bound can know - no guarded tool call within it, so ENDED, OR IDLE WAITING ON ITS USER - and the
 refresh runs after the guard's verdict, through `_config.refresh_session_stamp`, which computes
 the state directory inside its own never-raise: a guard's `main` exits 0 on an exception, and a
@@ -3530,9 +3535,12 @@ refused before anything is built, because it would run the shared files and grad
 **The run is one process group, and a stop signal is an exception.** `_proc_group` is the module
 `run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
-ONE deadline, `--timeout`, covers both runs - the second gets what the first left - and it is
-refused above `MAX_TIMEOUT`, which leaves `HOST_BASH_LIMIT` room for the teardowns, so the
-helper's own deadline fires before the host kills it. SIGKILL cannot be caught; a throwaway left
+ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
+reads the throwaway and both runs, each getting what the earlier ones left. What follows the
+deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's two git
+calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
+host's limit less that margin, so the helper's own deadline and cleanup finish before the host
+kills it. SIGKILL cannot be caught; a throwaway left
 that way is reported by name the next time - `leftover_throwaways` reads `git worktree list` for
 `THROWAWAY_PREFIX` and grades each by the pid its `OWNER_FILE` records: `running` while that
 process lives (a sibling's `red`), `left-behind` once it is gone, `unknown` with no record - and
@@ -3540,7 +3548,10 @@ never pruned. The throwaway's temp directory is never inside the shared tree: `h
 skips a TMPDIR that points there. The child runs with `SCRUBBED_ENV` removed and, by path rather
 than by substring, every value that is a path under the shared root - a path list loses only its
 entries under the root, so an in-repo `.venv/bin` leaves PATH intact otherwise - and every
-`redFirst` basis names what was dropped. The throwaway holds only tracked files, so a suite that needs an untracked dependency
+`redFirst` basis names what was dropped. A value that is not itself a path but carries one under
+the root - an option string such as `NODE_OPTIONS=--require …/setup.js` - is kept, since it is
+not a path to rewrite, and named in the basis as `kept, naming the shared root`, because a runner
+reads the path inside it. The throwaway holds only tracked files, so a suite that needs an untracked dependency
 (`node_modules`, an in-repo `.venv`, generated files) cannot run there and comes back
 `could-not-prove`; and it shares the repository's git directory, so a test that runs git in its
 own cwd writes shared refs.

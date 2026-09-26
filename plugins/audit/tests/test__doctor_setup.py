@@ -979,7 +979,43 @@ def _cache_install_cases(check):
           "named: %r %r" % (got_f.get("extras"), said_f),
           got_f.get("extras") == ["hooks/__pycache__/guard.pyc"]
           and got_f.get("freshBytecode") == 1
-          and "matching its published source" in said_f)
+          and "body matches a fresh compile" in said_f)
+
+    # A matching HEADER is the condition under which Python executes a .pyc; it
+    # says nothing about the body. A restore inside one second at one size, or a
+    # `cp -p` of an edited-then-restored hook, leaves exactly this.
+    with open(fresh, "rb") as fh:
+        header = fh.read(16)
+    other = os.path.join(_harness.fixture_root("doctor-pyc-other-"), "guard.py")
+    with open(other, "w", encoding="utf-8") as fh:
+        fh.write("x = 'something else entirely'\n")
+    swapped = os.path.join(os.path.dirname(other), "swapped.pyc")
+    py_compile.compile(other, cfile=swapped, doraise=True)
+    with open(swapped, "rb") as fh:
+        body = fh.read()[16:]
+    with open(fresh, "wb") as fh:
+        fh.write(header + body)
+    got_s = M.plugin_integrity(cache, project=project, home=home)
+    check("pc7 a .pyc whose HEADER matches its source but whose BODY is another "
+          "program's is NAMED, not counted - the header is what makes Python run "
+          "it, so it is the bytecode this line exists to surface: %r"
+          % (got_s.get("extras"),),
+          fresh.replace(os.sep, "/").split(cache.replace(os.sep, "/") + "/")[-1]
+          in (got_s.get("extras") or [])
+          and got_s.get("freshBytecode") == 0)
+
+    # A module a hook reaches through `hooks/../scripts/` is compiled under THAT
+    # name; the body embeds it, so a fresh compile has to be given the same one.
+    detour = os.path.join(cache, "hooks", "..", "hooks", "guard.py")
+    py_compile.compile(os.path.join(cache, "hooks", "guard.py"), cfile=fresh,
+                       dfile=detour, doraise=True)
+    got_d = M.plugin_integrity(cache, project=project, home=home)
+    check("pc8 bytecode compiled under the path it was IMPORTED by - not its plain "
+          "path - is still Python's own and counted: the fresh compile is given "
+          "the recorded name, or every module a hook reaches by a relative detour "
+          "would be named on every install: %r" % (got_d.get("extras"),),
+          got_d.get("freshBytecode") == 1
+          and got_d.get("extras") == ["hooks/__pycache__/guard.pyc"])
     os.remove(fresh)
 
     with open(os.path.join(cache, "hooks", "guard.py"), "w",
