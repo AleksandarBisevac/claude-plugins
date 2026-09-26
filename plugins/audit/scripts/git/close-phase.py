@@ -771,7 +771,11 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
     source = _tree_holding(observation.get("trees") or [], manifest_path)
     base = (source or {}).get("path") or git_root
     tree = observation.get("parentTree")
-    if (the_plan or {}).get("merge", {}).get("mode") != "in-parent-worktree" \
+    # BOTH MODES THAT LAND IN A CHECKOUT: the merge made now, and the branch that
+    # already landed - a re-run, or a merge a human made by hand - whose stamp
+    # belongs in the same surviving copy.
+    if (the_plan or {}).get("merge", {}).get("mode") not in (
+            "in-parent-worktree", "already-contained") \
             or not tree or not tree.get("path"):
         return manifest_path, project, ""
     if _wt.same_tree(tree.get("path"), base):
@@ -1058,7 +1062,12 @@ def main(argv, out=print):
     the_plan = plan(observation, names["branch"], names["parent"],
                     names["policy"], want_worktree=args.remove_worktree,
                     want_branch=args.delete_branch, no_ff=args.no_ff)
-    refusal = no_survivor_refusal(observation, args.manifest, names["parent"])
+    # ASKED ONLY WHERE A WRITE WOULD FOLLOW. With `meta.merge.auto` false the run
+    # hands over the merge command and writes nothing, so there is no stamp to
+    # lack a survivor - unless the branch already landed and the stamp is due.
+    writes = the_plan["auto"] or the_plan["merge"]["mode"] == "already-contained"
+    refusal = (no_survivor_refusal(observation, args.manifest, names["parent"])
+               if writes else None)
     if refusal:
         out("[close-phase] REFUSED: %s. Nothing was merged or written." % (refusal,))
         return E_USAGE

@@ -3271,8 +3271,8 @@ def _say_who_else_was_running(project, res, row, out=print):
         unsure = _ev.undecided_neighbours(rows, row, _ev.RUNNER_GATE)
         if unsure:
             out("  machine:  whether %s ran alongside this run is not knowable from "
-                "whole-second stamps - a run shorter than a second was stamped in "
-                "the second this one started or ended"
+                "whole-second stamps - they meet in one second, in an order no "
+                "writer's chain records"
                 % (", ".join(str(o.get("runId") or "?") for o in unsure),))
         else:
             out("  machine:  this run had the machine to itself")

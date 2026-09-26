@@ -5626,10 +5626,18 @@ def _crowd_cases(check):
         prev = {"runId": "A", _ev_io.STARTED_KEY: "2026-09-26T15:48:37Z",
                 "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
 
-        def line_for(row, others):
-            with open(os.path.join(evidence, "2026-09.t.jsonl"), "w") as fh:
-                for r in others + [row]:
-                    fh.write(json.dumps(r) + "\n")
+        def line_for(row, others, one_writer=True):
+            """The machine line for `row`, with `others` written before it by the
+            same writer (one chain) or by another writer (another file)."""
+            for name in os.listdir(evidence):
+                os.remove(os.path.join(evidence, name))
+            files = ([("2026-09.t.jsonl", others + [row])] if one_writer
+                     else [("2026-09.other.jsonl", others),
+                           ("2026-09.t.jsonl", [row])])
+            for name, part in files:
+                with open(os.path.join(evidence, name), "w") as fh:
+                    for r in _ev_io.chain_file(part, name):
+                        fh.write(json.dumps(r) + "\n")
             lines = []
             M._say_who_else_was_running(root, {"status": "passed"}, row,
                                         out=lines.append)
@@ -5648,12 +5656,17 @@ def _crowd_cases(check):
               len(got) == 1 and "1 other gate run(s) shared this window (A)" in got[0])
         blip = {"runId": "Z", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
                 "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
-        got = line_for(prev, [blip])
+        got = line_for(prev, [blip], one_writer=False)
         check("gc3 a sub-second run stamped in the second this one ended is said to "
               "be unknowable from whole-second stamps, never asserted as sharing "
               "the window: %r" % (got,),
               len(got) == 1 and "whole-second" in got[0] and "Z" in got[0]
               and "shared this window" not in got[0])
+        got = line_for(mine, [prev], one_writer=False)
+        check("gc4 the same back-to-back pair from TWO writers is said to be "
+              "unknowable, never that this run had the machine to itself: %r" % (got,),
+              len(got) == 1 and "whole-second" in got[0] and "A" in got[0]
+              and "to itself" not in got[0])
     finally:
         _harness.remove_tree(root)
 

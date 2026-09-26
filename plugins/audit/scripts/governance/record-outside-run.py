@@ -222,10 +222,14 @@ def record_outside(project, manifest_path, label, started_at, ts, duration_ms,
     # answer, and telling them later - on somebody else's gate run - is telling
     # the wrong reader.
     gate_runs, basis = _ev.overlapping_runs(rows, written["row"], _ev.RUNNER_GATE)
+    # ...and the runs the whole-second stamps cannot place either side of it,
+    # said apart: they are neither contested nor cleared.
+    unsure = _ev.undecided_neighbours(rows, written["row"], _ev.RUNNER_GATE)
     return E_OK, {"recorded": True, "runId": written["row"]["runId"],
                   "path": written["path"], "journalled": bool(written["appended"]),
                   "contests": None if gate_runs is None
                   else [str(r.get("runId") or "?") for r in gate_runs],
+                  "undecided": [str(r.get("runId") or "?") for r in unsure],
                   "basis": basis, "refused": ""}
 
 
@@ -243,6 +247,10 @@ def render(answer, out=print):
             "verdicts are no longer this gate's alone to claim, and a red among "
             "them may be the crowd rather than the work"
             % (len(contests), ", ".join(contests)))
+    elif answer.get("undecided"):
+        out("  contests: whether %s shared this window is not knowable from "
+            "whole-second stamps - the two meet in one second, in an order no "
+            "field records" % (", ".join(answer["undecided"]),))
     else:
         out("  contests: no recorded gate run shares this window, so nothing "
             "this plugin measured is put in doubt by it")

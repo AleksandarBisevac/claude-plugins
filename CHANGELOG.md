@@ -347,8 +347,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   Overlap was inclusive at both ends over whole-second stamps, so a run that started in the second
   the previous row was written always "shared this window". Windows now compare half-open at the
   end: a run ending in second t and one starting in t are sequential, windows sharing a second or
-  more still overlap, and a sub-second run stamped in the other's start or end second - which no
-  field can order - is said to be not knowable rather than asserted either way.
+  more still overlap. Two windows meeting in one second are sequential only when one gate writer's
+  chain records them one after the other; across writers - a gate run and an outside suite, or two
+  sessions - that second is not knowable, and the machine line, the attribution of a red and
+  `record-outside-run.py`'s contests line each say so rather than claiming nobody else ran.
 - **`close-phase.py` stamps the landing in the tree the merge lands in, whatever manifest path it
   was given.** Run from the main checkout with the WORKTREE's manifest - the command its own
   dry-run printed - it merged, then wrote `mergedAt`, the derived status and the index stub into
@@ -356,7 +358,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to main. The stamp now goes to the parent branch's checkout the merge landed in, and the
   printed follow-up names that manifest. With the parent checked out in no worktree and the
   manifest inside the phase's own worktree there is no surviving copy, so it refuses before the
-  ref-only fast-forward (exit 2), naming the branch to check out.
+  ref-only fast-forward (exit 2), naming the branch to check out. A branch that already landed - a
+  re-run, or a merge made by hand - is stamped in the same surviving copy, and a run with
+  `meta.merge.auto` false, which writes nothing, is not refused.
 - **`close-phase.py` run from the main worktree standing on the phase branch** lands it, and now
   prints the two commands that free the branch there - `git switch <parent>` (or `--detach` when
   another worktree holds the parent, saying it leaves a detached HEAD), then `git branch -d

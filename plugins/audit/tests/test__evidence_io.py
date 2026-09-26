@@ -1707,13 +1707,20 @@ def _cases(check):
               "for two causes: %r / %r"
               % (gate_side, [r.get("runId") for r in out_side]),
               gate_side == [] and [r.get("runId") for r in out_side] == ["OUT"])
-        check("wr10 a run that STARTS in the second the other's row was written is "
-              "sequential, not overlapping - half-open at the end, in both orders: "
-              "%r / %r" % (M.overlap_state((10, 20), (20, 30)),
-                           M.overlap_state((20, 30), (10, 20))),
-              M.overlap_state((10, 20), (20, 30)) == M.OVERLAP_NO
-              and M.overlap_state((20, 30), (10, 20)) == M.OVERLAP_NO
+        check("wr10 a run that STARTS in the second the other's row was written, BY THE "
+              "SAME WRITER, is sequential - half-open at the end, in both orders: "
+              "%r / %r" % (M.overlap_state((10, 20), (20, 30), ordered=True),
+                           M.overlap_state((20, 30), (10, 20), ordered=True)),
+              M.overlap_state((10, 20), (20, 30), ordered=True) == M.OVERLAP_NO
+              and M.overlap_state((20, 30), (10, 20), ordered=True) == M.OVERLAP_NO
               and M.overlap_state((10, 20), (21, 30)) == M.OVERLAP_NO)
+        check("wr10g ...but ACROSS writers the shared boundary second orders nothing - "
+              "undecided, never asserted sequential: %r / %r"
+              % (M.overlap_state((10, 20), (20, 30)),
+                 M.overlap_state((20, 20), (10, 20), ordered=True)),
+              M.overlap_state((10, 20), (20, 30)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((20, 30), (10, 20)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((20, 20), (10, 20), ordered=True) == M.OVERLAP_NO)
         check("wr10b SECOND DIRECTION: windows that genuinely share a second or more "
               "still overlap - %r / %r" % (M.overlap_state((10, 20), (19, 30)),
                                            M.overlap_state((15, 15), (10, 20))),
@@ -1735,11 +1742,24 @@ def _cases(check):
                  "ts": "2026-09-26T15:50:39Z"},
                 {"runId": "C", M.STARTED_KEY: "2026-09-26T15:50:39Z",
                  "ts": "2026-09-26T15:51:38Z"}]
-        _crowd = [M.shared_the_machine(_seq, r)[0] for r in _seq]
-        check("wr10d runs recorded strictly one after another are not a crowd - each "
-              "run finds nobody else in its window: %r"
-              % ([[o.get("runId") for o in c] for c in _crowd],),
-              _crowd == [[], [], []])
+        _chain = M.chain_file(_seq, "2026-09.writer.jsonl")
+        _crowd = [M.shared_the_machine(_chain, r)[0] for r in _chain]
+        _unsure = [M.undecided_neighbours(_chain, r, M.RUNNER_GATE) for r in _chain]
+        check("wr10d runs ONE writer's chain records strictly one after another are "
+              "not a crowd and not undecided either - each finds nobody else in its "
+              "window: %r / %r"
+              % ([[o.get("runId") for o in c] for c in _crowd],
+                 [[o.get("runId") for o in u] for u in _unsure]),
+              _crowd == [[], [], []] and _unsure == [[], [], []])
+        _apart = (M.chain_file([_seq[0]], "2026-09.one.jsonl")
+                  + M.chain_file([_seq[1]], "2026-09.two.jsonl"))
+        check("wr10h ...while the same two windows from TWO writers meet in a second "
+              "no chain orders - undecided, not sequential: %r"
+              % ([o.get("runId") for o in
+                  M.undecided_neighbours(_apart, _apart[1], M.RUNNER_GATE)],),
+              M.shared_the_machine(_apart, _apart[1])[0] == []
+              and [o.get("runId") for o in
+                   M.undecided_neighbours(_apart, _apart[1], M.RUNNER_GATE)] == ["A"])
         _over = [dict(_seq[0]), dict(_seq[1], **{M.STARTED_KEY:
                                                  "2026-09-26T15:49:30Z"})]
         check("wr10e SECOND DIRECTION: a run that began seven seconds before the other "
@@ -1759,6 +1779,26 @@ def _cases(check):
               and [o.get("runId") for o in
                    M.undecided_neighbours([_blip], _seq[0], M.RUNNER_GATE)] == ["Z"])
 
+        _mixed = M.chain_file(
+            [_seq[0], dict(_seq[1], **{M.RUNNER_KEY: M.RUNNER_OUTSIDE})],
+            "2026-09.one.jsonl")
+        check("wr10i an OUTSIDE suite whose row one writer's chain holds right after a "
+              "gate run is not ordered by that chain - the suite ran where no chain "
+              "watched it - so the shared second stays undecided: %r"
+              % ([o.get("runId") for o in
+                  M.undecided_neighbours(_mixed, _mixed[1], M.RUNNER_GATE)],),
+              [o.get("runId") for o in
+               M.undecided_neighbours(_mixed, _mixed[1], M.RUNNER_GATE)] == ["A"])
+        _g = {"runId": "G", M.STARTED_KEY: "2026-09-26T10:00:12Z",
+              "ts": "2026-09-26T10:00:12Z"}
+        _o = {"runId": "O", M.STARTED_KEY: "2026-09-26T10:00:05Z",
+              "ts": "2026-09-26T10:00:12Z", M.RUNNER_KEY: M.RUNNER_OUTSIDE}
+        _gv = M.attribution_of(_g, [_o])
+        check("wr11b a sub-second gate red stamped in an outside run's end second is "
+              "neither its own verdict nor contested - the whole-second stamps cannot "
+              "say, and the basis names the run: %r" % (_gv,),
+              _gv["attributed"] is None and "O" in _gv["basis"]
+              and "not knowable" in _gv["basis"])
         verdict = M.attribution_of(_mine, [_outside])
         check("wr11 a red with an outside suite in its window is CONTESTED, and "
               "the basis NAMES the rival: the one thing missing when a push's "

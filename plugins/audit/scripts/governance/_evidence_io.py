@@ -1425,32 +1425,63 @@ def window_of(row):
 OVERLAP_YES, OVERLAP_NO, OVERLAP_UNDECIDED = "yes", "no", "undecided"
 
 
-def overlap_state(one, other):
+def overlap_state(one, other, ordered=False):
     """Whether two `(start, end)` windows, in WHOLE seconds, share a moment:
     `OVERLAP_YES`, `OVERLAP_NO`, or `OVERLAP_UNDECIDED` when the stamps cannot say.
 
-    A stamp names the second an instant fell in, never the instant, so a window
-    is compared HALF-OPEN at its end: a run that ended in second t and one that
-    started in second t are sequential - the next run started after the last row
-    was written, which is how a single executor's runs are recorded one after
-    another. Windows sharing a whole second or more overlap.
-
-    ONE SHAPE STAYS UNDECIDED: a run shorter than a second (start == end)
-    stamped in the very second the other started or ended. Both fell inside that
-    one second, in an order no field records - `ts` and `startedAt` are whole
-    seconds, `durationMs` is relative to a start that is itself rounded, and the
-    ledger's file order records when rows were written, not when runs began. That
-    is said as undecided rather than asserted either way."""
+    A stamp names the second an instant fell in, never the instant. Windows
+    sharing a whole second or more overlap; windows with a second between them do
+    not. What is left is two windows MEETING in one second - one ending in second
+    t, the other starting in t, or a run shorter than a second stamped in the
+    other's start or end second. Both instants fell inside that second in an
+    order the stamps do not record, so the answer is UNDECIDED - unless `ordered`:
+    the caller has established that ONE writer's chain records the two runs one
+    after the other, and one executor runs its gates one at a time, so the later
+    row's run began after the earlier row was written - sequential."""
     s1, e1 = one
     s2, e2 = other
+    meeting = OVERLAP_NO if ordered else OVERLAP_UNDECIDED
     if s1 == e1 or s2 == e2:
         point, (s, e) = (s1, (s2, e2)) if s1 == e1 else (s2, (s1, e1))
         if s == e:
-            return OVERLAP_UNDECIDED if point == s else OVERLAP_NO
+            return meeting if point == s else OVERLAP_NO
         if s < point < e:
             return OVERLAP_YES
-        return OVERLAP_UNDECIDED if point in (s, e) else OVERLAP_NO
-    return OVERLAP_YES if (s1 < e2 and s2 < e1) else OVERLAP_NO
+        return meeting if point in (s, e) else OVERLAP_NO
+    if s1 < e2 and s2 < e1:
+        return OVERLAP_YES
+    return meeting if (e1 == s2 or e2 == s1) else OVERLAP_NO
+
+
+def chain_ordered(rows, one, other):
+    """Does ONE gate writer's chain record `one` and `other` one after the other?
+
+    A row's `prev` names the `hash` of the row appended before it in the same
+    writer's file, so following `prev` from either row and reaching the other is
+    that writer's own record of the order. An OUTSIDE run is never ordered this
+    way: its row is written by this plugin, but the suite ran where no chain
+    watched it. A row passed without its chain keys (the run just recorded) is
+    matched to its copy on disk by `runId`."""
+    if runner_of(one) != RUNNER_GATE or runner_of(other) != RUNNER_GATE:
+        return False
+    by_id = dict((str(r.get("runId")), r) for r in (rows or [])
+                 if isinstance(r, dict) and r.get("runId"))
+    one = by_id.get(str(one.get("runId")), one)
+    other = by_id.get(str(other.get("runId")), other)
+    by_hash = dict((r.get("hash"), r) for r in (rows or [])
+                   if isinstance(r, dict) and r.get("hash"))
+
+    def reaches(start, target):
+        seen, cur = set(), start
+        while isinstance(cur, dict) and cur.get("prev") and cur["prev"] not in seen:
+            seen.add(cur["prev"])
+            cur = by_hash.get(cur["prev"])
+            if cur is target:
+                return True
+        return False
+    if not (one.get("hash") and other.get("hash")):
+        return False
+    return reaches(one, other) or reaches(other, one)
 
 
 def _overlaps(one, other):
@@ -1480,11 +1511,19 @@ def overlapping_runs(rows, row, runner):
     executors were invited onto one machine, and the answer belongs to whoever
     invited them.
     """
+    found, _undecided, basis = _classified(rows, row, runner)
+    return (found, basis)
+
+
+def _classified(rows, row, runner):
+    """`(overlapping, undecided, basis)` for `row` against every OTHER run by
+    `runner` - one pass, so a reader of either list reads one answer. Both are
+    None when `row` has no window."""
     start, end, basis = window_of(row)
     if start is None:
-        return (None, basis)
+        return (None, None, basis)
     mine = str((row or {}).get("runId") or "")
-    found = []
+    found, unsure = [], []
     for other in (rows or []):
         if not isinstance(other, dict):
             continue
@@ -1495,31 +1534,21 @@ def overlapping_runs(rows, row, runner):
         o_start, o_end, _why = window_of(other)
         if o_start is None:
             continue
-        if _overlaps((start, end), (o_start, o_end)):
+        state = overlap_state((start, end), (o_start, o_end),
+                              ordered=chain_ordered(rows, row, other))
+        if state == OVERLAP_YES:
             found.append(other)
-    return (found, basis)
+        elif state == OVERLAP_UNDECIDED:
+            unsure.append(other)
+    return (found, unsure, basis)
 
 
 def undecided_neighbours(rows, row, runner):
     """The OTHER runs by `runner` whose window whole-second stamps cannot place
     either side of `row`'s (`OVERLAP_UNDECIDED`) - reported apart from the runs
     that did overlap, so a surface says it cannot tell rather than that the
-    window was shared. `[]` when `row` has no window: nothing was compared."""
-    start, end, _basis = window_of(row)
-    if start is None:
-        return []
-    mine = str((row or {}).get("runId") or "")
-    out = []
-    for other in (rows or []):
-        if not isinstance(other, dict) or runner_of(other) != runner:
-            continue
-        if mine and str(other.get("runId") or "") == mine:
-            continue
-        o_start, o_end, _why = window_of(other)
-        if o_start is not None and overlap_state(
-                (start, end), (o_start, o_end)) == OVERLAP_UNDECIDED:
-            out.append(other)
-    return out
+    window was shared, or that nobody else ran. `[]` when `row` has no window."""
+    return _classified(rows, row, runner)[1] or []
 
 
 def contested_by(rows, row):
@@ -1568,6 +1597,15 @@ def attribution_of(row, rows):
     contesting, basis = contested_by(rows, row)
     if contesting is None:
         return {"attributed": None, "contested": [], "basis": basis}
+    unsure = undecided_neighbours(rows, row, RUNNER_OUTSIDE)
+    if not contesting and unsure:
+        # NEITHER CLAIM IS MADE: whether that suite ran alongside this one is not
+        # in the whole-second stamps, so the verdict is not asserted as this run's.
+        return {"attributed": None, "contested": [],
+                "basis": "%s; whether %s ran outside this gate in the same window is "
+                         "not knowable from whole-second stamps"
+                         % (basis, ", ".join(str(o.get("runId") or "?")
+                                             for o in unsure))}
     if not contesting:
         return {"attributed": True, "contested": [],
                 "basis": "%s; no run from outside this gate shares that window"
