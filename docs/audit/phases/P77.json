@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P77-R1",
@@ -79,9 +79,10 @@
         "issue": "cache_integrity (in the diff) describes bytecode that the cache holds and the commit does not as harmless ('not a published file'). But `__pycache__/*.pyc` beside a published `.py` is what Python executes when the recorded source mtime and size match, and the 3.0.1 cache does hold `hooks/__pycache__`. So `clean` can sit over hooks that run different code. The checkout arm shares the tracked-files-",
         "resolution": "fix task P77.3-6u9"
       }
-    ]
+    ],
+    "outcome": "matches; four review passes, every finding fixed in P77.3-P77.5, including a guard regression caught and closed before landing"
   },
-  "summary": null,
+  "summary": "Executor, reviewer and schema share one redFirst vocabulary, checked by a lint over the briefs' return shapes and their prose. stamp-verification.py red proves red in a throwaway detached worktree of HEAD with the task's test files copied in, never writing the shared tree: a red counts as proved only when one of the task's own cases fails an assertion, a compile or collection error only when --introduces names a symbol HEAD lacks and a second run with the fix no longer raises it, the child's environment is scrubbed by path, one deadline covers build, runs and teardown under the host limit, and a leftover throwaway is reported by owner. Doctor's running-plugin row grades each copy on its own age against a printed idle bound, refreshed by guarded tool calls after the guard has decided, and its plugin-files row verifies a marketplace-cache install against its recorded commit, bytecode included. Reviewed four times - one pass caught a regression in which a malformed stateDir let a secret read through, closed and verified over 609 guard calls - every finding fixed; merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P77.1",
@@ -391,5 +392,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-25T18:00:40Z"
+  "startedAt": "2026-09-25T18:00:40Z",
+  "testEvidence": {
+    "runId": "2026-09-26T04:35:26Z.98fdf1",
+    "status": "passed",
+    "at": "2026-09-26T04:35:26Z"
+  }
 }
