@@ -88,7 +88,65 @@ Two consequences to say out loud rather than let the human discover:
   not a failure, and the output says so in its own words rather than reporting a clean sheet.
   `remove --path` is how those come down.
 
-## Exit codes
+## The lock worktree tooling shares
+
+Worktrees of one clone share a single git directory, and the plugin's lock lives there
+(`$(git rev-parse --git-common-dir)/audit-locks`), so a claim taken from any worktree is seen from
+every other. Tooling of your own that must not run twice at once across worktrees — an e2e guard
+driving one backend, a shared dev database — can take that same lock under a namespaced name
+instead of inventing a lockfile per worktree, which each worktree would see only in its own tree.
+Take it, run, and give it back **in one shell**, with an identity that belongs to this run alone:
+
+```bash
+audit_lock() { python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" "$@"; }
+audit_lock acquire user-e2e --session "e2e-$$" --pid $$ --wait 30 --project <worktreeDir>
+taken=$?
+[ "$taken" -eq 0 ] || exit "$taken"      # 3 held, 4 abandoned, 2 bad name, 1 error
+rc=0
+<the run that must be alone> || rc=$?
+audit_lock release user-e2e --session "e2e-$$" --pid $$ --project <worktreeDir>
+exit "$rc"
+```
+
+**It is a POSIX-shell recipe.** It runs unchanged under `sh`, `bash` and `zsh` — zsh is the macOS
+default and the shell Claude Code's Bash tool uses there. That is why the command is a function and
+not a variable (zsh does not split an unquoted variable into words) and why the exit status is `rc`
+(`status` is read-only in zsh). `test__refs.py` runs this block under each of them that is
+installed, and records a skip for each that is not. **Git Bash on Windows is not covered**: its
+`$$` is an MSYS pid, not the Windows pid the lock probes for liveness, so a held lock there can read
+as abandoned. The test skips that shell for that reason.
+
+`--wait 30` waits out a live holder for that many seconds before refusing; `0` refuses at once.
+
+**A `user-` lock excludes by holder.** A second `acquire` of the same name is refused while the
+first holds it even when both carry one identity — and inside Claude Code they do: parallel
+subagents in different worktrees share `$CLAUDE_CODE_SESSION_ID` and `$CLAUDE_PID`, the defaults
+`--session` and `--pid` fall back to. The plugin's own names answer that case as re-entry ("already
+yours"); a user lock never does. `release` still compares identities only, so **release only after
+your own acquire succeeded**, as the early `exit` above ensures — a run sharing the holder's identity would
+otherwise remove a claim it never took.
+
+**Why `e2e-$$` and `$$`.** The pid is what liveness is judged on, and `$$` is the shell that lives
+exactly as long as the hold. Recorded that way, a crashed run's lock reads as abandoned at once;
+with no pid recorded, the claim falls back to the age rule and is not offered for takeover until it
+is old. The same pair on acquire and release is what lets the release through.
+
+**When the lock is refused**, `audit-lock.py` answers with its own exit codes, not the ones in the
+next section, which are `/audit:worktree`'s: `3` a live run holds it — wait, or stop; `4` the holder is gone — confirm no run is
+live, then `acquire user-e2e --takeover` retakes it; `2` the name broke the rules. `release
+--force` removes any holder's claim, a user lock or the plugin's own, so it is for a lock you have
+confirmed is dead, never a way past a live one.
+
+**The name rules are the library's, not this page's.** `_locks.valid_name` decides and
+`_locks.USER_NAME_RULES` states them; a refused name prints that sentence, from `acquire` and
+`release` alike. The `user-` prefix is what keeps the namespace apart: the plugin's own names are
+`index`, `usage` and `phase-<id>`, every reader that decides something from a name keys on those,
+and a user name whose own part would read as one of them (`user-index`, `user-phase-p1`) is refused
+as well, so no user lock can pass for the plugin's. `audit-lock.py status`, `/audit:status` and
+`/audit:doctor` list user locks beside the plugin's by name; the doctor's advice for an abandoned one
+is the `--takeover` above, since no `/audit` command takes a user lock over.
+
+## Exit codes of `/audit:worktree`
 
 `0` it ran · `1` it could not, and the reason names a path · `2` usage · `4` git could not be
 **asked** · `5` there was nothing to examine — which is **not** the same as "everything is clean",

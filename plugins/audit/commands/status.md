@@ -125,7 +125,11 @@ meanings, rendered from the same tuple the gate evaluates:
 - `budget-80` — a phase is at or past 80% of its `budgetUSD`
 - `invariant-breach` — a started phase breaks one of the orchestrator's invariants,
   checked **after the fact** by `scripts/governance/verify-invariants.py` against git,
-  the phase shard, the journal and the usage ledger
+  the phase shard, the journal and the usage ledger. With an `invariants-baseline.json`
+  beside the manifest, only a breach the baseline does not hold trips it — the gate and
+  `verify-invariants.py` read the baseline through the same `_invariants` functions, so
+  they count the same breaches; the JSON block keeps the full list as `allBreaches`, and a
+  baseline that cannot be read trips the gate like a check that did not run
 - `failing-tests` — a task or phase whose recorded `testEvidence.status` cannot sign
   work off: `failed`, `gate-mutated` (exit 0 as well — every command passed and the
   gate rewrote the declared files it was grading, so the verdict is about bytes the

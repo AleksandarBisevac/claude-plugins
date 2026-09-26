@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-The cases for `_scoped_commit.py` — what two committing commands share.
+The cases for `_scoped_commit.py` — what the three committing commands share.
 
-WHAT THIS FILE IS ABOUT. `commit-audit-state.py` and `commit-manifest-index.py`
-each stage a fixed allow-list and refuse everything else, and the parts that
-decide "refuse" are here rather than in either of them. The suites beside those
-two commands prove each verb end to end; this one proves the shared parts in both
+WHAT THIS FILE IS ABOUT. `commit-audit-state.py`, `commit-manifest-index.py` and
+`commit-task-work.py` each stage a fixed allow-list and refuse everything else,
+and the parts that decide "refuse" - and how each path is staged, and how the
+index is put back - are here rather than in any of them. The suites beside those
+commands prove each verb end to end; this one proves the shared parts in both
 directions, because a helper that is only ever seen agreeing with its caller may
 be asserting nothing.
 
@@ -213,6 +214,187 @@ def _cases(check):
           "in the caller's half is not a cut to make in the command's: %r"
           % (M.fitted_header(outgrown, "a subject nobody will read"),),
           M.fitted_header(outgrown, "a subject nobody will read") == outgrown)
+    _staging_cases(check, tmp, outside)
+
+
+# --- how a path is staged, and putting the index back ------------------------
+def _unborn(tmp, name):
+    """A repository with no commit at all: HEAD names a branch that does not exist."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    _git(repo, "init", "-q")
+    return repo
+
+
+def _staging_cases(check, tmp, outside):
+    unborn = _unborn(tmp, "unborn")
+    check("sc14 in a repository with no commit yet, HEAD holds NOTHING - an "
+          "answer, not an unknown: `ls-tree HEAD` fails there, and reading that "
+          "failure as 'not established' would keep every absent declared path "
+          "in a pathspec the first commit then refuses: %r"
+          % (M.in_head(unborn, ["x.py"]),),
+          M.in_head(unborn, ["x.py"]) == set())
+    check("sc15 ...and a directory git will not describe at all is NOT "
+          "established, which is the other answer and a different one: %r"
+          % (M.in_head(outside, ["x.py"]),),
+          M.in_head(outside, ["x.py"]) is None)
+
+    snap, why = M.snapshot(outside, ["x.py"])
+    check("sc16 an index this module cannot read is not snapshotted, and the "
+          "refusal says nothing was staged - a staging it could not undo is not "
+          "one it may start: %r" % (why,),
+          snap is None and "nothing was staged" in why)
+    said = M.restored(outside, {"entries": [], "ita": []}, ["x.py"], "boom")
+    check("sc17 a restore that FAILS says so, names what is still staged and "
+          "keeps the refusal it was restoring for - 'the index is as you left "
+          "it' over an index that is not is the false clean sheet: %r" % (said,),
+          said.startswith("boom - ") and "could NOT be put back" in said
+          and "x.py" in said and M.INDEX_RESTORED not in said)
+
+    # AN UNMERGED PATH AND AN INTENT-TO-ADD PATH, snapshotted and restored.
+    repo = _repo(tmp, "conflict")
+    _write(os.path.join(repo, "keep", "a.txt"), "stashed\n")
+    _git(repo, "stash", "-q")
+    _write(os.path.join(repo, "keep", "a.txt"), "other\n")
+    _git(repo, "commit", "-q", "-am", "other")
+    subprocess.run(["git", "-C", repo, "stash", "pop", "-q"],
+                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    _write(os.path.join(repo, "keep", "ita.txt"), "intent\n")
+    _git(repo, "add", "-N", "--", "keep/ita.txt")
+    paths = ["keep/a.txt", "keep/ita.txt"]
+    found = _git(repo, "ls-files", "-s", "--", *paths)
+    found_status = _git(repo, "status", "--porcelain=v2", "--", "keep/ita.txt")
+    snap, why = M.snapshot(repo, paths)
+    _write(os.path.join(repo, "keep", "a.txt"), "resolved\n")
+    staged = M.stage(repo, paths, {"keep/a.txt": M.IN_INDEX,
+                                   "keep/ita.txt": M.IN_INDEX})
+    moved = _git(repo, "ls-files", "-s", "--", *paths)
+    why_back = M.restore(repo, snap, paths)
+    check("sc18 an index holding a CONFLICT is snapshotted and put back stage by "
+          "stage - `git write-tree` refuses an unmerged index outright, so a "
+          "snapshot built on it would refuse every commit made mid-conflict: "
+          "%r / %r" % (why, why_back),
+          why == "" and staged == "" and moved != found and why_back == ""
+          and _git(repo, "ls-files", "-s", "--", *paths) == found
+          and found.count("keep/a.txt") == 3)
+    check("sc19 ...and an INTENT-TO-ADD path comes back intent-to-add rather "
+          "than as a staged empty file, which `ls-files -s` alone cannot tell "
+          "apart: %r" % (_git(repo, "status", "--porcelain=v2", "--",
+                              "keep/ita.txt"),),
+          found_status.startswith("1 .A ")
+          and _git(repo, "status", "--porcelain=v2", "--",
+                   "keep/ita.txt") == found_status)
+    _review2_cases(check, tmp)
+
+
+def _review2_cases(check, tmp):
+    # AN IGNORED DIRECTORY, DECLARED WHOLE, HOLDING A TRACKED FILE.
+    repo = _repo(tmp, "ignored-dir")
+    _write(os.path.join(repo, "gen", "a.txt"), "v1\n")
+    _write(os.path.join(repo, ".gitignore"), "gen\n")
+    _git(repo, "add", "--", ".gitignore")
+    _git(repo, "add", "-f", "--", "gen/a.txt")
+    _git(repo, "commit", "-q", "-m", "tracked under an ignored dir")
+    _write(os.path.join(repo, "gen", "a.txt"), "v2\n")
+    _write(os.path.join(repo, "gen", "new.txt"), "untracked\n")
+    kinds = M.classify(repo, [("gen", True)])
+    done = M.stage_and_commit(repo, ["gen"], kinds, ["x"], lambda f: "foreign")
+    shown = _git(repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
+    check("sc20 a directory git ignores AS A WHOLE, holding a tracked edited "
+          "file, stages that file - `check-ignore` does not report the "
+          "directory and `git add -- gen` refuses it - and its untracked "
+          "member stays out, never forced: %r / %r" % (kinds, done),
+          kinds == {"gen": M.TRACKED_DIR}
+          and done["committed"] and not done["refused"] and shown == ["gen/a.txt"]
+          and _git(repo, "ls-files", "--", "gen/new.txt").strip() == "")
+
+    # THE KEPT-DELETION COMMIT, BUILT IN A TEMPORARY INDEX.
+    repo = _repo(tmp, "kept-deletion")
+    _write(os.path.join(repo, "f.cfg"), "cfg\n")
+    _git(repo, "add", "--", "f.cfg")
+    _git(repo, "commit", "-q", "-m", "cfg")
+    _git(repo, "rm", "-q", "--cached", "--", "f.cfg")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    # A path somebody else staged in the meantime, which nothing allows.
+    _write(os.path.join(repo, "keep", "b.txt"), "sibling\n")
+    _git(repo, "add", "--", "keep/b.txt")
+    sha, why = M.commit_from_index(repo, ["f.cfg"], ["drop f.cfg"], head)
+    shown = _git(repo, "show", "--name-status", "--pretty=format:",
+                 "HEAD").split("\n")
+    check("sc21 a commit made from the index for a kept deletion carries EXACTLY "
+          "the allow-list - a path a sibling staged meanwhile does not ride "
+          "along, and stays staged for its owner: %r / %r" % (why, shown),
+          why == "" and sha and [ln for ln in shown if ln.strip()]
+          == ["D\tf.cfg"]
+          and "keep/b.txt" in _git(repo, "diff", "--cached", "--name-only"))
+    # The sibling's own commit moves HEAD to a tree the stale one does not
+    # hold, so a commit built on the stale HEAD would undo it.
+    _git(repo, "commit", "-q", "-m", "sibling", "--", "keep/b.txt")
+    moved = _git(repo, "rev-parse", "HEAD").strip()
+    sha2, why2 = M.commit_from_index(repo, ["f.cfg"], ["again"], head)
+    check("sc22 ...and it refuses BEFORE committing when HEAD is no longer the "
+          "HEAD it read - a commit built from the stale tree would undo the "
+          "commits that moved it: %r" % (why2,),
+          sha2 == "" and "before the commit" in why2
+          and _git(repo, "rev-parse", "HEAD").strip() == moved)
+
+    # A COMMIT LANDING BETWEEN THE CHECK AND THE COMMIT. Simulated at the one
+    # moment it can happen: the runner makes a sibling commit just before it
+    # hands `git commit` on.
+    repo = _repo(tmp, "moved-head")
+    _write(os.path.join(repo, "f.cfg"), "cfg\n")
+    _git(repo, "add", "--", "f.cfg")
+    _git(repo, "commit", "-q", "-m", "cfg")
+    _git(repo, "rm", "-q", "--cached", "--", "f.cfg")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    real_run = M.run_git
+    sibling = {}
+
+    def _racing(git_root, args, **kwargs):
+        if list(args[:1]) == ["commit"] and not sibling:
+            tree = _git(repo, "rev-parse", "HEAD^{tree}").strip()
+            sibling["sha"] = _git(repo, "commit-tree", tree, "-p", head,
+                                  "-m", "sibling").strip()
+            _git(repo, "update-ref", "HEAD", sibling["sha"], head)
+        return real_run(git_root, args, **kwargs)
+    M.run_git = _racing
+    try:
+        sha, why = M.commit_from_index(repo, ["f.cfg"], ["drop f.cfg"], head)
+    finally:
+        M.run_git = real_run
+    check("sc24 a commit made on a HEAD that moved after the check is REPORTED - "
+          "its SHA, the HEAD it landed on and the HEAD read before staging all "
+          "named - and nothing is reset: %r" % (why,),
+          sha and why and sibling.get("sha") in why and head in why
+          and sha in why
+          and _git(repo, "rev-parse", "HEAD").strip() == sha)
+
+    # A SHA-256 REPOSITORY.
+    repo = os.path.join(tmp, "sha256")
+    os.makedirs(repo)
+    made = subprocess.run(["git", "-C", repo, "init", "-q",
+                           "--object-format=sha256"],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if made.returncode != 0:
+        _harness.skip(check, "sc23 an index restore in a SHA-256 repository",
+                      "this git cannot create a sha256 repository",
+                      made.returncode != 0)
+        return
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "Fixture")
+    _write(os.path.join(repo, "a.txt"), "a\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    found = _git(repo, "ls-files", "-s")
+    snap, why = M.snapshot(repo, ["a.txt", "b.txt"])
+    _write(os.path.join(repo, "a.txt"), "changed\n")
+    _write(os.path.join(repo, "b.txt"), "new\n")
+    _git(repo, "add", "--", "a.txt", "b.txt")
+    why_back = M.restore(repo, snap, ["a.txt", "b.txt"])
+    check("sc23 an index in a SHA-256 repository is put back too - the removal "
+          "line's zero id is as long as the repository's object ids, and a "
+          "sha1-length one is 'malformed index info' there: %r" % (why_back,),
+          why == "" and why_back == "" and _git(repo, "ls-files", "-s") == found)
 
 
 def _selftest():

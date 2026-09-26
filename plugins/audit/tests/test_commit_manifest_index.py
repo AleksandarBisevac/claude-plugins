@@ -631,8 +631,53 @@ def _cases(check):
               "is not this command's to refuse - it is not ahead of a shard, it is "
               "dangling, and the validator reports that: %r" % (text,),
               code == 0 and "P9.9" not in text)
+        _staging_cases(check, repos)
     finally:
         repos.close()
+
+
+# --- the shared staging, driven through this command ---------------------------
+def _staging_cases(check, repos):
+    # A RENAME INTO THE INDEX PATH FROM OUTSIDE THE ALLOW-LIST. HEAD must not
+    # hold the index for git to call it a rename, so the fixture commits its
+    # removal first.
+    fx = repos.make()
+    root = fx["root"]
+    draft = "docs/audit/draft.json"
+    # Committed from the index, not with a pathspec: a pathspec commit reads the
+    # working tree, where the file still is, and records nothing.
+    TI._git(root, "rm", "-q", "--cached", "--", INDEX_REL)
+    TI._git(root, "commit", "-q", "-m", "fixture: the index not yet committed")
+    os.rename(os.path.join(root, INDEX_REL), os.path.join(root, draft))
+    TI._git(root, "add", "--", draft)
+    TI._git(root, "commit", "-q", "-m", "fixture: a draft", "--", draft)
+    TI._git(root, "mv", draft, INDEX_REL)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("cmi27 a staged rename from OUTSIDE the allow-list onto the index path "
+          "is refused and its SOURCE named - with rename detection on, the index "
+          "lists only the new name, which is allowed: %r / %r" % (code, text),
+          code == 1 and draft in text and _head(fx) == before)
+
+    # A COMMIT A HOOK REFUSES, AFTER STAGING.
+    fx = repos.make()
+    _widen(fx)
+    hooks = os.path.join(fx["root"], ".git", "hooks")
+    if not os.path.isdir(hooks):
+        os.makedirs(hooks)
+    with io.open(os.path.join(hooks, "pre-commit"), "w", encoding="utf-8") as fh:
+        fh.write("#!/bin/sh\nexit 1\n")
+    os.chmod(os.path.join(hooks, "pre-commit"), 0o755)
+    TI._git(fx["root"], "config", "core.hooksPath", hooks)
+    found = TI._git(fx["root"], "ls-files", "-s")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("cmi28 a commit refused AFTER staging leaves the index exactly as it "
+          "was found and says so - it used to leave the index staged: %r / %r"
+          % (code, text),
+          code == 1 and _head(fx) == before
+          and TI._git(fx["root"], "ls-files", "-s") == found
+          and _scoped.INDEX_RESTORED in text)
 
 
 def _selftest():

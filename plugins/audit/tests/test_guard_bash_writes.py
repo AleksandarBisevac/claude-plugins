@@ -45,6 +45,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -2075,6 +2076,225 @@ def _cases(check):
     finally:
         import shutil as _sh_shape
         _sh_shape.rmtree(str(shape_dir), ignore_errors=True)
+
+    _journal_origin_cases(check)
+
+
+def _journal_origin_cases(check):
+    """(ja) WHO MOVED THE JOURNAL IS READ FROM THE ROWS, not from who claims it.
+
+    The guard blamed a shell command for every journal file that went dirty
+    without a claim in this session's sidecar - a peer session's hook rows, a
+    CLI script's rows filed under another state directory, a merge. Reading a
+    peer's sidecar would let a real tampering pass (k2), so the evidence is the
+    CONTENT: rows that chain onto the committed tail, carry a hash that
+    verifies, say the plugin wrote them and are fresh are the plugin's own; a
+    file byte-identical to the version a merge brought in is the merge's;
+    anything else keeps the tamper notice. Every allow-shaped verdict below
+    stands beside the tamper case that proves it did not open a hole.
+    """
+    import shutil
+    root = Path(_harness.fixture_root("bash-writes-journal-origin-"))
+    repo = root / "repo"
+    (repo / "docs" / "audit").mkdir(parents=True)
+    (repo / "docs" / "audit" / "audit-plan.json").write_text(
+        '{"meta":{"version":3},"phases":[]}', encoding="utf-8")
+    (repo / ".gitignore").write_text(".claude/\n", encoding="utf-8")
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def run_git(*argv):
+        return subprocess.run(git + list(argv), cwd=str(repo),
+                              capture_output=True, text=True, timeout=30)
+    run_git("init", "-q")
+    run_git("add", "-A")
+    run_git("commit", "-qm", "init")
+    jcfg = _config._deep_merge(_config.DEFAULTS, {})
+    jsd = repo / ".claude" / "state"
+    jmod = _config._load_journal_lib()
+    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(repo)
+    try:
+        def row(sid, via, ts=None):
+            entry = {"action": "manifest.edit", "target": "",
+                     "summary": "a row", "actor": {"sessionId": sid, "via": via}}
+            if ts:
+                entry["ts"] = ts
+            return jmod.append(str(repo), entry, config=jcfg)
+
+        def look(sid, command="ps"):
+            ok, got = _harness.attempt(
+                M.decide, {"tool_name": "Bash", "session_id": sid,
+                           "cwd": str(repo), "tool_input": {"command": command}},
+                cfg=jcfg, state_dir=jsd)
+            return got if ok else ("EXC", got)
+
+        def baseline(sid):
+            look(sid)
+
+        # ja1/ja2: a PEER session's hook appends to its own file.
+        baseline("ja-a")
+        peer = row("bbbbbbbb-0000-4000-8000-00000000000b", "hook")
+        v, why = look("ja-a")
+        check("ja1 a peer session's own hook rows, chained and fresh, are named "
+              "as the plugin's writer - that session, by id - and not as a "
+              "shell write into the audit trail",
+              v == "warn" and "bbbbbbbb" in why and "the plugin's own" in why
+              and "append-only audit journal" not in why, repr((v, why[:300])))
+        # ja2 is the direction that fails if the content check always says yes:
+        # a line appended by hand to a file of the same shape.
+        baseline("ja-b")
+        tampered = row("cccccccc-0000-4000-8000-00000000000c", "hook")
+        with open(tampered, "a", encoding="utf-8") as fh:
+            fh.write('{"v": 1, "action": "manifest.edit", "hash": "0"}\n')
+        v, why = look("ja-b")
+        check("ja2 ...while a row appended by hand after them breaks the chain, "
+              "and the file keeps the tamper notice",
+              v == "warn" and "append-only audit journal" in why
+              and "the plugin's own" not in why, repr((v, why[:300])))
+
+        # ja2b/ja2c each break ONE link and keep every other part of a plugin
+        # row, so each check is the only thing between it and an acquittal.
+        def forge(sid, fix_hash, fix_prev):
+            path = row(sid, "hook")
+            with open(path, "r", encoding="utf-8") as fh:
+                last = json.loads(fh.read().splitlines()[-1])
+            forged = dict(last, summary="forged")
+            forged["prev"] = last["hash"] if fix_prev else "0" * 64
+            forged.pop("hash", None)
+            forged["hash"] = jmod.row_hash(forged) if fix_hash else "0" * 64
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(forged, sort_keys=True) + "\n")
+        baseline("ja-b2")
+        forge("ffffffff-0000-4000-8000-00000000000f", False, True)
+        v, why = look("ja-b2")
+        check("ja2b a plugin-shaped row that chains onto its predecessor but "
+              "carries a hash that does not verify keeps the tamper notice",
+              v == "warn" and "append-only audit journal" in why,
+              repr((v, why[:300])))
+        baseline("ja-b3")
+        forge("abababab-0000-4000-8000-0000000000ab", True, False)
+        v, why = look("ja-b3")
+        check("ja2c ...and so does one whose own hash verifies but whose `prev` "
+              "does not name the row before it",
+              v == "warn" and "append-only audit journal" in why,
+              repr((v, why[:300])))
+        baseline("ja-c")
+        row("dddddddd-0000-4000-8000-00000000000d", "manual")
+        v, why = look("ja-c")
+        check("ja3 a valid chain whose rows do not say the plugin wrote them "
+              "keeps the tamper notice - `via` is part of the evidence",
+              v == "warn" and "append-only audit journal" in why, repr((v, why[:300])))
+        baseline("ja-d")
+        row("eeeeeeee-0000-4000-8000-00000000000e", "hook",
+            ts="2020-01-01T00:00:00Z")
+        v, why = look("ja-d")
+        check("ja4 rows stamped long before this session's previous look are "
+              "not fresh, so they are not taken for an append made while the "
+              "command ran", v == "warn" and "append-only audit journal" in why,
+              repr((v, why[:300])))
+        # ja5: a COMMITTED file - the rows must chain onto the committed tail,
+        # and the committed bytes must be untouched.
+        run_git("add", "-A")
+        run_git("commit", "-qm", "journal so far")
+        baseline("ja-e")
+        row("bbbbbbbb-0000-4000-8000-00000000000b", "hook")
+        v, why = look("ja-e")
+        check("ja5 new rows appended to a COMMITTED journal file chain onto "
+              "its committed tail and are the plugin's",
+              v == "warn" and "the plugin's own" in why
+              and "append-only audit journal" not in why, repr((v, why[:300])))
+        run_git("checkout", "--", ".")
+        baseline("ja-f")
+        with open(peer, "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        # The SAME byte length, so the rows after it still line up where the
+        # committed tail ended - only the prefix test tells this from an append.
+        lines[0] = lines[0].replace('"a row"', '"b row"', 1)
+        with open(peer, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        row("bbbbbbbb-0000-4000-8000-00000000000b", "hook")
+        v, why = look("ja-f")
+        check("ja6 ...but a committed row rewritten in place is not an append, "
+              "whatever is chained after it - the tamper notice stands",
+              v == "warn" and "append-only audit journal" in why,
+              repr((v, why[:300])))
+        run_git("checkout", "--", ".")
+        # ja7/ja8: a merge brings another branch's journal file in.
+        run_git("switch", "-q", "-c", "feat")
+        jdir = repo / "docs" / "audit" / "journal"
+        brought = jdir / "2026-09.8775a6bed318e390.jsonl"
+        brought.write_text(json.dumps({"action": "audit.state.committed",
+                                       "actor": {"via": "commit-audit-state"}})
+                           + "\n", encoding="utf-8")
+        run_git("add", "-A")
+        run_git("commit", "-qm", "branch row")
+        run_git("switch", "-q", "main")
+        baseline("ja-g")
+        run_git("merge", "--no-ff", "--no-commit", "feat")
+        v, why = look("ja-g", "git merge --no-ff --no-commit feat")
+        check("ja7 a journal file byte-identical to the version the merge "
+              "brought in is named as the merge's, not as a shell write",
+              v == "warn" and "brought in by the merge" in why
+              and "append-only audit journal" not in why, repr((v, why[:300])))
+        run_git("merge", "--abort")
+        baseline("ja-h")
+        run_git("merge", "--no-ff", "--no-commit", "feat")
+        with open(brought, "a", encoding="utf-8") as fh:
+            fh.write('{"v": 1, "hash": "0"}\n')
+        v, why = look("ja-h", "git merge --no-ff --no-commit feat")
+        check("ja8 ...while the same file edited on top of the merge matches no "
+              "version git holds, and keeps the tamper notice",
+              v == "warn" and "append-only audit journal" in why
+              and "brought in by the merge" not in why, repr((v, why[:300])))
+        run_git("merge", "--abort")
+        # ja9-ja11: ORIG_HEAD is evidence only for the operation that just
+        # set it, and never for bytes that cut committed rows off HEAD's own.
+        # The rows are not the plugin's (no chain), so only the ref can acquit.
+        orig = jdir / "2026-09.origtest.jsonl"
+        v1 = '{"row": 1}\n'
+        v2 = v1 + '{"row": 2}\n'
+        orig.write_text(v1, encoding="utf-8")
+        run_git("add", "-A")
+        run_git("commit", "-qm", "orig v1")
+        orig.write_text(v2, encoding="utf-8")
+        run_git("add", "-A")
+        run_git("commit", "-qm", "orig v2")
+        b_sha = run_git("rev-parse", "HEAD").stdout.strip()
+        baseline("ja-i")
+        run_git("reset", "-q", "HEAD~1")
+        v, why = look("ja-i", "git reset HEAD~1")
+        check("ja9 a reset made in this window leaves the journal file at the "
+              "version ORIG_HEAD names, and that is git's write",
+              v == "warn" and "brought in by the merge" in why
+              and "append-only audit journal" not in why, repr((v, why[:300])))
+        run_git("checkout", "--", ".")
+        orig_path = run_git("rev-parse", "--git-path", "ORIG_HEAD").stdout.strip()
+        old = time.time() - 3600
+        os.utime(str(repo / orig_path), (old, old))
+        baseline("ja-j")
+        orig.write_text(v2, encoding="utf-8")
+        v, why = look("ja-j", "git show ORIG_HEAD:x > x")
+        check("ja10 ...but a STALE ORIG_HEAD acquits nothing: restoring a file "
+              "to the version an hour-old reset left behind is a shell write",
+              v == "warn" and "append-only audit journal" in why
+              and "brought in by the merge" not in why, repr((v, why[:300])))
+        run_git("checkout", "--", ".")
+        run_git("reset", "-q", "--hard", b_sha)
+        baseline("ja-k")
+        orig.write_text(v1, encoding="utf-8")
+        v, why = look("ja-k", "git show ORIG_HEAD:x > x")
+        check("ja11 ...and a fresh one does not acquit bytes that are HEAD's own "
+              "version with rows cut off the end",
+              v == "warn" and "append-only audit journal" in why
+              and "brought in by the merge" not in why, repr((v, why[:300])))
+        run_git("checkout", "--", ".")
+    finally:
+        if prev_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+        shutil.rmtree(str(root), ignore_errors=True)
 
 
 def _selftest():

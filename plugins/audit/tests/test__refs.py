@@ -35,6 +35,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -108,6 +109,13 @@ process.stdout.write(JSON.stringify({
 def _tool_src(name):
     """The source text of a `tools/` file, read off the repo root."""
     with open(os.path.join(M.REPO_ROOT, "tools", name), "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _tool_src_refs():
+    """`_refs.py`'s own source, the file under test."""
+    with open(os.path.join(M.REPO_ROOT, M.PLUGIN_REL, "scripts", "_refs.py"),
+              "r", encoding="utf-8") as fh:
         return fh.read()
 
 
@@ -2574,6 +2582,154 @@ def _cases(check):
     finally:
         shutil.rmtree(_tmp_rf, ignore_errors=True)
 
+    # --- (rv) one red-first vocabulary across the executor, reviewer and schema --
+    # The executor returned `proved|could-not-prove|not-attempted`, the schema
+    # declared the same three, and the reviewer graded with
+    # `proved|not-proved|could-not-prove|not-applicable` - two words the schema
+    # rejects, one of them standing in for the executor's `not-attempted`, and a
+    # sentence telling the reviewer the executor sends `not-proved`, which it never
+    # does. Nothing compared the three, so each read as consistent on its own.
+    _rv = M.red_first_vocabulary_drift()
+    check("rv1 the executor's return, the reviewer's return and the schema enum "
+          "carry ONE red-first vocabulary: the executor offers exactly the schema's "
+          "words, and the reviewer offers those plus the grades declared "
+          "reviewer-only and nothing else: %r" % (_rv["problems"],),
+          _rv["problems"] == [] and _rv["schema"]
+          and set(_rv["executor"]) == set(_rv["schema"])
+          and set(_rv["reviewer"]) - set(_rv["schema"])
+          == set(M.RED_FIRST_REVIEWER_ONLY))
+    check("rv2 ...and the schema is the one source: the lint reads the enum off "
+          "`schema/audit-plan.schema.json` rather than a copy of its own, so a word "
+          "added there is a word both briefs owe the day it lands: %r"
+          % (_rv["schema"],),
+          sorted(_rv["schema"]) == sorted(
+              json.loads(_product_doc(M.RED_FIRST_SCHEMA))["$defs"]
+              [M.RED_FIRST_DEF]["properties"]["status"]["enum"]))
+
+    _RV_SCHEMA = json.dumps({"$defs": {"redFirst": {"properties": {
+        "status": {"enum": ["proved", "could-not-prove", "not-attempted"]},
+        "basis": {"type": "string"}}}}})
+    _RV_EXEC_OK = ('Report back a structured outcome:\n\n{"gates": {},\n'
+                   ' "redFirst": {"status": "proved|could-not-prove|not-attempted",'
+                   '\n              "basis": "..."}}\n')
+    _RV_REV_OK = ('## Return format\n\n{"intent": {"redFirst": '
+                  '"proved|not-proved|could-not-prove|not-attempted"}}\n')
+
+    def _rv_tree(executor, reviewer, schema=_RV_SCHEMA):
+        tmp = tempfile.mkdtemp(prefix="qg-rv-")
+        _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_EXECUTOR_BRIEF, executor)
+        _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_REVIEWER_BRIEF, reviewer)
+        if schema is not None:
+            _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_SCHEMA, schema)
+        return tmp
+
+    _rv_cases = (
+        ("allow", _RV_EXEC_OK, _RV_REV_OK, _RV_SCHEMA),
+        ("rev-alien", _RV_EXEC_OK,
+         _RV_REV_OK.replace("not-attempted", "not-applicable"), _RV_SCHEMA),
+        ("exec-short", _RV_EXEC_OK.replace("|not-attempted", ""), _RV_REV_OK,
+         _RV_SCHEMA),
+        ("stale-decl", _RV_EXEC_OK, _RV_REV_OK.replace("not-proved|", ""),
+         _RV_SCHEMA),
+        ("twice", _RV_EXEC_OK, _RV_REV_OK + _RV_REV_OK, _RV_SCHEMA),
+        ("no-schema", _RV_EXEC_OK, _RV_REV_OK, None),
+        ("prose-retired", _RV_EXEC_OK,
+         _RV_REV_OK + "\nIn phase mode `redFirst` is `not-applicable`.\n",
+         _RV_SCHEMA),
+    )
+    _rv_out = {}
+    for _name, _ex, _re, _sc in _rv_cases:
+        _tmp_rv = _rv_tree(_ex, _re, _sc)
+        try:
+            _rv_out[_name] = M.red_first_vocabulary_drift(_tmp_rv)
+        finally:
+            shutil.rmtree(_tmp_rv, ignore_errors=True)
+    # THE ALLOW CASE: it is what fails when the lint is widened into refusing the
+    # declared reviewer-only grade, which is the direction that gets it deleted.
+    check("rv3 THE ALLOW CASE: an executor offering exactly the schema's words and "
+          "a reviewer offering those plus the declared reviewer-only grade is "
+          "quiet: %r" % (_rv_out["allow"]["problems"],),
+          _rv_out["allow"]["problems"] == [])
+    check("rv4 a reviewer grade the schema rejects and nothing declares "
+          "reviewer-only is reported BY WORD - the shipped defect, "
+          "`not-applicable` standing where `not-attempted` belongs: %r"
+          % (_rv_out["rev-alien"]["problems"],),
+          len(_rv_out["rev-alien"]["problems"]) == 3
+          and any("'not-applicable'" in p
+                  for p in _rv_out["rev-alien"]["problems"])
+          and any("'not-attempted'" in p
+                  for p in _rv_out["rev-alien"]["problems"]))
+    check("rv5 an executor that cannot say a schema word is reported: the record "
+          "then has a word nobody is able to write onto it: %r"
+          % (_rv_out["exec-short"]["problems"],),
+          len(_rv_out["exec-short"]["problems"]) == 1
+          and "'not-attempted'" in _rv_out["exec-short"]["problems"][0])
+    check("rv6 a reviewer-only declaration the reviewer no longer uses is "
+          "reported - a declaration nothing reads is an exemption waiting to "
+          "admit the next alien word: %r" % (_rv_out["stale-decl"]["problems"],),
+          len(_rv_out["stale-decl"]["problems"]) == 1
+          and "'not-proved'" in _rv_out["stale-decl"]["problems"][0])
+    check("rv7 two declared return shapes in one brief is reported rather than "
+          "the first being read - counted, not found, because which one a reader "
+          "honours is the question: %r" % (_rv_out["twice"]["problems"],),
+          len(_rv_out["twice"]["problems"]) == 1
+          and "2" in _rv_out["twice"]["problems"][0])
+    check("rv8 a schema the lint cannot READ is a problem and not a skip: with no "
+          "enum every brief would compare clean against nothing: %r"
+          % (_rv_out["no-schema"]["problems"],),
+          len(_rv_out["no-schema"]["problems"]) == 1
+          and "unreadable" in _rv_out["no-schema"]["problems"][0])
+
+    check("rv12 a RETIRED word in a brief's PROSE is reported too - the return "
+          "shapes were the only thing read, so the phase-mode sentence could "
+          "revert to `not-applicable` and nothing would fail: %r"
+          % (_rv_out["prose-retired"]["problems"],),
+          len(_rv_out["prose-retired"]["problems"]) == 1
+          and "not-applicable" in _rv_out["prose-retired"]["problems"][0])
+    check("rv13 ...and the lint's source states no measurement it cannot "
+          "re-derive: the retired words are a named tuple, not a sentence about "
+          "what a narrowing would have cost",
+          "no narrowing measured over this tree" not in _tool_src_refs()
+          and "not-applicable" in M.RED_FIRST_RETIRED)
+    _rv_rev_text = _squash(_product_doc("agents/audit-reviewer.md"))
+    check("rv14 the reviewer's echo rule for `proved` accepts the helper's own "
+          "`--introduces` basis, which carries no assertion tally - a rule that "
+          "demanded one refused the block the sanctioned helper prints",
+          "`--introduces` basis" in _rv_rev_text
+          and "a second run with the working tree's implementation" in _rv_rev_text)
+    _rv_exec = _squash(_product_doc("agents/audit-executor.md"))
+    _rv_rev = _squash(_product_doc("agents/audit-reviewer.md"))
+    _rv_ref = _squash(_product_doc("reference/execute-task.md"))
+    _rv_ptr = dict((rel, ("stamp-verification.py red" in text,
+                          "red_first_vocabulary_drift()" in text))
+                   for rel, text in (("executor", _rv_exec),
+                                     ("reviewer", _rv_rev),
+                                     ("execute-task", _rv_ref)))
+    check("rv9 all three documents point at the sanctioned red-first helper and "
+          "name the lint that holds the vocabulary, in the rule's own text rather "
+          "than in a note beside it: %r" % (_rv_ptr,),
+          all(a and b for a, b in _rv_ptr.values()))
+    _rv_undo = [rel for rel, text in (("executor", _rv_exec),
+                                      ("execute-task", _rv_ref))
+                if "undoing the fix for as long" in text
+                or "temporarily undoes the fix" in text]
+    check("rv10 no brief still describes proving red as undoing the fix in the "
+          "shared tree - the instruction a host refused beside a sibling's "
+          "uncommitted work: %r" % (_rv_undo,),
+          _rv_undo == [])
+    _rv_compile = [rel for rel, text in (("executor", _rv_exec),
+                                         ("reviewer", _rv_rev),
+                                         ("execute-task", _rv_ref))
+                   if not re.search(r"zero tests collected.{0,160}"
+                                    r"introduces the symbol", text)]
+    check("rv11 every document that grades a red says a compile or collection "
+          "error is not one unless the task introduces the symbol - in ONE "
+          "sentence, because the executor brief also says `zero tests "
+          "collected` about the gate, and a document-wide pair of substrings "
+          "would pass on that alone: %r"
+          % (_rv_compile,),
+          _rv_compile == [])
+
     # --- (rs) P42: the return shape, and the path that stopped asking for it ----
     # The executor's return is prose an agent writes: nothing parses it, nothing
     # rejects it, and its only reader is the orchestrator - the one actor that
@@ -2913,13 +3069,14 @@ def _cases(check):
     # THE VACUITY GUARD, and it is not decoration: `_tk_off == {}` is also what an
     # intersection that had gone EMPTY returns, which is how a renamed verb on
     # either side would leave this line green over nothing.
-    check("tk3 ...and the intersection is the script verbs the two docs name, "
-          "with `move` on the hint side alone because it is an Edit procedure "
-          "rather than a script call - enumerated, so a rename on either side "
-          "is a finding rather than a silent skip: %r"
+    check("tk3 ...and the intersection is the script verbs the two docs name - "
+          "`move` among them now that it is a script call rather than an Edit "
+          "procedure - enumerated, so a rename on either side is a finding "
+          "rather than a silent skip: %r"
           % ((_tk_shared, sorted(_tk_flags)),),
-          _tk_shared == ["add", "add-phase", "cancel", "done", "scope", "start"]
-          and "move" in _tk_flags and "move" not in _at_usage)
+          _tk_shared == ["add", "add-phase", "block", "cancel", "done", "move",
+                         "note", "reopen", "scope", "start"]
+          and "move" in _tk_flags and "move" in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time
     # the widening ran - which is worth a comment because the traceback pointed
@@ -3097,7 +3254,8 @@ def _cases(check):
           "copy of the script would each leave pf1 green over nothing at all: %r"
           % ((_pf_verbs, _pf_checked),),
           _pf_checked != [] and "--gate-clear" in _pf_checked
-          and _pf_verbs == ["add", "add-phase", "cancel", "done", "scope"]
+          and _pf_verbs == ["add", "add-phase", "block", "cancel", "done", "move",
+                            "note", "reopen", "scope"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")
@@ -3172,10 +3330,10 @@ def _cases(check):
     _iq_red = _question_lines(_REV, "RED")
     _iq_words = dict((w, w in _REV) for w in ("`proved`", "`not-proved`",
                                               "`could-not-prove`",
-                                              "`not-applicable`"))
+                                              "`not-attempted`"))
     check("iq5 the brief asks the question this register records more than any "
           "other - was the test ever seen RED - as a QUESTION, and carries the "
-          "whole three-valued vocabulary plus the gate-only case, so a reviewer "
+          "executor's three words plus its own reviewer-only grade, so a reviewer "
           "READS the executor's word instead of re-deriving it: %r"
           % ((_iq_red, _iq_words),),
           _iq_red != [] and all(_iq_words.values())
@@ -3671,6 +3829,140 @@ def _cases(check):
               "reach is reported by document and line: %r" % (_dp,),
               _dp == [("commands/init.md", 1)])
     finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    _lock_recipe_cases(check)
+
+
+# --- the worktree lock recipe, run as written ----------------------------------
+_RECIPE_SECTION = "## The lock worktree tooling shares"
+_RECIPE_RUN = "<the run that must be alone>"
+_RECIPE_DIR = "<worktreeDir>"
+_RECIPE_WAIT = "--wait 30"
+# How long a holder waits for its sentinel before giving up: 0.05 s a tick.
+_HOLD_TICKS = 1200
+
+
+def _lock_recipe():
+    """The fenced shell block of worktree.md's lock section, verbatim."""
+    text = _product_doc("commands/worktree.md")
+    section = text.split(_RECIPE_SECTION, 1)[1].split("\n## ", 1)[0]
+    match = re.search(r"```bash\n(.*?)```", section, re.S)
+    return match.group(1) if match else None
+
+
+def _run_recipe(shell, script, env):
+    return subprocess.Popen([shell, "-c", script], env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def _msys_pid(shell):
+    """True when `shell`'s `$$` is an MSYS pid rather than an OS pid.
+
+    Git for Windows' shells publish the Windows pid beside their own at
+    `/proc/$$/winpid`; the recipe records `$$`, which the lock then probes as an
+    OS pid, so there the recipe's liveness is not what it says.
+    """
+    done = subprocess.run([shell, "-c", "[ -r /proc/$$/winpid ]"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return done.returncode == 0
+
+
+def _lock_recipe_cases(check):
+    """THE RECIPE IS A PROGRAM, so it is run, under every POSIX shell a reader has.
+
+    A document's shell block is read by a human who pastes it into whatever shell
+    they are in - on macOS, and in Claude Code's Bash tool there, that is zsh -
+    so a recipe that works only in bash is a recipe that does not work. Each shell
+    missing here is a graded skip, never a silent one.
+    """
+    recipe = _lock_recipe()
+    check("lr1 worktree.md's lock section carries one bash block with both "
+          "placeholders a caller fills in",
+          bool(recipe) and _RECIPE_RUN in recipe and _RECIPE_DIR in recipe
+          and recipe.count(_RECIPE_WAIT) == 1)
+    if not recipe:
+        return
+    if shutil.which("git") is None:
+        _harness.skip(check, "lr2", "git is not on PATH", True)
+        return
+    tmp = tempfile.mkdtemp(prefix="lock-recipe-")
+    holders = []
+    try:
+        main_tree = os.path.join(tmp, "main")
+        linked = os.path.join(tmp, "linked")
+        quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        subprocess.run(["git", "init", "-q", main_tree], check=True, **quiet)
+        subprocess.run(["git", "-C", main_tree, "-c", "user.email=a@b", "-c",
+                        "user.name=a", "-c", "commit.gpgsign=false", "commit",
+                        "-q", "--allow-empty", "-m", "base"], check=True, **quiet)
+        subprocess.run(["git", "-C", main_tree, "worktree", "add", "-q", "-b",
+                        "wt", linked], check=True, **quiet)
+        common = subprocess.run(["git", "-C", main_tree, "rev-parse",
+                                 "--git-common-dir"], stdout=subprocess.PIPE,
+                                check=True).stdout.decode().strip()
+        lock_file = os.path.join(os.path.realpath(os.path.join(main_tree, common)),
+                                 "audit-locks", "user-e2e.lock")
+        # One shared identity for both runs: the case parallel subagents of one
+        # Claude Code session are in, and the one the recipe must survive. No
+        # startup file of the operator's may run: `zsh -c` reads $ZDOTDIR/.zshenv
+        # and `bash -c` reads $BASH_ENV, and either can change which python runs.
+        env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(_output.PLUGIN_ROOT),
+                   CLAUDE_CODE_SESSION_ID="one-shared-session",
+                   CLAUDE_PID=str(os.getpid()), ZDOTDIR=tmp)
+        for name in ("BASH_ENV", "ENV"):
+            env.pop(name, None)
+        go = os.path.join(tmp, "go")
+        # The holder waits on a SENTINEL, not a clock: it holds until this test
+        # has seen the second run's answer, however long a loaded sweep takes.
+        # BOUNDED, so a holder whose test died can never spin on after it: the
+        # loop gives up by itself, and `finally` below also kills it.
+        hold = ("i=0; while [ ! -e '%s' ] && [ \"$i\" -lt %d ]; do sleep 0.05; "
+                "i=$((i+1)); done" % (go, _HOLD_TICKS))
+        for shell in ("sh", "bash", "zsh"):
+            label = "lr2 %s" % (shell,)
+            if shutil.which(shell) is None:
+                _harness.skip(check, label, "%s is not on PATH" % (shell,), True)
+                continue
+            if _msys_pid(shell):
+                _harness.skip(check, label, "%s's $$ is an MSYS pid, not the OS "
+                              "pid the lock probes - the recipe is POSIX-shell "
+                              "only" % (shell,), True)
+                continue
+            if os.path.exists(go):
+                os.unlink(go)
+            first = recipe.replace(_RECIPE_DIR, "'%s'" % (main_tree,)).replace(
+                _RECIPE_RUN, hold)
+            # `--wait 0` for the second run only: the recipe's own wait would
+            # outlast the holder and take the lock after it, which is correct and
+            # would hide whether the refusal happens at all.
+            second = recipe.replace(_RECIPE_DIR, "'%s'" % (linked,)).replace(
+                _RECIPE_RUN, "true").replace(_RECIPE_WAIT, "--wait 0")
+            holder = _run_recipe(shell, first, env)
+            holders.append(holder)
+            deadline = time.monotonic() + 30
+            while not os.path.exists(lock_file) and holder.poll() is None \
+                    and time.monotonic() < deadline:
+                time.sleep(0.05)
+            took = os.path.exists(lock_file)
+            other = _run_recipe(shell, second, env)
+            other_out = other.communicate(timeout=60)[0].decode("utf-8", "replace")
+            with open(go, "w", encoding="utf-8") as fh:
+                fh.write("go\n")
+            held_out = holder.communicate(timeout=60)[0].decode("utf-8", "replace")
+            check("%s: the recipe takes the lock, and a concurrent run from "
+                  "another worktree under the SAME session is refused with exit "
+                  "3: first=%r second=%r %r"
+                  % (label, holder.returncode, other.returncode,
+                     (held_out + other_out)[-200:]),
+                  took and holder.returncode == 0 and other.returncode == 3)
+            check("lr3 %s: the lock is gone once the holder finishes, so the "
+                  "release ran" % (shell,), not os.path.exists(lock_file))
+    finally:
+        for holder in holders:
+            if holder.poll() is None:
+                holder.kill()
+                holder.wait()
         shutil.rmtree(tmp, ignore_errors=True)
 
 

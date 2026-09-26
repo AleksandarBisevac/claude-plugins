@@ -26,15 +26,18 @@ NOT `clean` rather than only that a gap line exists.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import copy
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _invariants as M                            # noqa: E402
+import _output                                     # noqa: E402
 import _evidence_io                                # noqa: E402
 import _journal_io                                 # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
@@ -1217,8 +1220,278 @@ def _cases(check):
               M.started_phases({"phases": [
                   {"id": "A", "tasks": [{"id": "A.1", "commit": "abc"}]},
                   {"id": "B", "tasks": [{"id": "B.1"}]}]}) == ["A"])
+
+        # --- structured keys ----------------------------------------------------
+        keyed = [c for c in whole["phases"][0]["checks"] if c["breaches"]]
+        check("ik1 every breach carries a structured key beside its sentence, "
+              "one per line, and no key is the sentence itself - a baseline "
+              "matches the key and only ever shows the line: %r"
+              % ([c["keys"] for c in keyed],),
+              keyed and all(len(c["keys"]) == len(c["breaches"]) for c in keyed)
+              and all(k["subject"] and k["subject"] != line
+                      for c in keyed for k, line in zip(c["keys"], c["breaches"])))
+        try:
+            M.result("commit-scope", "b", ["a bare sentence"], [], 1)
+            refused = False
+        except TypeError:
+            refused = True
+        check("ik2 ...and a breach built without found() is refused at once, so "
+              "a check cannot ship a breach no baseline could match", refused)
+
+        # --- the live pairing re-check is the phase's own ------------------------
+        lines = [
+            "task P1.1: file 'src/a.py' %s (fileIndex['src/a.py'] must include "
+            "'P1.1')" % (M._crossrefs.FILEINDEX_PAIRING,),
+            "task P9.3: file 'src/z.py' %s (fileIndex['src/z.py'] must include "
+            "'P9.3')" % (M._crossrefs.FILEINDEX_PAIRING,),
+            "fileIndex['src/a.py']: task 'P1.7' does not exist",
+        ]
+        own = M.own_pairing_findings(lines, {"tasks": [{"id": "P1.1"}]})
+        check("ik3 the pairing re-check keeps only rows naming THIS phase's "
+              "tasks - another phase mid-flight has unpaired rows by "
+              "construction, and they are not this phase's breach: %r" % (own,),
+              own == [lines[0]])
+
+        # --- a validator finding keys on its locus and ids ---------------------
+        said = ("task P1.1: file 'src/a.py' %s (fileIndex['src/a.py'] must include "
+                "'P1.1')" % (M._crossrefs.FILEINDEX_PAIRING,))
+        reworded = ("task P1.1: file 'src/a.py' is not paired in the index "
+                    "(fileIndex['src/a.py'] must list 'P1.1')")
+        elsewhere = said.replace("src/a.py", "src/b.py")
+        check("ik4 a REWORDED validator finding keys the same - its locus and the "
+              "ids it quotes are the finding, the sentence is how it is said "
+              "today - while one about another file does not: %r"
+              % (M._validator_subject(said),),
+              M._validator_subject(said) == M._validator_subject(reworded)
+              and M._validator_subject(said) != M._validator_subject(elsewhere)
+              and "missing" not in M._validator_subject(said))
+        check("ik5 ...and a validator that crashed is keyed on that fact, never on "
+              "the exception's text",
+              M._validator_subject(M._VALIDATOR_CRASH % ("boom 1",))
+              == M._validator_subject(M._VALIDATOR_CRASH % ("other 2",)))
+
+        # --- every breach site builds its breach with found() ------------------
+        tree = ast.parse(open(M.__file__, encoding="utf-8").read())
+        visited, bare = _breach_sites(tree)
+        founds = sum(1 for n in ast.walk(tree) if _is_found(n))
+        check("ik6 every breach this module appends, extends, adds with += or "
+              "passes to result() - under whatever name result() is handed - is "
+              "a found() call, read from the syntax tree so a bare sentence on a "
+              "path only a live repository reaches fails CI: %d site(s) visited, "
+              "%d found() call(s), bare at lines %r" % (visited, founds, bare),
+              bare == [] and visited > 0 and visited == founds)
+
+        # --- local evidence goes stale on the clone that wrote it --------------
+        def _history(breaches):
+            return {"found": True, "phaseId": "P7", "branch": "b", "breaches": [],
+                    "gaps": [], "checks": [M.result("branch-history", "b",
+                                                    breaches, [], 1)]}
+        gone = {"phase": "P7", "check": "branch-history", "subject": "stash x",
+                "sha": None, "breach": "y", "clone": "clone-a"}
+        here = M.compare_baseline([gone], _history([]), "clone-a")
+        there = M.compare_baseline([gone], _history([]), "clone-b")
+        check("ik7 an entry read from a clone's own evidence goes stale ON THAT "
+              "CLONE and is set aside on any other: %r / %r"
+              % (len(here["unmatched"]), there["notComparedWhy"]),
+              len(here["unmatched"]) == 1
+              and there["unmatched"] == []
+              and there["notComparedWhy"] == {M.NOT_COMPARED_LOCAL: 1})
+        stamped = M.fingerprints(_history([
+            M.found("stash", "stash x", local=True),
+            M.found("pushed", "remote r")]), "clone-a")
+        check("ik8 ...and the clone is stamped per BREACH, only on the local ones: "
+              "%r" % ([(e["subject"], e["clone"]) for e in stamped],),
+              [(e["subject"], e["clone"]) for e in stamped]
+              == [("remote r", None), ("stash x", "clone-a")])
+
+        # --- the clone id is a token the clone carries --------------------------
+        home = _harness.fixture_root("clone-id-")
+        try:
+            spot = os.path.join(home, "repo")
+            subprocess.run(["git", "init", "-q", spot], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            before = M.clone_id(spot)
+            minted = M.clone_id(spot, create=True)
+            moved = os.path.join(home, "moved")
+            shutil.move(spot, moved)
+            after_move = M.clone_id(moved)
+            subprocess.run(["git", "init", "-q", spot], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            same_path = M.clone_id(spot, create=True)
+        finally:
+            _harness.remove_tree(home)
+        check("ik12 the clone id is minted only when asked, moves WITH the clone "
+              "- a clone read from a new path is still itself - and a second "
+              "clone made at the SAME path is a different clone: %r"
+              % ((before, minted, after_move, same_path),),
+              before is None and minted and after_move == minted
+              and same_path and same_path != minted
+              and "/" not in minted and home not in minted)
+        home = _harness.fixture_root("clone-id-empty-")
+        try:
+            spot = os.path.join(home, "repo")
+            subprocess.run(["git", "init", "-q", spot], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            common = os.path.dirname(M._locks.lock_dir(spot))
+            with open(os.path.join(common, M.CLONE_ID_NAME), "w") as fh:
+                fh.write("")
+            empty_read = M.clone_id(spot)
+            healed = M.clone_id(spot, create=True)
+            litter = [n for n in os.listdir(common) if n.startswith(".clone-id-")]
+            real_clone_id = M.clone_id
+            M.clone_id = lambda _root, create=False: None
+            try:
+                target = os.path.join(home, "baseline.json")
+                written, why = M.write_baseline(
+                    target, _history([M.found("stash", "stash x", local=True)]),
+                    {"phases": [{"id": "P7", "status": "done"}]}, spot)
+            finally:
+                M.clone_id = real_clone_id
+        finally:
+            _harness.remove_tree(home)
+        check("ik16 an EMPTY token file - a truncation, or a write that never "
+              "landed - reads as no id, and the next minting replaces it instead "
+              "of reading empty for ever; the publish leaves no sibling behind: "
+              "%r" % ((empty_read, healed, litter),),
+              empty_read is None and healed and litter == [])
+        check("ik17 ...and a baseline write with a local breach and no clone id "
+              "is REFUSED, never stored under no clone where every other clone "
+              "would compare it: %r" % (why,),
+              written is None and why and "no id" in why)
+        pair = [dict(gone, clone="clone-a"), dict(gone, clone="clone-b")]
+        held = M.compare_baseline(pair, _history([
+            M.found("stash", "stash x", local=True)]), "clone-a")
+        check("ik13 two clones' local entries with one subject stay two entries - "
+              "the clone is in the key - so the one this clone wrote matches and "
+              "the other is set aside, not re-stamped: %r"
+              % ((held["matched"], held["notComparedWhy"], held["new"]),),
+              held["matched"] == 1 and held["new"] == []
+              and held["notComparedWhy"] == {M.NOT_COMPARED_LOCAL: 1}
+              and len(set(M.baseline_key(e) for e in pair)) == 2)
+
+        # --- a validator finding's key is its rule, locus and ids --------------
+        acme = _mio.load_manifest(os.path.join(
+            str(_output.REPO_ROOT), "examples", "acme-store",
+            "audit-plan.json"))
+        task = acme["phases"][0]["tasks"][0]
+        task["status"] = "bogus"
+        task["blockedBy"] = [5]
+        task["dependsOn"] = [5]
+        found_now = M._rules.validate(acme)[0]
+        status_line = [x for x in found_now if "'bogus'" in x]
+        widened = [str(x).replace("'cancelled']", "'cancelled', 'parked']")
+                   for x in status_line]
+        widened = [_output.finding(_output.finding_code(status_line[0]), x)
+                   for x in widened]
+        check("ik9 a status finding keys the SAME after one value is appended to "
+              "the allowed list it quotes - the vocabulary is the validator's, "
+              "not the finding's: %r"
+              % ([M._validator_subject(x) for x in status_line + widened],),
+              len(status_line) == 1
+              and M._validator_subject(status_line[0])
+              == M._validator_subject(widened[0]))
+        same_locus = [x for x in found_now
+                      if "entry must be a string id" in x]
+        keys = set(M._validator_subject(x) for x in same_locus)
+        check("ik10 two findings on ONE locus from different rules key "
+              "differently - a key without the rule would let a new rule's "
+              "finding be absorbed by an old one's baseline entry: %r"
+              % (sorted(keys),),
+              len(same_locus) == 2 and len(keys) == 2)
+        import _manifest_vocab as _vocab
+        origin_task = {"id": "P1.1", "ado": {"origin": "sideways"}}
+        said_origin = []
+        _vocab._check_ado(origin_task, "task P1.1", said_origin)
+        real_origin = _vocab.ADO_ORIGIN
+        _vocab.ADO_ORIGIN = tuple(real_origin) + ("imported",)
+        try:
+            grown_origin = []
+            _vocab._check_ado(origin_task, "task P1.1", grown_origin)
+        finally:
+            _vocab.ADO_ORIGIN = real_origin
+        check("ik14 an allowed-values list spelled WITHOUT brackets - `one of 'a', "
+              "'b'` - leaves the key too: one value appended to ADO_ORIGIN does "
+              "not re-key the finding: %r"
+              % ([M._validator_subject(x) for x in said_origin + grown_origin],),
+              len(said_origin) == 1 and len(grown_origin) == 1
+              and said_origin[0] != grown_origin[0]
+              and M._validator_subject(said_origin[0])
+              == M._validator_subject(grown_origin[0])
+              and "sideways" in M._validator_subject(said_origin[0]))
+        dotted = [_output.finding("fields.template.object-field-reference",
+                                  "meta.ado.fields.%s must be an object of field "
+                                  "reference name -> literal value, got list"
+                                  % (k,)) for k in ("x", "y")]
+        check("ik15 a finding with no `: ` keys on the dotted path it opens with, "
+              "so two fields' findings under one rule stay two: %r"
+              % ([M._validator_subject(x) for x in dotted],),
+              M._validator_subject(dotted[0]) != M._validator_subject(dotted[1]))
+        check("ik11 ...and every finding validate() returned carries the code of "
+              "the rule that raised it: %r"
+              % ([str(x)[:40] for x in found_now
+                  if not _output.finding_code(x)],),
+              found_now and all(_output.finding_code(x) for x in found_now))
     finally:
         repos.close()
+
+
+def _breach_sites(tree):
+    """`(visited, bare)` over every place a breach enters a check's answer.
+
+    A breach list is any name a function hands `result()` as its breaches - the
+    third positional argument or `breaches=` - and a site is each item that
+    reaches such a name: an `append`, an `extend` or `+=` of a list, tuple or
+    comprehension, or a list written into the `result()` call itself. An
+    `extend` of anything else cannot be read here and counts as bare.
+    """
+    visited, bare = 0, []
+    for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+        names, literal = set(), []
+        for call in ast.walk(fn):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                    and call.func.id == "result"):
+                continue
+            arg = call.args[2] if len(call.args) > 2 else next(
+                (k.value for k in call.keywords if k.arg == "breaches"), None)
+            if isinstance(arg, ast.Name):
+                names.add(arg.id)
+            elif isinstance(arg, (ast.List, ast.Tuple)):
+                literal.append(arg)
+        items = []
+        for arg in literal:
+            items.extend(arg.elts)
+        for node in ast.walk(fn):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ("append", "extend")
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in names and node.args):
+                arg = node.args[0]
+                if node.func.attr == "append":
+                    items.append(arg)
+                else:
+                    items.extend(_spread(arg))
+            elif (isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add)
+                  and isinstance(node.target, ast.Name)
+                  and node.target.id in names):
+                items.extend(_spread(node.value))
+        for item in items:
+            visited += 1
+            if not _is_found(item):
+                bare.append(getattr(item, "lineno", fn.lineno))
+    return visited, bare
+
+
+def _spread(arg):
+    if isinstance(arg, (ast.List, ast.Tuple)):
+        return list(arg.elts)
+    if isinstance(arg, (ast.ListComp, ast.GeneratorExp)):
+        return [arg.elt]
+    return [arg]
+
+
+def _is_found(node):
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "found")
 
 
 # --- the in-memory mutations the both-directions cases use --------------------

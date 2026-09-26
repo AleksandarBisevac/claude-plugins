@@ -53,6 +53,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _evidence_io  # noqa: E402  (where a run's record lives, and how to read it)
+import _manifest_io as _mio  # noqa: E402  (declared_gate_entries: the one reading of a gate)
 import _report_html  # noqa: E402  (the vocabulary and the view, decided once)
 import _status_facts  # noqa: E402  (evidence_gap: the ONE rule that says whether an absence is excused)
 
@@ -135,8 +136,10 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None):
     """
     pointer = _report_html.tev_pointer(holder)
     row = by_run.get(str(pointer.get("runId"))) if pointer else None
+    # At phase scope the phase's own declaration, through the one normaliser -
+    # an all-blank `testGate` runs nothing, so it is no gate here either.
     configured = (_report_html.tev_configured(holder, phase) if scope == "task"
-                  else bool(holder.get("testGate")))
+                  else bool(_mio.declared_gate_entries(holder.get("testGate"))))
     view = _report_html.tev_view(
         pointer, row, configured,
         gap=_status_facts.evidence_gap(holder, scope, boundary),

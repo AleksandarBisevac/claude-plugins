@@ -914,6 +914,26 @@ def _cases(check):
           M._touts.output_problems is not None
           and M._touts.output_problems(["**"])[0][0] == "**")
 
+    # A MOVEDFROM CHAIN THE ALLOCATOR WOULD NEVER HAVE MADE: an old id a live task
+    # holds, or one two chains both claim. Verb-made plans cannot reach either;
+    # a hand edit can, and the evidence join would then move runs silently.
+    _i, _f, w = M._walk_phases([_phase(id="P0", tasks=[
+        _task("P0.1"),
+        _task("P0.2", movedFrom={"id": "P0.1", "phase": "P0", "at": "t"}),
+        _task("P0.3", movedFrom={"id": "P9.1", "phase": "P9", "at": "t"}),
+        _task("P0.4", movedFrom={"id": "P8.1", "phase": "P8", "at": "t",
+                                 "previous": {"id": "P9.1", "phase": "P9"}})])])
+    _mw = [x for x in w if "movedFrom" in x and ("live task" in x or "both" in x)]
+    check("mo5 a movedFrom id a live task holds, and one two chains both claim, "
+          "are each WARNED about by name: %r" % (_mw,),
+          len(_mw) == 2 and any("P0.1" in x for x in _mw)
+          and any("P9.1" in x for x in _mw))
+    _i, _f, w = M._walk_phases([_phase(id="P0", tasks=[
+        _task("P0.2", movedFrom={"id": "P1.1", "phase": "P1", "at": "t",
+                                 "previous": {"id": "P2.1", "phase": "P2"}})])])
+    check("mo6 SECOND DIRECTION: a clean chain draws neither: %r" % (w,),
+          not [x for x in w if "live task" in x or "both" in x])
+
 
 def _selftest():
     return _harness.run(_cases)

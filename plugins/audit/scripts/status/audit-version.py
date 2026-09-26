@@ -53,30 +53,22 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home as _home  # noqa: E402  (Claude Code's own install records, fail-open)
+
 E_OK, E_NEWER, E_USAGE = 0, 1, 2
-PLUGIN_NAME = "audit"
 RELEASES_API = "https://api.github.com/repos/%s/%s/releases/latest"
 FETCH_TIMEOUT = 5                  # seconds: the one network call waits no longer
-UNDOCUMENTED = "a file Claude Code writes and does not document"
 
 
-# --- reading -------------------------------------------------------------------
-def claude_home(env=None):
-    """Claude Code's home: CLAUDE_CONFIG_DIR when set, else ~/.claude."""
-    env = os.environ if env is None else env
-    return env.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"),
-                                                         ".claude")
-
-
-def _read_json(path):
-    """(document, why) - the parsed file, or None and the reason it is absent."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh), ""
-    except OSError as exc:
-        return None, "%s could not be read (%s)" % (path, exc.strerror or exc)
-    except ValueError as exc:
-        return None, "%s is not JSON (%s)" % (path, exc)
+# --- reading ---------------------------------------------------------------------
+# The Claude-home readers live one layer down in `_claude_home`, where the doctor
+# reaches them too; these names are that module's, not copies of it.
+claude_home = _home.claude_home
+marketplace_of = _home.marketplace_of
+marketplace_facts = _home.marketplace_facts
+installed_copies = _home.installed_copies
+read_json = _home.read_json
+PLUGIN_NAME = _home.PLUGIN_NAME
 
 
 _SEMVER = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)"
@@ -107,88 +99,12 @@ def running(plugin_root=None):
     """The copy this command runs from: its version and where it was read."""
     root = plugin_root or _output.PLUGIN_ROOT
     path = os.path.join(root, ".claude-plugin", "plugin.json")
-    doc, why = _read_json(path)
+    doc, why = read_json(path)
     version = (doc or {}).get("version") if isinstance(doc, dict) else None
     return {"version": version if isinstance(version, str) else None,
             "root": root, "basis": path if doc is not None else why,
             "repository": (doc or {}).get("repository")
             if isinstance(doc, dict) else None}
-
-
-def _installed(home):
-    doc, why = _read_json(os.path.join(home, "plugins", "installed_plugins.json"))
-    plugins = doc.get("plugins") if isinstance(doc, dict) else None
-    return (plugins if isinstance(plugins, dict) else None), why
-
-
-def marketplace_of(plugin_root, home):
-    """(name, basis) - the marketplace this copy was installed from, or None.
-
-    Read off Claude Code's install record for this exact path, else off the
-    cache path it installs into (`plugins/cache/<marketplace>/<plugin>/<ver>`).
-    A copy run from a checkout matches neither, and that is said."""
-    plugins, _why = _installed(home)
-    target = os.path.realpath(plugin_root)
-    for key, entries in sorted((plugins or {}).items()):
-        name, _at, market = key.partition("@")
-        if name != PLUGIN_NAME or not market:
-            continue
-        for entry in entries if isinstance(entries, list) else []:
-            path = entry.get("installPath") if isinstance(entry, dict) else None
-            if path and os.path.realpath(path) == target:
-                return market, "installed_plugins.json names this path"
-    parts = os.path.realpath(plugin_root).split(os.sep)
-    if "cache" in parts:
-        i = len(parts) - 1 - parts[::-1].index("cache")
-        if len(parts) > i + 2 and parts[i + 2] == PLUGIN_NAME:
-            return parts[i + 1], "the cache path this copy sits in"
-    return None, ("this copy runs from %s, not from an installed marketplace copy"
-                  % (plugin_root,))
-
-
-def marketplace_facts(home, name):
-    """What the marketplace clone offers, when it was refreshed, and whether it
-    auto-updates - or why that could not be read."""
-    doc, why = _read_json(os.path.join(home, "plugins", "known_marketplaces.json"))
-    entry = doc.get(name) if isinstance(doc, dict) else None
-    if not isinstance(entry, dict):
-        return {"name": name, "error": why or ("known_marketplaces.json has no %r"
-                                               % (name,))}
-    out = {"name": name, "lastUpdated": entry.get("lastUpdated"),
-           "autoUpdate": entry.get("autoUpdate"),
-           "location": entry.get("installLocation"), "offered": None,
-           "basis": "known_marketplaces.json, %s" % UNDOCUMENTED}
-    location = entry.get("installLocation")
-    catalog, cwhy = _read_json(os.path.join(location or "", ".claude-plugin",
-                                            "marketplace.json"))
-    for plugin in (catalog or {}).get("plugins") or [] if isinstance(catalog, dict) \
-            else []:
-        if isinstance(plugin, dict) and plugin.get("name") == PLUGIN_NAME:
-            source = plugin.get("source")
-            if isinstance(source, str):
-                pj, _pwhy = _read_json(os.path.join(location, source,
-                                                    ".claude-plugin", "plugin.json"))
-                offered = (pj or {}).get("version") if isinstance(pj, dict) else None
-                out["offered"] = offered if isinstance(offered, str) else None
-            break
-    if out["offered"] is None:
-        out["offeredWhy"] = cwhy or ("the clone at %s names no %r plugin with a "
-                                     "version" % (location, PLUGIN_NAME))
-    return out
-
-
-def installed_copies(home, name):
-    """Every installed copy of this plugin from `name`, by scope and project."""
-    plugins, why = _installed(home)
-    if plugins is None:
-        return None, why
-    rows = []
-    for entry in plugins.get("%s@%s" % (PLUGIN_NAME, name)) or []:
-        if isinstance(entry, dict):
-            rows.append({"scope": entry.get("scope"),
-                         "project": entry.get("projectPath"),
-                         "version": entry.get("version")})
-    return rows, ""
 
 
 def _github_repo(repository):

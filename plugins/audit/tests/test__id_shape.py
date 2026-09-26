@@ -126,6 +126,22 @@ def _cases(check):
         check("is15d ...and a trunk known only as a remote-tracking branch of ANY remote "
               "counts - upstream/main, not only origin/main",
               M.suffix_here(tmp, plan) == a, M.suffix_here(tmp, plan))
+        # A MOVED TASK'S OLD IDS ARE TAKEN. `move` takes the id out of its phase,
+        # and an allocator counting live ids alone would hand it out again - to an
+        # unrelated task that the ledger, evidence and journal rows written under
+        # the old id would then attach to. The whole `movedFrom` chain counts.
+        moved = {"phases": [
+            {"id": "P2", "tasks": [{"id": "P2.1"}]},
+            {"id": "P3", "tasks": [{"id": "P3.1"},
+                                   {"id": "P3.2", "movedFrom": {
+                                       "id": "P4.1", "phase": "P4",
+                                       "previous": {"id": "P2.2", "phase": "P2"}}}]},
+            {"id": "P4", "tasks": []}]}
+        check("is17 a moved task's old ids stay taken, every link of the chain: the "
+              "next P2 id is past P2.2 and the next P4 id is past P4.1: %r"
+              % ((M.next_task_id(moved, "P2", None), M.next_task_id(moved, "P4", None)),),
+              M.next_task_id(moved, "P2", None) == "P2.3"
+              and M.next_task_id(moved, "P4", None) == "P4.2")
         loose = tempfile.mkdtemp(prefix="id-shape-nogit-")
         try:
             check("is16 ...and None outside a repository", M.current_branch(loose) is None)

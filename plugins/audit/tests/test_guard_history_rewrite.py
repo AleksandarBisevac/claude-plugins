@@ -77,6 +77,26 @@ def _decide(repo, command):
 
 def _cases(check):
     # --- parsing, before any repo exists --------------------------------------
+    # (qs) the double-quoted substitution reader, with no other layer in front
+    # of it: the bodies it returns, and None for one it cannot read.
+    _q = M._quoted_substitutions
+    _qg = "git " + "stash"
+    check("qs1 a quoted `)` inside a substitution does not end it - the whole "
+          "body comes back", _q('echo "$(echo \')\'; ' + _qg + ')"')
+          == ["echo ')'; " + _qg], repr(_q('echo "$(echo \')\'; ' + _qg + ')"')))
+    check("qs2 a substitution that never closes is unreadable: None, not an "
+          "empty list", _q('echo "$(' + _qg) is None
+          and _q('echo "`' + _qg) is None, repr(_q('echo "$(' + _qg)))
+    check("qs3 SECOND DIRECTION: a closed one is read and a single-quoted one "
+          "is not a substitution at all",
+          _q('echo "$(date)"') == ["date"] and _q("echo '$(date)'") == [])
+    check("qs4 an inner body that will not parse makes the whole command "
+          "unparseable (None) - the answer that sends every arm to the raw-text "
+          "reading, never an empty list",
+          M.git_calls('echo "`' + _qg + " '`" + '"') is None
+          and M.git_calls('echo "$(date)"') == [],
+          repr(M.git_calls('echo "`' + _qg + " '`" + '"')))
+
     check("gh1 `reset --hard` with no ref parses as 'no target' - the empty "
           "string, not None, because None means 'this is not a reset at all' "
           "and the two lead to opposite verdicts",
@@ -570,6 +590,208 @@ def _cases(check):
               "filename sits there. The conservative direction, kept on purpose - "
               "the narrowing would widen a secret guard that shares the rule",
               v == "deny", repr((v, why)))
+
+        # --- every `git` word counts, prose included ---------------------------
+        # An emitter's arguments were once read as inert. Each fix of that
+        # narrowing opened another pass (a later pipe, a comment ending in a
+        # backslash, a file run by name or by git itself), so it was REMOVED: a
+        # fail-loud guard keeps only what it can prove. `echo ... git stash`
+        # prose is refused on purpose; the rewritten rows below (gp1, gp2, gp3,
+        # gp7, gp17, gp19, gp23) pinned the removed allow and now pin the base.
+        for _cid, _cmd, _want, _what in (
+                ("gp1", "echo attempt used " + _G, "deny",
+                 "an emitter's words are read like any other - the over-refusal "
+                 "SECURITY.md states as deliberate"),
+                ("gp2", "printf '%s\\n' an attempt used " + _G + " drop", "deny",
+                 "the other text emitter, the same reading"),
+                ("gp3", "echo attempt used " + _G + " > notes.md", "deny",
+                 "...and an emitter writing a file, the same"),
+                ("gp4", "true && " + _G + " push", "deny",
+                 "after `&&` is command position, whatever came before"),
+                ("gp5", _G, "deny", "the bare command, unchanged"),
+                ("gp6", "bash -c '" + _G + "'", "deny",
+                 "a shell's -c argument is a command line"),
+                ("gp7", "bash -c 'echo " + _G + "'", "deny",
+                 "...which is read by the same rule, emitter and all"),
+                ("gp8", "echo " + _G + " | sh", "deny",
+                 "an emitter PIPED into a shell hands the words to something "
+                 "that runs them - the allow above holds only while the output "
+                 "goes nowhere a shell reads"),
+                ("gp9", "echo " + _G + " | xargs -I{} sh -c {}", "deny",
+                 "any pipe keeps the conservative reading, not only into sh"),
+                ("gp10", "$(echo " + _G + ")", "deny",
+                 "a substitution in command position RUNS its output"),
+                ("gp11", "echo `echo " + _G + "`", "deny",
+                 "...and so does a backquoted one inside an argument"),
+                ("gp12", "sudo " + _G, "deny", "sudo runs its argument"),
+                ("gp13", "env FOO=1 " + _G, "deny", "env runs its argument"),
+                ("gp14", "echo x | xargs " + _G + " drop", "deny",
+                 "xargs runs its argument"),
+                ("gp15", "timeout 5 " + _G, "deny",
+                 "a prefix this guard has no table entry for is still read "
+                 "conservatively - the narrowing is a closed list of programs "
+                 "that never run arguments, not an open list of ones that do"),
+                ("gp16", "echo done; " + _G, "deny",
+                 "the emitter's reach ends at its own separator"),
+                ("gp17", "FOO=1 echo " + _G, "deny",
+                 "an assignment before the emitter changes nothing"),
+                ("gp18", "echo " + _G + " 2>&1 | sh", "deny",
+                 "a redirection does not end the command: its output still "
+                 "reaches the pipe"),
+                ("gp19", "echo " + _G + " > notes.md 2>&1", "deny",
+                 "...nor does a redirection that ends in a file"),
+                ("gp20", "$(echo " + _G + "; true)", "deny",
+                 "an emitter OPENING a substitution is refused even when its "
+                 "own command ends at a `;` - the substitution's output runs"),
+                ("gp21", "echo " + _G + " > x.sh; sh x.sh", "deny",
+                 "an emitter writing a SHELL SCRIPT is writing a command"),
+                ("gp22", "echo " + _G + " >> ~/.bashrc", "deny",
+                 "...and so is one writing a dotfile a shell sources"),
+                ("gp23", "echo " + _G + " > notes.txt; sh notes.txt", "deny",
+                 "the write-then-run shape the removed exemption let through"),
+                # A SUBSTITUTION INSIDE DOUBLE QUOTES is one word to the lexer,
+                # and it runs.
+                ("gp24", 'echo "$(' + _G + ')"', "deny",
+                 "a double-quoted substitution runs its command"),
+                ("gp25", 'eval "$(echo ' + _G + ')"', "deny",
+                 "...and eval runs what the substitution printed"),
+                ("gp26", 'sh -c "$(echo ' + _G + ')"', "deny",
+                 "...and so does a shell's -c"),
+                ("gp27", 'echo "`' + _G + '`"', "deny",
+                 "a double-quoted backquote runs its command too"),
+                ("gp28", "echo '$(" + _G + ")'", "allow",
+                 "while a SINGLE-quoted one is literal text"),
+                # `xargs git` with no verb: the verb comes from stdin.
+                ("gp29", "echo stash | xargs git", "deny",
+                 "the verb arrives on stdin and cannot be read"),
+                ("gp30", "echo x | xargs git log --oneline", "allow",
+                 "...while a verb on the command line is graded as itself")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
+
+        # --- a line continuation is not a separator -----------------------------
+        # bash removes backslash-newline before it reads a word, so the emitter
+        # and the pipe on the next line are ONE pipeline. Read as two, the pipe
+        # started a new command and the emitter's words were inert.
+        _nl = "\\\n"
+        for _cid, _cmd, _want, _what in (
+                ("gc1", "echo git push --force origin main " + _nl + "  | sh",
+                 "deny", "a force-push printed into a shell across a continuation"),
+                ("gc2", "echo git rebase -i HEAD~2 " + _nl + " | sh", "deny",
+                 "a rebase, the same way"),
+                ("gc3", "echo " + _G + " " + _nl + "\t| bash", "deny",
+                 "a stash, with a tab after the newline"),
+                ("gc4", "git log --oneline " + _nl + "  -3", "allow",
+                 "...while a continuation inside an ordinary read joins it and "
+                 "is still that read"),
+                # A COMMENT RUNS TO THE END OF ITS LINE, and a backslash at its end
+                # does NOT continue it - bash starts the next line as a command.
+                ("gc5", "true # note " + _nl + "git push --force origin main",
+                 "deny", "a force-push on the line after a comment that ends in "
+                 "a backslash"),
+                ("gc6", "git status # note " + _nl + "git push --force origin main",
+                 "deny", "...where joining would have made it an argument of "
+                 "`git status`"),
+                ("gc7", ": # " + _nl + _G, "deny", "...a stash, the same way"),
+                ("gc8", "git " + _nl + "  stash", "deny",
+                 "a continuation outside a comment is still joined")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
+
+        # --- a piped heredoc body is graded as shell ----------------------------
+        # A data reading of the far side was tried and REMOVED: each allow-list
+        # of it missed a spelling that runs the body (a later stage, an option set
+        # in the environment). The field report's need is met without it - the
+        # heredoc fed straight to the script is data (gq25). gq1 and gq2 pinned
+        # the removed allow and now pin the base.
+        _body = "an attempt used " + _G + " and was refused"
+        _D = _G + " drop"
+        for _cid, _cmd, _want, _what in (
+                ("gq1", "cat <<'EOF' | python3 x.py --technical -\n%s\nEOF"
+                 % _body, "deny", "a piped body is shell, whatever the far side"),
+                ("gq2", "cat <<'EOF' | node tools/log.mjs\n%s\nEOF" % _body,
+                 "deny", "...for any far side"),
+                ("gq30", "cat <<'EOF' | python3 echo.py | sh\n%s\nEOF" % _D,
+                 "deny", "a later stage runs what the first one echoed"),
+                ("gq31", "export NODE_OPTIONS='-r /dev/stdin'; "
+                 "cat <<'EOF' | node e.js\n%s\nEOF" % _D, "deny",
+                 "an interpreter option set in the environment runs the body"),
+                ("gq3", "cat <<'EOF' | bash\n%s\nEOF" % (_G + " drop"), "deny",
+                 "a bare shell on the far side runs the body"),
+                ("gq4", "cat <<'EOF' | python3 -\n%s\nEOF" % (_G + " drop"),
+                 "deny", "an interpreter reading its PROGRAM from stdin runs the "
+                 "body, so the body stays in the graded text"),
+                ("gq5", "cat <<'EOF' | python3 -m pdb x.py\n%s\nEOF" % _G,
+                 "deny", "a code flag on the far side (`-m`, `-c`, `-e`) may run "
+                 "what it reads - pdb executes its stdin - so it is not data"),
+                ("gq6", "cat <<'EOF' | frobnicate --x\n%s\nEOF" % _G, "deny",
+                 "an unknown far side keeps the conservative reading"),
+                ("gq7", "cat <<EOF | python3 x.py -\n$(%s)\nEOF" % _G, "deny",
+                 "an UNQUOTED delimiter lets the shell run a substitution in the "
+                 "body before the script ever reads it"),
+                ("gq8", "cat > notes.md <<EOF\n$(%s)\nEOF" % _G, "deny",
+                 "...and so it does for a body on its way into a file - the same "
+                 "class, closed where it was open"),
+                ("gq9", "cat > notes.md <<'EOF'\n$(%s)\nEOF" % _G, "allow",
+                 "while a QUOTED delimiter makes the same bytes inert text"),
+                ("gq10", "cat <<'EOF' | sh deploy.sh\n%s\nEOF" % _G, "deny",
+                 "a SHELL given a script is not on the data list - a shell "
+                 "script reading its stdin is one `read`+`eval` from running it"),
+                # Every spelling below reads its PROGRAM from stdin, or hands the
+                # body to something that does. The data shape is one allow-list
+                # entry, so each of these keeps the grading it had before it.
+                ("gq11", "cat <<'EOF' | python3 -W ignore -\n%s\nEOF" % _D,
+                 "deny", "an option's VALUE is not a script operand"),
+                ("gq12", "cat <<'EOF' | perl -I lib -\n%s\nEOF" % _D, "deny",
+                 "the same for perl's include path"),
+                ("gq13", "cat <<'EOF' | deno run -\n%s\nEOF" % _D, "deny",
+                 "a SUBCOMMAND is not a script operand"),
+                ("gq14", "cat <<'EOF' | python3 /dev/fd/0\n%s\nEOF" % _D, "deny",
+                 "a /dev path to stdin is the dash written out"),
+                ("gq15", "cat <<'EOF' | python3 -i x.py\n%s\nEOF" % _D, "deny",
+                 "-i reads stdin as commands after the script"),
+                ("gq16", "cat <<'EOF' | PYTHONINSPECT=1 python3 x.py -\n%s\nEOF"
+                 % _D, "deny", "...and so does its environment spelling"),
+                ("gq17", "tee >(sh) <<'EOF' | python3 x.py -\n%s\nEOF" % _D,
+                 "deny", "a head other than cat can hand the body to a shell"),
+                ("gq18", "cat <<EOF | python3 x.py -\n%s\nEOF" % _D, "deny",
+                 "an UNQUOTED delimiter is not vouched for as data"),
+                ("gq19", "env python3 -W ignore - <<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a wrapper and an option in front of an interpreter's stdin "
+                 "program, in the heredoc's own head"),
+                ("gq20", "bash <(cat) <<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a shell reading the body through process substitution"),
+                ("gq21", "sh <<<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a here-string is not a heredoc - the next line is a command"),
+                ("gq22", "cat <<'EOF' && %s\nx\nEOF" % _D, "deny",
+                 "the rest of the heredoc's own line is command text"),
+                ("gq23", "cat <<'EOF' | xargs python3 x.py\n%s\nEOF" % _D,
+                 "deny", "a wrapper on the far side is not a plain script run"),
+                ("gq24", "cat <<'EOF' \\\n  | bash\n%s\nEOF" % _D, "deny",
+                 "a heredoc line that continues is not read to its far side"),
+                ("gq25", "python3 x.py --technical - <<'EOF'\n%s\nEOF" % _body,
+                 "allow", "a script run fed the body directly is still data"),
+                ("gq26", "sudo python3 tools/x.py - <<'EOF'\n%s\nEOF" % _body,
+                 "allow", "...and so behind a wrapper - gq19 is the deny beside "
+                 "it"),
+                # Each spelling below reaches exactly one check: no process
+                # substitution in the head, no option before the operand, no
+                # shell reading the body - so removing that one check is what
+                # lets it through.
+                ("gq27", "awk '{system($0)}' <<'EOF' | python3 x.py -\n%s\nEOF"
+                 % _D, "deny", "a head that is not cat is not vouched for - awk "
+                 "runs each line it reads"),
+                ("gq28", "cat <<'EOF' | python3 runner -\n%s\nEOF" % _D, "deny",
+                 "an operand without the interpreter's extension is not a "
+                 "script file the data shape can vouch for"),
+                ("gq29", "cat <<<'EOF'\n%s\nEOF" % _D, "deny",
+                 "a here-string read as a heredoc would drop the next line as "
+                 "data - it is a command")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
         check("gh34 the text the guard grades, per heredoc kind: the body going "
               "into a FILE is gone, the body fed to a shell and the body fed to "
               "an interpreter are both still there. An interpreter body is kept "
@@ -611,8 +833,105 @@ def _cases(check):
               "machine is a guard whose hooks get switched off, which is the "
               "failure mode this whole file is organised around" % _G,
               v == "allow" and why == "", repr((v, why)))
+        # --- the reader's own limits refuse rather than pass -------------------
+        for _cid, _cmd, _want, _what in (
+                ("gs1", 'echo "$(echo \')\'; ' + _G + ')"', "deny",
+                 "a quoted `)` inside a double-quoted substitution does not end it"),
+                ("gs2", 'echo "$(' + _G + " ')" + '"', "deny",
+                 "an inner body that will not parse falls to the raw-text reading "
+                 "instead of contributing nothing"),
+                ("gs3", 'echo "$(date)"', "allow",
+                 "...while a substitution that runs no git is nothing to refuse"),
+                # EVERY `reset --hard` is graded, not the first.
+                ("gs4", "git reset --hard && git reset --hard HEAD~2", "deny",
+                 "the second reset orphans a recorded commit"),
+                ("gs5", "git reset --hard && git reset --hard HEAD", "allow",
+                 "...while two resets that orphan nothing pass"),
+                # A here-string fed to a shell or an interpreter is its program.
+                ("gs6", "sh <<<'" + _G + "'", "deny",
+                 "a here-string to a shell is a command"),
+                ("gs7", 'bash <<< "git push --force origin main"', "deny",
+                 "...a force-push, the same way"),
+                ("gs8", "python3 <<< '" + _G + " drop'", "deny",
+                 "...and to an interpreter it is code, read the way -c is"),
+                ("gs9", "cat <<< '" + _G + "'", "allow",
+                 "while a here-string to a program that only reads it is data")):
+            v, why = _decide(repo, _cmd)
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:120])))
     finally:
         _harness.remove_tree(tmp)
+
+    # --- a git command is judged by the plan of the tree it runs in -----------
+    # The recorded SHAs came from CLAUDE_PROJECT_DIR's manifest. A worktree's
+    # plan records the commits ITS tasks made, which the main checkout's copy
+    # does not hold until a merge - so a rebase of the worktree branch orphaned
+    # them with nothing refused. The tree is the one git runs in: `-C <dir>`, or
+    # the directory a `cd` moved the shell to, or the payload's own.
+    _wt_ok, _wt = _harness.attempt(_harness.worktree_pair, "histguard-wt-")
+    if not _wt_ok:
+        check("gw0 the worktree fixture builds (%s)" % (_wt,), False)
+        return
+    with open(os.path.join(_wt["wt"], "f.txt"), "w", encoding="utf-8") as fh:
+        fh.write("x")
+    _git(_wt["wt"], "add", "f.txt")
+    _git(_wt["wt"], "-c", "user.email=t@t.t", "-c", "user.name=t",
+         "commit", "-qm", "wt work")
+    _wt_sha = _git(_wt["wt"], "rev-parse", "HEAD").stdout.decode().strip()
+    _wt_man = os.path.join(_wt["wt"], _wt["manifest_rel"])
+    with open(_wt_man, "r", encoding="utf-8") as fh:
+        _doc = json.load(fh)
+    _doc["phases"][1]["tasks"][0]["commit"] = _wt_sha
+    with open(_wt_man, "w", encoding="utf-8") as fh:
+        json.dump(_doc, fh)
+    _prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = _wt["main"]
+    try:
+        for _cid, _cwd, _cmd, _want, _what in (
+                ("gw1", _wt["main"], "git -C %s rebase main" % _wt["wt"], "deny",
+                 "`git -C <worktree>` rebases the worktree branch, whose plan "
+                 "records a commit the rebase rewrites"),
+                ("gw2", _wt["main"], "cd %s && git reset --hard HEAD~1"
+                 % _wt["wt"], "deny",
+                 "a `cd` into the worktree, then a reset that orphans the "
+                 "commit ITS plan records"),
+                ("gw3", _wt["wt"], "git commit --amend -m x", "deny",
+                 "a session standing in the worktree amends the commit its plan "
+                 "records"),
+                ("gw4", _wt["main"], "git rebase main", "allow",
+                 "the same verb in the main checkout, whose plan records "
+                 "nothing - the tree is per command, not a switch")):
+            v, why = M.decide({"tool_name": "Bash", "cwd": _cwd,
+                               "tool_input": {"command": _cmd}})
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:160])))
+        # A SECOND worktree, still at the base commit, so `HEAD~1` does not
+        # resolve there: a reset asked about in the wrong tree is a question
+        # git cannot answer, and an unanswerable question is an allow.
+        _wt_b = os.path.join(_wt["root"], "main-B")
+        _git(_wt["main"], "worktree", "add", "-q", _wt_b, "-b", "wt-b")
+        for _cid, _cmd, _want, _what in (
+                ("gw5", "git -C %s status; git -C %s reset --hard HEAD~1"
+                 % (_wt_b, _wt["wt"]), "deny",
+                 "the reset's `HEAD~1` is resolved in the tree the RESET runs "
+                 "in, not in the first tree the command reached"),
+                ("gw6", "git -C %s status; git -C %s commit --amend -m x"
+                 % (_wt_b, _wt["wt"]), "deny",
+                 "...and the amend's HEAD is the amended tree's"),
+                ("gw7", "git -C %s status; git -C %s reset --hard HEAD"
+                 % (_wt_b, _wt["wt"]), "allow",
+                 "while a reset of the worktree onto ITS OWN HEAD, which holds "
+                 "the recorded commit, is allowed - asked in the first tree, "
+                 "HEAD there is the base and the reset read as orphaning it")):
+            v, why = M.decide({"tool_name": "Bash", "cwd": _wt["main"],
+                               "tool_input": {"command": _cmd}})
+            check("%s %s: %s" % (_cid, _want, _what), v == _want,
+                  repr((v, why[:160])))
+    finally:
+        if _prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev
 
 
 def _selftest():

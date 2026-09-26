@@ -1,7 +1,7 @@
 {
   "id": "P77",
   "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
-  "status": "pending",
+  "status": "done",
   "description": "",
   "desiredOutcome": "executor, reviewer and schema share one redFirst vocabulary checked by a lint; a sanctioned red-first helper proves red in a throwaway tree without touching the shared one, and a compile or collection failure is not a proved red; and doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
   "testGate": [
@@ -15,21 +15,79 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
+  "branch": "audit/p77-red-first-has-one-vocabulary-a",
+  "mergedAt": "2026-09-26T04:35:55Z",
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P77-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "`--introduces` can be satisfied by a test that is broken whether or not the fix is present, so a compile failure can still be recorded as a proved red. `introduced()` checks three things: the symbol is absent from HEAD's implementation files, it is present in the working tree's copy, and it appears ANYWHERE in the run's output. Nothing ties the error to the symbol, and nothing refuses SyntaxError ",
+        "resolution": "fix task P77.3-6u9"
+      },
+      {
+        "id": "P77-R2",
+        "severity": "high",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py",
+        "issue": "The history rule hides the live stale copy that the WARNING exists to find. The stamp is written only on UserPromptSubmit (`_config.stamp_running_plugin`, from detect-plan-skip.py), and /audit:doctor is itself asked for by a prompt. So the session running the doctor has always just re-stamped and is always the newest copy (`top`). Any other session in the project stamped earlier, including one on ",
+        "resolution": "fix task P77.3-6u9"
+      },
+      {
+        "id": "P77-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "The throwaway is not always removed. Probed in a scratch repo: SIGTERM to the helper during its run left `.../audit-red-08k4fne6/tree (detached HEAD)` in `git worktree list`, and left the temp directory in place. Python's default SIGTERM handler exits without running `finally`, and SIGKILL cannot be caught. This is the likely path in practice: DEFAULT_TIMEOUT is 900 s, which is longer than the Bas",
+        "resolution": "fix task P77.3-6u9"
+      },
+      {
+        "id": "P77-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "'proved' is neither an assertion failure nor tied to the test the task added. `_house_tally` counts every `FAIL ` line in the output, excluding only the two build-escape labels. That includes a pre-existing case in the same file that the working-tree test file changed to match other implementation edits, `label_faults` duplicate-id failures, and cases turned False by `_harness.attempt` catching an",
+        "resolution": "fix task P77.3-6u9"
+      },
+      {
+        "id": "P77-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "The throwaway is only cut off from the shared tree by argv spelling. The child inherits the whole environment, and the throwaway holds only tracked files. (a) PYTHONPATH, an editable install (.pth into the shared tree) or CLAUDE_PROJECT_DIR (read by audit-status, usage_ledger, _evidence_io and others) can make the test import or write the shared tree's code and state. A green result is then printe",
+        "resolution": "fix task P77.3-6u9"
+      },
+      {
+        "id": "P77-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "`_PYTEST_SUMMARY` needs the `=`-framed summary line, but `pytest -q` prints `1 failed, 2 passed in 0.05s` with no framing. A real red under -q therefore reads as `no-tally` and is reported could-not-prove. That fails safe, but it is wrong for one of pytest's most common invocations, and no sr13 shape covers it.",
+        "resolution": "fix task P77.3-6u9"
+      },
+      {
+        "id": "P77-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_refs.py",
+        "issue": "`red_first_vocabulary_drift` reads only the two return-shape lines. So it passes while a brief tells an agent, in prose, to use a stray word. The phase-mode instruction at audit-reviewer.md:56 ('`redFirst` is `not-attempted`') could revert to `not-applicable` and no case would fail; iq5 checks only that words are present, never that retired ones are absent. The stated limit says no narrowing 'meas",
+        "resolution": "fix task P77.3-6u9"
+      },
+      {
+        "id": "P77-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_setup.py",
+        "issue": "cache_integrity (in the diff) describes bytecode that the cache holds and the commit does not as harmless ('not a published file'). But `__pycache__/*.pyc` beside a published `.py` is what Python executes when the recorded source mtime and size match, and the 3.0.1 cache does hold `hooks/__pycache__`. So `clean` can sit over hooks that run different code. The checkout arm shares the tracked-files-",
+        "resolution": "fix task P77.3-6u9"
+      }
+    ],
+    "outcome": "matches; four review passes, every finding fixed in P77.3-P77.5, including a guard regression caught and closed before landing"
   },
-  "summary": null,
+  "summary": "Executor, reviewer and schema share one redFirst vocabulary, checked by a lint over the briefs' return shapes and their prose. stamp-verification.py red proves red in a throwaway detached worktree of HEAD with the task's test files copied in, never writing the shared tree: a red counts as proved only when one of the task's own cases fails an assertion, a compile or collection error only when --introduces names a symbol HEAD lacks and a second run with the fix no longer raises it, the child's environment is scrubbed by path, one deadline covers build, runs and teardown under the host limit, and a leftover throwaway is reported by owner. Doctor's running-plugin row grades each copy on its own age against a printed idle bound, refreshed by guarded tool calls after the guard has decided, and its plugin-files row verifies a marketplace-cache install against its recorded commit, bytecode included. Reviewed four times - one pass caught a regression in which a malformed stateDir let a secret read through, closed and verified over 609 guard calls - every finding fixed; merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P77.1",
       "title": "One redFirst vocabulary, a sanctioned red-first helper, and a compile failure is not a proved red",
-      "status": "pending",
+      "status": "done",
       "description": "Reproduced at HEAD: executor and schema say proved|could-not-prove|not-attempted; the reviewer says proved|not-proved|could-not-prove|not-applicable, misquotes the executor (reviewer.md:67) and has no word for regression mode. The schema enum is the one source; the reviewer echoes the executor's word when its basis holds; not-attempted replaces not-applicable; not-proved stays as a DECLARED reviewer-only grade; a _refs lint checks reviewer words are within schema plus declared reviewer-only. The executor brief sends executors to overwrite shared files to prove red (undo the fix in the shared tree, git show HEAD:f > f), which the host refused beside a sibling's uncommitted work: add stamp-verification.py red --task <id> -- <cmd> that builds a throwaway tree (git worktree add --detach or a git archive scratch) with HEAD's version of the task's implementation files and the working tree's test files, runs the command there, and records the red, never touching the shared tree; the briefs point at it. proved requires at least one test collected and an assertion failure; a compile or collection error is could-not-prove unless the task introduces the symbol.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
@@ -39,7 +97,9 @@
         "plugins/audit/scripts/_refs.py",
         "plugins/audit/tests/test__refs.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -64,21 +124,27 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cb85483f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_refs.red_first_vocabulary_drift over the schema enum; stamp-verification.py red in a throwaway detached worktree; collection errors are could-not-prove unless --introduces.",
+        "descriptive": "Red-first has one vocabulary across executor, reviewer and schema, and can be proved without touching the shared tree."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-25T18:00:40Z",
+      "completedAt": "2026-09-25T18:25:26Z",
+      "verifiedBy": [
+        "test__refs rv1",
+        "test__refs rv9",
+        "test_stamp_verification sr2",
+        "test_stamp_verification sr6",
+        "test_stamp_verification sr7"
+      ]
     },
     {
       "id": "P77.2",
       "title": "Doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
-      "status": "pending",
+      "status": "done",
       "description": "Reproduced at HEAD (and live on this repo): running_plugin_verdict counts any stamp that is not this copy as drift and never reads the mtime it records, so a dead session's stamp holds the row yellow and 'start a new session' cannot clear it - grade on the newest stamp per copy with its age, report an older copy that a newer one has stamped since as history (named, aged), and offer a prune. plugin_integrity assumes a marketplace install is a clone; the cache is not (installed_plugins.json records installPath and gitCommitSha, and the marketplace clone holds that commit) - compare the cache tree with git archive of that SHA from the marketplace clone, unverifiable only when either is missing (these are undocumented Claude Code files; say so as /audit:version does).",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -86,7 +152,16 @@
         "plugins/audit/scripts/status/_doctor_setup.py",
         "plugins/audit/tests/test__doctor_setup.py",
         "plugins/audit/hooks/_config.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/status/_claude_home.py",
+        "plugins/audit/tests/test__claude_home.py",
+        "plugins/audit/scripts/status/audit-version.py",
+        "plugins/audit/tests/test_audit_version.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/doctor.md",
+        "SECURITY.md",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -113,16 +188,214 @@
       "dependsOn": [
         "P77.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a5a92e38",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "split_history grades the newest stamp per copy; cache_integrity compares the cache with git archive of the recorded commit; readers in _claude_home.",
+        "descriptive": "Doctor stops warning about a dead session's old plugin stamp and verifies a marketplace install instead of calling it unverifiable."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-25T18:25:26Z",
+      "completedAt": "2026-09-25T22:03:37Z",
+      "verifiedBy": [
+        "test__doctor_trail rh1",
+        "test__doctor_trail rh3",
+        "test__doctor_setup pc1",
+        "test__claude_home ch8"
+      ]
+    },
+    {
+      "id": "P77.3-6u9",
+      "title": "Review findings: a proved red is tied to the task and survives only the fix, liveness is the last tool call, and the throwaway is always accounted for",
+      "status": "done",
+      "description": "Phase review findings, all to be fixed. Orchestrator decisions: (R1) --introduces is decided by a SECOND run in the throwaway with the working tree's implementation files copied in - the error must be gone there - plus an identifier-shaped symbol and a final error of the import/attribute/name class naming it; syntax errors never qualify. (R2) liveness is the last guarded tool call, not the last prompt: an existing hook that already runs refreshes the stamp's mtime, throttled, and a copy is history only past a stated idle bound printed with its number; the asking session is never the yardstick. (R3) the process-group runner and the interrupt-to-exception handling run-test-gate uses move to one lower-layer module both entry points share, the default timeout stays under the host's Bash limit, and a leftover throwaway is reported by name. (R4) proved names the failing cases and requires one of the task's own. (R5) the child runs with a scrubbed environment and the brief says untracked dependencies are absent. R6-R8 as the review says.\nR1 (high) plugins/audit/scripts/governance/stamp-verification.py:356-385,476-482: `--introduces` can be satisfied by a test that is broken whether or not the fix is present, so a compile failure can still be recorded as a proved red. `introduced()` checks three things: the symbol is absent from HEAD's implementation files, it is present in the working tree's copy, and it appears ANYWHERE in the run's output. Nothing ties the error to the symbol, and nothing refuses SyntaxError or IndentationError, which `_COMPILE_ERROR` lists. Probed in a scratch repo. The task added src/newmod.py with helper_fn, and the test file had `assert helper_fn() == 2 )`. That test exits 1 with `SyntaxError: unmatched ')'` even in the working tree WITH the fix. `red --introduces helper_fn` still exited 0 with `{\"status\": \"proved\", ... \"SyntaxError: unmatched ')'\"}`, because the traceback prints the test's own line. `--introduces \"\"` also proved, since the empty string is a substring of everything, and so does any common token for a task whose implementation files are new at HEAD. -> Only the absence of the symbol should count, so gate on that. Require the symbol to be an identifier (`^[A-Za-z_][\\w.]*$`). Require the final error line to be ImportError, ModuleNotFoundError, AttributeError or NameError, and to name the symbol; SyntaxError, IndentationError and TabError never qualify. Best of all, run the same command a second time in the throwaway with the working tree's implementation files copied in, and require that run to be green or at least to lose that error. Add cases for a SyntaxError test, an empty symbol and a substring symbol.\nR2 (high) plugins/audit/scripts/status/_doctor_trail.py:302-323,425; plugins/audit/commands/doctor.md:170-174; PLUGIN-BUILD-GUIDE.md:2642-2651: The history rule hides the live stale copy that the WARNING exists to find. The stamp is written only on UserPromptSubmit (`_config.stamp_running_plugin`, from detect-plan-skip.py), and /audit:doctor is itself asked for by a prompt. So the session running the doctor has always just re-stamped and is always the newest copy (`top`). Any other session in the project stamped earlier, including one on an old copy that is in the middle of a long turn firing guard hooks on every tool call, has an older newest stamp. It is therefore filed as history and reported 'not in force', and the row reads OK. Test rh2 asserts exactly this (here=200, elsewhere=100 gives `match`). rh3 and rh6 reach WARNING only by making the foreign stamp newer than the one asking. The justification in the docstring, 'cannot reach a guarded tool call without one, so a copy's NEWEST stamp is when it last ran here', is false: one prompt can drive hours of guarded tool calls, subagents included. The limit as stated ('idle since the newer one stamped') describes a rare case, but the real case is every other session that has not prompted since the doctor's own prompt. -> Stop grading liveness relative to the stamp of the session that is asking. Choices: (a) exclude the asking session's own stamp from `top`; (b) call a stamp history only when its age exceeds a stated idle bound, printed with the number; (c) make the mtime mean 'last tool call' with a throttled `os.utime` from a PreToolUse hook that already runs. Until then, do not print 'not in force'. Say 'last prompted N ago; may still be running' and keep a foreign copy younger than the bound at WARNING. Restate the limit in doctor.md and PLUGIN-BUILD-GUIDE.md to match. Add the case of a foreign stamp that is 30 s old next to the asking session's stamp that is 1 s old.\nR3 (med) plugins/audit/scripts/governance/stamp-verification.py:71,209,430-440,545-549: The throwaway is not always removed. Probed in a scratch repo: SIGTERM to the helper during its run left `.../audit-red-08k4fne6/tree (detached HEAD)` in `git worktree list`, and left the temp directory in place. Python's default SIGTERM handler exits without running `finally`, and SIGKILL cannot be caught. This is the likely path in practice: DEFAULT_TIMEOUT is 900 s, which is longer than the Bash tool's 600 s maximum, so a long run is killed by the host before the helper's own timeout fires. On its own timeout, `subprocess.run` kills only the direct child, so a test runner's grandchildren keep running in (and writing to) the directory being removed. run-test-gate.py already solves both problems (start_new_session plus killpg, and INTERRUPT_SIGNALS turned into exceptions); red does not reuse that. The module docstring's 'removes both' and 'The shared working tree is only read' are claims these paths falsify. -> Reuse run-test-gate's pattern: SIGTERM/SIGINT raise an exception, the child starts a new session and is killed as a group on timeout or interrupt. Set DEFAULT_TIMEOUT below the host's Bash limit, or require --timeout. Name the throwaway with a recognisable prefix so the next `red` or `/audit:doctor` can report (not prune) a leftover registration. Change the docstring to name SIGKILL as the case removal cannot cover.\nR4 (med) plugins/audit/scripts/governance/stamp-verification.py:244-270,466-470: 'proved' is neither an assertion failure nor tied to the test the task added. `_house_tally` counts every `FAIL ` line in the output, excluding only the two build-escape labels. That includes a pre-existing case in the same file that the working-tree test file changed to match other implementation edits, `label_faults` duplicate-id failures, and cases turned False by `_harness.attempt` catching an exception. `_pytest_tally` treats pytest's `failed` as assertions, but pytest counts any exception raised in a test body (TypeError, AttributeError, an import inside the test) as failed. Only unittest separates failures from errors. The printed basis carries only the tally line, so neither the executor nor a reviewer can see WHICH case went red. -> Put the failing case labels or test node ids in the basis. Accept a `--case <id>` (or read `tests.add` / `testsAdded`) and require at least one FAIL line or node id to match it. For pytest, grade `red` only when the failure's `E ` block shows AssertionError, or else report the exception class. Add sr cases: an unrelated existing case failing while the new one passes, and a pytest body TypeError.\nR5 (med) plugins/audit/scripts/governance/stamp-verification.py:387-397,430-440,468-471: The throwaway is only cut off from the shared tree by argv spelling. The child inherits the whole environment, and the throwaway holds only tracked files. (a) PYTHONPATH, an editable install (.pth into the shared tree) or CLAUDE_PROJECT_DIR (read by audit-status, usage_ledger, _evidence_io and others) can make the test import or write the shared tree's code and state. A green result is then printed as 'the test passes WITHOUT the fix', a claim the run never established. (b) node_modules, .venv and generated files are untracked, so vitest/jest and in-repo-venv projects cannot run there at all. An in-repo interpreter path such as /repo/.venv/bin/python is refused as 'naming the shared tree'. (c) The throwaway shares the repository's common git dir, so a test that runs git in its cwd (stash, config, branch) writes shared refs and config. -> Run the child with a scrubbed environment: drop GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, CLAUDE_PROJECT_DIR and PYTHONPATH, or rewrite them to the throwaway. Word the green note as 'passed in the throwaway' and name the environment it inherited. State in the executor brief and PLUGIN-BUILD-GUIDE that untracked dependencies are absent, so such suites come back could-not-prove. Optionally allow a declared read-only dependency path to be symlinked in.\nR6 (low) plugins/audit/scripts/governance/stamp-verification.py:233: `_PYTEST_SUMMARY` needs the `=`-framed summary line, but `pytest -q` prints `1 failed, 2 passed in 0.05s` with no framing. A real red under -q therefore reads as `no-tally` and is reported could-not-prove. That fails safe, but it is wrong for one of pytest's most common invocations, and no sr13 shape covers it. -> Make the `=+` framing optional (anchored on `^(=+ )?(\\d+ (failed|passed|error).*) in [\\d.]+s`) and add a -q shape to sr13.\nR7 (low) plugins/audit/scripts/_refs.py:1129-1133; plugins/audit/agents/audit-reviewer.md:56,68-73: `red_first_vocabulary_drift` reads only the two return-shape lines. So it passes while a brief tells an agent, in prose, to use a stray word. The phase-mode instruction at audit-reviewer.md:56 ('`redFirst` is `not-attempted`') could revert to `not-applicable` and no case would fail; iq5 checks only that words are present, never that retired ones are absent. The stated limit says no narrowing 'measured over this tree' separated the word classes, but it names no command or measurement. A retired-word denylist restricted to the two brief files is a narrowing the current tree would pass (grep: neither brief contains `not-applicable`). Separately, the reviewer's echo rule for `proved` (line 69) requires 'a tally showing ... an assertion failing'. That excludes the helper's own `--introduces` proved block, which has no such tally. -> Add a retired-words tuple (`not-applicable`) that is refused anywhere in the two briefs. Either give the 'measured' claim its command or delete it. Extend the echo condition to accept the helper's `--introduces` basis shape.\nR8 (low) plugins/audit/scripts/status/_doctor_setup.py:345-352; PLUGIN-BUILD-GUIDE.md:2530-2539: cache_integrity (in the diff) describes bytecode that the cache holds and the commit does not as harmless ('not a published file'). But `__pycache__/*.pyc` beside a published `.py` is what Python executes when the recorded source mtime and size match, and the 3.0.1 cache does hold `hooks/__pycache__`. So `clean` can sit over hooks that run different code. The checkout arm shares the tracked-files-only limit, but that arm's docstring does not call the extra files benign. -> Either list `.pyc` files, and any `.py` or `.sh` the commit does not publish, under hooks/ and scripts/ as named extras in the row (they need not change the verdict), or state the limit as 'unpublished files, bytecode included, are not compared - and bytecode executes'.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "plugins/audit/tests/test__proc_group.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a test broken by a SyntaxError with the fix present is recorded as proved under --introduces"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "39174c05",
+      "outcome": {
+        "technical": "introduces decided by a second run; proved tied to the task's case; scrubbed child env; _proc_group shared runner; throttled stamp refresh with an idle bound.",
+        "descriptive": "A red-first proof can no longer be faked by a broken test, a live session on an old plugin is reported, and the throwaway tree is always cleaned up."
+      },
+      "startedAt": "2026-09-25T22:13:38Z",
+      "completedAt": "2026-09-25T22:56:01Z",
+      "verifiedBy": [
+        "test_stamp_verification sr16",
+        "test_stamp_verification sr25",
+        "test__doctor_trail rh2",
+        "test__proc_group pg1",
+        "test__refs rv12",
+        "test__doctor_setup pc5"
+      ]
+    },
+    {
+      "id": "P77.4-6u9",
+      "title": "Final-review findings: the stamp refresh can never change a guard verdict, the scrub drops entries not variables, and the red run keeps one deadline",
+      "status": "done",
+      "description": "Final-pass review findings, all to be fixed. Orchestrator decisions: (R1, a guard regression) the stamp refresh can never change a guard's verdict - everything it computes runs inside its never-raise wrapper and after the guard has decided, and a case pins that a malformed stateDir still blocks a secret read; (R2) the scrub removes only PATH-list ENTRIES under the shared root and only variables whose value IS a path under it (path-prefix, not substring), and the basis lists what was dropped; (R5) one overall deadline across both runs, under the host limit; (R6) a throwaway is 'left behind' only when no live process holds it; the rest as the review says, including a throwaway temp dir that can never be inside the shared tree.\nR1 (med) plugins/audit/hooks/guard-secrets-read.py:1963-1967: NEW DEFECT: the stamp refresh can now disable the secret guard. `refresh_running_stamp` never raises, but its arguments are built OUTSIDE that wrapper and BEFORE `_decide_core`. `_config.state_dir(root, cfg)` is `root / (cfg.get('stateDir') or ...)`, which raises TypeError on a non-string `stateDir`. When `decide` raises, `main` exits 0, which means allow. Probed with CLAUDE_PROJECT_DIR in a scratch directory and a Read of `.env`. With the normal cfg it gives `block`. With cfg['stateDir']=5 the new `decide` raises `TypeError: unsupported operand type(s) for /: 'PosixPath' and 'int'`, so the read is allowed. The parent commit's `decide` returns `block` for the same call, because the guard never touched state_dir before this line. It is otherwise fine on the points asked. Cost: one Path join and one os.stat per call. It never creates a file: a missing stamp makes `os.stat` raise, which returns False. It writes only an mtime, and only to `<stateDir>/running-plugin-<session>.json`. -> Move all of the refresh inside one try: pass `root` and `cfg` and compute state_dir inside `refresh_running_stamp`'s `try`, or wrap the call site in `try/except Exception: pass`. Better, make the call after `_decide_core` has produced the verdict, so bookkeeping can never come before the guard's decision. Add a guard-secrets-read case with cfg `stateDir` as an int, asserting a `.env` Read still blocks. Prove it red against the current line.\nR2 (med) plugins/audit/scripts/governance/stamp-verification.py:405-411 (child_env): NEW DEFECT: the environment scrub drops WHOLE variables when the root appears anywhere in the value as a substring. PATH is lost whenever one entry is under the root: an activated in-repo .venv, node_modules/.bin, or direnv PATH_add. The child then resolves executables through os.defpath. Probed: with PATH='/repo/x/.venv/bin:...', TMPDIR=/repo/x/.tmp and PWD=/repo/x, `child_env('/repo/x')` dropped ['PATH','PWD','TMPDIR'], and `os.get_exec_path(env)` gave ['/bin','/usr/bin']. The match is a substring, not a path prefix, so root /repo also drops values under /repo-other or /repository. HOME survives unless its value contains the root. Dropping TMPDIR under the root is correct for the child. The harm: the command runs a different interpreter, or 'could not start'. Worse, a test that shells out to a tool now off PATH can go red because of the environment and be printed `proved`. The proved and could-not-prove bases do not carry `dropped`; only the green note and the human `environment:` line do. -> Filter os.pathsep-separated values entry by entry: drop only the entries equal to the root or under root+os.sep, and keep the variable. Never drop PATH or HOME whole. Match the root as a path with a separator boundary, not as a substring. Put `dropped` (and any filtered PATH entries) into every redFirst basis. Add cases for an in-root PATH entry that is removed while PATH survives, and for a sibling directory `/repo-other` that is kept.\nR3 (low) plugins/audit/scripts/governance/stamp-verification.py:141-144,148,215-222,529-533: `--introduces` cannot prove in two of the cases it advertises. This fails safe (could-not-prove), but the executor brief, CHANGELOG and INTRODUCES_CLASSES claim these cases work. (a) pytest: a collection-time ImportError prints `E   ImportError: cannot import name 'helper_fn' ...`, and `_FINAL_ERROR` (`^\\s*Class:`) cannot match past the `E   ` prefix. Probed on a representative collection-error output: `final_error` returns None and `qualifying_error` returns None, so pytest can never reach the second run. (b) AttributeError: `_COMPILE_ERROR` omits it, so a tally-less `AttributeError: module 'newmod' has no attribute 'helper_fn'` classifies as `no-tally`. `_wants_second` then returns False, although `qualifying_error` accepts it (probed: no-tally, True, False). The sr16-sr20 cases use a bare-python ModuleNotFoundError only. -> Accept pytest's `E   ` prefix when reading the final error, taking the last `E   <Class>: msg` line. Let AttributeError reach the second run: add it to the classes `_wants_second` accepts, or accept `no-tally` there when a qualifying error is present. Add sr cases on a captured pytest collection error and on a bare AttributeError.\nR4 (low) plugins/audit/scripts/governance/stamp-verification.py:310-320,463-470: `--case` is trusted without a check. When it is given, `own_failures` accepts any asserting failure whose id is in the list, including a pre-existing case that HEAD's test file already carries. The proved basis then says 'the task's own among them' whether the ids were derived (absent from HEAD) or merely named by the executor. So the unrelated-existing-case route from the prior finding 4 is still open, through a flag the party being checked chooses. -> Apply the absent-from-HEAD whole-name check to `--case` ids too, and refuse or flag an id HEAD already carries. At minimum, write 'named by --case' in the proved basis so a reviewer can tell a declared case from a derived one.\nR5 (low) plugins/audit/scripts/governance/stamp-verification.py:221-225,634-640; PLUGIN-BUILD-GUIDE.md:3527: The claim 'DEFAULT_TIMEOUT stays under HOST_BASH_LIMIT, so the helper's own timeout fires before the host kills it' is false on the `--introduces` path. Each `_run_in` gets the full `args.timeout`, so two runs can take 2 x 480 s plus teardown grace, which exceeds 600. `--timeout` is also unbounded. sr21 asserts only the constant relation. In practice the first run is usually a fast import failure, which is why this is low. -> Use one deadline for the whole command: the second run gets the remainder, and --timeout is refused or clamped so that the total stays under HOST_BASH_LIMIT minus the grace. Otherwise restate the claim as per-run. Add a case that drives the two-run path against the budget.\nR6 (low) plugins/audit/scripts/governance/stamp-verification.py:512-521,677-678: `leftover_throwaways` reports every registered `audit-red-` worktree, and the human output prints each one as 'LEFT BEHIND by an earlier run (not pruned)'. A sibling task's `red` running concurrently in the same repository is listed the same way. The code's own comment says 'it may be another run's, still going', so the printed claim is stronger than its basis. -> Word it 'registered by another run - left behind, or still running (not pruned)', or print the holder directory's age so a reader can tell.\nR7 (low) plugins/audit/scripts/status/_doctor_trail.py:449-453 (with _distinct at 362-372): The WARNING line rewritten by this diff says a copy was 'last active %s ago', using the stamp `_distinct(state['others'])` keeps. `_distinct` keeps the FIRST stamp per copy in filename order (`running_plugin_stamps` sorts by name), not the newest. When two sessions share an old copy, the row can print an older session's age as the copy's last activity. The old wording, 'newest stamp', had the same selection bug, but the diff wrote the new claim over it. -> Pick the max-mtime stamp per copy before rendering, for example with the `newest` map `split_history` already builds. Add a case with two stamps of one foreign copy at different ages that asserts the younger age is printed.\nR8 (low) plugins/audit/scripts/status/_doctor_trail.py:302-307,436-439; plugins/audit/commands/doctor.md:167-177: The bound is only partly honest. The arithmetic holds against the real matcher (hooks.json: PreToolUse `Read|Grep|Bash|mcp__.*`): 2 x (60 + 600) < 1800. But the history clause asserts 'no guarded tool call for longer than a live session goes between two', and a live session has no such bound when it is waiting on its user or a permission prompt. Such a session is still open on the old copy and is filed as history after 30 minutes. doctor.md's 'One limit' names only 'Edit, Write, Glob and agent calls'. WebFetch, WebSearch, Skill, TodoWrite and the other unmatched tools are omitted. The list also overstates in the safe direction: a subagent's own Read and Bash calls carry the parent's session_id and do refresh the stamp. -> Word history as 'no guarded tool call within the N-minute bound - ended, or idle waiting on its user'. State the limit as 'every tool outside the Read|Grep|Bash|mcp__ matcher', derived from or pointed at hooks.json, rather than a partial list.\nR9 (low) plugins/audit/scripts/status/_doctor_setup.py:345-360,501-503: `extras` lists every file under hooks/ and scripts/ that the commit does not publish. That always includes the `__pycache__/*.pyc` Python writes itself from the published sources the first time a hook runs. So the 'bytecode executes' clause appears on essentially every cache install, and it does not separate that harmless, fresh bytecode from the stale or foreign bytecode it was added to surface. A line that is always present gets read past. -> Name only bytecode that does not match its published `.py`: read the .pyc header's source mtime and size and compare them with the published file, or a .pyc with no published source. Count the matching bytecode separately, or omit it.\nR1 (low) plugins/audit/scripts/governance/stamp-verification.py:619 (holder = tempfile.mkdtemp): The throwaway's holder is created under the HELPER's TMPDIR. When TMPDIR points under the shared root, the throwaway worktree is built inside the shared working tree and shows in siblings' `git status`. The new scrub removes TMPDIR from the child's environment but not from the helper's own mkdtemp. -> Build the holder under a directory outside the root: pass `dir=` from tempfile.gettempdir() when it is not under the root, else a system temp path, and refuse when neither is available.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/commands/doctor.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: repro that FAILS on current code - with a non-string stateDir a Read of .env is allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "69ef999c",
+      "outcome": {
+        "technical": "refresh_session_stamp after the verdict inside one wrapper; path-boundary scrub of entries; one deadline; owner-pid leftovers; holder_base outside the tree.",
+        "descriptive": "A misconfigured state directory can no longer turn the secret guard off, and the red-first helper keeps a test's environment and time budget intact."
+      },
+      "startedAt": "2026-09-26T02:32:24Z",
+      "completedAt": "2026-09-26T03:27:08Z",
+      "verifiedBy": [
+        "test_guard_secrets_read gs-live2",
+        "test__config rp15",
+        "test_stamp_verification sr32",
+        "test_stamp_verification sr39",
+        "test__doctor_trail rh9b"
+      ]
+    },
+    {
+      "id": "P77.5-6u9",
+      "title": "Final-review low findings: one deadline covers build and teardown, option strings pointing into the tree are named, and the docs match the rules",
+      "status": "done",
+      "description": "Final review (answer: matches) left five low findings, all to be fixed: the deadline covers the build and teardown and the guide's claim is made true at every accepted --timeout; option-string values carrying a path under the root are named in the basis (not rewritten); the bytecode note says what a matching header does and does not show; execute-task.md's boundary sentence matches the --case rule; the guide's refresh-limit list is derived from the matcher as doctor.md is, and rh10 checks both.\nR1 (low) plugins/audit/scripts/governance/stamp-verification.py:229-232,871,880; PLUGIN-BUILD-GUIDE.md:3533-3535: The 'one deadline' covers only the second run. `deadline` is set before `_build_throwaway`, but the FIRST run still gets the full budget: `_run_in(path, cmd, args.timeout, env)` at :880. Two other costs sit outside the budget as well. The build (`git worktree add`) and the removal (`worktree remove` plus `worktree list`) are git calls, each capped at 120 s. `TEARDOWN_MARGIN = 3 * GRACE_SECONDS` is used up by one timed-out teardown (SIGTERM wait plus SIGKILL wait, 2 x GRACE) plus `drain` (GRACE). So the comment's 'then the throwaway's removal' has no seconds left. At `--timeout 585` (MAX_TIMEOUT), any build time plus a first run that times out, plus removal, goes over HOST_BASH_LIMIT. The guide's 'the helper's own deadline fires before the host kills it' is then false. sr39 passes against the remainder-for-run-2 half and cannot see this half. The default of 480 s leaves room, which is why this is low. -> Give the first run `max(1, int(deadline - time.time()))` as well. Include the build and removal in the budget: either cap those git calls at the time remaining, or add their bound to TEARDOWN_MARGIN and say so in the comment. Otherwise restate the guide sentence as a claim about the default only. Add a case that asserts the first run's timeout is the remainder after the build, for example with a stubbed `_build_throwaway` that sleeps.\nR2 (low) plugins/audit/scripts/governance/stamp-verification.py:423-457 (_under, child_env): The switch from substring matching to path matching reopened a narrower channel, silently. A variable whose value carries an absolute path under the root inside an option string is now KEPT, and it is not named anywhere. Probed: `child_env('/repo/x', {'NODE_OPTIONS': '--require /repo/x/test/setup.js', 'PYTEST_ADDOPTS': '--basetemp=/repo/x/.t -c /repo/x/pytest.ini', ...})` keeps both, and `dropped` does not list them. Such variables point the child in the throwaway back at the shared tree's working-tree files. `--require` loads the working tree's setup, `-c` its ini, and `--basetemp` is a directory pytest empties. So a basis reading 'in a throwaway tree at HEAD ... run without X' can rest on a shared-tree file, and it gives no hint that it does. The docstring's 'text that mentions the root is kept' is honest about intent. What it does not cover is that a runner treats these values as paths. -> Split each non-path-list value on whitespace and `=` and run `_under` over its absolute tokens. Drop a variable that has one, or keep it and add a `kept, naming the shared root: VAR` clause to the basis. Either way, the basis must not be silent about it. Add an sr case with NODE_OPTIONS/PYTEST_ADDOPTS naming a path under the root, next to sr32's NOTE case, which must stay kept.\nR3 (low) plugins/audit/scripts/status/_doctor_setup.py:349-369,398-404; PLUGIN-BUILD-GUIDE.md:2543-2545; CHANGELOG.md:209-210: `_fresh_bytecode` counts a .pyc as Python's own when its header records the published source's mtime and size, and the docs say bytecode 'which Python wrote itself'. A matching header is exactly the condition under which Python EXECUTES a .pyc. It says nothing about whether the body was compiled from that source. The repo's own recorded trap produces a stale body with a matching header: a restore within the same second and at the same size, or `cp -p`/`rsync -t` of an edited-then-restored hook. The line was added to surface that bytecode, and now it is counted and not named. The claim 'Python wrote itself' has no basis in what the code reads. -> For the running interpreter's cache_tag, compare the body: compile the published source to a temp cfile with `py_compile`, using the same source path, and compare the bytes after the 16-byte header. Otherwise compare `marshal.loads(pyc[16:])` with `compile(src, path, 'exec')` over co_code and co_consts recursively. Count only a matching body. Bytecode for another cache_tag, which this interpreter never runs, can stay counted. At minimum, word the count as 'header matches its source (body not verified)'. Add a case where a pyc with a matching header wraps a different body and is named.\nR4 (low) plugins/audit/reference/execute-task.md:116-117: This is a boundary the diff left behind. The orchestrator's reference still defines the helper's own case as '(`--case`, or a case the working tree's test file adds)', that is, --case as an alternative. This commit made `--case` a narrowing that is held to the absent-from-HEAD test (own_failures at stamp-verification.py:529-544; audit-executor.md:113-116 and PLUGIN-BUILD-GUIDE.md:3553-3556 now say so). The one reader that closes a task on the executor's redFirst word is told the old contract. P77.4's `files` does not include execute-task.md. -> Restate as: the task's own is a case present in the working tree's test file and absent from HEAD's, and `--case` narrows to named ids held to that same test. Add execute-task.md to the fix task's files.\nR5 (low) PLUGIN-BUILD-GUIDE.md:2660-2662: Prior finding 8 is only half closed. doctor.md now states the refresh limit as the hooks.json matcher, `Read|Grep|Bash|mcp__.*`. The guide's paragraph on the same row still says 'Edit, Write, Glob and agent calls do not refresh the stamp', the partial list that omits WebFetch, WebSearch, Skill, TodoWrite and the rest. The diff edited the next sentence and left this one. rh10 pins doctor.md only, so nothing sees the second copy. -> Replace the list with the matcher wording, or point at doctor.md. Extend rh10 to read the guide paragraph too, or delete the restatement so there is one copy.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - NODE_OPTIONS naming a file under the shared root survives the scrub unnamed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "99080b68",
+      "outcome": {
+        "technical": "deadline across build/runs/teardown with TEARDOWN_MARGIN; child_env naming; _body_matches for fresh bytecode; docs derived from the rules.",
+        "descriptive": "The red-first helper stays inside its time budget end to end, flags environment options that point back into the shared tree, and the doctor only trusts bytecode it can verify."
+      },
+      "startedAt": "2026-09-26T03:35:22Z",
+      "completedAt": "2026-09-26T04:28:33Z",
+      "verifiedBy": [
+        "test_stamp_verification sr42",
+        "test_stamp_verification sr43",
+        "test__doctor_setup pc7",
+        "test__doctor_trail rh11"
+      ]
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T18:00:40Z",
+  "testEvidence": {
+    "runId": "2026-09-26T04:35:26Z.98fdf1",
+    "status": "passed",
+    "at": "2026-09-26T04:35:26Z"
+  }
 }

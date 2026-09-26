@@ -584,6 +584,13 @@ def _cases(check):
           and M.tev_configured({}, {"testGate": ["x"]}) is True
           and M.tev_configured({"tests": {"gate": []}}, {"testGate": []}) is False
           and M.tev_configured({}, {}) is False)
+    check("tv2b ...and an ALL-BLANK gate is no gate, on the task and on the phase - "
+          "the runner never runs a blank entry, and a report that counted one "
+          "would show 'configured' over a task nothing can measure",
+          M.tev_configured({"tests": {"gate": ["  ", ""]}},
+                           {"testGate": ["  "]}) is False
+          and M.tev_configured({"tests": {"gate": ["  "]}},
+                               {"testGate": ["x"]}) is True)
 
     # `ran` / `treeMutated` / `coverage`: one row, one field moved at a time.
     def _row(**over):

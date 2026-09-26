@@ -33,6 +33,7 @@ import _harness                                    # sets sys.path for scripts/ 
 import _output                                     # noqa: E402  (PLUGIN_ROOT, for the schema read)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
+import _proc_group as _pg                          # noqa: E402  (the teardown `_tear_down` is)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
@@ -2437,21 +2438,21 @@ def _cases(check):
                   "group WOULD signal us, one given its own session would not. "
                   "Both ends asserted, because a predicate stuck at either "
                   "constant is half right and wholly useless: same=%r detached=%r"
-                  % (M.shares_our_group(plain.pid),
-                     M.shares_our_group(detached.pid)),
-                  M.shares_our_group(plain.pid) is True
-                  and M.shares_our_group(detached.pid) is False)
+                  % (_pg.shares_our_group(plain.pid),
+                     _pg.shares_our_group(detached.pid)),
+                  _pg.shares_our_group(plain.pid) is True
+                  and _pg.shares_our_group(detached.pid) is False)
             check("lc12 ...and an unanswerable pid is True, the SAFE direction: "
                   "not knowing whether we would hit ourselves must never read as "
                   "permission to aim at the group",
-                  M.shares_our_group(-1) is True)
+                  _pg.shares_our_group(-1) is True)
 
-            real = M.shares_our_group
+            real = _pg.shares_our_group
             try:
-                M.shares_our_group = lambda _pid: True
+                _pg.shares_our_group = lambda _pid: True
                 narrow = M._tear_down(detached)
             finally:
-                M.shares_our_group = real
+                _pg.shares_our_group = real
             check("lc13 ...and `_tear_down` READS it: told the child shares our "
                   "group, it takes the narrow kill and reports UNCONFIRMED, even "
                   "though this child had a session of its own. The use site, "
@@ -2509,22 +2510,22 @@ def _cases(check):
                   "it can answer, and True is 'do not aim at the group'. This is "
                   "the platform half of lc11, and it is only honest beside "
                   "lc13w - a constant nobody reads: same=%r detached=%r own=%r"
-                  % (M.shares_our_group(detached.pid),
-                     M.shares_our_group(ignored.pid),
-                     M.shares_our_group(os.getpid())),
-                  M.shares_our_group(detached.pid) is True
-                  and M.shares_our_group(ignored.pid) is True
-                  and M.shares_our_group(os.getpid()) is True
-                  and M.shares_our_group(-1) is True)
+                  % (_pg.shares_our_group(detached.pid),
+                     _pg.shares_our_group(ignored.pid),
+                     _pg.shares_our_group(os.getpid())),
+                  _pg.shares_our_group(detached.pid) is True
+                  and _pg.shares_our_group(ignored.pid) is True
+                  and _pg.shares_our_group(os.getpid()) is True
+                  and _pg.shares_our_group(-1) is True)
 
-            real = M.shares_our_group
+            real = _pg.shares_our_group
             try:
-                M.shares_our_group = lambda _pid: True
+                _pg.shares_our_group = lambda _pid: True
                 forced_true = M._tear_down(detached)
-                M.shares_our_group = lambda _pid: False
+                _pg.shares_our_group = lambda _pid: False
                 forced_false = M._tear_down(ignored)
             finally:
-                M.shares_our_group = real
+                _pg.shares_our_group = real
             _harness.attempt(detached.wait, 10)
             _harness.attempt(ignored.wait, 10)
             check("lc13w ...and `_tear_down` does NOT read it here: swung to "
@@ -4484,6 +4485,42 @@ def _no_verdict_cases(check):
           % ([ln for ln in p_lines if "graded by" in ln],),
           p_code == M.E_FAIL
           and not any("graded by" in ln for ln in p_lines))
+
+    # --- the breadth clause, end to end ---------------------------------------
+    # `coverage()` is pinned directly by br1-br3; these pin that `main` hands it
+    # `task_scope` at all, which is a keyword a merge can drop without any of
+    # those going red.
+    wide_suites = ["src/features/projects/s%02d.test.ts" % i for i in range(12)]
+    wide_out = os.path.join(root, "wide.txt")
+    with open(wide_out, "w") as fh:
+        fh.write("".join(" PASS  %s\n" % s for s in wide_suites)
+                 + "Tests:       12 passed, 12 total\n")
+    wide_mp = os.path.join(root, "wide-plan.json")
+    with open(wide_mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "wide": _step(sys.executable, say, wide_out, "0")}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["wide"], "tasks": [
+                            {"id": "P1.1", "title": "one suite's worth",
+                             "status": "in_progress",
+                             "files": ["src/features/projects/s00.ts",
+                                       wide_suites[0]]}]}]}, fh)
+
+    def _wide(*extra):
+        lines = []
+        M.main([wide_mp, "P1", "--project-dir", root, "--no-reuse"]
+               + list(extra), out=lines.append)
+        return "\n".join(lines)
+    at_task = _wide("--task", "P1.1")
+    at_phase = _wide()
+    check("br4 `main` under --task asks the breadth question: a run naming "
+          "suites the task neither declares nor is named after prints exactly "
+          "ONE `breadth:` clause: %r" % (at_task.count("breadth:"),),
+          at_task.count("breadth:") == 1)
+    check("br5 ...and the same run at phase scope prints none, so the clause is "
+          "the task scope's and not the run's: %r"
+          % (at_phase.count("breadth:"),),
+          at_phase.count("breadth:") == 0 and "wide" in at_phase)
 
 
 def _empty_and_retry_cases(check):

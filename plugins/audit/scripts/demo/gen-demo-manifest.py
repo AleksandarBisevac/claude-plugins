@@ -902,19 +902,25 @@ SCHEMA_EXEMPTIONS = {
         "of its own: every other timestamp this generator stamps is derived from "
         "the plan's own dates, and an attempt has no date in a fixture where no "
         "attempt happened.",
-    # `task.intentCheck` AND ITS THREE FIELDS, on `task.redFirst`'s own argument:
-    # no rendered surface reads it yet (not the report, not the panel, not
-    # /audit:status), and the fixture is what those surfaces are built from, so a
-    # block here would be a key nobody ever sees. REVISIT when a surface reads it
-    # - the report is the obvious first one, since `outcome` already renders
-    # beside it.
+    # `task.intentCheck` AND ITS FIELDS, on `task.redFirst`'s own argument: no
+    # rendered surface reads it (not the report, not the panel), and the fixture
+    # is what those surfaces are built from, so a block here would be a key
+    # nobody ever sees. `/audit:status` and sign-off read only its ABSENCE, and
+    # only on a phase whose sign-off is due - which this fixture has none of, so
+    # a block here would not reach them either. REVISIT when a rendered surface
+    # reads it - the report is the obvious first one, since `outcome` already
+    # renders beside it.
     "task.intentCheck":
         "whether the closed diff does what the task's description asked, per the "
         "reviewer's own per-task call. No rendered surface reads it yet, the same "
         "reason `task.redFirst` is exempt above; this fixture is what those "
         "surfaces are built from.",
+    "intentCheck.basis":
+        "why an intent question was deliberately not put, beside `not-asked`. "
+        "Unreachable for the reason the block itself is, and a fabricated reason "
+        "in a published fixture would be a quoted sentence nobody said.",
     "intentCheck.answer":
-        "one of the three words, and unreachable for the reason the block itself "
+        "one of the four words, and unreachable for the reason the block itself "
         "is: an answer inside an object the fixture does not carry has nowhere to "
         "sit. Coverage for the vocabulary is the schema enum.",
     "intentCheck.commit":
@@ -1103,6 +1109,21 @@ SCHEMA_EXEMPTIONS = {
         "derives the demo's ledger from THIS manifest's current ids, so a "
         "`movedFrom` here would advertise a join to rows the demo does not have - "
         "the fixture would contradict itself.",
+    # THREE KEYS THE VERBS FOR HAND EDITS WRITE, each on the argument its row
+    # states: no rendered surface reads any of them, so a value here is a key
+    # nobody sees. REVISIT when the report or the panel renders one.
+    "task.blockedReason":
+        "why a task is blocked, written by /audit:task block. The report and the "
+        "panel render the status and not the reason, so a reason here would be a "
+        "key no rendered surface shows.",
+    "task.notes":
+        "the append-only log /audit:task note writes. No rendered surface reads "
+        "it, and a fabricated note in a published fixture would be a dated "
+        "sentence nobody wrote.",
+    "outcome.noChange":
+        "a close with no commit because nothing needed to change, written by "
+        "/audit:task done --no-change. Read by /audit:doctor only, which the "
+        "fixture is not rendered through; every demo close carries a commit.",
 }
 
 
@@ -1723,10 +1744,10 @@ def _evidence_specs(manifest):
             tstatus = task.get("status")
             if tstatus not in ("done", "in_progress", "blocked"):
                 continue
-            entries = ((task.get("tests") or {}).get("gate")
-                       or phase.get("testGate") or [])
-            resolved = [(e, build.get(e, e)) for e in entries
-                        if isinstance(e, str) and e.strip()]
+            # WHICH GATE is `_manifest_io.gate_entries`' answer, the one the
+            # runner the demo imitates resolves by.
+            entries, _source = _mio.gate_entries(phase, task)
+            resolved = [(e, build.get(e, e)) for e in entries]
             if not resolved:
                 continue                    # the ungated task: nothing to record
             owns = list(task.get("files") or [])
@@ -1765,13 +1786,16 @@ def _evidence_specs(manifest):
                                             "%s-a%d" % (ids["taskId"], attempt),
                                             red=resolved[0][0],
                                             overlap=overlap)))
-        if pstatus == "done" and phase.get("testGate") and phase.get("mergedAt"):
+        # The phase's own declaration through the one normaliser: an all-blank
+        # `testGate` runs nothing, so it earns no sign-off run.
+        phase_gate = _mio.declared_gate_entries(phase.get("testGate"))
+        if pstatus == "done" and phase_gate and phase.get("mergedAt"):
             owns = sorted(set(f for t in (phase.get("tasks") or [])
                               for f in (t.get("files") or [])))
             out.append(("phase", {"phaseId": phase.get("id")},
                         _at(phase.get("mergedAt"), -1), None,
                         _run_result([(e, build.get(e, e))
-                                     for e in phase["testGate"]],
+                                     for e in phase_gate],
                                     owns, phase.get("baseRef"),
                                     "%s-signoff" % (phase.get("id"),),
                                     overlap=owns)))

@@ -1,7 +1,7 @@
 {
   "id": "P71",
   "title": "A task commit carries what the index says and the verdict it was measured under",
-  "status": "pending",
+  "status": "done",
   "description": "",
   "desiredOutcome": "commit-task-work commits both halves of a staged rename or deletion, stages a tracked file under an ignored directory and leaves the index as found on any refusal, names an untracked ignored file instead of passing silently, and refuses a task whose newest gate verdict is not passed on the work being committed unless the operator overrides it on the record",
   "testGate": [
@@ -15,26 +15,173 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "036e98e87346dfb55f49ffe233b7dfab1e8a5bbc",
+  "branch": "audit/p71-a-task-commit-carries-what-the",
+  "mergedAt": "2026-09-26T04:50:02Z",
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P71-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/commit-task-work.py",
+        "issue": "verdict_binding hands the raw task.files list to _tree_stamp.scope_digest, which hashes each entry with _journal_io.file_hash(project/entry). An entry with a ':line-range' suffix, or a directory entry, hashes as None ('missing') at gate time AND at commit time, so field_state answers AGREES whatever happened to the file. Probed: owns=['src/a.py:10-20'] and owns=['src'], changing src/a.py -> 'agree",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R2",
+        "severity": "med",
+        "file": "commit-task-work.py",
+        "issue": "--record takes the scopeDigest inside run_gate, then write_pointer writes task.testEvidence into the phase file (the manifest itself in the single-file layout) and write_evidence_since also writes the manifest. A task declaring its own manifest/phase file is always MOVED and refused; re-running the gate rewrites the pointer again, so --override-verdict is the only way out.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R3",
+        "severity": "med",
+        "file": "commit-task-work.py",
+        "issue": "The empty-gate check returns no-gate before the ledger is read: a task with a newest FAILED row whose gates are later emptied commits without an override, and the NO_GATE sentence says the recorder 'writes no verdict for it' while a red one sits in the ledger. Separately the row's gate is never compared with the gate declared now: a passed row measured under an older/narrower tests.gate still bind",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R4",
+        "severity": "med",
+        "file": "plugins/audit/reference/execute-task.md",
+        "issue": "4c's exit-1 remedy for a foreign staged path is 'declare them with /audit:task scope'. Widening task.files changes the set scope_digest hashes, so the next commit is refused as MOVED with 'the declared files have changed since it was measured' - untrue when only the list changed. The doc does not say a scope change after the gate forces a re-measure.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R5",
+        "severity": "med",
+        "file": "plugins/audit/tests/test_commit_task_work.py",
+        "issue": "Branches with no case: _in_head's unborn-HEAD arm; index_snapshot's write-tree refusal (unmerged index); INDEX_NOT_RESTORED; override_row failing after the commit (exit 1 with the SHA); the unreadable-ledger refusal; a reused row whose source is missing; the UNANSWERABLE and NOT_DECLARED arms; '--override-verdict was given and not needed'.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R6",
+        "severity": "low",
+        "file": "CHANGELOG.md",
+        "issue": "'which gate measures a task is now one function, _manifest_io.gate_entries()' is untrue: copies remain in _panel_composition._gate_source (its docstring's reason - the rule lives in an L7 entry point it may not import - is now stale), _report_html.py:548 (counts all-blank entries as a gate), gen-demo-manifest.py:1727 (no fallback from an all-blank task gate), _manifest_phases._gate_entries.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+        "issue": "--no-renames in the shared foreign_staged also changes what commit-audit-state and commit-manifest-index refuse (a staged rename from outside their allow-list into it now names and refuses its source). A fix, but the CHANGELOG credits commit-task-work only and no case pins it for the other two.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R8",
+        "severity": "low",
+        "file": "commit-task-work.py",
+        "issue": "Docs say the index is restored 'exactly as it was found', but write-tree drops intent-to-add entries (' A ita' becomes '?? ita') and refuses an index with unmerged entries, so a conflict resolved in the tree but not added - which plain git add used to resolve - is now refused. Neither refusal is in the documented exit-1 causes.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R9",
+        "severity": "low",
+        "file": "commit-task-work.py",
+        "issue": "'ignored' also takes the record paths (phase file, journal, evidence) when git ignores them, and the refusal advises 'drop it from the task's files', wrong for a record path. A declared file untracked with git rm --cached and then ignored also gets '-f is yours to decide' when the operator wants the deletion committed.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-R10",
+        "severity": "low",
+        "file": "commit-task-work.py",
+        "issue": "One unreadable line in any ledger file refuses every task commit in the project, and names no repair.",
+        "resolution": "fix task P71.2-zso"
+      },
+      {
+        "id": "P71-S1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/commit-task-work.py",
+        "issue": "NO_GATE says 'neither its own `tests.gate` nor its phase's `testGate` declares an entry'. P71.3 now prints that sentence for a task whose gate was CLEARED (`gateBasis: cleared`). There `_mio.gate_entries` returns ([], 'task') while the phase's testGate still has entries, so the printed claim is false. ctw70's fixture phase has testGate ['test'] (test__invariants.py:82) and the case asserts NO_GATE",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-task-work.py",
+        "issue": "First-review R3's first half (a red verdict, then the gate emptied) is only partly closed. The refusal fires only while no new record exists. Step 4c says 'record the gate, then commit'. Under --record an emptied or cleared gate writes an `empty-gate` row (P70), and P71.3 accepts that row as the newest verdict. So in the prescribed flow the red is always retired by one --record. The refusal still ",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+        "issue": "A declared entry or a record path that is a DIRECTORY gitignored as a whole, while it holds tracked files, is classified ON_DISK. `git check-ignore` does not report such a directory: probed with the patterns `gen`, `/gen`, `gen/**` and `gen/*`, exit 1 every time. So it is staged with `git add -- gen`, which for `gen` and `/gen` exits 1 ('paths are ignored ... Use -f'). The commit is refused (the i",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+        "issue": "The DELETED_ON_DISK branch commits the whole index with a bare `git commit`. It checks the index a third time and then commits in a separate git process. Anything a sibling session stages in between rides into the commit, even though nothing on the allow-list names it. Every other branch uses a pathspec commit, which cannot carry such a path. This repo shares its working tree with sibling tasks, s",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+        "issue": "_REMOVE hardcodes a 40-zero object id. In a SHA-256 repository `update-index -z --index-info` dies with 'fatal: malformed index info 0 000...0<TAB>a.txt' (probed: `git init --object-format=sha256`, snapshot, `git add`, restore). So every refusal after staging leaves the staging in place. The output does report INDEX_NOT_RESTORED, so it is not silent. Separately, INDEX_RESTORED says 'exactly as it ",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-task-work.py",
+        "issue": "The check that the row was measured under the current gate compares step NAMES only. (a) A `meta.buildCommands` edit that changes what an entry runs, made after a green, still binds, even though reuse_identity treats the resolved commands as part of what a gate is. (b) On a row with `stepsDropped` (a count, _evidence_io.py:625) it compares `now[:len(recorded)]` and ignores the count. So a gate wid",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "The merge resolution passes both new keywords. `recorded=` is pinned end to end: ctw53/ctw53b record through RTG.main and commit. `task_scope=args.task is not None` is not pinned. The only task_scope cases call coverage() directly (test_run_test_gate.py:4389-4408), so dropping the keyword from the merged call, or run_gate not forwarding it, turns no case red. The gap came from P70 and the merge ke",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S8",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_commit_task_work.py",
+        "issue": "Some changed sentences are not true of the code. ctw50's label says 'the recorder writes no row for an empty gate', which has been false since P70 (ce1: --record writes an `empty-gate` row). PLUGIN-BUILD-GUIDE attributes 'directories expanded to the files git lists' to `declared_scope()`, which only strips suffixes; the expansion is scope_digest/_files_under. Its binding paragraph also still says ",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_evidence_view.py",
+        "issue": "R6 is closed at task scope, but the same class lives on at phase scope. `bool(holder.get('testGate'))` and `phase.get('testGate')` count an all-blank testGate as a configured gate, and the demo feeds blank entries to _run_result. `_mio.declared_gate_entries` is the one normaliser, and neither reader uses it.",
+        "resolution": "fix task P71.4-zso"
+      },
+      {
+        "id": "P71-S10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_tree_stamp.py",
+        "issue": "Take a task whose every declared entry is a directory with no file git lists under it (empty, or holding only ignored files), while a record path is dirty so the commit reaches the verdict. scope_digest returns None on both sides, but scope_list_digest is not None, so field_state answers UNANSWERABLE on every re-record. --override-verdict is the only way on.",
+        "resolution": "fix task P71.4-zso"
+      }
+    ],
+    "outcome": "matches after the fixes; two review passes, every finding fixed in P71.2-P71.4; P71.1 was committed by hand over a red gate verdict that came from an open bug elsewhere in the plan, which this phase now makes refusable"
   },
-  "summary": null,
+  "summary": "A task commit carries what the index says and the verdict it was measured under. commit-task-work, commit-audit-state and commit-manifest-index share one staging sequence in _scoped_commit: a staged rename or deletion commits both halves, a tracked file or directory under an ignore rule is staged without -f, an ignored untracked path is named, every refusal after staging puts the allowed paths' index entries back as they were found, every commit uses a pathspec, and the one commit made from an index is built in a temporary index and still runs the project's hooks. The commit is bound to the task's newest gate verdict: passed and current for a declared scope normalised once on both sides (line ranges stripped, directories expanded, the plugin's own record paths excluded), measured under the gate declared now (a digest of the resolved gate), a red retired only by a green or a journaled --override-verdict, and a cleared task bound on its empty-gate record. The task-or-phase gate rule has one home, _manifest_io.gate_entries, read by every surface. Reviewed twice, every finding fixed; merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach. P71.1 itself was committed by hand while its recorded gate was red from an unrelated open bug - the case this phase now refuses without an override.",
   "tasks": [
     {
       "id": "P71.1",
       "title": "commit-task-work commits a staged rename's source, stages tracked files under ignored directories, and is bound to the task's newest verdict",
-      "status": "pending",
+      "status": "done",
       "description": "Field report on 3.0.1, reproduced at HEAD: (1) tracked() asks the index only; after git mv the old path is only in HEAD, so the red-first skip drops it and the commit records a copy. Tracked = index OR HEAD; a HEAD-only path stays out of the git add argv (git add -- old fails 128) and in the git commit -- pathspec (records the rename). Cases for a staged R and a staged D. (2) git add -- <tracked file under an ignored dir> exits 1 AND stages it (git 2.50.1); the script refuses and leaves it staged, breaking 'a refusal leaves the index as found'. Split by ls-files: tracked -> git add -u --, untracked -> git add --; the ignore refusal survives only for untracked paths, named 'ignored; -f is yours to decide'; any failure after staging resets the allowed paths; an untracked declared file under an ignored dir is named, not 'nothing uncommitted'. Never add -f. (3) the commit ignores task.testEvidence: refuse unless the task's newest evidence row is passed and current for the staged work (the declared-work digest run-test-gate records matches what is staged); an explicit override flag writes a journal row. No runtime related-tests step.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
         "plugins/audit/tests/test_commit_task_work.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_scoped_commit.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -59,16 +206,223 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "405e64e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Paths only in HEAD stay in the commit pathspec; add -u for index entries with the index restored on failure; the newest evidence row must be passed with a matching declared-work digest, --override-verdict journals the exception.",
+        "descriptive": "A task commit records renames and deletions, stages tracked files under ignored directories, and refuses work whose newest gate verdict is not passed."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-25T14:32:08Z",
+      "completedAt": "2026-09-25T15:37:23Z",
+      "verifiedBy": [
+        "test_commit_task_work ctw30",
+        "test_commit_task_work ctw33",
+        "test_commit_task_work ctw39"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-25T15:24:29Z.93eef2",
+        "status": "failed",
+        "at": "2026-09-25T15:24:29Z"
+      }
+    },
+    {
+      "id": "P71.2-zso",
+      "title": "Sign-off review findings: the verdict digest covers suffixed and directory entries and skips record paths, an emptied or changed gate is still graded, and all three scoped commits stage and restore alike",
+      "status": "done",
+      "description": "Findings of the phase review, every one to be fixed (or answered with a measured reason) in this task:\nR1 (high) plugins/audit/scripts/governance/commit-task-work.py (verdict_binding) with plugins/audit/scripts/governance/_tree_stamp.py (scope_digest): verdict_binding hands the raw task.files list to _tree_stamp.scope_digest, which hashes each entry with _journal_io.file_hash(project/entry). An entry with a ':line-range' suffix, or a directory entry, hashes as None ('missing') at gate time AND at commit time, so field_state answers AGREES whatever happened to the file. Probed: owns=['src/a.py:10-20'] and owns=['src'], changing src/a.py -> 'agrees', basis '1 declared file(s); 0 read, 1 missing'. The command then prints that the digest matches, which is false. -> Normalise the scope ONCE in _tree_stamp and use it on both sides (run-test-gate's tested_state and commit-task-work): strip the line suffix (_vocab._strip_line_suffix), expand a directory into the files git lists under it; or refuse UNANSWERABLE when an entry that exists on disk hashed None. Cases for a suffixed entry and a directory entry edited after a green gate, red first.\nR2 (med) commit-task-work.py verdict_binding; run-test-gate.py _record_run -> _evidence_io.write_pointer: --record takes the scopeDigest inside run_gate, then write_pointer writes task.testEvidence into the phase file (the manifest itself in the single-file layout) and write_evidence_since also writes the manifest. A task declaring its own manifest/phase file is always MOVED and refused; re-running the gate rewrites the pointer again, so --override-verdict is the only way out. -> Leave the plugin's own record paths (the phase file / manifest, evidence and journal dirs) out of the scope digest on both sides, as reuse_identity already does for the content identity; or digest that file with the pointer block removed. Case: a single-file-layout task that declares audit-plan.json.\nR3 (med) commit-task-work.py verdict_binding (the 'if not entries' early return): The empty-gate check returns no-gate before the ledger is read: a task with a newest FAILED row whose gates are later emptied commits without an override, and the NO_GATE sentence says the recorder 'writes no verdict for it' while a red one sits in the ledger. Separately the row's gate is never compared with the gate declared now: a passed row measured under an older/narrower tests.gate still binds after the gate is widened. -> Read the task's rows before deciding no-gate; a newest row is graded (or at least named). Compare the row's gate (step names / declared_gate over current entries) with gate_entries now and refuse on mismatch. Cases: red-then-emptied, gate-changed-after-green.\nR4 (med) plugins/audit/reference/execute-task.md step 4c; commit-task-work.py: 4c's exit-1 remedy for a foreign staged path is 'declare them with /audit:task scope'. Widening task.files changes the set scope_digest hashes, so the next commit is refused as MOVED with 'the declared files have changed since it was measured' - untrue when only the list changed. The doc does not say a scope change after the gate forces a re-measure. -> Tell a list change from a content change (record the declared scope in testedState or derive it from scopeBasis) and word each refusal; add to 4c that widening scope after the gate means recording the gate again.\nR5 (med) plugins/audit/tests/test_commit_task_work.py: Branches with no case: _in_head's unborn-HEAD arm; index_snapshot's write-tree refusal (unmerged index); INDEX_NOT_RESTORED; override_row failing after the commit (exit 1 with the SHA); the unreadable-ledger refusal; a reused row whose source is missing; the UNANSWERABLE and NOT_DECLARED arms; '--override-verdict was given and not needed'. -> One case per branch, each fixture telling its branch apart from its neighbours; prove each red by mutating the branch.\nR6 (low) CHANGELOG.md: 'which gate measures a task is now one function, _manifest_io.gate_entries()' is untrue: copies remain in _panel_composition._gate_source (its docstring's reason - the rule lives in an L7 entry point it may not import - is now stale), _report_html.py:548 (counts all-blank entries as a gate), gen-demo-manifest.py:1727 (no fallback from an all-blank task gate), _manifest_phases._gate_entries. -> Move those copies onto _manifest_io.gate_entries (fix across all surfaces) and keep the CHANGELOG sentence true.\nR7 (low) plugins/audit/scripts/governance/_scoped_commit.py foreign_staged; CHANGELOG.md: --no-renames in the shared foreign_staged also changes what commit-audit-state and commit-manifest-index refuse (a staged rename from outside their allow-list into it now names and refuses its source). A fix, but the CHANGELOG credits commit-task-work only and no case pins it for the other two. -> CHANGELOG line for the other two; one case each in test_commit_audit_state and test_commit_manifest_index.\nR8 (low) commit-task-work.py index_snapshot/restore_index; PLUGIN-BUILD-GUIDE.md; execute-task.md: Docs say the index is restored 'exactly as it was found', but write-tree drops intent-to-add entries (' A ita' becomes '?? ita') and refuses an index with unmerged entries, so a conflict resolved in the tree but not added - which plain git add used to resolve - is now refused. Neither refusal is in the documented exit-1 causes. -> Snapshot with ls-files -s + update-index --index-info so flags survive (or qualify the sentence); list the unmerged-index refusal under exit 1.\nR9 (low) commit-task-work.py stage_targets / ignored_refusal: 'ignored' also takes the record paths (phase file, journal, evidence) when git ignores them, and the refusal advises 'drop it from the task's files', wrong for a record path. A declared file untracked with git rm --cached and then ignored also gets '-f is yours to decide' when the operator wants the deletion committed. -> Word the record-path refusal separately; recognise in-HEAD + absent-from-index + ignored as a deletion to commit.\nR10 (low) commit-task-work.py (unreadable-ledger refusal): One unreadable line in any ledger file refuses every task commit in the project, and names no repair. -> Name the file holding the torn line and the command that shows it; or narrow to lines that could carry this task's id.\npre-existing 1 (med) plugins/audit/scripts/governance/commit-audit-state.py; commit-manifest-index.py: Both still stage with one git add -- allowed and do not restore the index on any failure after staging; commit-audit-state's git commit has no pathspec. The defects fixed in commit-task-work, open in the other two scoped commits. -> Move index_snapshot, restore_index and the per-kind staging into _scoped_commit, have all three use them, restore cases in each suite.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: repro that FAILS on current code - a task declaring src/a.py:10-20 commits after src/a.py changed since its green gate"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "05cd735",
+      "outcome": {
+        "technical": "_tree_stamp.declared_scope normalises suffixes and directories, record paths excluded, scopeListDigest recorded; _scoped_commit.stage_and_commit shared with pathspec commits and ls-files/update-index restore; one gate normaliser.",
+        "descriptive": "A task commit can no longer pass on work that changed since its gate, and the three scoped commits stage and restore the index the same way."
+      },
+      "startedAt": "2026-09-25T16:35:16Z",
+      "completedAt": "2026-09-25T17:53:48Z",
+      "verifiedBy": [
+        "test_commit_task_work ctw51",
+        "test_commit_task_work ctw53b",
+        "test_commit_task_work ctw56",
+        "test__scoped_commit sc18",
+        "test__tree_stamp tss1",
+        "test_commit_audit_state cas31"
+      ]
+    },
+    {
+      "id": "P71.3-zso",
+      "title": "A cleared task commits on its recorded empty-gate row, and the cleared rule is pinned where it now lives",
+      "status": "done",
+      "description": "Merging P70 into this branch put two rules side by side. P70 records an EMPTY gate (a task gate cleared on purpose, or an empty phase gate) as an empty-gate row and pointer under --record, so a done cleared task does not trip no-test-evidence. This branch's commit binding reads the ledger before a no-gate answer and refuses when the newest row is not passed - so a cleared task whose newest row is exactly that empty-gate record is refused, and the only way on is --override-verdict. The empty-gate row IS the recorded answer for a gate that is empty now: accept it there (and only there - an empty-gate row under a gate that has entries now is a gate changed after the measurement, which the gate-mismatch refusal already names). Also pin _manifest_io.gate_cleared / gate_entries' cleared arm with its own cases, since the merge moved it there.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: repro that FAILS on current code - a task whose gate was cleared, with its empty-gate row recorded, is refused by the commit binding"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "89f5e24d",
+      "outcome": {
+        "technical": "verdict_binding accepts an empty-gate row while the gate is empty and refuses it as a changed gate otherwise.",
+        "descriptive": "A task whose gate was cleared on purpose can be committed on the record of that empty gate."
+      },
+      "startedAt": "2026-09-25T17:57:40Z",
+      "completedAt": "2026-09-25T21:57:00Z",
+      "verifiedBy": [
+        "test_commit_task_work ctw70",
+        "test_commit_task_work ctw71",
+        "test__manifest_io gc1"
+      ]
+    },
+    {
+      "id": "P71.4-zso",
+      "title": "Second-review findings: the cleared-gate sentence is true, a recorded red is retired only by a green or an override, and the index-built commit carries exactly the allow-list",
+      "status": "done",
+      "description": "Second phase review findings, all to be fixed. Orchestrator decisions: (R2) option (b) - keep the protection: an empty-gate row binds only when no red was recorded under entries after the last green; retiring a red takes a green or an override with its reason. (R4) the DELETED_ON_DISK commit is built in a temporary index and committed with commit-tree/update-ref against the HEAD it read, so it carries exactly the allow-list. (R5) the zero oid comes from the repository's object format, and INDEX_RESTORED says only what it restores. (R6) the row carries a digest of the resolved gate, and stepsDropped is counted. R1, R3, R7-R10 as the review says.\nR1 (med) plugins/audit/scripts/governance/commit-task-work.py:232-234,541-546; plugins/audit/tests/test_commit_task_work.py:925-935 (ctw70): NO_GATE says 'neither its own `tests.gate` nor its phase's `testGate` declares an entry'. P71.3 now prints that sentence for a task whose gate was CLEARED (`gateBasis: cleared`). There `_mio.gate_entries` returns ([], 'task') while the phase's testGate still has entries, so the printed claim is false. ctw70's fixture phase has testGate ['test'] (test__invariants.py:82) and the case asserts NO_GATE is in the output, so the suite locks the false sentence in place. -> Branch on `_mio.gate_cleared(task.get('tests'))`. The cleared case gets its own sentence ('its task gate was cleared on purpose (`gateBasis: cleared`); the phase's `testGate` grades it at sign-off'). NO_GATE stays for the both-empty case (ctw50). Change ctw70 to assert the cleared sentence and that NO_GATE's 'nor its phase's' clause is absent.\nR2 (low) plugins/audit/scripts/governance/commit-task-work.py:528-540; plugins/audit/reference/execute-task.md:427-431; CHANGELOG.md (### Changed, first bullet): First-review R3's first half (a red verdict, then the gate emptied) is only partly closed. The refusal fires only while no new record exists. Step 4c says 'record the gate, then commit'. Under --record an emptied or cleared gate writes an `empty-gate` row (P70), and P71.3 accepts that row as the newest verdict. So in the prescribed flow the red is always retired by one --record. The refusal still says 'emptying a gate does not retire the red it last answered. Record a green on a gate, or commit over it with a reason'. That sentence leaves out the one step that actually gets past it, and it describes a protection the orchestrated flow never keeps. -> The operator has to choose. (a) Keep P71.3's rule and change the refusal and the 4c/CHANGELOG sentences to name `run-test-gate.py ... --task <id> --record` as the way on, dropping 'does not retire'. Or (b) keep the protection: an `empty-gate` row binds only when no red was recorded under entries after the last green. Either way, add a case for red, then emptied, then --record, then commit.\nR3 (low) plugins/audit/scripts/governance/_scoped_commit.py:243-291 (classify), 300-308 (stage): A declared entry or a record path that is a DIRECTORY gitignored as a whole, while it holds tracked files, is classified ON_DISK. `git check-ignore` does not report such a directory: probed with the patterns `gen`, `/gen`, `gen/**` and `gen/*`, exit 1 every time. So it is staged with `git add -- gen`, which for `gen` and `/gen` exits 1 ('paths are ignored ... Use -f'). The commit is refused (the index is restored) with git's raw -f hint. The desired outcome 'stages a tracked file under an ignored directory' holds for a FILE entry and not for the directory form. Probe: a scratch repo, gen/a.txt tracked, .gitignore `gen`, a.txt edited, stage_and_commit(['gen']) returned refused. -> In classify, a directory on disk that is not an exact entry but that `covering(index, ...)` shows holding index entries should stage its tracked members with `git add -u --`. Untracked members stay subject to the ignore rule, never -f. Add a case per suite with a declared ignored directory holding a tracked edited file.\nR4 (low) plugins/audit/scripts/governance/_scoped_commit.py:461-468: The DELETED_ON_DISK branch commits the whole index with a bare `git commit`. It checks the index a third time and then commits in a separate git process. Anything a sibling session stages in between rides into the commit, even though nothing on the allow-list names it. Every other branch uses a pathspec commit, which cannot carry such a path. This repo shares its working tree with sibling tasks, so the window is real, even if small. -> Build this one commit in a temporary index: GIT_INDEX_FILE=<tmp>; `read-tree HEAD`; feed the real index's entries under `paths` through `update-index --index-info`; `--force-remove` the DELETED_ON_DISK paths; `write-tree`; `commit-tree`; `update-ref HEAD <new> <old>`. The result carries exactly the allow-list, and update-ref refuses if HEAD moved.\nR5 (low) plugins/audit/scripts/governance/_scoped_commit.py:331-334 (_REMOVE, INDEX_RESTORED), 366-391 (restore): _REMOVE hardcodes a 40-zero object id. In a SHA-256 repository `update-index -z --index-info` dies with 'fatal: malformed index info 0 000...0<TAB>a.txt' (probed: `git init --object-format=sha256`, snapshot, `git add`, restore). So every refusal after staging leaves the staging in place. The output does report INDEX_NOT_RESTORED, so it is not silent. Separately, INDEX_RESTORED says 'exactly as it was found', but --index-info writes entries without skip-worktree/assume-unchanged bits or stat data. -> Take the zero-oid length from `git rev-parse --show-object-format`, or remove entries with `update-index -z --force-remove --stdin`. Add a restore case in a sha256 repo. Either keep the skip-worktree bit (`ls-files -t`/`-v`) or narrow INDEX_RESTORED to 'the allowed paths' entries, stages and intent-to-add flags'.\nR6 (low) plugins/audit/scripts/governance/commit-task-work.py:451-474 (_gate_mismatch): The check that the row was measured under the current gate compares step NAMES only. (a) A `meta.buildCommands` edit that changes what an entry runs, made after a green, still binds, even though reuse_identity treats the resolved commands as part of what a gate is. (b) On a row with `stepsDropped` (a count, _evidence_io.py:625) it compares `now[:len(recorded)]` and ignores the count. So a gate widened past the kept steps still binds. -> For (b), also require len(recorded) + stepsDropped == len(entries). For (a), record a digest of `declared_gate(entries, build)` on the row and compare it, or state in 4c that a buildCommands change is not detected. Add a case for each.\nR7 (low) plugins/audit/scripts/governance/run-test-gate.py:3631-3634; plugins/audit/tests/test_run_test_gate.py: The merge resolution passes both new keywords. `recorded=` is pinned end to end: ctw53/ctw53b record through RTG.main and commit. `task_scope=args.task is not None` is not pinned. The only task_scope cases call coverage() directly (test_run_test_gate.py:4389-4408), so dropping the keyword from the merged call, or run_gate not forwarding it, turns no case red. The gap came from P70 and the merge kept it. -> Add a case that runs RTG.main with --task over a run naming suites the task neither declares nor is named after, and asserts exactly one `breadth:` clause. Assert none for the same run without --task. Prove it red by deleting the keyword at 3634.\nR8 (low) plugins/audit/tests/test_commit_task_work.py:904-908 (ctw50); PLUGIN-BUILD-GUIDE.md:3150-3160: Some changed sentences are not true of the code. ctw50's label says 'the recorder writes no row for an empty gate', which has been false since P70 (ce1: --record writes an `empty-gate` row). PLUGIN-BUILD-GUIDE attributes 'directories expanded to the files git lists' to `declared_scope()`, which only strips suffixes; the expansion is scope_digest/_files_under. Its binding paragraph also still says only 'both empty ... unless its newest recorded verdict is red', with no word of the cleared gate or of the empty-gate row P71.3 accepts and refuses. -> Reword ctw50 (no row is recorded in THIS fixture). Say that scope_digest expands directories. Add the cleared and empty-gate rule to the guide's binding paragraph in the same words as execute-task.md 4c.\nR9 (low) plugins/audit/scripts/report/_evidence_view.py:138-139; plugins/audit/scripts/demo/gen-demo-manifest.py:1768-1774: R6 is closed at task scope, but the same class lives on at phase scope. `bool(holder.get('testGate'))` and `phase.get('testGate')` count an all-blank testGate as a configured gate, and the demo feeds blank entries to _run_result. `_mio.declared_gate_entries` is the one normaliser, and neither reader uses it. -> Read both through `_mio.declared_gate_entries(phase.get('testGate'))`, with one case each for an all-blank phase gate.\nR10 (low) plugins/audit/scripts/governance/_tree_stamp.py:196-258 (scope_digest); commit-task-work.py:622-628: Take a task whose every declared entry is a directory with no file git lists under it (empty, or holding only ignored files), while a record path is dirty so the commit reaches the verdict. scope_digest returns None on both sides, but scope_list_digest is not None, so field_state answers UNANSWERABLE on every re-record. --override-verdict is the only way on. -> Hash an empty expansion as a defined entry (e.g. [dir, []]), so the digest exists and moves when a file appears. Or answer NOT_DECLARED with a basis naming the empty directory. Add a case.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: repro that FAILS on current code - a cleared task commits with a sentence saying its phase declares no gate entry"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d89961e3",
+      "outcome": {
+        "technical": "_red_after_green; TRACKED_DIR staging; commit_from_index via GIT_INDEX_FILE git commit with HEAD checks; object-format zero oid; gate digest.",
+        "descriptive": "A red gate result can only be cleared by a green one or an explicit override, and every commit path runs the project's own git hooks."
+      },
+      "startedAt": "2026-09-25T22:14:10Z",
+      "completedAt": "2026-09-26T04:42:25Z",
+      "verifiedBy": [
+        "test_commit_task_work ctw73",
+        "test_commit_task_work ctw80",
+        "test_commit_task_work ctw81",
+        "test__scoped_commit sc24",
+        "test__scoped_commit sc23"
+      ]
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T14:32:08Z",
+  "testEvidence": {
+    "runId": "2026-09-26T04:49:35Z.4d0f83",
+    "status": "passed",
+    "at": "2026-09-26T04:49:35Z"
+  }
 }

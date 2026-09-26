@@ -124,6 +124,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
+import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading of a
@@ -201,9 +202,6 @@ CANCELLED = "cancelled"
 UNNAMED_SIGNAL = "an unnamed interrupt"
 
 DEFAULT_TIMEOUT_SECONDS = 3600
-# How long a torn-down group is given to die politely before SIGKILL. Small on
-# purpose: this runs after a step has already overrun its whole budget.
-GRACE_SECONDS = 5
 
 # How many characters of a sample a basis line may spend before `_output.some_of`
 # stops and says how many it did not show. In CHARACTERS rather than elements,
@@ -2054,11 +2052,6 @@ def _resolved(entries, build, preamble=None):
             for e, command in declared_gate(entries, build)]
 
 
-def gate_cleared(tests):
-    """Whether a task's `tests` block records its gate as cleared on purpose."""
-    return isinstance(tests, dict) and tests.get("gateBasis") == "cleared"
-
-
 def gate_of(manifest, phase_id, task_id=None):
     """`(commands, source, error)` -- the gate to run, and WHOSE it is.
 
@@ -2090,18 +2083,18 @@ def gate_of(manifest, phase_id, task_id=None):
     # Read beside `buildCommands` because it is the same kind of declaration: what a
     # gate entry becomes before a shell sees it.
     preamble = (manifest.get("meta") or {}).get("nodePreamble")
+    task = None
     if task_id is not None:
         tasks = [t for t in (phases[0].get("tasks") or [])
                  if isinstance(t, dict) and t.get("id") == task_id]
         if not tasks:
             return None, None, "no task %r in phase %r" % (task_id, phase_id)
-        tests = tasks[0].get("tests")
-        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
-        resolved = _resolved(entries, build, preamble)
-        if resolved or gate_cleared(tests):
-            return resolved, "task", None
-    return (_resolved(phases[0].get("testGate") or [], build, preamble),
-            "phase", None)
+        task = tasks[0]
+    # WHICH DECLARATION is `_manifest_io.gate_entries`' answer, shared with
+    # `commit-task-work`, which binds a task commit to this gate's verdict and
+    # has to agree about whose gate that is.
+    entries, source = _mio.gate_entries(phases[0], task)
+    return _resolved(entries, build, preamble), source, None
 
 
 # --- a verdict already measured on these bytes --------------------------------
@@ -2369,108 +2362,20 @@ def render_reuse(res, out=print):
 
 
 def _spawn_kwargs():
-    """Popen kwargs that put the child in a group we can tear down whole.
-
-    POSIX gets `start_new_session` (setsid), so the shell becomes a process-group
-    LEADER and `killpg` reaches everything it started. Windows gets its own
-    process group for the same purpose. A platform offering neither is left alone
-    rather than guessed at - `_tear_down` then reports that it could not confirm.
-
-    THE TRADE IS DELIBERATE AND IS THE REASON THE HANDLER IN `main` EXISTS.
-    Detaching from the controlling terminal means a Ctrl-C no longer reaches the
-    children BY ACCIDENT; we give that up to gain a teardown that is the same on
-    all three paths - timeout, SIGINT and SIGTERM - instead of one that happens to
-    work on one of them.
-    """
+    """Popen kwargs for one gate step: a shell, its output captured, and the
+    process group `_proc_group.group_kwargs` gives, so the step's whole tree can
+    be torn down on every path."""
     kwargs = {"shell": True, "stdout": subprocess.PIPE,
               "stderr": subprocess.STDOUT}
-    if hasattr(os, "setsid"):
-        kwargs["start_new_session"] = True
-    elif hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    kwargs.update(_proc_group.group_kwargs())
     return kwargs
 
 
-def shares_our_group(pid):
-    """Whether `pid` sits in THIS process's group - i.e. whether signalling that
-    group would signal us.
-
-    A NAMED PREDICATE RATHER THAN AN INLINE COMPARISON, because the branch it
-    guards cannot be covered by observing the alternative: a case that removed
-    the guard and called `_tear_down` would signal its own runner and die, which
-    reads as infrastructure trouble rather than as a caught defect. The decision
-    is testable here, and `_tear_down`'s use of it is reached by swapping this
-    name - the same seam `test__journal_io` uses on `_git_anchor_finding`.
-
-    True on any error, which is the safe direction: unable to tell whether we
-    would hit ourselves means do not aim at the group.
-    """
-    try:
-        return os.getpgid(pid) == os.getpgid(0)
-    except Exception:
-        return True
-
-
-def _tear_down(proc):
-    """Kill the process GROUP. True when that could be confirmed, False when not.
-
-    THE FAULT THIS EXISTS FOR: `subprocess.run(timeout=)` kills the DIRECT child,
-    and under `shell=True` the direct child is the shell. `npx` -> `node` -> its
-    workers outlive it, keep running, and keep WRITING - into the very tree this
-    script is about to describe with `git status --porcelain`. A survivor does not
-    merely leak a process; it turns the after-snapshot into a race.
-
-    SIGTERM, a grace period, then SIGKILL, because a test runner asked to stop
-    politely usually flushes its output and a runner that ignores that is not
-    going to be reasoned with. The return value is what the row records: a
-    teardown that could not be confirmed is a fact about the run, and reporting it
-    as a clean stop would be a claim with nothing behind it.
-    """
-    try:
-        if hasattr(os, "killpg"):
-            gid = os.getpgid(proc.pid)
-            if shares_our_group(proc.pid):
-                # THE CHILD IS IN OUR OWN GROUP, so `killpg` here would signal
-                # THIS process - the caller - and not the child's tree. That is
-                # not hypothetical: with `start_new_session` removed the whole
-                # test runner died mid-suite, which is how this branch was found.
-                # A platform with no `setsid` reaches the same state honestly, so
-                # the narrow kill is taken and the answer is `False`: the direct
-                # child goes, its descendants are not accounted for, and the row
-                # says the teardown could not be confirmed rather than implying a
-                # clean stop.
-                proc.kill()
-                try:
-                    proc.wait(timeout=GRACE_SECONDS)
-                except Exception:
-                    pass
-                return False
-            os.killpg(gid, signal.SIGTERM)
-            try:
-                proc.wait(timeout=GRACE_SECONDS)
-            except Exception:
-                os.killpg(gid, signal.SIGKILL)
-                proc.wait(timeout=GRACE_SECONDS)
-            return True
-        completed = subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return completed.returncode == 0
-    except Exception:
-        return False
-
-
-def _drain(proc):
-    """Whatever the child had already written, after the group is gone.
-
-    Called AFTER the kill and never instead of it: a timed-out child is often
-    blocked on a full pipe, so reading first would wait on a process nothing is
-    going to stop. Failure here costs a diagnostic, never the teardown."""
-    try:
-        out, _err = proc.communicate(timeout=GRACE_SECONDS)
-        return (out or b"").decode("utf-8", "replace")
-    except Exception:
-        return ""
+# The teardown and the interrupt handling are `_proc_group`'s, shared with
+# `stamp-verification.py red`; these names are that module's objects.
+shares_our_group = _proc_group.shares_our_group
+_tear_down = _proc_group.tear_down
+_drain = _proc_group.drain
 
 
 def _shell(project, command, timeout=None):
@@ -2698,7 +2603,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
-             task_scope=False):
+             recorded=None, task_scope=False):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -2719,7 +2624,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # rewrites the very files it checks, so a fingerprint taken after the run
     # would describe what the gate PRODUCED rather than what it was asked to
     # judge. Both digests are spent from `before`, above the first command.
-    state = _tree_stamp.tested_state(project, owns, before)
+    # `recorded` is the paths the recorder writes (`_evidence_io.recorded_paths`),
+    # left out of the scope digest because the pointer lands in one of them after
+    # this is taken; `commit-task-work` grades the row with the same set.
+    state = _tree_stamp.tested_state(project, owns, before, excluded=recorded)
     started = time.monotonic()
     # THE WALL CLOCK BESIDE THE MONOTONIC ONE, and both are needed for different
     # questions. `started` measures how long this run took and is immune to a
@@ -3235,63 +3143,12 @@ def render_quiet(res, out=print):
 
 
 # --- stopping this process ----------------------------------------------------
-# A TERMINAL'S Ctrl-C DOES NOT REACH THE CHILDREN, by construction rather than by
-# accident: `_spawn_kwargs` puts every step in a session of its own, so the signal
-# arrives HERE and nowhere else. That trade is stated there - one teardown that is
-# the same on all three paths instead of one that happens to work on one of them -
-# and these two functions are the half of it that was never written. SIGTERM has
-# no default that could stand in either: with no handler the interpreter simply
-# dies, the detached group outlives it, and the run leaves neither a record nor a
-# stopped child.
-INTERRUPT_SIGNALS = ("SIGINT", "SIGTERM")
-
-
-def _raiser(word):
-    """A handler that raises the interrupt NAMING the signal it was installed for.
-
-    The name is bound at install time because that is the only place it is known
-    without a second table to keep in step - and a `cancelled` row owes its reader
-    the thing that stopped the run, which is the whole of that row's basis.
-
-    `KeyboardInterrupt` rather than an exception of this file's own: SIGINT already
-    raises it, so ONE arm in `run_gate` covers both signals instead of two that can
-    drift apart. It is a `BaseException`, which is what carries it past every
-    `except Exception` between here and there.
-    """
-    def _handler(_signum, _frame):
-        raise KeyboardInterrupt(word)
-    return _handler
-
-
-def _arm_interrupt():
-    """Install the handlers; return what they displaced, for `_disarm_interrupt`.
-
-    NOT GUARDED AGAINST `ValueError`. `signal.signal` refuses off the main thread,
-    and this file is an entry point - a caller that reaches that state has a
-    defect, and swallowing it would hide the one fact that matters here, which is
-    that the interrupt path is NOT armed.
-    """
-    previous = []
-    for name in INTERRUPT_SIGNALS:
-        sig = getattr(signal, name)
-        previous.append((sig, signal.signal(sig, _raiser(name))))
-    return previous
-
-
-def _disarm_interrupt(previous):
-    """Put back exactly what `_arm_interrupt` displaced.
-
-    A handler left installed outlives the call, and `main` is a function the
-    suites drive many times in one process - so this is a `finally`, not a
-    courtesy.
-
-    `None` is what `signal.signal` returns for a handler that was not set from
-    Python, and it cannot be handed back: `signal.signal(sig, None)` is a
-    TypeError. The default is restored in that case, which is the honest reading -
-    there is no Python handler to return to.
-    """
-    for sig, handler in previous:
-        signal.signal(sig, signal.SIG_DFL if handler is None else handler)
+# `_proc_group` holds why a stop signal is turned into an exception here; these
+# names are that module's objects.
+INTERRUPT_SIGNALS = _proc_group.INTERRUPT_SIGNALS
+_raiser = _proc_group.raiser
+_arm_interrupt = _proc_group.arm_interrupt
+_disarm_interrupt = _proc_group.disarm_interrupt
 
 
 def runtime_claim(manifest):
@@ -3667,6 +3524,8 @@ def main(argv, out=print):
         previous = _arm_interrupt()
         try:
             res = run_gate(project, commands, owns=owns, timeout=args.timeout,
+                           recorded=_ev.recorded_paths(project,
+                                                       args.manifest)[0],
                            task_scope=args.task is not None)
         finally:
             _disarm_interrupt(previous)
@@ -3685,6 +3544,11 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    # The resolved gate, as a digest the row carries: what `commit-task-work`
+    # compares so a `meta.buildCommands` edit after a green is a changed gate.
+    res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
+        [name for name, _command in (commands or [])],
+        (manifest.get("meta") or {}).get("buildCommands"))
     # STRICTLY AFTER THE VERDICT, and that placement is the whole of it: the
     # evidence file, the journal and the manifest all live inside the repository
     # this run has just described with `git status --porcelain`, so a write above

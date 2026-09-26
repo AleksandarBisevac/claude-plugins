@@ -22,6 +22,7 @@ differ in what they are for, not in where they belong.
 
 FILE LAYOUT
     <evidence dir>/<YYYY-MM>.<writerId>.jsonl     (default <manifest dir>/evidence)
+    <evidence dir>/<YYYY-MM>.<writerId>.wt-<key>.jsonl   (in a linked worktree)
 
 One file per writer per month, which is the journal's argument and not a
 decoration: two sessions in two git worktrees append at the same time, and a
@@ -52,6 +53,7 @@ This module carries no `--selftest` of its own; its cases live in
 """
 import binascii
 import calendar
+import hashlib
 import os
 import sys
 import time
@@ -297,6 +299,27 @@ STARTED_KEY = "startedAt"
 # tree AT THAT MOMENT and the moment is gone.
 REUSE_KEY = "reuseKey"
 
+# The row key for `gate_digest`'s answer.
+GATE_DIGEST_KEY = "gateDigest"
+
+
+def gate_digest(entries, build):
+    """`sha256:<hex>` over the gate as declared and resolved, or None for no entries.
+
+    Each entry beside what it resolves to through `meta.buildCommands` (an entry
+    naming none is its own command), in declared order, and WITHOUT
+    `meta.nodePreamble` - that is the machine's prelude, not the gate. ONE
+    SPELLING for the recorder that writes it and the committer that compares it,
+    so the two cannot come to hash one gate two ways.
+    """
+    names = _mio.declared_gate_entries(list(entries or []))
+    if not names:
+        return None
+    build = build if isinstance(build, dict) else {}
+    pairs = [[name, build.get(name, name)] for name in names]
+    return "sha256:" + hashlib.sha256(
+        _journal_io.canonical(pairs).encode("utf-8")).hexdigest()
+
 # A run with more steps than this is a build, not a gate; more paths than this is
 # a rewrite, not a diff. Both cuts are COUNTED beside the list they cut, because a
 # truncation nobody announced reads as "that is all there was".
@@ -352,8 +375,8 @@ MAX_FAILING = 10
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "retriedAfterSignal", "retryBasis")
-STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis", "dirtyDigest",
-              "dirtyBasis")
+STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
+              "scopeListDigest", "dirtyDigest", "dirtyBasis")
 _PORCELAIN_RENAME = " -> "
 # The C-style escapes git writes INSIDE a quoted porcelain path. Git quotes a
 # path whose bytes it will not print raw - a double quote, a backslash, a control
@@ -578,6 +601,12 @@ def row_for(project, result, scope, ids, identity, published=None):
     # `phase` beside a `taskId`, which is a shape two opposite readings both fit.
     if result.get("gateSource") is not None:
         row["gateSource"] = str(result["gateSource"])
+    # WHAT THE GATE WAS, resolved: a digest of every entry beside the command it
+    # resolves to (`gate_digest`), so a reader can tell a gate whose entries kept
+    # their names while `meta.buildCommands` changed what they run. Written only
+    # when the writer computed one.
+    if result.get(GATE_DIGEST_KEY) is not None:
+        row[GATE_DIGEST_KEY] = str(result[GATE_DIGEST_KEY])
     # THE IDENTITY THE NEXT RUN COMPARES ITSELF AGAINST. It is not derivable from
     # anything else on the row and it never will be: `testedState` holds a digest
     # of WHICH paths were dirty, which is silent about their contents, so a
@@ -808,10 +837,14 @@ def append_row(project, row, session_id=None, config=None):
     directory = evidence_dir(project, config)
     os.makedirs(directory, exist_ok=True)
     actor = {"sessionId": session_id} if session_id else {}
+    # The trail's own key, for the trail's reason: one writer per file, and one
+    # session driving two linked worktrees is two writers - their branches would
+    # otherwise each append the same basename and meet as a conflict on merge.
     path = _journal_io.file_for(
         directory, row.get("ts") or _now(), actor,
         fallback=None if _journal_io.has_session(actor)
-        else _journal_io.writer_token(project, config))
+        else _journal_io.writer_token(project, config),
+        worktree=_journal_io.worktree_key(project, config))
     lock = _journal_io._acquire(path, record="the evidence ledger")
     try:
         rows, _torn = _journal_io.read_file(path)
@@ -1490,7 +1523,34 @@ def attribution_of(row, rows):
                                          for o in contesting))}
 
 
-def latest_by_subject(rows):
+def subject_aliases(manifest):
+    """`{("task", oldId): ("task", liveId)}` for every id a live task was moved from.
+
+    THE LEDGER KEEPS THE SUBJECT A RUN WAS RECORDED UNDER, and `move` gives the
+    task a new id. Rewriting append-only rows is not on offer, so the readers
+    map through the plan instead: `movedFrom` and the `previous` links inside it
+    are exactly the ids this task used to answer to.
+
+    AN ALIAS ONLY WHERE IT IS UNAMBIGUOUS. An old id a live task holds now is
+    that task's, and aliasing it away would move its own runs onto another; an
+    old id two chains both claim has no single owner. Verb-made plans reach
+    neither (the allocator never mints a chain's id), so both are skipped here
+    rather than guessed at, and `_manifest_phases` warns about each by name.
+    """
+    live = set(str(t.get("id")) for _ph, t in _mio.iter_tasks(manifest or {})
+               if t.get("id"))
+    claims = {}
+    for _ph, task in _mio.iter_tasks(manifest or {}):
+        if not task.get("id"):
+            continue
+        for old in _mio.moved_from_ids(task):
+            claims.setdefault(old, set()).add(str(task.get("id")))
+    return dict((("task", old), ("task", next(iter(owners))))
+                for old, owners in claims.items()
+                if len(owners) == 1 and old not in live)
+
+
+def latest_by_subject(rows, aliases=None):
     """The newest recorded run per `(scope, id)`, keyed for a pointer write.
 
     NEWEST BY `ts` AND NOT BY FILE ORDER. Rows land in one file per writer per
@@ -1501,6 +1561,9 @@ def latest_by_subject(rows):
     A row missing the id its own scope needs is skipped rather than guessed at -
     it cannot be pointed at anything, and inventing a subject for it would put a
     pointer on a task that never ran.
+
+    `aliases` is `subject_aliases(plan)`: a row recorded under a task's old id is
+    keyed under the id the task holds now, so a moved task's runs still join it.
     """
     best = {}
     for row in rows or []:
@@ -1511,6 +1574,7 @@ def latest_by_subject(rows):
         if not scope or not subject or not row.get("runId"):
             continue
         key = (scope, str(subject))
+        key = (aliases or {}).get(key, key)
         current = best.get(key)
         if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
             best[key] = row
@@ -1595,11 +1659,21 @@ def reconcile(project, manifest_path, session_id=None, config=None):
     """
     config = _journal_io.load_config(project) if config is None else config
     read = read_rows(project, config=config)
-    best = latest_by_subject(read["rows"])
+    # A MOVED TASK IS POINTED AT WHERE IT LIVES NOW. Its runs carry the old id and
+    # the old phase; keyed through the plan's `movedFrom`, they aim at the live id,
+    # and the phase is the one that holds it rather than the one the row names.
+    try:
+        plan = _mio.load_manifest(manifest_path)
+    except Exception:
+        plan = {}
+    owner = dict((str(t.get("id")), str(ph.get("id")))
+                 for ph, t in _mio.iter_tasks(plan) if t.get("id"))
+    best = latest_by_subject(read["rows"], aliases=subject_aliases(plan))
     moved, refused, already = [], [], []
     for (scope, subject), row in sorted(best.items()):
         if scope == "task":
-            ids = {"taskId": subject, "phaseId": row.get("phaseId")}
+            ids = {"taskId": subject,
+                   "phaseId": owner.get(subject) or row.get("phaseId")}
         else:
             ids = {"phaseId": subject}
         current = _current_pointer(manifest_path, scope, ids)

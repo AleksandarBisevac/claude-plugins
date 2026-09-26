@@ -558,6 +558,71 @@ def _cases(check):
     _harness.stage(check, "tsc-excluded", _excluded_cases)
     _harness.stage(check, "tsc-identity", _identity_cases)
     _harness.stage(check, "tsr", _render_cases)
+    _harness.stage(check, "tss", _scope_cases)
+
+
+def _scope_cases(check):
+    """The ONE normalisation of a declared scope, which both the gate row and the
+    committer hash through."""
+    repo = _seeded_repo("tree-stamp-scope-")
+    plain, _pb = M.scope_digest(repo, ["src/mine.py"])
+    suffixed, sbasis = M.scope_digest(repo, ["src/mine.py:1-2"])
+    check("tss1 a `:line-range` entry hashes as the FILE it names - left on, it "
+          "reached `file_hash` as a path that does not exist and read as missing "
+          "on both sides of every comparison: %r" % (sbasis,),
+          plain is not None and suffixed == plain and "0 missing" in sbasis)
+    as_dir, dbasis = M.scope_digest(repo, ["src"])
+    _write(os.path.join(repo, "src", "mine.py"), "v = 2\n")
+    as_dir_after, _da = M.scope_digest(repo, ["src"])
+    check("tss2 a DIRECTORY entry hashes as the files git lists under it, so an "
+          "edit to one of them moves the digest: %r" % (dbasis,),
+          as_dir is not None and as_dir_after is not None
+          and as_dir != as_dir_after and "2 declared file(s)" in dbasis)
+    kept, _kb = M.scope_digest(repo, ["src/mine.py", "src/theirs.py"])
+    left, lbasis = M.scope_digest(repo, ["src/mine.py", "src/theirs.py"],
+                                  excluded=["src/theirs.py"])
+    _write(os.path.join(repo, "src", "theirs.py"), "w = 2  # the recorder\n")
+    left_after, _la = M.scope_digest(repo, ["src/mine.py", "src/theirs.py"],
+                                     excluded=["src/theirs.py"])
+    check("tss3 a path the CALLER's recorder writes is left out of the scope "
+          "digest and the basis names it, so a write after the digest is taken "
+          "does not read as a change to the work: %r" % (lbasis,),
+          left == left_after and left != kept and "left out" in lbasis)
+    check("tss4 the LIST digest is a digest of the declared list alone: it moves "
+          "when an entry is added and not when a file's bytes do, which is what "
+          "lets a reader tell a changed scope from edited files",
+          M.scope_list_digest(["src/mine.py"]) == M.scope_list_digest(
+              ["src/mine.py:3"])
+          and M.scope_list_digest(["src/mine.py"]) != M.scope_list_digest(
+              ["src/mine.py", "src/theirs.py"])
+          and M.scope_list_digest([]) is None)
+    os.makedirs(os.path.join(repo, "hollow"))
+    hollow, hbasis = M.scope_digest(repo, ["hollow"])
+    _write(os.path.join(repo, "hollow", "now.py"), "n = 1\n")
+    filled, _fb = M.scope_digest(repo, ["hollow"])
+    check("tss6 a declared directory git lists NO file under is a defined entry "
+          "- the digest exists, and it moves once a file appears there. A None "
+          "on both sides would grade `unanswerable` on every comparison: %r"
+          % (hbasis,),
+          hollow is not None and filled is not None and hollow != filled)
+    # A PATH ON DISK WHOSE BYTES CANNOT BE READ: a dangling symlink is one that
+    # every platform with `os.symlink` can make without privileges.
+    dangling = os.path.join(repo, "src", "gone.py")
+    made = False
+    try:
+        os.symlink(os.path.join(repo, "nowhere"), dangling)
+        made = True
+    except (AttributeError, NotImplementedError, OSError):
+        made = False
+    if made:
+        none, nbasis = M.scope_digest(repo, ["src/mine.py", "src/gone.py"])
+        check("tss5 a declared path that IS on disk and cannot be read gives NO "
+              "digest, and the basis names it - a null hash there would compare "
+              "equal to the next null and read as agreement: %r" % (nbasis,),
+              none is None and "src/gone.py" in nbasis)
+    else:
+        _harness.skip(check, "tss5 a path on disk whose bytes cannot be read",
+                      "os.symlink is not usable here", not made)
 
 
 def _selftest():

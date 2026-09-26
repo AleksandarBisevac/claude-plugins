@@ -153,8 +153,9 @@ claude-plugins/                           # this repo (personal, public)
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
+          _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
-          stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished
+          stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -190,6 +191,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
           audit-lookup.py                 # one question, one pointer: why cancelled, a bug's conclusion, fileIndex's last declarer
           audit-version.py                # /audit:version: the running build, the marketplace and installed copies, the newest release
+          _claude_home.py                 # Claude Code's own install records (installed_plugins.json, known_marketplaces.json), read fail-open
         report/                           # the report domain: the FIRST subdirectory under scripts/
           render-report.py                # self-contained HTML+MD report (CI artifact)
           _report_ui.py                   # reads the ordered parts under scripts/ui/report{,-css}/, assembles _CSS/_SCRIPT
@@ -277,6 +279,7 @@ L1:
   _ado_tracked -> _output
   _areas -> _output
   _branch -> _output
+  _claude_home -> _output
   _cli_fmt -> _output
   _commit_trail -> _output
   _demo_cast -> _output
@@ -292,6 +295,7 @@ L1:
   _merge_install -> _output
   _policy -> _output
   _priority -> _output
+  _proc_group -> _output
   _refs -> _output
   _task_outputs -> _output
   _ui_theme -> _output
@@ -305,7 +309,7 @@ L2:
   _evidence_io -> _journal_io, _locks, _manifest_io, _output
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
-  _id_shape -> _branch, _manifest_vocab, _output
+  _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
@@ -314,7 +318,7 @@ L2:
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
-  _tree_stamp -> _journal_io, _output
+  _tree_stamp -> _journal_io, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _manifest_io, _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
@@ -325,7 +329,7 @@ L3:
   _ado_fetch -> _ado_drift, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
-  _evidence_view -> _evidence_io, _output, _report_html, _status_facts
+  _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
@@ -337,9 +341,9 @@ L3:
 L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
-  _doctor_setup -> _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
+  _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
-  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
+  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -368,16 +372,16 @@ L7:
   audit-journal -> _evidence_io, _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _output
+  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _tree_stamp, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _tree_stamp, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
-  audit-version -> _output
+  audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit
+  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _tree_stamp
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
@@ -398,9 +402,9 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _proc_group, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _manifest_io, _output, _tree_stamp
+  stamp-verification -> _locks, _manifest_io, _output, _proc_group, _tree_stamp
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
@@ -2525,6 +2529,26 @@ sharded layout's shards are intact (the assertion that moved out of `ci.yml` so 
 command call one implementation), and whether any `task.files` entry lives inside a submodule
 the parent repo cannot stage. Layer 4, set by `_manifest_rules` at layer 3.
 
+**`plugin_integrity` asks a marketplace-cache install too.** A copy Claude Code installed into
+its plugin cache is a plain directory, not a clone, so the checkout question has no answer
+there — and the row used to warn on every such install that nothing recorded what it should
+contain. Something does: `installed_plugins.json` records the `gitCommitSha` the copy was made
+from and `known_marketplaces.json` names the marketplace clone that holds it (both read through
+`_claude_home`, fail-open, and the row says they are undocumented). `cache_integrity` compares
+every file `git archive` of that commit publishes under the plugin's directory with the cache
+copy, byte for byte, and names each file that differs or is missing. A file the cache holds and
+the commit does not publish is not compared - there is nothing to compare it with - and it is not
+harmless: `__pycache__/*.pyc` beside a published `.py` is what Python executes when its recorded
+source size and mtime match. So every such file under `hooks/` and `scripts/` is named in the row
+as an extra, beside a verdict that stays about the published files. Bytecode is counted instead
+of named only when BOTH halves check out: its header records the published source's size and
+mtime - the condition under which Python runs it - and its body matches a fresh compile of that
+source by this interpreter, under the file name the body records (a hook reaches `scripts/` by
+`hooks/../scripts/`). A matching header alone says nothing about the body: a restore inside one
+second at one size leaves exactly that. Another interpreter's bytecode with a matching header is
+counted apart, as not body-verified. Unverifiable only when a side
+is missing.
+
 **`check_sandbox` (P0-S) is the same question one layer down**, which is why it sits beside
 `check_interpreter` rather than in `_doctor_hygiene`: that one asks whether the guards can run
 at all, this asks whether the layer they LEAN ON is there. The plugin's secret guards match
@@ -2625,6 +2649,26 @@ anything, which is the evidence the original incident was diagnosed by. `running
 folds them into three outcomes: they agree, they differ, or it was NOT ESTABLISHED — and the
 third is not the first, so it warns rather than reading as clean. Every branch is OK or
 WARNING; a stale plugin is a thing to tell somebody, not a thing to fail a run on.
+
+**It grades each copy's own age against a stated idle bound, never against the session
+asking.** A session that has ended leaves its stamp, and state GC keeps it for days, so counting
+every stamp that is not this copy as drift held the row yellow on one dead session's file. The
+first repair graded copies against the newest stamp, and that was wrong: the session asking for
+the row has always just prompted, so every other session - one mid-turn on an older copy
+included - looked superseded. So the stamp's mtime now means the last GUARDED TOOL CALL:
+`guard-secrets-read` (Read, Grep, Bash and MCP calls) refreshes it through
+`_config.refresh_running_stamp`, throttled to one write per `RUNNING_STAMP_REFRESH_SECONDS`, and a
+call inside the throttle pays one `stat`. `split_history` then files a copy other than this one
+as HISTORY only when its newest stamp is older than `IDLE_BOUND_SECONDS`, and the row prints the
+bound with its number; a foreign copy inside it is live, a WARNING that says when it was last
+active and that it may still be running. The limit is stated rather than hidden: a tool outside
+`guard-secrets-read`'s `hooks.json` matcher, `Read|Grep|Bash|mcp__.*`, refreshes nothing, so a
+session using only such tools, or waiting on its user, for longer than the bound reads as history
+until its next prompt or matched call. History is worded as what the
+bound can know - no guarded tool call within it, so ENDED, OR IDLE WAITING ON ITS USER - and the
+refresh runs after the guard's verdict, through `_config.refresh_session_stamp`, which computes
+the state directory inside its own never-raise: a guard's `main` exits 0 on an exception, and a
+refresh that raised before the decision once turned a blocked secret read into an allowed one.
 
 **`check_task_restarts`/`check_gate_patterns` answer what KEEPS HAPPENING, not only what is
 true now** — a task started more times than any other (`task.start` rows grouped by
@@ -2733,6 +2777,19 @@ update`, `claude plugin update`, a restart) print only when a newer release is k
 marketplace is. Exit 0, 1 when a newer release is published, 2 a usage error. Layer 7 (an
 entry point); its cases are in `plugins/audit/tests/test_audit_version.py`.
 
+### `plugins/audit/scripts/status/_claude_home.py`
+The readers of Claude Code's own install records, moved down from `audit-version.py` so
+`/audit:doctor` can reach them: an entry point is importable by nothing, and a second reader
+of two undocumented files is a second answer about what is installed. `claude_home`,
+`read_json`, `installed_plugins`, `marketplace_of`, `marketplace_facts` and
+`installed_copies` are `/audit:version`'s, unchanged; `install_record` finds the record for
+one exact install path - the marketplace and the `gitCommitSha` it was made from - and
+`marketplace_source` finds the clone `known_marketplaces.json` names and the plugin's directory
+inside it off the clone's own `marketplace.json`. Every reader is fail-open: a missing,
+malformed or differently shaped record is None beside the sentence saying why, and the caller
+says the basis is a file Claude Code does not document. Layer 1; its cases are in
+`plugins/audit/tests/test__claude_home.py`.
+
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the
 whole-plan render `audit-status.py` and the whole-journal render `audit-journal.py show`
@@ -2772,8 +2829,12 @@ index lock by building an argv and calling `main()` through `_panel_write._lockm
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
-`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` — turning the
-library's answers into exit codes —
+`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` with an ASCII
+id (a spelling that differs only in case from a held lock is refused, so the answer does not
+depend on whether the filesystem folds case), and for tooling that is not the plugin's a
+namespaced `user-<name>` under `_locks.USER_NAME_RULES`, whose own part may never be a lock name
+itself and which excludes by holder, never answering re-entry — turning the library's answers
+into exit codes —
 a live holder is **waited out** for a bounded window and then refused (exit 3); one that is
 not alive can be seized with `--takeover` (exit 4), because the old "older than 60 minutes =
 crashed" rule was wrong in both directions. `--wait` overrides the window, and zero is the
@@ -2804,6 +2865,37 @@ and `refs/stash`); every manifest state the phase COMMITTED still validates (eac
 index and shards reassembled through `git show` and run back through `_manifest_rules`); a
 `risk: "high"` task ran on neither a declared nor a metered `haiku`; and `phase.baseRef` is
 an ancestor of the parent `_branch.parent_branch` resolves.
+
+Every breach is built with `found(line, subject, sha, local)`, `result()` refuses one that was not,
+and `test__invariants.py` walks this file's syntax tree so a bare sentence fails CI: the sentence is
+what a reader is shown and the `keys` beside it — the subject that broke the rule and the commit it
+is recorded against, resolved to the full id through git — are what a baseline matches, so a
+reworded template or a count that moves between runs changes the output and never the match. A
+validator finding's subject is `_manifest_rules.finding_subject`: the CODE of the rule that raised
+it, its locus and the ids it quotes, with the sentence and any quoted allowed-values list taken
+out. Every validator finding is built with `_output.finding(code, text)` — a `str` subclass, so
+every caller that prints, joins or compares findings reads it unchanged and only this reader asks
+for `.code` — and `test__output.py`'s `fc` cases follow every call `validate()` reaches, across
+modules, and fail a finding site built without a code (an append, an extend or `+=` of a list or
+comprehension, an assignment of one, or a list returned in place), or two sites sharing one. The
+ADO hierarchy findings carry `_ado_parent`'s own rule code (`crossrefs.ado_parents.A1`...). An
+allowed-values list leaves the key bracketed or spelled `one of 'a', 'b'`, and a finding with no
+`: ` keys on the dotted path it opens with. The clone id is published by linking a finished
+sibling onto its name, and a baseline write with a local breach and no readable id is refused. The live
+pairing re-check keeps only the rows naming this phase's own tasks (`own_pairing_findings`).
+
+**The baseline** (`invariants-baseline.json` beside the manifest) lives here rather than in the
+command because two surfaces give a verdict over these checks, and `counted_breaches` is the one
+answer both read. `apply_baseline` compares on `(phase, check, subject, sha, clone)` — `clone`
+set only on a local entry — and sets an entry
+aside, with the reason, when this run could not have seen it again — its phase was not examined,
+its check had a gap, or it was read from another clone's own evidence (a breach marked `local` — a
+reflog, the stash, a remote-tracking ref, the usage ledger — carries the id of the clone that
+wrote it, and goes stale only there); only the rest can be reported as no longer matching, each
+with what git says about its commit. `write_baseline` refuses while a phase it covers is in flight,
+takes the `index` lock around its read-then-write and refuses a hold it did not take itself, keeps
+every set-aside entry, and returns what it removed. The baseline is a human's commit outside any phase commit,
+since each of the plugin's commit classes would breach its own scope by carrying it.
 
 `audit-state-scope` and `index-scope` sit next to `commit-scope` rather than at the end
 because each asks that check's question about a different commit, and the three allow-lists
@@ -2959,18 +3051,46 @@ has started (a branch, a `baseRef` or a recorded commit). `--json` for the whole
 one breach, 2 usage error or unreadable manifest — and a missing basis is deliberately exit 0
 with the word in the output, because sign-off deletes the phase branch and a gate that fired
 on absent evidence would fire on every finished phase. Wired into Phase sign-off and into
-`/audit:status --gate --fail-on invariant-breach`.
+`/audit:status --gate --fail-on invariant-breach`. `--write-baseline` records the current
+breaches in `invariants-baseline.json` beside the manifest, and `--baseline FILE` names another
+file; once one exists the CLI prints only the breaches it does not hold, counts the ones it does,
+and exits 1 only on a new one. Everything about the baseline itself — its keys, what is set aside,
+the in-flight refusal, the lock — is `_invariants`', which is what lets the gate give the same
+verdict.
 
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
-Everything the two **commit-a-narrow-allow-list** commands share, so that neither holds a second
-copy of it: the git runner that keeps stderr (a refusal is the only thing a human can act on, so
+Everything the three **commit-a-narrow-allow-list** commands (`commit-audit-state.py`,
+`commit-manifest-index.py`, `commit-task-work.py`) share, so that none holds a second copy of it:
+the git runner that keeps stderr (a refusal is the only thing a human can act on, so
 `_commit_trail._git`'s `DEVNULL` is wrong here), git's own line shape, `under_any` over
 `_invariants._under`, the working-tree read that decides **before** anything is staged, the index
-read that refuses **after** it, and the one answer shape and renderer both commands print.
+read that refuses **after** it (with `--no-renames`, so a staged rename from outside the list names
+its source), and the one answer shape and renderer the commands print.
 
-**Neither command can import the other** — nothing may import a hyphenated entry point — so this
-module is the only place the two halves meet, and a second spelling of a refusal rule is how one
-commit comes to carry what the other forbids. Layer 5: it reads `_invariants` (L4) for `_under`,
+**How each path is staged, and how the index is put back.** `classify()` asks git what it holds
+for each allowed path and `stage()` stages it accordingly — `git add -u --` for an index entry,
+`git add --` for a path only on disk, both for a directory holding tracked files (its tracked
+members with `-u`, its untracked ones git does not ignore by name, because a directory gitignored
+as a whole is not reported by `check-ignore` and `git add -- <dir>` refuses it), neither for a path
+only HEAD holds (a staged rename's source, a staged deletion) — and `stage_and_commit()` is the
+whole sequence: snapshot the allowed paths' index entries (`ls-files -s`, every stage of a conflict
+kept, intent-to-add read from `status --porcelain=v2`), stage, read back, commit with the list as
+the pathspec, and on any refusal put the entries back through `update-index --index-info`, whose
+removal lines carry a zero id as long as the repository's object format's (SHA-1 or SHA-256).
+Stat data and the skip-worktree bit are not restored, and the sentence it prints says only what is.
+The one commit a pathspec cannot make is one carrying a file taken out of the index with `git rm
+--cached` and then ignored — a pathspec commit reads the working tree and records nothing for it —
+and `commit_from_index()` builds that one in a temporary index (`read-tree` of the HEAD read
+before staging, the allowed entries over it) and runs a real `git commit` with `GIT_INDEX_FILE`
+pointing at it, so it carries exactly the allow-list and the project's `pre-commit` and
+`commit-msg` hooks run on it as on every other commit; a refusing hook leaves the real index
+untouched. HEAD is checked against the one read before staging just before the commit, and the new
+commit's first parent after it; a mismatch there is refused with both SHAs named, and nothing is
+reset.
+
+**No command can import another** — nothing may import a hyphenated entry point — so this
+module is the only place they meet, and a second spelling of a refusal rule is how one commit
+comes to carry what another forbids. Layer 5: it reads `_invariants` (L4) for `_under`,
 which is the one answer to "is this path inside that entry" that the writer and the after-the-fact
 checker both have to give.
 
@@ -3119,12 +3239,41 @@ manifest file, the journal directory and the evidence directory. Nothing else, a
 conflict on merge. `_invariants.commit_scope()` re-derives that same list from git afterwards, so
 these commits are graded by something that did not make them.
 
-**How the exclusion is enforced rather than intended.** Paths are staged explicitly
-(`git add -- <path>…`, never `git add -A`), the git index is read *before* staging so work somebody
-else had already staged cannot ride along, it is read *back* afterwards against the same
-allow-list, and the commit itself carries an explicit pathspec. A path outside the list is **named**
-in the refusal, and a staged index gets a sentence of its own — reporting the expensive mistake in
-the same words as a stray README is what makes a reader skim past it.
+**How the exclusion is enforced rather than intended.** Paths are staged explicitly (never
+`git add -A`), the git index is read *before* staging so work somebody else had already staged
+cannot ride along, it is read *back* afterwards against the same allow-list, and the commit itself
+carries an explicit pathspec. A path outside the list is **named** in the refusal, and a staged
+index gets a sentence of its own — reporting the expensive mistake in the same words as a stray
+README is what makes a reader skim past it.
+
+**Each path is staged by what git holds for it**, through `_scoped_commit` (below the section on
+that module): the source of a staged `git mv` or `git rm` is committed as the rename or deletion it
+is, a tracked file under a gitignored directory is staged as the tracked file it is, an untracked
+declared file git ignores is refused by name before anything is staged — `-f` is never passed — and
+a record path git ignores is refused in words of its own. A refusal after staging puts the allowed
+paths' index entries back from a snapshot taken before it.
+
+**Bound to the verdict it was measured under.** It refuses unless the task's newest evidence row
+(the rows carrying its task id) is `passed`, was measured under the gate the task declares now
+(the row's steps, their dropped count and `gateDigest` — the entries beside what
+`meta.buildCommands` resolves them to, `_evidence_io.gate_digest()`), and its
+`testedState.scopeDigest` still matches the files being committed. That digest is
+`_tree_stamp.scope_digest()`: the scope is normalised once by `declared_scope()` (line suffixes
+stripped), `scope_digest()` expands a directory into the files git lists under it (one it lists
+nothing under is hashed as a defined empty entry), and the recorder's own paths are left out on both
+sides; `scopeListDigest` beside it tells a changed declared list from changed contents. HEAD and
+the dirty-path digest are not compared, because a sibling commit between a task's gate and its
+commit moves both. A task nothing can measure — its task gate cleared on purpose
+(`gateBasis: cleared`), or its own `tests.gate` and its phase's `testGate` both empty — commits and
+says it is bound to no verdict, in a sentence that says which of the two it is, unless a red was
+recorded under its gate after the last green: the `empty-gate` row `--record` writes for such a gate
+does not retire that red, and only a green or an override with its reason does. The same row under
+a gate that declares entries now is refused as a gate changed after the measurement. An unparseable
+ledger line
+refuses unless it names another task. `--override-verdict <reason>` commits anyway and writes an
+`audit.task.verdict-overridden` journal row; it is refused while the journal is off. Which gate
+measures a task is `_manifest_io.gate_entries()` — the one answer `run-test-gate.py`, the panel's
+gate badge, the report and the demo generator all read.
 
 **It does not write `task.commit`.** The SHA is only knowable after the commit this makes, and the
 shard is inside that commit, so writing it here would need a second commit or an amend — which
@@ -3431,8 +3580,23 @@ from the one a reader sees. `DIRTY_LIMIT` is inherited from `dirty_digest()` uns
 records **which** paths were dirty, never their contents, so a rewrite of an already-dirty file
 outside the declared scope moves nothing here. `tsl2` exercises that rather than describing it.
 
+### `plugins/audit/scripts/governance/_proc_group.py`
+One child process tree run so that it can be stopped whole, and a stop signal turned into an
+exception so a caller's `finally` runs. `run-test-gate.py` solved both first - a timed-out
+`subprocess.run` kills only the direct child, so a runner's grandchildren kept writing, and
+SIGTERM with no handler ends the interpreter without running a `finally` - and
+`stamp-verification.py red` met the same two failures, so the answer moved here rather than
+being written twice. `group_kwargs` gives the child a session of its own, `tear_down` sends the
+group SIGTERM then SIGKILL and says whether that could be confirmed (`shares_our_group` keeps it
+from aiming at its own caller), `drain` reads what was written after the group is gone, and
+`arm_interrupt`/`disarm_interrupt` install and restore handlers that raise `KeyboardInterrupt`
+naming the signal. What it cannot cover is SIGKILL, which no handler sees. Layer 1; its cases are
+in `plugins/audit/tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
+objects.
+
 ### `plugins/audit/scripts/governance/stamp-verification.py`
-The CLI over it: `take` a stamp, or `compare` one against the tree now.
+The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which
+proves a red-first without touching the tree it is pointed at.
 
 **Why a command and not a helper** — the caller is orchestrator and agent *prose*, which reaches
 Python only through Bash, the same reason `verify-invariants.py` and `check-ado-item.py` are
@@ -3458,6 +3622,63 @@ both `--files` and `--task` is refused rather than resolved.
 this session are an older installed copy, and what an abandoned worktree left behind — questions
 about the *installation*. This asks about the *tree*. A claim taken while the doctor was warning
 about a stale copy is a claim whose stamp belongs beside that warning, not instead of it.
+
+**`red` runs the test against code without the fix somewhere other than the shared tree.** The
+briefs used to prove a red by undoing the fix in the working tree for the length of the run, which
+is a write over ground siblings are editing, and a host refused it beside a sibling's uncommitted
+work. `red --manifest M --task T -- <cmd>` checks HEAD out with `git worktree add --detach` into a
+temp directory (hooks pointed nowhere), copies the task's declared **test** files from the working
+tree over it — a declared file is a test when `tests.add` names it or its path has a test shape;
+the rest stay at HEAD, and the split is printed — runs the command there, and removes the
+throwaway in a `finally`, asking git afterwards whether it still lists it. A throwaway it could
+not remove is exit `4`, never folded into the verdict. A command naming the shared tree by path is
+refused before anything is built, because it would run the shared files and grade the fix.
+
+**The run is one process group, and a stop signal is an exception.** `_proc_group` is the module
+`run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
+interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
+ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
+reads the throwaway and both runs, each getting what the earlier ones left. What follows the
+deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's two git
+calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
+host's limit less that margin, so the helper's own deadline and cleanup finish before the host
+kills it. SIGKILL cannot be caught; a throwaway left
+that way is reported by name the next time - `leftover_throwaways` reads `git worktree list` for
+`THROWAWAY_PREFIX` and grades each by the pid its `OWNER_FILE` records: `running` while that
+process lives (a sibling's `red`), `left-behind` once it is gone, `unknown` with no record - and
+never pruned. The throwaway's temp directory is never inside the shared tree: `holder_base`
+skips a TMPDIR that points there. The child runs with `SCRUBBED_ENV` removed and, by path rather
+than by substring, every value that is a path under the shared root - a path list loses only its
+entries under the root, so an in-repo `.venv/bin` leaves PATH intact otherwise - and every
+`redFirst` basis names what was dropped. A value that is not itself a path but carries one under
+the root - an option string such as `NODE_OPTIONS=--require …/setup.js` - is kept, since it is
+not a path to rewrite, and named in the basis as `kept, naming the shared root`, because a runner
+reads the path inside it. The throwaway holds only tracked files, so a suite that needs an untracked dependency
+(`node_modules`, an in-repo `.venv`, generated files) cannot run there and comes back
+`could-not-prove`; and it shares the repository's git directory, so a test that runs git in its
+own cwd writes shared refs.
+
+**`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
+reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's
+`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion:
+a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
+`assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
+assertions. `proved` needs one of those failures to be the TASK'S OWN - a case id present in the
+working tree's copy of a declared test file and absent from HEAD's. `--case` narrows to the ids it
+names and is held to the same test, because the flag is chosen by the party being checked; the
+basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
+run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
+import error are `collection-error`, which prints `could-not-prove` — unless the task
+**introduces the symbol**: `--introduces S` needs an identifier, absent from HEAD's copy of every
+declared implementation file and present in the working tree's; a final error of the
+import/attribute/name class naming `S` whole (pytest's `E   ` gutter is read, and a tally-less
+AttributeError counts as a collection error), never a syntax error; and a SECOND run in the
+throwaway, with the working tree's implementation copied in, that no longer ends on that error and
+reaches its assertions. A runner whose tally it does not read is `no-tally`, also
+`could-not-prove`. A green run
+gets no word at all (exit `1`): a test that passes without the fix is work left, not an outcome to
+record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
+every word it can print is one the schema's enum declares.
 
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'
@@ -3589,6 +3810,26 @@ with no `fixedIn`, and journals `task.reopen`. It refuses a task that is not don
 phase is signed off - done, or awaiting its merge - because that verdict is not re-decided, and a
 stored `done` over an open task is a finding every later verb refuses on.
 
+`done --no-change --reason TEXT` is the one close without a SHA, for a task whose answer was that
+nothing needed to change: `commit` stays null and `outcome.noChange` records the reason and the HEAD
+it was examined at (`_examined_head`; null, and said, when git cannot name one), which is the block
+`_commit_trail.no_change_close` answers from for the doctor's no-SHA warning as well. `--intent
+not-asked --intent-basis TEXT` records an intent question deliberately not put; `_done_flags_refusal`
+refuses the word without its basis and every combination of the two closes' flags that names both or
+neither, and `_status_facts.intent_unanswered` is what sign-off and `/audit:status` list.
+
+`move <taskId> --to <phaseId>`, `block <taskId> --reason TEXT` and `note <taskId> --text TEXT` are
+the hand edits operators kept making. `move` allocates with `_allocate_id` - what `next-id task`
+prints - rewrites every reference through `_id_refs.rename`, writes `movedFrom`, and writes every
+phase whose body changed plus the index through `_write_plan`, which snapshots all of them before
+the first write so a refusal restores all of them. A second move nests the first as
+`movedFrom.previous`; `_manifest_io.moved_from_ids` walks that chain for `_id_shape.next_task_id`,
+which never mints one of those ids again, and for `_evidence_io.subject_aliases`, through which the
+doctor and `reconcile` join runs recorded under an old id to the live task. `block` writes `status` and `blockedReason`
+(cleared by the next `start`, whose row keeps it as the value it moved from); `note` appends one
+`{at, text}` entry to `notes[]`, the one addition a started task takes. Each journals its own row -
+`task.move`, `task.block`, `task.note`.
+
 `settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
 `status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its
 shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled back on findings,
@@ -3609,8 +3850,8 @@ written and read with.
 
 `next-id bug|prop|task --phase <id>` prints the id a hand-written record takes - a bug
 (`commands/bug.md`), a parked proposal (`init.md`, `sync.md`), a bug's fix task or a moved task
-(`bug.md`, `task.md` -> move) are the records the model still writes by hand, and so the ids it used
-to compute by hand as max+1. It reads the same allocator every scripted writer does, suffix and
+(`bug.md`) are the records the model still writes by hand, and so the ids it used to compute by
+hand as max+1; a moved task no longer is one - `move` takes the same allocator's answer in process. It reads the same allocator every scripted writer does, suffix and
 reservations included, and writes nothing. Not `phase`: a phase is minted only by `add-phase`, which
 writes it under the lock, where a task's phase is fixed before its id is asked for.
 ### `plugins/audit/scripts/usage/audit-usage.py`

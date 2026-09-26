@@ -27,9 +27,11 @@ This module carries no `--selftest` of its own; its cases live in
 """
 import json
 import os
+import io
 import shutil
 import subprocess
 import sys
+import tarfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -60,6 +62,7 @@ import _manifest_vocab  # noqa: E402  (PROPOSAL_STATUS: the manifest's own words
 import _config_rules  # noqa: E402  (the audit.config.json rules, at layer 2)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 import _merge_install  # noqa: E402  (what a merge-driver install is, read back; layer 1)
+import _claude_home  # noqa: E402  (Claude Code's own install records, fail-open; layer 1)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -290,10 +293,15 @@ def check_sandbox(rep, project, home=None):
 # plugin wrote about itself - which answers nothing an attacker who could edit the
 # files could not also rewrite. What DOES exist is git: a marketplace install of a
 # `github` source is a clone, and a clone can be asked whether its tracked files
-# still match the commit it is on. Where that is not available the row says so and
+# still match the commit it is on. A copy Claude Code installed into its plugin
+# CACHE is not a clone, but its install record names the commit it was made from
+# and the marketplace clone beside it holds that commit, so the cache copy is
+# compared with `git archive` of it. Both records are files Claude Code writes and
+# does not document, read fail-open. Where none of that is available the row says so and
 # claims nothing - an installation this cannot verify is reported as unverifiable,
 # never as clean, which is the same rule every other basis in this command follows.
 _INTEGRITY_TIMEOUT = 10
+_ARCHIVE_TIMEOUT = 60
 
 
 def _git_out(argv, cwd):
@@ -310,7 +318,189 @@ def _git_out(argv, cwd):
     return (proc.stdout.decode("utf-8", "replace"), None)
 
 
-def plugin_integrity(plugin_root, project=None):
+def _archive_files(clone, sha, sub):
+    """`(files, why)` - `{relpath: bytes}` of every regular file under `sub` in
+    `git archive <sha>` of `clone`, or None beside git's own refusal."""
+    argv = ["git", "-C", clone, "archive", "--format=tar", sha]
+    if sub:
+        argv += ["--", sub]
+    try:
+        proc = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=_ARCHIVE_TIMEOUT)
+    except Exception as exc:
+        return None, exc.__class__.__name__
+    if proc.returncode != 0:
+        return None, ((proc.stderr or b"").decode("utf-8", "replace").strip()
+                      .splitlines()[:1] or ["git archive exited non-zero"])[0]
+    prefix = (sub.rstrip("/") + "/") if sub else ""
+    files = {}
+    with tarfile.open(fileobj=io.BytesIO(proc.stdout), mode="r:") as tar:
+        for member in tar.getmembers():
+            if not member.isfile() or not member.name.startswith(prefix):
+                continue
+            files[member.name[len(prefix):]] = tar.extractfile(member).read()
+    return files, None
+
+
+# Where the code that runs lives: an unpublished file here is named in the row.
+_CODE_DIRS = ("hooks", "scripts")
+
+
+def _header_matches(plugin_root, rel, published):
+    """The published source a `__pycache__` file belongs to when its header is
+    source-stamped (flags 0) and records that source's mtime and size as the
+    cache copy has them, else None. A matching header is exactly the condition
+    under which Python EXECUTES the file - and says nothing about the body."""
+    parts = rel.split("/")
+    if len(parts) < 2 or parts[-2] != "__pycache__" or not parts[-1].endswith(".pyc"):
+        return None
+    source = "/".join(parts[:-2] + [parts[-1].split(".")[0] + ".py"])
+    if source not in published:
+        return None
+    try:
+        with open(os.path.join(plugin_root, *rel.split("/")), "rb") as fh:
+            head = fh.read(16)
+        st = os.stat(os.path.join(plugin_root, *source.split("/")))
+    except OSError:
+        return None
+    if len(head) < 16 or int.from_bytes(head[4:8], "little") != 0:
+        return None
+    if (int.from_bytes(head[8:12], "little") == int(st.st_mtime) & 0xFFFFFFFF
+            and int.from_bytes(head[12:16], "little") == st.st_size & 0xFFFFFFFF):
+        return source
+    return None
+
+
+def _body_matches(plugin_root, rel, source):
+    """Whether the bytecode after the header is what THIS interpreter compiles
+    from the published source now - a restore inside one second at one size, or
+    a `cp -p` of an edited-then-restored file, leaves a matching header over a
+    stale body, and only a fresh compile tells the two apart."""
+    import marshal
+    import py_compile
+    import tempfile
+    work = tempfile.mkdtemp(prefix="doctor-pyc-")
+    try:
+        with open(os.path.join(plugin_root, *rel.split("/")), "rb") as fh:
+            have = fh.read()[16:]
+        # The body embeds the path the source was IMPORTED by, which is not always
+        # its plain path (a hook reaching `scripts/` imports `hooks/../scripts/x.py`),
+        # so the fresh compile is given that same recorded name. Loading the code
+        # object executes nothing, and this is a file Python already runs.
+        recorded = marshal.loads(have).co_filename
+        fresh = os.path.join(work, "fresh.pyc")
+        py_compile.compile(os.path.join(plugin_root, *source.split("/")),
+                           cfile=fresh, dfile=recorded, doraise=True)
+        with open(fresh, "rb") as fh:
+            want = fh.read()[16:]
+        return have == want
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _bytecode_kind(plugin_root, rel, published):
+    """`fresh` (header and body match a compile of the published source by this
+    interpreter), `header-only` (another interpreter's file with a matching
+    header, whose body this one cannot compile to compare), or None - named."""
+    source = _header_matches(plugin_root, rel, published)
+    if source is None:
+        return None
+    tag = rel.split("/")[-1].split(".")
+    if len(tag) < 3 or tag[1] != sys.implementation.cache_tag:
+        return "header-only" if len(tag) >= 3 else None
+    return "fresh" if _body_matches(plugin_root, rel, source) else None
+
+
+def _unpublished(plugin_root, published):
+    """`(extras, fresh)` - every file under `_CODE_DIRS` that `published` does not
+    hold, sorted, except bytecode Python wrote from a published source that still
+    matches it, which is only counted: that is every install's own bytecode, and a
+    line naming it on every run is read past. Stale or foreign bytecode is named."""
+    extras, fresh, header_only = [], 0, 0
+    for sub in _CODE_DIRS:
+        for base, dirs, names in os.walk(os.path.join(plugin_root, sub)):
+            dirs.sort()
+            for name in names:
+                rel = os.path.relpath(os.path.join(base, name),
+                                      plugin_root).replace(os.sep, "/")
+                if rel in published:
+                    continue
+                kind = _bytecode_kind(plugin_root, rel, published)
+                if kind == "fresh":
+                    fresh += 1
+                elif kind == "header-only":
+                    header_only += 1
+                else:
+                    extras.append(rel)
+    return sorted(extras), fresh, header_only
+
+
+def cache_integrity(plugin_root, home):
+    """The same question as `plugin_integrity`, for a copy that is not a checkout.
+
+    -> the same shape, plus `basis`. Every file the recorded commit publishes under
+    the plugin's directory is compared byte for byte. A file the cache holds and
+    the commit does not is not COMPARED - it has nothing to be compared with -
+    and it is not harmless either: `__pycache__/*.pyc` beside a published `.py`
+    is what Python executes when its recorded source size and mtime match. So
+    every such file under `hooks/` and `scripts/`, where the code that runs
+    lives, is NAMED in `extras` - except bytecode whose header records its
+    published source AND whose body matches a fresh compile of that source by
+    this interpreter, counted in `freshBytecode`, and another interpreter's
+    bytecode with a matching header, counted apart in `headerOnlyBytecode`
+    because its body is not verified. The verdict stays about published files.
+    Unverifiable only when a side is missing: no install record, no recorded
+    commit, no clone, or a clone that does not hold the commit."""
+    out = {"verdict": "unverifiable", "detail": "", "modified": [], "commit": None}
+    record, why = _claude_home.install_record(plugin_root, home)
+    if record is None:
+        out["detail"] = ("the installed copy is neither a git checkout nor a copy "
+                         "Claude Code's install record names (%s; %s)"
+                         % (why, _claude_home.UNDOCUMENTED))
+        return out
+    sha = record["gitCommitSha"]
+    if not sha:
+        out["detail"] = ("installed_plugins.json records no commit for %s (%s)"
+                         % (plugin_root, _claude_home.UNDOCUMENTED))
+        return out
+    clone, sub, why = _claude_home.marketplace_source(home, record["marketplace"])
+    if clone is None:
+        out["detail"] = ("installed_plugins.json records commit %s for this copy, "
+                         "but the marketplace clone that would hold it is not "
+                         "known: %s (%s)" % (sha[:12], why, _claude_home.UNDOCUMENTED))
+        return out
+    files, why = _archive_files(clone, sha, sub)
+    if files is None or not files:
+        out["detail"] = ("the marketplace clone at %s cannot produce commit %s "
+                         "that installed_plugins.json records for this copy (%s)"
+                         % (clone, sha[:12], why or "no file under %s" % (sub,)))
+        return out
+    changed = []
+    for rel in sorted(files):
+        try:
+            with open(os.path.join(plugin_root, *rel.split("/")), "rb") as fh:
+                same = fh.read() == files[rel]
+        except OSError:
+            same = False
+        if not same:
+            changed.append(rel)
+    extras, fresh, header_only = _unpublished(plugin_root, files)
+    out["extras"] = extras
+    out["freshBytecode"] = fresh
+    out["headerOnlyBytecode"] = header_only
+    out["commit"] = sha[:12]
+    out["basis"] = ("git archive of %s from the marketplace clone at %s, the "
+                    "commit installed_plugins.json records for this copy - %s, "
+                    "as is known_marketplaces.json" % (sha[:12], clone,
+                                                       _claude_home.UNDOCUMENTED))
+    out["verdict"] = "modified" if changed else "clean"
+    out["modified"] = changed
+    return out
+
+
+def plugin_integrity(plugin_root, project=None, home=None):
     """Do the installed plugin's own files still match what its checkout records?
 
     -> {"verdict", "detail", "modified", "commit"} with verdict one of
@@ -338,10 +528,7 @@ def plugin_integrity(plugin_root, project=None):
     top, why = _git_out(["git", "-C", plugin_root, "rev-parse", "--show-toplevel"],
                         plugin_root)
     if top is None:
-        out["detail"] = ("the installed copy is not inside a git checkout (%s), "
-                         "so nothing on this machine records what it should "
-                         "contain" % (why if isinstance(why, str) else why[0],))
-        return out
+        return cache_integrity(plugin_root, home or _claude_home.claude_home())
     root = top.strip()
     if project:
         # `guard-edits`' own test, borrowed rather than re-derived: the plugin
@@ -392,20 +579,35 @@ def check_plugin_files(rep, project, plugin_root=None, integrity=None):
     """
     root = plugin_root or _output.PLUGIN_ROOT
     state = integrity if integrity is not None else plugin_integrity(root, project)
+    against = ("the commit its checkout is on" if not state.get("basis")
+               else "the commit it was installed from")
+    basis = (" (basis: %s)" % state["basis"]) if state.get("basis") else ""
+    if state.get("extras"):
+        basis += ("; not compared, because the commit does not publish them - and "
+                  "bytecode executes: %s" % (_output.some_of(state["extras"]),))
+    if state.get("freshBytecode"):
+        basis += ("; %d bytecode file(s) not listed whose header records its "
+                  "published source and whose body matches a fresh compile of it "
+                  "by this interpreter" % (state["freshBytecode"],))
+    if state.get("headerOnlyBytecode"):
+        basis += ("; %d bytecode file(s) for another interpreter not listed: the "
+                  "header records its published source, and the body is not "
+                  "verified - this interpreter cannot compile it to compare"
+                  % (state["headerOnlyBytecode"],))
     if state["verdict"] == "modified":
         rep.warn("plugin files",
-                 "the installed plugin's tracked files do NOT match the commit "
-                 "its checkout is on (%s): %s. These files run on every tool "
-                 "call, so this is worth answering before anything else in this "
-                 "report" % (state["commit"] or "unknown commit",
-                             _output.some_of(state["modified"])),
+                 "the installed plugin's tracked files do NOT match %s (%s): %s. "
+                 "These files run on every tool call, so this is worth answering "
+                 "before anything else in this report%s"
+                 % (against, state["commit"] or "unknown commit",
+                    _output.some_of(state["modified"]), basis),
                  "re-install the plugin (/plugin -> Installed -> update), or if "
                  "the change is yours, commit it so the record says so")
         return state
     if state["verdict"] == "clean":
         rep.ok("plugin files",
-               "the installed plugin's tracked files match the commit its "
-               "checkout is on (%s)" % (state["commit"] or "unknown commit",))
+               "the installed plugin's tracked files match %s (%s)%s"
+               % (against, state["commit"] or "unknown commit", basis))
         return state
     if state["verdict"] == "dev":
         rep.ok("plugin files",
@@ -418,8 +620,10 @@ def check_plugin_files(rep, project, plugin_root=None, integrity=None):
              "published is NOT ESTABLISHED: %s. This plugin ships hooks that run "
              "on every tool call, so that is worth knowing and this row is not "
              "saying they are fine" % state["detail"],
-             "install it through /plugin from a marketplace source, which leaves "
-             "a checkout that records what the copy should contain")
+             "install it through /plugin from a marketplace source: Claude Code "
+             "then records the commit the copy was made from, and keeps the "
+             "marketplace clone that holds it, which is what this row compares "
+             "against")
     return state
 
 
