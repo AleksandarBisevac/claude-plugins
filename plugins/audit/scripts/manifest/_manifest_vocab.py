@@ -176,14 +176,25 @@ def segment_of(status):
 # folded into one of these, because publishing a provenance nobody recorded is
 # worse than rendering a word this build does not know.
 GATE_BASIS = ("declared", "cleared", "tests.add", "files",
-              "phase-no-spelling", "phase-no-paths")
+              "phase-no-spelling", "phase-no-paths",
+              # `gate-only-no-suite`: the phase's own gate runs no suite at all
+              # (`meta.phaseGate.exclude` removes every `meta.buildCommands`
+              # key), so there is no wide gate left to narrow away from.
+              # `failing-from-run` is written `failing-from-run:<runId>` - a
+              # reader compares the word before the colon and looks the runId
+              # up in the evidence ledger, and never parses it further, because
+              # the schema calls a runId opaque.
+              "gate-only-no-suite", "failing-from-run")
 
 # The arms under which the phase's gate verbatim is the ANSWER rather than an
 # unnarrowed default. `declared` is a caller naming the commands outright, which is
 # the deliberate wide gate the validator's line used to ask for in prose;
 # `phase-no-spelling` is the derivation reporting that nothing in this project
 # records how its runner takes paths, so narrowing would be a guess.
-GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling")
+# `gate-only-no-suite` joins them for the same reason as `phase-no-spelling`:
+# a phase gate that runs no suite has nothing path-scoped to narrow FROM, so
+# carrying it verbatim is an answer and not an unnarrowed default.
+GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling", "gate-only-no-suite")
 
 
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
@@ -225,6 +236,16 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # copy from .claude/audit.config.json — the plugin's standing split):
               # ledgerDir, showCost, pricingAsOf, pricing.
               "usage",
+              # The one phase-gate default. `always` and `exclude` are the
+              # only declared way to shape what a NEW phase's gate starts as -
+              # absent means today's behaviour exactly, every buildCommands key in
+              # buildCommands order. `_manifest_phases.phase_gate_default` is the
+              # one reader.
+              "phaseGate",
+              # Advisory cost budget for a phase's gate, in milliseconds.
+              # Absent = nothing is graded on cost, same shape as `budgetUSD` one
+              # level down.
+              "gateBudgetMs",
               # The rest are NOT in the schema, and the reason for each is in
               # `OFF_SCHEMA` below rather than here - one copy, and a lint that
               # goes red when it stops being true. (The comment that stood here

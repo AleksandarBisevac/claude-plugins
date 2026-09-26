@@ -836,6 +836,25 @@ def _cases(check):
           and M.VIEW_SEGS["archived"] == ("archived",)
           and M.VIEW_SEGS["all"] == M.SEGMENTS)
 
+    # --- the phase-gate default and 'runs no suite' words --------------------
+    check("mv48 `gate-only-no-suite` and `failing-from-run` are in GATE_BASIS - "
+          "a word `phase_gate_suite_gap` and a future ledger-backed derivation "
+          "write that the validator's vocabulary does not know is a basis "
+          "nothing can grade: %r" % (sorted(M.GATE_BASIS),),
+          "gate-only-no-suite" in M.GATE_BASIS
+          and "failing-from-run" in M.GATE_BASIS)
+    check("mv49 ...and `gate-only-no-suite` is an ANSWER rather than an "
+          "unnarrowed default, the same standing `phase-no-spelling` has: a "
+          "phase gate that runs no suite has nothing path-scoped to narrow "
+          "FROM, so carrying it verbatim is not the thing the wide-gate "
+          "warning exists to catch: %r" % (sorted(M.GATE_BASIS_ANSWERED),),
+          "gate-only-no-suite" in M.GATE_BASIS_ANSWERED
+          # `failing-from-run` is NOT an answer - it is written
+          # `failing-from-run:<runId>` and a reader compares the word before
+          # the colon, so the bare word never appears as a task's own
+          # `gateBasis` value and has no business in the ANSWERED set.
+          and "failing-from-run" not in M.GATE_BASIS_ANSWERED)
+
 
 def _selftest():
     return _harness.run(_cases)

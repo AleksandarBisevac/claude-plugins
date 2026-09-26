@@ -155,6 +155,55 @@ def _cases(record):
            callable(getattr(M, "main", None))
            and not hasattr(_manifest_rules, "main"))
 
+    # --- meta.phaseGate / meta.gateBudgetMs -----------------------------------
+    _pg_base = _valid_manifest()
+    _pg_base["meta"]["buildCommands"] = {"test": "x", "lint": "y", "coverage": "z"}
+
+    _pg_empty = copy.deepcopy(_pg_base)
+    _pg_empty["meta"]["phaseGate"] = {"exclude": ["test", "lint", "coverage"]}
+    _pg_empty_w = M.validate(_pg_empty)[1]
+    record("c26 a meta.phaseGate.exclude that removes every buildCommands key "
+           "validates (still additive) and WARNS 'phase gate runs no suite': "
+           "%r" % ([x for x in _pg_empty_w if "no suite" in x],),
+           any("phase gate runs no suite" in x for x in _pg_empty_w))
+
+    _pg_bad = copy.deepcopy(_pg_base)
+    _pg_bad["meta"]["phaseGate"] = {"always": ["lint", "nope"]}
+    _pg_bad_w = M.validate(_pg_bad)[1]
+    record("c27 an `always` entry that names no buildCommands key is warned by "
+           "name: %r" % ([x for x in _pg_bad_w if "phaseGate" in x],),
+           any("nope" in x and "phaseGate" in x for x in _pg_bad_w))
+
+    _pg_budget = copy.deepcopy(_pg_base)
+    _pg_budget["meta"]["gateBudgetMs"] = True
+    _pg_budget_w = M.validate(_pg_budget)[1]
+    # THE SUBSTRING IS "positive integer", NOT MERELY THE KEY NAME: the key
+    # alone is not proof of the type check - an unrecognised key ALSO draws a
+    # warning naming it (the typo-catcher), so a case asking only "is
+    # `gateBudgetMs` mentioned anywhere" would stay green even with the shape
+    # check deleted, the moment the key itself is merely known.
+    record("c28 a boolean `gateBudgetMs` is warned as the wrong SHAPE, the "
+           "same `bool is an int subclass` rule budgetUSD is held to - not "
+           "merely named as an unrecognised key: %r"
+           % ([x for x in _pg_budget_w if "gateBudgetMs" in x],),
+           any("gateBudgetMs" in x and "positive integer" in x
+               for x in _pg_budget_w))
+
+    # --- ALLOW: a reordering is not a narrowing -------------------------------
+    _pg_none_w = M.validate(_pg_base)[1]
+    record("c29 a manifest with no meta.phaseGate at all gains no new warning "
+           "from this rule: %r" % ([x for x in _pg_none_w
+                                    if "phaseGate" in x or "no suite" in x],),
+           not any("phaseGate" in x or "no suite" in x for x in _pg_none_w))
+    _pg_ok = copy.deepcopy(_pg_base)
+    _pg_ok["meta"]["phaseGate"] = {"always": ["lint"]}
+    _pg_ok_w = M.validate(_pg_ok)[1]
+    record("c30 ...and `always: [lint]` ALONE validates clean - a reordering of "
+           "the default gate is not a narrowing, so it draws none of this "
+           "rule's warnings: %r" % ([x for x in _pg_ok_w
+                                     if "phaseGate" in x or "no suite" in x],),
+           not any("phaseGate" in x or "no suite" in x for x in _pg_ok_w))
+
     # --- a stub fallen behind its shard -------------------------------------
     # `validate()` reads the assembled manifest, where the body wins, so the stub's
     # stale copy is invisible to it - and the stub is what the index alone answers.

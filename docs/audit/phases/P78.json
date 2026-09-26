@@ -32,7 +32,7 @@
     {
       "id": "P78.1",
       "title": "The test-shaped predicate and the gate-path reader live beside tests_add_path",
-      "status": "in_progress",
+      "status": "done",
       "description": "Constraint: 'is this path a test file' is answered in run-test-gate.py (_TEST_MARKS, _TEST_DIRS, _subject_of, _segments, _is_suite_path) and 'which paths does a gate entry name' in audit-task.py (_gate_entry_paths). Both files are entry points and an entry point cannot import another, so the gate-only narrowing (audit-task) and --own (run-test-gate) could only reach them by copying. Rule: MOVE them, bodies and docstrings unchanged, into plugins/audit/scripts/manifest/_manifest_phases.py beside tests_add_path (the file-naming question both build on) as public TEST_MARKS, TEST_DIRS, subject_of, path_segments, is_suite_path, gate_entry_paths. run-test-gate.py and audit-task.py import _manifest_phases and keep thin module aliases (_is_suite_path = _phases.is_suite_path, and so on) so every caller and every existing case keeps its name: an alias, never a second body. Not _manifest_vocab: its docstring says it holds no rule, and _task_outputs was moved out of it because a path rule is not vocabulary. One widening, classification only: is_suite_path also answers True for a basename starting with test_ (pytest's prefix form, which the plan gate's default exemptGlobs already treats as a test file via **/test_*.*); subject_of stays suffix-only, because it re-spells a path onto another file's stem and the prefix must not start doing that. The widening also reaches run-test-gate's suite_paths and evidence_paths classification, in the same direction; run the whole of test_run_test_gate.py and read any case that moved. Reuse: tests_add_path (_manifest_phases.py), the moved bodies as they are. Red-first: test__manifest_phases.py asserts is_suite_path('pkg/test_orders.py') is True; mutation that must turn it red: drop the prefix clause; allow cases: subject_of('pkg/test_orders.py') stays None and is_suite_path('src/testing.py') stays False. Identity pins in test_run_test_gate.py and test_audit_task.py assert each alias IS the _manifest_phases function (the is operator), so a re-pasted copy goes red. House: stdlib only, no typing/annotations/walrus/f-strings, %-formatting, Python 3.8, cases in plugins/audit/tests/, no register ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -68,24 +68,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "abb8d81f757e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Moved TEST_MARKS, TEST_DIRS, subject_of, path_segments, is_suite_path, gate_entry_paths into _manifest_phases (bodies unchanged); run-test-gate and audit-task keep aliases (identity pins mp1, tg13). is_suite_path also reads a test_ basename prefix (sp1-sp4; subject_of stays suffix-only). No existing case moved. Scope widened mid-task to PLUGIN-BUILD-GUIDE.md for the regenerated module-map fence (test__deps g1). redFirst proved via stamp-verification red at HEAD. Executor stamp: scopeDigest agreed, dirtyDigest moved only by the recorder's own evidence and shard writes. Gate run 2026-09-26T05:14:12Z.c95b88 green; reviewer intent matches, no findings.",
+        "descriptive": "The question whether a path is a test file, and which paths a gate entry names, now each have one home in _manifest_phases beside tests_add_path, so the gate-only narrowing and the executor's own-tests run can import them instead of copying."
       },
       "startedAt": "2026-09-26T04:53:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T05:18:40Z",
+      "verifiedBy": [
+        "sp1",
+        "sp2",
+        "sp3",
+        "sp4",
+        "mp1",
+        "tg13"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T05:14:12Z.c95b88",
         "status": "passed",
         "at": "2026-09-26T05:14:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "abb8d81f757e",
+        "at": "2026-09-26T05:18:40Z"
       }
     },
     {
       "id": "P78.2",
       "title": "meta.phaseGate.always/exclude and meta.gateBudgetMs; the one phase-gate default and the one 'runs no suite' rule",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The rule this phase holds: no state of a plan may make the sign-off gate run fewer suites than today unless the plan DECLARES it and the gate PRINTS it. Constraint: COMPATIBILITY.md lets a key be added for free only while its absence keeps today's behaviour, and _help.schema_vocab_drift() checks KNOWN_META against the schema, so a key exists in the schema first. Schema, under $defs.meta.properties: phaseGate (object, additionalProperties permissive) with always (non-blank strings meant to be buildCommands keys; they come FIRST in a new phase's default and nothing is dropped because of them) and exclude (buildCommands keys; the ONLY declared way to keep a key out of the default - a coverage key that re-runs the test suite, or an e2e key that belongs at the third place); gateBudgetMs (positive integer, advisory; absent = nothing is graded on cost). Each description says what absence means: no phaseGate = today's default, every buildCommands key in buildCommands order, byte-identical; no exclude = nothing dropped. KNOWN_META += phaseGate, gateBudgetMs. ONE ANSWER FOR THE DEFAULT, used by add-phase now and by the derivation in the next phase: phase_gate_default(meta) in _manifest_phases.py returns {entries, always, rest, excluded, basis}: entries = always in declared order, then every other buildCommands key in buildCommands order, minus exclude. An entry named in both lists stays (always is always) and draws a warning. ONE RULE FOR 'phase gate runs no suite': phase_gate_suite_gap(manifest, suite_keys=None) in the same module, evaluated only when exclude is non-empty (without exclude the default is today's set). A default EMPTY after exclusion returns 'phase gate runs no suite: meta.phaseGate.exclude removes every meta.buildCommands key and meta.phaseGate.always adds none', which needs no evidence. With suite_keys ({running, silent, unknown}, computed from the ledger by L1.e) and no default key in running, it returns 'phase gate runs no suite as far as the ledger shows: <keys> are left after meta.phaseGate.exclude', naming the keys with no recorded run or only pre-field runs as not established. Otherwise it returns None. WHICH PREDICATE DECIDES 'suite-running': the counts reader - run-test-gate.summary_reader (P70 run-test-gate.py:550), the one function that recognises a test runner's own summary line - recorded per step as suiteReader by L1.e. It can only answer from a run's output, so its answer is read back from the ledger rather than guessed from the plan. Not the test-shaped predicate: it classifies paths, and a wide key such as 'npm test' names none. Not the key's spelling: orchestrator.md forbids inferring a test run from a command's spelling. Not steps[].measured: ran_count also tallies a wrapper's hook lines (_STEP_WORDS, pre-commit), so a pre-commit lint reads as measured checks. _manifest_rules._check_meta calls phase_gate_suite_gap(manifest) with no evidence, so the pure validator emits the certain arm only. GATE_BASIS += gate-only-no-suite and failing-from-run (written failing-from-run:<runId>; a reader compares the word before the colon and looks the runId up, never parses it - the schema calls a runId opaque); GATE_BASIS_ANSWERED += gate-only-no-suite; extend the tests.gateBasis description with both words. Other validator WARNINGS, never findings (Validation stays additive): phaseGate not an object; always or exclude not a list of non-blank strings; an always or exclude entry that is not a buildCommands key (name it and the keys); a comma-joined entry (reuse P70's _manifest_phases._comma_joined_gate, never a second copy of that rule); an entry in both lists; gateBudgetMs not a positive integer, or a bool (the budgetUSD rule). SCHEMA_EXEMPTIONS rows in gen-demo-manifest.py for the new fields, with the reason (no rendered surface shows them yet). Red-first in test__manifest_phases.py: always [lint] over buildCommands {test, lint, coverage} gives [lint, test, coverage] (mutation: return always alone -> red); exclude naming every key with no always gives [] and phase_gate_suite_gap returns the certain sentence (mutation: skip the empty check -> red); no phaseGate gives every key in buildCommands order (mutation: sort the keys -> red). In test_validate_manifest.py: exclude-to-nothing warns 'phase gate runs no suite'; always ['lint', 'nope'] warns naming nope; gateBudgetMs true warns. Allow cases: a manifest with no phaseGate gains no new warning; always [lint] alone validates clean, because a reordering is not a narrowing.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -124,16 +136,21 @@
       "dependsOn": [
         "P78.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T05:18:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T07:35:32Z.178afb",
+        "status": "passed",
+        "at": "2026-09-26T07:35:32Z"
+      }
     },
     {
       "id": "P78.3",

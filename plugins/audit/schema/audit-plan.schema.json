@@ -242,6 +242,32 @@
             "type": "string"
           }
         },
+        "phaseGate": {
+          "type": "object",
+          "description": "What a NEW phase's gate defaults to, and the one declared way to narrow it. Absent = today's behaviour exactly: every meta.buildCommands key, in buildCommands order, byte-identical. See `always` and `exclude`.",
+          "additionalProperties": true,
+          "properties": {
+            "always": {
+              "type": "array",
+              "description": "meta.buildCommands keys that come FIRST in a new phase's default gate, in the order given here. Absent/empty adds nothing - every other buildCommands key still lands in the default, in buildCommands order.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "exclude": {
+              "type": "array",
+              "description": "meta.buildCommands keys left OUT of a new phase's default gate - the ONE declared way to keep a key (a coverage re-run, an e2e suite that belongs at a later place) out of it. Absent/empty drops nothing. An entry named in both `always` and `exclude` stays IN the default: `always` is always.",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "gateBudgetMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Advisory cost budget for a phase's gate, in milliseconds. Absent = nothing is graded on cost. A value of 0 or below is rejected for `budgetUSD`'s reason: an ungraded gate must render as 'no budget' rather than as infinitely over."
+        },
         "ado": {
           "type": [
             "object",
@@ -1455,7 +1481,7 @@
         },
         "gateBasis": {
           "type": "string",
-          "description": "Which derivation produced `gate`, written by /audit:task add and re-written by /audit:task scope --gate. 'declared' = the caller named the commands; 'cleared' = --gate-clear; 'tests.add'/'files' = narrowed to this task's own paths in a sibling's spelling; 'phase-no-spelling' = the phase's gate, because no task in the phase declares a path-scoped entry to read this project's spelling off; 'phase-no-paths' = the phase's gate, because a sibling is path-scoped and this task names no file. The validator's wide-gate warning reads it: 'declared' and 'phase-no-spelling' are answers rather than unnarrowed defaults, and a task carrying no basis at all is still named. The vocabulary is open — a word this build does not know is treated as an unnarrowed default rather than folded into one it does."
+          "description": "Which derivation produced `gate`, written by /audit:task add and re-written by /audit:task scope --gate. 'declared' = the caller named the commands; 'cleared' = --gate-clear; 'tests.add'/'files' = narrowed to this task's own paths in a sibling's spelling; 'phase-no-spelling' = the phase's gate, because no task in the phase declares a path-scoped entry to read this project's spelling off; 'phase-no-paths' = the phase's gate, because a sibling is path-scoped and this task names no file; 'gate-only-no-suite' = the phase's own gate runs no suite at all (`meta.phaseGate.exclude` removes every `meta.buildCommands` key), so there is no wide gate to narrow away from; 'failing-from-run:<runId>' = the ledger already has a run of this exact gate that failed, named by its opaque runId rather than parsed. The validator's wide-gate warning reads it: 'declared', 'phase-no-spelling' and 'gate-only-no-suite' are answers rather than unnarrowed defaults, and a task carrying no basis at all is still named. The vocabulary is open — a word this build does not know is treated as an unnarrowed default rather than folded into one it does."
         }
       }
     },

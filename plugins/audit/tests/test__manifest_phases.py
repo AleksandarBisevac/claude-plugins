@@ -970,6 +970,55 @@ def _cases(check):
     check("mo6 SECOND DIRECTION: a clean chain draws neither: %r" % (w,),
           not [x for x in w if "live task" in x or "both" in x])
 
+    # --- the one phase-gate default -------------------------------------------
+    check("pg1 `phase_gate_default` exists and puts `always` FIRST, then every "
+          "OTHER buildCommands key in buildCommands order: %r"
+          % (getattr(M, "phase_gate_default", None)
+             and M.phase_gate_default(
+                 {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+                  "phaseGate": {"always": ["lint"]}}),),
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+               "phaseGate": {"always": ["lint"]}})["entries"]
+          == ["lint", "test", "coverage"])
+    check("pg2 ...and `exclude` naming every key with no `always` empties the "
+          "default - the mutation to prove this is watched, not merely "
+          "asserted (skip the empty check -> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+               "phaseGate": {"exclude": ["test", "lint", "coverage"]}})
+              ["entries"] == [])
+    check("pg3 ...and with NO meta.phaseGate at all, the default is every "
+          "buildCommands key, in buildCommands order - byte-identical to "
+          "before this field existed (mutation: sort the keys -> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"zeta": "x", "alpha": "y", "mid": "z"}})
+              ["entries"] == ["zeta", "alpha", "mid"])
+    check("pg4 `phase_gate_suite_gap` answers the CERTAIN arm with no evidence "
+          "at all: a default emptied by `exclude` with no `always` runs no "
+          "suite, whatever the ledger says",
+          hasattr(M, "phase_gate_suite_gap")
+          and M.phase_gate_suite_gap(
+              {"meta": {"buildCommands":
+                        {"test": "x", "lint": "y", "coverage": "z"},
+                        "phaseGate":
+                        {"exclude": ["test", "lint", "coverage"]}}})
+              is not None
+          and "phase gate runs no suite" in M.phase_gate_suite_gap(
+              {"meta": {"buildCommands":
+                        {"test": "x", "lint": "y", "coverage": "z"},
+                        "phaseGate":
+                        {"exclude": ["test", "lint", "coverage"]}}}))
+    check("pg5 ...and WITHOUT exclude the default is today's set, so the gap "
+          "is never asked - a manifest with no phaseGate at all draws no "
+          "'runs no suite' sentence",
+          hasattr(M, "phase_gate_suite_gap")
+          and M.phase_gate_suite_gap(
+              {"meta": {"buildCommands": {"test": "x"}}}) is None)
+
 
 def _selftest():
     return _harness.run(_cases)

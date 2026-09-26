@@ -222,6 +222,181 @@ def _comma_joined_gate(entries, build_keys, where, field):
     return out
 
 
+# --- what a NEW phase's gate defaults to -------------------------------------------
+def _phase_gate_lists(meta):
+    """`(always, exclude, build_keys)` - the validated pieces `phase_gate_default`
+    and `_check_phase_gate` both read, asked ONCE so the two cannot disagree
+    about what counts as a non-blank string.
+    """
+    meta = meta if isinstance(meta, dict) else {}
+    build = meta.get("buildCommands")
+    build_keys = list(build.keys()) if isinstance(build, dict) else []
+    gate = meta.get("phaseGate")
+    gate = gate if isinstance(gate, dict) else {}
+    always = [a for a in _safe_list(gate.get("always"))
+              if isinstance(a, str) and a.strip()]
+    exclude = [e for e in _safe_list(gate.get("exclude"))
+               if isinstance(e, str) and e.strip()]
+    return always, exclude, build_keys
+
+
+def phase_gate_default(meta):
+    """`{entries, always, rest, excluded, basis}` - what a NEW phase's gate
+    starts as, read by `/audit:phase add` now and by a future task-level
+    derivation alike - the ONE answer, so neither can quietly disagree with
+    the other about what "today's default" means.
+
+    `entries` = `always` in declared order, then every OTHER `buildCommands`
+    key in buildCommands order, minus `exclude`. `always` COMES FIRST because
+    that is the one thing a caller declared outright; `rest` preserves
+    buildCommands order rather than sorting it, because a plan's own ordering
+    is the only one this project has ever produced and there is no reason to
+    prefer another.
+
+    ALWAYS IS ALWAYS. An entry named in both lists is not dropped: `exclude`
+    is the declared way to keep a key OUT, and `always` is a stronger,
+    later-read declaration that puts a key back IN - so an author who lists
+    the same key in both gets the key, not the absence of one. `_check_phase_gate`
+    is what warns about the overlap; this function only resolves it.
+
+    ABSENT MEANS TODAY'S BEHAVIOUR EXACTLY: with no `phaseGate` at all, `always`
+    and `exclude` are both empty, so `entries` is every `buildCommands` key, in
+    buildCommands order, byte-identical to what `/audit:phase add` wrote before
+    this field existed.
+    """
+    always, exclude, build_keys = _phase_gate_lists(meta)
+    always_set = set(always)
+    exclude_set = set(exclude) - always_set
+    rest = [k for k in build_keys
+            if k not in always_set and k not in exclude_set]
+    excluded = [k for k in build_keys if k in exclude_set]
+    entries = list(always) + rest
+    if not build_keys:
+        basis = "no meta.buildCommands key exists to default a gate from"
+    elif not always and not exclude:
+        basis = ("no meta.phaseGate: default is every buildCommands key, in "
+                 "buildCommands order")
+    elif not excluded:
+        basis = ("meta.phaseGate.always puts %d key(s) first (%s); every "
+                 "other buildCommands key follows in buildCommands order"
+                 % (len(always), _output.some_of(always, render=repr))
+                 if always else
+                 "meta.phaseGate.exclude names no key meta.buildCommands "
+                 "actually declares, so the default is unchanged")
+    else:
+        basis = ("meta.phaseGate.exclude drops %d buildCommands key(s) (%s)%s"
+                 % (len(excluded), _output.some_of(excluded, render=repr),
+                    " after meta.phaseGate.always puts %d first (%s)"
+                    % (len(always), _output.some_of(always, render=repr))
+                    if always else ""))
+    return {"entries": entries, "always": always, "rest": rest,
+            "excluded": excluded, "basis": basis}
+
+
+def phase_gate_suite_gap(manifest, suite_keys=None):
+    """The 'phase gate runs no suite' warning, or None when the gate still runs one.
+
+    EVALUATED ONLY WHEN `exclude` IS NON-EMPTY - without it the default is
+    today's set, and today's set has always been trusted to run something.
+
+    TWO ARMS, and only the first needs no evidence. A default EMPTY after
+    exclusion (`exclude` removed every `buildCommands` key and `always` added
+    none) is CERTAIN: there is no key left to have run, whatever the ledger
+    says, so this arm fires from the plan alone. The second arm needs
+    `suite_keys` - `{running, silent, unknown}`, computed from the evidence
+    ledger by the counts reader (`run-test-gate.summary_reader`, recorded per
+    step as `suiteReader`) - because a wide key like `npm test` is not
+    test-shaped by its spelling and this function must not guess one from the
+    other: with no default key recorded as `running`, it names the keys left
+    after `exclude` as not established rather than as certainly silent.
+    `suite_keys=None` (the pure validator's call, with no evidence in hand)
+    answers only the certain arm.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    _always, exclude, _build_keys = _phase_gate_lists(meta)
+    if not exclude:
+        return None
+    default = phase_gate_default(meta)
+    if not default["entries"]:
+        return ("phase gate runs no suite: meta.phaseGate.exclude removes "
+                "every meta.buildCommands key and meta.phaseGate.always adds "
+                "none")
+    if suite_keys is None:
+        return None
+    running = set((suite_keys or {}).get("running") or [])
+    if any(k in running for k in default["entries"]):
+        return None
+    return ("phase gate runs no suite as far as the ledger shows: %s are "
+            "left after meta.phaseGate.exclude"
+            % (_output.some_of(default["entries"]),))
+
+
+def _check_phase_gate(manifest, warnings):
+    """WARNINGS for `meta.phaseGate` and `meta.gateBudgetMs` - additive, never
+    a finding (`COMPATIBILITY.md` -> Validation stays additive): both fields
+    are new, so a shape a validator does not like is named rather than
+    refused.
+
+    THE 'RUNS NO SUITE' SENTENCE IS NOT HERE. `phase_gate_suite_gap` is asked
+    directly by `_manifest_rules._check_meta`, with no evidence, so the pure
+    validator emits its certain arm only - this function is the SHAPE checks
+    that do not need the ledger at all.
+    """
+    meta = manifest.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    if "phaseGate" in meta:
+        gate = meta.get("phaseGate")
+        if gate is not None and not isinstance(gate, dict):
+            warnings.append("meta.phaseGate: must be an object with `always` "
+                            "and/or `exclude`, got %s" % (type(gate).__name__,))
+        elif isinstance(gate, dict):
+            for field in ("always", "exclude"):
+                raw = gate.get(field)
+                if raw is None:
+                    continue
+                if not isinstance(raw, list):
+                    warnings.append("meta.phaseGate.%s: must be an array of "
+                                    "buildCommands keys, got %s"
+                                    % (field, type(raw).__name__))
+                    continue
+                bad = [e for e in raw if not (isinstance(e, str) and e.strip())]
+                if bad:
+                    warnings.append("meta.phaseGate.%s: every entry must be "
+                                    "a non-blank string (%d bad: %s)"
+                                    % (field, len(bad),
+                                       _output.some_of(bad, render=repr)))
+            always, exclude, build_keys = _phase_gate_lists(meta)
+            if build_keys:
+                for field, entries in (("always", always), ("exclude", exclude)):
+                    warnings.extend(_comma_joined_gate(
+                        entries, build_keys, "meta.phaseGate", field))
+                    unknown = [e for e in entries if e not in build_keys]
+                    if unknown:
+                        warnings.append(
+                            "meta.phaseGate.%s names %s, which %s not a "
+                            "buildCommands key - meta.buildCommands declares "
+                            "%s" % (field, _output.some_of(unknown, render=repr),
+                                    "is" if len(unknown) == 1 else "are",
+                                    _output.some_of(sorted(build_keys))))
+            both = sorted(set(always) & set(exclude))
+            if both:
+                warnings.append(
+                    "meta.phaseGate: %s in both `always` and `exclude` - "
+                    "always is always, so %s stays in the default gate"
+                    % (_output.some_of(both, render=repr),
+                       "it" if len(both) == 1 else "they"))
+    if "gateBudgetMs" in meta:
+        budget = meta.get("gateBudgetMs")
+        if isinstance(budget, bool) or not isinstance(budget, int):
+            warnings.append("meta.gateBudgetMs: must be a positive integer, "
+                            "got %s" % (type(budget).__name__,))
+        elif budget <= 0:
+            warnings.append("meta.gateBudgetMs: must be greater than 0 (got "
+                            "%s) - omit the key entirely for 'no budget'"
+                            % (budget,))
+
+
 def _check_phase_intent(phase, pwhere, build_keys):
     """Warnings for a phase whose gate or outcome says less than it should.
 
