@@ -646,7 +646,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P74.7-qq5",
-      "P74.8-qq5"
+      "P74.8-qq5",
+      "P74.9-qq5"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1118,7 +1119,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P74.7-qq5"
+      "P74.7-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -1701,7 +1703,8 @@
       "P80.2",
       "P74.1",
       "P74.2-qq5",
-      "P74.7-qq5"
+      "P74.7-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1748,7 +1751,8 @@
       "P76.3-6qa",
       "P76.4-6qa",
       "P74.3-qq5",
-      "P74.8-qq5"
+      "P74.8-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1915,7 +1919,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P74.8-qq5"
+      "P74.8-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2664,7 +2669,8 @@
       "P74.3-qq5",
       "P76.3-6qa",
       "P76.4-6qa",
-      "P74.8-qq5"
+      "P74.8-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -3115,7 +3121,8 @@
       "P80.2",
       "P74.1",
       "P74.2-qq5",
-      "P74.7-qq5"
+      "P74.7-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -3357,7 +3364,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P74.8-qq5"
+      "P74.8-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -3628,6 +3636,12 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5"
+    ],
+    "plugins/audit/scripts/governance/record-outside-run.py": [
+      "P74.9-qq5"
+    ],
+    "plugins/audit/tests/test_record_outside_run.py": [
+      "P74.9-qq5"
     ]
   },
   "bugs": [
