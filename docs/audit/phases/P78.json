@@ -24,7 +24,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P78-R1",
@@ -68,9 +68,10 @@
         "issue": "comments added in this phase cite phase and task ids (run-test-gate.py, test_audit_task.py, test_run_test_gate.py), and one older section marker in run-test-gate.py does too; comments must state their rule, not cite the private register",
         "resolution": "fixed in P78.14-msc (188bc251ccf5)"
       }
-    ]
+    ],
+    "outcome": "code-review over the phase diff: 6 findings (1 high, 2 med, 3 low), all fixed in P78.12-msc to P78.15-msc; phase gate green on all eight entries (2026-09-26T11:47:49Z.4d38e8); invariants clean"
   },
-  "summary": null,
+  "summary": "A new phase's gate now has one declared default: meta.phaseGate.always first, every other build key after it, and only meta.phaseGate.exclude drops one, printed by add-phase, the validator and the sign-off run, with 'phase gate runs no suite' when nothing suite-running is left (from the plan, or from the ledger's per-step suiteReader). A gate-only task with no test file gets the always entries instead of a test run pointed at source files. retarget --gate-drop and --gate-set change a phase's gate in one validated write, and the docs now say --gate replaces. The SAME SUITE line names its retarget remedy, the doctor names a never-failing gate step that costs more than meta.gateBudgetMs, and a fix task opened from a red sign-off run is gated on the suites that run named as failing (add --failing-from). An executor's own tests run through run-test-gate --own --quiet with the whole output in a local log, and audit-lookup run reads a background gate's row from the ledger. The desired outcome is met; the phase review's six findings were fixed in four follow-up tasks before the gate.",
   "tasks": [
     {
       "id": "P78.1",
@@ -1038,5 +1039,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-26T04:53:57Z"
+  "startedAt": "2026-09-26T04:53:57Z",
+  "testEvidence": {
+    "runId": "2026-09-26T11:47:49Z.4d38e8",
+    "status": "passed",
+    "at": "2026-09-26T11:47:49Z"
+  }
 }
