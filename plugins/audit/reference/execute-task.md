@@ -549,7 +549,8 @@ not need to.
           python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" \
               <manifestPath> <phaseId>
           ```
-          commits the index **alone**, under the lock, and refuses rather than committing nothing
+          commits the index and the one journal file holding the row that names the commit, and
+          **nothing else**, under the lock, and refuses rather than committing nothing
           or committing it beside work that does not belong with it. Its name used to reach a human
           only inside `commit-task-work.py`'s refusal — after a task commit had already been turned
           away for staging the index — which is too late for a caller who commits by hand instead:
@@ -573,7 +574,13 @@ not need to.
           receives a plan referring to runs it does not have. `verify-invariants.py`'s
           `evidence-committed` is what says so afterwards. One file per writer per month, so
           parallel phases never conflict on either — one writer on two BRANCHES still can, and
-          `audit-journal.py merge` is what resolves that without recomputing anything a row says.
+          `audit-journal.py merge --file <journal or evidence file>` is what resolves that without
+          recomputing anything a row says: one implementation for both records, the same
+          refusals, and a same-second tie ordered by content only when its rows touch different
+          targets (a journal row's `target`; for a run, every key a ledger reader files it under,
+          the plan's moved task ids included), with the order written down -
+          in the journal file's `journal.merge` row, or for a ledger file in an `evidence.merge`
+          journal row naming it, because every row in the ledger is read as a recorded run.
         - **The explicit pathspec is the script's, and it is what makes the gate's
           `TREE CHANGED OUTSIDE THIS WORK` line affordable.** **The index does not arrive empty**:
           a previous task's `git mv` leaves paths staged, and a bare `git commit` sweeps every one
@@ -615,7 +622,11 @@ not need to.
           script deliberately does not: the SHA is only knowable after the commit it makes and the
           shard is inside that commit, so writing it there would need a second commit or the amend
           this document forbids. It leaves an `audit.task.committed` journal row in the meantime,
-          so the gap between the commit and this write is not a commit nothing points at.
+          so the gap between the commit and this write is not a commit nothing points at. That
+          row is INSIDE the commit it names: it is written first, keyed by a nonce the commit
+          message carries as its `Audit-Row` trailer, and `git log --grep "Audit-Row: <nonce>"`
+          finds the commit from it. A commit refused after the row was written leaves an
+          `audit.commit.withdrawn` row naming the nonce.
           **Do NOT write `bugs[]` by hand.** A bug materialized into this task (`bug.taskId` ↔
           `task.bugId`) reads as **fixed** once the task is `done` — the rollup derives it (with
           `fixedIn` = this `task.commit`) — and `/audit:task done` stores both values on the bug in

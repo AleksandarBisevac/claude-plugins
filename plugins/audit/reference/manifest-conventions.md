@@ -418,7 +418,13 @@ The journal's **completion-record actions**:
   touched and stays true whatever happens to it afterwards, so a plan-movement claim hung on it
   would assert a transition that had not happened yet and might never happen
 - `audit.state.committed` — an audit-state commit was made for work no task commit will carry
-  (details: commit, phaseId)
+  (details: commitNonce, phaseId; older rows: commit, phaseId). Written before the commit and
+  carried by it, so it names the commit by the nonce its `Audit-Row` trailer carries
+- `audit.index.committed`, `audit.task.committed` — the same, for a manifest-index commit and a
+  task commit (details: commitNonce, phaseId, and taskId on the task row)
+- `audit.commit.withdrawn` — a scoped commit whose rows were already written was NOT made (a hook
+  or git refused it), so the rows keyed by this nonce name no commit (details: commitNonce,
+  phaseId, taskId?, reason)
 
 **Each action has exactly ONE writer**, and which one differs — never append any of them by hand,
 because two writers means duplicate rows and a doctor that can no longer trust the count.

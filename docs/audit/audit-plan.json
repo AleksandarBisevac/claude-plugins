@@ -473,7 +473,7 @@
     {
       "id": "P73",
       "title": "The trail names each commit from inside it",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P73.json"
     },
     {
@@ -652,6 +652,12 @@
       "P79.7",
       "P80.12",
       "P81.8",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
       "P78.15-msc",
       "P82.1",
       "P83.1",
@@ -767,6 +773,13 @@
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
+      "P73.1",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
       "P78.1",
       "P78.5",
       "P78.10",
@@ -970,7 +983,9 @@
       "P72.3-ttl",
       "P75.2-j5h",
       "P76.1",
-      "P76.2"
+      "P76.2",
+      "P73.2-9h1",
+      "P73.3-9h1"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1127,7 +1142,8 @@
       "P57.1"
     ],
     "plugins/audit/commands/resume.md": [
-      "P7.1"
+      "P7.1",
+      "P73.1"
     ],
     "plugins/audit/commands/review.md": [
       "P7.1",
@@ -1415,7 +1431,13 @@
       "P77.1",
       "P77.3-6u9",
       "P77.5-6u9",
-      "P78.11"
+      "P78.11",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1432,7 +1454,8 @@
       "P69.4-j6r",
       "P79.7",
       "P81.8",
-      "P76.1"
+      "P76.1",
+      "P73.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1734,6 +1757,12 @@
       "P72.5-ttl",
       "P76.3-6qa",
       "P76.4-6qa",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
       "P78.13-msc"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
@@ -1744,7 +1773,13 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -1764,7 +1799,14 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P73.2-9h1",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1790,7 +1832,12 @@
       "P71.1",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -1811,7 +1858,9 @@
       "P41.7",
       "P48.1",
       "P53.6",
-      "P72.4-ttl"
+      "P72.4-ttl",
+      "P73.2-9h1",
+      "P73.3-9h1"
     ],
     "plugins/audit/scripts/governance/audit-lock.py": [
       "P34.2",
@@ -1832,7 +1881,11 @@
       "P34.4",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1845,14 +1898,24 @@
       "P68.2-v4q",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
       "P71.2-zso",
       "P71.3-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6"
@@ -2621,6 +2684,12 @@
       "P81.4",
       "P76.3-6qa",
       "P76.4-6qa",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1",
       "P78.13-msc"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
@@ -2654,7 +2723,13 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -2670,7 +2745,13 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -2871,7 +2952,13 @@
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5",
       "P71.2-zso",
-      "P71.4-zso"
+      "P71.4-zso",
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2932,7 +3019,9 @@
       "P41.7",
       "P53.6",
       "P59.13",
-      "P72.4-ttl"
+      "P72.4-ttl",
+      "P73.2-9h1",
+      "P73.3-9h1"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
@@ -3063,7 +3152,11 @@
       "P34.4",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -3072,14 +3165,20 @@
       "P68.2-v4q",
       "P71.2-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
       "P71.2-zso",
       "P71.3-zso",
       "P71.4-zso",
-      "P73.1"
+      "P73.1",
+      "P73.3-9h1"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1"
@@ -3394,7 +3493,13 @@
       "P66.3-x3g",
       "P66.4-x3g",
       "P72.4-ttl",
-      "P73.1"
+      "P73.1",
+      "P73.2-9h1",
+      "P73.3-9h1",
+      "P73.4-9h1",
+      "P73.5-9h1",
+      "P73.6-9h1",
+      "P73.7-9h1"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",

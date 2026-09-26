@@ -23,10 +23,14 @@ confined to the file it carries. That is the whole design, and it is why widenin
 verification -- its allow-list and its staged set are one list -- while
 destroying the property both `_invariants` scope checks exist to defend.
 
-WHAT IT STAGES: THE INDEX. Not the shard, not the journal, not the evidence, not
-the task's files. The allow-list is one entry long and nothing downstream widens
-it, and `_invariants`' `index-scope` re-derives the same rule from git after the
-fact -- so the commits this makes are graded by something that did not make them.
+WHAT IT STAGES: THE INDEX, AND THE JOURNAL FILE HOLDING THE ROW THAT NAMES THE
+COMMIT. Not the shard, not the evidence, not the task's files. The allow-list is
+the index, and `_scoped_commit.commit_with_rows` adds to it the one file its own
+row landed in, so the commit carries the row naming it and leaves no trail
+behind; a journal file is named for one writer and one worktree, so it is not a
+file two phases meet on. Nothing else widens the list, and `_invariants`'
+`index-scope` re-derives the same rule from git after the fact -- so the commits
+this makes are graded by something that did not make them.
 
 HOW THE EXCLUSION IS ENFORCED RATHER THAN INTENDED. The path is staged EXPLICITLY
 (by what git holds for it, never `git add -A`), the index is read back and
@@ -134,7 +138,14 @@ E_OK, E_FAIL, E_USAGE = 0, 1, 2
 # finish by hand. The phase id goes in the subject, where it is still greppable.
 COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-index"
-DEFAULT_SUBJECT = "the shared index, carried alone so no phase's work rides with it"
+# WHAT THE COMMIT CARRIES, and it names the row because the commit carries it.
+# The subject after the class header is prose for a person reading `git log`:
+# the readers find this class through its journal rows - a row's `commit`, or its
+# nonce matched to an `Audit-Row` trailer - and check only that the subject opens
+# with `_invariants.INDEX_HEADER`, which this text follows. So commits already in
+# history keep the older subject and are found and graded exactly as before; a
+# person finds the class by the `audit-index` scope.
+DEFAULT_SUBJECT = "the shared index and the row naming it, no phase's work"
 
 # `SUBJECT_LEAD` for `commit-audit-state.py`'s reason, and this file carried
 # the identical defect: with the phase id first, the subject after the colon IS
@@ -336,11 +347,15 @@ def _coauthor(manifest):
     return value if isinstance(value, str) and value.strip() else None
 
 
-def record_row(project, phase_id, sha, index_abs, config=None):
+def record_row(project, phase_id, nonce, index_abs, config=None):
     """Anchor the commit in the trail. Returns the file the row landed in, or False.
 
-    THE TARGET IS THE INDEX, which is what this commit carried, and `commit` and
-    `phaseId` are the only `details` keys - both checked to be on
+    WRITTEN BEFORE THE COMMIT AND CARRIED BY IT, so it names the commit by
+    `nonce`, the value of the commit's `Audit-Row` trailer, and not by a SHA the
+    commit does not have yet.
+
+    THE TARGET IS THE INDEX, which is what this commit carried, and the nonce
+    and `phaseId` are the only `details` keys - both checked to be on
     `_journal_io.DETAILS_KEYS` by this file's cases rather than assumed, because
     that allow-list DROPS an unknown key in silence and a row could otherwise
     carry neither while still reading as an action that happened.
@@ -378,9 +393,10 @@ def record_row(project, phase_id, sha, index_abs, config=None):
         "actor": {"sessionId": _journal_io.env_session_id(),
                   "via": "commit-manifest-index"},
         "target": _journal_io.repo_relative_or_token(project, index_abs),
-        "summary": "the manifest index was committed as %s for %s - the shared "
-                   "file, with no phase's work beside it" % (sha[:12], phase_id),
-        "details": {"commit": sha, "phaseId": str(phase_id)},
+        "summary": "the manifest index was committed for %s as the commit "
+                   "carrying `%s` - the shared file, with no phase's work beside "
+                   "it" % (phase_id, _scoped_commit.row_trailer(nonce)),
+        "details": {_invariants.NONCE_KEY: nonce, "phaseId": str(phase_id)},
     }, config=config)
 
 
@@ -453,6 +469,7 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
             skipped, foreign=foreign,
             refused="the git index already holds paths this commit may not "
                     "carry. A manifest-index commit carries the shared index and "
+                    "the one journal file holding the row that names it, and "
                     "nothing else, so it refuses rather than sweeping them in - "
                     "unstage them and re-run")
     # AHEAD OF THE DO-NOTHING ANSWERS: `git status` does not list an ignored
@@ -483,38 +500,48 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
             "commit-audit-state.py <manifest> <phase>), then run this again"
             % ("; ".join(what for what, _rel in ahead), ", ".join(shards))))
 
-    # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.stage_and_commit`, the
-    # sequence all three scoped commits share: the path staged by what git holds
+    # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.commit_with_rows`, the
+    # sequence every scoped commit shares: the row naming the commit written
+    # first and its file added to the list, each path staged by what git holds
     # for it, the index read back against this same list, a commit with the list
-    # as its pathspec, and the index put back as it was found on any refusal
-    # after staging.
-    done = _scoped_commit.stage_and_commit(
+    # as its pathspec, the index put back as it was found on any refusal after
+    # staging, and the row withdrawn when no commit was made.
+    phase_id = _phase_id(phase)
+    done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
-        commit_message(_phase_id(phase), subject, _coauthor(manifest)),
-        _foreign_after_staging)
+        commit_message(phase_id, subject, _coauthor(manifest)),
+        _foreign_after_staging,
+        lambda nonce: ([record_row(project, phase_id, nonce, targets["indexAbs"],
+                                   config=config)], ""),
+        lambda nonce, why: _scoped_commit.withdraw(
+            project, config, nonce, "commit-manifest-index",
+            {"phaseId": phase_id}, why))
     staged = done["staged"]
     if not done["committed"]:
         return E_FAIL, _scoped_commit.answer(skipped, staged=staged,
                                              foreign=done["foreign"],
-                                             refused=done["refused"])
+                                             refused=done["refused"], done=done)
     sha = done["sha"]
     if sha and done["refused"]:
         # Committed on a HEAD that moved underneath: reported, never undone.
         return E_FAIL, _scoped_commit.answer(skipped, committed=True, commit=sha,
                                              staged=staged,
-                                             refused=done["refused"])
+                                             refused=done["refused"],
+                                             journalled=done["journalled"],
+                                             done=done)
     if not sha:
         # The commit exists and this process cannot name it. A failure rather than
-        # a success with a blank field: the journal row is the only handle anything
-        # has on such a commit, and a row naming nothing is worse than no row.
+        # a success with a blank field: nothing downstream can be handed a SHA,
+        # and the row inside the commit reaches it only by its trailer.
         return E_FAIL, _scoped_commit.answer(
             skipped, committed=True, staged=staged,
-            refused="%s, so no journal row could name it" % (done["refused"],))
-
-    journalled = bool(record_row(project, _phase_id(phase), sha,
-                                 targets["indexAbs"], config=config))
+            journalled=done["journalled"], done=done,
+            refused="%s; the row inside it names it by `%s`"
+                    % (done["refused"], _scoped_commit.row_trailer(
+                        done["nonce"]) if done["nonce"] else "nothing"))
     return E_OK, _scoped_commit.answer(skipped, committed=True, commit=sha,
-                                       staged=staged, journalled=journalled)
+                                       staged=staged,
+                                       journalled=done["journalled"], done=done)
 
 
 def main(argv, out=print):

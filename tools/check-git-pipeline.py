@@ -1618,10 +1618,17 @@ def check_index_commit_carries_only_the_index(fx):
 
     THE CLAIM IS ABOUT GIT AND CANNOT BE MADE ANYWHERE ELSE. The command's own
     suite proves the allow-list and the refusals; what only a real repository can
-    say is that `git add -- <index>` followed by a commit produces a commit whose
-    entire file list is that one path, while a shard modified in the same tree at
-    the same moment stays uncommitted. Both halves are asserted, because "the
-    index is in the commit" also passes for a commit that swept in everything.
+    say is that staging the index and committing produces a commit whose entire
+    file list is that path and the one journal file holding the row naming the
+    commit, while a shard modified in the same tree at the same moment stays
+    uncommitted and no journal file is left dirty. Both halves are asserted,
+    because "the index is in the commit" also passes for a commit that swept in
+    everything.
+
+    AND THE ROW STILL NAMES ITS COMMIT AFTER A REAL REBASE. The row is inside the
+    commit, so it names it by the nonce the commit's `Audit-Row` trailer carries
+    rather than by a SHA; the rebased commit has a new SHA and the same message,
+    and `git log --grep` finds that one and only that one.
     """
     before = git(fx, "rev-parse", "HEAD")[1].strip()
     try:
@@ -1646,19 +1653,261 @@ def check_index_commit_carries_only_the_index(fx):
         carried = [ln.strip() for ln in
                    git(fx, "show", "--name-only", "--pretty=format:",
                        head)[1].splitlines() if ln.strip()]
-        dirty = [ln for ln in git(fx, "status", "--porcelain")[1].splitlines()
-                 if ln.strip().endswith(SHARD_REL)]
-        ok = (code == 0 and head != settled and carried == [MANIFEST_REL]
-              and len(dirty) == 1)
-        return ok, ("exit %r; the commit carried %r (want exactly [%r]); the "
-                    "shard is still dirty=%r (want one line); output %r"
-                    % (code, carried, MANIFEST_REL, dirty,
-                       (out or "").strip()[:200]))
+        porcelain = git(fx, "status", "--porcelain")[1].splitlines()
+        dirty = [ln for ln in porcelain if ln.strip().endswith(SHARD_REL)]
+        trail_dirty = [ln for ln in porcelain if "docs/audit/journal/" in ln]
+        trail = [p for p in carried if p.startswith("docs/audit/journal/")]
+        prefix = "Audit-Row: "
+        nonces = [ln[len(prefix):].strip() for ln in
+                  git(fx, "log", "-1", "--format=%B", head)[1].splitlines()
+                  if ln.startswith(prefix)]
+        ok = (code == 0 and head != settled
+              and sorted(carried) == sorted([MANIFEST_REL] + trail)
+              and len(trail) == 1 and len(dirty) == 1 and trail_dirty == []
+              and len(nonces) == 1)
+        if not ok:
+            return False, ("exit %r; the commit carried %r (want [%r] and one "
+                           "journal file); the shard is still dirty=%r (want "
+                           "one line); journal left dirty=%r (want none); "
+                           "trailer %r; output %r"
+                           % (code, carried, MANIFEST_REL, dirty, trail_dirty,
+                              nonces, (out or "").strip()[:200]))
+
+        # A REAL REBASE: a commit slid in beneath the index commit. The shard
+        # edit rides along untouched - the new base is committed by pathspec,
+        # and `--autostash` sets the edit aside while git replays.
+        git(fx, "checkout", "-q", "--detach", settled)
+        with io.open(os.path.join(fx["root"], "rebase-base.txt"), "w",
+                     encoding="utf-8") as fh:
+            fh.write("a commit the rebase replays onto\n")
+        git(fx, "add", "--", "rebase-base.txt")
+        git(fx, "commit", "-q", "-m", "fixture: new base", "--",
+            "rebase-base.txt")
+        new_base = git(fx, "rev-parse", "HEAD")[1].strip()
+        if new_base == settled:
+            return False, "the fixture could not make the commit to rebase onto"
+        git(fx, "checkout", "-q", "-")
+        code, rebase_out = git(fx, "rebase", "-q", "--autostash", "--onto",
+                               new_base, settled)
+        rebased = git(fx, "rev-parse", "HEAD")[1].strip()
+        found = [ln.strip() for ln in
+                 git(fx, "log", "--format=%H", "--fixed-strings",
+                     "--grep=%s%s" % (prefix, nonces[0]))[1].splitlines()
+                 if ln.strip()]
+        # AND THROUGH THE PRODUCT'S OWN READER, which is what grades the commit:
+        # its record separator and trailer parsing, run over a history git
+        # really rewrote rather than one amended in-process.
+        import _invariants
+        read = _invariants.index_commits(fx["root"], "P1", git_root=fx["root"])
+        ok = (code == 0 and rebased != head and found == [rebased]
+              and read[0] == [rebased] and read[3] == [])
+        return ok, ("the index commit %s was rebased to %s (exit %r: %s); `git "
+                    "log --grep` for its trailer found %r and the reader "
+                    "resolved %r (want exactly the rebased commit from both)"
+                    % (head[:12], rebased[:12], code,
+                       (rebase_out or "").strip()[:200], found, read[0]))
     finally:
         git(fx, "reset", "--hard", "-q", before)
         from _suite import remove_tree   # tools/_suite.py says why it is here
         remove_tree(os.path.join(fx["root"], "docs", "audit", "phases"))
         write_manifest(fx, manifest_body())
+
+
+def check_squashed_index_commit_is_a_gap(fx):
+    """A real `git merge --squash` of a branch holding a work commit and an
+    index commit is reported as a gap naming the squash, never as a breach."""
+    return _squashed_index_commit(fx, scoped_first=False)
+
+
+def check_squash_ending_in_the_trailer_is_a_gap(fx):
+    """...and so is one of a branch holding the index commit FIRST and work
+    after it, whose squash message therefore ENDS with the index commit's
+    trailer: only the subject header tells that squash from the commit it
+    absorbed."""
+    return _squashed_index_commit(fx, scoped_first=True)
+
+
+def _squashed_index_commit(fx, scoped_first):
+    """The squash check, the scoped commit made before or after the work.
+
+    THE CLAIM ONLY GIT CAN MAKE: that the squash message git writes carries the
+    index commit's trailer, so the row resolves to the squash commit - whose
+    file list holds the work too - and that index-scope then declines to grade
+    that commit as the index commit it absorbed. The branch is graded clean
+    first, so the gap is the squash's and not the fixture's.
+    """
+    import _invariants
+    before = git(fx, "rev-parse", "HEAD")[1].strip()
+    work = "src/squashed-work.ts"
+    try:
+        _sharded(fx)
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "fixture: the sharded layout")
+        git(fx, "checkout", "-q", "-b", "squash-side")
+
+        def the_work():
+            with io.open(os.path.join(fx["root"], work.replace("/", os.sep)),
+                         "w", encoding="utf-8") as fh:
+                fh.write("export const work = 1\n")
+            git(fx, "add", "--", work)
+            git(fx, "commit", "-q", "-m", "fix(P1.1): audit - the work")
+
+        if not scoped_first:
+            the_work()
+        index = read_manifest(fx)
+        index["fileIndex"]["src/widened.ts"] = ["P1.1"]
+        write_manifest(fx, index)
+        code, out = script(fx, "commit-manifest-index.py", MANIFEST_REL, "P1",
+                           "--project", ".")
+        if scoped_first:
+            the_work()
+
+        def scope():
+            manifest = _invariants._mio.load_manifest(
+                os.path.join(fx["root"], MANIFEST_REL))
+            return [c for c in _invariants.check_phase(
+                manifest, "P1", os.path.join(fx["root"], MANIFEST_REL),
+                fx["root"], fx["root"])["checks"]
+                if c["name"] == "index-scope"][0]
+
+        on_side = scope()
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        git(fx, "merge", "-q", "--squash", "squash-side")
+        git(fx, "commit", "-q", "--no-edit")
+        squash = git(fx, "rev-parse", "HEAD")[1].strip()
+        body = git(fx, "log", "-1", "--format=%B")[1].strip().splitlines()
+        ends = bool(body) and body[-1].strip().startswith("Audit-Row: ")
+        after = scope()
+        ok = (code == 0 and on_side["verdict"] == _invariants.CLEAN
+              and ends == scoped_first
+              and after["breaches"] == [] and after["examined"] == 0
+              and any(squash[:12] in g for g in after["gaps"]))
+        return ok, ("index commit exit %r (%s); on the branch %r; squash "
+                    "message ends with the trailer %r; after the squash %s: %r "
+                    "breaches %r gaps %r"
+                    % (code, (out or "").strip()[:120], on_side["verdict"], ends,
+                       squash[:12], after["verdict"], after["breaches"],
+                       after["gaps"]))
+    finally:
+        git(fx, "checkout", "-q", "-f", FIXTURE_BRANCH)
+        git(fx, "reset", "--hard", "-q", before)
+        git(fx, "branch", "-D", "squash-side")
+        from _suite import remove_tree   # tools/_suite.py says why it is here
+        remove_tree(os.path.join(fx["root"], "docs", "audit", "phases"))
+        path = os.path.join(fx["root"], work.replace("/", os.sep))
+        if os.path.exists(path):
+            os.remove(path)
+        write_manifest(fx, manifest_body())
+        reset_journal(fx)
+
+
+def _ledger_append(fx, rel, run_id, ts, task, session):
+    """One run appended to the ledger file `rel`, chained by the product's own
+    `chain_onto`, and anchored by a journal row naming the file - the pair
+    `_evidence_io.record` writes. `session` names the journal file the anchor
+    lands in, so two branches anchor in two files and only the ledger
+    conflicts."""
+    import _evidence_io
+    import _journal_io
+    path = os.path.join(fx["root"], rel.replace("/", os.sep))
+    directory = os.path.dirname(path)
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
+    tail = [r for r in _journal_io.read_file(path)[0]
+            if not r.get("_unparseable")] if os.path.exists(path) else []
+    row = _evidence_io.chain_onto(
+        {"v": 1, "runId": run_id, "ts": ts, "scope": "task", "taskId": task,
+         "phaseId": "P1", "status": "passed", "steps": [], "failed": []},
+        tail, os.path.basename(path))
+    with io.open(path, "a", encoding="utf-8") as fh:
+        fh.write(_journal_io.canonical(row) + "\n")
+    # Dated NOW, as a real anchor row is: the fixture is fast enough that the
+    # merge's own row can land in the same second as these, and then `verify`
+    # has to choose between them by what they say, not by file order.
+    return _journal_io.append(fx["root"], {
+        "action": _evidence_io.ACTION_RECORDED, "target": rel,
+        "summary": "run %s recorded" % (run_id,),
+        "actor": {"sessionId": session, "via": "fixture"}})
+
+
+def _git_rel(fx, path):
+    return _output.posix_rel(path, fx["root"])
+
+
+def check_evidence_ledger_merge(fx):
+    """A ledger file two branches appended to conflicts in a real `git merge`,
+    and `audit-journal.py merge --file` resolves it from the index stages.
+
+    THE CLAIM ONLY GIT CAN MAKE: that the two stages git leaves for a ledger
+    file are what the verb reads, and that the file it writes verifies as a
+    chain and completes the merge. Both branches append at the SAME second on
+    different tasks, so the result also rests on the tie being ordered rather
+    than refused.
+
+    AND THAT THE MERGE COMMIT HOLDS THE LEDGER'S ANCHOR. The verb names the
+    journal file its `evidence.merge` row landed in; staged with the ledger,
+    a fresh CLONE at the merge commit reports no drift on the re-chained
+    file - without that row the clone's newest row for the file would record
+    one side's bytes.
+    """
+    import _evidence_io
+    import _journal_io
+    found = git(fx, "rev-parse", "HEAD")[1].strip()
+    rel = "docs/audit/evidence/2026-06.s-pipe.jsonl"
+    clone = tempfile.mkdtemp(prefix="audit-ledger-clone-")
+    try:
+        anchors = [_ledger_append(fx, rel, "run-base", "2026-06-01T10:00:00Z",
+                                  "P1.1", "s-base")]
+        git(fx, "add", "--", rel, *[_git_rel(fx, a) for a in anchors if a])
+        git(fx, "commit", "-q", "-m", "fixture: a ledger file")
+        git(fx, "checkout", "-q", "-b", "ledger-side")
+        side = _ledger_append(fx, rel, "run-side", "2026-06-02T10:00:00Z",
+                              "P1.2", "s-side")
+        git(fx, "add", "--", rel, _git_rel(fx, side))
+        git(fx, "commit", "-q", "-m", "fixture: the side branch's run")
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        mine = _ledger_append(fx, rel, "run-main", "2026-06-02T10:00:00Z",
+                              "P1.1", "s-main")
+        git(fx, "add", "--", rel, _git_rel(fx, mine))
+        git(fx, "commit", "-q", "-m", "fixture: this branch's run")
+        code, out = git(fx, "merge", "-q", "--no-edit", "ledger-side")
+        if code == 0:
+            return False, "the fixture did not conflict: %s" % (out or "")[:200]
+        code, out = script(fx, "audit-journal.py", "merge", "--file", rel,
+                           "--project", ".", "--json")
+        try:
+            payload = json.loads(out or "")
+        except ValueError:
+            payload = {}
+        anchor = payload.get("recordedIn")
+        rows = [r for r in _journal_io.read_file(os.path.join(
+            fx["root"], rel.replace("/", os.sep)))[0]
+            if not r.get("_unparseable")]
+        verdict = _evidence_io.verify_rows(rows, os.path.basename(rel))
+        git(fx, "add", "--", rel, *([anchor] if anchor else []))
+        done, done_out = git(fx, "commit", "-q", "--no-edit")
+        head = git(fx, "rev-parse", "HEAD")[1].strip()
+        git(fx, "clone", "-q", "--no-hardlinks", fx["root"], clone)
+        git(fx, "-C", clone, "checkout", "-q", head)
+        drift = [w for w in _journal_io.verify(clone)["warnings"]
+                 if rel in w and "changed since" in w]
+        ok = (code == 0 and [r.get("runId") for r in rows][:1] == ["run-base"]
+              and sorted(r.get("runId") for r in rows)
+              == ["run-base", "run-main", "run-side"]
+              and not verdict["findings"] and done == 0
+              and payload.get("recorded") is True and bool(anchor)
+              and drift == [])
+        return ok, ("merge exit %r (%s); recorded %r in %r; rows %r; chain "
+                    "findings %r; the merge commit exit %r (%s); drift in a "
+                    "clone at it %r"
+                    % (code, (out or "").strip()[:160], payload.get("recorded"),
+                       anchor, [r.get("runId") for r in rows],
+                       verdict["findings"], done,
+                       (done_out or "").strip()[:120], drift))
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why it is here
+        remove_tree(clone)
+        _cleanup(fx, found, "ledger-side", files=(rel,))
 
 
 CHECKS = (
@@ -1736,8 +1985,19 @@ CHECKS = (
      check_sweep_leaves_strangers),
     ("g20 the sweep reaps the worktree the plugin created and leaves the "
      "hand-made one beside it", check_sweep_only_reaps_what_it_created),
-    ("g21 an index commit lands the shared file and leaves the shard behind",
+    ("g21 an index commit lands the shared file and the row naming it, leaves "
+     "the shard behind, and the row still names it after a real rebase",
      check_index_commit_carries_only_the_index),
+    ("g22 a ledger file two branches appended to conflicts in a real merge, and "
+     "`audit-journal.py merge` resolves it from the index into a chain that "
+     "verifies and completes the merge",
+     check_evidence_ledger_merge),
+    ("g23 an index commit squash-merged together with work is a gap naming the "
+     "squash commit, never a breach over the work it absorbed",
+     check_squashed_index_commit_is_a_gap),
+    ("g24 ...and so is a squash of the index commit FIRST and work after it, "
+     "whose message ends with the trailer - only the subject header stops it",
+     check_squash_ending_in_the_trailer_is_a_gap),
 )
 
 

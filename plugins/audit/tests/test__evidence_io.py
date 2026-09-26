@@ -1944,6 +1944,7 @@ def _cases(check):
                                "lint") == 0)
 
     _worktree_ledger_cases(check)
+    _merge_ledger_cases(check)
 
 
 def _worktree_ledger_cases(check):
@@ -2017,6 +2018,152 @@ def _worktree_ledger_cases(check):
           "files as it reads the old one", not gaps
           and {"run-a", "run-b", "run-m"} <= set(committed),
           repr((sorted(committed), gaps)))
+
+
+
+# --- em: a ledger file that diverged, merged by the journal's one merge ----------
+def _em_run(run_id, ts, task, scope="task", phase="P1"):
+    row = {"v": 1, "runId": run_id, "ts": ts, "scope": scope,
+           "phaseId": phase, "status": "passed", "steps": [], "failed": []}
+    if task is not None:
+        row["taskId"] = task
+    return row
+
+
+def _em_merge(ours, theirs, name, aliases):
+    """`merge_rows` under a plan's `aliases`. A build whose `merge_rows` takes
+    none is called without them, so a case aimed at the reader's key fails on
+    its ASSERTION there rather than raising and taking the rest down."""
+    try:
+        return M.merge_rows(ours, theirs, name, aliases=aliases)
+    except TypeError:
+        return M.merge_rows(ours, theirs, name)
+
+
+def _em_pair(name, mine, yours):
+    base = [_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1")]
+    return (M.chain_file(base + [mine], name),
+            M.chain_file(base + [yours], name))
+
+
+def _merge_ledger_cases(check):
+    name = "2026-06.s-em.jsonl"
+    stamp = "2026-06-02T10:00:00Z"
+
+    # THE READER'S KEY, FIRST. A `--task` run measured under its phase's gate is
+    # recorded `scope: phase` with a task id, and `latest_by_subject` files it
+    # under the phase - the key a phase sign-off run is filed under too.
+    ours, theirs = _em_pair(name, _em_run("run-task", stamp, "P1.2",
+                                          scope="phase"),
+                            _em_run("run-signoff", stamp, None, scope="phase"))
+    res = _em_merge(ours, theirs, name, {})
+    check("em7 a --task run measured under the phase gate and a phase sign-off "
+          "run of that phase in ONE second are REFUSED, not ordered - "
+          "`latest_by_subject` files both under the phase, so their order is "
+          "which one becomes the phase's pointer: %r"
+          % (res["refusals"] or res.get("ordered"),),
+          not res["ok"] and not res["rows"] and len(res["refusals"]) == 1)
+
+    ours, theirs = _em_pair(name, _em_run("run-old", stamp, "P1.9"),
+                            _em_run("run-new", stamp, "P1.2"))
+    moved = {("task", "P1.9"): ("task", "P1.2")}
+    res = _em_merge(ours, theirs, name, moved)
+    apart = _em_merge(ours, theirs, name, {})
+    check("em8 ...and so are runs under a moved task's OLD id and its NEW one: "
+          "the plan's aliases make them one subject to every reader. The pair: "
+          "under a plan that moved nothing the same two runs ARE disjoint and "
+          "are ordered: %r / %r" % (res["refusals"], apart.get("ordered")),
+          not res["ok"] and len(res["refusals"]) == 1
+          and apart["ok"] and len(apart["ordered"]) == 1)
+
+    ours, theirs = _em_pair(name, _em_run("run-o", stamp, "P1.1"),
+                            _em_run("run-t", stamp, "P1.2"))
+    res = _em_merge(ours, theirs, name, {})
+    swapped = _em_merge(theirs, ours, name, {})
+    check("em9 two task runs of DIFFERENT tasks in one second are ordered, the "
+          "order is written for the record of the merge, and the ledger - which "
+          "takes no marker row - comes out BYTE FOR BYTE the same whichever "
+          "side is ours: %r" % (res["ordered"],),
+          res["ok"] and len(res["rows"]) == 3
+          and all(r.get("runId") for r in res["rows"])
+          and not M.verify_rows(res["rows"], name)["findings"]
+          and _journal_io.merge_text(res["rows"])
+          == _journal_io.merge_text(swapped["rows"])
+          and stamp in res["summary"] and len(res["ordered"]) == 1)
+
+    blind = M.merge_rows(ours, theirs, name)
+    check("em10 ...and with the plan NOT read (no aliases at all) which ids were "
+          "moved is unknown, so the same tie is refused rather than ordered: %r"
+          % (blind["refusals"],),
+          not blind["ok"] and len(blind["refusals"]) == 1)
+
+    x = _em_run("run-x", stamp, "P1.3")
+    y = _em_run("run-y", stamp, "P1.3")
+    one = M.chain_file([_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1"),
+                        x, y], name)
+    two = M.chain_file([_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1"),
+                        y, x], name)
+    res = _em_merge(one, two, name, {})
+    swapped = _em_merge(two, one, name, {})
+    check("em11 an IDENTICAL tie held in two chain orders is ordered by content "
+          "too, so both resolutions of a ledger file are one file: %r"
+          % ([r.get("runId") for r in res["rows"]],),
+          res["ok"] and swapped["ok"]
+          and _journal_io.merge_text(res["rows"])
+          == _journal_io.merge_text(swapped["rows"]))
+
+    row = _em_run("run-t", stamp, "P1.2", scope="phase")
+    check("em12 a run's targets are the readers' keys - `subject_key`, which "
+          "`latest_by_subject` files a pointer under, and the `_same_subject` "
+          "pair, a moved id mapped in both - and nothing when the plan is "
+          "unread: %r" % (M.merge_targets(row, {}),),
+          M.merge_targets(row, {}) == ("key phase P1",
+                                       "pair task=P1.2 phase=P1")
+          and M.merge_targets(_em_run("r", stamp, "P1.9"), moved)
+          == ("key task P1.2", "pair task=P1.2 phase=P1")
+          and M.merge_targets(row, None) == ()
+          and M.subject_key(row) == ("phase", "P1")
+          and M.latest_by_subject([dict(row, ts=stamp)])
+          == {("phase", "P1"): dict(row, ts=stamp)})
+
+    # THE TIE ONLY THE VERDICT PAIR PROTECTS: a task-scope run and a phase-scope
+    # run carrying the same task id are filed under different `subject_key`s, and
+    # a task commit's verdict (`_same_subject`) reads both as that task's.
+    ours, theirs = _em_pair(name, _em_run("run-task", stamp, "P1.2"),
+                            _em_run("run-under-phase", stamp, "P1.2",
+                                    scope="phase"))
+    res = _em_merge(ours, theirs, name, {})
+    check("em13 a scope:task run and a scope:phase run carrying the SAME task id "
+          "in one second are refused: their keys differ, but the verdict a task "
+          "commit is bound to reads both as that task's, so their order is "
+          "which one is newest: %r" % (res["refusals"] or res.get("ordered"),),
+          not res["ok"] and len(res["refusals"]) == 1)
+
+    tmp = _harness.fixture_root("audit-evidence-plan-")
+    try:
+        proj = _project(os.path.join(tmp, "sharded"),
+                        {"manifestPath": "docs/audit/audit-plan.json"})
+        audit = os.path.join(proj, "docs", "audit")
+        os.makedirs(os.path.join(audit, "phases"))
+        with open(os.path.join(audit, "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {}, "phases": [
+                {"id": "P1", "shard": "phases/P1.json"},
+                {"id": "P2", "shard": "phases/P2.json"}]}, fh)
+        with open(os.path.join(audit, "phases", "P1.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": "P1", "tasks": []}, fh)
+        with open(os.path.join(audit, "phases", "P2.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("<<<<<<< ours\n{}\n=======\n{}\n>>>>>>> theirs\n")
+        aliases, why = M.plan_aliases(proj)
+        check("em14 a plan whose SHARD will not parse is named by that shard, "
+              "not by the index that parses - the operator is sent to the file "
+              "that failed: %r" % (why,),
+              aliases is None and "docs/audit/phases/P2.json" in why
+              and "docs/audit/audit-plan.json" not in why)
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _selftest():
