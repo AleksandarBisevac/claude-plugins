@@ -5162,13 +5162,50 @@ def _derived_gate_cases(check):
           and not any(ln.startswith("GATE GREEN:") for ln in lines)
           and any("DERIVED RUN NAMED 2 OF 3 LISTED SUITES" in ln
                   and "test_c.py" in ln for ln in lines))
-    check("dg3n NARROWED, ALLOW: the same run's `testGateDerived.narrowed` "
-          "is true, so the sign-off line prints too, naming the phase and "
-          "the count this derivation kept: %r"
+    check("dg3n RED-FIRST: `testGateDerived.narrowed` is true, but this run "
+          "did not name every listed suite - the derived-step gap already "
+          "graded it `could-not-run` - so the sign-off line must not claim "
+          "this run MEASURED the derived gate; the two sentences cannot "
+          "both be true of one run: %r"
           % ([ln for ln in lines if ln.startswith("NARROWED sign-off:")],),
+          not any(ln.startswith("NARROWED sign-off:")
+                 and "measured the DERIVED gate" in ln for ln in lines)
+          and any(ln.startswith("NARROWED sign-off:")
+                 and "did not name every listed suite" in ln
+                 and "certifies nothing" in ln for ln in lines))
+
+    # --- dg3g: a derived run that DID name every listed suite -- the allow -
+    # narrowed sign-off's measured line still prints exactly as before, which
+    # is the direction `dg3n` above must not have broken.
+    root1b = _harness.fixture_root("run-test-gate-derived-full-")
+    subprocess.run(["git", "init", "-q", root1b], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say1b = os.path.join(root1b, "say.py")
+    with open(say1b, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::"
+                 "test_one PASSED\\n')\n"
+                 "sys.stdout.write('tests/test_b.py::"
+                 "test_two PASSED\\n')\n"
+                 "sys.stdout.write('2 passed in 0.01s\\n')\n"
+                 "raise SystemExit(0)\n")
+    derived_full = {"entry": "pytest",
+                    "tests": ["tests/test_a.py", "tests/test_b.py"],
+                    "narrowed": True}
+    mp1b = _plan(root1b, say1b,
+                {"testGateBasis": "derived", "testGateDerived": derived_full},
+                {"phaseGate": {"mode": "enforce"}})
+    lines1b = []
+    M.main([mp1b, "P1", "--project-dir", root1b, "--no-reuse", "--record"],
+          out=lines1b.append)
+    check("dg3g ALLOW: a run that named every listed suite still prints the "
+          "measured NARROWED line unchanged - suppressing it is only for a "
+          "run the derived-step gap actually graded `could-not-run`: %r"
+          % ([ln for ln in lines1b if ln.startswith("NARROWED sign-off:")],),
           any(ln.startswith("NARROWED sign-off:")
-              and "3 of 3 listed checks" in ln
-              and "before P1 is whole" in ln for ln in lines))
+              and "measured the DERIVED gate" in ln
+              and "2 of 2 listed checks" in ln
+              and "before P1 is whole" in ln for ln in lines1b))
     rows_derived = _ev_io.read_rows(root)["rows"]
     check("dg3s ALLOW: an ENFORCE-mode run - `phase.testGateBasis` is "
           "already `derived` - prints no `shadow:` line and records no "
@@ -5258,6 +5295,73 @@ def _derived_gate_cases(check):
           "two failing suites and a `testGateDerived` on the phase",
           not any(ln.startswith("shadow:") for ln in lines4)
           and "shadow" not in (rows4[0] if rows4 else {}))
+
+    # --- dg20: SHADOW mode with `testGateBasis` already `derived` -----------
+    # An independent case from `dg3s` above: that one is mode `enforce`, so
+    # `shadow_gate_claim`'s own first line - `mode != "shadow"` - already
+    # returns None before its `testGateBasis` guard is ever reached. This
+    # fixture sets mode to `shadow` so the FIRST guard cannot be what is
+    # doing the work, and isolates the second one alone.
+    root5 = _harness.fixture_root("run-test-gate-shadow-derived-")
+    subprocess.run(["git", "init", "-q", root5], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say5 = os.path.join(root5, "say.py")
+    with open(say5, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('FAILED tests/test_a.py::"
+                 "test_one - AssertionError\\n')\n"
+                 "sys.stdout.write('FAILED tests/"
+                 "test_other.py::test_two - AssertionError\\n')\n"
+                 "sys.stdout.write('2 failed in 0.02s\\n')\n"
+                 "raise SystemExit(1)\n")
+    mp5 = _plan(root5, say5,
+               {"testGateBasis": "derived", "testGateDerived": derived_shadow},
+               {"phaseGate": {"mode": "shadow"}})
+    lines5 = []
+    M.main([mp5, "P1", "--project-dir", root5, "--no-reuse", "--record"],
+          out=lines5.append)
+    rows5 = _ev_io.read_rows(root5)["rows"]
+    check("dg20 RED-FIRST: mode `shadow` AND `phase.testGateBasis == "
+          "\"derived\"` together still record no `shadow` field and print "
+          "no `shadow:` line, on the SAME two failing suites `dg19` reads a "
+          "shadow claim from - the `testGateBasis` guard has to fire on its "
+          "own, not only alongside `mode != \"shadow\"`",
+          not any(ln.startswith("shadow:") for ln in lines5)
+          and "shadow" not in (rows5[0] if rows5 else {}))
+
+    # --- dg21: the derived-step gap must not overwrite an earlier no-verdict
+    # outcome/outcomeBasis a step already carries - it appends its own reason
+    # instead. The entry here reports one no-verdict signature of its own
+    # (a vitest-shaped "no test files" exit) AND names fewer of the listed
+    # suites than `testGateDerived.tests` records, so both arms fire on the
+    # SAME step. Driven through `run_gate` directly, the same seam `lc16`
+    # above uses, because `outcomeBasis` is an in-memory field - it is not
+    # among `_evidence_io.STEP_KEYS`, so a committed row is the wrong place
+    # to read it back from.
+    root6 = _harness.fixture_root("run-test-gate-derived-gap-keeps-")
+    subprocess.run(["git", "init", "-q", root6], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say6 = os.path.join(root6, "say6.py")
+    with open(say6, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::test_one\\n')\n"
+                 "sys.stdout.write('No test files found, exiting with "
+                 "code 1\\n')\n"
+                 "raise SystemExit(1)\n")
+    res6 = M.run_gate(root6, [("pytest", _step(sys.executable, say6))],
+                      derived_check={"entry": "pytest",
+                                     "tests": ["tests/test_a.py",
+                                              "tests/test_b.py"]})
+    step6 = res6["steps"][0]
+    check("dg21 RED-FIRST: the step's own no-verdict signature ('vitest "
+          "found no test file to run') stays on `outcomeBasis`, and the "
+          "derived-gap reason is APPENDED to it rather than replacing it: %r"
+          % (step6.get("outcomeBasis"),),
+          step6.get("outcome") == M.CANNOT_RUN
+          and "vitest found no test file to run" in
+              (step6.get("outcomeBasis") or "")
+          and "DERIVED RUN NAMED 1 OF 2 LISTED SUITES" in
+              (step6.get("outcomeBasis") or ""))
 
 
 def _own_cases(check):

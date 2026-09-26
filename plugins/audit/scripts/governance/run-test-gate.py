@@ -2963,11 +2963,28 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
                         # `outcome` below exactly as it does for a kill or a
                         # missing interpreter, and the repair is the same
                         # shape: re-derive and re-run, not retry the task.
-                        step["outcome"] = CANNOT_RUN
-                        step["outcomeBasis"] = (
+                        #
+                        # A MARKER, NEVER A STRING MATCH ON `outcomeBasis`.
+                        # `_render_verdict` needs to know this gap fired
+                        # without re-parsing the sentence below out of
+                        # whatever else already sits on the step.
+                        step["derivedGap"] = True
+                        gap_reason = (
                             "DERIVED RUN NAMED %d OF %d LISTED SUITES: %s"
                             % (matched, total,
                                _output.some_of(missing, budget=SAMPLE_BUDGET)))
+                        # KEEP WHAT WAS ALREADY THERE. A signal, a no-verdict
+                        # signature or `never_started` graded this same step
+                        # first, and each of those is its own observation -
+                        # overwriting it with the gap's reason would erase
+                        # the one that actually explains why nothing ran.
+                        if step.get("outcome") != CANNOT_RUN:
+                            step["outcome"] = CANNOT_RUN
+                        if step.get("outcomeBasis"):
+                            step["outcomeBasis"] = (
+                                step["outcomeBasis"] + "; " + gap_reason)
+                        else:
+                            step["outcomeBasis"] = gap_reason
             steps.append(step)
             # The attempt that ANSWERED, if one did: a retried step's first
             # attempt was ended by a signal, so only the second can speak here.
@@ -3447,12 +3464,25 @@ def _render_verdict(res, out):
     # the time either one prints.
     narrowed = res.get("narrowed")
     if isinstance(narrowed, dict):
-        out("NARROWED sign-off: this run measured the DERIVED gate (%d of "
-            "%d listed checks; basis on phase.testGateBasis). It is "
-            "evidence about this phase's own tests and their recorded "
-            "couplings. The full suite was not run here and is owed "
-            "before %s is whole."
-            % (narrowed["listed"], narrowed["full"], res.get("subject")))
+        # A MEASUREMENT CLAIM NEEDS A MEASUREMENT UNDER IT. `derived_step_gap`
+        # already graded this run `could-not-run` when the derived entry
+        # named fewer of the listed suites than the phase records - see the
+        # `GATE COULD NOT RUN` line above - so saying this same run
+        # "measured the DERIVED gate" would claim, in the very next line,
+        # exactly what the banner above just refused. The two sentences
+        # cannot both be true of one run.
+        if any(st.get("derivedGap") for st in (res.get("steps") or ())):
+            out("NARROWED sign-off: the derived gate was declared for this "
+                "phase, but this run did not name every listed suite, so it "
+                "certifies nothing about that gate - see the GATE COULD NOT "
+                "RUN line above for what it did not measure.")
+        else:
+            out("NARROWED sign-off: this run measured the DERIVED gate (%d of "
+                "%d listed checks; basis on phase.testGateBasis). It is "
+                "evidence about this phase's own tests and their recorded "
+                "couplings. The full suite was not run here and is owed "
+                "before %s is whole."
+                % (narrowed["listed"], narrowed["full"], res.get("subject")))
     shadow = res.get("shadow")
     if isinstance(shadow, dict):
         out("shadow: derived would have listed %d of %d failing suite(s)"

@@ -21,10 +21,116 @@
   "branch": "audit/p79-the-derived-sign-off-gate-in-s",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P79-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/derive-phase-gate.py:242",
+        "issue": "_gather_facts runs meta.phaseGate.derived.runner as the full listing and derived.spelling as the related listing, while the schema defines the listings as derived.listing.all / derived.listing.related (spelling is the path-scoped run command); a schema-correct manifest never runs its listings, the suite stubs listing: {} and the build guide documents the code's reading",
+        "resolution": "open: fix task P79.8-5bh"
+      },
+      {
+        "id": "P79-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/derive-phase-gate.py:248",
+        "issue": "the full listing is not timed: fullListing carries no durationMs and testGateDerived records only the related listing's cost",
+        "resolution": "open: fix task P79.8-5bh"
+      },
+      {
+        "id": "P79-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:286",
+        "issue": "_importers_arm's final fallback returns no reason for a related listing that exited 0 and named no suite, and an all listing that named none does not turn the derivation wide with basis derived-empty",
+        "resolution": "open: fix task P79.8-5bh"
+      },
+      {
+        "id": "P79-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/derive-phase-gate.py:234",
+        "issue": "a verifiedOn.command that cannot run or exits non-zero is not its own printed reason; it surfaces later as 'this machine answers None', conflated with a real version mismatch",
+        "resolution": "open: fix task P79.8-5bh"
+      },
+      {
+        "id": "P79-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:371",
+        "issue": "the always-on arm (changedSince filtered by is_suite_path, lastFailedSuites, dedup) has no case",
+        "resolution": "open: fix task P79.8-5bh"
+      },
+      {
+        "id": "P79-R6",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:158",
+        "issue": "newest_red_phase_row has no case",
+        "resolution": "open: fix task P79.8-5bh"
+      },
+      {
+        "id": "P79-R7",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3448",
+        "issue": "_render_verdict prints 'this run measured the DERIVED gate' even when derived_step_gap graded the same run could-not-run; the dg3n case asserts both lines together",
+        "resolution": "open: fix task P79.9-5bh"
+      },
+      {
+        "id": "P79-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:2110",
+        "issue": "shadow_gate_claim's testGateBasis == 'derived' guard has no independent case",
+        "resolution": "open: fix task P79.9-5bh"
+      },
+      {
+        "id": "P79-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:2954",
+        "issue": "derived_step_gap overwrites a step's existing no-verdict outcome and outcomeBasis instead of keeping it and appending",
+        "resolution": "open: fix task P79.9-5bh"
+      },
+      {
+        "id": "P79-R10",
+        "severity": "med",
+        "file": "plugins/audit/tests/test_audit_task.py:7539",
+        "issue": "cp1 and cp5 never read the coupling.learned / coupling.dropped journal row or its details",
+        "resolution": "open: fix task P79.10-5bh"
+      },
+      {
+        "id": "P79-R11",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py:7561",
+        "issue": "cp2 does not pin basis {runId, head, phases} after a re-couple",
+        "resolution": "open: fix task P79.10-5bh"
+      },
+      {
+        "id": "P79-R12",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:6485",
+        "issue": "couple accepts --basis-head as typed with no git check and stores --phases ids unchecked against the plan; _check_coupling validates neither basis.head nor basis.phases",
+        "resolution": "open: fix task P79.10-5bh"
+      },
+      {
+        "id": "P79-R13",
+        "severity": "med",
+        "file": "plugins/audit/agents/audit-reviewer.md:36",
+        "issue": "states unconditionally that the reviewer is handed the derive-phase-gate.py --brief line and runId, while phase-signoff.md spawns the sign-off reviewer at step 1, before step 2a derives",
+        "resolution": "open: fix task P79.11-5bh"
+      },
+      {
+        "id": "P79-R14",
+        "severity": "low",
+        "file": "COMPATIBILITY.md:170",
+        "issue": "the new bullet promises an absence reading for four keys and states three; phase.testGateBasis has none",
+        "resolution": "open: fix task P79.11-5bh"
+      },
+      {
+        "id": "P79-R15",
+        "severity": "low",
+        "file": "docs/audit/phases/P79.json",
+        "issue": "each executor's audit-stamp grades stale: dirtyDigest moved with sibling edits in the shared worktree while scopeDigest agreed",
+        "resolution": "triaged, no change: the stamps' own-file digests agreed, and each task commit was bound by commit-task-work to that task's recorded green gate run, which is the measurement that decides a task"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -446,7 +552,7 @@
     {
       "id": "P79.7",
       "title": "Docs: init 5.4 runner table, sign-off step 2a, the reviewer's basis line, the boundary sentence",
-      "status": "in_progress",
+      "status": "done",
       "description": "commands/init.md step 5.4 (assemble the candidate manifest): write meta.phaseGate with mode 'shadow', always (the lint/typecheck/build keys recon found), smoke (a tagged e2e key when there is one), and derived ONLY for a runner whose listing recon RAN and saw work without executing a test, with the pass-with-no-tests flag in both listing commands and verifiedOn = the version command and its output. Carry the design's runner table as claims about each tool with the documentation date the design records: Jest 30+ --listTests --findRelatedTests (exit 1 on no match since v28 without --passWithNoTests; an unmapped TS paths alias is an invisible edge), Vitest 5 'vitest list --filesOnly' (2.x-4.x executes files; related transforms every module on the path; no rerun-last-failed), Playwright 1.46+ '--list --reporter=json' (loads every file; a shared fixture means the whole suite), Cypress (no listing in run), Nx and Turborepo (list projects or tasks, not tests; a shallow clone means everything changed), pytest --collect-only -qq (imports modules; exit 5 on none), Go/Gradle/.NET list flags; a runner with no non-executing listing gets listing null. Offer, never impose, reporter settings for the executor's own run (vitest --silent=passed-only, jest --silent, playwright line/dot); no retries in proposed commands. reference/phase-signoff.md step 2a: when meta.phaseGate.mode is set run derive-phase-gate.py <m> <P> before step 2's run-test-gate.py --record, read the DERIVED line, and route the NARROWED and 'DERIVED RUN NAMED k OF N' lines; the reviewer's sign-off brief carries the derive-phase-gate.py --brief line and the runId only (tk2), never the listing or runner output. agents/audit-reviewer.md: what that line means and that the reviewer never re-runs the suite. manifest-conventions.md: the coupling.learned, coupling.dropped and phase.gateDerived journal actions and their details. commands/doctor.md: the recall row. README Test evidence: the derived gate, shadow first, and the boundary 'selected by import graph and recorded couplings only' (dg4). COMPATIBILITY.md: mode absent = no derivation; coupling absent = no learned arm; testGateDerived absent = no NARROWED line. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/commands/init.md",
@@ -486,18 +592,220 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "249d3e30c21baa5614f9a37633d88afc06714f3b",
+      "outcome": {
+        "technical": "init.md synthesis step (phaseGate, runner table dated 2026-09-25, reporter offers, no retries); phase-signoff.md 2a and the NARROWED / DERIVED RUN NAMED routing; audit-reviewer.md handed-input row and must-not line; manifest-conventions.md coupling.learned / coupling.dropped / phase.gateDerived; doctor.md shadow recall row; README Test evidence derived-gate paragraph; COMPATIBILITY.md absence readings; CHANGELOG [Unreleased]. Listings documented per the SCHEMA (derived.listing.related / .all), not the current derive-phase-gate.py reading. Task review: intent matches; redFirst not-attempted (gate-only docs task); inheritedTests not-asked - the gate's selftests entry is the whole sweep. Review findings carried to sign-off: audit-reviewer.md states the --brief input unconditionally while phase-signoff.md spawns the reviewer (step 1) before deriving (2a) (med); COMPATIBILITY.md promises four absence readings and states three (low); stale stamp from dirty-set change, scopeDigest agrees (low).",
+        "descriptive": "The derived sign-off gate is documented where each reader meets it: init writes meta.phaseGate in shadow mode with a dated runner table, sign-off derives before it gates, the reviewer gets the basis line only, the journal actions and the doctor's recall row are described, the README states the selection boundary, COMPATIBILITY says what each new key's absence means, and the changelog records it."
+      },
+      "startedAt": "2026-09-26T16:02:36Z",
+      "completedAt": "2026-09-26T16:20:02Z",
+      "verifiedBy": [
+        "selftests",
+        "gate-parity"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-26T16:12:16Z.c9a986",
+        "status": "passed",
+        "at": "2026-09-26T16:12:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "249d3e30c21baa5614f9a37633d88afc06714f3b",
+        "at": "2026-09-26T16:20:02Z"
+      }
+    },
+    {
+      "id": "P79.8-5bh",
+      "title": "derive-phase-gate runs the schema's listings, times both, and names every skipped arm",
+      "status": "in_progress",
+      "description": "Sign-off review findings on the listing plumbing. (1) derive-phase-gate.py _gather_facts reads meta.phaseGate.derived.runner as the FULL listing and derived.spelling as the RELATED listing; the schema ($defs/meta/properties/phaseGate/properties/derived) defines the listings as derived.listing.all and derived.listing.related (related carries {paths}), while runner is a buildCommands key and spelling is the path-scoped RUN command. Read listing.all and listing.related; a listing never executes a test. The test fixture's listing: {} stub goes; fixtures declare real listing.related / listing.all commands. Correct the PLUGIN-BUILD-GUIDE.md derive-phase-gate section and the module docstring to the schema's reading. (2) Time both listings: fullListing carries durationMs like the related one, and testGateDerived records both costs. (3) Version check: a verifiedOn.command that cannot be run or exits non-zero is its own printed skip reason (the version command failed), distinct from a machine that answers a different version; never render it as 'this machine answers None'. (4) An empty listing never narrows silently: an ALL listing that ran, exited 0 and named no suite turns the whole derivation wide with basis derived-empty (the vocabulary word already exists) and a printed reason, before anything runs; a RELATED listing that named none while ALL named some makes the importers arm contribute nothing with a printed reason (_gate_derive._importers_arm's final fallback currently returns no reason). Update the docstrings that call derived-empty unreachable. (5) _gate_derive.derive(): cases for the always-on arm (a changedSince path that is a suite is added, one that is not is dropped; a lastFailedSuites path is added and deduped against another arm), and for newest_red_phase_row (newest failed phase-scope row by ts; a green row does not override; another phase or scope is excluded). No plan ids in comments; no numbers in prose.",
+      "files": [
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/tests/test__gate_derive.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_derive_phase_gate.py: a manifest declaring meta.phaseGate.derived.listing.related / .all spawns exactly those two commands ({paths} filled in related) and never derived.runner or derived.spelling - red at HEAD",
+          "plugins/audit/tests/test__gate_derive.py: an ALL listing that ran and named no suite turns the derivation wide with basis derived-empty and a printed reason; changedSince, lastFailedSuites and newest_red_phase_row each have cases"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-09-26T16:02:36Z",
+      "startedAt": "2026-09-26T16:31:03Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-26T16:12:16Z.c9a986",
+        "runId": "2026-09-26T17:04:45Z.b62036",
         "status": "passed",
-        "at": "2026-09-26T16:12:16Z"
+        "at": "2026-09-26T17:04:45Z"
+      }
+    },
+    {
+      "id": "P79.9-5bh",
+      "title": "a NARROWED line never claims a measurement the same run could not make",
+      "status": "in_progress",
+      "description": "Sign-off review findings on run-test-gate.py. (1) _render_verdict prints 'NARROWED sign-off: this run measured the DERIVED gate' whenever res['narrowed'] is a dict, even when derived_step_gap graded that same run could-not-run (DERIVED RUN NAMED k OF N LISTED SUITES); the dg3n case asserts both lines together and so enshrines the contradiction. When the derived step was graded could-not-run, print instead that the derived gate was declared but this run did not name every listed suite and certifies nothing about it (point at the GATE COULD NOT RUN line); keep the line unchanged on a run that did name every listed suite. (2) shadow_gate_claim's testGateBasis == 'derived' guard gets an independent case: mode shadow AND testGateBasis derived returns no shadow claim on that condition alone. (3) derived_step_gap overwrites a step's existing no-verdict outcome/outcomeBasis (set earlier by signal, no-verdict signature or never-started); keep the earlier outcome and append the derived-gap reason to outcomeBasis rather than replacing it. No plan ids in comments; no numbers in prose.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a derived run graded could-not-run by the derived-step gap does not print 'this run measured the DERIVED gate' - the dg3n pairing that asserts both goes red at HEAD",
+          "plugins/audit/tests/test_run_test_gate.py: shadow mode with phase.testGateBasis derived is its own case; a step already carrying a no-verdict outcomeBasis keeps it and gains the derived-gap reason"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T16:31:03Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T17:05:45Z.cf8d75",
+        "status": "passed",
+        "at": "2026-09-26T17:05:45Z"
+      }
+    },
+    {
+      "id": "P79.10-5bh",
+      "title": "couple checks its basis against git and the plan, and its cases read the journal",
+      "status": "in_progress",
+      "description": "Sign-off review findings on couple/uncouple. (1) couple --basis-head is accepted as typed: verify it names a commit git has (in the project directory, the way 'done --commit' asks git), refuse exit 2 naming the SHA when git answers no, and when git cannot be asked (no git, a shallow clone) write it and report it as unverified rather than accusing it, exactly as 'done --commit' does. (2) --phases ids are stored unchecked: refuse exit 2 on an id the plan does not hold, naming it. (3) _manifest_phases._check_coupling validates test, sources and basis.runId only: add warnings (through _output.finding with a stable code, like its siblings) for a basis.head that is not an object-id-shaped string and a basis.phases entry that is not a phase id in the plan. (4) cp1 and cp5 assert on meta.coupling only: read the journal as the other verbs' cases do and assert exactly one coupling.learned row (details field/to/runId/commit) for couple and one coupling.dropped row (details field/from) for uncouple. (5) cp2 does not pin basis after a re-couple: assert the first call's basis {runId, head, phases} is kept when a second couple passes a different --basis-run / --basis-head / --phases, and state that rule where couple is documented (commands/task.md and the README /audit:task row), with the new refusals. No plan ids in comments; no numbers in prose.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: couple --basis-head naming a SHA git does not have is refused exit 2 and writes nothing; --phases naming an id the plan does not hold is refused exit 2; a real commit and real phase ids are accepted - red at HEAD",
+          "plugins/audit/tests/test_audit_task.py: couple and uncouple each write exactly one coupling.learned / coupling.dropped journal row with its details; a re-couple keeps the first basis"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T16:31:03Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T17:06:46Z.194e50",
+        "status": "passed",
+        "at": "2026-09-26T17:06:46Z"
+      }
+    },
+    {
+      "id": "P79.11-5bh",
+      "title": "the reviewer's derived-gate input is conditional, and every promised absence reading is stated",
+      "status": "in_progress",
+      "description": "Sign-off review findings on the docs. (1) agents/audit-reviewer.md says unconditionally that when meta.phaseGate.mode is set the orchestrator has already derived the gate and hands the reviewer the derive-phase-gate.py --brief line and the runId; but reference/phase-signoff.md spawns the sign-off reviewer at step 1, before step 2a derives (and the derivation must follow the fix tasks the review creates, so it cannot move before the review). Make both documents say the same thing: the basis line and runId are handed only when a derivation is already recorded for the phase (phase.testGateDerived present, e.g. a re-review after a gate), and at a first sign-off the input is absent and the reviewer reads it as absent rather than assuming one; phase-signoff.md step 1's reviewer spawn names that conditional input. (2) COMPATIBILITY.md's new bullet promises an absence reading for each of meta.phaseGate.mode, meta.coupling, phase.testGateDerived and phase.testGateBasis and states three; state phase.testGateBasis's own reading (read as the undeclared default, the same rule as tests.gateBasis; derive-phase-gate.py writes it together with testGateDerived). (3) CHANGELOG.md [Unreleased]: add that couple refuses a --basis-head git does not have and a --phases id the plan does not hold, and that an ALL listing naming no suite turns the derived gate wide with basis derived-empty. No plan ids; no numbers in prose.",
+      "files": [
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T16:31:03Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T17:07:45Z.26fb08",
+        "status": "passed",
+        "at": "2026-09-26T17:07:45Z"
       }
     }
   ],
