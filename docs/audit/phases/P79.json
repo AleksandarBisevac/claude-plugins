@@ -667,7 +667,7 @@
     {
       "id": "P79.9-5bh",
       "title": "a NARROWED line never claims a measurement the same run could not make",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review findings on run-test-gate.py. (1) _render_verdict prints 'NARROWED sign-off: this run measured the DERIVED gate' whenever res['narrowed'] is a dict, even when derived_step_gap graded that same run could-not-run (DERIVED RUN NAMED k OF N LISTED SUITES); the dg3n case asserts both lines together and so enshrines the contradiction. When the derived step was graded could-not-run, print instead that the derived gate was declared but this run did not name every listed suite and certifies nothing about it (point at the GATE COULD NOT RUN line); keep the line unchanged on a run that did name every listed suite. (2) shadow_gate_claim's testGateBasis == 'derived' guard gets an independent case: mode shadow AND testGateBasis derived returns no shadow claim on that condition alone. (3) derived_step_gap overwrites a step's existing no-verdict outcome/outcomeBasis (set earlier by signal, no-verdict signature or never-started); keep the earlier outcome and append the derived-gap reason to outcomeBasis rather than replacing it. No plan ids in comments; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -697,18 +697,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "356be6dc3268081ed90eadb57d73e7578cf299f0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate.py: the derived-gap step carries derivedGap, keeps an earlier no-verdict outcome and appends its reason to outcomeBasis; _render_verdict prints the measured NARROWED line or the new certifies-nothing line, never both. Cases dg3n (rewritten), dg3g (allow), dg20 (shadow + testGateBasis derived), dg21 (append). Task review: intent matches, redFirst proved; inheritedTests not-asked - selftests is the whole sweep. Review notes: stale stamp from sibling edits, scopeDigest agrees (no action, as P79-R15); preExisting: derivedGap and outcomeBasis are not in _evidence_io.STEP_KEYS, so a committed row cannot say why a step could not run - recorded as a fault.",
+        "descriptive": "A derived sign-off run that did not name every listed suite no longer prints that it measured the derived gate; it says it certifies nothing about that gate and points at the could-not-run line, while a run that named every listed suite prints the measured line unchanged."
       },
       "startedAt": "2026-09-26T16:31:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T17:17:16Z",
+      "verifiedBy": [
+        "dg3n",
+        "dg3g",
+        "dg20",
+        "dg21"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T17:05:45Z.cf8d75",
         "status": "passed",
         "at": "2026-09-26T17:05:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "356be6dc3268081ed90eadb57d73e7578cf299f0",
+        "at": "2026-09-26T17:17:16Z"
       }
     },
     {

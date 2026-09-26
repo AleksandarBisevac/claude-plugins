@@ -645,10 +645,16 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" couple \
 (`tests_add_path` and `is_suite_path` both have to accept it). `--sources` names every file
 this test is coupled to, and each one is checked the same way. `--basis-run` is looked up in
 the evidence ledger, never merely typed — a run id the ledger does not hold is refused,
-because a coupling states what taught it. A test coupled for the first time gets a new entry;
-a test already coupled has its `sources` WIDENED (unioned) with the ones just named, and its
-`learnedAt` stays the one the first call wrote — a coupling is a fact that grows and is
-never silently replaced.
+because a coupling states what taught it. `--basis-head` is asked of git the same way
+`done`'s own SHA is: refused, exit 2, when git can be asked and the SHA resolves to
+nothing in this project's repository; written and reported unverified, never refused, when
+git cannot be asked at all (no git on PATH, or a shallow clone). `--phases` is checked against
+the plan this call is writing into — an id that plan does not hold is refused, exit 2, naming
+it. A test coupled for the first time gets a new entry; a test already coupled has its
+`sources` WIDENED (unioned) with the ones just named, and its `basis` (`runId`/`head`/`phases`)
+and `learnedAt` stay exactly what the first call wrote — a re-couple's own `--basis-run`/
+`--basis-head`/`--phases` are still validated, but never written over the first call's basis.
+A coupling is a fact that grows and is never silently replaced.
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" uncouple \
@@ -657,7 +663,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" uncouple \
 
 `uncouple --test` drops the one entry it names. **Refused, exit 2:** `--test` naming a test
 `meta.coupling` carries no entry for, and (on `couple`) an empty `--sources`, a missing
-`--basis-run`/`--basis-head`, or a `--basis-run` the evidence ledger does not hold.
+`--basis-run`/`--basis-head`, a `--basis-run` the evidence ledger does not hold, a
+`--basis-head` that is not a commit SHA or that git can be asked about and does not have, or a
+`--phases` id this plan does not hold.
 `--sources` and `--basis-run`/`--basis-head`/`--phases` belong to `couple` alone; `--test` is
 the one flag the two verbs share.
 

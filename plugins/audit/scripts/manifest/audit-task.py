@@ -6428,6 +6428,19 @@ def _coupling_sources_refusal(sources):
             % (_output.some_of(bad, render=repr),))
 
 
+def _coupling_phases_refusal(phases, phase_ids):
+    """Whether every `--phases` value names a phase this plan actually
+    holds, or the refusal naming the ones that do not. Stored unchecked,
+    a typo would sit in `meta.coupling` forever with no rule grading it
+    after the fact."""
+    bad = [p for p in phases if p not in phase_ids]
+    if not bad:
+        return None
+    return ("[audit-task] --phases names %s that %s not a phase id in this "
+            "plan" % (_output.some_of(bad, render=repr),
+                     "is" if len(bad) == 1 else "are"))
+
+
 def cmd_couple(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -6461,7 +6474,17 @@ def _locked_couple(args, project, config, mpath, out):
     exactly as the first call wrote them -- so the entry records what first
     taught the coupling and grows only the list of what it now covers, the
     same shape `_check_coupling`'s docstring reads a widened entry as ("each
-    test should carry ONE entry with every source it is coupled to").
+    test should carry ONE entry with every source it is coupled to"). A
+    re-couple's own `--basis-run`/`--basis-head`/`--phases` are still
+    validated (a re-couple with a bad basis is still refused), but never
+    written over the first call's basis.
+
+    `--basis-head` IS ASKED OF GIT, not trusted as typed: refused when git
+    can be asked and says no, written and reported unverified when it
+    cannot be asked at all (no git, a shallow clone) -- `--commit`'s own
+    rule, reused rather than re-derived. `--phases` is checked against the
+    plan this call is writing into, refused by name when an id is not a
+    phase this plan holds.
     """
     test = (args.test or "").strip()
     refusal = _coupling_test_refusal(test)
@@ -6488,6 +6511,13 @@ def _locked_couple(args, project, config, mpath, out):
             "run examined, so a later mismatch has a real answer to compare "
             "against")
         return E_USAGE
+    if not _SHA_SHAPE.match(head):
+        out("[audit-task] --basis-head %r is not a commit SHA (7-40 hex "
+            "characters) -- the same object-id shape `--commit` requires, "
+            "so a later mismatch has a real SHA to compare against, not a "
+            "name that goes on resolving to whatever it points at later"
+            % (head,))
+        return E_USAGE
     try:
         rows = _evidence_io.read_rows(project)["rows"]
     except Exception as exc:
@@ -6499,12 +6529,29 @@ def _locked_couple(args, project, config, mpath, out):
             "evidence ledger -- a coupling says what taught it, and this run "
             "taught nothing recorded" % (run_id,))
         return E_USAGE
+    # THE SAME ASK `done --commit` MAKES, reused rather than re-derived
+    # (`_commit_git_note`'s own reason): refused when git can be asked and
+    # says no, written and reported unverified when it cannot be asked at
+    # all (no git, a shallow clone) -- an unasked question is not a clean
+    # trail, but it is not a fabricated SHA either.
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    refusal, unverified = _commit_git_note(git_root, head)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     phases = _split_csv(args.phases)
 
     plan = _read_plan(mpath, out)
     if isinstance(plan, int):
         return plan
     raw_index, assembled, vm = plan
+    phase_ids = set(p.get("id") for p in (assembled.get("phases") or [])
+                    if isinstance(p, dict))
+    refusal = _coupling_phases_refusal(phases, phase_ids)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     meta = dict(assembled.get("meta") or {})
     coupling = [dict(e) for e in (meta.get("coupling") or [])
                if isinstance(e, dict)]
@@ -6541,11 +6588,13 @@ def _locked_couple(args, project, config, mpath, out):
     index_note = _index_dirty_note(written, mpath, project, None)
     if args.as_json:
         result = {"ok": True, "test": test, "entry": entry,
-                  "written": written}
+                  "written": written, "commitVerified": unverified is None}
         out(_json_tail(result, args, jres, warnings, written_manifest,
                        index_note))
         return 0
     out("[audit-task] %s" % (summary,))
+    if unverified:
+        out(unverified)
     _report_tail(out, jres, "coupling.learned", warnings, written_manifest,
                 written, index_note)
     return 0

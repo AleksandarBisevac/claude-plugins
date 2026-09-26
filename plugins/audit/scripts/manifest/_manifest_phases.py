@@ -386,7 +386,10 @@ def _check_phase_gate_derived(derived, build_keys):
     return out
 
 
-def _check_coupling(coupling):
+_COUPLING_OBJECT_ID = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+
+def _check_coupling(coupling, phase_ids):
     """WARNINGS for `meta.coupling` - shape only, additive.
 
     Every entry needs `test`, a non-empty `sources` and `basis.runId` - a
@@ -394,6 +397,14 @@ def _check_coupling(coupling):
     requires one. Two entries naming the same `test` are named together
     rather than one silently shadowing the other: a reader (and a future
     derivation) has no rule for which of two conflicting source lists wins.
+
+    `basis.head` (an object-id shape) and `basis.phases` (every entry a
+    phase id `phase_ids` actually holds) are graded here too, CODED like
+    the siblings above them in this module - `couple` itself asks git and
+    the plan before it ever writes either field, so a bad value reaching
+    this walk means the manifest was edited by hand, which is exactly what
+    a stable code lets a caller keep filtering for even though this check
+    stays additive.
     """
     if not isinstance(coupling, list):
         return ["meta.coupling: must be an array, got %s"
@@ -419,6 +430,24 @@ def _check_coupling(coupling):
             missing.append("basis.runId")
         if missing:
             out.append("%s: missing %s" % (where, _output.some_of(missing)))
+        if isinstance(basis, dict):
+            head = basis.get("head")
+            if head is not None and not (isinstance(head, str)
+                                         and _COUPLING_OBJECT_ID.match(head)):
+                out.append(_output.finding(
+                    "phases.coupling.head-shape",
+                    "%s: basis.head %r does not read as an object id (7-40 "
+                    "hex characters)" % (where, head)))
+            phases = basis.get("phases")
+            if isinstance(phases, list):
+                bad = [p for p in phases if p not in phase_ids]
+                if bad:
+                    out.append(_output.finding(
+                        "phases.coupling.phase-id",
+                        "%s: basis.phases names %s that %s not a phase id "
+                        "in this plan"
+                        % (where, _output.some_of(bad, render=repr),
+                           "is" if len(bad) == 1 else "are")))
         if isinstance(test, str) and test.strip():
             if test in seen:
                 dup.add(test)
@@ -518,7 +547,9 @@ def _check_phase_gate(manifest, warnings):
                             "%s) - omit the key entirely for 'no budget'"
                             % (budget,))
     if "coupling" in meta:
-        warnings.extend(_check_coupling(meta.get("coupling")))
+        phase_ids = set(p.get("id") for p in (manifest.get("phases") or [])
+                        if isinstance(p, dict))
+        warnings.extend(_check_coupling(meta.get("coupling"), phase_ids))
 
 
 def _check_phase_intent(phase, pwhere, build_keys):

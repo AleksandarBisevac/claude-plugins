@@ -1027,6 +1027,38 @@ def _cases(check):
           == ["lint"])
 
 
+    # --- meta.coupling: shape, plus the two new coded warnings -----------------
+    cp_phase_ids = set(["P1", "P2"])
+    cp_ok = [{"test": "tests/test_a.py", "sources": ["src/a.ts"],
+             "basis": {"runId": "RUN-1", "head": "deadbeef",
+                      "phases": ["P1"]}}]
+    check("cp1 a coupling entry whose `basis.head` reads as an object id and "
+          "whose `basis.phases` are all held by the plan draws nothing: %r"
+          % (M._check_coupling(cp_ok, cp_phase_ids),),
+          M._check_coupling(cp_ok, cp_phase_ids) == [])
+    cp_bad_head = [{"test": "tests/test_a.py", "sources": ["src/a.ts"],
+                    "basis": {"runId": "RUN-1", "head": "not-a-sha",
+                             "phases": ["P1"]}}]
+    w = M._check_coupling(cp_bad_head, cp_phase_ids)
+    check("cp2 a `basis.head` that does not read as an object id (7-40 hex "
+          "characters) draws a CODED warning - `couple` itself asks git "
+          "before writing this field, so a bad value here means the "
+          "manifest was edited by hand: %r" % (w,),
+          len(w) == 1 and M._output.finding_code(w[0])
+          == "phases.coupling.head-shape" and "not-a-sha" in w[0])
+    cp_bad_phase = [{"test": "tests/test_a.py", "sources": ["src/a.ts"],
+                     "basis": {"runId": "RUN-1", "head": "deadbeef",
+                              "phases": ["P1", "P404"]}}]
+    w = M._check_coupling(cp_bad_phase, cp_phase_ids)
+    check("cp3 a `basis.phases` entry that is not a phase id in the plan "
+          "draws a CODED warning naming it: %r" % (w,),
+          len(w) == 1 and M._output.finding_code(w[0])
+          == "phases.coupling.phase-id" and "P404" in w[0])
+    check("cp4 SECOND DIRECTION: a clean entry with an object-id head and "
+          "every phase held by the plan draws neither coded warning",
+          M._check_coupling(cp_ok, cp_phase_ids) == [])
+
+
 def _selftest():
     return _harness.run(_cases)
 

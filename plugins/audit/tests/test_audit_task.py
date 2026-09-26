@@ -5714,7 +5714,7 @@ def _cases(check):
             ("move", ["move", "P2.3", "--to", "P4"]),
             ("couple", ["couple", "--test", "tests/test_tw.py",
                         "--sources", "src/a.ts", "--basis-run", "RUN-TW",
-                        "--basis-head", "deadbeef"]),
+                        "--basis-head", _tw_sha]),
             ("uncouple", ["uncouple", "--test",
                           "tests/test_tw.py"]),
         )
@@ -7531,6 +7531,32 @@ def _cases(check):
         def cp_coupling(mpath):
             return cp_meta(mpath).get("coupling") or []
 
+        def cp_journal(project, action):
+            """Every row of `action` the journal actually holds - the same
+            read every other verb's case in this file takes (`task.scope`,
+            `phase.cancel`), so a coupling row is read the way the rest of
+            the trail already is rather than by a second route."""
+            jmod = _panel_write._journalmod()
+            return [r for r in (jmod.read_all(project) if jmod else [])
+                   if r.get("action") == action]
+
+        def cp_repo(name, manifest):
+            """A fixture whose project really IS a git repository with a
+            commit - `pd_repo`'s own reason: the question `couple` asks is
+            whether git resolves a SHA, and a stub would answer for a third
+            party neither the suite nor the code asked."""
+            proj, mpath = mk(name, manifest, git=True)
+            for argv in (["config", "user.email", "t@example.com"],
+                         ["config", "user.name", "Test User"],
+                         ["add", "-A"], ["commit", "-qm", "seed"]):
+                subprocess.run(["git", "-C", proj] + argv,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            head = subprocess.run(["git", "-C", proj, "rev-parse", "HEAD"],
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL)
+            return proj, mpath, head.stdout.decode("utf-8", "replace").strip()
+
         cp_proj, cp_mp = mk("cp-couple", base_manifest())
         _cp_ev.append_row(cp_proj, {
             "v": 1, "runId": "RUN-CP1", "ts": "2026-09-01T00:00:00Z",
@@ -7553,6 +7579,22 @@ def _cases(check):
                             "phases": ["P2"]},
                    "learnedAt": cp_coupling(cp_mp)[0]["learnedAt"]}])
         _cp_learned_at = cp_coupling(cp_mp)[0]["learnedAt"] if cp_coupling(cp_mp) else None
+        _cp_learned_rows = cp_journal(cp_proj, "coupling.learned")
+        # `details.to` is a LIST, so `_journal_io._clip` spells it as JSON
+        # text - decoded rather than compared as text, `jf_val`'s own reason
+        # two groups over.
+        _cp_learned_det = (_cp_learned_rows[0].get("details") or {}
+                           if _cp_learned_rows else {})
+        check("cp1b `couple` writes exactly one `coupling.learned` journal "
+              "row, carrying {field, to, runId, commit} - read the way "
+              "every other verb's case in this file reads its own action: "
+              "%r" % (_cp_learned_rows,),
+              len(_cp_learned_rows) == 1
+              and _cp_learned_det.get("field") == "tests/test_a.py"
+              and json.loads(_cp_learned_det.get("to") or "null")
+              == ["src/a.ts", "src/b.ts"]
+              and _cp_learned_det.get("runId") == "RUN-CP1"
+              and _cp_learned_det.get("commit") == "deadbeef")
 
         # ---- MUTATION GUARD: coupling the SAME test twice UNIONS the -------
         # sources and keeps the first `learnedAt` -- an implementation that
@@ -7570,6 +7612,31 @@ def _cases(check):
               codecp2 == 0 and len(cp_coupling(cp_mp)) == 1
               and cp_coupling(cp_mp)[0]["sources"]
               == ["src/a.ts", "src/b.ts", "src/c.ts"]
+              and cp_coupling(cp_mp)[0]["learnedAt"] == _cp_learned_at)
+
+        # ---- MUTATION GUARD: a re-couple does not pin `basis` -- a THIRD --
+        # `couple` on the same test, passing a DIFFERENT --basis-run,
+        # --basis-head and --phases, must still keep the entry's basis
+        # exactly as the first call wrote it: `basis` is what taught the
+        # coupling, and only the first teaching counts.
+        _cp_ev.append_row(cp_proj, {
+            "v": 1, "runId": "RUN-CP2", "ts": "2026-09-01T00:30:00Z",
+            "scope": "phase", "phaseId": "P3", "status": "failed", "steps": []})
+        codecp2b, txtcp2b = run(
+            ["couple", "--test", "tests/test_a.py",
+             "--sources", "src/d.ts",
+             "--basis-run", "RUN-CP2", "--basis-head", "cafebabe",
+             "--phases", "P3", "--project-dir", cp_proj])
+        check("cp2b MUTATION GUARD: a re-couple with a DIFFERENT basis "
+              "widens `sources` again but keeps the FIRST call's basis "
+              "{runId, head, phases} - an implementation that overwrote "
+              "basis on every call would move it here: %r"
+              % (cp_coupling(cp_mp),),
+              codecp2b == 0 and len(cp_coupling(cp_mp)) == 1
+              and cp_coupling(cp_mp)[0]["sources"]
+              == ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"]
+              and cp_coupling(cp_mp)[0]["basis"] == {
+                  "runId": "RUN-CP1", "head": "deadbeef", "phases": ["P2"]}
               and cp_coupling(cp_mp)[0]["learnedAt"] == _cp_learned_at)
 
         # ---- ALLOW CASE: a runId the ledger lacks is refused, exit 2 -------
@@ -7599,6 +7666,15 @@ def _cases(check):
         check("cp5 `uncouple --test` drops the entry it names: %r"
               % (cp_coupling(cp_mp),),
               codecp5 == 0 and cp_coupling(cp_mp) == [])
+        _cp_dropped_rows = cp_journal(cp_proj, "coupling.dropped")
+        _cp_dropped_det = (_cp_dropped_rows[0].get("details") or {}
+                           if _cp_dropped_rows else {})
+        check("cp5b `uncouple` writes exactly one `coupling.dropped` "
+              "journal row, carrying {field, from}: %r" % (_cp_dropped_rows,),
+              len(_cp_dropped_rows) == 1
+              and _cp_dropped_det.get("field") == "tests/test_a.py"
+              and json.loads(_cp_dropped_det.get("from") or "null")
+              == ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"])
 
         # ---- ALLOW CASE: uncoupling an unknown test is refused, exit 2 -----
         codecp6, txtcp6 = run(
@@ -7608,6 +7684,41 @@ def _cases(check):
               "coupling entry is refused exit 2 - a no-op reporting success "
               "would hide that nothing was there to drop: %r" % (txtcp6[:140],),
               codecp6 == 2 and "carries no meta.coupling entry" in txtcp6)
+
+        # ---- (cp) --basis-head is asked of git, exactly as `done --commit` -
+        cp_projg, cp_mpg, cp_head = cp_repo("cp-git", base_manifest())
+        _cp_ev.append_row(cp_projg, {
+            "v": 1, "runId": "RUN-CPG", "ts": "2026-09-01T01:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
+        codecp7, txtcp7 = run(
+            ["couple", "--test", "tests/test_g.py", "--sources", "src/g.ts",
+             "--basis-run", "RUN-CPG", "--basis-head", "0" * 40,
+             "--phases", "P2", "--project-dir", cp_projg])
+        check("cp7 RED-FIRST/ALLOW CASE: --basis-head naming a SHA git CAN "
+              "be asked about and does not have is refused exit 2, nothing "
+              "written - the same refusal `done --commit` gives a "
+              "fabricated SHA: %r" % (txtcp7[:160],),
+              codecp7 == 2 and "0" * 12 in txtcp7
+              and cp_coupling(cp_mpg) == [])
+        codecp8, txtcp8 = run(
+            ["couple", "--test", "tests/test_g.py", "--sources", "src/g.ts",
+             "--basis-run", "RUN-CPG", "--basis-head", cp_head,
+             "--phases", "P2", "--project-dir", cp_projg])
+        check("cp8 ALLOW CASE, the direction cp7 breaks in: the repository's "
+              "REAL head is accepted, and a real phase id passes --phases "
+              "unchanged: %r" % ((codecp8, cp_coupling(cp_mpg)),),
+              codecp8 == 0 and len(cp_coupling(cp_mpg)) == 1
+              and cp_coupling(cp_mpg)[0]["basis"] == {
+                  "runId": "RUN-CPG", "head": cp_head, "phases": ["P2"]})
+        codecp9, txtcp9 = run(
+            ["couple", "--test", "tests/test_h.py", "--sources", "src/h.ts",
+             "--basis-run", "RUN-CPG", "--basis-head", cp_head,
+             "--phases", "P2,P404", "--project-dir", cp_projg])
+        check("cp9 RED-FIRST/ALLOW CASE: --phases naming an id the plan "
+              "does not hold is refused exit 2, and nothing is added: %r"
+              % (txtcp9[:140],),
+              codecp9 == 2 and "P404" in txtcp9
+              and len(cp_coupling(cp_mpg)) == 1)
 
     finally:
         _harness.remove_tree(tmp)
