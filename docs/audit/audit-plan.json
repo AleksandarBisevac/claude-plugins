@@ -3914,6 +3914,31 @@
       "taskId": "P69.1",
       "fixedIn": "91c7891",
       "notes": null
+    },
+    {
+      "id": "BUG-12",
+      "title": "The widened history-guard and secrets-guard reading (P83) still has the gaps its third phase review found; handed to a human maintainer",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-09-26T21:53:59Z",
+      "reportedBy": null,
+      "description": "P83 closed every residual SECURITY.md listed for guard-history-rewrite and guard-secrets-read and over-refuses nothing main allows, and its third phase review measured that nothing main refuses now passes. The same review found gaps inside the phase's own wider reading - three med (an interpreter exempted from here-string grading in shapes where it still reads its program from stdin; the word `in` inside a case arm reopening pattern mode; three shapes the narrowings dropped: a process substitution whose command tees into a hook, a bare hook name after a cd into the hooks directory, a variable program behind a wrapper option that takes a value) and three low (two shapes missing from SECURITY.md's not-followed list, perl open coverage narrower than the CHANGELOG says, missing allow twins). The automated session was stopped by a safety classifier while writing the fix, so it is handed to a human maintainer, as F512 was. Full findings with resolutions: quality-gates-internal/probes/fr15-16/reviews/review-P83c.json; red tests already written: quality-gates-internal/probes/fr15-16/p83-handoff/p83.5-red-tests.patch.",
+      "repro": [
+        "Apply p83-handoff/p83.5-red-tests.patch on main after P83 lands",
+        "python3 plugins/audit/tests/test_guard_history_rewrite.py --selftest",
+        "python3 plugins/audit/tests/test__config.py --selftest"
+      ],
+      "expected": "Every case in the patch passes, with each deny case beside an allow case, and SECURITY.md's not-followed list stating exactly what remains.",
+      "actual": "The patch's deny cases for the dropped shapes and the wrapper-option program fail; the listed documentation gaps stand.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "SECURITY.md"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": "Lane: human maintainer (the automated executor and the orchestrator were both stopped by a safety classifier on this work). Release is blocked while this is open unless the user ships over it with #release-with-bugs."
     }
   ],
   "deferred": {
