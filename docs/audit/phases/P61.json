@@ -1,7 +1,7 @@
 {
   "id": "P61",
   "title": "Ids that two branches cannot both mint",
-  "status": "in_progress",
+  "status": "done",
   "description": "F471, operator decision option (c): branch-suffix ids for bugs, phases and tasks, plus a resolve verb for the collisions that remain.",
   "desiredOutcome": "Two branches that each add a bug, a phase and a task allocate different ids and merge with the driver with no conflict; a collision that still happens (both on the development branch) is resolved by one verb that renumbers the named side and every reference to it.",
   "testGate": [

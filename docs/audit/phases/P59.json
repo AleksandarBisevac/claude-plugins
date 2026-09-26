@@ -1,7 +1,7 @@
 {
   "id": "P59",
   "title": "3.0.1 - the platforms the release preflight could not see",
-  "status": "in_progress",
+  "status": "done",
   "description": "Everything CI found on windows and ubuntu that a macOS preflight in a full clone cannot reach, plus the field report that arrived alongside it.",
   "desiredOutcome": "CI is green on every platform it runs, and the preflight says which platforms it did NOT cover rather than reading as complete.",
   "testGate": [

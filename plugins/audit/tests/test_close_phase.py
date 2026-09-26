@@ -32,6 +32,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _manifest_io as _mio                        # noqa: E402  (the layout the stamp writes)
 import _proposals                                  # noqa: E402  (the rule sign-off reports)
 import _worktrees as W                             # noqa: E402
 
@@ -664,6 +665,111 @@ def _cases(check):
               % (body4.get("mergedAt"),),
               path4 == shard and stamp4 == "2026-01-02T03:04:05Z"
               and body4["mergedAt"] == "2026-01-02T03:04:05Z")
+
+        # THE MERGE IS AN INPUT OF THE DERIVED STATUS. A branch phase signed off
+        # with every task terminal reads done once `mergedAt` lands, so the stamp
+        # stores that status beside it - on the shard, and mirrored on the index
+        # stub, which is what a reader of the index alone is answered from.
+        signed = {"id": "P2", "title": "Two", "status": "in_progress",
+                  "branch": "feature/p2", "mergedAt": None,
+                  "review": {"status": "passed"},
+                  "tasks": [{"id": "P2.1", "title": "t", "status": "done"}]}
+        mpath = os.path.join(root, "audit-plan.json")
+        _mio.save_sharded(mpath, {"meta": {"version": 2}, "phases": [signed],
+                                  "bugs": [], "fileIndex": {}})
+        stub_of = lambda: [s for s in _mio.read_json(mpath)["phases"]  # noqa: E731
+                           if s.get("id") == "P2"][0]
+        spath = os.path.join(root, stub_of()["shard"])
+        path5, _st5 = M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        body5 = _mio.read_json(spath)
+        check("s5 the stamp stores the status the merge now derives - done, for a "
+              "signed-off phase with every task terminal - in the same write as "
+              "mergedAt: %r" % (body5.get("status"),),
+              path5 == spath and body5.get("status") == "done"
+              and body5.get("mergedAt") == "2026-01-02T03:04:05Z")
+        mirrored, why = M.mirror_stub(mpath, "P2", root)
+        check("s6 ...and the index stub is re-mirrored from that shard, so the index "
+              "alone reads done too: stub=%r (%s)" % (stub_of().get("status"), why),
+              mirrored == mpath and stub_of().get("status") == "done")
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        again, why2 = M.mirror_stub(mpath, "P2", root)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        check("s7 ...and a stub that already agrees is not rewritten - the index "
+              "is written on a phase's own transitions, not on every run: %r"
+              % (why2,), again == "" and before == after)
+        unsigned = dict(signed, review={"status": "pending"})
+        _mio.save_sharded(mpath, {"meta": {"version": 2}, "phases": [unsigned],
+                                  "bugs": [], "fileIndex": {}})
+        M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        body8 = _mio.read_json(os.path.join(root, stub_of()["shard"]))
+        check("s8 SECOND DIRECTION: a merge of a phase whose sign-off is NOT "
+              "recorded stamps mergedAt and stores no done - the derivation does not "
+              "answer done there, and the case goes red when the stamp writes done "
+              "unconditionally: %r" % (body8.get("status"),),
+              body8.get("mergedAt") == "2026-01-02T03:04:05Z"
+              and body8.get("status") == "in_progress")
+
+        # THE MIRROR FAILS AS A SENTENCE, NEVER AS A RAISE. It runs after the merge
+        # has landed, so a lock held elsewhere, or a lock that cannot even be asked
+        # for, must leave the index as it was and say which command catches it up.
+        _mio.save_sharded(mpath, {"meta": {"version": 2}, "phases": [signed],
+                                  "bugs": [], "fileIndex": {}})
+        M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        with open(mpath, "rb") as fh:
+            held_before = fh.read()
+        claim = mpath + ".lock"                  # another run's claim on the index
+        with open(claim, "w") as fh:
+            fh.write("held elsewhere")
+        try:
+            got9, why9 = M.mirror_stub(mpath, "P2", root)
+        finally:
+            os.remove(claim)
+        with open(mpath, "rb") as fh:
+            held_after = fh.read()
+        check("s9 with the index lock held elsewhere the mirror writes nothing and "
+              "answers with a sentence naming settle: %r" % (why9,),
+              got9 == "" and "settle" in why9 and "not taken" in why9
+              and held_before == held_after and stub_of().get("status") != "done")
+        real_read = M._panel_write.read_config
+
+        def _boom(_project):
+            raise RuntimeError("config unreadable")
+        M._panel_write.read_config = _boom
+        try:
+            try:
+                got10, why10 = M.mirror_stub(mpath, "P2", root)
+                raised10 = None
+            except Exception as exc:
+                got10, why10, raised10 = "", "", exc
+        finally:
+            M._panel_write.read_config = real_read
+        check("s10 ...and a lock that cannot even be ASKED for is a sentence too, not "
+              "an exception out of a merge that already landed: %r / %r"
+              % (why10, raised10),
+              raised10 is None and got10 == "" and "config unreadable" in why10
+              and "settle" in why10)
+        # REVALIDATED, and only the write's own findings refuse it: a write making
+        # the plan invalid has its prior bytes restored, while a plan that was
+        # already carrying a finding is not this write's to refuse (s1 stamps a
+        # file that is no plan at all, and lands).
+        broken = _mio.read_json(mpath)
+        broken["fileIndex"] = {"src/x.py": ["P9.9"]}   # names no task
+        with open(mpath, "rb") as fh:
+            rv_before = fh.read()
+        new11 = M._revalidated_write(mpath, mpath, broken)
+        with open(mpath, "rb") as fh:
+            rv_after = fh.read()
+        check("s11 a write that introduces a finding is rolled back byte for byte and "
+              "the finding is returned: %r" % (new11,),
+              new11 != [] and rv_before == rv_after)
+        fine = _mio.read_json(mpath)
+        fine["meta"]["title"] = "Renamed"
+        new12 = M._revalidated_write(mpath, mpath, fine)
+        check("s12 SECOND DIRECTION: a write that validates stands - the case that "
+              "goes red when every write is rolled back: %r" % (new12,),
+              new12 == [] and _mio.read_json(mpath)["meta"]["title"] == "Renamed")
     finally:
         _harness.remove_tree(root)
 

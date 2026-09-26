@@ -1,7 +1,7 @@
 {
   "id": "P40",
   "title": "A gate that measured nothing does not record a failure",
-  "status": "in_progress",
+  "status": "done",
   "description": "A gate step that exits non-zero having collected nothing produced no verdict about the tests, and the ledger records it as a failing suite. Field report 12's operator read three such rows as contention, withdrew two of them on inspection, and the one that survived was a gate measuring while a sibling executor wrote files. The column that separates them - `ran` - was on the row the whole time. A signal-killed gate is classified correctly and then handed to the operator with no retry at any parallelism.",
   "desiredOutcome": "A recorded gate row says whether its steps measured anything, and a verdict of `failed` is reserved for a run that measured and found failures. A step that collected nothing is visible as such on the row; the gate verdict becomes `could-not-run` only when nothing was measured AND the tree carried dirty paths outside the declared scope at run start, with the basis naming them. A task whose own test file does not compile, with no foreign dirty paths, stays red - that case is proven red before either rule ships.",
   "testGate": [

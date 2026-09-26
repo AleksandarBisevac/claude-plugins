@@ -1,7 +1,7 @@
 {
   "id": "P65",
   "title": "close-phase judges a landing by the phase the merge brings in",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "a phase signed off on its branch lands and is cleaned up in one close-phase run from the parent, its preview says the same, and a re-run never moves mergedAt",
   "testGate": [

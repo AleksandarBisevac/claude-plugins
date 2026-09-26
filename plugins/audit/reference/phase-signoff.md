@@ -181,7 +181,11 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `plugins/audit/tests/test_run_test_gate.py` — run it with `--selftest`.** It never retries a
    step that exited non-zero **having printed its own end-of-run report**, whatever the exit code:
    a suite that reported has measured, and re-running a measurement until it comes back green is
-   how a real failure becomes an infrastructure excuse. And a step ended by a signal on **both**
+   how a real failure becomes an infrastructure excuse. One report is the exception, and it is
+   read narrowly: a jest run whose **every** failure is `Test suite failed to run` naming a worker
+   terminated by a signal is jest reporting the kill, not a measurement of the suites that died -
+   so it is retried like any other kill, at a halved `--maxWorkers` where the command declares
+   one. One real assertion failure beside the kill keeps it a measurement, and no retry. And a step ended by a signal on **both**
    attempts is not a third attempt — it is a `GATE COULD NOT RUN` naming both attempts and both
    signals, which is the arm above: fix the host, spend no retry.
 
@@ -259,11 +263,17 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       `phase.desiredOutcome` is set, how the phase met — or didn't meet — it. The verb writes
       `phase.review.status` (the verdict), `phase.review.outcome` and `phase.summary`, **clears
       `phase.claim`** (the run is finishing), and journals `phase.verdict`, under the index lock
-      with revalidate-or-roll-back. It **never writes `phase.status`**: a phase's status is
-      derived (`_manifest_io.effective_phase_status`) and reads `done` once every task is
-      terminal, the verdict is recorded and — for a phase with a branch — step c has stamped
-      `mergedAt`. A hand-written `done` is what used to be lost when a phase was worked on its
-      parent branch and never merged. (All shard writes in the sharded layout.)
+      with revalidate-or-roll-back. A phase's status is derived
+      (`_manifest_io.effective_phase_status`) and reads `done` once every task is terminal, the
+      verdict is recorded and — for a phase with a branch — step c has stamped `mergedAt`; the
+      verb then **stores** that derived status on the shard and the index stub, so a reader of the
+      field alone (an older plugin's hooks, `jq`, an agent) is not left reading `in_progress`. A
+      phase with no branch is `done` here; one with a branch stays `in_progress` until step c's
+      stamp stores `done`. **Never write `phase.status` by hand**: a hand-written `done` is what
+      used to be lost when a phase was worked on its parent branch and never merged, and
+      `validate-manifest` warns about a stored status its derivation disagrees with, naming
+      `audit-task.py settle`. (All shard writes in the sharded layout; the stub mirror and a
+      settle write the index.)
    b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, + coauthor;
       the subject and body rule is `reference/execute-task.md`'s step 4c, and a phase TITLE pasted in whole is what overruns it here).
       Stage the journal directory **and the evidence directory** here too, for the same reason as
@@ -313,6 +323,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    d. `close-phase.py` wrote `phase.mergedAt` — **into the copy of the plan that survives**, which
       is not always the one you are looking at: a phase that ran in a worktree merges into the
       parent's tree, and the worktree is removed moments later. The output names the file it wrote.
+      The same write stores the phase's derived `done`, and the index stub is re-mirrored from the
+      shard under the index lock; when the output says the stub was NOT re-mirrored (the lock was
+      held), run `audit-task.py settle` once the holder is done rather than editing the index.
       Then **ADO echo** the phase: its PBI (when `phase.ado` is linked) moves to the done-state
       (`reference/orchestrator.md` → **ADO echo**).
       **When the output lists proposals parked on this branch**, they are the new work this phase

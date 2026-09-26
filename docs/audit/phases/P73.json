@@ -1,0 +1,83 @@
+{
+  "id": "P73",
+  "title": "The trail names each commit from inside it",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "a scoped commit carries the journal row that names it, so a phase can end with a clean tree, and every reader of those rows resolves the commit they name",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [
+    "P71"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P73.1",
+      "title": "A scoped commit carries the journal row that names it",
+      "status": "pending",
+      "description": "Every scoped commit writes the journal row naming it AFTER the commit, so the row is never inside it and no phase ends with a clean tree (reported by a user; visible on this repo at every phase end). Structural fix: write the row BEFORE the commit, keyed by a nonce the commit message carries as a trailer, stage it into the same commit, and resolve the SHA from the trailer (git log --grep) wherever a reader needs it - which also survives a rebase. Survey every reader of these rows (audit-journal, doctor, verify-invariants, the panel, journal-writes' record keys) and keep each one right; the hash chain must still verify.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/reference/execute-task.md",
+        "tools/check-git-pipeline.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_audit_state.py: repro that FAILS on current code - after commit-task-work and commit-audit-state, git status still shows the journal row that names the last commit"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

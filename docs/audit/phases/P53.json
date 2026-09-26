@@ -1,7 +1,7 @@
 {
   "id": "P53",
   "title": "Checks and documents that assert less than they claim",
-  "status": "in_progress",
+  "status": "done",
   "description": "The accumulated residue of four review rounds: a table maintained by hand beside the derivation that replaced it, an anchor whose reason is false, a case that raises instead of failing so one mutation takes its neighbours down, a git anchor that fails open so a bug inside it reads as no tampering, a document behind by a whole feature, a widening that blinds the prose scanners further than its comment admits, a repair that spends nearly all of the subject-length budget with nothing clamping a caller, and an advice table that swallows a branch and drops an unrecognised warning. None of these is a user-visible defect today. Every one of them is a check or a sentence that will be trusted the next time somebody needs it.",
   "desiredOutcome": "Every check named in this phase goes red when the thing it guards breaks, every document named describes the mechanism the code has, and each deliberate gap is a stated decision rather than an unnoticed hole.",
   "testGate": [

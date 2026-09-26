@@ -2226,6 +2226,26 @@ def _cases(check):
     finally:
         _shutil.rmtree(_ng_proj, ignore_errors=True)
 
+    # --- the sweep names a phase's branch the way the CLI does -----------------
+    # The panel built its allow-list from RECORDED branches only, so a worktree
+    # `/audit:worktree add` cut for an unstarted phase under an {initials} template
+    # was a stranger to the panel's sweep and a row to the CLI's.
+    _sm_meta = {"developmentBranch": "dev",
+                "branch": {"template": "{type}/{initials}-{phase}-{slug}"}}
+    _sm_plan = {"meta": _sm_meta,
+                "phases": [{"id": "P5", "title": "Five", "tasks": []},
+                           {"id": "P6", "title": "Six", "branch": "feature/p6",
+                            "tasks": []}]}
+    import _branch as _br                                       # noqa: E402
+    _sm_want = _br.branch_of(_sm_meta, _sm_plan["phases"][0], "Ann Bee")["name"]
+    _sm = M.sweep_maps(_sm_plan, "Ann Bee")
+    check("sw0 the panel sweep's allow-list and parents come from the SAME answer "
+          "the CLI uses - an unstarted phase's composed name, initials included, "
+          "and a started one's recorded name: %r" % (_sm,),
+          _sm["wanted"] == {_sm_want: "P5", "feature/p6": "P6"}
+          and _sm["parents"] == {_sm_want: "dev", "feature/p6": "dev"}
+          and sorted(_sm["phases"]) == ["feature/p6"])
+
     # --- the sweep's rows: one shape, three consumers ----------------------------
     # `POST /api/worktrees/sweep` had no case anywhere, and the defect it hid was a
     # list of pre-joined STRINGS where every other panel write emits change rows.

@@ -1,7 +1,7 @@
 {
   "id": "P45",
   "title": "The task gate stops being the phase gate in disguise",
-  "status": "pending",
+  "status": "done",
   "description": "The highest-cost item two field reports agree on, and the only one from report 11 that never got a task. A generated plan gives every task the phase's whole gate, so nine tasks meant sixty-three minutes of full-suite runs to prove what one sign-off run proves; and the source-to-test derivation the documents prefer resolves, on a real codebase, to more than half the suite because a shared module is imported by everything. Nothing measures what a derived gate actually selects, and the rule the orchestrator would need is in a document it does not read.",
   "desiredOutcome": "A task's gate is derived from the task's own test files and reports which of the three defaults it took; a generated task whose gate equals its phase's raises a warning naming it; the size a gate actually selects is visible as a ratio beside the count it ran, where the tax is paid; and the rule - the task gate measures the task's own tests, the full suite belongs to sign-off - is in the document the orchestrator reads, carrying what enforces it and what does not.",
   "testGate": [

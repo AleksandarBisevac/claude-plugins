@@ -1,7 +1,7 @@
 {
   "id": "P64",
   "title": "A phase's branch is cut by the verb that starts its work",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "starting a phase's first task cuts its branch from the resolved parent (or refuses and says why), a started task on another branch is refused, and doctor names a running phase with no branch - so no phase runs outside the protocol in silence",
   "testGate": [

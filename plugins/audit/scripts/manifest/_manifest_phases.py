@@ -208,6 +208,67 @@ def _gate_entries(value):
     return [e for e in _safe_list(value) if isinstance(e, str) and e.strip()]
 
 
+def _comma_joined_gate(entries, build_keys, where, field):
+    """Warnings for gate entries that are several `buildCommands` keys joined
+    by commas into one string.
+
+    The runner resolves an entry through `meta.buildCommands` WHOLE, so
+    `"lint,test"` is not two keys - it is one shell command, which no shell
+    can find. Named only when the entry is not itself a key and EVERY part of
+    it is one: a literal command may carry a comma (`eslint a.ts,b.ts`), and
+    an entry only part of which names a key is not this spelling.
+    """
+    out = []
+    for entry in entries:
+        if entry in build_keys or "," not in entry:
+            continue
+        parts = [p.strip() for p in entry.split(",")]
+        if all(p and p in build_keys for p in parts):
+            out.append("%s: %s entry %r is %d buildCommands keys joined by "
+                       "commas into ONE entry, which runs as one shell command "
+                       "no shell can find - split it: %s"
+                       % (where, field, entry, len(parts), json.dumps(parts)))
+    return out
+
+
+def _check_phase_intent(phase, pwhere, build_keys):
+    """Warnings for a phase whose gate or outcome says less than it should.
+
+    ADDITIVE AND NEVER A REFUSAL (`COMPATIBILITY.md` -> Validation stays
+    additive). An empty gate is a designed state - sign-off then rests on
+    review alone - so a phase holding one is named, not refused. A finished
+    phase is history nobody can act on, so nothing fires on one.
+
+    THE OUTCOME AND EMPTY-GATE LINES ASK OF A PHASE IN FLIGHT: running, or
+    with every task finished and its sign-off still due - the moment sign-off
+    reads both. A phase not yet started is not asked; a plan parks phases whose
+    outcome is written when they are picked up, and naming every one of them
+    is the noise that teaches a reader to skip the class.
+    """
+    if _mio.effective_phase_status(phase) in TERMINAL:
+        return []
+    out = _comma_joined_gate(_gate_entries(phase.get("testGate")), build_keys,
+                             pwhere, "testGate")
+    if not (_mio.phase_running(phase) or _mio.signoff_due(phase)):
+        return out
+    outcome = phase.get("desiredOutcome")
+    # The bodies carry no phase id, so `_warning_groups.collapse` folds the
+    # same state across phases into one line.
+    if not (isinstance(outcome, str) and outcome.strip()):
+        out.append("%s: in flight (running or awaiting sign-off) with no "
+                   "desiredOutcome - sign-off asks whether a phase met its "
+                   "outcome, and this one states none. Set it with "
+                   "`/audit:phase retarget <phaseId> --outcome \"<what success "
+                   "is>\"`" % (pwhere,))
+    if not _gate_entries(phase.get("testGate")):
+        out.append("%s: in flight (running or awaiting sign-off) with an "
+                   "EMPTY testGate - a designed state, and its sign-off rests "
+                   "on review alone. If a command can grade this work, "
+                   "`/audit:phase retarget <phaseId> --gate <entry>`"
+                   % (pwhere,))
+    return out
+
+
 def _check_area_tag(phase, pwhere, findings):
     """A phase's `area` must be a tag or a list of them (v0.16 shape, v0.28 meaning).
 
@@ -491,8 +552,12 @@ def tests_add_repair(entry):
 
 
 # --- the walk --------------------------------------------------------------------
-def _walk_phases(phases):
+def _walk_phases(phases, build_keys=()):
     """One pass over every phase and every task: (index, findings, warnings).
+
+    `build_keys` is the set of `meta.buildCommands` names, which is what a gate
+    entry resolves through; empty, the comma-joined-entry rule has nothing to
+    compare against and stays silent.
 
     THE INDEX IS WHY THIS WAS NEVER CUT OUT BEFORE. Five accumulating locals
     ride this single walk and each is read by a DIFFERENT check further down,
@@ -546,6 +611,7 @@ def _walk_phases(phases):
         _check_claim(phase, pwhere, f, w)
         _check_review(phase, pwhere, w)
         _check_area_tag(phase, pwhere, f)
+        w.extend(_check_phase_intent(phase, pwhere, build_keys))
         # A budget of 0 or a negative one is not a budget, and a string is a typo
         # that would silently render as "no budget". Both are worth saying out loud.
         if "budgetUSD" in phase:
@@ -760,6 +826,9 @@ def _walk_phases(phases):
             phase_gate = _gate_entries(phase.get("testGate"))
             task_gate = _gate_entries(tests.get("gate")
                                       if isinstance(tests, dict) else None)
+            if task.get("status") not in TERMINAL:
+                w.extend(_comma_joined_gate(task_gate, build_keys, twhere,
+                                            "tests.gate"))
             gate_basis = (tests.get("gateBasis")
                           if isinstance(tests, dict) else None)
             if phase_gate and task_gate == phase_gate \

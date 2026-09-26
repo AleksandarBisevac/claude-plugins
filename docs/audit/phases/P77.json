@@ -1,0 +1,128 @@
+{
+  "id": "P77",
+  "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "executor, reviewer and schema share one redFirst vocabulary checked by a lint; a sanctioned red-first helper proves red in a throwaway tree without touching the shared one, and a compile or collection failure is not a proved red; and doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P77.1",
+      "title": "One redFirst vocabulary, a sanctioned red-first helper, and a compile failure is not a proved red",
+      "status": "pending",
+      "description": "Reproduced at HEAD: executor and schema say proved|could-not-prove|not-attempted; the reviewer says proved|not-proved|could-not-prove|not-applicable, misquotes the executor (reviewer.md:67) and has no word for regression mode. The schema enum is the one source; the reviewer echoes the executor's word when its basis holds; not-attempted replaces not-applicable; not-proved stays as a DECLARED reviewer-only grade; a _refs lint checks reviewer words are within schema plus declared reviewer-only. The executor brief sends executors to overwrite shared files to prove red (undo the fix in the shared tree, git show HEAD:f > f), which the host refused beside a sibling's uncommitted work: add stamp-verification.py red --task <id> -- <cmd> that builds a throwaway tree (git worktree add --detach or a git archive scratch) with HEAD's version of the task's implementation files and the working tree's test files, runs the command there, and records the red, never touching the shared tree; the briefs point at it. proved requires at least one test collected and an assertion failure; a compile or collection error is could-not-prove unless the task introduces the symbol.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__refs.py: repro that FAILS on current code - the reviewer brief grades redFirst with not-proved/not-applicable, which the schema enum rejects, and no lint notices"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P77.2",
+      "title": "Doctor's running-plugin and plugin-files rows grade on evidence a new session or a marketplace install can actually clear",
+      "status": "pending",
+      "description": "Reproduced at HEAD (and live on this repo): running_plugin_verdict counts any stamp that is not this copy as drift and never reads the mtime it records, so a dead session's stamp holds the row yellow and 'start a new session' cannot clear it - grade on the newest stamp per copy with its age, report an older copy that a newer one has stamped since as history (named, aged), and offer a prune. plugin_integrity assumes a marketplace install is a clone; the cache is not (installed_plugins.json records installPath and gitCommitSha, and the marketplace clone holds that commit) - compare the cache tree with git archive of that SHA from the marketplace clone, unverifiable only when either is missing (these are undocumented Claude Code files; say so as /audit:version does).",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/hooks/_config.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_trail.py: repro that FAILS on current code - one six-day-old stamp from a dead session naming an older plugin holds the running-plugin row at WARNING while every newer stamp names the running copy"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P77.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

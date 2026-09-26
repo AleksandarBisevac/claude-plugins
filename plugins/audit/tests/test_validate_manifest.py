@@ -155,6 +155,39 @@ def _cases(record):
            callable(getattr(M, "main", None))
            and not hasattr(_manifest_rules, "main"))
 
+    # --- a stub fallen behind its shard -------------------------------------
+    # `validate()` reads the assembled manifest, where the body wins, so the stub's
+    # stale copy is invisible to it - and the stub is what the index alone answers.
+    import _manifest_io as _mio                                   # noqa: E402
+    stub_root = tempfile.mkdtemp(prefix="vm-stub-")
+    try:
+        spath = os.path.join(stub_root, "audit-plan.json")
+        _mio.save_sharded(spath, _valid_manifest())
+        code_ok, out_ok = _run([spath])
+        with open(spath, encoding="utf-8") as fh:
+            idx = json.load(fh)
+        idx["phases"][0]["status"] = "done"
+        with open(spath, "w", encoding="utf-8") as fh:
+            json.dump(idx, fh)
+        code_st, out_st = _run([spath])
+        stub_lines = [ln for ln in out_st.splitlines()
+                      if "index stub mirrors" in ln]
+        record("c24 a stub mirroring a status its shard no longer holds is ONE "
+               "warning naming the phase, both values and the settle command, and "
+               "the plan stays valid: %r" % (stub_lines,),
+               code_st == 0 and len(stub_lines) == 1
+               and "phase P0: index stub mirrors status as done while its "
+               "shard holds pending" in stub_lines[0]
+               and _mio.stale_stubs(spath) == [("P0", "status", "done", "pending")]
+               and "audit-task.py\" settle" in stub_lines[0])
+        record("c25 SECOND DIRECTION: the same plan before the stub was touched says "
+               "nothing about stubs - the case that goes red when the warning fires "
+               "unconditionally: %r" % (out_ok,),
+               code_ok == 0 and "index stub" not in out_ok)
+    finally:
+        import shutil                                             # noqa: E402
+        shutil.rmtree(stub_root, ignore_errors=True)
+
     fd2, path2 = tempfile.mkstemp(suffix=".json")
     os.close(fd2)
     try:

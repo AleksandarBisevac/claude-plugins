@@ -210,8 +210,9 @@ def status_by_key(manifest):
     """`{(kind, id): (status, basis)}` for every phase, task and bug.
 
     The PHASE rows go through `_manifest_io.effective_phase_status` for the same
-    reason: the signoff verb never writes `status`, so a signed-off phase's card
-    would otherwise be held at Active for ever.
+    reason: a plan signed off before the verbs stored the derived status still
+    carries the old one, so a signed-off phase's card would otherwise be held at
+    Active for ever.
 
     The BUG rows go through `_manifest_io.effective_bug_status`, and the basis says
     when that derivation moved the answer: a bug whose fix task is done reads

@@ -1,7 +1,7 @@
 {
   "id": "P35",
   "title": "The prose-number rule is enforced in the two spellings an author wrote by accident",
-  "status": "pending",
+  "status": "done",
   "description": "While writing P34.5 an author produced two numbers, noticed them, removed them, and reported\nthat NEITHER lint had fired: `anchored 13 of 14 sections`, written as a quotation of what a\ncommand prints, and `five claims deep`, an ordinary `the N <noun>` with the numeral spelled as\na word. Both were caught by an author reading their own prose, which is the mechanism the\nlints exist to replace.\n\nThe finding is not that two sentences were wrong. It is that the class is still\nauthor-enforced in two spellings while CLAUDE.md presents it as lint-enforced - a document\nclaiming an instrument it does not have, which is this register's most repeated shape.",
   "desiredOutcome": "The class CLAUDE.md presents as lint-enforced is lint-enforced in the spellings that actually get written, or the document says which ones it is not.",
   "testGate": [

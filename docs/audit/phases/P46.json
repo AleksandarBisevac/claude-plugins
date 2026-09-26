@@ -1,7 +1,7 @@
 {
   "id": "P46",
   "title": "A gate costs what it measures, and no more",
-  "status": "in_progress",
+  "status": "done",
   "description": "Field report 11 and 12's remaining gate costs: a gate cannot be corrected once a task starts, a run is repeated on a tree already measured, a signal-killed run is handed back with no retry, a push is a suite the plugin cannot see, and a refusal is right and a screen long.",
   "desiredOutcome": "A started task's gate can be corrected and the change is journaled; a run whose tree and command are already recorded reuses that verdict rather than re-measuring; a signal death is retried once at reduced parallelism and says so on the row; the doctor names a pre-push hook that runs the suite; and the backtick refusal keeps every fact in two lines.",
   "testGate": [

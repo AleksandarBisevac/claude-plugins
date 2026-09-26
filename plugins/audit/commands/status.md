@@ -131,10 +131,12 @@ meanings, rendered from the same tuple the gate evaluates:
   gate rewrote the declared files it was grading, so the verdict is about bytes the
   gate produced), `no-checks` (exit 0, and still not a verdict — the gate ran and
   found nothing to check), `timed-out`, `cancelled` (both stopped rather than
-  answered) or `could-not-run` (the runner never started). `passed` and `empty-gate`
-  do not trip it
+  answered) or `could-not-run` (no verdict for a reason that is not the work's: the
+  runner never started, never reached a check, or the OS ended it). `passed` and
+  `empty-gate` do not trip it
 - `no-test-evidence` — a `done` task **or phase** carrying no `testEvidence` at
-  all **that could have carried one**. Both scopes, exactly like `failing-tests`: a
+  all **that could have carried one**. A task or phase whose gate is EMPTY carries
+  one too once `run-test-gate.py --record` has run it: an `empty-gate` pointer. Both scopes, exactly like `failing-tests`: a
   phase's sign-off gate records a run of its own, and no task's pointer stands in
   for it. Work that finished before the *evidence boundary* is excused rather than
   failed — see below

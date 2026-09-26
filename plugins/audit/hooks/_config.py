@@ -2361,8 +2361,9 @@ def manifest_state(root, manifest_rel):
 
     A MERGED phase is never counted as running, whatever `status` still says.
     `close-phase.py` stamps `mergedAt` the moment `git merge` verifies the branch
-    landed, and it never writes `status` itself — that field is the sign-off
-    commit's, made on the phase's own branch before the merge. A phase that
+    landed, and stores `status` only where the derivation now answers `done` - a
+    plan it stamped before it did that, or one stamped by hand, keeps whatever
+    `status` it had. A phase that
     reaches here with `mergedAt` set and no sign-off recorded (its DERIVED status,
     which reads a recorded verdict as done once the merge lands, is not terminal)
     was merged by hand or signed off on a copy that did not survive; either way

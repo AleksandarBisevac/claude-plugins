@@ -1338,6 +1338,31 @@ def _cases(check):
                                      hooks_dir=hk_dir),),
               not M.guide_enumeration(verb_guide, script_dir=src_c,
                                       hooks_dir=hk_dir))
+        # A SUBPARSER IS A VERB TOO. A command that moves from one flat parser
+        # with a `choices` positional to one subparser per verb spells every verb
+        # as `add_parser("<verb>")`, and a reader of `choices` alone stops seeing
+        # all of them at once - the file leaves the check without anything going
+        # red.
+        with open(os.path.join(src_c, "verbs.py"), "w", encoding="utf-8") as fh:
+            fh.write("import argparse\n"
+                     "p = argparse.ArgumentParser()\n"
+                     "sub = p.add_subparsers(dest='command')\n"
+                     "sub.add_parser('told', help='x')\n"
+                     "sub.add_parser('untold')\n")
+        with open(verb_guide, "w", encoding="utf-8") as fh:
+            fh.write(
+                "intro\n\n" + M._TREE_HEADING + "\n\n```\n"
+                "  verbs.py    # a command\n"
+                "```\n\n" + M._SECTION2_HEADING + "\n\n"
+                "### `verbs.py`\n`told <thing>` does a thing.\n\n"
+                "## 3. Next section\nnot part of section 2.\n"
+            )
+        sub_hits = M.guide_enumeration(verb_guide, script_dir=src_c,
+                                       hooks_dir=hk_dir)
+        check("e8 a verb spelled as a SUBPARSER is read as one: the undocumented "
+              "`untold` is reported and the documented `told` is not: %r"
+              % (sub_hits,),
+              [problem.split("`")[1] for _f, problem in sub_hits] == ["untold"])
     finally:
         shutil.rmtree(enum_tmp, ignore_errors=True)
 

@@ -35,392 +35,427 @@
     {
       "id": "P1",
       "title": "v0.3.0 hardening",
-      "shard": "phases/P1.json"
+      "shard": "phases/P1.json",
+      "status": "done"
     },
     {
       "id": "P2",
       "title": "v0.4.0 release quality",
-      "shard": "phases/P2.json"
+      "shard": "phases/P2.json",
+      "status": "done"
     },
     {
       "id": "P3",
       "title": "v0.5.0 features (ADO-team focus)",
-      "shard": "phases/P3.json"
+      "shard": "phases/P3.json",
+      "status": "done"
     },
     {
       "id": "P4",
       "title": "v0.6.0 agents & full-coverage enforcement",
-      "shard": "phases/P4.json"
+      "shard": "phases/P4.json",
+      "status": "done"
     },
     {
       "id": "P5",
       "title": "v0.6.1 git-root-in-subdir fix",
-      "shard": "phases/P5.json"
+      "shard": "phases/P5.json",
+      "status": "done"
     },
     {
       "id": "P6",
       "title": "v0.6.2 submodule preflight guard",
-      "shard": "phases/P6.json"
+      "shard": "phases/P6.json",
+      "status": "done"
     },
     {
       "id": "P7",
       "title": "v0.7.0 command surface: /audit:<verb> split",
-      "shard": "phases/P7.json"
+      "shard": "phases/P7.json",
+      "status": "done"
     },
     {
       "id": "P8",
       "title": "v0.8.0 live shakedown + progress/dry-run/report/readability",
-      "shard": "phases/P8.json"
+      "shard": "phases/P8.json",
+      "status": "done"
     },
     {
       "id": "P9",
       "title": "refactor: dev tooling bootstrap",
-      "shard": "phases/P9.json"
+      "shard": "phases/P9.json",
+      "status": "done"
     },
     {
       "id": "P10",
       "title": "refactor: shared-infra dedup",
-      "shard": "phases/P10.json"
+      "shard": "phases/P10.json",
+      "status": "done"
     },
     {
       "id": "P11",
       "title": "refactor: UI asset extraction",
-      "shard": "phases/P11.json"
+      "shard": "phases/P11.json",
+      "status": "done"
     },
     {
       "id": "P12",
       "title": "refactor: panel-server Python split",
-      "shard": "phases/P12.json"
+      "shard": "phases/P12.json",
+      "status": "done"
     },
     {
       "id": "P13",
       "title": "refactor: render-report Python split",
-      "shard": "phases/P13.json"
+      "shard": "phases/P13.json",
+      "status": "done"
     },
     {
       "id": "P14",
       "title": "refactor: cleanups",
-      "shard": "phases/P14.json"
+      "shard": "phases/P14.json",
+      "status": "done"
     },
     {
       "id": "BF1",
       "title": "CI legs: Windows separators + Linux viewport",
-      "shard": "phases/BF1.json"
+      "shard": "phases/BF1.json",
+      "status": "done"
     },
     {
       "id": "BF2",
       "title": "CRLF: the assets' eol is a contract",
-      "shard": "phases/BF2.json"
+      "shard": "phases/BF2.json",
+      "status": "done"
     },
     {
       "id": "P15",
       "title": "refactor: structure visible and enforced",
-      "shard": "phases/P15.json"
+      "shard": "phases/P15.json",
+      "status": "done"
     },
     {
       "id": "P16",
       "title": "F10: the sub-cent rule proven where it renders",
-      "shard": "phases/P16.json"
+      "shard": "phases/P16.json",
+      "status": "done"
     },
     {
       "id": "P17",
       "title": "release v0.32.0",
-      "shard": "phases/P17.json"
+      "shard": "phases/P17.json",
+      "status": "done"
     },
     {
       "id": "P18",
       "title": "Worktree lifecycle, merge target and merge policy",
-      "shard": "phases/P18.json"
+      "shard": "phases/P18.json",
+      "status": "done"
     },
     {
       "id": "P19",
       "title": "Faults: the exemptions nobody reads, and the demo that proves it",
-      "shard": "phases/P19.json"
+      "shard": "phases/P19.json",
+      "status": "done"
     },
     {
       "id": "P20",
       "title": "Faults: close the remainder",
-      "shard": "phases/P20.json"
+      "shard": "phases/P20.json",
+      "status": "done"
     },
     {
       "id": "P21",
       "title": "2.1.1: the sweep's safety conditions must be about the worktree they name",
-      "shard": "phases/P21.json"
+      "shard": "phases/P21.json",
+      "status": "done"
     },
     {
       "id": "P22",
       "title": "Field report: the contradictions a real phase run found",
-      "shard": "phases/P22.json"
+      "shard": "phases/P22.json",
+      "status": "done"
     },
     {
       "id": "P23",
       "title": "Close the register: the last two open faults",
-      "shard": "phases/P23.json"
+      "shard": "phases/P23.json",
+      "status": "done"
     },
     {
       "id": "P24",
       "title": "F232: every exemption names the instrument that audits its reason",
-      "shard": "phases/P24.json"
+      "shard": "phases/P24.json",
+      "status": "done"
     },
     {
       "id": "P25",
       "title": "/audit:status: narrow the default view, and stop paying for output nobody prints",
-      "shard": "phases/P25.json"
+      "shard": "phases/P25.json",
+      "status": "done"
     },
     {
       "id": "P26",
       "title": "F265: a documented flag's VALUES are checked against the parser that takes them",
-      "shard": "phases/P26.json"
+      "shard": "phases/P26.json",
+      "status": "done"
     },
     {
       "id": "P27",
       "title": "release v2.2.0",
-      "shard": "phases/P27.json"
+      "shard": "phases/P27.json",
+      "status": "done"
     },
     {
       "id": "P28",
       "title": "Field report: the guard that gets routed around, and a commit type commitlint refuses",
-      "shard": "phases/P28.json"
+      "shard": "phases/P28.json",
+      "status": "done"
     },
     {
       "id": "P29",
       "title": "Two field reports: the remedies the documents prescribe and the code refuses",
-      "shard": "phases/P29.json"
+      "shard": "phases/P29.json",
+      "status": "done"
     },
     {
       "id": "P31",
       "title": "Third field report: the remedy the product prescribes and refuses in the same breath",
-      "shard": "phases/P31.json"
+      "shard": "phases/P31.json",
+      "status": "done"
     },
     {
       "id": "P32",
       "title": "Fourth field report: what a command accepts, what a scope holds, and what nothing checks",
       "shard": "phases/P32.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P33",
       "title": "Fourth field report, the run side: a remedy that shipped broken and a run that stops itself",
       "shard": "phases/P33.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P34",
       "title": "Fifth field report: the ledger is 27% false failures, and most of it is the machine",
       "shard": "phases/P34.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P35",
       "title": "The prose-number rule is enforced in the two spellings an author wrote by accident",
       "shard": "phases/P35.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P36",
       "title": "F319/F320 fallout: a check whose reason is false, and the wiring's fail modes",
       "shard": "phases/P36.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P37",
       "title": "before-you-claim: the authorship gate for the classes the register keeps recording",
       "shard": "phases/P37.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P38",
       "title": "The claim hook reads the operation, not the spelling",
-      "shard": "phases/P38.json"
+      "shard": "phases/P38.json",
+      "status": "done"
     },
     {
       "id": "P39",
       "title": "A task added to a running phase can be worked",
-      "shard": "phases/P39.json"
+      "shard": "phases/P39.json",
+      "status": "done"
     },
     {
       "id": "P40",
       "title": "A gate that measured nothing does not record a failure",
       "shard": "phases/P40.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P41",
       "title": "The promises SECURITY.md makes are true where a driven exploit says they are not",
-      "shard": "phases/P41.json"
+      "shard": "phases/P41.json",
+      "status": "done"
     },
     {
       "id": "P42",
       "title": "The loop the agents run in closes",
       "shard": "phases/P42.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P43",
       "title": "The orchestrator's own errors get mechanisms",
       "shard": "phases/P43.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P44",
       "title": "The plan gate says one thing to one file",
       "shard": "phases/P44.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P45",
       "title": "The task gate stops being the phase gate in disguise",
       "shard": "phases/P45.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P46",
       "title": "A gate costs what it measures, and no more",
       "shard": "phases/P46.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P47",
       "title": "The agents' loop, the parts still in a handoff note",
       "shard": "phases/P47.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P48",
       "title": "The plugin reads its own trail back",
       "shard": "phases/P48.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P49",
       "title": "The plugin offers its own bar, and measures value not only cost",
       "shard": "phases/P49.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P50",
       "title": "First contact, the orchestrator's weight, and the 2.x migration",
       "shard": "phases/P50.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P51",
       "title": "The small open ones",
       "shard": "phases/P51.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P52",
       "title": "The gate lock is safe to take, safe to lose, and proven",
       "shard": "phases/P52.json",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "P53",
       "title": "Checks and documents that assert less than they claim",
       "shard": "phases/P53.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P54",
       "title": "The guards' last read shapes, and the work the plan has no place for",
       "shard": "phases/P54.json",
-      "status": "in_progress"
+      "status": "done"
     },
     {
       "id": "P55",
       "title": "The last small ones the register still holds",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P55.json"
     },
     {
       "id": "P56",
       "title": "The plugin costs the user less than wild use, and can prove it",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P56.json"
     },
     {
       "id": "P57",
       "title": "The instructions cost what they are worth",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P57.json"
     },
     {
       "id": "P58",
       "title": "Release 3.0.0 obligations",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P58.json"
     },
     {
       "id": "P59",
       "title": "3.0.1 - the platforms the release preflight could not see",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P59.json"
     },
     {
       "id": "P60",
       "title": "Manifest merge by record",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P60.json"
     },
     {
       "id": "P61",
       "title": "Ids that two branches cannot both mint",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P61.json"
     },
     {
       "id": "P62",
       "title": "The doctor measures what the layout costs instead of guessing",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P62.json"
     },
     {
       "id": "P63",
       "title": "A phase's status is derived, so a finished phase stops holding the gate",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P63.json"
     },
     {
       "id": "P64",
       "title": "A phase's branch is cut by the verb that starts its work",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P64.json"
     },
     {
       "id": "P65",
       "title": "close-phase judges a landing by the phase the merge brings in",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P65.json"
     },
     {
       "id": "P66",
       "title": "A merge's write derives no completion the merged branch already recorded",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P66.json"
     },
     {
       "id": "P67",
       "title": "/audit:version says which build is running and whether a newer one is published",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P67.json"
     },
     {
       "id": "P68",
       "title": "The index is committed only where the committed shards support it",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P68.json"
     },
     {
       "id": "P69",
       "title": "What the plan records about a finished phase is true, and the worktree tool knows its own branches",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P69.json"
     },
     {
       "id": "P70",
       "title": "A gate that could not reach a verdict says so, and names what failed",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P70.json"
     },
     {
@@ -434,6 +469,60 @@
       "title": "Every hook judges the tree the work is in, and blames only what it can show",
       "status": "in_progress",
       "shard": "phases/P72.json"
+    },
+    {
+      "id": "P73",
+      "title": "The trail names each commit from inside it",
+      "status": "pending",
+      "shard": "phases/P73.json"
+    },
+    {
+      "id": "P74",
+      "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
+      "status": "pending",
+      "shard": "phases/P74.json"
+    },
+    {
+      "id": "P75",
+      "title": "verify-invariants reports what is new, and user tooling can share the cross-worktree lock",
+      "status": "pending",
+      "shard": "phases/P75.json"
+    },
+    {
+      "id": "P76",
+      "title": "The verbs cover what operators were hand-editing",
+      "status": "pending",
+      "shard": "phases/P76.json"
+    },
+    {
+      "id": "P77",
+      "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
+      "status": "pending",
+      "shard": "phases/P77.json"
+    },
+    {
+      "id": "P78",
+      "title": "A phase gate that says where it came from and what it cost",
+      "status": "pending",
+      "shard": "phases/P78.json"
+    },
+    {
+      "id": "P79",
+      "title": "The derived sign-off gate, in shadow first",
+      "status": "pending",
+      "shard": "phases/P79.json"
+    },
+    {
+      "id": "P80",
+      "title": "The third place",
+      "status": "pending",
+      "shard": "phases/P80.json"
+    },
+    {
+      "id": "P81",
+      "title": "Selection miss learns, flaky is muted",
+      "status": "pending",
+      "shard": "phases/P81.json"
     }
   ],
   "fileIndex": {
@@ -490,7 +579,9 @@
       "P67.2",
       "P68.1",
       "P69.3",
+      "P69.4-j6r",
       "P70.2",
+      "P70.3-fos",
       "P71.1",
       "P72.1",
       "P72.2-ttl",
@@ -499,7 +590,15 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P73.1",
+      "P75.1",
+      "P76.2",
+      "P77.2",
+      "P78.11",
+      "P79.7",
+      "P80.12",
+      "P81.8"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -555,7 +654,17 @@
       "P63.4",
       "P63.8",
       "P64.1",
-      "P67.1"
+      "P67.1",
+      "P69.2",
+      "P69.1",
+      "P69.3",
+      "P69.4-j6r",
+      "P70.1",
+      "P70.3-fos",
+      "P79.2",
+      "P79.3",
+      "P80.5",
+      "P80.10"
     ],
     "README.md": [
       "P2.3",
@@ -584,7 +693,8 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P80.11"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -593,14 +703,16 @@
     ],
     "docs/examples/azure-pipelines.yml": [
       "P3.2",
-      "P13.4"
+      "P13.4",
+      "P80.10"
     ],
     "docs/demo-large.html": [
       "P18.10",
       "P23.3",
       "P27.1",
       "P61.9",
-      "P63.6"
+      "P63.6",
+      "P80.7"
     ],
     "docs/index.html": [
       "P13.3",
@@ -686,6 +798,17 @@
       "P64.3",
       "P66.1",
       "P67.2",
+      "P69.3",
+      "P69.4-j6r",
+      "P78.4",
+      "P78.8",
+      "P78.11",
+      "P79.4",
+      "P79.7",
+      "P80.10",
+      "P80.12",
+      "P81.2",
+      "P81.8",
       "P72.3-ttl"
     ],
     "plugins/audit/agents/audit-executor.md": [
@@ -700,7 +823,9 @@
       "P56.3",
       "P56.4",
       "P50.5",
-      "P55.18"
+      "P55.18",
+      "P77.1",
+      "P78.11"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -717,7 +842,9 @@
       "P43.4",
       "P47.4",
       "P49.4",
-      "P50.5"
+      "P50.5",
+      "P77.1",
+      "P79.7"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -734,7 +861,8 @@
       "P32.2",
       "P42.1",
       "P57.3",
-      "P61.14"
+      "P61.14",
+      "P81.2"
     ],
     "plugins/audit/commands/init.md": [
       "P1.6",
@@ -756,7 +884,9 @@
       "P50.1",
       "P57.2",
       "P61.14",
-      "P63.11"
+      "P63.11",
+      "P79.7",
+      "P80.12"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -783,7 +913,11 @@
       "P61.3",
       "P63.4",
       "P63.8",
-      "P63.12"
+      "P63.12",
+      "P69.3",
+      "P70.3-fos",
+      "P74.1",
+      "P78.4"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -796,12 +930,15 @@
       "P7.1",
       "P18.5",
       "P47.4",
-      "P65.1"
+      "P65.1",
+      "P80.10",
+      "P81.8"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
       "P8.2",
-      "P57.1"
+      "P57.1",
+      "P69.4-j6r"
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
@@ -813,7 +950,9 @@
       "P33.2",
       "P48.1",
       "P57.1",
-      "P57.4"
+      "P57.4",
+      "P70.3-fos",
+      "P80.6"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -844,7 +983,16 @@
       "P63.11",
       "P64.3",
       "P68.1",
-      "P70.1"
+      "P70.1",
+      "P69.4-j6r",
+      "P76.1",
+      "P76.2",
+      "P78.4",
+      "P78.8",
+      "P78.11",
+      "P79.4",
+      "P81.2",
+      "P81.5"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -871,6 +1019,8 @@
       "P63.10",
       "P63.13",
       "P72.1",
+      "P69.3",
+      "P77.2",
       "P72.2-ttl",
       "P72.3-ttl",
       "P72.4-ttl",
@@ -1015,7 +1165,12 @@
       "P66.1",
       "P66.2-x3g",
       "P66.3-x3g",
-      "P66.4-x3g"
+      "P66.4-x3g",
+      "P69.3",
+      "P69.4-j6r",
+      "P76.1",
+      "P79.7",
+      "P81.8"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1066,6 +1221,10 @@
       "P63.11",
       "P64.3",
       "P69.3",
+      "P69.4-j6r",
+      "P76.1",
+      "P80.12",
+      "P81.8",
       "P72.3-ttl"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
@@ -1087,7 +1246,14 @@
       "P49.4",
       "P57.5",
       "P61.1",
-      "P61.8"
+      "P61.8",
+      "P70.1",
+      "P76.1",
+      "P77.1",
+      "P78.2",
+      "P79.1",
+      "P80.1",
+      "P81.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1131,6 +1297,11 @@
       "P61.11",
       "P67.1",
       "P72.1",
+      "P69.1",
+      "P79.2",
+      "P79.3",
+      "P80.5",
+      "P80.10",
       "P72.2-ttl",
       "P72.5-ttl"
     ],
@@ -1162,7 +1333,8 @@
       "P63.3",
       "P63.5",
       "P65.1",
-      "P69.3"
+      "P69.3",
+      "P69.4-j6r"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -1203,7 +1375,8 @@
       "P51.6",
       "P47.3",
       "P53.7",
-      "P63.7"
+      "P63.7",
+      "P69.4-j6r"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -1216,7 +1389,8 @@
       "P34.7",
       "P51.9",
       "P59.5",
-      "P63.6"
+      "P63.6",
+      "P80.7"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -1239,7 +1413,11 @@
       "P48.4",
       "P54.3",
       "P53.10",
-      "P60.4"
+      "P60.4",
+      "P78.9",
+      "P79.6",
+      "P80.9",
+      "P81.6"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -1273,7 +1451,8 @@
       "P57.4",
       "P59.10",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P80.6"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -1293,7 +1472,12 @@
       "P34.6",
       "P41.1",
       "P42.1",
-      "P61.9"
+      "P61.9",
+      "P78.2",
+      "P79.1",
+      "P80.1",
+      "P80.7",
+      "P81.1"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1333,7 +1517,8 @@
       "P13.2",
       "P13.3",
       "P15.4",
-      "P51.9"
+      "P51.9",
+      "P80.7"
     ],
     "plugins/audit/scripts/ui/panel.css": [
       "P11.1"
@@ -1369,7 +1554,10 @@
       "P15.4",
       "P32.2",
       "P45.2",
-      "P51.5"
+      "P51.5",
+      "P69.3",
+      "P69.4-j6r",
+      "P78.5"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -1398,7 +1586,8 @@
       "P21.1",
       "P23.3",
       "P63.7",
-      "P64.1"
+      "P64.1",
+      "P74.1"
     ],
     "plugins/audit/tests/test__worktrees.py": [
       "P18.1",
@@ -1406,7 +1595,8 @@
       "P18.9",
       "P21.1",
       "P23.3",
-      "P63.7"
+      "P63.7",
+      "P74.1"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -1421,7 +1611,10 @@
       "P63.7",
       "P65.1",
       "P65.2-iy2",
-      "P69.3"
+      "P69.3",
+      "P69.4-j6r",
+      "P74.1",
+      "P80.2"
     ],
     "plugins/audit/tests/test_close_phase.py": [
       "P18.3",
@@ -1435,7 +1628,10 @@
       "P63.7",
       "P65.1",
       "P65.2-iy2",
-      "P69.3"
+      "P69.3",
+      "P69.4-j6r",
+      "P74.1",
+      "P80.2"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1444,7 +1640,8 @@
       "P21.1",
       "P63.7",
       "P64.1",
-      "P69.1"
+      "P69.1",
+      "P69.4-j6r"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
@@ -1452,7 +1649,8 @@
       "P18.9",
       "P21.1",
       "P64.1",
-      "P69.1"
+      "P69.1",
+      "P69.4-j6r"
     ],
     "tools/check-git-pipeline.py": [
       "P18.8",
@@ -1467,7 +1665,8 @@
       "P66.2-x3g",
       "P66.3-x3g",
       "P66.4-x3g",
-      "P72.4-ttl"
+      "P72.4-ttl",
+      "P73.1"
     ],
     "docs/handbook.html": [
       "P18.8",
@@ -1496,13 +1695,20 @@
       "P60.3",
       "P61.14",
       "P63.11",
+      "P69.3",
+      "P69.4-j6r",
+      "P78.11",
+      "P79.7",
+      "P80.12",
+      "P81.8",
       "P72.4-ttl",
       "P72.5-ttl"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
       "P18.5",
-      "P64.1"
+      "P64.1",
+      "P69.4-j6r"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -1512,20 +1718,36 @@
       "P50.6",
       "P54.4",
       "P61.1",
-      "P61.8"
+      "P61.8",
+      "P78.2",
+      "P79.1",
+      "P80.1",
+      "P81.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
-      "P32.2"
+      "P32.2",
+      "P69.3",
+      "P70.2",
+      "P78.2",
+      "P79.1",
+      "P80.1",
+      "P81.1"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
       "P20.6",
-      "P64.1"
+      "P64.1",
+      "P69.4-j6r"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
-      "P32.2"
+      "P32.2",
+      "P69.3",
+      "P78.2",
+      "P79.1",
+      "P80.1",
+      "P81.1"
     ],
     "plugins/audit/tests/test__help.py": [
       "P18.2",
@@ -1539,7 +1761,8 @@
       "P57.1",
       "P57.3",
       "P61.14",
-      "P69.1"
+      "P69.1",
+      "P75.1"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
@@ -1565,7 +1788,12 @@
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
       "P26.1",
-      "P47.2"
+      "P47.2",
+      "P70.2",
+      "P78.9",
+      "P79.6",
+      "P80.9",
+      "P81.6"
     ],
     "tools/prove-gates.py": [
       "P18.6",
@@ -1598,7 +1826,9 @@
       "P18.9",
       "P32.7",
       "P63.7",
-      "P63.9"
+      "P63.9",
+      "P69.3",
+      "P80.8"
     ],
     "plugins/audit/scripts/ui/panel/branch-convention.js": [
       "P18.7",
@@ -1621,13 +1851,15 @@
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
       "P32.7",
-      "P63.9"
+      "P63.9",
+      "P80.8"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
       "P21.2",
       "P22.11",
-      "P53.7"
+      "P53.7",
+      "P69.4-j6r"
     ],
     "plugins/audit/tests/test__panel_state.py": [
       "P18.7"
@@ -1640,7 +1872,12 @@
       "P32.2",
       "P34.6",
       "P40.2",
-      "P50.8"
+      "P50.8",
+      "P78.2",
+      "P79.1",
+      "P80.1",
+      "P80.7",
+      "P81.1"
     ],
     "tools/verify.sh": [
       "P19.2",
@@ -1675,7 +1912,8 @@
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
-      "P32.7"
+      "P32.7",
+      "P80.8"
     ],
     "tools/bench-hooks.py": [
       "P20.3",
@@ -1695,7 +1933,11 @@
       "P25.1",
       "P32.7",
       "P42.1",
-      "P61.1"
+      "P61.1",
+      "P78.2",
+      "P79.1",
+      "P80.1",
+      "P81.1"
     ],
     "plugins/audit/tests/test__areas.py": [
       "P20.6",
@@ -1714,7 +1956,12 @@
       "P53.10",
       "P50.8",
       "P59.13",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P77.2",
+      "P78.9",
+      "P79.6",
+      "P80.9",
+      "P81.6"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1744,7 +1991,16 @@
       "P59.3",
       "P59.6",
       "P59.8",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos",
+      "P78.1",
+      "P78.5",
+      "P78.6",
+      "P78.7",
+      "P79.5",
+      "P80.4",
+      "P81.3",
+      "P81.4"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -1769,7 +2025,16 @@
       "P59.6",
       "P59.8",
       "P59.13",
-      "P70.1"
+      "P70.1",
+      "P70.3-fos",
+      "P78.1",
+      "P78.5",
+      "P78.6",
+      "P78.7",
+      "P79.5",
+      "P80.4",
+      "P81.3",
+      "P81.4"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -1795,7 +2060,8 @@
       "P54.4",
       "P61.2",
       "P63.8",
-      "P69.3"
+      "P69.3",
+      "P69.4-j6r"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1807,7 +2073,8 @@
       "P54.4",
       "P61.2",
       "P63.8",
-      "P69.3"
+      "P69.3",
+      "P69.4-j6r"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -1874,6 +2141,18 @@
       "P64.1",
       "P68.1",
       "P69.3",
+      "P69.4-j6r",
+      "P74.1",
+      "P76.1",
+      "P76.2",
+      "P78.1",
+      "P78.3",
+      "P78.4",
+      "P78.8",
+      "P79.2",
+      "P79.4",
+      "P81.2",
+      "P81.5",
       "P72.3-ttl"
     ],
     "plugins/audit/tests/test_audit_task.py": [
@@ -1917,6 +2196,18 @@
       "P64.4-uym",
       "P68.1",
       "P69.3",
+      "P69.4-j6r",
+      "P74.1",
+      "P76.1",
+      "P76.2",
+      "P78.1",
+      "P78.3",
+      "P78.4",
+      "P78.8",
+      "P79.2",
+      "P79.4",
+      "P81.2",
+      "P81.5",
       "P72.3-ttl"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
@@ -1937,7 +2228,12 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P70.3-fos",
+      "P78.1",
+      "P78.2",
+      "P79.1",
+      "P80.1"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -1948,7 +2244,12 @@
       "P51.8",
       "P58.1",
       "P61.2",
-      "P70.2"
+      "P70.2",
+      "P70.3-fos",
+      "P78.1",
+      "P78.2",
+      "P79.1",
+      "P80.1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1960,7 +2261,8 @@
       "P52.4",
       "P52.5",
       "P55.1",
-      "P55.2"
+      "P55.2",
+      "P75.1"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -1971,7 +2273,8 @@
       "P52.4",
       "P52.5",
       "P55.1",
-      "P55.2"
+      "P55.2",
+      "P75.1"
     ],
     "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
       "P22.11"
@@ -1988,6 +2291,7 @@
       "P66.4-x3g",
       "P66.5-x3g",
       "P72.1",
+      "P69.3",
       "P72.3-ttl",
       "P72.4-ttl",
       "P72.5-ttl",
@@ -2008,7 +2312,9 @@
       "P63.1",
       "P63.3",
       "P63.5",
-      "P65.1"
+      "P65.1",
+      "P69.3",
+      "P69.4-j6r"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
       "P22.8",
@@ -2025,7 +2331,8 @@
       "P53.2",
       "P57.1",
       "P57.3",
-      "P59.6"
+      "P59.6",
+      "P77.1"
     ],
     "plugins/audit/tests/test__refs.py": [
       "P23.1",
@@ -2046,7 +2353,8 @@
       "P53.1",
       "P53.2",
       "P57.1",
-      "P57.3"
+      "P57.3",
+      "P77.1"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -2062,11 +2370,13 @@
       "P32.7",
       "P34.7",
       "P51.9",
-      "P63.6"
+      "P63.6",
+      "P80.7"
     ],
     "plugins/audit/tests/test_render_report.py": [
       "P25.1",
-      "P51.9"
+      "P51.9",
+      "P80.7"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -2080,7 +2390,9 @@
       "P57.4",
       "P59.10",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P69.3",
+      "P80.6"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2092,13 +2404,15 @@
       "P31.5",
       "P31.6",
       "P32.7",
-      "P34.4"
+      "P34.4",
+      "P73.1"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
       "P29.5",
       "P31.5",
-      "P34.4"
+      "P34.4",
+      "P73.1"
     ],
     "plugins/audit/tests/test__invariants.py": [
       "P28.2",
@@ -2179,6 +2493,14 @@
       "P55.5",
       "P56.5",
       "P55.14",
+      "P70.1",
+      "P70.3-fos",
+      "P78.5",
+      "P79.5",
+      "P80.3",
+      "P80.4",
+      "P81.3",
+      "P81.4",
       "P72.4-ttl",
       "P72.5-ttl"
     ],
@@ -2190,17 +2512,20 @@
       "P53.6",
       "P54.6",
       "P68.1",
-      "P68.2-v4q"
+      "P68.2-v4q",
+      "P73.1"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
-      "P31.5"
+      "P31.5",
+      "P73.1"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
       "P34.4",
       "P68.1",
-      "P68.2-v4q"
+      "P68.2-v4q",
+      "P73.1"
     ],
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5"
@@ -2227,7 +2552,11 @@
     "plugins/audit/commands/doctor.md": [
       "P31.2",
       "P48.4",
-      "P62.1"
+      "P62.1",
+      "P78.11",
+      "P79.7",
+      "P80.12",
+      "P81.8"
     ],
     "plugins/audit/commands/logs.md": [
       "P31.2",
@@ -2241,7 +2570,8 @@
     ],
     "plugins/audit/scripts/manifest/repair-commits.py": [
       "P31.6",
-      "P55.10"
+      "P55.10",
+      "P69.4-j6r"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -2258,6 +2588,11 @@
       "P50.9",
       "P55.22",
       "P59.1",
+      "P69.1",
+      "P79.2",
+      "P79.3",
+      "P80.5",
+      "P80.10",
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl"
@@ -2294,7 +2629,13 @@
       "P56.5",
       "P59.13",
       "P72.4-ttl",
-      "P72.5-ttl"
+      "P72.5-ttl",
+      "P78.5",
+      "P79.5",
+      "P80.3",
+      "P80.4",
+      "P81.3",
+      "P81.4"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -2304,7 +2645,9 @@
       "P48.1",
       "P59.5",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P70.3-fos",
+      "P80.6"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2313,13 +2656,17 @@
       "P46.6",
       "P48.1",
       "P63.5",
-      "P63.8"
+      "P63.8",
+      "P70.3-fos",
+      "P80.6"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
-      "P32.7"
+      "P32.7",
+      "P80.7"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
-      "P32.7"
+      "P32.7",
+      "P80.7"
     ],
     "plugins/audit/scripts/ui/shared/lookup.js": [
       "P32.7"
@@ -2374,7 +2721,14 @@
     ],
     "plugins/audit/tests/test_validate_manifest.py": [
       "P32.2",
-      "P45.2"
+      "P45.2",
+      "P69.3",
+      "P69.4-j6r",
+      "P78.2",
+      "P78.5",
+      "P79.1",
+      "P80.1",
+      "P81.1"
     ],
     "examples/acme-store/phases/BF1.json": [
       "P32.2"
@@ -2385,13 +2739,15 @@
       "P52.2",
       "P52.3",
       "P52.5",
-      "P55.3"
+      "P55.3",
+      "P75.1"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
       "P52.1",
       "P55.1",
-      "P59.13"
+      "P59.13",
+      "P75.1"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -2412,7 +2768,12 @@
       "P48.4",
       "P53.5",
       "P53.10",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P77.2",
+      "P78.9",
+      "P79.6",
+      "P80.9",
+      "P81.6"
     ],
     ".claude/skills/before-you-claim/SKILL.md": [
       "P37.1"
@@ -2465,6 +2826,7 @@
       "P63.8",
       "P63.10",
       "P72.1",
+      "P69.3",
       "P72.2-ttl",
       "P72.3-ttl",
       "P72.4-ttl",
@@ -2505,14 +2867,16 @@
       "P56.5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
-      "P43.4"
+      "P43.4",
+      "P77.1"
     ],
     "plugins/audit/tests/test__tree_stamp.py": [
       "P43.4",
       "P46.3"
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
-      "P43.4"
+      "P43.4",
+      "P77.1"
     ],
     "tools/orchestrator-state.py": [
       "P43.5",
@@ -2588,7 +2952,8 @@
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
-      "P63.6"
+      "P63.6",
+      "P80.7"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5"
@@ -2603,7 +2968,8 @@
       "P62.1",
       "P63.5",
       "P63.8",
-      "P63.10"
+      "P63.10",
+      "P77.2"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
@@ -2613,7 +2979,8 @@
       "P63.3",
       "P63.5",
       "P63.8",
-      "P63.10"
+      "P63.10",
+      "P77.2"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2625,7 +2992,9 @@
       "P53.9"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
-      "P55.4"
+      "P55.4",
+      "P75.1",
+      "P76.1"
     ],
     "tools/check-report-interactive.mjs": [
       "P55.7",
@@ -2638,11 +3007,13 @@
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
-      "P69.3"
+      "P69.3",
+      "P78.10"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
-      "P69.3"
+      "P69.3",
+      "P78.10"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -2670,7 +3041,13 @@
       "P55.21",
       "P64.3",
       "P68.1",
-      "P70.1"
+      "P70.1",
+      "P69.3",
+      "P70.3-fos",
+      "P73.1",
+      "P76.1",
+      "P77.1",
+      "P78.11"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -2685,15 +3062,19 @@
       "P63.2"
     ],
     "plugins/audit/tests/test__commit_trail.py": [
-      "P59.13"
+      "P59.13",
+      "P69.4-j6r"
     ],
     "plugins/audit/tests/test__doctor_completions.py": [
       "P59.13",
       "P69.2",
+      "P69.4-j6r",
+      "P76.1",
       "P72.8-ttl"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
-      "P59.13"
+      "P59.13",
+      "P69.4-j6r"
     ],
     "plugins/audit/tests/test_repair_tests_add.py": [
       "P59.13"
@@ -2739,7 +3120,12 @@
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
       "P63.11",
-      "P69.3"
+      "P69.3",
+      "P70.3-fos",
+      "P74.1",
+      "P78.11",
+      "P79.7",
+      "P80.12"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
@@ -2754,13 +3140,15 @@
       "P63.6"
     ],
     "plugins/audit/tests/test__report_md.py": [
-      "P63.6"
+      "P63.6",
+      "P80.7"
     ],
     "plugins/audit/scripts/manifest/_priority.py": [
       "P63.8"
     ],
     "plugins/audit/scripts/manifest/read-ado-links.py": [
-      "P63.8"
+      "P63.8",
+      "P69.3"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -2794,18 +3182,13 @@
       "P67.1",
       "P67.3-2e7"
     ],
-    "plugins/audit/scripts/status/_doctor_completions.py": [
-      "P69.2",
-      "P72.8-ttl"
-    ],
-    "plugins/audit/COMPATIBILITY.md": [
-      "P69.3"
-    ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
-      "P71.1"
+      "P71.1",
+      "P73.1"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
-      "P71.1"
+      "P71.1",
+      "P73.1"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
@@ -2818,6 +3201,56 @@
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
+    ],
+    "plugins/audit/scripts/status/_doctor_completions.py": [
+      "P69.2",
+      "P69.4-j6r",
+      "P76.1",
+      "P72.8-ttl"
+    ],
+    "plugins/audit/COMPATIBILITY.md": [
+      "P69.3"
+    ],
+    "plugins/audit/scripts/manifest/_commit_trail.py": [
+      "P69.4-j6r"
+    ],
+    "plugins/audit/tests/test_verify_invariants.py": [
+      "P75.1"
+    ],
+    "plugins/audit/scripts/governance/_gate_derive.py": [
+      "P79.2"
+    ],
+    "plugins/audit/tests/test__gate_derive.py": [
+      "P79.2"
+    ],
+    "plugins/audit/scripts/governance/derive-phase-gate.py": [
+      "P79.3"
+    ],
+    "plugins/audit/tests/test_derive_phase_gate.py": [
+      "P79.3"
+    ],
+    "plugins/audit/scripts/governance/import-evidence.py": [
+      "P80.5"
+    ],
+    "plugins/audit/tests/test_import_evidence.py": [
+      "P80.5"
+    ],
+    "tools/ui-tests/full-run-verified.test.mjs": [
+      "P80.8"
+    ],
+    "plugins/audit/scripts/governance/full-gate.py": [
+      "P80.10",
+      "P81.7"
+    ],
+    "plugins/audit/tests/test_full_gate.py": [
+      "P80.10",
+      "P81.7"
+    ],
+    ".claude/hooks/guard-release.py": [
+      "P80.11"
+    ],
+    ".claude/hooks/arm-release-bypass.py": [
+      "P80.11"
     ],
     "plugins/audit/tests/_harness.py": [
       "P72.1"
@@ -3040,7 +3473,7 @@
     {
       "id": "BUG-11",
       "title": "manage-worktrees list/remove/sweep compose a phase's branch without the git user's initials, so the worktree add just cut is a stranger to its own tool",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "high",
       "reportedAt": "2026-09-25T12:01:47Z",
       "reportedBy": null,
@@ -3059,7 +3492,7 @@
         "plugins/audit/tests/test_manage_worktrees.py"
       ],
       "taskId": "P69.1",
-      "fixedIn": null,
+      "fixedIn": "91c7891",
       "notes": null
     }
   ],

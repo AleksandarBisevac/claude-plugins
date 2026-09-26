@@ -1,0 +1,79 @@
+{
+  "id": "P74",
+  "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "close-phase run from the main worktree prints the two commands that finish its cleanup and never tells the operator to remove the main tree; a phase with no recorded branch is refused with the reason and asked for --branch, and phases built on one combined branch can be signed off as a group",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P74.1",
+      "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
+      "status": "pending",
+      "description": "Reproduced at HEAD: from the main worktree standing on the phase branch the merge lands, then the branch deletion says 'the worktree must go first' (impossible for the main tree) and the ownership refusal fires before the isMain check, telling the operator to git worktree remove the main tree. Check isMain before ownership; when the holder is the main tree print git switch <parent> and git branch -d <branch>; never move HEAD. A phase with phase.branch null is refused with 'whether audit/p1-p1 is contained could not be established' - say the name was composed because no branch is recorded and ask for --branch. Phases built on one combined branch: --branch already lands them; add a group sign-off (review from the task.commit lists, one gate, one invariants run over the union) in the signoff verb/command, reusing close-phase --branch per phase.",
+      "files": [
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/phase-signoff.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: repro that FAILS on current code - close-phase run from the main worktree on the phase branch prints neither git switch <parent> nor git branch -d <branch>, and tells the operator to remove the main worktree"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

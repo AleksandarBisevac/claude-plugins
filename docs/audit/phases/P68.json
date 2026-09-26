@@ -1,7 +1,7 @@
 {
   "id": "P68",
   "title": "The index is committed only where the committed shards support it",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "commit-manifest-index never records an index that names tasks or phases its committed shards do not hold - it refuses and names the shard to commit first - and the notes that point at it state the order",
   "testGate": [

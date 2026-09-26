@@ -129,9 +129,17 @@ def cancel_lookup(manifest, journal_rows, node_id):
         return False, "no task or phase %r in this manifest" % (node_id,)
     status = node.get("status")
     if status != "cancelled":
-        return True, {"id": node_id, "kind": kind, "cancelled": False,
-                      "status": status,
-                      "pointer": "%s.status in the manifest" % (node_id,)}
+        # A phase's status is DERIVED, and the answer is the derivation's; the
+        # stored value rides beside it only where the two differ.
+        payload = {"id": node_id, "kind": kind, "cancelled": False,
+                   "status": status,
+                   "pointer": "%s.status in the manifest" % (node_id,)}
+        if kind == "phase":
+            derived = _mio.effective_phase_status(node)
+            if derived != status:
+                payload.update(status=derived, stored=status,
+                               basis=_mio.phase_basis(node))
+        return True, payload
     if kind == "task":
         reason_text = (node.get("outcome") or {}).get("descriptive") or ""
         field = "outcome.descriptive"
@@ -157,16 +165,47 @@ def bug_lookup(manifest, bug_id):
     `resolution`/`conclusion` key in this schema, only `status` and the
     operator's own `notes`, carried verbatim by `/audit:bug close` - so that
     is what this reports, with the exact array index as the pointer rather
-    than a synthesised one."""
+    than a synthesised one.
+
+    `status` and `fixedIn` are the DERIVED values (`_mio.derived_disagreements`), which a
+    linked fix task that is done moves to `fixed` and its commit; where the stored
+    ones differ, `stored` carries them and `basis` says why."""
     bugs = manifest.get("bugs") or []
     for i, bug in enumerate(bugs):
         if isinstance(bug, dict) and bug.get("id") == bug_id:
-            return True, {"id": bug_id, "status": bug.get("status"),
-                          "notes": bug.get("notes"),
-                          "fixedIn": bug.get("fixedIn"),
-                          "taskId": bug.get("taskId"),
-                          "pointer": "bugs[%d] in the manifest" % (i,)}
+            payload = {"id": bug_id, "status": bug.get("status"),
+                       "notes": bug.get("notes"),
+                       "fixedIn": bug.get("fixedIn"),
+                       "taskId": bug.get("taskId"),
+                       "pointer": "bugs[%d] in the manifest" % (i,)}
+            drift = [r for r in _mio.derived_disagreements(manifest)
+                     if r["kind"] == "bug" and r["id"] == bug_id]
+            if drift:
+                payload["stored"] = {"status": bug.get("status"),
+                                     "fixedIn": bug.get("fixedIn")}
+                payload["basis"] = drift[0]["basis"]
+                for row in drift:
+                    payload[row["field"]] = row["derived"]
+            return True, payload
     return False, "no bug %r in this manifest" % (bug_id,)
+
+
+def _drift_line(payload):
+    """`stored X, derived Y (basis)` -- or None where stored and derived agree."""
+    stored = payload.get("stored")
+    if stored is None:
+        return None
+    if isinstance(stored, dict):
+        pairs = [(field, stored.get(field), payload.get(field))
+                 for field in ("status", "fixedIn")
+                 if stored.get(field) != payload.get(field)]
+    else:
+        pairs = [("status", stored, payload.get("status"))]
+    return "%s (%s)" % ("; ".join("%sstored %s, derived %s"
+                                  % ("" if field == "status" else field + " ",
+                                     was, now)
+                                  for field, was, now in pairs),
+                        payload.get("basis"))
 
 
 def file_lookup(manifest, path):
@@ -233,8 +272,11 @@ def _render_human(question, node_id, found, payload):
         return ["no match: %s" % (payload,)]
     if question == "cancel":
         if not payload["cancelled"]:
-            return ["%s is not cancelled (status: %s)"
-                   % (node_id, payload["status"])]
+            lines = ["%s is not cancelled (status: %s)"
+                     % (node_id, payload["status"])]
+            if _drift_line(payload):
+                lines.append("  %s" % (_drift_line(payload),))
+            return lines
         lines = ["%s was cancelled: %s" % (node_id, payload["reasonText"]),
                 "pointer: %s" % (payload["pointer"],)]
         if "journal" in payload:
@@ -242,10 +284,12 @@ def _render_human(question, node_id, found, payload):
                          % (payload["journal"]["pointer"], payload["journal"]["ts"]))
         return lines
     if question == "bug":
-        return ["%s: status=%s notes=%s fixedIn=%s"
-               % (node_id, payload["status"], payload["notes"] or "(none)",
-                  payload["fixedIn"] or "(none)"),
-               "pointer: %s" % (payload["pointer"],)]
+        lines = ["%s: status=%s notes=%s fixedIn=%s"
+                 % (node_id, payload["status"], payload["notes"] or "(none)",
+                    payload["fixedIn"] or "(none)")]
+        if _drift_line(payload):
+            lines.append("  %s" % (_drift_line(payload),))
+        return lines + ["pointer: %s" % (payload["pointer"],)]
     if question == "brief":
         if not payload["files"]:
             return ["%s declares no files yet" % (node_id,)]

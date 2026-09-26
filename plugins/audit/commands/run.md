@@ -20,10 +20,22 @@ Otherwise run the full preflight (steps 1–5, including the lock) and emit **Pr
 
 Execute exactly `<taskId>`, with status guards:
 1. `status == "done"` → refuse: report its `commit`/`outcome`. Offer (AskUserQuestion) an explicit
-   **re-open**: on confirmation, reset `status = "pending"`, `attempts = 0`, clear `commit`,
-   `outcome`, `completedAt`, `verifiedBy` — and **if `task.bugId` is set, reopen the linked bug too**
-   (its `bugs[]` entry back to `status: "in_progress"`, clear `fixedIn`) so a re-opened bugfix task
-   never leaves its bug marked `fixed` at a stale SHA — then execute. Never silently re-run a done task.
+   **re-open**, and on confirmation run the verb, never a hand edit:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reopen <taskId> \
+           --reason "<the human's why, verbatim>"
+   ```
+   **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The
+   operator's words go in unchanged*: `--reason` reaches the hash-chained journal, and `-` reads it
+   off stdin. It resets `status = "pending"`, `attempts = 0`, clears `commit`, `outcome`, `completedAt`,
+   `verifiedBy` and `intentCheck`, and puts a linked bug back to `in_progress` with no `fixedIn`, so
+   a re-opened bugfix task never leaves its bug marked `fixed` at a stale SHA — under the index lock,
+   revalidated, with a `task.reopen` journal row. **It refuses a task whose phase is signed off**
+   (done, or signed off and awaiting its merge): that verdict reviewed the work as it stands and
+   sign-off is not re-decided, so the phase could never be signed again, and a stored `done` over
+   an open task is a plan every later verb refuses as invalid. Relay the refusal: the new work is a
+   new task in an open phase or a bug (`/audit:bug`). On exit 0, execute. Never silently re-run a
+   done task.
    A reopened task with an `ado` link gets the **ADO echo** (orchestrator.md → "ADO echo"): its card
    moves back to the pending-state with the comment `reopened by /audit:run` — the reopen was
    human-confirmed, so the board move inherits that consent.

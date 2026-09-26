@@ -404,9 +404,9 @@ def _cases(check):
                 {"id": "P1.1", "title": "t", "status": "done"}]}]})
         check("f9g a merged phase whose status DID flip to done is not stale",
               M.manifest_state(tmp_f, rel)["staleClosedPhase"] is None)
-        # The signoff verb never writes `status`, so a phase signed off and then
-        # merged is done by derivation with `in_progress` still stored - the
-        # correct close, which must not be reported as the gap.
+        # A phase signed off and merged before the verbs stored the derived status
+        # is done by derivation with `in_progress` still stored - a correct close,
+        # which must not be reported as the gap.
         write_manifest({"meta": {"version": 2}, "phases": [
             {"id": "P1", "title": "p", "status": "in_progress",
              "branch": "audit/p1", "review": {"status": "passed"},

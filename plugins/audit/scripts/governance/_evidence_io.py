@@ -320,8 +320,10 @@ MAX_FAILING = 10
 
 # `measured` IS THE ONE DERIVED FIELD THIS ROW KEEPS, and the exception is
 # deliberate rather than an oversight of the rule beside it. `signal` stays off
-# the row because `exit` and `outcome` can be read for it and a cached claim can
-# contradict its own source; that risk is what the rule guards. It cannot arise
+# the row because `exit` and `outcome` can be read for it - or, for a jest
+# worker jest reaped itself at exit 1, `failing`, which names the signal beside
+# the suite - and a cached claim can contradict its own source; that risk is
+# what the rule guards. It cannot arise
 # here: the word is computed from THIS row's `ran` by one function at write time
 # (`run-test-gate.measured_state`), so the two cannot drift. What the rule does
 # not guard is the failure that was actually reported - many readers, one
@@ -340,8 +342,8 @@ MAX_FAILING = 10
 # `retriedAfterSignal` AND `retryBasis` ARE ON THE ROW FOR THE REASON `signal`
 # IS NOT. The rule beside `measured` is that a claim the row can already be read
 # for is not cached a second time, and `signal` obeys it: `exit` and `outcome`
-# hold the evidence, so a reader a week later can name the signal without being
-# told it. That does not hold here. Every other field of a retried step - its
+# (or `failing`, for a jest worker) hold the evidence, so a reader a week later
+# can name the signal without being told it. That does not hold here. Every other field of a retried step - its
 # exit, its count, its duration, its outcome - describes the attempt that
 # ANSWERED, and nothing in the row says an earlier attempt was ended by the OS
 # and thrown away, which means a green row would read as a gate that answered on

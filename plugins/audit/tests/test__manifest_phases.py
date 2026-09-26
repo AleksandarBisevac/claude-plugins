@@ -448,7 +448,8 @@ def _cases(check):
           and [x for x in _ta_s_w if "names no file" in x] == [])
     _ta_v_f, _ta_v_w = _rules.validate(
         {"meta": {"version": 2}, "phases": [
-            _phase(status="in_progress", tasks=[
+            _phase(status="in_progress", desiredOutcome="d", testGate=["lint"],
+                   tasks=[
                 _task("P0.1", status="pending",
                       tests={"mode": "tdd", "add": [_TA_PROSE],
                              "expectRedFirst": True, "gate": []})])]})
@@ -787,6 +788,104 @@ def _cases(check):
           and _rules.FINDING_SEVERITY is M.FINDING_SEVERITY
           and _rules._check_review is M._check_review)
 
+    # --- gate entries that are several entries, and running phases that ------
+    # --- state no outcome or run no gate --------------------------------------
+    # ADDITIVE WARNINGS, NEVER FINDINGS: each is a state a plan may be in on
+    # purpose (an empty gate is designed), so the line names it and refuses
+    # nothing. Every rule here has its allow case beside it.
+    _gw_build = {"lint": "echo l", "typecheck": "echo t", "test": "echo 1 passed"}
+
+    def _gw(pgate, tgate=None, status="in_progress", outcome="ship it",
+            tstatus="in_progress", build=None):
+        tests = {"mode": "gate-only", "add": []}
+        if tgate is not None:
+            tests["gate"] = tgate
+        ph = _phase(status=status, testGate=pgate, tasks=[
+            _task("P0.1", status=tstatus, tests=tests)])
+        if outcome is not None:
+            ph["desiredOutcome"] = outcome
+        _f, _w = _rules.validate({"meta": {"version": 2, "buildCommands":
+                                           _gw_build if build is None
+                                           else build},
+                                  "phases": [ph], "fileIndex": {}, "bugs": []})
+        return _f, _w
+
+    _gw_f, _gw_w = _gw(["lint,typecheck,test"])
+    _gw_hit = [x for x in _gw_w if "commas into ONE entry" in x]
+    check("gw1 a testGate entry `lint,typecheck,test` whose every part IS a "
+          "buildCommands key is ONE shell command no shell can find - the "
+          "warning names the entry and the split spelling, and nothing is "
+          "refused: %r" % ((_gw_f, _gw_hit),),
+          _gw_f == [] and len(_gw_hit) == 1
+          and "'lint,typecheck,test'" in _gw_hit[0]
+          and '["lint", "typecheck", "test"]' in _gw_hit[0])
+    _gw_tf, _gw_tw = _gw(["lint"], tgate=["lint,test"])
+    check("gw2 ...and the same on a task's tests.gate, naming the task: %r"
+          % ([x for x in _gw_tw if "commas into ONE entry" in x],),
+          len([x for x in _gw_tw if "commas into ONE entry" in x
+               and "task P0.1" in x]) == 1)
+    _gw_done = _gw(["lint"], tgate=["lint,test"], tstatus="done")[1]
+    _gw_fin = _gw(["lint,test"], status="done", tstatus="done")[1]
+    check("gw2b ALLOW: a FINISHED task's or phase's gate has already run, so the "
+          "line would name nothing anybody can act on - this repo's own plan "
+          "carries such an entry, on a done task: %r"
+          % ([x for x in _gw_done + _gw_fin if "commas into ONE entry" in x],),
+          not [x for x in _gw_done + _gw_fin if "commas into ONE entry" in x])
+    _gw_af, _gw_aw = _gw(["lint", "npx eslint a.ts,b.ts", "lint,deploy"],
+                         build=dict(_gw_build, **{"a,b": "echo ab"}))
+    # `a` and `b` are keys too, so only the entry being a key ITSELF keeps
+    # this one quiet.
+    _gw_aw2 = _gw(["a,b"], build=dict(_gw_build, **{"a,b": "echo ab",
+                                                    "a": "echo a",
+                                                    "b": "echo b"}))[1]
+    check("gw3 ALLOW, three ways: a literal command holding a comma, an entry "
+          "only PART of which names a key, and an entry that is itself a key "
+          "are all left alone - only an entry whose every part is a key is the "
+          "split spelling written as one: %r"
+          % ([x for x in _gw_aw + _gw_aw2 if "commas into ONE entry" in x],),
+          not [x for x in _gw_aw + _gw_aw2 if "commas into ONE entry" in x])
+
+    _gw_nf, _gw_nw = _gw(["lint"], outcome=None)
+    _gw_bw = _gw(["lint"], outcome="   ")[1]
+    check("gw4 a RUNNING phase with no desiredOutcome, or a blank one, is "
+          "named - sign-off grades a phase against it: %r"
+          % ([x for x in _gw_nw + _gw_bw if "desiredOutcome" in x],),
+          len([x for x in _gw_nw if "desiredOutcome" in x]) == 1
+          and len([x for x in _gw_bw if "desiredOutcome" in x]) == 1)
+    _gw_dw = _gw(["lint"], outcome=None, status="done", tstatus="done")[1]
+    _gw_sw = _gw(["lint"])[1]
+    _gw_uw = _gw(["lint"], outcome=None, status="pending", tstatus="pending")[1]
+    check("gw5 ALLOW: a FINISHED phase with no outcome is history nobody can "
+          "act on, a phase not yet running has not reached the sign-off that "
+          "reads it, and a phase that states one says nothing: %r"
+          % ([x for x in _gw_dw + _gw_sw + _gw_uw if "desiredOutcome" in x],),
+          not [x for x in _gw_dw + _gw_sw + _gw_uw if "desiredOutcome" in x])
+
+    _gw_ew = _gw([])[1]
+    _gw_pw = _gw([], tgate=None, status="in_progress", tstatus="pending")[1]
+    check("gw6 a RUNNING phase (derived: a task in flight) with an EMPTY "
+          "testGate is named, as a designed state and not a fault - its "
+          "sign-off rests on review alone: %r"
+          % ([x for x in _gw_ew + _gw_pw if "EMPTY testGate" in x],),
+          len([x for x in _gw_ew if "EMPTY testGate" in x]) == 1
+          and len([x for x in _gw_pw if "EMPTY testGate" in x]) == 1)
+    _gw_qw = _gw([], status="pending", tstatus="pending")[1]
+    _gw_gw = _gw(["lint"])[1]
+    check("gw7 ALLOW: a phase that is not running, and a running one with a "
+          "gate, say nothing about the gate: %r"
+          % ([x for x in _gw_qw + _gw_gw if "EMPTY testGate" in x],),
+          not [x for x in _gw_qw + _gw_gw if "EMPTY testGate" in x])
+    _gw_sd = _gw([], outcome=None, status="in_progress", tstatus="done")[1]
+    check("gw8 a phase whose tasks are all finished and whose SIGN-OFF IS DUE "
+          "is still asked both questions - that is the moment sign-off reads "
+          "the outcome and runs the gate, so a rule that went quiet there "
+          "would go quiet exactly when it matters: %r"
+          % ([x for x in _gw_sd if "desiredOutcome" in x
+              or "EMPTY testGate" in x],),
+          _mio.signoff_due(_phase(status="in_progress", tasks=[
+              _task("P0.1", status="done")]))
+          and len([x for x in _gw_sd if "desiredOutcome" in x]) == 1
+          and len([x for x in _gw_sd if "EMPTY testGate" in x]) == 1)
     # --- `outputs`: the only key on a task that can WIDEN the plan gate -------
     # A FINDING AND NOT A WARNING, which is the decision rather than an
     # oversight: a warning leaves the entry in the file, and the gate would then

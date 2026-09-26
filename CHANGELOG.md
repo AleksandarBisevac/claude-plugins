@@ -73,7 +73,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is out it prints the update commands and exits 1. The release check is the plugin's one
   outbound request (`SECURITY.md` -> *Outbound network*); `--offline` skips it.
 
+- **`/audit:phase settle` stores every derived value a plan carries stale.** A phase's status and
+  a linked bug's `fixed`/`fixedIn` are derived, and nothing stored them, so every signed-off phase
+  kept `in_progress` or `pending` on its shard and index stub and every fixed bug kept `triaged` -
+  right for every surface that derives, wrong for an older plugin's hooks, `jq`, an agent or a
+  teammate reading the file. `audit-task.py settle` stores the derived phase `status`, bug `status`
+  and `fixedIn`, and re-mirrors any index stub fallen behind its shard, under the index lock with
+  revalidate-or-roll-back and one `plan.settle` journal row. It only moves a value towards what the
+  derivation already answers: a stored `done`/`cancelled` and a person's `wontfix`/`not_a_bug` are
+  never touched. `validate-manifest` now WARNS - never refuses - about a stored value its
+  derivation disagrees with and about a stale stub, naming the command - one warning per record
+  with an id-free body, so a plan carrying dozens collapses to a line per kind of move with a
+  count and the `--verbose` pointer; `audit-lookup` answers a
+  bug's and a phase's status from the derivation and prints `stored X, derived Y (basis)` where
+  they differ.
+
 ### Changed
+- **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
+  names the task and the phase, and a `graded by:` line sits directly under the verdict banner -
+  the task's own `tests.gate`, or the phase's gate pointed at the task's files - while the
+  `GATE RED:` / `GATE GREEN:` literals the orchestrator keys on are unchanged (`NO CHECK RAN:`
+  counts as a banner too). The coverage basis
+  gains one `breadth:` clause when the run named suites the task neither declares nor is named
+  after, with both counts; it refuses nothing. A repeated verdict's first line now carries the
+  `--no-reuse` spelling.
+- **`validate-manifest.py` names three more states, as warnings.** A `testGate` or `tests.gate`
+  entry whose every comma-separated part is a `meta.buildCommands` key - one string the shell
+  runs as a single command it cannot find - with the split spelling; a phase in flight (running,
+  or with its sign-off due) with no `desiredOutcome`; and one with an EMPTY `testGate`, which stays
+  a designed state. Finished tasks and phases are exempt, a phase not yet started is not asked,
+  and nothing is refused.
 - **`/audit:task start` performs phase entry: a phase's first task cuts its branch.** Cutting the
   phase branch was prose the orchestrator ran before the verb, so every phase driven through the
   verbs rather than `/audit:run` ran on its parent with no branch - most of this repository's own -
@@ -104,7 +133,68 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   was no change at all. The verb's own row is `phase.verdict`, the way `task.done` sits beside the
   hook's `task.complete`.
 
+- **The verbs that change an input of a derived status store the value it derives.** `signoff`
+  stores `done` on a phase with no branch (shard and index stub); `close-phase.py`'s `mergedAt`
+  stamp stores it on a branched one and re-mirrors the stub under the index lock; `/audit:task
+  done` on a bug's fix task stores the bug's `fixed` and `fixedIn` in the index - the one index
+  write a close makes, which the verb reports with the command that lands it. A stored terminal
+  status already won inside the derivation, so no reader's answer changes at the moment it is
+  written (`COMPATIBILITY.md`). Because a stored value no longer follows its inputs, the two paths
+  that changed an input afterwards now move it too: `/audit:run`'s re-open is the new
+  `audit-task.py reopen` verb, which refuses a task whose phase is signed off (its verdict is not
+  re-decided, and a stored `done` over an open task is a plan every later verb refuses) and
+  names a new task or `/audit:bug` instead; and `repair-commits.py --apply` clears a bug's
+  `fixedIn` that held the commit its fix task lost. `close-phase.py` revalidates the stamp and the
+  stub mirror and restores the prior bytes on a finding the write introduced, and the mirror
+  answers any failure, the lock's included, with a sentence naming `settle`.
+- **`manage-worktrees.py` parses each verb's flags under that verb.** One flat parser accepted
+  `add --apply`, `list --force` and every other flag on every verb and ignored them; `--apply` and
+  the sweep verbs now parse under `sweep` alone, and a misplaced flag is a usage error.
+- **`/audit:doctor` accepts the `done` verb's own `task.done` row as a close's receipt.** The
+  hook derives `task.complete` only for a close it watched, so a task closed in a linked worktree,
+  or added and closed in one Bash call, was reported as edited outside the pipeline. A `task.done`
+  row whose `completedAt` is the task's is now the receipt; a done task with neither row is still a
+  FINDING, and the era starts at the first receipt of either kind. The hook's own `task.complete`
+  now receipts only the close whose `completedAt` it carries, so a task re-opened and flipped back
+  to done by hand is found whichever row the original close left.
+
 ### Fixed
+- **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
+  shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
+  vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,
+  and the shell's diagnostic was read for paths - `/bin/sh` became a printed path and produced a
+  false `NO OVERLAP`. `run-test-gate.py` now reads each diagnostic a case holds the tool's own
+  output for (sh, dash, zsh, bash and vitest - not cmd.exe, which stays a failure) beside its exit code,
+  only where the output carries no end-of-run report (`reached_a_verdict` stays the guard for a
+  runner whose exit status is a count, and a bare 127 stays a failure), prints the words it read
+  as the basis, and asks the coverage question only of steps that reached a verdict.
+- **A jest suite that failed to run names its suite, its reason and its signal.** `failing` held
+  `Test suite failed to run` with neither the suite nor the cause, so a worker killed by SIGSEGV
+  was graded `failed`, recorded without a trace of the signal, and then repeated as a red on the
+  same tree. Each such heading is now paired with its `FAIL <path>` and first reason line, the
+  signal written FIRST so the committed row keeps it behind however long a suite path, and a run
+  whose every failure is a killed worker is `could-not-run` carrying `signal` and a `signalBasis`
+  naming jest's report as the channel - jest reaps its workers, so its exit stays 1. Such a step is
+  run once more at a halved `--maxWorkers` where the command declares one, which is what the
+  signal retry is for. One real assertion failure beside a kill stays `failed`, is not retried,
+  and the list names both.
+- **A task whose gate was cleared is EMPTY at task scope, as `commands/task.md` promises.**
+  `--gate-clear` writes `tests.gateBasis: cleared`, and `run-test-gate.py --task` ignored it and
+  ran the phase's gate against the task anyway. It now answers EMPTY, names the task and says the
+  phase's `testGate` at sign-off still grades it - or that nothing does, when that gate is EMPTY
+  too; a task that merely declares no gate keeps the phase fallback. Under `--record` an EMPTY
+  answer, at task or phase scope, writes an `empty-gate` row and pointer, so a done task with a
+  cleared gate does not trip `--fail-on no-test-evidence`; under `--json` it is a JSON object.
+- **`/audit:worktree` named a phase's branch one way in `add` and another everywhere else
+  (BUG-11).** `add` composed the branch with git user.name while `list`, `remove` and `sweep`
+  composed it with no user name, so under a template carrying `{initials}` the worktree `add` had
+  just cut was listed as a stranger and `remove` found no worktree holding the phase's branch.
+  Every verb, and the panel's sweep, now names it through one `_branch.branch_of`. `commands/worktree.md` also says a new worktree
+  has no installed dependencies, and that a symlinked `node_modules` resolves outside it.
+- **The guide's verb check could not see a subparser.** `_deps.guide_enumeration` read verbs only
+  off a `choices=` positional, so a command spelled with `add_parser` left the check with every verb
+  at once; it now reads both, and the verb it had been missing (`audit-lookup.py brief`) is
+  documented.
 - **`commit-manifest-index` committed an index ahead of the shards it names.** `/audit:task add`
   writes a task into its phase's shard and its files into the index, and committing the index
   first recorded a plan whose `fileIndex` named a task no committed shard held - a commit that
