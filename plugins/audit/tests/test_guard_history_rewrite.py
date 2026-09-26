@@ -739,6 +739,32 @@ def _cases(check):
                 ("gp60", "(echo '" + _G + "'; true) | sh", "deny",
                  "...and every stage of a piped group reaches the shell, not "
                  "only its last"),
+                # Compound commands, comments and receiving groups.
+                ("gp61", "if true; then echo '" + _G + "' > .git/hooks/pre-commit; fi",
+                 "deny", "an emitter after a reserved word is still an emitter"),
+                ("gp62", "for x in 1; do echo '" + _G + "'; done | sh", "deny",
+                 "...and a loop's output piped after `done` reaches every stage"),
+                ("gp63", "echo 'never " + _G + "' # see > $X", "allow",
+                 "a comment's `>` is not a redirect"),
+                ("gp64", "echo '" + _G + "' | (cd /tmp && sh)", "deny",
+                 "a pipe into a group reaches every stage of it"),
+                ("gp65", "echo '" + _G + "' | sudo grep -c x \"$F\"", "allow",
+                 "a wrapper's operand holding `$` is not the program"),
+                ("gp66", "echo '" + _G + "' > docs/Update", "allow",
+                 "a file named like a hook outside any hook directory is not "
+                 "one"),
+                ("gp67", "echo '" + _G + "' > >(cat)", "allow",
+                 "a process substitution whose command only prints is not "
+                 "a run"),
+                ("gp68", "echo 'git push' '--force origin main' | sh", "deny",
+                 "an emitter's words print as one line, so a phrase split "
+                 "across arguments is read whole"),
+                ("gp69", "cat <<< '" + _G + "' | sh", "deny",
+                 "cat fed a here-string prints it"),
+                ("gp70", "builtin echo '" + _G + "' | sh", "deny",
+                 "`builtin` runs its argument"),
+                ("gp71", "echo \"$(echo '" + _G + "')\" | sh", "deny",
+                 "an inner emitter's substitution contributes what it prints"),
                 # A `case` read in command position only; the body is READ.
                 ("gs19", 'echo "$(echo worst case)"; echo stash | xargs git',
                  "deny", "a bare word `case` in a substitution does not make "
@@ -987,6 +1013,22 @@ def _cases(check):
     check("se2 ...while a keyword `case` carries the read past its patterns to "
           "the `)` after `esac`", M._substitution_end(_body, 0)
           == _body.index("esac)") + 4, repr(M._substitution_end(_body, 0)))
+    _body = "echo $(case x in a) echo y;; esac) end) tail"
+    check("se4 a case inside a nested substitution closes that one, not this",
+          M._substitution_end(_body, 0) == _body.index(") tail"),
+          repr(M._substitution_end(_body, 0)))
+    _body = "( case x in a) echo y;; esac ) ) tail"
+    check("se5 ...and a case inside a subshell, the same",
+          M._substitution_end(_body, 0) == _body.index(") tail"),
+          repr(M._substitution_end(_body, 0)))
+    _body = "case a in (a) case b in b) date;; esac;; esac) tail"
+    check("se6 ...and a nested case after a parenthesised pattern is in "
+          "command position", M._substitution_end(_body, 0)
+          == _body.index("esac) tail") + 4, repr(M._substitution_end(_body, 0)))
+    _body = "case x in a) (echo y) ;; esac) tail"
+    check("se7 ...while a subshell's `)` inside an open case arm closes the "
+          "subshell, not a pattern", M._substitution_end(_body, 0)
+          == _body.index(") tail"), repr(M._substitution_end(_body, 0)))
     check("se3 ...and one with no `esac` never closes, which is unreadable",
           M._substitution_end("case x in x) date", 0) is None,
           repr(M._substitution_end("case x in x) date", 0)))

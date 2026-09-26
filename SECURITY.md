@@ -243,14 +243,20 @@ base refused:
   Node body that runs a subprocess) is read as code, not searched for git — the
   guard reads shell text, and a program's own calls are the general residual above;
 - a git command quoted as one phrase is read as a command only where a text
-  emitter (`echo`, `printf`) prints it and that output is run - piped into a
-  program that runs its stdin, written by a redirect or through `tee` into a file
-  named as a git hook or under `.git/hooks/` or `.husky/`, into a target the reading
-  cannot resolve (an expansion, a glob, a process substitution), or into a file a
-  later stage of the same command runs. Not followed: a file run by a LATER command,
-  a hook directory under another name holding a file not named as a hook, a file
-  written by another program (`dd`, `cp`, an editor), and a phrase assembled at run
-  time (a `printf` format, a variable).
+  emitter (`echo`, `printf`, or `cat` fed a here-string) prints it and that output
+  is run: piped into a program that runs its stdin (a shell, `eval`, `source` of
+  stdin, a program named by a variable), written by a redirect or through `tee`
+  into anything under `.git/hooks/` or `.husky/`, into a file named as a git hook
+  in a directory whose name says it holds hooks, into a target the reading cannot
+  resolve (an expansion, a glob, a process substitution that runs its input), or
+  into a file a later stage of the same command runs. What an emitter prints is
+  its words as one line, a substitution inside them contributing what an emitter
+  within it prints, and a compound command (a group, a loop, `if`, `case`) carries
+  its pipe or redirect to every stage inside it. Not followed: a file run by a
+  LATER command; a `core.hooksPath` directory whose name does not say it holds
+  hooks; a file written by another program (`dd`, `cp`, an editor); a phrase
+  assembled at run time (a `printf` format, a variable's value); and output that
+  reaches a shell through a descriptor or a named pipe.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's

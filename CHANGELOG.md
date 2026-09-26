@@ -309,12 +309,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   read as a command where a text emitter prints it and that output is run - piped into a program
   that runs its stdin, written by a redirect or `tee` into a git hook, into a target the reading
   cannot resolve, or into a file the same command runs. Operators for that reading are recognised
-  only outside quotes, so a `>` inside a commit message stays text.
+  only outside quotes and outside comments, so a `>` inside a commit message stays text; what an
+  emitter prints is read as one line; and a group, a loop, `if` or `case` carries its pipe or
+  redirect to every stage inside it, on the sending side and the receiving one. A `case` is
+  tracked at every nesting level. `builtin` is a wrapper.
 - **`guard-secrets-read` reads a secret path split by a line continuation, and a here-string fed to
   an interpreter.** Its shell-read arm now joins continuations before it reads a verb and a path, as
   the shell does, and a here-string handed to python or node - behind a wrapper too - is graded by
   the inline-eval arm, the same capability as `-c`, with a refusal that names the here-string; one
-  fed to an interpreter already running a script file is that script's input.
+  fed to an interpreter already running a script file, or its own inline program, is that
+  script's input, decided per interpreter (`perl -c` compiles stdin and `python -E` names no
+  program, so neither exempts it). Perl's own `open` shapes - two-argument, with or without a
+  `<` mode, and three-argument with `'<'` - are reads the inline-eval arm names.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path

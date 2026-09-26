@@ -605,9 +605,18 @@ _READ_CALL_EXPR = re.compile(
     r"|(?:fs\s*\.\s*)?readFile(?:Sync)?\s*\(\s*([^,)]+?)\s*[,)]"
     r"|createReadStream\s*\(\s*([^,)]+?)\s*[,)]"
     r"|(?:File|IO)\s*\.\s*(?:read|readlines|foreach|open)\s*\(\s*([^,)]+?)\s*[,)]"
-    r"|load_dotenv\s*\(\s*([^,)]*?)\s*[,)]",
+    r"|load_dotenv\s*\(\s*([^,)]*?)\s*[,)]"
+    # Perl's open: a handle first, then the path - two-argument with an optional
+    # `<` read mode inside the string, or three-argument with the mode `'<'`.
+    # A string opening with `>`, `|` or `+` is a write or a pipe, not a read.
+    r"|\bopen\s*\(\s*(?:my\s+)?[$\w]+\s*,\s*(['\"]\s*<?\s*[^'\"<>|+\s][^'\"]*['\"])"
+    r"\s*\)"
+    r"|\bopen\s*\(\s*(?:my\s+)?[$\w]+\s*,\s*['\"]<['\"]\s*,\s*([^,)]+?)\s*\)",
     re.IGNORECASE,
 )
+# A Perl two-argument read spells its mode inside the path string (`'<.env'`);
+# the path is the string without it.
+_PERL_READ_MODE = re.compile(r"^(['\"])\s*<\s*(.*)\1$")
 
 
 def _eval_read_targets(clause):
@@ -622,6 +631,9 @@ def _eval_read_targets(clause):
         expr = next((g for g in m.groups() if g), None)
         if expr is None:
             continue
+        mode = _PERL_READ_MODE.match(expr)
+        if mode:
+            expr = mode.group(1) + mode.group(2) + mode.group(1)
         if bindings is None:
             bindings = _eval_bindings(clause)
         target = _resolve_write_expr(expr, bindings)
@@ -695,6 +707,9 @@ def _unestablished_read_target(clause):
         expr = next((g for g in m.groups() if g), None)
         if expr is None:
             continue
+        mode = _PERL_READ_MODE.match(expr)
+        if mode:
+            expr = mode.group(1) + mode.group(2) + mode.group(1)
         if bindings is None:
             bindings = _eval_bindings(clause)
         if _resolve_write_expr(expr, bindings):

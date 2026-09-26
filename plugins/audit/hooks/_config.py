@@ -1382,7 +1382,8 @@ _DATA_SCRIPT_EXTS = (
 # Programs that run their argument as a command, for reading a heredoc HEAD:
 # `env python3 -`, `sudo bash`, `xargs sh -c ...`, `timeout 5 python3 -`.
 _HEAD_WRAPPERS = ("env", "sudo", "doas", "xargs", "timeout", "nice", "ionice",
-                  "nohup", "command", "exec", "time", "stdbuf", "chrt", "setsid")
+                  "nohup", "command", "builtin", "exec", "time", "stdbuf", "chrt",
+                  "setsid")
 _SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash")
 _ANY_INTERPRETER = re.compile(
     r"^(?:python(?:3(?:\.\d+)?)?|node|nodejs|deno|bun|ruby|perl|php|awk|gawk"
@@ -1437,11 +1438,46 @@ def is_shell(word):
     return _program_of(word) in _SHELL_PROGRAMS
 
 
+# Per interpreter family: the flags that hand it its program inline (or name
+# a module to run), and the options that take a separate value, so the value
+# is not read as the script. Anything else before the first operand is an
+# option; the first operand is the script when it carries a script extension.
+_OWN_PROGRAM = (
+    (re.compile(r"^python(?:3(?:\.\d+)?)?$"), ("-c", "-m"), ("-W", "-X", "-Q")),
+    (re.compile(r"^(?:node|nodejs)$"), ("-e", "-p", "--eval", "--print"),
+     ("-r", "--require", "--import", "--loader", "--experimental-loader")),
+    (re.compile(r"^ruby$"), ("-e",), ("-r", "-I", "-C", "-E")),
+    (re.compile(r"^perl$"), ("-e", "-E"), ("-I", "-M", "-m")),
+    (re.compile(r"^php$"), ("-r",), ("-c", "-d")),
+)
+_SCRIPT_EXTS = (".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".pm",
+                ".php")
+
+
 def runs_own_program(words):
     """Whether an interpreter's words already name the program it runs - a
-    script file, or `-c`/`-e` code - so what arrives on its stdin is input."""
-    return _plain_script_run(words) or any(
-        w in ("-c", "-e", "-E", "-p", "-pe", "-ne") for w in words[1:])
+    script file, or code handed to it by its own inline flag - so what arrives
+    on its stdin is input. Decided per interpreter: `perl -c` compiles stdin
+    and `python -E` is not a program flag, so neither counts."""
+    program = _program_of(words[0]) if words else ""
+    for pattern, inline, takes_value in _OWN_PROGRAM:
+        if not pattern.match(program):
+            continue
+        skip = False
+        for word in words[1:]:
+            if skip:
+                skip = False
+                continue
+            if word in inline:
+                return True
+            if word in takes_value:
+                skip = True
+                continue
+            if word.startswith("-"):
+                continue
+            return word.lower().endswith(_SCRIPT_EXTS)
+        return False
+    return False
 
 
 def program_candidates(words):

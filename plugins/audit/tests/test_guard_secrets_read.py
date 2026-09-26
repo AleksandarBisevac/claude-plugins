@@ -182,6 +182,23 @@ def _cases(check):
           bash("python3 tools/redact.py <<< \"print(open('.env').read())\""))
     _expect("b5h7 ...and so is one to node running a script file", "allow",
           bash("node tools/redact.mjs <<< \"require('fs').readFileSync('.env')\""))
+    # Perl's own open() shapes are reads the eval arm names.
+    _expect("b5p1 perl two-argument open of a secret is a read", "block",
+          bash("perl -e \"open(F, '.env'); print <F>\""))
+    _expect("b5p2 ...and the explicit read mode, the same", "block",
+          bash("perl -e \"open(F, '<.env'); print <F>\""))
+    _expect("b5p3 ...and three-argument open with '<'", "block",
+          bash("perl -e \"open(my \\$f, '<', '.env'); print <\\$f>\""))
+    _expect("b5p4 ...while perl opening an ordinary file is nothing", "allow",
+          bash("perl -e \"open(F, 'README.md'); print <F>\""))
+    _expect("b5h9 ruby running a script reads a here-string as input", "allow",
+          bash("ruby tools/redact.rb <<< \"File.read('.env')\""))
+    _expect("b5h10 node with an option before its script, the same", "allow",
+          bash("node --no-warnings tools/redact.mjs <<< \"require('fs').readFileSync('.env')\""))
+    _expect("b5h11 perl -c compiles its stdin, so the here-string is its program",
+          "block", bash("perl -c <<< \"open(F, '.env'); print <F>\""))
+    _expect("b5h12 python -E is not a program flag, so the here-string is the program",
+          "block", bash("python3 -E <<< \"print(open('.env').read())\""))
     _expect("b5h8 a here-string glued to the interpreter's name is read", "block",
           bash("python3<<<\"print(open('.env').read())\""))
     _expect("b5h5 ...and code-shaped text in a here-string to a program that only "

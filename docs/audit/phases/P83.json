@@ -85,6 +85,55 @@
         "file": "CHANGELOG.md",
         "issue": "'The history guard reads four shapes the way the shell does' is a present-tense count in prose, the author-enforced class CLAUDE.md names. The list right after it already enumerates the shapes. The P83.1 commit claim '7 no number written into prose' is therefore not accurate for this line.",
         "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-S1",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "_prints_phrases treats a stage as an emitter only when echo or printf is its program word. _stages leaves a reserved word at the head of the stage's words. For `if true; then echo hello > out.txt; fi` the stage is ['then','echo','hello'] with target out.txt, and _prints_phrases returns [] (checked on benign text through _stages/_op_tokens). So consider this shape: an emitter inside a then/else/do ",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S2",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "_op_tokens does not know comments. An unquoted `#` at a word start is an ordinary character, so a comment's `>`, `|`, `(` and `)` become operators. Measured with an allow-side command: `echo 'never git stash' # see > $X` is allowed on main and DENIED on the branch, because the comment's `>` is read as a redirect to an unresolvable target. The other direction was checked on benign text: in `( echo ",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S3",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "On the receiving side of a pipe, only the FIRST stage of a group is asked whether it runs its stdin. In `echo hello | (cd x && cat)` the receiver is stage ['cd','x']; the `cat` stage after `&&` is never looked at (checked on benign text). A shell inside a receiving group or brace group, placed after any other command in it, reads the pipe, and the phrase is not read. R4's resolution asked for the ",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S4",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "The case tracking is one counter, checked only at depth 1. A `case` inside a nested `$(` or `( )` has its pattern `)` read as a close. After a parenthesised pattern `(x)`, the arm's first word is not in command position. Measured on benign bodies (index returned vs the real close): `echo $(case x in a) echo y;; esac) end) tail` gives 33 vs 38; `( case x in a) echo y;; esac ) ) tail` gives 29 vs 31",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S5",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "The exemption flag list is interpreter-blind and too broad. For python, `-E` means 'ignore PYTHON* env', not a program. For ruby, `-E` sets the encoding. For ruby and perl, `-p` on its own is a loop flag, and the program is still read from stdin. perl's -c compiles its stdin program, and that runs BEGIN blocks. Any of these words before a here-string exempts a here-string that IS the program. Shap",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S6",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "New over-refusals compared with main, all measured on allow-side commands with the same fixture repo (in_progress plan). (a) Behind a wrapper, every word is a candidate, and a `$` in ANY candidate counts as a runner. So `echo 'git stash' | sudo grep -c x \"$F\"`, `echo 'never git stash' | timeout 5 grep -c stash \"$F\"` and `echo 'never git stash' | xargs -0 printf '%s' \"$X\"` are allowed on main and d",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S7",
+        "severity": "low",
+        "file": "SECURITY.md",
+        "issue": "The 'Not followed' list still reads as complete, and it is not. Missing: a phrase split across several quoted emitter arguments that the emitter joins (_prints_phrases reads each word separately; named in R5 and still absent); a here-string printed by cat or another non-emitter into a shell (followed under P83.1 through words[1:], dropped by the emitter-only rule, with no case pinning either side;",
+        "resolution": "fix task P83.4-wkm"
       }
     ]
   },
@@ -254,6 +303,55 @@
         "test_guard_history_rewrite gs19",
         "test_guard_secrets_read b5h6"
       ]
+    },
+    {
+      "id": "P83.4-wkm",
+      "title": "Round-2 review findings: the stage model reads compound commands, comments, receiving groups and nested cases, and over-refuses nothing main allows",
+      "status": "in_progress",
+      "description": "Round-2 review findings, all to be fixed. Decisions: (S1) reserved words are stepped over when finding a stage's program, and if/while/until/for/case ... fi/done/esac form a group whose pipe or redirect reaches every stage inside. (S2) the stage lexer skips a comment (an unquoted `#` at a word start) to the end of its line. (S3) a pipe into a group asks every stage of the receiving group whether it runs its stdin. (S4) case tracking is per nesting level (a stack of the depths where a case opened), so a nested case or one after a parenthesised pattern reads to its real close. (S5) whether an interpreter already runs a program is decided per interpreter: its own inline-program flags (python -c; node -e/-p/--eval/--print; ruby -e; perl -e/-E; php -r) or a script operand with a script extension after its options. (S6) the variable-as-program rule reads only the program word, not a wrapper's operands; a hook-named file counts only in a directory whose name holds 'hook' or under .git/hooks or .husky; a process substitution target runs only when its own command runs its input; ruby/perl script runs and node with options before the script are script runs. (S7) what an emitter prints is its words joined as one line (so a phrase split across arguments is read whole), a cat fed a here-string prints that string, `builtin` is a wrapper, and an inner emitter's substitution contributes what it prints; SECURITY.md's not-followed list is restated from the code.\nR1 (med) plugins/audit/hooks/guard-history-rewrite.py:553-559 (_prints_phrases), 493-550 (_stages): _prints_phrases treats a stage as an emitter only when echo or printf is its program word. _stages leaves a reserved word at the head of the stage's words. For `if true; then echo hello > out.txt; fi` the stage is ['then','echo','hello'] with target out.txt, and _prints_phrases returns [] (checked on benign text through _stages/_op_tokens). So consider this shape: an emitter inside a then/else/do body whose own redirect names a hook, or whose output is piped into a shell. The phrase is not read. P83.1 read words[1:] and so did read it; P83.3 dropped it. A second, related case: a compound command (for/while/until/if/case) whose output is piped or redirected after its closing `done`/`fi`/`esac` is not treated as a group. Only the closing-word stage receives `to` or the targets, and the body stages do not. SECURITY.md names neither shape. Not run as an evasion, per the constraint. -> Before program_candidates in _prints_phrases, _runs_input and _tee_targets, strip the leading reserved words (then, do, else, elif, !, the words in _OPENS_COMMAND). In _stages, open a group at if/for/while/until/case and close it at fi/done/esac, the way `{`/`}` are handled, so that a pipe or redirect after the close applies to every member. Add deny cases (an emitter in a then-branch redirected into .git/hooks/, and a loop body piped into a shell) and allow twins (the same written into notes.md).\nR2 (med) plugins/audit/hooks/guard-history-rewrite.py:417-491 (_op_tokens): _op_tokens does not know comments. An unquoted `#` at a word start is an ordinary character, so a comment's `>`, `|`, `(` and `)` become operators. Measured with an allow-side command: `echo 'never git stash' # see > $X` is allowed on main and DENIED on the branch, because the comment's `>` is read as a redirect to an unresolvable target. The other direction was checked on benign text: in `( echo hello # )<newline>) | cat`, the comment's `)` closes the group, the pipe lands on an empty stage, and the echo stage's `to` stays None. So a group whose inner line ends in a comment holding a close paren (or brace), followed by the real close and a pipe into a shell, leaves the phrase unread. P83.1's change to join_continuations exists exactly to read a comment the way the shell does. This second lexer does not use that rule. -> In _op_tokens, when `#` is unquoted and starts a word (`has` is False, the at_start rule of join_continuations), skip to the end of the line. Add an allow case (an emitter with a comment holding `> $X`) and a deny case (a group whose comment holds `)`, then piped into a shell).\nR3 (med) plugins/audit/hooks/guard-history-rewrite.py:613-631 (_output_runs), 562-573 (_runs_input): On the receiving side of a pipe, only the FIRST stage of a group is asked whether it runs its stdin. In `echo hello | (cd x && cat)` the receiver is stage ['cd','x']; the `cat` stage after `&&` is never looked at (checked on benign text). A shell inside a receiving group or brace group, placed after any other command in it, reads the pipe, and the phrase is not read. R4's resolution asked for the receiving side too. gp48/gp49/gp60 cover only the sending side. -> When `to` points at a stage that opens a group, test _runs_input (and _tee_targets) over every member of that group, not just the first. Record group spans in _stages so that _output_runs can find them. Add a deny case: a receiving group whose shell follows a `cd`.\nR4 (med) plugins/audit/hooks/guard-history-rewrite.py:633-690 (_substitution_end): The case tracking is one counter, checked only at depth 1. A `case` inside a nested `$(` or `( )` has its pattern `)` read as a close. After a parenthesised pattern `(x)`, the arm's first word is not in command position. Measured on benign bodies (index returned vs the real close): `echo $(case x in a) echo y;; esac) end) tail` gives 33 vs 38; `( case x in a) echo y;; esac ) ) tail` gives 29 vs 31; a nested case after an `(a)` pattern gives 42 vs 57. The first two miss on main as well, so they are not a regression against main. The third was unreadable (raw-text) under P83.1 and is now cut short. The docstring, the CHANGELOG ('a case in command position carries the read past its patterns to its esac') and commit claim 6 all say more than the code does. In a double-quoted substitution, a close taken too early turns the rest of the real body into quoted text that nothing reads. -> Keep a stack of the depths at which a case is open. A `)` ends a pattern exactly when the innermost open case sits at the current depth. Set cmd_pos after any pattern close, parenthesised or not. Add se cases for a case in a nested substitution, a case in a subshell, and a nested case after an `(x)` pattern.\nR5 (med) plugins/audit/hooks/_config.py:1441-1444 (runs_own_program), used by guard-secrets-read.py:1115-1118: The exemption flag list is interpreter-blind and too broad. For python, `-E` means 'ignore PYTHON* env', not a program. For ruby, `-E` sets the encoding. For ruby and perl, `-p` on its own is a loop flag, and the program is still read from stdin. perl's -c compiles its stdin program, and that runs BEGIN blocks. Any of these words before a here-string exempts a here-string that IS the program. Shape: an interpreter option from that list that does not supply program text for THAT interpreter, followed by a here-string holding code that reads a secret path. Not run, per the constraint; please verify. This is not a regression against main, where no here-string arm existed, but it is a hole in the new arm. -> Make the program options per interpreter: python -c; node -e/-p/--eval/--print; ruby -e; perl -e/-E and clusters ending in e. Treat a bare loop, syntax-check or env flag as leaving stdin as the program. Add deny cases for python -E and ruby/perl -p with a here-string, beside b5h6/b5h7.\nR6 (low) plugins/audit/hooks/guard-history-rewrite.py:562-573 (_runs_input), 602-611 (_target_runs); plugins/audit/hooks/guard-secrets-read.py:1115-1118: New over-refusals compared with main, all measured on allow-side commands with the same fixture repo (in_progress plan). (a) Behind a wrapper, every word is a candidate, and a `$` in ANY candidate counts as a runner. So `echo 'git stash' | sudo grep -c x \"$F\"`, `echo 'never git stash' | timeout 5 grep -c stash \"$F\"` and `echo 'never git stash' | xargs -0 printf '%s' \"$X\"` are allowed on main and denied here. (b) Hook names are case-folded and matched in any directory, so `echo 'never git stash' > docs/Update` is denied. (c) `> >(cat)` is denied whatever the body of the process substitution. (d) guard-secrets-read exempts only a plain python/node script run. `ruby tools/x.rb <<< ...`, `perl tools/x.pl <<< ...` and `node --no-warnings tools/x.mjs <<< ...` are allowed on main and blocked here. (The awk case is blocked on main too, so it is not charged here.) -> (a) Stop at the first candidate that names a known program that does not run its stdin; its operands are not programs. Count an expansion only in a program position. (b)/(c) are deliberate conservative choices: state them in SECURITY.md or narrow them (for example, require a hook name to have no extension AND sit under a hooks-like directory, or read the process-substitution body with _runs_input). (d) Extend the script-run exemption to ruby (.rb) and perl (.pl), and allow an option before the script, or document the refusal. Add allow cases for each shape you keep allowed.\nR7 (low) SECURITY.md:245-253: The 'Not followed' list still reads as complete, and it is not. Missing: a phrase split across several quoted emitter arguments that the emitter joins (_prints_phrases reads each word separately; named in R5 and still absent); a here-string printed by cat or another non-emitter into a shell (followed under P83.1 through words[1:], dropped by the emitter-only rule, with no case pinning either side; checked on benign text: `cat <<< hello | cat` yields no printed words); an emitter reached through `builtin`; an emitter's substitution output inside another emitter; and the shapes of findings 1-4. The paragraph opens with 'stated rather than left to be found'. -> After findings 1-5 are settled, add one bullet per shape still open, or close each shape. At minimum name the split-argument, non-emitter here-string, reserved-word/compound, receiving-group and nested-case shapes.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: repro that FAILS on current code - an emitter with a comment holding > and an expansion is refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T11:48:33Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T10:59:58Z"
