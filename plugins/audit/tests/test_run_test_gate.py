@@ -4242,6 +4242,9 @@ def _cases(check):
     _harness.stage(check, "ce0 the empty-and-retry block",
                    _empty_and_retry_cases)
     _harness.stage(check, "sf0 the suite-files block", _suite_files_cases)
+    _harness.stage(check, "rv0 the remedy-line block", _remedy_cases)
+    _harness.stage(check, "dg0 the record-before-render block", _record_order_cases)
+    _harness.stage(check, "xg0 the excluded/no-suite block", _excluded_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -4858,6 +4861,250 @@ def _suite_files_cases(check):
           "still `none` here: %r" % (precommit_step.get("measured"),),
           precommit_step.get("measured") is not None
           and precommit_step.get("suiteReader") == "none")
+
+
+def _remedy_cases(check):
+    """The remedy line under `SAME SUITE COUNTED ONCE`, phase-scope only.
+
+    THE REPRO: a phase gate `[test, coverage]` whose two steps print the same
+    suite and the same count prints the duplication with no runnable way out
+    of it - `main` has `res['subject']` (the phase id) and the manifest PATH
+    in hand, and printed nothing that used either.
+    """
+    root = _harness.fixture_root("run-test-gate-remedy-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say = os.path.join(root, "say.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write(open(sys.argv[1]).read())\n"
+                 "raise SystemExit(int(sys.argv[2]))\n")
+    dup_out = os.path.join(root, "dup.txt")
+    with open(dup_out, "w") as fh:
+        fh.write(" PASS  src/cart.test.js\nTests  5 passed (5)\n")
+
+    def _plan(gate):
+        mp = os.path.join(root, "audit-plan.json")
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 2, "buildCommands": {
+                "test": _step(sys.executable, say, dup_out, "0"),
+                "coverage": _step(sys.executable, say, dup_out, "0")}},
+                "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                            "testGate": gate, "tasks": [
+                                {"id": "P1.1", "title": "t", "status":
+                                 "in_progress", "files": ["src/a.ts"]}]}]},
+                      fh)
+        return mp
+
+    mp = _plan(["test", "coverage"])
+    lines = []
+    code = M.main([mp, "P1", "--project-dir", root, "--no-reuse"],
+                  out=lines.append)
+    text = "\n".join(lines)
+    remedy = [ln.strip() for ln in lines if ln.strip().startswith("remedy:")]
+    check("rv1 THE REPRO: a phase gate whose two steps report the SAME suite "
+          "and the SAME count prints the duplication with a runnable way out "
+          "of it - a `retarget --gate-drop` line naming the SECOND entry, "
+          "`coverage`, and the manifest path `main` already holds: %r"
+          % (remedy,),
+          code == M.E_OK and "SAME SUITE COUNTED ONCE" in text
+          and len(remedy) == 1 and "retarget P1 --gate-drop coverage" in remedy[0]
+          and mp in remedy[0] and "CLAUDE_PLUGIN_ROOT" in remedy[0]
+          and "audit-task.py" in remedy[0])
+
+    cmd = remedy[0][len("remedy:"):].strip()
+    env = dict(os.environ)
+    env["CLAUDE_PLUGIN_ROOT"] = _output.PLUGIN_ROOT
+    proc = subprocess.run(cmd + " --project-dir " + root, shell=True,
+                          cwd=root, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE)
+    with open(mp, encoding="utf-8") as fh:
+        after = json.load(fh)
+    check("rv2 RUNNING THE PRINTED COMMAND, argv split and nothing added but "
+          "the project directory a real terminal would already be standing "
+          "in, drops `coverage` from the phase's own testGate: %r"
+          % ((proc.returncode, after["phases"][0].get("testGate")),),
+          proc.returncode == 0 and after["phases"][0]["testGate"] == ["test"])
+
+    task_lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--task", "P1.1"],
+          out=task_lines.append)
+    _plan(["test", "coverage"])
+    task_lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--task", "P1.1"],
+          out=task_lines.append)
+    task_text = "\n".join(task_lines)
+    check("rv3 ALLOW: a TASK-scope run of the same duplicated gate prints the "
+          "duplication line and NO remedy - a phase retarget there would drop "
+          "the wrong declaration, since the narrowing rules a task's own "
+          "gate is corrected by are `_invariants`'s and not "
+          "`meta.phaseGate`'s: %r"
+          % ([ln for ln in task_lines if "remedy:" in ln],),
+          "SAME SUITE COUNTED ONCE" in task_text
+          and not any("remedy:" in ln for ln in task_lines))
+
+    def _vitest_other(_project, command, _timeout=None):
+        return 0, (" PASS  src/user.test.js\nTests  5 passed (5)\n"
+                   if "user" in command else
+                   " PASS  src/cart.test.js\nTests  5 passed (5)\n"), {}
+
+    res_diff = M.run_gate(root, [("cart", "npx vitest run src/cart.test.js"),
+                                 ("user", "npx vitest run src/user.test.js")],
+                          runner=_vitest_other)
+    res_diff["manifestPath"] = mp
+    res_diff["subject"] = "P1"
+    diff_lines = []
+    M.render(res_diff, out=diff_lines.append)
+    check("rv4 ALLOW: two steps of equal count over DIFFERENT suites print "
+          "neither the duplication line nor a remedy (`sc5` stays green) - "
+          "even with `manifestPath` present, there is no `SAME SUITE` group "
+          "to hang a remedy off of: %r"
+          % ([ln for ln in diff_lines if "remedy:" in ln],),
+          not any("SAME SUITE" in ln for ln in diff_lines)
+          and not any("remedy:" in ln for ln in diff_lines))
+
+
+def _record_order_cases(check):
+    """A PIN, NO BEHAVIOUR CHANGE: the ledger row is written before the first
+    verdict banner, so a run cut off mid-render still leaves its row.
+    """
+    root = _harness.fixture_root("run-test-gate-order-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say = os.path.join(root, "say.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('Tests: 1 failed, 0 passed, 1 total\\n')\n"
+                 "raise SystemExit(1)\n")
+    mp = os.path.join(root, "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "test": _step(sys.executable, say)}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["test"], "tasks": []}]}, fh)
+
+    class _CutOff(Exception):
+        pass
+
+    seen = []
+
+    def _raising_out(line):
+        seen.append(line)
+        if str(line).startswith(M._VERDICT_BANNERS):
+            raise _CutOff("cut off at the first verdict banner")
+
+    try:
+        M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--record"],
+              out=_raising_out)
+        raised = False
+    except _CutOff:
+        raised = True
+    recorded_line = [ln for ln in seen if ln.startswith("  evidence: recorded")]
+    rows = _ev_io.read_rows(root)["rows"]
+    check("dg22 THE ROW IS WRITTEN BEFORE THE BANNER: `_record_run` already "
+          "runs before `render`, so a run cut off AT the first verdict "
+          "banner still leaves `evidence: recorded <runId>` printed and the "
+          "row sitting in the ledger - never a run that answered and left "
+          "no trace of it: %r"
+          % ((raised, len(recorded_line), len(rows)),),
+          raised and len(recorded_line) == 1 and len(rows) == 1)
+
+
+def _excluded_cases(check):
+    """The declared narrowing, printed rather than silently applied - and the
+    statement that nothing here could tell a suite from a hook list.
+    """
+    root = _harness.fixture_root("run-test-gate-excluded-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    lint_out = os.path.join(root, "lint.txt")
+    with open(lint_out, "w") as fh:
+        fh.write("check yaml.................................."
+                 "............................Passed\n")
+    # NAMED FOR THE WRAPPER IT STANDS IN FOR, not "say.py" - `wrapper_words`
+    # (and so `ran_count`/`measured_state`) matches on the COMMAND STRING, and
+    # this is the one case here that needs the lint step to measure real HOOK
+    # checks (`MEASURED_CHECKS`) rather than an unknowable count, so the
+    # `suiteReader`-vs-`measured` mutation has something to disagree about.
+    say = os.path.join(root, "pre-commit-lint.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write(open(sys.argv[1]).read())\n"
+                 "raise SystemExit(0)\n")
+
+    def _plan(exclude):
+        mp = os.path.join(root, "audit-plan.json")
+        meta = {"version": 2, "buildCommands": {
+            "lint": _step(sys.executable, say, lint_out),
+            "test": _step(sys.executable, say, lint_out)}}
+        if exclude:
+            meta["phaseGate"] = {"exclude": exclude}
+        with open(mp, "w") as fh:
+            json.dump({"meta": meta,
+                       "phases": [{"id": "P1", "title": "p", "status":
+                                   "in_progress", "testGate": ["lint"],
+                                   "tasks": []}]}, fh)
+        return mp
+
+    mp = _plan(["test"])
+    lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse"], out=lines.append)
+    check("xg1 RED-FIRST: a phase gate excluding `test` prints, under its "
+          "header, which buildCommands key `meta.phaseGate.exclude` "
+          "declares out of this gate - naming it rather than leaving a "
+          "reader to diff `meta.buildCommands` against `testGate` by hand: %r"
+          % ([ln for ln in lines if "excluded:" in ln],),
+          any("excluded:" in ln and "test" in ln for ln in lines))
+    check("xg2 RED-FIRST: a lint-only gate under that exclude - a "
+          "`pre-commit`-shaped step that MEASURED real checks and recognised "
+          "no test runner's summary - prints `PHASE GATE RAN NO SUITE` "
+          "above the verdict: %r"
+          % ([ln for ln in lines if "PHASE GATE RAN NO SUITE" in ln],),
+          any(ln.startswith("PHASE GATE RAN NO SUITE") for ln in lines)
+          and "test" in [ln for ln in lines
+                        if ln.startswith("PHASE GATE RAN NO SUITE")][0])
+
+    mp_none = _plan(None)
+    lines_none = []
+    M.main([mp_none, "P1", "--project-dir", root, "--no-reuse"],
+          out=lines_none.append)
+    check("xg3 ALLOW: a plan with no `meta.phaseGate.exclude` at all prints "
+          "NEITHER line - there is nothing declared out of this gate to "
+          "name, and nothing here refuses a green verdict either way: %r"
+          % ([ln for ln in lines_none
+              if "excluded:" in ln or "PHASE GATE RAN NO SUITE" in ln],),
+          not any("excluded:" in ln or "PHASE GATE RAN NO SUITE" in ln
+                 for ln in lines_none))
+
+    # --- xg4: RED-FIRST - `meta.phaseGate.exclude` edited AFTER `testGate` -
+    # `phase_gate_default` alone answers "what would a gate built TODAY drop",
+    # which is a DIFFERENT claim from "was not run here": a phase's own
+    # `testGate` can still carry a key `exclude` now lists, and that key RUNS.
+    # The fixture is built so the two readings disagree - `test` is excluded
+    # AND still in `testGate` (stale), `coverage` is excluded and genuinely
+    # absent from `testGate` (true) - so a version reading `exclude` alone
+    # cannot tell them apart and this case can.
+    stale_mp = os.path.join(root, "audit-plan-stale.json")
+    with open(stale_mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "lint": _step(sys.executable, say, lint_out),
+            "test": _step(sys.executable, say, lint_out),
+            "coverage": _step(sys.executable, say, lint_out)},
+            "phaseGate": {"exclude": ["test", "coverage"]}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["lint", "test"], "tasks": []}]}, fh)
+    stale_lines = []
+    M.main([stale_mp, "P1", "--project-dir", root, "--no-reuse"],
+          out=stale_lines.append)
+    excluded_line = [ln for ln in stale_lines if "excluded:" in ln]
+    check("xg4 RED-FIRST: `test` is STILL in this phase's `testGate` - it "
+          "RAN, whatever `meta.phaseGate.exclude` now says - so the line "
+          "must not name it; `coverage` truly is not in `testGate`, so the "
+          "line must name that one instead: %r" % (excluded_line,),
+          len(excluded_line) == 1
+          and excluded_line[0]
+          == "  excluded: coverage - meta.phaseGate.exclude declares them "
+             "out of this phase's gate; they were not run here")
 
 
 def _reuse_cases(check):

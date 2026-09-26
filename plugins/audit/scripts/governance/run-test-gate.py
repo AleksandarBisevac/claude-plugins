@@ -2889,6 +2889,27 @@ def _render_verdict(res, out):
     quiet run is a second spelling of one run and not a second run - only the
     step inventory above this differs between the two.
     """
+    # THE STATEMENT THAT NOTHING HERE COULD TELL A SUITE FROM A HOOK LIST,
+    # above every other line this function prints - a caller reading a green
+    # verdict off a lint-only gate that excluded its one test entry should not
+    # have to open the ledger to learn that nothing here ran a suite at all.
+    # `suiteReader`, NEVER `measured`: a `pre-commit`-shaped step that measured
+    # real hook counts is not a test suite, which is exactly the conflation
+    # `suiteReader` exists to refuse (`P78.5`). A STATEMENT, not a refusal -
+    # `GATE GREEN` still prints under it, and `reference/orchestrator.md`'s
+    # banners are unchanged. `excludedGateKeys` is computed once in `main`
+    # (the one arithmetic `phase_gate_default` owns) and carried on `res`,
+    # never re-derived here from a re-opened manifest.
+    excluded_keys = res.get("excludedGateKeys")
+    if excluded_keys:
+        steps = res.get("steps") or []
+        if steps and not any(st.get("suiteReader", "none") != "none"
+                             for st in steps):
+            out("PHASE GATE RAN NO SUITE: the counts reader recognised no "
+                "test runner's summary in any step (%s); meta.phaseGate."
+                "exclude declares %s out of this gate"
+                % (_output.some_of([st.get("name") for st in steps]),
+                   _output.some_of(excluded_keys)))
     # THE PARTS, PRINTED WHERE THE TOTAL IS READ (P46.5). Above the verdict
     # banners and below the steps, because this is a statement about the steps
     # and `reference/orchestrator.md` keys its arms on the banner literals - a
@@ -2906,6 +2927,13 @@ def _render_verdict(res, out):
                 "what a nondeterminism in that suite costs."
                 % (", ".join(grp["names"]), grp["ran"],
                    _output.some_of(grp["files"], budget=SAMPLE_BUDGET)))
+            manifest_path = res.get("manifestPath")
+            if manifest_path:
+                phase_id = res.get("subject")
+                for name in grp["names"][1:]:
+                    out('  remedy: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/'
+                        'manifest/audit-task.py" retarget %s --gate-drop %s '
+                        '%s' % (phase_id, name, manifest_path))
         else:
             out("SAME COUNT, SAME SUITE NOT ESTABLISHED: %s each reported %d "
                 "check(s), and %s named no suite file - so nothing here can "
@@ -3562,6 +3590,16 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    # THE REMEDY LINE'S OWN GATE. `_render_verdict` composes a `retarget
+    # --gate-drop` call for a duplicated phase-scope suite, and it needs the
+    # manifest PATH to do it - but `gateSource` alone cannot say whether this
+    # was a phase-scope run: a task borrowing its phase's gate ALSO carries
+    # `gateSource == "phase"` (`graded_by`'s own check is this one -
+    # `args.task is None`). So the path is carried only when this run is
+    # genuinely phase-scope, and a task-scope run - borrowed gate or its own -
+    # never gets a phase retargeted out from under it.
+    if args.task is None:
+        res["manifestPath"] = args.manifest
     # The resolved gate, as a digest the row carries: what `commit-task-work`
     # compares so a `meta.buildCommands` edit after a green is a changed gate.
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
@@ -3611,6 +3649,32 @@ def main(argv, out=print):
     # is open, so it is derived rather than guessed. Printed before the table so
     # it is read with the verdict rather than after the reader has left.
     out("  covers:   %s" % (runtime_claim(manifest),))
+    # THE GATE PRINTS THE DECLARED NARROWING, under its header and phase-scope
+    # only - a task-scope run is narrowed by its OWN tests.gate, whose rules
+    # are `_invariants`' and not `meta.phaseGate`'s, so naming an exclusion
+    # here would describe a declaration this run was never measured against.
+    # `_phases.phase_gate_default` is the ONE answer to "what a gate built
+    # TODAY from meta.phaseGate would drop" (P78.2/P78.3) - and that is NOT
+    # the same claim as "was not run here". `meta.phaseGate.exclude` can be
+    # edited after a phase's `testGate` was written, so a phase whose
+    # `testGate` still carries a now-excluded key RUNS that key regardless -
+    # `phase_gate_default` alone cannot see that, because it never looks at
+    # what THIS RUN actually resolved. `commands`, from `gate_of` above, is
+    # what did - so the claim this line makes is filtered against it.
+    if args.task is None:
+        default_excluded = _phases.phase_gate_default(
+            manifest.get("meta")).get("excluded") or []
+        ran_keys = set(name for name, _command in (commands or []))
+        excluded = [k for k in default_excluded if k not in ran_keys]
+        if excluded:
+            out("  excluded: %s - meta.phaseGate.exclude declares them out "
+                "of this phase's gate; they were not run here"
+                % (_output.some_of(excluded),))
+            # CARRIED ON THE RESULT, so `_render_verdict`'s "PHASE GATE RAN NO
+            # SUITE" line reads the SAME filtered list rather than re-opening
+            # the manifest to ask `phase_gate_default` a second time - and
+            # never the unfiltered one, for the reason above.
+            res["excludedGateKeys"] = excluded
     if identity["key"] is None:
         # THE MISSING BASIS IS THE THING TO SAY. Every other run records an
         # identity and this one cannot, so no verdict taken here will ever be

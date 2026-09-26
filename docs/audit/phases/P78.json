@@ -434,9 +434,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-26T09:30:43Z.62936c",
+        "runId": "2026-09-26T09:47:44Z.e5693e",
         "status": "passed",
-        "at": "2026-09-26T09:30:43Z"
+        "at": "2026-09-26T09:47:44Z"
       }
     },
     {
@@ -615,7 +615,7 @@
     {
       "id": "P78.10",
       "title": "audit-lookup run <runId>: the ledger row a background gate is read from",
-      "status": "in_progress",
+      "status": "done",
       "description": "Constraint: the rule this phase documents is that a gate longer than the Bash tool's foreground bound runs under run_in_background and its verdict is read from the ledger, not from a truncated terminal; no command reads one row today. Rule: audit-lookup.py <manifest> run <runId> [--json] answers from _evidence_io.read_rows + row_by_run: runId, ts, scope and subject, status, failed, per step name/exit/durationMs/outcome, the failing lines and failingSuites with their bases exactly as recorded (the writer already bounded and redacted them), and verdictSource/reusedFrom when the row is a repeat. 'latest' in place of a runId, with --phase <id> or --task <id>, answers the newest row for that subject through latest_by_subject. An unknown runId is a miss, with the exit and wording this CLI uses for its other misses; an unreadable ledger is said, never read as 'no such run'. Read-only, no lock, the subcommand shape the other questions use (a subparser with the common parents). Red-first: a fixture ledger row prints with its failing suites and status; mutation: return the first row with a matching subject instead of the newest -> red on a fixture holding two; allow case: an unknown runId prints the miss sentence and exits as bug does for an unknown bug.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -647,18 +647,36 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "996d0fd844c9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup run <runId|latest> [--phase|--task] [--json]: run_lookup through _evidence_io.row_by_run or latest_by_subject with subject aliases; _run_payload renders the bounded step fields; a miss exits 1 and names unreadable ledger files. Scope widened to PLUGIN-BUILD-GUIDE.md for the regenerated module map (this wave's new edges) and the run verb in audit-lookup's section. Cases rl1-rl7, al20-al24; redFirst proved via --introduces run_lookup; mutations first-row and rows[0]-fallback red. Gate run 2026-09-26T09:34:08Z.713830 green; reviewer matches; one low finding (a comment overstating which step keys are dropped) carried to sign-off.",
+        "descriptive": "A gate that ran in the background can be read back by its run id or as the latest run of a task or phase, as a bounded row and never as raw runner output."
       },
       "startedAt": "2026-09-26T08:56:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T09:39:47Z",
+      "verifiedBy": [
+        "rl1",
+        "rl2",
+        "rl3",
+        "rl4",
+        "rl5",
+        "rl6",
+        "rl7",
+        "al20",
+        "al21",
+        "al22",
+        "al23",
+        "al24"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T09:34:08Z.713830",
         "status": "passed",
         "at": "2026-09-26T09:34:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "996d0fd844c9",
+        "at": "2026-09-26T09:39:47Z"
       }
     },
     {
