@@ -147,7 +147,7 @@ claude-plugins/                           # this repo (personal, public)
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
           _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
           commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
-          commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
+          commit-manifest-index.py        # commits the manifest INDEX and the row naming the commit, NOTHING else, under the index lock; refuses in the single-file layout
           commit-task-work.py             # commits ONE task's declared files + the phase file + the records, naming any staged path outside that list
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
@@ -3098,9 +3098,10 @@ checker both have to give.
 
 **What is deliberately not here: the allow-lists.** Each command derives its own, and they differ
 in exactly the entries that matter — one may stage the phase's shard and the records beside it and
-never the shared index, the other may stage only the shared index and never a phase's file. A
-shared builder taking a flag would be one function holding two safety properties, which is the
-shape in which a widened list stops being noticed.
+never the shared index, another may stage only the shared index and the journal file holding
+the row that names its commit, and never a phase's file. A shared builder taking a flag would be
+one function holding several safety properties, which is the shape in which a widened list stops
+being noticed.
 
 ### `plugins/audit/scripts/governance/commit-audit-state.py`
 `commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say

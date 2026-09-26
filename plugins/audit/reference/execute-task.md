@@ -526,7 +526,8 @@ not need to.
           python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" \
               <manifestPath> <phaseId>
           ```
-          commits the index **alone**, under the lock, and refuses rather than committing nothing
+          commits the index and the one journal file holding the row that names the commit, and
+          **nothing else**, under the lock, and refuses rather than committing nothing
           or committing it beside work that does not belong with it. Its name used to reach a human
           only inside `commit-task-work.py`'s refusal — after a task commit had already been turned
           away for staging the index — which is too late for a caller who commits by hand instead:

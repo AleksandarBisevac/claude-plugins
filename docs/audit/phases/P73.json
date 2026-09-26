@@ -66,6 +66,55 @@
         "file": "tools/check-git-pipeline.py",
         "issue": "g21's rebase half asserts what git's own `git log --grep` returns. It never calls the product reader (_invariants.index_commits / commits_carrying), so the reader's record separator and prefix parsing are never run against a really rebased history (it3 covers amend only, in-process). The cherry-picked-alongside-itself branch the docstring describes (several SHAs for one nonce) has no case at all.",
         "resolution": "fix task P73.3-9h1"
+      },
+      {
+        "id": "P73-S1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "The R2 fix makes an indented trailer resolve, so after a real `git merge --squash` the squash commit is returned as the commit the row names. The scope checks then grade that commit's whole file list as if it were the scoped commit. I probed it by running code, not by reading (scratchpad/p73b/probe_squash.py, built on test__invariants' own fixture). On the side branch, a work commit plus a trailer",
+        "resolution": "fix task P73.4-9h1"
+      },
+      {
+        "id": "P73-S2",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md",
+        "issue": "R3's class is still open outside the sentences it named. (a) The tree line still says 'commits the manifest INDEX and NOTHING else'. (b) The guide's _scoped_commit section still says 'the other may stage only the shared index and never a phase's file'; that is the paragraph the fixed _scoped_commit docstring mirrors, and it also counts two commands where there are three. (c) execute-task.md says t",
+        "resolution": "fix task P73.4-9h1"
+      },
+      {
+        "id": "P73-S3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "issue": "The DEFAULT_SUBJECT comment says 'every reader finds this class by the `audit-index` SCOPE'. No product code reads the scope. index_commits/recorded_commits find the class through its journal rows: the `commit` field, or nonce to `Audit-Row` trailer. The only `--grep audit-index` is a person's. The conclusion is true (nothing reads the subject, so old commits are unaffected), but the basis given f",
+        "resolution": "fix task P73.4-9h1"
+      },
+      {
+        "id": "P73-S4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_journal_io.py",
+        "issue": "The docstring says an evidence.merge row wins a same-second tie because its stateHash covers bytes 'which already include every run recorded against the file in that second'. That holds only for runs recorded BEFORE the merge. A record() row landing in ANOTHER journal file in the same second, after the merge, loses to the merge row, and verify reports drift. That is a loud false positive, not hidd",
+        "resolution": "fix task P73.4-9h1"
+      },
+      {
+        "id": "P73-S5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "When a SHARD is unreadable, the refusal note names the index, not the file that failed. I probed a sharded plan with conflict markers in phases/P2.json. The note reads: 'the plan (docs/audit/audit-plan.json) could not be read (Expecting value: line 1 column 1 (char 0))'. The operator is pointed at a file that parses, with a parser offset into a different one. The fail-safe direction is right: the ",
+        "resolution": "fix task P73.4-9h1"
+      },
+      {
+        "id": "P73-S6",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__evidence_io.py",
+        "issue": "The `pair` target exists for commit-task-work's verdict_binding: `_same_subject` on the raw taskId/phaseId, with `_newest` giving a same-ts tie to the later row. The case it alone protects is a task-scope run and a phase-scope run carrying the same taskId, which have different subject_keys. No behavioural case covers that. em12 pins the exact tuple spelling, so a mutation that keeps the spelling b",
+        "resolution": "fix task P73.4-9h1"
+      },
+      {
+        "id": "P73-S7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-audit-state.py",
+        "issue": "The added comments write the scoped-commit cardinality into prose ('all three scoped commits share', 'two of the three lists', 'one of the three'). The lint does not match this shape, so it is author-enforced under CLAUDE.md. `_deps` already derives the writer set (every file defining COMMIT_TYPE and COMMIT_SCOPE), so these sentences go stale when a fourth class is added.",
+        "resolution": "fix task P73.4-9h1"
       }
     ]
   },
@@ -259,6 +308,64 @@
         "test__journal_io at1",
         "test__journal_io at4"
       ]
+    },
+    {
+      "id": "P73.4-9h1",
+      "title": "Round-2 review findings: a commit that absorbed a scoped commit is a named gap, never graded as the scoped commit",
+      "status": "in_progress",
+      "description": "Round-2 phase review findings, all to be fixed. Orchestrator decisions: (R1) a commit is graded as a scoped commit only when its subject opens with its class's own header and the Audit-Row trailer is a line of its LAST paragraph, the stripped form still accepted there; a commit that carries the nonce any other way (a squash or any absorbing commit) is reported as a gap that names the absorbing commit, never graded and never a breach; cases for both directions, plus the squash probe from the review as a real-git case. (R2) the remaining index-alone sentences, including the user-facing breach sentence, say index plus the naming row. (R3) the DEFAULT_SUBJECT comment gives the reason that holds (readers find the class by journal rows and trailers) and cmi40 is replaced by a case that fails when a reader starts depending on the subject. (R4) newest_anchor's docstring claims only what it does. (R5) the refusal note names the shard that could not be read. (R6) a behavioural case for the tie only the verdict pair protects. (R7) the counted comments are reworded to carry no count.\nR1 (med) plugins/audit/scripts/governance/_invariants.py:437-441, 479 (commits_carrying strip); 570-573 (recorded_commits); 780-811 (index_scope grading): The R2 fix makes an indented trailer resolve, so after a real `git merge --squash` the squash commit is returned as the commit the row names. The scope checks then grade that commit's whole file list as if it were the scoped commit. I probed it by running code, not by reading (scratchpad/p73b/probe_squash.py, built on test__invariants' own fixture). On the side branch, a work commit plus a trailer-carrying index commit give index-scope `clean`. After `git merge --squash side && git commit --no-edit` on the base branch, index-scope reports `breach`: 'manifest-index commit b002dab9b2a8 staged src/a.py, and this class carries the manifest index ... and nothing else'. Before the strip, the same history was an unresolved-nonce gap. A squash whose bodies are NOT indented (a forge's squash message keeps each commit body) resolved the same way even before this fix, so the root is in P73.1's design and the strip only widened it. `_worktrees.py` treats a squash-merged branch as a normal workflow, so ordinary history now fails `verify-invariants` with exit 1. it8 asserts only commits_carrying's return value. No case asserts what a scope check says about a squash commit. -> A resolved commit is graded only when it IS the scoped commit. The test: its subject opens with the class's own header (`chore(audit-index): ` / `chore(audit-state): `) and the trailer is in its final paragraph. Otherwise another commit absorbed it (a squash), and the checker reports a gap that names that commit, rather than grading its file list. Add a case that squashes an index commit together with a work commit and asserts gap-not-breach. Add the pair case too: a squash of the index commit alone still resolves and is graded.\nR2 (low) PLUGIN-BUILD-GUIDE.md:150, PLUGIN-BUILD-GUIDE.md:3100-3102, plugins/audit/reference/execute-task.md:529, plugins/audit/scripts/governance/_invariants.py:807-811: R3's class is still open outside the sentences it named. (a) The tree line still says 'commits the manifest INDEX and NOTHING else'. (b) The guide's _scoped_commit section still says 'the other may stage only the shared index and never a phase's file'; that is the paragraph the fixed _scoped_commit docstring mirrors, and it also counts two commands where there are three. (c) execute-task.md says the script 'commits the index **alone**'. (d) index-scope's user-facing breach sentence says 'this class carries the manifest index (%s) and nothing else', while the reader beside it allows the journal directory. The commit's claim 3 says its grep covered governance/ only, which is why the docs and the printed sentence were missed. -> Reword all four to the index plus the one journal file holding the row that names the commit. Grep the docs and reference/ too, not only governance/.\nR3 (low) plugins/audit/scripts/governance/commit-manifest-index.py:141-146; plugins/audit/tests/test_commit_manifest_index.py:604-621 (cmi40): The DEFAULT_SUBJECT comment says 'every reader finds this class by the `audit-index` SCOPE'. No product code reads the scope. index_commits/recorded_commits find the class through its journal rows: the `commit` field, or nonce to `Audit-Row` trailer. The only `--grep audit-index` is a person's. The conclusion is true (nothing reads the subject, so old commits are unaffected), but the basis given for it is not. cmi40 makes an empty commit by hand and asserts what git's own `log --grep` returns, plus a spelling pin (`'row naming it' in DEFAULT_SUBJECT`). No change to any reader could turn it red. -> State the real basis: the class is found through its journal rows, and a person finds it by the scope. If the old-subject claim is worth a case, run index_commits/index-scope over a history in which a row names a commit carrying the OLD subject, and assert that it resolves and is graded.\nR4 (low) plugins/audit/scripts/governance/_journal_io.py:2702-2716 (newest_anchor docstring): The docstring says an evidence.merge row wins a same-second tie because its stateHash covers bytes 'which already include every run recorded against the file in that second'. That holds only for runs recorded BEFORE the merge. A record() row landing in ANOTHER journal file in the same second, after the merge, loses to the merge row, and verify reports drift. That is a loud false positive, not hidden drift. On the question asked: a forged same-second merge row in another file can now supersede a real record row. But a forged row one second later already won under both the old rule and the new one, so the rule adds no capability. Anyone who can append a valid chained row could always re-anchor. I checked with a probe that the choice is the same under every permutation of the candidates. -> Say 'every run recorded before it', and name the case of a same-second record after the merge as reporting drift. Optionally, prefer a merge row only for a target under the evidence directory, the only target record_merge writes.\nR5 (low) plugins/audit/scripts/governance/_evidence_io.py:894-906 (plan_aliases): When a SHARD is unreadable, the refusal note names the index, not the file that failed. I probed a sharded plan with conflict markers in phases/P2.json. The note reads: 'the plan (docs/audit/audit-plan.json) could not be read (Expecting value: line 1 column 1 (char 0))'. The operator is pointed at a file that parses, with a parser offset into a different one. The fail-safe direction is right: the tie is refused. -> Name the file that raised. For example, read the index and each shard separately in the except path, or say 'the plan or one of its shards' and include the shard path that failed.\nR6 (low) plugins/audit/tests/test__evidence_io.py (em7-em12); plugins/audit/scripts/governance/_evidence_io.py:874-879: The `pair` target exists for commit-task-work's verdict_binding: `_same_subject` on the raw taskId/phaseId, with `_newest` giving a same-ts tie to the later row. The case it alone protects is a task-scope run and a phase-scope run carrying the same taskId, which have different subject_keys. No behavioural case covers that. em12 pins the exact tuple spelling, so a mutation that keeps the spelling but drops the pair where the key is present survives only by accident of em12's fixture. I probed it: the tie is refused today. -> Add a case that pairs a scope:'task' run with a scope:'phase' run carrying the same taskId at one second and asserts it is refused. Prove it red with merge_targets returning only the key.\nR7 (low) plugins/audit/scripts/governance/commit-audit-state.py:211, 445, 450; plugins/audit/scripts/governance/commit-manifest-index.py:502; plugins/audit/scripts/governance/_scoped_commit.py:689; plugins/audit/scripts/governance/commit-task-work.py:734: The added comments write the scoped-commit cardinality into prose ('all three scoped commits share', 'two of the three lists', 'one of the three'). The lint does not match this shape, so it is author-enforced under CLAUDE.md. `_deps` already derives the writer set (every file defining COMMIT_TYPE and COMMIT_SCOPE), so these sentences go stale when a fourth class is added. -> Drop the numeral: 'every scoped commit shares', 'on the audit-state and task lists', and so on.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "tools/check-git-pipeline.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: repro that FAILS on current code - after a squash merge of a clean side branch, index-scope reports a breach"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T09:10:50Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T04:55:13Z"

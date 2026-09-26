@@ -351,6 +351,13 @@ def _cases(check):
               M.COMMIT_TYPE in ("build", "chore", "ci", "docs", "feat", "fix",
                                 "perf", "refactor", "revert", "style", "test"))
 
+        check("cas40 the header the scope reader checks a carrier by is the one "
+              "this command writes, spelled from its own type and scope - two "
+              "spellings would grade every real audit-state commit as absorbed: "
+              "%r" % (_invariants.STATE_HEADER,),
+              _invariants.STATE_HEADER == "%s(%s): " % (M.COMMIT_TYPE,
+                                                       M.COMMIT_SCOPE))
+
         # --- the subject a commitlint repository will take ---------------------
         # ASKED OF THE SUBJECT git ACTUALLY RECORDED, not of the string the module
         # composed: this is the line commitlint's hook would be handed, and the

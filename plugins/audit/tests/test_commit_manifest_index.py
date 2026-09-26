@@ -601,24 +601,36 @@ def _cases(check):
               code == 0 and sorted(lone) == sorted([INDEX_REL] + trail)
               and len(trail) == 1 and trail[0] in _row_files(fx))
 
-        # THE SUBJECT CHANGED AND HISTORY DID NOT: a commit made under the
-        # subject this class used to write is found by the same search as one
-        # made now, because what finds the class is its scope.
+        # THE SUBJECT CHANGED AND HISTORY DID NOT: a row naming a commit made
+        # under the subject this class used to write resolves to it and is
+        # graded through the product's own reader - which looks at the class
+        # header and never at the prose after it.
+        old = repos.make()
         old_subject = ("%s(%s): %s %s - the shared index, carried alone so no "
                        "phase's work rides with it"
                        % (M.COMMIT_TYPE, M.COMMIT_SCOPE, M.SUBJECT_LEAD, PHASE))
-        TI._git(fx["root"], "commit", "-q", "--allow-empty", "-m", old_subject)
-        opening = "%s(%s): " % (M.COMMIT_TYPE, M.COMMIT_SCOPE)
-        by_scope = TI._git(fx["root"], "log", "--format=%s", "--fixed-strings",
-                           "--grep=" + opening).splitlines()
-        check("cmi40 the index commit's subject now names the row it carries, "
-              "and a commit under the OLD subject is still found by the search "
-              "that finds this class - the scope, which did not move: %r"
-              % (by_scope,),
-              old_subject in by_scope
-              and any(line.endswith(" - " + M.DEFAULT_SUBJECT)
-                      for line in by_scope)
-              and "row naming it" in M.DEFAULT_SUBJECT)
+        _widen(old)
+        TI._nonce_row(old["root"], _invariants.ACTION_INDEX_COMMITTED,
+                      "0d0d000000000001", INDEX_REL)
+        carrier = TI._commit_carrying(old["root"], [INDEX_REL,
+                                                    "docs/audit/journal"],
+                                      old_subject, "0d0d000000000001")
+        read = _invariants.index_commits(old["root"], PHASE,
+                                         git_root=old["root"])
+        graded = [c for c in _invariants.check_phase(
+            _mio.load_manifest(old["manifest"]), PHASE, old["manifest"],
+            old["root"], old["root"])["checks"] if c["name"] == "index-scope"][0]
+        check("cmi41 a row naming a commit under the OLD subject still resolves "
+              "to it and is graded clean by index-scope - the reader checks the "
+              "class header, not the prose after it: %r / %r / examined %r"
+              % (read[0], graded["verdict"], graded["examined"]),
+              read[0] == [carrier] and graded["verdict"] == _invariants.CLEAN
+              and graded["examined"] == 1)
+        check("cmi42 ...and the header the reader checks is the one this command "
+              "writes, spelled from its own type and scope: %r"
+              % (_invariants.INDEX_HEADER,),
+              _invariants.INDEX_HEADER == "%s(%s): " % (M.COMMIT_TYPE,
+                                                       M.COMMIT_SCOPE))
 
         fx = repos.make()
         index = _mio.read_json(fx["manifest"])

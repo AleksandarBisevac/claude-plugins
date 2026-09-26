@@ -2003,6 +2003,45 @@ def _merge_ledger_cases(check):
           and M.latest_by_subject([dict(row, ts=stamp)])
           == {("phase", "P1"): dict(row, ts=stamp)})
 
+    # THE TIE ONLY THE VERDICT PAIR PROTECTS: a task-scope run and a phase-scope
+    # run carrying the same task id are filed under different `subject_key`s, and
+    # a task commit's verdict (`_same_subject`) reads both as that task's.
+    ours, theirs = _em_pair(name, _em_run("run-task", stamp, "P1.2"),
+                            _em_run("run-under-phase", stamp, "P1.2",
+                                    scope="phase"))
+    res = _em_merge(ours, theirs, name, {})
+    check("em13 a scope:task run and a scope:phase run carrying the SAME task id "
+          "in one second are refused: their keys differ, but the verdict a task "
+          "commit is bound to reads both as that task's, so their order is "
+          "which one is newest: %r" % (res["refusals"] or res.get("ordered"),),
+          not res["ok"] and len(res["refusals"]) == 1)
+
+    tmp = _harness.fixture_root("audit-evidence-plan-")
+    try:
+        proj = _project(os.path.join(tmp, "sharded"),
+                        {"manifestPath": "docs/audit/audit-plan.json"})
+        audit = os.path.join(proj, "docs", "audit")
+        os.makedirs(os.path.join(audit, "phases"))
+        with open(os.path.join(audit, "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {}, "phases": [
+                {"id": "P1", "shard": "phases/P1.json"},
+                {"id": "P2", "shard": "phases/P2.json"}]}, fh)
+        with open(os.path.join(audit, "phases", "P1.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": "P1", "tasks": []}, fh)
+        with open(os.path.join(audit, "phases", "P2.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("<<<<<<< ours\n{}\n=======\n{}\n>>>>>>> theirs\n")
+        aliases, why = M.plan_aliases(proj)
+        check("em14 a plan whose SHARD will not parse is named by that shard, "
+              "not by the index that parses - the operator is sent to the file "
+              "that failed: %r" % (why,),
+              aliases is None and "docs/audit/phases/P2.json" in why
+              and "docs/audit/audit-plan.json" not in why)
+    finally:
+        _harness.remove_tree(tmp)
+
 
 def _selftest():
     return _harness.run(_cases)

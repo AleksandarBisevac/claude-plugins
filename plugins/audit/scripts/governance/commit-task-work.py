@@ -730,8 +730,8 @@ def override_row(project, task_id, phase_id, nonce, verdict, reason,
 
     It names the commit - by `nonce`, the commit's `Audit-Row` trailer, since it
     is written before the commit and carried by it - the run it went over (when
-    there was one) and the operator's reason, so the override is findable by any
-    of the three.
+    there was one) and the operator's reason, so the override is findable by
+    any of them.
     """
     config = _journal_io.load_config(project) if config is None else config
     details = {_invariants.NONCE_KEY: nonce, "taskId": str(task_id),

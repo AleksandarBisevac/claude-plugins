@@ -2,13 +2,13 @@
 """
 What a commit-a-narrow-allow-list command is made of, in one place.
 
-WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMAND. Three entry points
+WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMAND. The entry points that
 stage a fixed set of paths and commit them -- `commit-audit-state.py` (the
 phase's manifest file, the journal and the evidence), `commit-manifest-index.py`
 (the manifest INDEX and the one journal file holding the row that names the
 commit, and nothing else) and `commit-task-work.py` (a
 task's declared files and the records beside them) -- and everything except the
-list itself is the same in all three: stage EXPLICITLY, each path by what git
+list itself is the same in each of them: stage EXPLICITLY, each path by what git
 holds for it (`classify`, `stage`), never `git add -A`; read the index back;
 refuse when anything outside the allow-list is in it; commit with the list as
 the pathspec; put the index back as it was found on any refusal after staging
@@ -686,8 +686,9 @@ def carry(git_root, paths, kinds, files):
     """`(paths, kinds, outside)` - the allow-list widened by each row file.
 
     A row file already under an allowed entry changes nothing; the journal
-    directory is on two of the three lists and holds it. One that is not - the
-    index commit's list is the index alone, and a journal directory that did not
+    directory is on the audit-state and task lists and holds it. One that is
+    not - the index commit's list begins as the index by itself, and a journal
+    directory that did not
     exist until this row created it is on no list - is added by name and
     classified the way every allowed path is. `outside` names the row files that
     cannot be carried at all (outside the git root, or ignored), which the caller

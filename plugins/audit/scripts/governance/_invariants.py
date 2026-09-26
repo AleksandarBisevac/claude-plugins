@@ -437,11 +437,24 @@ AUDIT_STATE_SCOPE_BASIS = (
 # reads it, and this is the lowest module both halves reach. A message survives an
 # amend, a rebase and a cherry-pick where a SHA does not, so the row keeps naming
 # the commit it is inside after each; the line is matched with its indent
-# stripped, so a squash merge, which indents every squashed body, still resolves.
-# A fixup or a reword that DROPS the line leaves the row naming no commit, which
-# a reader reports as a gap rather than a pass.
+# stripped. A squash merge keeps the squashed messages, trailer included, so its
+# commit CARRIES the row without being the commit the row names: `STATE_HEADER`
+# below is how a reader tells the two apart, and an absorbing carrier is a gap,
+# never graded. A fixup or a reword that DROPS the line leaves the row naming no
+# commit, which a reader reports as a gap rather than a pass.
 ROW_TRAILER = "Audit-Row"
 NONCE_KEY = "commitNonce"
+
+# THE HEADER EACH CLASS OPENS ITS SUBJECT WITH, which is what tells the commit a
+# row names from a commit that merely CARRIES its trailer. A squash merge, or any
+# commit that absorbs another, keeps the absorbed message - trailer included - in
+# its own body, and its file list is not the scoped commit's. So a carrier is the
+# scoped commit only when its subject opens with the class's header and the
+# trailer is a line of its LAST paragraph, where `_scoped_commit` writes it; the
+# writers spell the same header from their own `COMMIT_TYPE`/`COMMIT_SCOPE`, and
+# each writer's suite pins the two equal.
+STATE_HEADER = "chore(audit-state): "
+INDEX_HEADER = "chore(audit-index): "
 
 # The row a writer appends when the commit its first row announced was NOT made -
 # a hook refused it, or git did. The first row cannot be taken back (the trail is
@@ -450,18 +463,25 @@ NONCE_KEY = "commitNonce"
 ACTION_COMMIT_WITHDRAWN = "audit.commit.withdrawn"
 
 
-def commits_carrying(git_root, nonces):
-    """`(found, why)` - `{nonce: [sha, ...]}` for the commits reachable from HEAD
-    whose message carries a `ROW_TRAILER: <nonce>` line, newest first.
+def _last_paragraph(body):
+    """The lines of `body`'s last paragraph, each stripped of its indent."""
+    out = []
+    for line in (body or "").strip().splitlines():
+        if not line.strip():
+            out = []
+            continue
+        out.append(line.strip())
+    return out
 
-    `found is None` means git would not search and `why` says so. A nonce absent
-    from `found` is carried by no commit in this history, which is an answer: the
-    commit was never made, or it lives on a history this checkout does not hold.
-    More than one SHA for a nonce is a commit that was cherry-picked alongside
-    itself; each of them carries the row, so each is returned.
 
-    ONE `git log` FOR EVERY NONCE, narrowed by `--grep` to the commits that carry
-    the trailer at all, rather than one search per row.
+def trailer_carriers(git_root, nonces):
+    """`(found, why)` - `{nonce: [{"sha", "subject", "inLast"}, ...]}` for the
+    commits reachable from HEAD whose message carries a `ROW_TRAILER: <nonce>`
+    line, newest first; `inLast` says the line is in the LAST paragraph.
+
+    The whole answer `commits_carrying` is a view of, kept so a reader can tell
+    the scoped commit from a commit that absorbed its message (`STATE_HEADER`).
+    `found is None` means git would not search, and `why` says so.
     """
     wanted = set(str(n) for n in (nonces or ()) if n)
     if not wanted:
@@ -478,12 +498,39 @@ def commits_carrying(git_root, nonces):
         sha, _sep, body = record.lstrip("\n").partition("\x00")
         if not sha:
             continue
+        last = set(_last_paragraph(body))
+        subject = (body.strip().splitlines() or [""])[0]
         for line in body.splitlines():
             line = line.strip()
             value = line[len(prefix):].strip() if line.startswith(prefix) else ""
-            if value in wanted and sha not in found.get(value, []):
-                found.setdefault(value, []).append(sha)
+            if value not in wanted:
+                continue
+            if any(c["sha"] == sha for c in found.get(value, [])):
+                continue
+            found.setdefault(value, []).append(
+                {"sha": sha, "subject": subject, "inLast": line in last})
     return found, ""
+
+
+def commits_carrying(git_root, nonces):
+    """`(found, why)` - `{nonce: [sha, ...]}` for the commits reachable from HEAD
+    whose message carries a `ROW_TRAILER: <nonce>` line, newest first.
+
+    `found is None` means git would not search and `why` says so. A nonce absent
+    from `found` is carried by no commit in this history, which is an answer: the
+    commit was never made, or it lives on a history this checkout does not hold.
+    More than one SHA for a nonce is a commit that was cherry-picked alongside
+    itself; each of them carries the row, so each is returned.
+
+    ONE `git log` FOR EVERY NONCE, narrowed by `--grep` to the commits that carry
+    the trailer at all, rather than one search per row. Every carrier, the scoped
+    commit or not; `trailer_carriers` says which is which.
+    """
+    found, why = trailer_carriers(git_root, nonces)
+    if found is None:
+        return None, why
+    return dict((n, [c["sha"] for c in carried])
+                for n, carried in found.items()), ""
 
 
 def withdrawn_nonces(rows):
@@ -502,9 +549,9 @@ def withdrawn_nonces(rows):
 
 
 def recorded_commits(project, phase_id, action, noun, config=None,
-                     git_root=None):
-    """`(shas, unnamed, why, unresolved)` - the commits of one class this phase's
-    trail records.
+                     git_root=None, header=None):
+    """`(shas, unnamed, why, unresolved, absorbed)` - the commits of one class
+    this phase's trail records.
 
     `shas is None` means nobody could look and `why` says so; that is a different
     answer from an empty list, which means this phase has never made a commit of
@@ -518,6 +565,13 @@ def recorded_commits(project, phase_id, action, noun, config=None,
     nonce no commit carries is in `unresolved` - a claim this history cannot
     support, reported rather than dropped - unless a row withdrew it, in which
     case the commit was never made and there is nothing to grade.
+
+    A CARRIER IS NOT ALWAYS THE COMMIT. With `header` given, a commit carrying
+    the trailer is returned in `shas` only when its subject opens with `header`
+    and the trailer is in its last paragraph; any other carrier - a squash, a
+    commit that absorbed the scoped one - is in `absorbed` as `(nonce, sha)`,
+    graded by nobody and reported as a gap, because its file list is not the
+    scoped commit's and grading it would be a breach nothing made.
 
     FOUND THROUGH THE JOURNAL AND NOWHERE ELSE, because there is nowhere else:
     neither an audit-state commit nor a manifest-index commit is a `task.commit`,
@@ -535,12 +589,12 @@ def recorded_commits(project, phase_id, action, noun, config=None,
     if not _journal_io.enabled(config):
         return None, 0, ("the journal is disabled here, so %s leaves no row "
                          "naming it and none can be found - this is not evidence "
-                         "that none was made" % (noun,)), []
+                         "that none was made" % (noun,)), [], []
     try:
         rows = _journal_io.read_all(project, config=config)
     except Exception as exc:                                   # defensive
         return None, 0, ("the journal could not be read (%s), so %s could not be "
-                         "found" % (exc, noun)), []
+                         "found" % (exc, noun)), [], []
     shas, unnamed, pending = [], 0, []
     withdrawn = withdrawn_nonces(rows)
     for row in rows:
@@ -563,15 +617,21 @@ def recorded_commits(project, phase_id, action, noun, config=None,
         else:
             unnamed += 1
     if not pending:
-        return shas, unnamed, "", []
-    found, why = commits_carrying(git_root or project, pending)
+        return shas, unnamed, "", [], []
+    found, why = trailer_carriers(git_root or project, pending)
     if found is None:
-        return None, 0, why, []
+        return None, 0, why, [], []
+    absorbed = []
     for nonce in pending:
-        for sha in found.get(nonce, []):
-            if sha not in shas:
-                shas.append(sha)
-    return shas, unnamed, "", [n for n in pending if not found.get(n)]
+        for carrier in found.get(nonce, []):
+            scoped = header is None or (carrier["subject"].startswith(header)
+                                        and carrier["inLast"])
+            if not scoped:
+                absorbed.append((nonce, carrier["sha"]))
+            elif carrier["sha"] not in shas:
+                shas.append(carrier["sha"])
+    return (shas, unnamed, "", [n for n in pending if not found.get(n)],
+            absorbed)
 
 
 def unresolved_gap(unresolved, noun):
@@ -583,6 +643,18 @@ def unresolved_gap(unresolved, noun):
             "its row never withdrawn, or it is on a history this checkout does "
             "not hold, a shallow clone included"
             % (len(unresolved), noun, ROW_TRAILER, ", ".join(unresolved)))
+
+
+def absorbed_gaps(absorbed, noun, header):
+    """One gap per commit that carries a row's trailer without BEING the commit
+    the row names, naming it: its files are not graded as that commit's."""
+    return ["the row keyed %s names %s that commit %s absorbed - it carries the "
+            "`%s` trailer but its subject does not open with `%s` or the trailer "
+            "is not in its last paragraph (a squash merge, most often) - so the "
+            "commit the row named is not in this history, and %s's files are "
+            "not graded as its" % (nonce, noun, sha[:12], ROW_TRAILER, header,
+                                   sha[:12])
+            for nonce, sha in absorbed]
 
 
 STATE_NOUN = "an audit-state commit"
@@ -598,7 +670,8 @@ def audit_state_commits(project, phase_id, config=None, git_root=None):
     pair the audit-state action with the index commit's sentences.
     """
     return recorded_commits(project, phase_id, ACTION_STATE_COMMITTED,
-                            STATE_NOUN, config=config, git_root=git_root)
+                            STATE_NOUN, config=config, git_root=git_root,
+                            header=STATE_HEADER)
 
 
 def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
@@ -617,11 +690,11 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
     mistake as the cheap one.
     """
     breaches, gaps = [], []
-    shas, unnamed, why, unresolved = audit_state_commits(
+    shas, unnamed, why, unresolved, absorbed = audit_state_commits(
         project, (phase or {}).get("id"), config=config, git_root=git_root)
     if shas is None:
         return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, [], [why], 0)
-    if not shas and not unnamed and not unresolved:
+    if not shas and not unnamed and not unresolved and not absorbed:
         return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, [], [], 0,
                       applies=False)
     if unnamed:
@@ -630,6 +703,7 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                     % (unnamed,))
     if unresolved:
         gaps.append(unresolved_gap(unresolved, STATE_NOUN))
+    gaps.extend(absorbed_gaps(absorbed, STATE_NOUN, STATE_HEADER))
     ok, git_why = _git_available(git_root)
     if not ok:
         return result("audit-state-scope", AUDIT_STATE_SCOPE_BASIS, [],
@@ -708,7 +782,8 @@ def index_commits(project, phase_id, config=None, git_root=None):
     caller can pair one class's action with the other's sentences.
     """
     return recorded_commits(project, phase_id, ACTION_INDEX_COMMITTED,
-                            INDEX_NOUN, config=config, git_root=git_root)
+                            INDEX_NOUN, config=config, git_root=git_root,
+                            header=INDEX_HEADER)
 
 
 def index_scope(phase, git_root, project, index_rel, phase_file_rel,
@@ -745,11 +820,11 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel,
     layout rather than a breach.
     """
     breaches, gaps = [], []
-    shas, unnamed, why, unresolved = index_commits(
+    shas, unnamed, why, unresolved, absorbed = index_commits(
         project, (phase or {}).get("id"), config=config, git_root=git_root)
     if shas is None:
         return result("index-scope", INDEX_SCOPE_BASIS, [], [why], 0)
-    if not shas and not unnamed and not unresolved:
+    if not shas and not unnamed and not unresolved and not absorbed:
         return result("index-scope", INDEX_SCOPE_BASIS, [], [], 0, applies=False)
     if unnamed:
         gaps.append("%d journal row(s) record a manifest-index commit for this "
@@ -757,6 +832,7 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel,
                     % (unnamed,))
     if unresolved:
         gaps.append(unresolved_gap(unresolved, INDEX_NOUN))
+    gaps.extend(absorbed_gaps(absorbed, INDEX_NOUN, INDEX_HEADER))
     if not index_rel:
         # Nothing to compare against. A commit whose every path was called a
         # breach would be this module reporting a manifest that lives outside the
@@ -806,9 +882,10 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel,
                 continue
             breaches.append(found(
                 "manifest-index commit %s staged %s, and this class carries the "
-                "manifest index (%s) and nothing else. A commit that carries the "
-                "shared file alone can be landed or re-derived on its own; one "
-                "that also carries work cannot be separated from it"
+                "manifest index (%s) and the journal file holding the row that "
+                "names the commit, and nothing else. A commit that carries only "
+                "the shared file and its row can be landed or re-derived on its "
+                "own; one that also carries work cannot be separated from it"
                 % (sha[:12], path, index_rel), path, sha))
     return result("index-scope", INDEX_SCOPE_BASIS, breaches, gaps, examined)
 

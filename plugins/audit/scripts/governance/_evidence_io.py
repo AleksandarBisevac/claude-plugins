@@ -889,9 +889,35 @@ def plan_aliases(project, config=None):
     try:
         return subject_aliases(_mio.load_manifest(path)), ""
     except Exception as exc:
-        return None, ("the plan (%s) could not be read (%s), so which task ids "
+        where, why = _unreadable_plan_file(project, path, rel, exc)
+        return None, ("the plan could not be read - %s (%s) - so which task ids "
                       "were moved onto which is unknown and no same-second tie "
-                      "in the ledger can be ordered" % (rel, exc))
+                      "in the ledger can be ordered" % (where, why))
+
+
+def _unreadable_plan_file(project, path, rel, exc):
+    """`(file, reason)` - the FILE of the plan that would not load, and why.
+
+    The loader reads the index and then every shard it names, and its error
+    carries a parser offset with no file name - so an unreadable shard would be
+    reported against the index, which parses. Each is read on its own here to
+    name the one that failed; when none does, the loader's own reason stands.
+    """
+    try:
+        index = _mio.read_json(path)
+    except Exception as first:
+        return rel, first
+    base = os.path.dirname(path)
+    for stub in (index.get("phases") or []) if isinstance(index, dict) else []:
+        shard = stub.get("shard") if isinstance(stub, dict) else None
+        if not shard:
+            continue
+        try:
+            _mio.read_json(os.path.join(base, str(shard)))
+        except Exception as bad:
+            return (_output.posix_rel(os.path.join(base, str(shard)), project),
+                    bad)
+    return rel, exc
 
 
 def record_merge(project, path, result, actor=None, config=None):

@@ -1713,6 +1713,70 @@ def check_index_commit_carries_only_the_index(fx):
         write_manifest(fx, manifest_body())
 
 
+def check_squashed_index_commit_is_a_gap(fx):
+    """A real `git merge --squash` of a branch holding a work commit and an
+    index commit is reported as a gap naming the squash, never as a breach.
+
+    THE CLAIM ONLY GIT CAN MAKE: that the squash message git writes carries the
+    index commit's trailer, so the row resolves to the squash commit - whose
+    file list holds the work too - and that index-scope then declines to grade
+    that commit as the index commit it absorbed. The branch is graded clean
+    first, so the gap is the squash's and not the fixture's.
+    """
+    import _invariants
+    before = git(fx, "rev-parse", "HEAD")[1].strip()
+    work = "src/squashed-work.ts"
+    try:
+        _sharded(fx)
+        git(fx, "add", "-A")
+        git(fx, "commit", "-q", "-m", "fixture: the sharded layout")
+        git(fx, "checkout", "-q", "-b", "squash-side")
+        with io.open(os.path.join(fx["root"], work.replace("/", os.sep)), "w",
+                     encoding="utf-8") as fh:
+            fh.write("export const work = 1\n")
+        git(fx, "add", "--", work)
+        git(fx, "commit", "-q", "-m", "fix(P1.1): audit - the work")
+        index = read_manifest(fx)
+        index["fileIndex"]["src/widened.ts"] = ["P1.1"]
+        write_manifest(fx, index)
+        code, out = script(fx, "commit-manifest-index.py", MANIFEST_REL, "P1",
+                           "--project", ".")
+
+        def scope():
+            manifest = _invariants._mio.load_manifest(
+                os.path.join(fx["root"], MANIFEST_REL))
+            return [c for c in _invariants.check_phase(
+                manifest, "P1", os.path.join(fx["root"], MANIFEST_REL),
+                fx["root"], fx["root"])["checks"]
+                if c["name"] == "index-scope"][0]
+
+        on_side = scope()
+        git(fx, "checkout", "-q", FIXTURE_BRANCH)
+        git(fx, "merge", "-q", "--squash", "squash-side")
+        git(fx, "commit", "-q", "--no-edit")
+        squash = git(fx, "rev-parse", "HEAD")[1].strip()
+        after = scope()
+        ok = (code == 0 and on_side["verdict"] == _invariants.CLEAN
+              and after["breaches"] == [] and after["examined"] == 0
+              and any(squash[:12] in g for g in after["gaps"]))
+        return ok, ("index commit exit %r (%s); on the branch %r; after the "
+                    "squash %s: %r breaches %r gaps %r"
+                    % (code, (out or "").strip()[:120], on_side["verdict"],
+                       squash[:12], after["verdict"], after["breaches"],
+                       after["gaps"]))
+    finally:
+        git(fx, "checkout", "-q", "-f", FIXTURE_BRANCH)
+        git(fx, "reset", "--hard", "-q", before)
+        git(fx, "branch", "-D", "squash-side")
+        from _suite import remove_tree   # tools/_suite.py says why it is here
+        remove_tree(os.path.join(fx["root"], "docs", "audit", "phases"))
+        path = os.path.join(fx["root"], work.replace("/", os.sep))
+        if os.path.exists(path):
+            os.remove(path)
+        write_manifest(fx, manifest_body())
+        reset_journal(fx)
+
+
 def _ledger_append(fx, rel, run_id, ts, task, session):
     """One run appended to the ledger file `rel`, chained by the product's own
     `chain_onto`, and anchored by a journal row naming the file - the pair
@@ -1904,6 +1968,9 @@ CHECKS = (
      "`audit-journal.py merge` resolves it from the index into a chain that "
      "verifies and completes the merge",
      check_evidence_ledger_merge),
+    ("g23 an index commit squash-merged together with work is a gap naming the "
+     "squash commit, never a breach over the work it absorbed",
+     check_squashed_index_commit_is_a_gap),
 )
 
 

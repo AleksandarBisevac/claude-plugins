@@ -2707,8 +2707,10 @@ def newest_anchor(candidates):
     SAY, never by which journal file happened to be read last:
       * within one file, the later row wins - chain order is a recorded order;
       * across files, an `EVIDENCE_MERGE_ACTION` row wins over the others,
-        because its `stateHash` covers the merged bytes, which already include
-        every run recorded against the file in that second;
+        because its `stateHash` covers the merged bytes, which include every
+        run recorded against the file BEFORE it. A run recorded after the merge
+        in the same second, into another journal file, loses to it, and verify
+        then reports drift - the loud direction, never a hidden edit;
       * any other tie goes to the greatest row content, then the greatest file
         name - a total order derived from the rows, so two readers listing the
         directory differently reach one verdict.

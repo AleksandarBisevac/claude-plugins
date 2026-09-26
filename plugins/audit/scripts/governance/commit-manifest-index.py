@@ -139,10 +139,12 @@ E_OK, E_FAIL, E_USAGE = 0, 1, 2
 COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-index"
 # WHAT THE COMMIT CARRIES, and it names the row because the commit carries it.
-# The subject is prose for a person reading `git log`: nothing reads it back -
-# every reader finds this class by the `audit-index` SCOPE, which is unchanged -
-# so the commits already in history keep the older subject, and are found
-# exactly as before.
+# The subject after the class header is prose for a person reading `git log`:
+# the readers find this class through its journal rows - a row's `commit`, or its
+# nonce matched to an `Audit-Row` trailer - and check only that the subject opens
+# with `_invariants.INDEX_HEADER`, which this text follows. So commits already in
+# history keep the older subject and are found and graded exactly as before; a
+# person finds the class by the `audit-index` scope.
 DEFAULT_SUBJECT = "the shared index and the row naming it, no phase's work"
 
 # `SUBJECT_LEAD` for `commit-audit-state.py`'s reason, and this file carried
@@ -499,7 +501,7 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
             % ("; ".join(what for what, _rel in ahead), ", ".join(shards))))
 
     # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.commit_with_rows`, the
-    # sequence all three scoped commits share: the row naming the commit written
+    # sequence every scoped commit shares: the row naming the commit written
     # first and its file added to the list, each path staged by what git holds
     # for it, the index read back against this same list, a commit with the list
     # as its pathspec, the index put back as it was found on any refusal after

@@ -298,6 +298,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A squash merge of a phase branch no longer reads as a scope breach.** A `git merge --squash`
+  keeps the squashed messages, `Audit-Row` trailers included, so the row naming an index or
+  audit-state commit resolved to the squash commit, and `index-scope` / `audit-state-scope` graded
+  that commit's whole file list - work included - as the scoped commit's, a breach nothing made. A
+  commit carrying a row's trailer is now graded as the scoped commit only when its subject opens
+  with the class's header (`_invariants.INDEX_HEADER` / `STATE_HEADER`, pinned equal to each
+  writer's own type and scope) and the trailer is a line of its last paragraph, indented or not.
+  Any other carrier is a gap naming the absorbing commit - never graded, and never a pass. The
+  index commit's breach sentence and the docs now say it carries the index and the journal file
+  holding its row; the ledger merge names the shard that would not parse, when it is a shard.
 - **`audit-journal.py merge` resolves the evidence ledger too.** The ledger is hash-chained with
   the journal's own chain and, before the per-worktree writer key, was appended on two branches
   under one name, but `merge --file` accepted only a journal file, so every ledger conflict was

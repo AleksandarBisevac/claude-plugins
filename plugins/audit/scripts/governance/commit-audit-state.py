@@ -208,8 +208,8 @@ def stage_targets(manifest, phase, manifest_path, project, git_root, config=None
     """`{"paths", "journal", "skipped"}` - the allow-list for THIS phase, resolved.
 
     `paths` are git-root-relative and exist on disk; `skipped` carries one
-    sentence per thing that could not be reached, naming which of the three it
-    was and why. A skip is REPORTED and never silent: "the evidence directory was
+    sentence per thing that could not be reached, naming which one it was and
+    why. A skip is REPORTED and never silent: "the evidence directory was
     outside the repository" and "the evidence directory does not exist" leave the
     same commit behind, and only one of them is a problem somebody should fix.
 
@@ -442,13 +442,13 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
         return E_OK, _answer(skipped, quiet=NOTHING_UNCOMMITTED)
 
     # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.commit_with_rows`, the
-    # one sequence all three scoped commits share: the row naming the commit
+    # one sequence every scoped commit shares: the row naming the commit
     # written first and carried, each path staged by what git holds for it, the
     # index read back against this same list, a commit with the list as its
     # pathspec, the index put back as it was found on any refusal after staging,
     # and the row withdrawn when no commit was made. The read-back is the only
-    # check that can see a path that arrived through one of the three
-    # directories rather than past them.
+    # check that can see a path that arrived through one of these directories
+    # rather than past them.
     #
     # NO SECOND EMPTY-INDEX GUARD. `pending` above already answered "is there
     # anything to commit"; `git commit` refuses an empty index on its own, and
