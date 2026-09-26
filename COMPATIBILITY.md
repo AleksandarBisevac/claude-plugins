@@ -156,6 +156,17 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   precedence, or ceasing to read a verdict as sign-off, is a major. What is not promised is the
   wording surfaces use for the state in between ("sign-off due"), under the standing exclusion
   for a command's wording below.
+- **`meta.phaseGate` and `meta.gateBudgetMs` are under the same promise, and absence keeps
+  meaning today's behaviour byte-for-byte.** With no `meta.phaseGate` at all, a new phase's
+  default gate is every `meta.buildCommands` key, in `buildCommands` order — exactly what
+  `/audit:phase add` wrote before either key existed. `phaseGate.always` alone only REORDERS that
+  default, putting the named keys first; it drops nothing on its own. With no `phaseGate.exclude`,
+  nothing is dropped from the default either. With no `meta.gateBudgetMs`, nothing is graded on
+  cost — `/audit:doctor`'s gate-economy row says so as an OK, never as silence. **A task's derived
+  gate reading `meta.phaseGate.always` when its own files name no suite to narrow to
+  (`tests.gateBasis: gate-only-no-suite`) moves no promise on this list either**: a NEW task's
+  derived gate has never been a promised value — only a manifest key a release *reads* is, and
+  the derivation this adds is one more shape that reading takes.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is

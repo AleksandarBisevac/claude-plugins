@@ -868,6 +868,20 @@ commands. All fields are optional except `version`; the orchestrator resolves th
 | `ado` | Azure DevOps connector for `/audit:sync` + the orchestration echo — states, sprints, Remaining Work, comments; editable in the panel's ADO card (never store credentials). | `null` |
 | `reportSummary` | Narrative shown in the report's **Summary** box (usually supplied read-only via `--summary-file`). | `null` |
 | `reportBasename` | Custom report filename, e.g. `q3-audit` → `q3-audit.html/.md`. | `audit-report` |
+| `phaseGate` | `{always, exclude}` — what a **new** phase's gate defaults to, and the one declared way to narrow it. `always` puts the named `buildCommands` keys first, in the order given; `exclude` leaves the named keys OUT (`always` outranks `exclude`: a key in both stays IN). Absent means today's behaviour exactly — every `buildCommands` key, in `buildCommands` order. | `{}` |
+| `gateBudgetMs` | Advisory per-run cost budget (ms) for a phase's gate, read by `/audit:doctor`'s gate-economy row against a gate that has never failed. Absent means nothing is graded on cost. | `null` |
+
+**No state a plan reaches may make the sign-off gate run FEWER suites than it does today, unless
+the plan declares that narrowing and the gate itself prints it.** `meta.phaseGate.exclude` is the
+one declared way to drop a `buildCommands` key from a new phase's default gate, and dropping every
+key that runs a test suite is a decision a reader is owed rather than a silence: `run-test-gate.py`
+prints `PHASE GATE RAN NO SUITE` when none of the steps it actually ran carries a recognised test
+runner's summary, and the `excluded:` line names exactly the keys `exclude` dropped from THIS run
+— never the whole declared list, so a phase whose `testGate` still carries a since-excluded key is
+not told it skipped a suite it in fact ran. **`suiteReader`** is the predicate that decides
+"suite-running" for both lines: the same counts reader (`run-test-gate.summary_reader`) the gate
+already runs to count checks, recorded per step in the evidence row rather than guessed from a
+gate entry's spelling — a wide key like `npm test` is not test-shaped by its name alone.
 
 Per-phase, `desiredOutcome` states what success looks like — `/audit:status` shows it, task
 subagents receive it, and sign-off must address it.

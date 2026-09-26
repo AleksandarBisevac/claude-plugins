@@ -457,7 +457,7 @@
     {
       "id": "P78.7",
       "title": "run-test-gate --own --quiet: the executor's own tests, unrecorded, whole output in a local log",
-      "status": "in_progress",
+      "status": "done",
       "description": "Constraint: executor.runsGate own-tests tells the executor to run the tests task.tests.add names, and today it does that through bare Bash, whose whole output enters its context. The runner's own render is already bounded (_render_steps prints at most _evidence_io.MAX_FAILING failing lines per step) and --quiet already exists (render_quiet), so the fix is a runner path, not a new renderer. Rule: --own requires --task and refuses --record and --reconcile (exit 2, each named). Commands: the task's OWN gate through P71's _manifest_io.gate_entries(phase, task) with source 'task' (a task measured by its phase's gate has nothing of its own), keeping entries that are not meta.buildCommands keys and whose paths (_manifest_phases.gate_entry_paths) all lie among the task's tests.add paths (_manifest_phases.tests_add_path per entry). None left -> exit 2 '<taskId> declares no gate entry pointed at its own tests.add paths (tests.gateBasis=<basis>) - there is nothing of its own to run', which is also what a gate-only task hears. The run goes through run_gate unchanged (bracket, counts, coverage), writes no row and no pointer, and asks no reuse lookup. The whole output of every step goes to <logsDir>/gate-raw/<runId>.log (runId from _evidence_io.new_run_id()), the directory made through the hooks config's ensure_local_dir and logs_dir (reached with _loader.load_hooks_config()), which drops a self-ignoring .gitignore. NOT under the evidence directory: it defaults under the manifest's directory, and ensure_local_dir's own docstring says never to make a self-ignoring directory there. The log is written after run_gate returns, outside the tree bracket, and the render prints 'raw log: <path>' before the verdict. run_gate keeps a step's text only when a caller asks (a keep_text argument), so ordinary runs pay nothing. Red-first (tk1): a fake runner printing far more lines than the bound, through --own --quiet, renders no more than the step lines, MAX_FAILING failing lines per step and the verdict lines, while the log holds every line; mutation: print the step text -> red. Allow cases: --own --record refused; a gate-only task refused with the sentence; the log directory carries the .gitignore marker. Absent logsDir means the config default.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -490,18 +490,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b2e719b86e50",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate.py: --own flag + three named refusals (missing --task, --record, --reconcile); own_gate_of() narrows a task's own gate entries to those pointed at its own tests.add paths, excluding meta.buildCommands keys; main skips reuse_identity/reusable_run under --own; run_gate gained keep_text=False and an always-present res['stepText'] (None default, matching cancelledBy's shape after a scanner regression was found and fixed); _own_log_dir/_write_own_log write every step's raw output to <logsDir>/gate-raw/<runId>.log via hooks/_config.ensure_local_dir, printed as 'raw log: <path>' before the verdict. Scope widened to PLUGIN-BUILD-GUIDE.md for the module-map line of the new _loader import. redFirst proved (HEAD revert; six live mutations, none survived; an API-limit interruption stranded one mutation, restored and verified before continuing). Gate run 2026-09-26T10:52:33Z.da4e95 green; reviewer matches, no findings.",
+        "descriptive": "an executor's own tests now run through run-test-gate.py itself instead of bare Bash: only the bounded render (steps, verdict, up to MAX_FAILING failing lines) reaches the caller's context, the whole raw output goes to a local self-ignored log file, and nothing about the run is ever recorded."
       },
       "startedAt": "2026-09-26T09:49:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T10:56:16Z",
+      "verifiedBy": [
+        "tk1",
+        "tk1b",
+        "own2",
+        "own3",
+        "own4",
+        "own5",
+        "own6",
+        "own7",
+        "own8",
+        "own9",
+        "own10"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T10:52:33Z.da4e95",
         "status": "passed",
         "at": "2026-09-26T10:52:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b2e719b86e50",
+        "at": "2026-09-26T10:56:16Z"
       }
     },
     {
@@ -703,7 +720,7 @@
     {
       "id": "P78.11",
       "title": "Docs: the always/exclude default, the economy row, --own, failed-first, and the background rule",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Docs owed by this phase's behaviour, written after the code lands, each sentence naming the function or command that makes it true. execute-task.md: the own-tests reading runs run-test-gate.py <m> <P> --task <T> --own --quiet instead of bare Bash; a retry brief carries the 'raw log:' path the last own run printed (tk3); a gate expected to outlast the Bash tool's foreground bound runs under run_in_background and its verdict is read with audit-lookup.py <m> run <runId> (the id from the 'evidence: recorded' line) or run latest --task <T>, never from a truncated terminal - the runner records before it prints its verdict (pinned by dg22). phase-signoff.md: the same background rule at step 2; the 'excluded:' and 'PHASE GATE RAN NO SUITE' lines and what the operator does with them; a red sign-off gate's fix task is created with /audit:task add ... --failing-from <runId>; what the SAME SUITE remedy line is for. agents/audit-executor.md: the own-tests bullet names --own --quiet and says a gate-only task hears 'nothing of its own to run'; every return field stays (_refs.return_shape_drift reads this brief against execute-task.md). commands/doctor.md: the economy row, what it never does, and that its remedy for new phases is meta.phaseGate.exclude. commands/task.md: gate-only-no-suite and failing-from-run:<runId> among the gateBasis words. README: meta.phaseGate.always, meta.phaseGate.exclude and meta.gateBudgetMs in the meta-block section, with the rule they hold (no state of a plan may make the sign-off gate run fewer suites than today unless the plan declares it and the gate prints it) and which predicate decides 'suite-running' (the counts reader's suiteReader, read back from the ledger). COMPATIBILITY.md: a paragraph per key saying what absence means (no phaseGate: add-phase defaults to every buildCommands key in buildCommands order; always alone only reorders that default; no exclude: nothing is dropped; no budget: nothing graded on cost), and that the gate-only derivation change moves no promise because the derived gate of a new task is not on the promised list. CHANGELOG.md [Unreleased]: the user-visible changes, including that retarget --gate was always a replace and two documents said append. No numbers written into prose (_deps.doc_prose_numbers), no register ids.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -713,7 +730,8 @@
         "plugins/audit/commands/task.md",
         "plugins/audit/README.md",
         "COMPATIBILITY.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/reference/orchestrator.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -745,16 +763,21 @@
         "P78.9",
         "P78.10"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T10:56:16Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T11:08:27Z.43cf25",
+        "status": "passed",
+        "at": "2026-09-26T11:08:27Z"
+      }
     }
   ],
   "startedAt": "2026-09-26T04:53:57Z"

@@ -208,5 +208,22 @@ is broken, and a run that exits 0 today still exits 0 with these rows present.
 card shows — and it writes, so it is not a flag here. If a user asks to clean that file,
 point them there rather than reaching for this command.
 
+## The `gate economy` row, after `gate patterns`
+
+`gate patterns` asks whether a gate ever fails; this row asks the question a never-failed gate
+still owes an answer to — what it costs — and grades ONLY the gates `gate patterns` would
+already call a candidate to drop, because a gate that has failed at least once earns its keep
+whatever it costs. **With no `meta.gateBudgetMs` declared, this is an OK row saying so, never
+silence**: the budget is opt-in, and a plan that never declared one has not been told its gates
+are cheap — it has been told nothing. Past the floor `gate patterns` already needs, a gate whose
+mean recorded cost exceeds the budget is named on a WARNING, never a FINDING, with the same
+remedies every time: `/audit:phase retarget <phaseId> --gate-drop <entry>` for each phase not yet
+signed off whose `testGate` still carries it, adding the entry to `meta.phaseGate.exclude` so the
+next phase this plan mints does not inherit it, and — when the entry is also named in
+`meta.phaseGate.always`, which outranks `exclude` — taking it out of `always` too, or the exclude
+alone will not stick. It **never** grades an unmeasured step as cheap: a step that carried no
+recorded `durationMs` is named on its own line rather than folded into the count that passed.
+Like every row in this section, a WARNING here changes nothing about the exit code.
+
 Do not modify anything. Related: `/audit:status`, `/audit:init`, `/audit:panel`,
 `/audit:usage`, `/audit:layout`, `/audit:logs`.

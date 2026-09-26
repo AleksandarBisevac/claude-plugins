@@ -246,12 +246,21 @@ rather than the entries: a narrow gate and a wide one look alike once written, a
 sentence is what tells them apart without opening the shard.
 
 **And the arm is written down, not only printed.** The same derivation sets
-`tests.gateBasis` — `tests.add`, `files`, `phase-no-spelling`, `phase-no-paths`, or
-`declared`/`cleared` for the two flags. The sentence is for a person and is gone after
+`tests.gateBasis` — `tests.add`, `files`, `phase-no-spelling`, `phase-no-paths`,
+`gate-only-no-suite`, or `declared`/`cleared` for the two flags. **`gate-only-no-suite` is
+`gate-only`'s own arm**, and it fires only for that mode: a `gate-only` task names no `tests.add`
+case at all, so a source file among its `files` is not evidence the project's suite-running
+command has anything of this task's to run, and narrowing to it would buy a green on work nobody
+wrote. When none of the task's `files` is a suite path (`_manifest_phases.is_suite_path`), the
+gate becomes `meta.phaseGate.always` where the plan declares one, else the sibling's own shared
+keys and path-less entries carried through — **never** the phase's wide `testGate`, which an
+operator already gets warned about running every attempt. The sentence is for a person and is gone after
 one screen; the word is what `validate-manifest.py` reads when it asks whether a task
 carrying its phase's gate verbatim is holding a default or an answer. It is silent on
 `phase-no-spelling` (this project records no path-scoped spelling, so there is nothing to
-narrow with) and on `declared` (a caller named these commands), and it names everything
+narrow with), on `gate-only-no-suite` (a `gate-only` task's own files name no suite to narrow to,
+which is its own answer) and on
+`declared` (a caller named these commands), and it names everything
 else — including a task that records no basis at all, which is what a hand-written or
 generated plan carries.
 
