@@ -94,7 +94,7 @@
     {
       "id": "P73.2-9h1",
       "title": "audit-journal merge resolves the evidence ledger too, and a same-second tie over disjoint targets is ordered rather than refused",
-      "status": "in_progress",
+      "status": "done",
       "description": "The evidence ledger is hash-chained like the journal and, before per-worktree writer keys, was appended on two branches under one name; audit-journal merge reads only the journal directory, so every such conflict was resolved by hand (interleave by timestamp, re-chain with the journal's row_hash). Give the evidence ledger the same merge verb the journal has - one implementation for both directories, the same refusals (a same-second tie that disagrees, a torn tail, a rewritten shared prefix), the same re-chain and a marker the evidence schema accepts (or a documented reason there is none) - and let a same-second tie whose rows touch disjoint targets be ordered deterministically instead of refused, with the order it chose written in the marker.",
       "files": [
         "plugins/audit/scripts/governance/audit-journal.py",
@@ -136,14 +136,20 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "04145ddf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "merge_rows takes a target_of function; disjoint same-second ties are ordered by content and recorded; evidence merges write an evidence.merge journal row instead of a ledger marker.",
+        "descriptive": "A conflict in the evidence ledger is now resolved by the same merge command the journal uses, and rows about different tasks written in the same second no longer stop it."
       },
       "startedAt": "2026-09-26T07:31:51Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T07:56:08Z",
+      "verifiedBy": [
+        "test_audit_journal me1",
+        "test_audit_journal me7",
+        "test__journal_io mt1",
+        "test__evidence_io em1",
+        "check-git-pipeline g22"
+      ]
     }
   ],
   "startedAt": "2026-09-26T04:55:13Z"
