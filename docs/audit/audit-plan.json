@@ -840,7 +840,8 @@
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
-      "P63.12"
+      "P63.12",
+      "P74.3-qq5"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -955,7 +956,8 @@
       "P76.1",
       "P76.2",
       "P74.1",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1564,7 +1566,8 @@
       "P72.2-ttl",
       "P72.5-ttl",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1641,7 +1644,8 @@
       "P80.1",
       "P80.7",
       "P81.1",
-      "P76.1"
+      "P76.1",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -2230,7 +2234,8 @@
       "P59.5",
       "P63.6",
       "P71.2-zso",
-      "P80.7"
+      "P80.7",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
@@ -2620,7 +2625,8 @@
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
       "P71.4-zso",
-      "P80.7"
+      "P80.7",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__gate_feed.py": [
       "P48.3",
@@ -2771,7 +2777,8 @@
       "P75.4-j5h",
       "P75.5-j5h",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -3460,14 +3467,16 @@
       "P56.2"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
-      "P32.7"
+      "P32.7",
+      "P74.3-qq5"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
     ],
     "tools/ui-tests/phase-signoff-note.test.mjs": [
       "P63.9",
-      "P63.12"
+      "P63.12",
+      "P74.3-qq5"
     ],
     "tools/verify.sh": [
       "P19.2",
@@ -3546,6 +3555,12 @@
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9"
+    ],
+    "plugins/audit/scripts/governance/_verdict_binding.py": [
+      "P74.3-qq5"
+    ],
+    "plugins/audit/tests/test__verdict_binding.py": [
+      "P74.3-qq5"
     ]
   },
   "bugs": [
