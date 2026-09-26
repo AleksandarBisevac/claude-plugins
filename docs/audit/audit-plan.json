@@ -641,7 +641,8 @@
       "P80.12",
       "P81.8",
       "P74.2-qq5",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -671,7 +672,8 @@
       "P81.8",
       "P72.4-ttl",
       "P72.5-ttl",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -841,7 +843,8 @@
     "docs/screenshots/captured-at.json": [
       "P63.9",
       "P63.12",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1103,7 +1106,8 @@
       "P78.4",
       "P74.1",
       "P74.2-qq5",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -1486,7 +1490,8 @@
       "P74.2-qq5",
       "P74.3-qq5",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P74.4-qq5"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1522,7 +1527,8 @@
       "P79.1",
       "P80.1",
       "P81.1",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -1888,7 +1894,8 @@
       "P81.4",
       "P74.2-qq5",
       "P74.3-qq5",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2093,7 +2100,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2153,7 +2161,8 @@
       "P69.3",
       "P71.2-zso",
       "P80.8",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2"
@@ -2222,7 +2231,8 @@
       "P71.4-zso",
       "P80.7",
       "P74.3-qq5",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
@@ -2235,7 +2245,8 @@
       "P63.6",
       "P71.2-zso",
       "P80.7",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
@@ -2416,13 +2427,15 @@
     "plugins/audit/scripts/ui/panel/composition.js": [
       "P63.9",
       "P63.12",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
       "P32.7",
       "P80.8",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7"
@@ -2626,7 +2639,8 @@
       "P32.7",
       "P71.4-zso",
       "P80.7",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/tests/test__gate_feed.py": [
       "P48.3",
@@ -2786,7 +2800,8 @@
       "P63.9",
       "P71.2-zso",
       "P80.8",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/tests/test__panel_page.py": [
       "P18.7",
@@ -3029,7 +3044,8 @@
       "P79.2",
       "P79.4",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P74.4-qq5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3299,7 +3315,8 @@
       "P81.4",
       "P74.2-qq5",
       "P74.3-qq5",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P74.4-qq5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -3476,7 +3493,8 @@
     "tools/ui-tests/phase-signoff-note.test.mjs": [
       "P63.9",
       "P63.12",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "tools/verify.sh": [
       "P19.2",
@@ -3557,10 +3575,12 @@
       "P77.3-6u9"
     ],
     "plugins/audit/scripts/governance/_verdict_binding.py": [
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P74.4-qq5"
     ]
   },
   "bugs": [
