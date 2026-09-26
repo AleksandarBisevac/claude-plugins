@@ -1,7 +1,7 @@
 {
   "id": "P71",
   "title": "A task commit carries what the index says and the verdict it was measured under",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "commit-task-work commits both halves of a staged rename or deletion, stages a tracked file under an ignored directory and leaves the index as found on any refusal, names an untracked ignored file instead of passing silently, and refuses a task whose newest gate verdict is not passed on the work being committed unless the operator overrides it on the record",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "036e98e87346dfb55f49ffe233b7dfab1e8a5bbc",
   "branch": "audit/p71-a-task-commit-carries-what-the",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T04:50:02Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
