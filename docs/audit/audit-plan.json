@@ -592,7 +592,8 @@
       "P79.7",
       "P80.12",
       "P81.8",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -660,7 +661,8 @@
       "P80.5",
       "P80.10",
       "P76.1",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "README.md": [
       "P2.3",
@@ -985,7 +987,8 @@
       "P81.2",
       "P81.5",
       "P76.1",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -1013,7 +1016,8 @@
       "P63.13",
       "P72.1",
       "P69.3",
-      "P77.2"
+      "P77.2",
+      "P76.4-6qa"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1229,7 +1233,8 @@
       "P79.1",
       "P80.1",
       "P81.1",
-      "P76.1"
+      "P76.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1696,7 +1701,8 @@
       "P79.1",
       "P80.1",
       "P81.1",
-      "P76.1"
+      "P76.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -1906,7 +1912,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__areas.py": [
       "P20.6",
@@ -2119,7 +2126,8 @@
       "P81.2",
       "P81.5",
       "P76.1",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -2174,7 +2182,8 @@
       "P81.2",
       "P81.5",
       "P76.1",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -2199,7 +2208,8 @@
       "P78.1",
       "P78.2",
       "P79.1",
-      "P80.1"
+      "P80.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -2215,7 +2225,8 @@
       "P78.1",
       "P78.2",
       "P79.1",
-      "P80.1"
+      "P80.1",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2448,7 +2459,8 @@
       "P80.4",
       "P81.3",
       "P81.4",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2544,13 +2556,15 @@
       "P32.1",
       "P61.2",
       "P61.5",
-      "P61.8"
+      "P61.8",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__proposals.py": [
       "P32.1",
       "P61.2",
       "P61.5",
-      "P61.8"
+      "P61.8",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -2577,7 +2591,8 @@
       "P80.4",
       "P81.3",
       "P81.4",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P76.4-6qa"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -2605,7 +2620,8 @@
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
-      "P80.7"
+      "P80.7",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -2767,7 +2783,8 @@
       "P63.8",
       "P63.10",
       "P72.1",
-      "P69.3"
+      "P69.3",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2943,12 +2960,14 @@
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
       "P69.3",
-      "P78.10"
+      "P78.10",
+      "P76.4-6qa"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
       "P69.3",
-      "P78.10"
+      "P78.10",
+      "P76.4-6qa"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
