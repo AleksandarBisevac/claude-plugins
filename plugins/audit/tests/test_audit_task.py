@@ -71,7 +71,9 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # dg (P78.3: a gate-only task's `files` arm narrows only to a suite path, and
 # a new phase's gate puts `meta.phaseGate.always` first and drops only what
 # `meta.phaseGate.exclude` names), pg (P78.3: the same phase-gate derivation,
-# driven through `add-phase` itself).
+# driven through `add-phase` itself), ff (P78.8: `add --failing-from <runId>`
+# gates a fix task on the suites a red sign-off run's own steps NAMED as
+# failing).
 def _cases(check):
     import contextlib
     import io
@@ -7325,6 +7327,155 @@ def _cases(check):
               "meta.buildCommands': %r" % (_pg4_got,),
               _pg4_got == (["test", "lint", "coverage"],
                           "from meta.buildCommands"))
+
+        # ---- (ff) a fix task opened after a red run is gated on ITS failing --
+        # suites -- `add --failing-from <runId>`. `_named_failing_suites`'s own
+        # rule: only a step whose `failingSuitesBasis` says the runner NAMED
+        # them counts; a tail excerpt is not a list of failing tests.
+        import _evidence_io as _ff_ev
+
+        def ff_manifest():
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"lint": "eslint .",
+                                           "test": "vitest run"}},
+                "phases": [
+                    {"id": "P1", "title": "Cart", "status": "in_progress",
+                     "testGate": ["lint", "test"],
+                     "tasks": [{
+                         "id": "P1.1", "title": "seed", "status": "done",
+                         "files": ["src/a.ts"],
+                         "tests": {"mode": "gate-only", "add": [],
+                                  "expectRedFirst": False,
+                                  "gate": ["lint",
+                                          "vitest run src/a.test.ts"]}}]},
+                    {"id": "P2", "title": "Elsewhere", "status": "pending",
+                     "testGate": ["lint", "test"], "tasks": []},
+                ],
+                "fileIndex": {"src/a.ts": ["P1.1"]},
+                "bugs": [],
+            }
+
+        ff_proj, ff_mp = mk("ff-failing-from", ff_manifest())
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-VITEST", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/cart.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                             "named as failing, read from "
+                                             "vitest's FAIL <file> line(s)")}]})
+
+        def ff_tests(tid):
+            return (task_in(ff_mp, tid) or {}).get("tests") or {}
+
+        codeff, txtff = run(
+            ["add", "Fix the cart total", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-VITEST",
+             "--tests-add", "src/cart2.test.ts: covers the new branch too"])
+        check("ff1 RED-FIRST (dg21): a fixture ledger row with a failed step "
+              "whose failingSuites names ['src/cart.test.ts'] (named basis) "
+              "and a sibling spelled 'vitest run src/a.test.ts' give the new "
+              "task 'vitest run src/cart.test.ts <its tests.add path>' and "
+              "gateBasis failing-from-run:<runId> - today's parser does not "
+              "know --failing-from at all, so this exits 2 rather than 0: %r"
+              % ((codeff, ff_tests("P1.2").get("gate"),
+                  ff_tests("P1.2").get("gateBasis")),),
+              codeff == 0
+              and ff_tests("P1.2").get("gate")
+              == ["lint",
+                  "vitest run src/cart.test.ts src/cart2.test.ts"]
+              and ff_tests("P1.2").get("gateBasis")
+              == "failing-from-run:RUN-VITEST")
+
+        # ---- MUTATION GUARD: a JEST-shaped row, `failing` carries CHECK -----
+        # names, never a suite path - reading suites off it instead of
+        # `failingSuites` would put a check's own title where a file path
+        # belongs.
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-JEST", "ts": "2026-09-01T00:05:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failing": ["renders the cart > totals an empty cart"],
+                      "failingSuites": ["src/cart.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) jest named "
+                                             "as failing, read from jest's "
+                                             "FAIL <path> header(s)")}]})
+        codeff, txtff = run(
+            ["add", "Fix on a jest-shaped row", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-JEST"])
+        check("ff2 MUTATION GUARD (dg21): the suite is read off "
+              "`failingSuites`, a FILE, never off `failing`, a CHECK's own "
+              "title with no path in it at all: %r"
+              % (ff_tests("P1.3").get("gate"),),
+              codeff == 0
+              and ff_tests("P1.3").get("gate")
+              == ["lint", "vitest run src/cart.test.ts"])
+
+        # ---- ALLOW CASE: a TAIL basis falls through, printing why ----------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-TAIL", "ts": "2026-09-01T00:10:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuitesBasis": (
+                          "no runner this gate can count recognised, so no "
+                          "suite file could be named")}]})
+        codeff, txtff = run(
+            ["add", "Fix from a tail-only row", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-TAIL",
+             "--tests-add", "src/tail.test.ts: the case this task writes"])
+        check("ff3 ALLOW CASE: a row with a TAIL basis (no runner named a "
+              "suite) falls through to the task's tests.add gate, with the "
+              "reason PRINTED rather than an empty gate - the gate is never "
+              "empty just because --failing-from could not narrow anything: "
+              "%r" % ((codeff, ff_tests("P1.4").get("gate"),
+                       ff_tests("P1.4").get("gateBasis")),),
+              codeff == 0
+              and ff_tests("P1.4").get("gate")
+              == ["lint", "vitest run src/tail.test.ts"]
+              and ff_tests("P1.4").get("gateBasis") == "tests.add"
+              and "named no suite as failing" in txtff)
+
+        # ---- ALLOW CASE: an unknown runId is refused, exit 2 ----------------
+        codeff, txtff = run(
+            ["add", "Fix an id nobody recorded", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "NO-SUCH-RUN"])
+        check("ff4 ALLOW CASE: an unknown runId is refused exit 2, naming NO "
+              "run rather than handing back the ordinary derivation in "
+              "silence: %r" % (txtff[:120],),
+              codeff == 2 and "no run with this id" in txtff
+              and task_in(ff_mp, "P1.5") is None)
+
+        # ---- ALLOW CASE: a PASSED row is refused, exit 2 --------------------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-GREEN", "ts": "2026-09-01T00:15:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "passed", "steps": []})
+        codeff, txtff = run(
+            ["add", "Fix from a green run", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-GREEN"])
+        check("ff5 ALLOW CASE: a run that PASSED is refused exit 2, naming its "
+              "actual status - a fix task opened from a passed run is not "
+              "failed-first: %r" % (txtff[:120],),
+              codeff == 2 and "not a FAILED run" in txtff and "passed" in txtff
+              and task_in(ff_mp, "P1.5") is None)
+
+        # ---- ALLOW CASE: a row scoped to a DIFFERENT phase is refused -------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-OTHER", "ts": "2026-09-01T00:20:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/other.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                             "named as failing, read from "
+                                             "vitest's FAIL <file> line(s)")}]})
+        codeff, txtff = run(
+            ["add", "Fix P1 from P2's run", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-OTHER"])
+        check("ff6 ALLOW CASE: a row scoped to a DIFFERENT phase is refused - "
+              "a fix task's gate can only narrow to suites THIS phase's own "
+              "run named as failing: %r" % (txtff[:140],),
+              codeff == 2 and "not phase P1's" in txtff
+              and task_in(ff_mp, "P1.5") is None)
 
     finally:
         _harness.remove_tree(tmp)

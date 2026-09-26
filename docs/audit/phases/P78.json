@@ -303,7 +303,7 @@
     {
       "id": "P78.5",
       "title": "A step records which counts reader recognised it, and a failing step records the suite files its runner named",
-      "status": "in_progress",
+      "status": "done",
       "description": "Constraint: a red row's steps[].failing holds CHECK NAMES, not suite files: for jest an assertion failure is stored as its bullet title alone (_jest_failure_name returns title), so the suite path is dropped. The failed-first fix-task gate, the derived gate's last-failed arm, the shadow recall and the selection-miss pass all need the failing SUITE files. Rule: a reader failing_suites(text) in run-test-gate.py returns (paths, basis): jest -> the paths on FAIL <path> headers (_JEST_SUITE_HEADER, FAIL only, ANSI stripped as jest_failures does); vitest -> the file part of 'FAIL <file> > ...' lines; pytest -> the path before :: on FAILED/ERROR lines; each path kept only when _manifest_phases.is_suite_path accepts it and it lies under no _VENDOR_DIRS segment; a runner whose failure lines name no file (mocha) or an unrecognised runner -> (None, a basis saying which), never an empty list that reads as nothing failed. observed_step sets failingSuites and failingSuitesBasis on a step that exited non-zero and carries no no-verdict outcome: a killed jest worker's FAIL header is not a failing test (jest_worker_signal), so a could-not-run step carries neither. The basis says 'named as failing' only when the paths came off the runner's own failure lines, the wording failing_lines uses, so a learner can refuse anything else. _evidence_io.py: add both keys to STEP_KEYS; bound the list by MAX_PATHS with the cut counted; redact each path through repo_relative_or_token as _paths does; add row_by_run(rows, run_id) beside latest_by_subject (the newest row by ts carrying that runId, or None) as the one lookup the later readers share. Red-first: test_run_test_gate.py feeds real-shaped jest, vitest and pytest failure output and asserts the suite files; a jest run whose only failures are killed workers carries no failingSuites (mutation: drop the outcome guard -> red); allow case: a passing step carries neither key (mutation: set it on every step -> red). test__evidence_io.py: row_for keeps the keys, cuts at MAX_PATHS with a count and tokenises an absolute path outside the project (mutation: skip the redaction -> red); row_by_run returns None for an unknown id and the newest by ts for a repeated one. SECOND OBSERVATION, THE 'suite-running' ANSWER: observed_step records, on EVERY step (passing ones too), suiteReader = the name summary_reader returns for its output (a _SUMMARY_READERS row: jest, vitest, mocha, pytest), or 'none' when it recognises no test runner's summary. A wrapper's line tally (_STEP_WORDS) is not a suite and records 'none'. 'none' is written rather than left absent so that a step recorded BEFORE this field (key absent) stays distinguishable as unknown. It is recorded because a run's text is not kept and measured cannot tell a test suite from a hook list. _evidence_io: suiteReader joins STEP_KEYS; suite_keys(rows) -> {running: step names with any suiteReader other than 'none', silent: names recorded only with 'none', unknown: names recorded only without the field} - the one ledger answer _manifest_phases.phase_gate_suite_gap takes. validate-manifest.py is the caller that holds the manifest path; its 'The one question validate() cannot be asked' block (main validate-manifest.py:118, the index_only_in_bodies precedent) adds the evidence arm. When meta.phaseGate.exclude is non-empty and phase_gate_suite_gap(manifest) returned nothing (so the certain arm has not already fired inside validate()), it calls it again with _evidence_io.suite_keys over the plan's ledger (_evidence_io.project_config_for, read_rows) and prints the warning returned, through the same _warning_groups collapse. An unreadable ledger is said, never read as 'no suite'. Red-first: a jest step records suiteReader jest and a pre-commit-shaped step records 'none' (mutation: derive it from measured -> red on the pre-commit step); suite_keys puts a key seen only in pre-field rows into unknown (mutation: treat absence as 'none' -> red); validate-manifest over a plan whose exclude leaves [lint], with a ledger where lint only ever recorded 'none', prints 'phase gate runs no suite as far as the ledger shows' (allow: a ledger where the left key recorded jest prints nothing).",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -342,24 +342,56 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2b0ab8cda747",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate: failing_suites (jest FAIL headers, vitest FAIL lines, pytest FAILED paths; filtered by is_suite_path and vendor dirs; None with a basis, never []); observed_step records suiteReader on every step and failingSuites only on a non-zero step that reached a verdict. _evidence_io: STEP_KEYS, redaction and MAX_PATHS bound, row_by_run, suite_keys, read_rows unreadableFiles. validate-manifest: ledger arm of the no-suite warning; an unreadable ledger gets its own warning and is never read as no suite (first review diverged on this clause; completed before commit, re-reviewed matches). Cases sf1-sf11, ef8-ef10, sk1-sk5, rr1-rr2, c31-c35; redFirst proved by HEAD revert plus seven targeted mutations, none survived. Gate run 2026-09-26T08:54:14Z.71d49d green.",
+        "descriptive": "A red gate row now names which suite files failed, not only which checks, every step records which test runner (if any) it recognised, and the 'phase gate runs no suite' warning can be asked of the ledger, saying so when the ledger itself cannot be read."
       },
       "startedAt": "2026-09-26T07:40:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T08:56:53Z",
+      "verifiedBy": [
+        "sf1",
+        "sf2",
+        "sf3",
+        "sf4",
+        "sf5",
+        "sf6",
+        "sf7",
+        "sf8",
+        "sf9",
+        "sf10",
+        "sf11",
+        "ef8",
+        "ef9",
+        "ef10",
+        "sk1",
+        "sk2",
+        "sk3",
+        "sk4",
+        "sk5",
+        "rr1",
+        "rr2",
+        "c31",
+        "c32",
+        "c33",
+        "c34",
+        "c35"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T08:54:14Z.71d49d",
         "status": "passed",
         "at": "2026-09-26T08:54:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2b0ab8cda747",
+        "at": "2026-09-26T08:56:53Z"
       }
     },
     {
       "id": "P78.6",
       "title": "The sign-off run prints what meta.phaseGate.exclude kept out and whether any step ran a suite; SAME SUITE names its retarget; the row-before-summary order is pinned",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(1) _render_verdict prints, under each SAME SUITE COUNTED ONCE group of a PHASE-scope run, one more line per group member after the first in gate order: 'remedy: python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py\" retarget <phaseId> --gate-drop <entry> <manifestPath>' (spelled the way close-phase.py's finishCommand spells a script call, never through __file__). The render needs the phase id, the manifest path and whose gate ran: carry them on the result main already builds (res['subject'], res['gateSource']) plus the manifest path, rather than handing a manifest to run_gate. Under --task, or when gateSource is task, no remedy is printed and the group line is unchanged: a task gate is corrected with scope, whose narrowing rules decide, and a phase retarget there would drop the wrong declaration. (2) A pin, no behaviour change: main already calls _record_run before render/render_quiet (P70 run-test-gate.py main: the res['recorded'] = _record_run(...) line precedes the final render), so a run cut off after recording still leaves its row. A case drives main with a fake runner and an out that raises on the first verdict banner, and asserts the ledger holds the row and 'evidence: recorded <runId>' was printed before the banner (dg22; mutation: move the record below the render -> red). Red-first for (1): the duplicated gate prints the remedy naming coverage, and RUNNING that printed command (argv split, against the fixture manifest) leaves testGate [test]; allow cases: a task-scope run with the same duplication prints no remedy; two steps of equal count over DIFFERENT suites print neither line (sc5 stays green). Blocked on L1.d because the case executes the printed retarget --gate-drop. (3) THE GATE PRINTS THE DECLARED NARROWING. A PHASE-scope run prints, under its header, 'excluded: <keys> - meta.phaseGate.exclude declares them out of this phase's gate; they were not run here', naming each buildCommands key the plan's exclude lists that this phase's testGate does not carry. When exclude is declared and no step of the run carries a suiteReader other than 'none' (L1.e's observation), it prints 'PHASE GATE RAN NO SUITE: the counts reader recognised no test runner's summary in any step (<steps>); meta.phaseGate.exclude declares <keys> out of this gate' above the verdict banners. This is a statement, never a refusal, and the banners orchestrator.md routes on stay unchanged. Red-first: exclude [coverage] prints the excluded line; a run of a lint-only gate under that exclude prints the PHASE GATE RAN NO SUITE line (mutation: read measured instead of suiteReader -> red on a pre-commit-shaped lint step that measured checks). Allow case: a plan with no exclude prints neither line.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -391,16 +423,21 @@
         "P78.5",
         "P78.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T08:56:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T09:30:43Z.62936c",
+        "status": "passed",
+        "at": "2026-09-26T09:30:43Z"
+      }
     },
     {
       "id": "P78.7",
@@ -449,7 +486,7 @@
     {
       "id": "P78.8",
       "title": "A fix task opened after a red sign-off run is gated on that run's failing suites",
-      "status": "pending",
+      "status": "in_progress",
       "description": "audit-task.py add gains --failing-from <runId>. _task_gate reads the ledger (_evidence_io.read_rows then _evidence_io.row_by_run) before its ordinary defaults: the row must exist, be scope phase for the target phase and carry status failed, else exit 2 naming which (the runId is looked up, never parsed). From its failed steps take failingSuites whose failingSuitesBasis says the runner named them; union them with this task's own tests.add paths; point the sibling spelling (_path_scoped_sibling, _repointed) at them; source word failing-from-run:<runId>, sentence naming the run and the suites. This is the failed-first re-run that does not depend on a runner cache (vitest has no rerun-last-failed, jest --onlyFailures needs its cache, Playwright reads .last-run.json). When the row names no suite (a tail basis, or a runner that prints no file) or the phase records no path-scoped spelling, fall through to the ordinary tests.add -> files -> phase-no-paths chain and print why: never an empty gate (dg21). The whole sign-off gate still runs once at the end, unchanged. Add failing_from to VERB_FLAGS['add'], build_parser, commands/task.md's argument-hint and add section, and the /audit:task README row (_refs.command_flag_drift). Red-first (dg21): a fixture ledger row with a failed step whose failingSuites is ['src/cart.test.ts'] (named basis) and a sibling spelled 'vitest run src/a.test.ts' give the new task 'vitest run src/cart.test.ts <its tests.add path>' and gateBasis failing-from-run:<runId>; mutation: read suites off the failing lines instead of failingSuites -> red on a jest-shaped row. Allow cases: a row with a tail basis falls through to the task's tests.add gate with the printed reason (mutation: return [] -> red); an unknown runId and a passed row are refused exit 2.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -481,16 +518,21 @@
         "P78.4",
         "P78.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T08:56:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T09:31:44Z.d3213b",
+        "status": "passed",
+        "at": "2026-09-26T09:31:44Z"
+      }
     },
     {
       "id": "P78.9",
@@ -537,16 +579,22 @@
       },
       "startedAt": "2026-09-26T08:51:55Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T09:33:08Z.6995af",
+        "status": "passed",
+        "at": "2026-09-26T09:33:08Z"
+      }
     },
     {
       "id": "P78.10",
       "title": "audit-lookup run <runId>: the ledger row a background gate is read from",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Constraint: the rule this phase documents is that a gate longer than the Bash tool's foreground bound runs under run_in_background and its verdict is read from the ledger, not from a truncated terminal; no command reads one row today. Rule: audit-lookup.py <manifest> run <runId> [--json] answers from _evidence_io.read_rows + row_by_run: runId, ts, scope and subject, status, failed, per step name/exit/durationMs/outcome, the failing lines and failingSuites with their bases exactly as recorded (the writer already bounded and redacted them), and verdictSource/reusedFrom when the row is a repeat. 'latest' in place of a runId, with --phase <id> or --task <id>, answers the newest row for that subject through latest_by_subject. An unknown runId is a miss, with the exit and wording this CLI uses for its other misses; an unreadable ledger is said, never read as 'no such run'. Read-only, no lock, the subcommand shape the other questions use (a subparser with the common parents). Red-first: a fixture ledger row prints with its failing suites and status; mutation: return the first row with a matching subject instead of the newest -> red on a fixture holding two; allow case: an unknown runId prints the miss sentence and exits as bug does for an unknown bug.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
-        "plugins/audit/tests/test_audit_lookup.py"
+        "plugins/audit/tests/test_audit_lookup.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -571,16 +619,21 @@
       "dependsOn": [
         "P78.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T08:56:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T09:34:08Z.713830",
+        "status": "passed",
+        "at": "2026-09-26T09:34:08Z"
+      }
     },
     {
       "id": "P78.11",
