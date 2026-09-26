@@ -97,7 +97,7 @@
     {
       "id": "P79.2",
       "title": "_gate_derive.py: the gate helpers' one home, and a pure derive()",
-      "status": "pending",
+      "status": "in_progress",
       "description": "New importable helper plugins/audit/scripts/governance/_gate_derive.py. MOVE, bodies and docstrings unchanged, _is_shared_key, _path_scoped_sibling and _repointed out of audit-task.py as is_shared_key, path_scoped_sibling, repointed; audit-task.py imports _gate_derive and keeps thin aliases. gate_entry_paths stays in _manifest_phases, where L1.a put it for --own. Layer: it imports _manifest_phases (tests_add_path, gate_entry_paths, is_suite_path, subject_of), _manifest_io, _manifest_vocab and _evidence_io - _manifest_rules only re-exports tests_add_path - so it takes the layer directly above _evidence_io and _manifest_phases; assign it in _deps.LAYERS with the reason in a comment, and do not restate the number in the docstring (_deps.layer_doc_drift). derive(manifest, phase, facts) is PURE: every observation arrives in facts from the caller (the listing answers with their exits, the installed version's answer, the paths changed since phase.baseRef, the newest red phase-scope row, the exempt verdict of each touched file), so cases need no subprocess. The derivation replaces only the NON-always part of the default, and only when meta.phaseGate.mode is set: always entries are kept verbatim and meta.phaseGate.exclude keys stay out, both read from _manifest_phases.phase_gate_default (L1.b) - one answer for the default, so a fallback can never run fewer suites than add-phase would have written. It returns {entries, basis, derived, narrowed, lines}. (1) always = meta.phaseGate.always verbatim. (2) tests = the union of path-scoped paths in each task's own gate (P71's _manifest_io.gate_entries with source 'task', entries that are not shared keys), arm tests.add, plus each meta.coupling[].test whose sources meet the union of the tasks' files, arm coupling. (3) importers only when derived.listing is recorded AND facts carries a version answer equal to verifiedOn.answer (dg23: otherwise the arm is skipped with 'importers: skipped - listing verified on <answer>, this machine answers <now>'), the related listing exited 0, and its paths are a STRICT subset of the all-listing: then arm importers with listed/full; equal -> the default's non-always part replaces the path-scoped entry, narrowed false, basis 'wide: importers resolved to the full suite', line 'DERIVED = FULL' (dg1); any non-zero exit -> the arm is skipped with the exit named, never an empty set and never red (the recorded listing carries the runner's pass-with-no-tests flag; init 5.4 checks that). (4) always-on additions: test files changed since baseRef (is_suite_path), arm changed; failingSuites of the newest red phase-scope row with a named basis, arm lastFailed. (5) smoke: meta.phaseGate.smoke is added unless EVERY file the phase's tasks declare is exempt (the plan gate's exemptGlobs verdict in facts) or is_suite_path, with the line 'smoke: skipped - every file this phase touched is docs or tests'; never decided by the meta.runtimeBoot.appRootPath prefix (dg10). (6) no path-scoped sibling -> always plus the default's non-always part (phase_gate_default after exclude), basis phase-no-spelling; no suite after (2)-(4) -> the same, basis derived-empty, before anything runs (dg2). The tests entry is the sibling spelling re-pointed at the sorted test set (repointed). The basis always carries 'selected by import graph and recorded couplings only' (dg4). Red-first in test__gate_derive.py: dg1 (allow: a strict subset keeps narrowed true and prints no such line; mutation: drop the subset comparison -> red); dg2 (mutation: return [] -> red; and a fallback on a plan with exclude [coverage] keeps coverage out and every other key in - mutation: fall back to every buildCommands key -> red); dg10 (mutation: decide by the prefix -> red; allow: a docs-and-tests-only phase skips with the line); dg23 (allow: equal answer uses the arm; mutation: ignore the version -> red); dg4 widen-only pin of the boundary sentence; a coupling whose sources miss the phase's files adds nothing. test_audit_task.py: the aliases ARE the _gate_derive functions and gb1 stays green. A migrated --selftest that prints where its cases live, safe_stdio() first in __main__, _output.PATH_PREAMBLE byte for byte, a PLUGIN-BUILD-GUIDE.md tree line and section, no register ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -106,7 +106,8 @@
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/tests/test__gate_derive.py",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/tests/test__deps.py"
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -133,16 +134,21 @@
       "dependsOn": [
         "P79.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T12:15:30Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T12:58:50Z.4fabe1",
+        "status": "passed",
+        "at": "2026-09-26T12:58:50Z"
+      }
     },
     {
       "id": "P79.3",
@@ -239,7 +245,7 @@
     {
       "id": "P79.5",
       "title": "The runner prints NARROWED, grades a derived run that skipped a listed suite as could-not-run, and records shadow",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Observations on a PHASE-scope run, read off the plan and the run, none deriving anything. (1) NARROWED: when phase.testGateBasis is derived and testGateDerived.narrowed is true, print after the verdict banner 'NARROWED sign-off: this run measured the DERIVED gate (<listed> of <full> listed checks; basis on phase.testGateBasis). It is evidence about this phase's own tests and their recorded couplings. The full suite was not run here and is owed before <P> is whole.' and put narrowed {listed, full} on the row. (2) derived-mismatch (dg3): the step whose entry equals testGateDerived.entry must name every listed test file (files_named plus _manifest_phases.subject_of stems, the matching coverage already uses); when it names k of N, the step's outcome becomes could-not-run with outcomeBasis 'DERIVED RUN NAMED k OF N LISTED SUITES: <sample>', printed as that line. NOT a new status word: the schema's testEvidence.status description says which member of the no-verdict class a run was is a per-step observation rather than a word of its own, and could-not-run already lands in _status_facts.NO_VERDICT_EVIDENCE and NOT_REUSABLE_STATUS. The printed repair is re-derive (derive-phase-gate.py) and re-run. A runner that names no path makes the question unanswerable, and the line says so instead of passing or failing it. (3) shadow (dg19): only on a run whose gate is the WIDE one (testGateBasis not derived) of a phase in mode shadow that carries testGateDerived, the row gets shadow {listed, full, missed} where missed = the steps' failingSuites with a named basis that testGateDerived.tests does not hold, and the terminal prints 'shadow: derived would have listed k of n failing suites'. _evidence_io.row_for allow-lists what crosses into a row (an inventive caller cannot widen it): add narrowed and shadow, bounded by MAX_PATHS and redacted as _paths does. Red-first: dg3 ends could-not-run with the line, never passed (mutation: skip the comparison -> red); dg19 records missed of one (mutation: record shadow on a derived run -> red; allow: a plan without mode records no shadow); NARROWED only for a narrowed derived gate (allow: narrowed false prints nothing). test__evidence_io.py: row_for keeps both fields and cuts missed at MAX_PATHS with a count.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -272,16 +278,21 @@
       "dependsOn": [
         "P79.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T12:15:31Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T12:59:50Z.be4b88",
+        "status": "passed",
+        "at": "2026-09-26T12:59:50Z"
+      }
     },
     {
       "id": "P79.6",

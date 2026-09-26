@@ -674,6 +674,25 @@ def row_for(project, result, scope, ids, identity, published=None):
         row["treeMutatedDropped"] = mut_dropped
     if cov_dropped:
         row["coverageDropped"] = cov_dropped
+    # THE DERIVED GATE'S OWN TWO CLAIMS, ALLOW-LISTED LIKE EVERYTHING ELSE
+    # HERE - an inventive caller handing this function an ad-hoc `result`
+    # cannot widen the row by inventing a third key under either one.
+    # `narrowed` is two counts and carries no path, so it needs no bound;
+    # `shadow.missed` is a path list a runner's own output produced, so it
+    # gets the SAME cut and the SAME redaction `treeMutated`/`overlap` get
+    # above, through `_paths`.
+    narrowed = result.get("narrowed")
+    if isinstance(narrowed, dict):
+        row["narrowed"] = {"listed": narrowed.get("listed"),
+                           "full": narrowed.get("full")}
+    shadow = result.get("shadow")
+    if isinstance(shadow, dict):
+        missed, missed_dropped = _paths(project, shadow.get("missed"))
+        shadow_row = {"listed": shadow.get("listed"), "full": shadow.get("full"),
+                      "missed": missed}
+        if missed_dropped:
+            shadow_row["missedDropped"] = missed_dropped
+        row["shadow"] = shadow_row
     # The three-valued fields keep their shape at the TOP level too, so a reader
     # that never opens `observations` still cannot mistake unknown for clean.
     row["treeMutated"] = row["observations"]["treeMutated"]

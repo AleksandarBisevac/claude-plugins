@@ -1857,6 +1857,54 @@ def suite_breadth(task_files, named):
                _output.some_of(extra, budget=SAMPLE_BUDGET)))
 
 
+def _stem_subjects(named):
+    """The `_subject_of` stems present in `named`, once.
+
+    SHARED BY `coverage` AND `derived_step_gap` BELOW, which ask the same
+    question of two different populations - a task's declared source files
+    against a runner's paths, and a derived gate's listed suite files
+    against one step's own paths - so the stem reading cannot drift between
+    the two the day either one changes it.
+    """
+    return set(s for s in (_subject_of(n) for n in (named or ())) if s)
+
+
+def _names_declared(f, named, subjects):
+    """Whether `named` could have printed the declared/listed path `f`.
+
+    Asked of the path the entry names, never of the entry's own spelling: a
+    declared `a/b.py:12-34` is asking about `a/b.py`, and nothing a runner
+    prints ever carries the `:line-range` suffix the schema allows on `f` -
+    comparing the raw entry against `named` would silently drop every
+    suffixed declaration into the complement, which reads as "declared but
+    not named by the run" about a file the run named exactly.
+    """
+    path = _vocab._strip_line_suffix(f)
+    return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
+                for n in named)
+            or _declared_stem(f) in subjects)
+
+
+def derived_step_gap(step, listed):
+    """`(matched, total, missing)` for the derived-gate step, or None.
+
+    `listed` is `phase.testGateDerived.tests` - the suite files this run was
+    supposed to measure because `meta.phaseGate.mode` is `enforce`. A step
+    that named fewer of them than it lists is a derived run whose own
+    coverage claim does not hold: the caller's signal to grade it
+    `could-not-run` rather than trust an exit code that answered a narrower
+    question than the one the phase recorded.
+
+    None when there is nothing declared to check the step against.
+    """
+    if not listed:
+        return None
+    named = step.get("named") or ()
+    subjects = _stem_subjects(named)
+    missing = sorted(f for f in listed if not _names_declared(f, named, subjects))
+    return len(listed) - len(missing), len(listed), missing
+
+
 def coverage(task_files, named, task_scope=False, reached=True):
     """`(overlap, basis)` -- which of the task's files the run actually named.
 
@@ -1896,25 +1944,8 @@ def coverage(task_files, named, task_scope=False, reached=True):
     if named is None:
         return None, ("this runner printed no file paths, so coverage is not "
                       "knowable from its output")
-    subjects = set(s for s in (_subject_of(n) for n in named) if s)
-
-    def _hit(f):
-        """Whether `named` could have printed the FILE `f` declares.
-
-        Asked of the path the entry names, never of the entry's own spelling:
-        a declared `a/b.py:12-34` is asking about `a/b.py`, and nothing a
-        runner prints ever carries the `:line-range` suffix the schema allows
-        on `f` -- comparing the raw entry against `named` would silently drop
-        every suffixed declaration out of `hits` and into the complement,
-        which reads as "declared but not named by the run" about a file the
-        run named exactly.
-        """
-        path = _vocab._strip_line_suffix(f)
-        return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
-                    for n in named)
-                or _declared_stem(f) in subjects)
-
-    hits = sorted(f for f in owned if _hit(f))
+    subjects = _stem_subjects(named)
+    hits = sorted(f for f in owned if _names_declared(f, named, subjects))
     wide = suite_breadth(owned, named) if task_scope else ""
     basis = ("the runner named %d path(s); the work under test declares "
              "%d file(s)" % (len(named), len(owned)))
@@ -1994,6 +2025,106 @@ def owned_files(manifest, phase_id, task_id=None):
                 return list(task.get("files") or []), None
         return None, "no task %r in phase %r" % (task_id, phase_id)
     return None, "no phase %r in this manifest" % (phase_id,)
+
+
+def _phase_by_id(manifest, phase_id):
+    """The phase dict named `phase_id`, or None - the same lookup `gate_of`
+    and `owned_files` each inline, pulled out because the derived-gate
+    checks below need it a second time without re-deriving either one's own
+    reading of the manifest."""
+    for phase in (manifest.get("phases") or []):
+        if isinstance(phase, dict) and phase.get("id") == phase_id:
+            return phase
+    return None
+
+
+def derived_gate_check(manifest, phase_id):
+    """`{"entry", "tests"}` when THIS run must measure the phase's derived
+    gate, else None.
+
+    ENFORCE ONLY. In `shadow` mode `phase.testGateDerived` is recorded
+    beside the wide gate and never replaces it - a step named after
+    `entry` there is still measuring the wide gate's own declaration, and
+    grading it against a narrower list it was never asked to run would
+    refuse a run for not doing something nobody told it to do.
+    """
+    mode = ((manifest.get("meta") or {}).get("phaseGate") or {}).get("mode")
+    if mode != "enforce":
+        return None
+    phase = _phase_by_id(manifest, phase_id)
+    if phase is None:
+        return None
+    derived = phase.get("testGateDerived")
+    if not isinstance(derived, dict):
+        return None
+    entry, tests = derived.get("entry"), derived.get("tests")
+    if not entry or not tests:
+        return None
+    return {"entry": entry, "tests": list(tests)}
+
+
+def narrowed_gate_claim(manifest, phase_id):
+    """`{"listed", "full"}` for the NARROWED banner and the row, or None.
+
+    Fires on `phase.testGateBasis == "derived"` with
+    `testGateDerived.narrowed` true - the same two facts
+    `derive-phase-gate.py` itself writes to say a narrower gate was really
+    computed, never an unnarrowed default or an empty derivation standing in
+    for one (`derived-empty` and the importers-word both read false here).
+
+    `full` READS THE LISTING WHEN THERE IS ONE. `testGateDerived.listed` is
+    what the listing command printed before narrowing further - a broader
+    candidate set than `tests` whenever a listing ran at all - and falls
+    back to `tests`'s own count when none did, which is the honest answer
+    for a derivation this build cannot compare against anything wider.
+    """
+    phase = _phase_by_id(manifest, phase_id)
+    if phase is None or phase.get("testGateBasis") != "derived":
+        return None
+    derived = phase.get("testGateDerived")
+    if not isinstance(derived, dict) or not derived.get("narrowed"):
+        return None
+    tests = derived.get("tests") or []
+    listing = derived.get("listed")
+    full = len(listing) if isinstance(listing, list) and listing else len(tests)
+    return {"listed": len(tests), "full": full}
+
+
+def shadow_gate_claim(manifest, phase_id, steps):
+    """`{"listed", "full", "missed"}` for the shadow line and the row, or
+    None.
+
+    SHADOW ONLY, AND ONLY OVER A REAL FAILURE. `meta.phaseGate.mode` must be
+    `shadow` - `enforce` already ran the derived gate itself, so asking
+    whether it "would have" caught a failure it just measured is a question
+    with no content - and `phase.testGateBasis` must not already be
+    `derived`, the same guard `narrowed_gate_claim` reads for the opposite
+    reason. `missed` is bounded on the way into a committed row by
+    `_evidence_io.row_for`, not here: this is the observation, not the
+    write.
+    """
+    mode = ((manifest.get("meta") or {}).get("phaseGate") or {}).get("mode")
+    if mode != "shadow":
+        return None
+    phase = _phase_by_id(manifest, phase_id)
+    if phase is None or phase.get("testGateBasis") == "derived":
+        return None
+    derived = phase.get("testGateDerived")
+    listed_tests = (derived or {}).get("tests") if isinstance(derived, dict) else None
+    if not listed_tests:
+        return None
+    failing = []
+    for st in (steps or []):
+        if st.get("failingSuitesBasis") and st.get("failingSuites"):
+            failing.extend(st["failingSuites"])
+    failing = sorted(set(failing))
+    if not failing:
+        return None
+    missed = [f for f in failing
+              if not any(f == t or f.endswith("/" + t) or t.endswith("/" + f)
+                        for t in listed_tests)]
+    return {"listed": len(failing) - len(missed), "full": len(failing),
+            "missed": missed}
 
 
 def attempt_of(manifest, task_id):
@@ -2708,12 +2839,19 @@ def observed_step(name, command, code, text, facts, duration_ms):
 
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
-             recorded=None, task_scope=False, keep_text=False):
+             recorded=None, task_scope=False, keep_text=False,
+             derived_check=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
     function that only returned a verdict could not be tested without building a
     repository around it, and `runner` is the seam the cases drive.
+
+    `derived_check` is `derived_gate_check`'s answer - the step named after
+    `phase.testGateDerived.entry` must name every one of `.tests`, or its
+    outcome is corrected to `could-not-run` before `failed`/`status` are
+    ever computed from it, so a derived run that skipped a listed suite can
+    never read as `passed` however green its own exit code came back.
 
     NOTHING HERE WRITES. The snapshot pair and the verdict are complete before the
     caller records anything, which is what keeps a recorder out of the measurement
@@ -2806,6 +2944,30 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
                                      _elapsed_ms(retry_started))
                 step["retriedAfterSignal"] = first["signal"]
                 step["retryBasis"] = retry_note(first["signal"], change)
+            # NAMED ONCE, HERE, so both `step_named` below and the
+            # derived-gate check just after read the SAME reading of this
+            # step's own output - a second call could not disagree with this
+            # one, but a caller that read it twice from two different lines
+            # is exactly the kind of copy this file's own rule refuses.
+            named_now = files_named(text)
+            step["named"] = named_now
+            if derived_check and name == derived_check.get("entry"):
+                gap = derived_step_gap(step, derived_check.get("tests"))
+                if gap is not None:
+                    matched, total, missing = gap
+                    if matched < total:
+                        # A DERIVED RUN THAT DID NOT NAME EVERY LISTED SUITE
+                        # answered a narrower question than the phase
+                        # recorded, so its exit code is not this run's
+                        # verdict - `run_status` reads `could-not-run` off
+                        # `outcome` below exactly as it does for a kill or a
+                        # missing interpreter, and the repair is the same
+                        # shape: re-derive and re-run, not retry the task.
+                        step["outcome"] = CANNOT_RUN
+                        step["outcomeBasis"] = (
+                            "DERIVED RUN NAMED %d OF %d LISTED SUITES: %s"
+                            % (matched, total,
+                               _output.some_of(missing, budget=SAMPLE_BUDGET)))
             steps.append(step)
             # The attempt that ANSWERED, if one did: a retried step's first
             # attempt was ended by a signal, so only the second can speak here.
@@ -2817,7 +2979,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # come apart. Scraped per step rather than sliced out of the joined
             # text below, because which STEP printed a path is the whole
             # question here and the join throws that away.
-            step_named.append(files_named(text))
+            step_named.append(named_now)
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
         # child's group is already gone - `_shell`'s own `except BaseException`
@@ -3280,6 +3442,21 @@ def _render_verdict(res, out):
             % (", ".join(s["name"] for s in res["steps"]) or "no commands", tree,
                "" if res["ranTotal"] is None
                else ", %d check(s) ran" % res["ranTotal"]))
+    # AFTER THE VERDICT, ON PURPOSE - both lines say what this run did NOT
+    # measure, and a reader who wants that has already read the banner by
+    # the time either one prints.
+    narrowed = res.get("narrowed")
+    if isinstance(narrowed, dict):
+        out("NARROWED sign-off: this run measured the DERIVED gate (%d of "
+            "%d listed checks; basis on phase.testGateBasis). It is "
+            "evidence about this phase's own tests and their recorded "
+            "couplings. The full suite was not run here and is owed "
+            "before %s is whole."
+            % (narrowed["listed"], narrowed["full"], res.get("subject")))
+    shadow = res.get("shadow")
+    if isinstance(shadow, dict):
+        out("shadow: derived would have listed %d of %d failing suite(s)"
+            % (shadow["listed"], shadow["full"]))
     return code
 
 
@@ -3779,7 +3956,10 @@ def main(argv, out=print):
                            recorded=_ev.recorded_paths(project,
                                                        args.manifest)[0],
                            task_scope=args.task is not None,
-                           keep_text=args.own)
+                           keep_text=args.own,
+                           derived_check=(
+                               derived_gate_check(manifest, args.phase)
+                               if args.task is None else None))
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no
@@ -3789,6 +3969,17 @@ def main(argv, out=print):
         # had its chance to rewrite one.
         res[_ev.REUSE_KEY] = identity["key"]
         res["reuseBasis"] = identity["basis"]
+        # PHASE-SCOPE ONLY, and asked of THIS run's own steps - a task-scope
+        # run is narrowed by its own `tests.gate`, whose rules are
+        # `_invariants`' and not `meta.phaseGate`'s, so neither claim is one
+        # this run was ever measured against.
+        if args.task is None:
+            narrowed = narrowed_gate_claim(manifest, args.phase)
+            if narrowed is not None:
+                res["narrowed"] = narrowed
+            shadow = shadow_gate_claim(manifest, args.phase, res.get("steps"))
+            if shadow is not None:
+                res["shadow"] = shadow
     # THE LOG IS WRITTEN HERE - AFTER `run_gate` RETURNS, OUTSIDE ITS TREE
     # BRACKET, and only for `--own`. `res.pop`, not a peek: the render below
     # takes only the bounded step lines, `_evidence_io.MAX_FAILING` failing

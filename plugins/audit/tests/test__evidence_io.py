@@ -1945,6 +1945,69 @@ def _cases(check):
 
     _worktree_ledger_cases(check)
     _merge_ledger_cases(check)
+    _narrowed_shadow_cases(check)
+
+
+def _narrowed_shadow_cases(check):
+    """(dgr) `row_for`'s two derived-gate fields - `narrowed`, two counts and
+    no path, and `shadow`, which carries `missed`, a path list a runner's
+    own output produced and so gets the same bound and redaction
+    `treeMutated`/`overlap` already get.
+    """
+    tmp = _harness.fixture_root("audit-evidence-derived-")
+    try:
+        plain = _project(os.path.join(tmp, "plain"), {})
+        base = {"status": "passed", "durationMs": 900, "failed": [],
+                "ranTotal": 3, "coverageBasis": None, "treeBasis": "b",
+                "treeMutated": [], "overlap": None, "steps": []}
+        ident = {"runId": "R-dgr", "attempt": 1, "via": "cli"}
+        with_both = dict(base, narrowed={"listed": 1, "full": 3},
+                         shadow={"listed": 1, "full": 2,
+                                 "missed": ["tests/test_x.py"]})
+        row = M.row_for(plain, with_both, "phase", {"phaseId": "P1"}, ident,
+                        published=[])
+        check("dgr1 RED-FIRST: `row_for` carries `narrowed` and `shadow` "
+              "when the run computed them - dropped before this task, an "
+              "inventive caller's own two keys read back as absent: %r"
+              % ((row.get("narrowed"), row.get("shadow")),),
+              row.get("narrowed") == {"listed": 1, "full": 3}
+              and row.get("shadow", {}).get("listed") == 1
+              and row.get("shadow", {}).get("full") == 2
+              and row.get("shadow", {}).get("missed")
+              == ["tests/test_x.py"])
+
+        no_derived = M.row_for(plain, base, "phase", {"phaseId": "P1"}, ident,
+                               published=[])
+        check("dgr2 ALLOW: a run that computed neither field carries "
+              "neither key - absence is not a zero-length dict, and a "
+              "writer that defaulted one in would tell every other reader "
+              "this phase has a derived gate when it does not",
+              "narrowed" not in no_derived and "shadow" not in no_derived)
+
+        many_missed = ["tests/test_%d.py" % i
+                       for i in range(M.MAX_PATHS + 5)]
+        over = dict(base, shadow={"listed": 0, "full": len(many_missed),
+                                  "missed": many_missed})
+        row_over = M.row_for(plain, over, "phase", {"phaseId": "P1"}, ident,
+                             published=[])
+        check("dgr3 `shadow.missed` is cut at MAX_PATHS with a count beside "
+              "it, the same bound `treeMutated` and `overlap` already carry "
+              "- an unbounded runner-produced path list is exactly the "
+              "unbounded row size this file's own rule refuses: %r"
+              % ((len(row_over["shadow"]["missed"]),
+                 row_over["shadow"].get("missedDropped")),),
+              len(row_over["shadow"]["missed"]) == M.MAX_PATHS
+              and row_over["shadow"]["missedDropped"] == 5)
+
+        no_widen = dict(base, narrowed={"listed": 1, "full": 2, "extra": "x"})
+        row_widen = M.row_for(plain, no_widen, "phase", {"phaseId": "P1"},
+                              ident, published=[])
+        check("dgr4 an inventive caller cannot widen `narrowed` past the "
+              "two counts this file names, the same rule every other field "
+              "on this row already keeps",
+              "extra" not in row_widen["narrowed"])
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _worktree_ledger_cases(check):

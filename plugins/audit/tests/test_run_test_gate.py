@@ -4246,6 +4246,7 @@ def _cases(check):
     _harness.stage(check, "dg0 the record-before-render block", _record_order_cases)
     _harness.stage(check, "xg0 the excluded/no-suite block", _excluded_cases)
     _harness.stage(check, "ow0 the --own block", _own_cases)
+    _harness.stage(check, "dgv0 the derived-gate block", _derived_gate_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -5106,6 +5107,157 @@ def _excluded_cases(check):
           and excluded_line[0]
           == "  excluded: coverage - meta.phaseGate.exclude declares them "
              "out of this phase's gate; they were not run here")
+
+
+def _derived_gate_cases(check):
+    """The derived sign-off gate, in shadow first: a phase's `testGateDerived`
+    either replaces the phase's gate (`meta.phaseGate.mode == "enforce"`) or
+    rides beside it (`"shadow"`), and this run has to grade itself against
+    whichever one it actually was measured under.
+    """
+    def _plan(root, say, phase_extra, meta_extra):
+        mp = os.path.join(root, "audit-plan.json")
+        meta = {"version": 2,
+                "buildCommands": {"pytest": _step(sys.executable, say)}}
+        meta.update(meta_extra)
+        phase = {"id": "P1", "title": "p", "status": "in_progress",
+                 "testGate": ["pytest"], "tasks": []}
+        phase.update(phase_extra)
+        with open(mp, "w") as fh:
+            json.dump({"meta": meta, "phases": [phase]}, fh)
+        return mp
+
+    # --- dg3: a derived (enforce) run that skipped a listed suite ----------
+    root = _harness.fixture_root("run-test-gate-derived-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say = os.path.join(root, "say.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::"
+                 "test_one PASSED\\n')\n"
+                 "sys.stdout.write('tests/test_b.py::"
+                 "test_two PASSED\\n')\n"
+                 "sys.stdout.write('2 passed in 0.01s\\n')\n"
+                 "raise SystemExit(0)\n")
+    derived = {"entry": "pytest",
+               "tests": ["tests/test_a.py",
+                        "tests/test_b.py",
+                        "tests/test_c.py"],
+               "narrowed": True}
+    mp = _plan(root, say,
+              {"testGateBasis": "derived", "testGateDerived": derived},
+              {"phaseGate": {"mode": "enforce"}})
+    lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--record"],
+          out=lines.append)
+    check("dg3 RED-FIRST: a derived gate listing three suites whose run "
+          "named only two comes back `GATE COULD NOT RUN`, never `GATE "
+          "GREEN` - the step's own exit code answered a narrower question "
+          "than the phase recorded, and that is not this run's verdict: %r"
+          % ([ln for ln in lines
+              if "DERIVED RUN NAMED" in ln or ln.startswith(
+                  M._VERDICT_BANNERS)],),
+          any(ln.startswith("GATE COULD NOT RUN:") for ln in lines)
+          and not any(ln.startswith("GATE GREEN:") for ln in lines)
+          and any("DERIVED RUN NAMED 2 OF 3 LISTED SUITES" in ln
+                  and "test_c.py" in ln for ln in lines))
+    check("dg3n NARROWED, ALLOW: the same run's `testGateDerived.narrowed` "
+          "is true, so the sign-off line prints too, naming the phase and "
+          "the count this derivation kept: %r"
+          % ([ln for ln in lines if ln.startswith("NARROWED sign-off:")],),
+          any(ln.startswith("NARROWED sign-off:")
+              and "3 of 3 listed checks" in ln
+              and "before P1 is whole" in ln for ln in lines))
+    rows_derived = _ev_io.read_rows(root)["rows"]
+    check("dg3s ALLOW: an ENFORCE-mode run - `phase.testGateBasis` is "
+          "already `derived` - prints no `shadow:` line and records no "
+          "`shadow` field: asking whether the derived gate `would have` "
+          "caught what it just ran is a question with no content",
+          not any(ln.startswith("shadow:") for ln in lines)
+          and "shadow" not in (rows_derived[0] if rows_derived else {}))
+
+    root2 = _harness.fixture_root("run-test-gate-derived-narrow-off-")
+    subprocess.run(["git", "init", "-q", root2], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say2 = os.path.join(root2, "say.py")
+    with open(say2, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::"
+                 "test_one PASSED\\n')\n"
+                 "sys.stdout.write('1 passed in 0.01s\\n')\n"
+                 "raise SystemExit(0)\n")
+    derived_off = {"entry": "pytest", "tests": ["tests/test_a.py"],
+                  "narrowed": False}
+    mp2 = _plan(root2, say2,
+               {"testGateBasis": "derived", "testGateDerived": derived_off},
+               {"phaseGate": {"mode": "enforce"}})
+    lines2 = []
+    M.main([mp2, "P1", "--project-dir", root2, "--no-reuse", "--record"],
+          out=lines2.append)
+    check("dg3-allow NARROWED prints NOTHING when `testGateDerived.narrowed` "
+          "is false - a derivation that computed nothing to narrow to earns "
+          "no claim that a narrower gate ran",
+          not any(ln.startswith("NARROWED sign-off:") for ln in lines2))
+
+    # --- dg19: a wide (shadow) run over two failing suites, one listed -----
+    root3 = _harness.fixture_root("run-test-gate-shadow-")
+    subprocess.run(["git", "init", "-q", root3], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say3 = os.path.join(root3, "say.py")
+    with open(say3, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('FAILED tests/test_a.py::"
+                 "test_one - AssertionError\\n')\n"
+                 "sys.stdout.write('FAILED tests/"
+                 "test_other.py::test_two - AssertionError\\n')\n"
+                 "sys.stdout.write('2 failed in 0.02s\\n')\n"
+                 "raise SystemExit(1)\n")
+    derived_shadow = {"entry": "pytest",
+                      "tests": ["tests/test_a.py"],
+                      "narrowed": False}
+    mp3 = _plan(root3, say3, {"testGateDerived": derived_shadow},
+               {"phaseGate": {"mode": "shadow"}})
+    lines3 = []
+    M.main([mp3, "P1", "--project-dir", root3, "--no-reuse", "--record"],
+          out=lines3.append)
+    rows3 = _ev_io.read_rows(root3)["rows"]
+    check("dg19 RED-FIRST: a WIDE run of a shadow-mode phase with two "
+          "failing suites, one of them listed in `testGateDerived.tests`, "
+          "records `shadow.missed` of one - the suite the derived gate "
+          "would NOT have caught: %r"
+          % ([ln for ln in lines3 if ln.startswith("shadow:")],),
+          any(ln == "shadow: derived would have listed 1 of 2 failing "
+                     "suite(s)" for ln in lines3)
+          and len(rows3) == 1
+          and rows3[0].get("shadow", {}).get("listed") == 1
+          and rows3[0].get("shadow", {}).get("full") == 2
+          and rows3[0].get("shadow", {}).get("missed")
+          == ["tests/test_other.py"])
+
+    # --- dg19-allow: a plan with no meta.phaseGate.mode records no shadow --
+    root4 = _harness.fixture_root("run-test-gate-shadow-off-")
+    subprocess.run(["git", "init", "-q", root4], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say4 = os.path.join(root4, "say.py")
+    with open(say4, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('FAILED tests/test_a.py::"
+                 "test_one - AssertionError\\n')\n"
+                 "sys.stdout.write('FAILED tests/"
+                 "test_other.py::test_two - AssertionError\\n')\n"
+                 "sys.stdout.write('2 failed in 0.02s\\n')\n"
+                 "raise SystemExit(1)\n")
+    mp4 = _plan(root4, say4, {"testGateDerived": derived_shadow}, {})
+    lines4 = []
+    M.main([mp4, "P1", "--project-dir", root4, "--no-reuse", "--record"],
+          out=lines4.append)
+    rows4 = _ev_io.read_rows(root4)["rows"]
+    check("dg19-allow: a plan with no `meta.phaseGate.mode` at all records "
+          "no `shadow` field and prints no shadow line, even with the same "
+          "two failing suites and a `testGateDerived` on the phase",
+          not any(ln.startswith("shadow:") for ln in lines4)
+          and "shadow" not in (rows4[0] if rows4 else {}))
 
 
 def _own_cases(check):
