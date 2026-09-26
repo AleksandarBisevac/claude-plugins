@@ -1,7 +1,7 @@
 {
   "id": "P83",
   "title": "the history and secrets guards close the residuals SECURITY.md states as open",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "Every shape SECURITY.md lists as an open residual of the history guard and guard-secrets-read, other than a program's own subprocess calls, is refused or graded, each with a deny case beside an allow case, and SECURITY.md's list shrinks to what remains.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "feda644acc4054f02a51a3baedd00b1c880c74b3",
   "branch": "audit/p83-the-history-and-secrets-guards",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T22:02:53Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
