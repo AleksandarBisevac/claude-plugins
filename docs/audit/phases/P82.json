@@ -71,6 +71,34 @@
         "file": "plugins/audit/tests/test_stamp_verification.py",
         "issue": "The new cases pin a loose template only by a literal with no word character at all (sr54 'no fixed words'). Findings 1-3 therefore all pass the suite as it stands: a single-letter fixed literal, a multi-line detail, and a house run echoing a unittest transcript. The mutation claim ('15/15 rows red') could not have covered these shapes.",
         "resolution": "fix task P82.2-fye"
+      },
+      {
+        "id": "P82-S1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "This is a regression introduced by P82.2, and it gives a false proved. The score for 'most specific' is the total fixed text of any literal that renders ANY form of the label, and that includes the full FAIL line with its detail. Suppose the working tree adds a literal that spells the printed line, such as a test asserting on the harness's output: EXPECT = 'the next value is read (saw %r)'. That l",
+        "resolution": "fix task P82.3-fye"
+      },
+      {
+        "id": "P82-S2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "Limit 1, which the implementer left in place, CAN give a false proved. In the test, an existing case's label is built at run time ('the ' + KIND + ' is read'), so none of HEAD's literals renders it. The working tree edits the case's condition and adds MSG = '%s is %s'. The generic template becomes the closest literal, HEAD does not hold it, and the result is 'added'. probe9 (b) gives exit 0 proved",
+        "resolution": "fix task P82.3-fye"
+      },
+      {
+        "id": "P82-S3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "Limit 2, which the implementer left in place, CAN give a false proved. It is the mirror image of R1. In a unittest run, the existing test_old was edited to fail, and a new passing test prints 'FAIL zz9 ...' and 'SELFTEST FAILED: 1/2 cases passed'. read_tally takes the house tally first, so the house reader credits zz9, which appears in the working tree's text and not in HEAD's. probe9 (c) gives ex",
+        "resolution": "fix task P82.3-fye"
+      },
+      {
+        "id": "P82-S4",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md",
+        "issue": "P82.1 wrote this and P82.2 left it unchanged. It still says failing_cases reads 'each runner's lines only in output that carries that runner's tally'. That is exactly the behaviour R1 found wrong and P82.2 replaced. The paragraph also says nothing of the most-specific-literal rule that now decides whether a label counts as the task's own.",
+        "resolution": "fix task P82.3-fye"
       }
     ]
   },
@@ -180,6 +208,51 @@
         "test_stamp_verification sr62",
         "test_stamp_verification sr63"
       ]
+    },
+    {
+      "id": "P82.3-fye",
+      "title": "Round-2 review findings: an exact literal outranks a template, a run-time label is a template, and two runners tally to could-not-prove",
+      "status": "in_progress",
+      "description": "Round-2 review findings, all to be fixed. Orchestrator decisions: (S1) a placeholder-free literal that matches the label exactly outranks any template, the longest such match wins, and templates are consulted only when no exact literal matches; probe9 (a) as a case. (S2) _fold treats a non-literal `+` operand, an f-string field and a .format field as placeholders, so a label built at run time is a template with those parts open; the remaining limit is written into _standing's docstring; probe9 (b) as a case. (S3) when tallies of more than one runner appear, the test command decides when it names the runner (pytest, python -m unittest, a house --selftest); otherwise the verdict is could-not-prove naming both tallies; the read_tally docstring says what it does; probe9 (c) as a case and sr55 follows. (S4) PLUGIN-BUILD-GUIDE.md describes the runner that ran and the most-specific-literal rule.\nR1 (med) plugins/audit/scripts/governance/stamp-verification.py:374-423 (_closest_literals, _standing): This is a regression introduced by P82.2, and it gives a false proved. The score for 'most specific' is the total fixed text of any literal that renders ANY form of the label, and that includes the full FAIL line with its detail. Suppose the working tree adds a literal that spells the printed line, such as a test asserting on the harness's output: EXPECT = 'the next value is read (saw %r)'. That literal then outranks HEAD's exact literal 'the next value is read'. The closest literal is not in HEAD, so an EXISTING case whose condition was edited to go red counts as the task's own. Probe scratchpad/p82/probe9.py (a) gives red exit 0 proved. The control with the same edit and no added literal gives exit 3 could-not-prove. P82.1 refused this case, because HEAD's exact literal rendered the label. No sr case covers this shape. -> Rank a placeholder-free literal equal to a form of the label above any template. Among exact renderings, take the longest form. Fall back to the most specific template only when no literal renders the label exactly. That way the detail never outranks the label, and a new parenthetical label ('the value (as read)') still beats an unrelated exact 'the value'. Add probe9 (a) as an sr row and prove it red against the current code.\nR2 (low) plugins/audit/scripts/governance/stamp-verification.py:590-602 (_fold), 401-423 (_standing): Limit 1, which the implementer left in place, CAN give a false proved. In the test, an existing case's label is built at run time ('the ' + KIND + ' is read'), so none of HEAD's literals renders it. The working tree edits the case's condition and adds MSG = '%s is %s'. The generic template becomes the closest literal, HEAD does not hold it, and the result is 'added'. probe9 (b) gives exit 0 proved. The control without the template gives exit 3. _standing's docstring does not state this limit. A one-off AST scan found 15 of 9958 check() calls in plugins/audit/tests and tools/ whose label does not fold to a literal, mostly a Name taken from a table, so the exposure in this repo is narrow. I measured that once and it is not a gate. -> Make _fold treat a non-literal operand of '+', an f-string FormattedValue and a '.format' field as a placeholder. HEAD's run-time label then has its own template ('the %s is read'), which outranks a generic one. Write the remaining limit (a label no literal in HEAD spells even partly) into _standing's docstring, and add probe9 (b) as a case.\nR3 (low) plugins/audit/scripts/governance/stamp-verification.py:414-420 (read_tally), 528 (red_verdict): Limit 2, which the implementer left in place, CAN give a false proved. It is the mirror image of R1. In a unittest run, the existing test_old was edited to fail, and a new passing test prints 'FAIL zz9 ...' and 'SELFTEST FAILED: 1/2 cases passed'. read_tally takes the house tally first, so the house reader credits zz9, which appears in the working tree's text and not in HEAD's. probe9 (c) gives exit 0 proved on the phantom. Without the echoed tally it gives exit 3, naming test_old. Choosing the runner whose tally prints last does not fix this. Under a merged pipe, the test's buffered stdout lands AFTER unittest's 'Ran 2 tests' and 'FAILED' lines on stderr. I checked this directly: the house lines printed last. The docstring 'The first tally a known runner printed' is also untrue, because the order is a fixed precedence, not print order. P82.2 now leans on it for 'the runner that ran'. -> When the output holds tallies from more than one runner, let the command decide when it names the runner ('-m unittest', 'pytest'). Otherwise fail closed to could-not-prove, with a basis that names both tallies. Correct the read_tally docstring. Add probe9 (c) as a case. sr55 pins house precedence for the reverse shape and would need to follow whichever rule is chosen.\nR4 (low) PLUGIN-BUILD-GUIDE.md:3653-3655: P82.1 wrote this and P82.2 left it unchanged. It still says failing_cases reads 'each runner's lines only in output that carries that runner's tally'. That is exactly the behaviour R1 found wrong and P82.2 replaced. The paragraph also says nothing of the most-specific-literal rule that now decides whether a label counts as the task's own. -> Say that failing_cases reads only the lines of the runner whose tally the verdict came from, and that a label counts as the task's own when HEAD does not hold the most specific literal that renders it, matching the CHANGELOG entry.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a template spelling the whole FAIL line outranks the exact label HEAD carries"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T12:09:22Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

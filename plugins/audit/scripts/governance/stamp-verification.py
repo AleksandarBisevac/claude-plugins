@@ -220,6 +220,7 @@ RED_WORDS = (RED_PROVED, RED_CANNOT)
 
 V_RED, V_GREEN = "red", "green"
 V_COLLECT, V_NO_TALLY, V_NOT_RUN = "collection-error", "no-tally", "could-not-run"
+V_MIXED = "mixed-tally"
 
 # The host's Bash tool gives a command at most this many seconds, and a helper it
 # kills never reaches its own `finally`. The default stays under it with room for
@@ -292,6 +293,8 @@ _UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)", re.M)
 _HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
 # A template's fixed text names a label only when it holds a run of two letters.
 _ANCHORING_WORD = re.compile(r"[^\W\d_]{2}")
+# A `.format` field; `{{` and `}}` stand for themselves.
+_FORMAT_FIELD = re.compile(r"\{\{|\}\}|\{[^{}]*\}")
 # A %-placeholder inside a label literal; `%%` is the one that stands for itself.
 _PLACEHOLDER = re.compile(r"%(?:\([^)]*\))?[#0 +-]*(?:\*|\d+)?(?:\.(?:\*|\d+))?"
                           r"[A-Za-z%]")
@@ -411,23 +414,60 @@ def _unittest_tally(text):
             "failed": failures + counts.get("errors", 0), "assertions": failures}
 
 
-def read_tally(text):
-    """The first tally a known runner printed, or None when none did."""
-    for reader in (_house_tally, _pytest_tally, _unittest_tally):
-        tally = reader(text)
-        if tally is not None:
-            return tally
-    return None
+TALLY_READERS = (("house", _house_tally), ("pytest", _pytest_tally),
+                 ("unittest", _unittest_tally))
 
 
-def classify_run(code, text):
+def command_runner(cmd):
+    """The runner a test command names - `pytest`, `python -m unittest`, a house
+    `--selftest` - or None when it names none, or more than one."""
+    args = [str(a) for a in (cmd or ())]
+    named = set()
+    for i, arg in enumerate(args):
+        base = os.path.basename(arg)
+        follows_m = i > 0 and args[i - 1] == "-m"
+        if base in ("pytest", "py.test") or (follows_m and arg == "pytest"):
+            named.add("pytest")
+        elif follows_m and arg == "unittest":
+            named.add("unittest")
+        elif arg == "--selftest":
+            named.add("house")
+    return named.pop() if len(named) == 1 else None
+
+
+def read_tally(text, cmd=None):
+    """The tally of the runner that ran, or None when no known runner printed one.
+
+    One runner's tally is that runner's. When more than one appears - a house
+    case echoing a captured unittest transcript, a unittest test printing a
+    house tally - neither the order they were printed in nor a precedence
+    between runners says which ran: a merged pipe puts a test's buffered
+    stdout after the runner's own stderr. So the command decides when it names
+    a runner (`command_runner`), and otherwise the answer is
+    `{"runner": None, "mixed": [...]}`, which no reader reads cases from."""
+    tallies = [t for t in (reader(text) for _name, reader in TALLY_READERS)
+               if t is not None]
+    if not tallies:
+        return None
+    if len(tallies) == 1:
+        return tallies[0]
+    named = [t for t in tallies if t["runner"] == command_runner(cmd)]
+    if named:
+        return named[0]
+    return {"runner": None, "mixed": [t["runner"] for t in tallies],
+            "collected": 0, "failed": 0, "assertions": 0}
+
+
+def classify_run(code, text, cmd=None):
     """`(verdict, tally)` for one run: `green` / `red` / `collection-error` /
-    `no-tally`. Exit 0 is `green` whatever the output says."""
+    `mixed-tally` / `no-tally`. Exit 0 is `green` whatever the output says."""
+    tally = read_tally(text, cmd)
     if code == 0:
-        return V_GREEN, read_tally(text)
-    tally = read_tally(text)
+        return V_GREEN, tally
     if tally is None:
         return (V_COLLECT if _COMPILE_ERROR.search(text) else V_NO_TALLY), None
+    if tally["runner"] is None:
+        return V_MIXED, tally
     if tally["collected"] > 0 and tally["assertions"] > 0:
         return V_RED, tally
     return V_COLLECT, tally
@@ -587,40 +627,66 @@ def introduced(root, implementation, symbol):
                   % (", ".join(implementation), ", ".join(in_wt)))
 
 
-def _fold(node):
-    """The template a literal expression spells - adjacent literals are one node
-    already, `+` between literals is joined here, and `template % values` is its
-    template, placeholders kept - or None."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
-        return _fold(node.left)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = _fold(node.left), _fold(node.right)
-        if left is not None and right is not None:
-            return left + right
-    return None
-
-
-def _label_template(literal):
-    """`literal`'s fixed pieces, split where a placeholder stands for any text
-    (`%%` is a fixed `%`) - or None when the literal is too loose to name a
-    label: a template whose fixed text holds no run of two letters (`'%dx%d'`,
-    `' (%s)'`, `'%s: %s'`) renders labels it was never written for."""
+def _split(text, fields, escapes):
+    """`text`'s fixed pieces, split at each hit of `fields` - `escapes` maps
+    the hits that stand for a fixed character (`%%`, `{{`) to that character."""
     pieces, cur, at = [], [], 0
-    for hit in _PLACEHOLDER.finditer(literal):
-        cur.append(literal[at:hit.start()])
-        if hit.group() == "%%":
-            cur.append("%")
+    for hit in fields.finditer(text):
+        cur.append(text[at:hit.start()])
+        if hit.group() in escapes:
+            cur.append(escapes[hit.group()])
         else:
             pieces.append("".join(cur))
             cur = []
         at = hit.end()
-    cur.append(literal[at:])
+    cur.append(text[at:])
     pieces.append("".join(cur))
-    if len(pieces) > 1 and not _ANCHORING_WORD.search("".join(pieces)):
-        return None
     return pieces
+
+
+def _joined(left, right):
+    return left[:-1] + [left[-1] + right[0]] + right[1:]
+
+
+def _fold(node):
+    """The fixed pieces of the text an expression renders, open between them
+    wherever a value goes - or None when no literal text is in it.
+
+    A literal's `%` placeholders are open, and `template % values` is its
+    template. `+` joins literals, and a non-literal operand joined to one is
+    open where its value goes; an f-string field and a `.format` field are
+    open too. So a label built at run time is a template of its own rather
+    than no literal at all, and outranks a generic template that fits it."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return _split(node.value, _PLACEHOLDER, {"%%": "%"})
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        return _fold(node.left)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _fold(node.left), _fold(node.right)
+        if left is None and right is None:
+            return None
+        return _joined(left or ["", ""], right or ["", ""])
+    if isinstance(node, ast.JoinedStr):
+        pieces = [""]
+        for part in node.values:
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                pieces[-1] += part.value
+            else:
+                pieces.append("")
+        return pieces
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "format" and isinstance(node.func.value, ast.Constant)
+            and isinstance(node.func.value.value, str)):
+        return _split(node.func.value.value, _FORMAT_FIELD, {"{{": "{", "}}": "}"})
+    return None
+
+
+def _names_a_label(pieces):
+    """Whether a template is anchored enough to name a label: one with no open
+    part, or one whose fixed text holds a run of two letters - `'%dx%d'`,
+    `' (%s)'` and `'%s: %s'` render labels they were never written for."""
+    return any(pieces) and (len(pieces) == 1
+                            or bool(_ANCHORING_WORD.search("".join(pieces))))
 
 
 def _renders(pieces, form):
@@ -652,33 +718,112 @@ def _label_forms(label):
     return [label] + [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
 
 
+def _callee(call):
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id
+    return func.attr if isinstance(func, ast.Attribute) else None
+
+
+def _case_callees(tree):
+    """`{name: position}` - the calls in a suite whose argument at `position`
+    names a case.
+
+    Derived from the file rather than listed: `check` and every body's own name
+    for it (the first parameter of a function handed to the harness's `stage`
+    or `run`) take the label first, the harness's `skip` takes it second, and a
+    suite's wrapper that passes one of its parameters on to such a call at a
+    label position (`_expect(name, ...)` calling `check(name, ...)`) names a
+    case at that parameter's position - followed until nothing new appears."""
+    callees = {"check": 0, "skip": 1}
+    defs = [n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    by_name = dict((d.name, d) for d in defs)
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        if _callee(call) not in ("stage", "run"):
+            continue
+        for arg in call.args:
+            body = by_name.get(arg.id) if isinstance(arg, ast.Name) else None
+            if body is not None and body.args.args:
+                callees.setdefault(body.args.args[0].arg, 0)
+    grew = True
+    while grew:
+        grew = False
+        for fn in defs:
+            params = [a.arg for a in fn.args.args]
+            for call in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
+                at = callees.get(_callee(call))
+                arg = call.args[at] if at is not None and len(call.args) > at else None
+                if (isinstance(arg, ast.Name) and arg.id in params
+                        and fn.name not in callees):
+                    callees[fn.name] = params.index(arg.id)
+                    grew = True
+    return callees
+
+
+def _case_label_nodes(tree):
+    """The argument nodes that name a case, by identity."""
+    callees = _case_callees(tree)
+    out = set()
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        at = callees.get(_callee(call))
+        if at is not None and len(call.args) > at:
+            out.add(id(call.args[at]))
+    return out
+
+
 def _source_view(text):
-    """`{"text", "templates"}` for one copy of a test file: every literal it
-    spells with its fixed pieces, or `templates` None when it is not Python."""
+    """`{"text", "labels", "others"}` for one copy of a test file: the fixed
+    pieces of every literal it spells, split by ROLE - the ones that are a case
+    call's label argument, and every other one - or both None when it is not
+    Python."""
     text = text or ""
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
-        return {"text": text, "templates": None}
-    literals = set(lit for lit in (_fold(n) for n in ast.walk(tree)) if lit)
-    templates = [(lit, pieces) for lit, pieces in
-                 ((lit, _label_template(lit)) for lit in sorted(literals)) if pieces]
-    return {"text": text, "templates": templates}
+        return {"text": text, "labels": None, "others": None}
+    naming = _case_label_nodes(tree)
+    labels, others = set(), set()
+    for node in ast.walk(tree):
+        pieces = _fold(node)
+        if pieces and _names_a_label(pieces):
+            (labels if id(node) in naming else others).add(tuple(pieces))
+    return {"text": text, "labels": sorted(labels), "others": sorted(others - labels)}
+
+
+def _closest_in(templates, forms):
+    """Within one role: a literal with no open part that EQUALS a form, the
+    longest such form winning; else the templates with the most fixed text."""
+    exact = set(p[0] for p in templates if len(p) == 1)
+    matched = [form for form in forms if form in exact]
+    if matched:
+        return [(max(matched, key=len),)]
+    scored = [(len("".join(p)), p) for p in templates
+              if any(_renders(list(p), form) for form in forms)]
+    if not scored:
+        return []
+    best = max(score for score, _p in scored)
+    return [p for score, p in scored if score == best]
 
 
 def _closest_literals(view, label):
-    """The literals of `view` that render `label` with the MOST fixed text -
-    the one the label was written from, when a looser template renders it too.
-    Empty when none renders it; None when the file is not Python."""
-    if view["templates"] is None:
+    """The literals of `view` a label was most plausibly written from, as
+    tuples of fixed pieces. Empty when none renders it; None when the file is
+    not Python.
+
+    ROLE FIRST: a literal that is a case call's label argument outranks every
+    other literal, so a constant or an expected-output string the task adds -
+    even one spelling the printed FAIL line verbatim, detail included - never
+    outranks the label argument that names the case. Other literals are read
+    only when no label argument renders the label (a label taken from a
+    table). Within a role, a literal equal to the label or to the label with
+    its detail set aside outranks any template, the longest such form wins -
+    so a new label holding a parenthesis still beats an older, shorter one -
+    and only then does the template with the most fixed text decide."""
+    if view["labels"] is None:
         return None
     forms = _label_forms(label)
-    scored = [(len("".join(pieces)), lit) for lit, pieces in view["templates"]
-              if any(_renders(pieces, form) for form in forms)]
-    if not scored:
-        return []
-    best = max(score for score, _lit in scored)
-    return [lit for score, lit in scored if score == best]
+    return _closest_in(view["labels"], forms) or _closest_in(view["others"], forms)
 
 
 def _carries_label(text, label):
@@ -697,19 +842,26 @@ def _standing(wt, head, name):
     """`added` / `at-head` / `absent` - case `name` in one test file's two copies.
 
     A single token is a whole name. A label is judged by the working tree's
-    closest literal: the task added it when HEAD's copy holds none of those
-    literals. HEAD is never asked whether some looser literal of its own
-    renders the label too - a generic message template there would refuse
-    every new case whose label it happens to fit."""
+    closest literal (`_closest_literals`): the task added it when HEAD's copy
+    holds none of those literals. HEAD is never asked whether some looser
+    literal of its own renders the label too - a generic message template
+    there would refuse every new case whose label it happens to fit.
+
+    WHAT THIS CANNOT SEE. A label that no literal in HEAD spells even in part -
+    read from a file, computed, assembled from values alone - has no literal
+    at HEAD, so a literal the task adds that renders it reads as the task's
+    own. And a label that no case call's argument spells (a table row fed to
+    `check` by a loop) is judged among the other literals, where a longer one
+    the task adds - a verbatim FAIL line, detail included - outranks it."""
     if len(name.split()) <= 1:
         in_wt, at_head = _names(wt["text"], name), _names(head["text"], name)
-    elif wt["templates"] is None or head["templates"] is None:
+    elif wt["labels"] is None or head["labels"] is None:
         forms = _label_forms(name)
         in_wt = any(form in wt["text"] for form in forms)
         at_head = any(form in head["text"] for form in forms)
     else:
         closest = _closest_literals(wt, name)
-        held = set(lit for lit, _pieces in head["templates"])
+        held = set(head["labels"]) | set(head["others"])
         in_wt = bool(closest)
         at_head = (any(lit in held for lit in closest) if closest
                    else bool(_closest_literals(head, name)))
@@ -912,12 +1064,14 @@ def _run_in(path, cmd, timeout, env):
     return proc.returncode, (out or b"").decode("utf-8", "replace"), None
 
 
+_TALLY_KEYS = {"house": "cases ", "pytest": " in ", "unittest": "Ran "}
+
+
 def _decisive_line(text, tally):
     """The line a reader checks the verdict against: the tally, else the error."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    if tally is not None:
-        keys = {"house": "cases ", "pytest": " in ", "unittest": "Ran "}
-        hits = [ln for ln in lines if keys[tally["runner"]] in ln]
+    if tally is not None and tally["runner"] in _TALLY_KEYS:
+        hits = [ln for ln in lines if _TALLY_KEYS[tally["runner"]] in ln]
         if hits:
             return hits[-1]
     errors = _ERROR_LINE.findall(text)
@@ -964,7 +1118,7 @@ def red_verdict(run, ctx):
             "basis": "`%s` in a throwaway tree at HEAD: %s%s"
                      % (shown, run["problem"], env_clause)}, None
     code, text = run["code"], run["text"]
-    verdict, tally = classify_run(code, text)
+    verdict, tally = classify_run(code, text, run["cmd"])
     line = _decisive_line(text, tally)
     where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, code)
     if verdict == V_GREEN:
@@ -973,7 +1127,8 @@ def red_verdict(run, ctx):
             "this task's test files, run with %s removed from its environment - so "
             "it proves nothing yet; fix the test, there is no redFirst word to "
             "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
-    failing = failing_cases(text, tally["runner"]) if tally is not None else []
+    failing = (failing_cases(text, tally["runner"])
+               if tally is not None and tally["runner"] is not None else [])
     how = ("named by --case and absent from HEAD's test files" if ctx["cases"]
            else "added by the task, absent from HEAD's test files")
     if verdict == V_RED:
@@ -1009,7 +1164,8 @@ def red_verdict(run, ctx):
             why_not.append("with the working tree's implementation copied in, a "
                            "second run still ends on %r, so the error is not the "
                            "absence this task fills" % (error,))
-        elif classify_run(second["code"], second["text"])[0] not in (V_GREEN, V_RED):
+        elif classify_run(second["code"], second["text"],
+                          run["cmd"])[0] not in (V_GREEN, V_RED):
             why_not.append("with the working tree's implementation copied in, a "
                            "second run lost %r but still reached no assertion "
                            "(%s), so the test is broken with the fix too"
@@ -1022,11 +1178,18 @@ def red_verdict(run, ctx):
                          "%s without that error, its tests reaching their "
                          "assertions%s" % (where, error, symbol, why,
                                            second["code"], env_clause)}, None
-    reason = ("no test was collected or none reached an assertion"
-              if verdict == V_COLLECT else
-              "its output carries no test tally this command reads, so an "
-              "assertion failure cannot be told from a crash - no test is known "
-              "to have been collected")
+    if verdict == V_MIXED:
+        reason = ("its output carries the tallies of more than one runner (%s) and "
+                  "the command names none of them, so which runner ran - and "
+                  "whose failing cases are its own - cannot be told"
+                  % ("; ".join("%s: %s" % (r, _decisive_line(text, {"runner": r}))
+                               for r in tally["mixed"]),))
+    elif verdict == V_COLLECT:
+        reason = "no test was collected or none reached an assertion"
+    else:
+        reason = ("its output carries no test tally this command reads, so an "
+                  "assertion failure cannot be told from a crash - no test is "
+                  "known to have been collected")
     if failing:
         reason += "; failing without an assertion: %s" % (_ids(failing),)
     return E_CANNOT_PROVE, verdict, {
@@ -1036,10 +1199,10 @@ def red_verdict(run, ctx):
                                          else "", env_clause)}, None
 
 
-def _wants_second(code, text, symbols):
+def _wants_second(code, text, symbols, cmd=None):
     """Whether a second run is owed: a collection error some named symbol's
     missing-symbol error could explain."""
-    verdict, _t = classify_run(code, text) if code is not None else (None, None)
+    verdict, _t = classify_run(code, text, cmd) if code is not None else (None, None)
     return verdict == V_COLLECT and any(qualifying_error(text, s) for s in symbols)
 
 
@@ -1141,7 +1304,7 @@ def run_red(args, cmd, out):
                 run["code"], run["text"], run["problem"] = _run_in(
                     path, cmd, _left(deadline), env)
             if run["problem"] is None and _wants_second(run["code"], run["text"],
-                                                        args.introduces):
+                                                        args.introduces, cmd):
                 _lay_over(root, path, scope["implementation"])
                 left = _left(deadline)
                 if left < 1:

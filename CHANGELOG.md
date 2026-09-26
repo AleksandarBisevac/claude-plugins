@@ -306,14 +306,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
   hands out) as its id only when present. It is the task's own when the working tree's test file
   holds a string literal that renders that label (wrapped and `%`-formatted literals included) and
-  HEAD's copy does not hold the MOST SPECIFIC such literal - so a generic template HEAD already has
-  (`'%s is %s'`) no longer refuses a new case it happens to fit, and a template whose fixed text is a
-  lone letter (`'%dx%d'`) renders no label at all. The FAIL line's detail is set aside at every
+  HEAD's copy does not hold the MOST SPECIFIC such literal. A case call's label argument (`check`'s,
+  the harness's `skip`, or a suite wrapper's that passes it on) outranks every other literal; within
+  that role a literal equal to the label outranks any template (the longest such match wins), and
+  only then does the template with the most fixed text decide - so a generic template HEAD already
+  has (`'%s is %s'`) no longer refuses a new case it happens to fit, a constant spelling the printed
+  FAIL line, even verbatim, no longer outranks the label argument naming the case, and a template
+  whose fixed text is a lone letter (`'%dx%d'`) renders no label at all.
+  A label built at run time (a value joined with `+`, an f-string or `.format` field) is a template
+  open where the value goes, so a generic template the task adds no longer outranks it. The FAIL line's detail is set aside at every
   ` (`, so a detail spanning lines no longer hides the label, and templates are matched in linear
   time rather than by a backtracking pattern. `--case` takes the id or the full label (the usage
   line, the flag's help and the executor brief now say so), and a name is refused by the same match
   that decides the proof, so a pytest nodeid is no longer reported as one HEAD already carries.
-  Cases are now read only from the runner whose tally the verdict was read from, so an
+  Cases are now read only from the runner whose tally the verdict was read from; when tallies of
+  more than one runner appear, the test command decides if it names one (`pytest`, `-m unittest`,
+  a house `--selftest`), and otherwise the red is `could-not-prove` naming every tally. So an
   `ERROR: <path> is not a directory` a passing house case printed on purpose - or a whole unittest
   transcript it echoed - is no longer a unittest case, and a line opening with `FAIL ` inside a
   unittest or pytest run is no longer a house one. A real unittest `ERROR:` is still named and

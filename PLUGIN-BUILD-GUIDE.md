@@ -3651,14 +3651,25 @@ own cwd writes shared refs.
 **`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
 reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's
 `Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion,
-reading each runner's lines only in output that carries that runner's tally (a passing house case
-may print `ERROR: <path>` as the message it asserts on):
+reading only the lines of the runner whose tally the verdict came from (a passing house case may
+print `ERROR: <path>` as the message it asserts on, or echo a whole unittest transcript). When the
+output carries the tallies of more than one runner, the command decides if it names one (`pytest`,
+`-m unittest`, a house `--selftest`); otherwise the verdict is `mixed-tally`, which prints
+`could-not-prove` and names every tally it saw:
 a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
 `assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
 assertions. `proved` needs one of those failures to be the TASK'S OWN - a case present in the
 working tree's copy of a declared test file and absent from HEAD's, known by its id when its label
-leads with an id-shaped token and otherwise by the whole label, which some string literal in the
-file must render. `--case` narrows to the ids or labels it names and is held to the same test, because the flag is chosen by the party being checked; the
+leads with an id-shaped token and otherwise by the whole label. A label counts as the task's own
+when HEAD's copy does not hold the MOST SPECIFIC literal in the working tree that renders it.
+Literals are ranked by ROLE first: one that is a case call's label argument - `check`'s first
+argument, the harness's `skip`, and any suite wrapper that passes its parameter on to one, derived
+from the file - outranks every other literal, and the others are read only when no label argument
+renders the label. Within a role, a literal equal to the label (its FAIL-line detail set aside)
+outranks any template, the longest such match wins, and only then does the template with the most
+fixed text decide. A label built at run
+time - a value joined with `+`, an f-string or `.format` field - is a template open where the value
+goes, and a template with no two-letter run in its fixed text (`'%dx%d'`) names no label. `--case` narrows to the ids or labels it names and is held to the same test, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task
