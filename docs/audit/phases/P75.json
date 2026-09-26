@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P75-R1",
@@ -226,9 +226,10 @@
         "issue": "R9 is only partly closed. The claims now name commands and exit codes, which R9 asked for. They still carry no `stamp-verification.py` stamp, which R9 also asked for, and the tree is shared with sibling phases. Claim 2's `probe/mutations.py --root W` does not say what W was.",
         "resolution": "fix task P75.4-j5h"
       }
-    ]
+    ],
+    "outcome": "matches; five review passes, every finding fixed in P75.2-P75.5"
   },
-  "summary": null,
+  "summary": "verify-invariants can show only breaches that are new against a committed baseline, and /audit:status --gate reads the same baseline, so the gate and the CLI give one verdict. The baseline keys each breach on structure - its check, subject and full SHA, and for a validator finding the stable code every validator site now carries, an AST lint failing any site without one - so rewording, a moved count or a longer allowed-values list never turns frozen history into new breaches; entries a run could not examine or whose evidence a clone never receives are set aside with their reason, a clone is identified by a random id written once in the git common dir, and a write is refused while a phase it covers is in flight. User tooling can take the cross-worktree lock as user-<name>: it excludes by holder, so parallel agents of one session are kept apart, and its recipe is tested under sh, bash and zsh. Reviewed five times, every finding fixed; merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach.",
   "tasks": [
     {
       "id": "P75.1",
@@ -546,5 +547,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-25T18:00:39Z"
+  "startedAt": "2026-09-25T18:00:39Z",
+  "testEvidence": {
+    "runId": "2026-09-26T03:57:24Z.3d0a3f",
+    "status": "passed",
+    "at": "2026-09-26T03:57:24Z"
+  }
 }
