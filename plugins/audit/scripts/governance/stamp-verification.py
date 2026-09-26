@@ -74,7 +74,6 @@ path but SIGKILL, which no process can catch - the `red` section says what is
 reported instead.
 """
 import argparse
-import ast
 import datetime
 import json
 import os
@@ -194,7 +193,10 @@ def read_stamp_text(args, stdin=None):
 # ground, and a host refused it beside a sibling's uncommitted work. So the proof
 # is made somewhere else: a `git worktree add --detach` of HEAD in a temp
 # directory, with the working tree's copy of the task's TEST files laid over it
-# and its implementation files left at HEAD.
+# and its implementation files left at HEAD. When that run is red, HEAD's own
+# copies of the test files are put back and the SAME command is run again: a
+# failing case is the task's own exactly when that run of HEAD did not name it.
+# The cost is one more run of the suite, paid only when the first one is red.
 #
 # WHAT IT WRITES, AND WHAT IT CANNOT PROMISE, so nobody has to discover it.
 # `git worktree add` registers the throwaway in the repository's administrative
@@ -288,16 +290,16 @@ _UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)", re.M)
 # A house case's id is its label's leading token when that token carries a digit
 # (`me1`, `ga9b`, `pc-sd0`) - the key the harness's `case_id()` hands out and
 # prove-gates attributes a mutation by. A label led by an ordinary word has no id
-# and is named by the whole label: its first word is one HEAD's test file almost
-# always carries too, so reading it as an id refuses the task's own case.
+# and is named by the whole label: its first word is one some case HEAD's run
+# prints almost always opens with too, so reading it as an id refuses the task's
+# own case.
 _HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
-# A template's fixed text names a label only when it holds a run of two letters.
-_ANCHORING_WORD = re.compile(r"[^\W\d_]{2}")
-# A `.format` field; `{{` and `}}` stand for themselves.
-_FORMAT_FIELD = re.compile(r"\{\{|\}\}|\{[^{}]*\}")
-# A %-placeholder inside a label literal; `%%` is the one that stands for itself.
-_PLACEHOLDER = re.compile(r"%(?:\([^)]*\))?[#0 +-]*(?:\*|\d+)?(?:\.(?:\*|\d+))?"
-                          r"[A-Za-z%]")
+# The lines that name a PASSING case: pytest `-v` (`node PASSED [ 50%]`) and
+# `-rA` (`PASSED node`), unittest `-v` (`test_x (mod.T) ... ok`).
+_PYTEST_VERBOSE = re.compile(r"^(\S+::\S+) (?:PASSED|FAILED|ERROR|SKIPPED|XFAIL|"
+                             r"XPASS)\b", re.M)
+_PYTEST_REPORTED = re.compile(r"^(?:PASSED|SKIPPED|XFAIL|XPASS) (\S+::\S+)", re.M)
+_UNITTEST_VERBOSE = re.compile(r"^(\w+) \([\w.]+\)(?: \.\.\.|\n)", re.M)
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
 _COMPILE_ERROR = re.compile(r"^\s*(?:E\s+)?(SyntaxError|IndentationError|TabError|"
@@ -627,90 +629,12 @@ def introduced(root, implementation, symbol):
                   % (", ".join(implementation), ", ".join(in_wt)))
 
 
-def _split(text, fields, escapes):
-    """`text`'s fixed pieces, split at each hit of `fields` - `escapes` maps
-    the hits that stand for a fixed character (`%%`, `{{`) to that character."""
-    pieces, cur, at = [], [], 0
-    for hit in fields.finditer(text):
-        cur.append(text[at:hit.start()])
-        if hit.group() in escapes:
-            cur.append(escapes[hit.group()])
-        else:
-            pieces.append("".join(cur))
-            cur = []
-        at = hit.end()
-    cur.append(text[at:])
-    pieces.append("".join(cur))
-    return pieces
-
-
-def _joined(left, right):
-    return left[:-1] + [left[-1] + right[0]] + right[1:]
-
-
-def _fold(node):
-    """The fixed pieces of the text an expression renders, open between them
-    wherever a value goes - or None when no literal text is in it.
-
-    A literal's `%` placeholders are open, and `template % values` is its
-    template. `+` joins literals, and a non-literal operand joined to one is
-    open where its value goes; an f-string field and a `.format` field are
-    open too. So a label built at run time is a template of its own rather
-    than no literal at all, and outranks a generic template that fits it."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return _split(node.value, _PLACEHOLDER, {"%%": "%"})
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
-        return _fold(node.left)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = _fold(node.left), _fold(node.right)
-        if left is None and right is None:
-            return None
-        return _joined(left or ["", ""], right or ["", ""])
-    if isinstance(node, ast.JoinedStr):
-        pieces = [""]
-        for part in node.values:
-            if isinstance(part, ast.Constant) and isinstance(part.value, str):
-                pieces[-1] += part.value
-            else:
-                pieces.append("")
-        return pieces
-    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "format" and isinstance(node.func.value, ast.Constant)
-            and isinstance(node.func.value.value, str)):
-        return _split(node.func.value.value, _FORMAT_FIELD, {"{{": "{", "}}": "}"})
-    return None
-
-
-def _names_a_label(pieces):
-    """Whether a template is anchored enough to name a label: one with no open
-    part, or one whose fixed text holds a run of two letters - `'%dx%d'`,
-    `' (%s)'` and `'%s: %s'` render labels they were never written for."""
-    return any(pieces) and (len(pieces) == 1
-                            or bool(_ANCHORING_WORD.search("".join(pieces))))
-
-
-def _renders(pieces, form):
-    """Whether a template's pieces render `form` whole, each gap any text.
-
-    Linear and without a regex engine: the first piece anchors the start, the
-    last the end, the middle ones are found left to right. A pattern of lazy
-    wildcards backtracks combinatorially on a many-placeholder literal, and this
-    runs after the red run, outside what --timeout bounds."""
-    if len(pieces) == 1:
-        return form == pieces[0]
-    first, last = pieces[0], pieces[-1]
-    if (len(form) < len(first) + len(last) or not form.startswith(first)
-            or not form.endswith(last)):
-        return False
-    at, end = len(first), len(form) - len(last)
-    for middle in pieces[1:-1]:
-        hit = form.find(middle, at, end)
-        if hit < 0:
-            return False
-        at = hit + len(middle)
-    return True
-
-
+# --- which failing case is the task's own: measured on HEAD's own run ---
+# Whether a case is new cannot be read off the test file's source: a label may be
+# assembled, looked up, built by a wrapper, or spelled again by an unrelated
+# literal, and every reading of the source met a shape it got wrong. So HEAD's own
+# test files are run with the same command in the same throwaway, and a failing
+# case is the task's own exactly when that run did not name it.
 def _label_forms(label):
     """The label as printed and the label before each ` (` it holds - a house
     FAIL line appends its detail that way, and a detail spanning lines leaves
@@ -718,318 +642,88 @@ def _label_forms(label):
     return [label] + [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
 
 
-# --- which calls name a case ---
-def _imports(tree):
-    """`(modules, names)` - `{alias: module}` for each `import M [as a]`, and
-    `{local: (module, name)}` for each `from M import n [as local]`."""
-    modules, names = {}, {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                modules[alias.asname or alias.name.split(".")[0]] = alias.name
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            for alias in node.names:
-                names[alias.asname or alias.name] = (node.module, alias.name)
-    return modules, names
+def _house_names(text):
+    return [ln[len("PASS "):].strip() if ln.startswith("PASS ")
+            else ln[len("FAIL "):].strip()
+            for ln in text.splitlines()
+            if (ln.startswith("PASS ") or ln.startswith("FAIL "))
+            and not any(m in ln for m in HOUSE_ESCAPES)]
 
 
-def _call_key(call, modules):
-    """How a call is keyed: `("name", f)` for a plain `f(...)`, `("mod", a, f)`
-    for `a.f(...)` on an imported module, `("attr", f)` for any other
-    `x.f(...)` - so a method wrapper is never matched by a module's function
-    that shares its name (`subprocess.run`), nor a plain wrapper by either."""
-    func = call.func
-    if isinstance(func, ast.Name):
-        return ("name", func.id)
-    if not isinstance(func, ast.Attribute):
-        return None
-    if isinstance(func.value, ast.Name) and func.value.id in modules:
-        return ("mod", func.value.id, func.attr)
-    return ("attr", func.attr)
+def _pytest_names(text):
+    return sorted(set(_PYTEST_VERBOSE.findall(text) + _PYTEST_REPORTED.findall(text)
+                      + [node for _k, node, _w in _PYTEST_FAILED.findall(text)]))
 
 
-def _call_arg(call, spec):
-    """The argument a `(position, keyword)` spec names in `call`, or None."""
-    at, word = spec
-    if len(call.args) > at and not any(isinstance(a, ast.Starred)
-                                       for a in call.args[:at + 1]):
-        return call.args[at]
-    return next((k.value for k in call.keywords if k.arg == word), None)
+def _unittest_names(text):
+    return sorted(set(_UNITTEST_VERBOSE.findall(text)
+                      + [name for _k, name in _UNITTEST_CASE.findall(text)]))
 
 
-def _wrappers(tree):
-    """`[(key, params, offset, node)]` - every function-like that could wrap a
-    case call: a def (a method, whose first parameter is `self` or `cls`, is
-    keyed as an attribute call and its positions shifted past that parameter)
-    and a lambda bound to a name."""
-    out = []
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            params = [a.arg for a in node.args.args]
-            method = bool(params) and params[0] in ("self", "cls")
-            out.append(((("attr" if method else "name"), node.name), params,
-                        1 if method else 0, node))
-        elif (isinstance(node, ast.Assign) and isinstance(node.value, ast.Lambda)
-              and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
-            out.append((("name", node.targets[0].id),
-                        [a.arg for a in node.value.args.args], 0, node.value))
-    return out
+NAME_READERS = {"house": _house_names, "pytest": _pytest_names,
+                "unittest": _unittest_names}
 
 
-def _sibling_callees(mod, sibling):
-    """The case calls a sibling module defines, or nothing when it cannot be read."""
-    text = sibling(mod) if sibling is not None else None
-    if not text:
-        return {}
-    try:
-        return _case_callees(ast.parse(text))
-    except (SyntaxError, ValueError):
-        return {}
+def run_names(text, runner):
+    """Every case a run of `runner` names, passing or failing, as printed: a
+    house PASS/FAIL label (a FAIL line's detail still on it), a pytest node id
+    from `-v` or `-rA` lines, a unittest test name from `-v` lines. The FAIL
+    lines alone name only what failed, which is why completeness is checked."""
+    reader = NAME_READERS.get(runner)
+    return reader(text) if reader is not None else []
 
 
-def _case_callees(tree, sibling=None):
-    """`{key: (position, keyword)}` - the calls in a suite whose argument at
-    `position`, or passed as `keyword`, names a case; keys as `_call_key`.
+def head_names(head, cmd, runner, new_files):
+    """`(names, problem)` - every case HEAD's own run named, or why that run
+    cannot say. Exactly one is None.
 
-    Derived from the file rather than listed: `check` and every body's own name
-    for it (the first parameter of a function handed to the harness's `stage`
-    or `run`) take the label first, the harness's `skip` takes it second, and
-    a wrapper - a def, a method, a lambda bound to a name - that passes one of
-    its parameters on to such a call at a label position names a case at that
-    parameter's position, followed until nothing new appears. A wrapper
-    imported from a sibling module (`from M import w`, or `import M` then
-    `M.w(...)`) is read from that module when `sibling(M)` returns its text.
-
-    WHAT THIS CANNOT SEE: a wrapper reached through a sibling's own imports
-    (one hop is read), a label assembled from a parameter (`'the rule ' +
-    name`), or a wrapper stored in a container or built by a factory."""
-    modules, names = _imports(tree)
-    harness = set(a for a, m in modules.items() if m == "_harness")
-    callees = {("name", "check"): (0, "label"), ("name", "skip"): (1, "label")}
-    for alias in harness:
-        callees[("mod", alias, "skip")] = (1, "label")
-    for mod in sorted(set(list(modules.values()) + [m for m, _n in names.values()])):
-        theirs = _sibling_callees(mod, sibling)
-        for local, (module, name) in names.items():
-            if module == mod and ("name", name) in theirs:
-                callees.setdefault(("name", local), theirs[("name", name)])
-        for alias, module in modules.items():
-            for key, spec in (theirs.items() if module == mod else ()):
-                if key[0] == "name":
-                    callees.setdefault(("mod", alias, key[1]), spec)
-    wrappers = _wrappers(tree)
-    defs = dict((key[1], params) for key, params, _o, _n in wrappers)
-    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
-        key = _call_key(call, modules)
-        runs = (key == ("name", "stage")
-                or (key is not None and key[0] == "mod" and key[1] in harness
-                    and key[2] in ("stage", "run")))
-        for arg in (call.args if runs else ()):
-            params = defs.get(arg.id) if isinstance(arg, ast.Name) else None
-            if params:
-                callees.setdefault(("name", params[0]), (0, "label"))
-    grew = True
-    while grew:
-        grew = False
-        for key, params, offset, node in wrappers:
-            if key in callees:
-                continue
-            for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
-                spec = callees.get(_call_key(call, modules))
-                arg = _call_arg(call, spec) if spec is not None else None
-                if isinstance(arg, ast.Name) and arg.id in params[offset:]:
-                    callees[key] = (params.index(arg.id) - offset, arg.id)
-                    grew = True
-                    break
-    return callees
+    `head` is `{"code", "text", "problem"}`. A run naming FEWER cases than its
+    tally collected - `pytest -q`, unittest without `-v` print only failures -
+    cannot tell an existing case from a new one, so it fails closed. A run with
+    no tally at all is read as naming nothing only when every declared test
+    file is new at HEAD, so there was nothing there to run."""
+    if head is None:
+        return None, "HEAD's own run was not made"
+    if head.get("problem"):
+        return None, "HEAD's own run could not be made: %s" % (head["problem"],)
+    tally = read_tally(head["text"], cmd)
+    if tally is None:
+        if new_files:
+            return [], None
+        return None, ("HEAD's own run printed no tally this command reads, so what "
+                      "it holds cannot be listed: %s"
+                      % (_decisive_line(head["text"], None),))
+    if tally["runner"] != runner:
+        return None, ("HEAD's own run was read as %s and the task's as %s, so their "
+                      "cases cannot be compared" % (tally["runner"] or "mixed",
+                                                     runner))
+    names = run_names(head["text"], runner)
+    if len(names) < tally["collected"]:
+        return None, ("HEAD's own run named %d case(s) and collected %d, so an "
+                      "existing case cannot be told from a new one - run the "
+                      "command so that every case is named (pytest -rA or -v, "
+                      "unittest -v)" % (len(names), tally["collected"]))
+    return names, None
 
 
-def _loop_rows(node, assigned):
-    """The literal rows a `for` loop or comprehension iterates, when it iterates
-    a literal list or tuple, or a name bound to one."""
-    if isinstance(node.iter, (ast.List, ast.Tuple)):
-        return list(node.iter.elts)
-    tables = assigned.get(node.iter.id, []) if isinstance(node.iter, ast.Name) else []
-    return [row for t in tables if isinstance(t, (ast.List, ast.Tuple)) for row in t.elts]
+def _held_by_head(case, heads, runs):
+    """Whether HEAD's own run named `case`, a failing case of the task's run.
 
-
-def _bound_values(tree):
-    """`{name: [value nodes]}` - what a name a case call is handed was bound to:
-    an assignment `NAME = value`, and a loop over literal rows whose target is
-    the name or unpacks to it."""
-    assigned = {}
-    for node in ast.walk(tree):
-        for target in (node.targets if isinstance(node, ast.Assign) else ()):
-            if isinstance(target, ast.Name):
-                assigned.setdefault(target.id, []).append(node.value)
-    out = dict((k, list(v)) for k, v in assigned.items())
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.For, ast.comprehension)):
-            continue
-        for row in _loop_rows(node, assigned):
-            if isinstance(node.target, ast.Name):
-                out.setdefault(node.target.id, []).append(row)
-            elif (isinstance(node.target, ast.Tuple)
-                  and isinstance(row, (ast.List, ast.Tuple))
-                  and len(row.elts) == len(node.target.elts)):
-                for name, item in zip(node.target.elts, row.elts):
-                    if isinstance(name, ast.Name):
-                        out.setdefault(name.id, []).append(item)
-    return out
-
-
-def _case_label_nodes(tree, sibling=None):
-    """The nodes that name a case, by identity: each case call's label
-    argument, and - when that argument is a name - what the name was bound to."""
-    callees = _case_callees(tree, sibling)
-    modules, _names = _imports(tree)
-    bound = _bound_values(tree)
-    out = set()
-    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
-        spec = callees.get(_call_key(call, modules))
-        arg = _call_arg(call, spec) if spec is not None else None
-        if arg is None:
-            continue
-        out.add(id(arg))
-        if isinstance(arg, ast.Name):
-            out.update(id(v) for v in bound.get(arg.id, ()))
-    return out
-
-
-# --- which literal a label was written from ---
-def _source_view(text, sibling=None):
-    """`{"text", "labels", "others"}` for one copy of a test file: the fixed
-    pieces of every literal it spells, split by ROLE - the ones that name a
-    case (`_case_label_nodes`), and every other one - or both None when it is
-    not Python. `sibling(module)` is the text of a sibling test module."""
-    text = text or ""
-    try:
-        tree = ast.parse(text)
-    except (SyntaxError, ValueError):
-        return {"text": text, "labels": None, "others": None}
-    naming = _case_label_nodes(tree, sibling)
-    labels, others = set(), set()
-    for node in ast.walk(tree):
-        pieces = _fold(node)
-        if pieces and _names_a_label(pieces):
-            (labels if id(node) in naming else others).add(tuple(pieces))
-    return {"text": text, "labels": sorted(labels), "others": sorted(others - labels)}
-
-
-def _closest_in(templates, forms):
-    """Within one role: a literal with no open part that EQUALS a form, the
-    longest such form winning; else the templates with the most fixed text."""
-    exact = set(p[0] for p in templates if len(p) == 1)
-    matched = [form for form in forms if form in exact]
-    if matched:
-        return [(max(matched, key=len),)]
-    scored = [(len("".join(p)), p) for p in templates
-              if any(_renders(list(p), form) for form in forms)]
-    if not scored:
-        return []
-    best = max(score for score, _p in scored)
-    return [p for score, p in scored if score == best]
-
-
-def _closest_literals(view, label):
-    """The literals of `view` a label was most plausibly written from, as
-    tuples of fixed pieces. Empty when none renders it; None when the file is
-    not Python.
-
-    ROLE FIRST: a literal that is a case call's label argument outranks every
-    other literal, so a constant or an expected-output string the task adds -
-    even one spelling the printed FAIL line verbatim, detail included - never
-    outranks the label argument that names the case. Other literals are read
-    only when no label argument renders the label (a label taken from a
-    table). Within a role, a literal equal to the label or to the label with
-    its detail set aside outranks any template, the longest such form wins -
-    so a new label holding a parenthesis still beats an older, shorter one -
-    and only then does the template with the most fixed text decide."""
-    if view["labels"] is None:
-        return None
-    forms = _label_forms(label)
-    return _closest_in(view["labels"], forms) or _closest_in(view["others"], forms)
-
-
-def _carries_label(text, label):
-    """Whether a test file's source spells `label`: some literal in it renders
-    the whole label, or - for a file that is not Python - it holds the text."""
-    if not text or not label:
-        return False
-    view = _source_view(text)
-    closest = _closest_literals(view, label)
-    if closest is None:
-        return any(form in text for form in _label_forms(label))
-    return bool(closest)
-
-
-def _standing(wt, head, name):
-    """`added` / `at-head` / `absent` - case `name` in one test file's two copies.
-
-    A single token is a whole name. A label is judged by the working tree's
-    closest literal, and the task added it when HEAD's copy holds none of the
-    closest literals under EITHER ranking - role first (`_closest_literals`)
-    or role blind, every literal in one pool. A case whose label the role
-    derivation missed would otherwise be judged by whichever label template
-    the task adds that happens to fit it; when the two rankings disagree, the
-    answer fails closed. HEAD is never asked whether some looser literal of its
-    own renders the label too - a generic message template there would refuse
-    every new case whose label it happens to fit.
-
-    WHAT THIS CANNOT SEE. A label that no literal in HEAD spells even in part -
-    read from a file, computed, assembled from values alone - has no literal
-    at HEAD, so a literal the task adds that renders it reads as the task's
-    own. And a label no case call's argument spells and no name bound to one
-    holds - a dict value, an attribute, a call's result - is judged only among
-    the other literals under both rankings, where a longer one the task adds
-    (a verbatim FAIL line, detail included) outranks the literal it came from."""
-    if len(name.split()) <= 1:
-        in_wt, at_head = _names(wt["text"], name), _names(head["text"], name)
-    elif wt["labels"] is None or head["labels"] is None:
-        forms = _label_forms(name)
-        in_wt = any(form in wt["text"] for form in forms)
-        at_head = any(form in head["text"] for form in forms)
-    else:
-        closest = _closest_literals(wt, name)
-        blind = _closest_in(wt["labels"] + wt["others"], _label_forms(name))
-        held = set(head["labels"]) | set(head["others"])
-        in_wt = bool(closest)
-        at_head = (any(lit in held for lit in closest + blind) if closest
-                   else bool(_closest_literals(head, name)))
-    if at_head:
-        return "at-head"
-    return "added" if in_wt else "absent"
-
-
-def _sibling_reader(root, rel, read):
-    """`sibling(module)` for `rel`: the text `read` gives for `module`'s file
-    in the same directory, or None."""
-    where = rel.rsplit("/", 1)[0] + "/" if "/" in rel else ""
-    return lambda module: read(root, where + module.replace(".", "/") + ".py")
-
-
-def _test_views(root, tests):
-    """`[(wt_view, head_view)]` - each declared test file, parsed once, with its
-    sibling modules read from the same copy of the tree."""
-    return [(_source_view(_wt_text(root, rel), _sibling_reader(root, rel, _wt_text)),
-             _source_view(_head_text(root, rel),
-                          _sibling_reader(root, rel, _head_text)))
-            for rel in tests]
-
-
-def _added_standing(views, name):
-    """The best standing any declared test file gives case `name`."""
-    got = [_standing(wt, head, name) for wt, head in views]
-    for word in ("added", "at-head"):
-        if word in got:
-            return word
-    return "absent"
-
-
-def _added_by_task(root, tests, name):
-    """Whether case `name` - an id, or a house label with no id - is one the
-    task added to a declared test file."""
-    return _added_standing(_test_views(root, tests), name) == "added"
+    A name printed identically by both runs is HEAD's. A house FAIL line
+    carries its detail, so a case failing now that passed at HEAD appears with
+    text HEAD never printed; it is HEAD's when it shares a label form with a
+    name HEAD printed that the task's run did not print again - a name the
+    task's run repeats is accounted for by that repeat, which is what keeps a
+    new label beside an older, shorter one (`the value (as read)` beside `the
+    value`) new. An id-led house label is HEAD's when HEAD printed that id."""
+    label = case.get("label") or ""
+    if label in heads:
+        return True
+    if case.get("id") and case.get("why") == "house FAIL":
+        if any(house_case_id(h) == case["id"] for h in heads):
+            return True
+    forms = set(_label_forms(label))
+    return any(forms & set(_label_forms(h)) for h in heads if h not in runs)
 
 
 def _is_named(failure, name):
@@ -1039,36 +733,32 @@ def _is_named(failure, name):
     return name == failure.get("id") or name in _label_forms(label)
 
 
-def _case_key(failure):
-    return failure["id"] or failure["label"]
-
-
-def own_failures(root, tests, failing, cases):
+def own_failures(heads, runs, failing, cases):
     """`(own, refused)` - the failing cases that are the TASK'S OWN and failed an
     assertion, and `[(name, "at-head"|"absent")]` for each `--case` name that
-    is not one of the task's own cases.
+    is not one of them.
 
-    Own means a case the task ADDED: its id - or, for a house label with no
-    id-shaped lead, its whole label - is carried by the working tree's copy of a
-    declared test file and not by HEAD's copy of it. `--case` narrows to the
-    cases it names, by id or by full label, and is held to the same test,
-    because the flag is chosen by the party whose proof is being checked - an
-    existing case going red because its test file was edited to match other work
-    is not a proof about this task's test, whoever names it. A name is refused
-    by the same match that decides the proof: resolved to the failing cases it
-    names, and judged by their key, so a pytest nodeid is judged as its test."""
-    views = _test_views(root, tests)
+    `heads` is every case HEAD's own run named and `runs` every case the
+    task's run named. Own means a case HEAD's run did not name
+    (`_held_by_head`). `--case` narrows to the failing cases it names, by id
+    or by full label, and each is held to the same measurement, because the
+    flag is chosen by the party whose proof is being checked."""
+    heads, runs = set(heads), set(runs)
+    held = [f for f in failing if _held_by_head(f, heads, runs)]
     refused = []
     for name in cases:
-        keys = [_case_key(f) for f in failing if _is_named(f, name)] or [name]
-        got = [_added_standing(views, key) for key in keys]
-        if "added" not in got:
-            refused.append((name, "at-head" if "at-head" in got else "absent"))
-    asserting = [f for f in failing if f["assertion"] and _case_key(f)]
+        named = [f for f in failing if _is_named(f, name)]
+        if not named:
+            refused.append((name, "at-head" if any(
+                name == h or name in _label_forms(h) or name == house_case_id(h)
+                for h in heads) else "absent"))
+        elif all(f in held for f in named):
+            refused.append((name, "at-head"))
+    asserting = [f for f in failing if f["assertion"] and (f["id"] or f["label"])
+                 and f not in held]
     if cases:
         asserting = [f for f in asserting if any(_is_named(f, c) for c in cases)]
-    return ([f for f in asserting if _added_standing(views, _case_key(f)) == "added"],
-            refused)
+    return asserting, refused
 
 
 def _names_shared_tree(cmd, root, project):
@@ -1232,21 +922,22 @@ def _refused_clause(refused):
     absent = [name for name, why in refused if why != "at-head"]
     clause = ""
     if at_head:
-        clause += ("; --case %s names a case HEAD's test file already carries, "
+        clause += ("; --case %s names a case HEAD's own run already named, "
                    "so it is not the task's" % (", ".join(at_head),))
     if absent:
-        clause += ("; --case %s names no case a declared test file in the "
-                   "working tree carries" % (", ".join(absent),))
+        clause += ("; --case %s names no failing case of this run"
+                   % (", ".join(absent),))
     return clause
 
 
 def red_verdict(run, ctx):
     """`(exit, verdict, block, note)` - what the run in the throwaway proved.
 
-    `run` is `{"cmd", "code", "text", "problem", "second"}`; `second` is the
-    re-run with the working tree's implementation copied in, when one was made.
-    `ctx` is `{"root", "implementation", "tests", "cases", "symbols",
-    "dropped"}`."""
+    `run` is `{"cmd", "code", "text", "problem", "second", "head"}`; `second`
+    is the re-run with the working tree's implementation copied in, when one
+    was made, and `head` the run of HEAD's own test files, made when the
+    task's run is red. `ctx` is `{"root", "implementation", "tests", "cases",
+    "symbols", "dropped", "new_files"}`."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
@@ -1270,10 +961,20 @@ def red_verdict(run, ctx):
             "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
     failing = (failing_cases(text, tally["runner"])
                if tally is not None and tally["runner"] is not None else [])
-    how = ("named by --case and absent from HEAD's test files" if ctx["cases"]
-           else "added by the task, absent from HEAD's test files")
+    how = ("named by --case and not named by HEAD's own run" if ctx["cases"]
+           else "not named by HEAD's own run of its test files")
     if verdict == V_RED:
-        own, refused = own_failures(ctx["root"], ctx["tests"], failing, ctx["cases"])
+        heads, head_problem = head_names(run.get("head"), run["cmd"],
+                                         tally["runner"], ctx.get("new_files"))
+        if head_problem is not None:
+            return E_CANNOT_PROVE, verdict, {
+                "status": RED_CANNOT, "at": at,
+                "basis": "%s with failing cases %s, but whether any is the task's "
+                         "own cannot be measured: %s - %s%s"
+                         % (where, _ids(failing), head_problem, line,
+                            env_clause)}, None
+        own, refused = own_failures(heads, run_names(text, tally["runner"]),
+                                    failing, ctx["cases"])
         refused_clause = _refused_clause(refused)
         if own:
             return E_PROVED, verdict, {
@@ -1340,6 +1041,35 @@ def red_verdict(run, ctx):
                                          else "", env_clause)}, None
 
 
+def _put_back_head(root, path, rels):
+    """Put HEAD's copy of each of `rels` back in the throwaway, removing one
+    HEAD does not have."""
+    for rel in rels:
+        dst = os.path.join(path, *rel.split("/"))
+        text = _head_text(root, rel)
+        if text is None:
+            if os.path.isfile(dst):
+                os.remove(dst)
+            continue
+        with open(dst, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+
+def _head_run(root, path, tests, cmd, deadline, timeout, env):
+    """`{"code", "text", "problem", "seconds"}` - the same command over HEAD's
+    own test files, in the same throwaway, within what is left of the deadline."""
+    _put_back_head(root, path, tests)
+    left = _left(deadline)
+    started = time.time()
+    if left < 1:
+        code, text, problem = None, "", ("the run timed out: no time was left of "
+                                         "the %s-second deadline" % (timeout,))
+    else:
+        code, text, problem = _run_in(path, cmd, left, env)
+    return {"code": code, "text": text, "problem": problem,
+            "seconds": round(time.time() - started, 2)}
+
+
 def _wants_second(code, text, symbols, cmd=None):
     """Whether a second run is owed: a collection error some named symbol's
     missing-symbol error could explain."""
@@ -1360,7 +1090,7 @@ def _red_scope(args, cmd, deadline):
         return None, ("red takes its scope off the plan: pass --manifest and "
                       "--task, and no --files")
     if not 1 <= args.timeout <= MAX_TIMEOUT:
-        return None, ("--timeout %s is outside 1..%d: one deadline covers both runs, "
+        return None, ("--timeout %s is outside 1..%d: one deadline covers every run, "
                       "and it must leave the host's %d-second Bash limit room for "
                       "the teardown, or the host kills the helper before its own "
                       "cleanup runs" % (args.timeout, MAX_TIMEOUT, HOST_BASH_LIMIT))
@@ -1431,7 +1161,8 @@ def run_red(args, cmd, out):
             json.dump({"pid": os.getpid()}, fh)
     except OSError:
         pass
-    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None}
+    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
+           "head": None}
     copied = []
     previous = _arm()
     try:
@@ -1455,6 +1186,10 @@ def run_red(args, cmd, out):
                 else:
                     code2, text2, problem2 = _run_in(path, cmd, left, env)
                 run["second"] = {"code": code2, "text": text2, "problem": problem2}
+            if (run["problem"] is None and run["code"] is not None
+                    and classify_run(run["code"], run["text"], cmd)[0] == V_RED):
+                run["head"] = _head_run(root, path, scope["tests"], cmd, deadline,
+                                        args.timeout, env)
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -1462,7 +1197,8 @@ def run_red(args, cmd, out):
         exit_code, verdict, block, note = red_verdict(run, {
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
-            "symbols": args.introduces, "dropped": dropped, "naming": naming})
+            "symbols": args.introduces, "dropped": dropped, "naming": naming,
+            "new_files": all(_head_text(root, rel) is None for rel in scope["tests"])})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
@@ -1476,7 +1212,12 @@ def run_red(args, cmd, out):
                        "outputTail": run["text"].splitlines()[-20:],
                        "second": None if run["second"] is None else
                        {"exit": run["second"]["code"],
-                        "outputTail": run["second"]["text"].splitlines()[-20:]}}}
+                        "outputTail": run["second"]["text"].splitlines()[-20:]},
+                       "head": None if run["head"] is None else
+                       {"exit": run["head"]["code"],
+                        "seconds": run["head"]["seconds"],
+                        "problem": run["head"]["problem"],
+                        "outputTail": run["head"]["text"].splitlines()[-20:]}}}
     if args.as_json:
         out(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -1522,7 +1263,7 @@ def build_parser():
                              "or collection error counts as red only when the "
                              "task introduces a symbol the run names")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
-                        help="seconds the red run may take; `red` only")
+                        help="seconds every run `red` makes may take together; `red` only")
     parser.add_argument("--case", action="append", default=[],
                         help="the id or full label of a case the task added; "
                              "`red` only - a red "

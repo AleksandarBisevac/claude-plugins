@@ -333,6 +333,53 @@
         "test_stamp_verification sr85",
         "test_stamp_verification sr86"
       ]
+    },
+    {
+      "id": "P82.5-fye",
+      "title": "red-first knows which cases HEAD already has by running HEAD's own suite, not by reading literals",
+      "status": "in_progress",
+      "description": "Four review rounds each found a new corner in deciding \"is this failing case the task's own\" from the SOURCE of the test file (literal ranking, templates, roles, wrappers, bound names), and P82.4 still names limits that can produce a false proved. Replace the guess with a measurement. The throwaway tree at HEAD already exists; before copying the task's test files over it, run the SAME test command there on HEAD's own test files and record every case the runner names in that run, passing or failing (house PASS/FAIL labels, with a FAIL line's detail set aside as today; pytest node ids under -rA or -v; unittest test names). A failing case in the task's run is the task's own exactly when HEAD's own run did not name it. `--case` is checked against the same set. Fail closed: if HEAD's own run cannot be made or names no cases while its tally is non-empty, the verdict is could-not-prove with that reason. Remove the static literal-ranking machinery (_closest_literals, roles, _case_callees, templates, bound names) that this replaces - one mechanism, not two - and keep only what the measurement still needs. Keep every existing case that states a verdict (sr50-sr88 and the rest) passing or rewritten to the measured rule with a reason; the reviewer probes probe5-probe11 must all answer correctly. Record the cost of the extra run (timed twice with a gap). Update the guide, CHANGELOG, audit-executor.md and execute-task.md.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a label held only as a dict value, edited to fail beside an added verbatim FAIL-line literal, is proved"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T16:43:10Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

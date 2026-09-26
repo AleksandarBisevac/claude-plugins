@@ -869,9 +869,9 @@ def _final_pass_cases(check):
     two = _house_test("import mine", [("old1", "mine.v == 2"), ("new1", "True")])
     root_c, man_c = _red_repo("stamp-red-caseold-", two)
     code_c, got_c = _red(root_c, man_c, [py, "tests/test_mine.py"], "--case", "old1")
-    check("sr36 --case cannot name a case HEAD's test file already carries: the "
+    check("sr36 --case cannot name a case HEAD's own run already named: the "
           "flag is chosen by the party being checked, so it is held to the same "
-          "absent-from-HEAD test as a derived id: exit=%r %r"
+          "measurement as a derived case: exit=%r %r"
           % (code_c, (got_c.get("redFirst") or {}).get("basis", "")[-160:]),
           code_c != M.E_PROVED
           and "old1" in (got_c.get("redFirst") or {}).get("basis", ""))
@@ -1106,7 +1106,7 @@ def _label_cases(check):
           runs[_NEW_LABEL][0] == M.E_PROVED
           and runs["the"][0] == M.E_CANNOT_PROVE
           and runs[_OLD_LABEL][0] == M.E_CANNOT_PROVE
-          and "HEAD's test file already carries" in json.dumps(runs[_OLD_LABEL][1]))
+          and "HEAD's own run already named" in json.dumps(runs[_OLD_LABEL][1]))
 
     wt_id = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1"),
                           ("'nv2 the new value is two'", "mine.v == 2")])
@@ -1132,31 +1132,10 @@ def _label_id_cases(check):
               if M.house_case_id(lb) != _harness.case_id(lb)],),
           all(M.house_case_id(lb) == _harness.case_id(lb) for lb in labels))
 
-    label = "the value is read as 3 (saw 3)"
-    sources = {
-        "joined": "check('the value ' + 'is read as %r' % (x,), ok)\n",
-        "wrapped": "check('the value is '\n      'read as %d' % (x,), ok)\n",
-        "a prefix only": "check('the value', ok)\n",
-        "no fixed words": "print('%s %s (%s)' % (a, b, c))\n",
-        "a loop's label": "check('%s is read as %r' % (name, x), ok)\n",
-        "another label": "check('the value is kept as %r' % (x,), ok)\n",
-        "not python": "the value is read as 3\n(",
-    }
-    got = dict((k, M._carries_label(v, label)) for k, v in sources.items())
-    check("sr54 a label is carried by a literal that renders it WHOLE - joined "
-          "with `+`, wrapped, placeholders read as any text, the FAIL line's "
-          "detail set aside, a loop's leading value included - and not by a "
-          "literal that renders only its start, nor by one with no fixed word, "
-          "which renders any label: %r" % (got,),
-          got == {"joined": True, "wrapped": True, "a prefix only": False,
-                  "no fixed words": False, "a loop's label": True,
-                  "another label": False, "not python": True})
-
-
-# --- only the runner that ran; the literal that renders a label most closely ---
+# --- only the runner that ran; labels that loose literals happen to fit ---
 # A passing house case may print a captured unittest transcript, `Ran N tests`
 # line and all; a test file may hold a loose literal (`'%dx%d'`) or a generic
-# message template (`'%s is %s'`) that renders labels it was never written for;
+# message template (`'%s is %s'`) that fits labels it was never written for;
 # and a FAIL line's detail may span lines, leaving ` (` with no closing paren.
 _TRANSCRIPT = ("TRANSCRIPT = 'FAIL: test_new_rule (test_u.T)\\n----\\n"
                "Ran 3 tests in 0.001s\\n\\nFAILED (failures=1)'",
@@ -1208,16 +1187,15 @@ def _specific_cases(check):
     code, said = _label_red("stamp-red-loose-", ["VIEW = '%dx%d' % (1280, 720)"],
                             new)
     check("sr57 a genuinely new sentence case PROVES although HEAD's test file "
-          "holds a loose literal (`'%%dx%%d'`) whose only fixed text is one "
-          "letter the label also holds: exit=%r %s" % (code, said[:300]),
+          "holds a loose literal (`'%%dx%%d'`) the label happens to fit: HEAD's "
+          "own run never printed that label: exit=%r %s" % (code, said[:300]),
           code == M.E_PROVED and "the fix sets the next value" in said)
     code_g, said_g = _label_red(
         "stamp-red-generic-", ["check('%s is %s' % ('a', 'b'), True)"],
         [("'the next value is %r once fixed' % (mine.v,)", "mine.v == 2")])
-    check("sr58 ...and although HEAD holds a generic template (`'%%s is %%s'`) "
-          "that renders it too: a label written from a template of its own is "
-          "judged by the MOST SPECIFIC template that renders it, which HEAD does "
-          "not hold: exit=%r %s" % (code_g, said_g[:300]),
+    check("sr58 ...and although HEAD holds a case whose label template "
+          "(`'%%s is %%s'`) would fit it: that case printed its own label, not "
+          "this one: exit=%r %s" % (code_g, said_g[:300]),
           code_g == M.E_PROVED and "the next value is 1 once fixed" in said_g)
     base = _label_suite([("'the new pass is kept'", "True")])
     multi = "'line one\\nline two'"
@@ -1232,7 +1210,8 @@ def _specific_cases(check):
     code_e, got_e = _red(root, man, [sys.executable, "tests/test_mine.py"])
     check("sr59 an EXISTING case whose condition was edited to go red is not "
           "the task's own, though its detail spans lines and the working tree "
-          "added a loose literal that renders its label: exit=%r %s"
+          "added a loose literal that fits its label - HEAD's own run named it: "
+          "exit=%r %s"
           % (code_e, json.dumps(got_e.get("redFirst"))[:300]),
           code_e == M.E_CANNOT_PROVE)
     head_m = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")])
@@ -1245,58 +1224,16 @@ def _specific_cases(check):
           "lines - the printed line keeps ` (` and loses the closing paren: "
           "exit=%r %s" % (code_m, json.dumps(got_m.get("redFirst"))[:300]),
           code_m == M.E_PROVED)
-    rows = {
-        "a one-letter template": ("VIEW = '%dx%d' % (1280, 720)\n",
-                                  "the box is 3x4 wide", False),
-        "a generic template": ("MSG = '%s is %s' % (a, b)\n",
-                               "the value is read", True),
-        "a detail left open": ("check('the value is read', ok)\n",
-                               "the value is read (Traceback (most recent", True),
-        "fixed text past the end": ("check('%s is refused' % k, ok)\n",
-                                    "the thing is refused later", False),
-    }
-    got = dict((k, M._carries_label(src, lb)) for k, (src, lb, _w) in rows.items())
-    check("sr61 a literal whose fixed text is a lone letter renders no label; a "
-          "generic one still renders what it spells, anchored at both ends; a "
-          "detail that never closes is set aside: %r" % (got,),
-          got == dict((k, w) for k, (_s, _l, w) in rows.items()))
-
-
-def _linear_cases(check):
-    code = "\n".join([
-        "import sys", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
-        "import _harness, _loader",
-        "M = _loader.load_script('stamp-verification.py', modname='sv_linear')",
-        "src = \"check('\" + '%s ' * 12 + \"zq' % t, ok)\\n\"",
-        "print(M._carries_label(src, ' '.join(['w'] * 60)))"])
-    try:
-        proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, universal_newlines=True,
-                              timeout=60)
-        out = proc.stdout.strip()
-    except subprocess.TimeoutExpired:
-        out = "timed out"
-    check("sr62 a template of many placeholders against a long label is decided "
-          "in linear time - the red run's --timeout does not bound this step, so "
-          "backtracking would hang the helper after the run: %r" % (out[-200:],),
-          out == "False")
-
-
 def _nodeid_cases(check):
-    root = _seeded_repo("stamp-nodeid-")
     rel = "tests/test_x.py"
-    os.makedirs(os.path.join(root, "tests"))
-    _write(os.path.join(root, rel), "def test_old():\n    assert True\n")
-    _git(root, "add", rel)
-    _git(root, "commit", "-q", "-m", "t")
-    _write(os.path.join(root, rel), "def test_old():\n    assert True\n\n\n"
-           "def test_a():\n    assert False\n")
     failing = [{"id": "test_a", "label": rel + "::test_a", "assertion": True,
                 "why": "assert False"}]
-    own, refused = M.own_failures(root, [rel], failing, [rel + "::test_a"])
+    own, refused = M.own_failures([rel + "::test_old"],
+                                  [rel + "::test_old", rel + "::test_a"],
+                                  failing, [rel + "::test_a"])
     check("sr63 --case naming a pytest failure by its full nodeid is judged by "
-          "the same match as the proof: the case is the task's own, and it is "
-          "not also reported as one HEAD already carries: %r"
+          "the same measurement as the proof: HEAD's own run did not name it, "
+          "so it is the task's own and is not reported as one HEAD holds: %r"
           % ((_shape(own), refused),),
           [f["id"] for f in own] == ["test_a"] and not refused)
 
@@ -1314,7 +1251,7 @@ def _wording_cases(check):
           and "[--case <id or full label of the case you added>]" in brief)
 
 
-# --- an exact literal first; a label built at run time; two runners' tallies ---
+# --- labels spelled twice or built at run time; two runners' tallies ---
 _UNIT_HEAD = "\n".join([
     "import os, sys, unittest", _PATH_LINE, "import mine",
     "class T(unittest.TestCase):",
@@ -1349,8 +1286,7 @@ def _exact_cases(check):
     code, basis = _suite_red("stamp-red-exact-", head, wt)
     check("sr65 an EXISTING case edited to go red is not the task's own when the "
           "working tree adds a case whose label template spells the edited "
-          "case's printed FAIL line: within one role, a placeholder-free "
-          "literal equal to the label outranks any template: "
+          "case's printed FAIL line - HEAD's own run named the edited case: "
           "exit=%r %s" % (code, basis[:300]),
           code == M.E_CANNOT_PROVE)
     head_b = _label_suite([("'the ' + KIND + ' is read'", "mine.v >= 1")],
@@ -1360,8 +1296,8 @@ def _exact_cases(check):
                                "MSG = '%s is %s' % ('a', 'b')"])
     code_b, basis_b = _suite_red("stamp-red-runtime-", head_b, wt_b)
     check("sr66 an EXISTING case whose label is built at run time is not the "
-          "task's own when the working tree adds a generic template: the "
-          "run-time label is a template of its own, open where the value goes: "
+          "task's own when the working tree adds a generic template - HEAD's "
+          "own run printed the label it builds: "
           "exit=%r %s" % (code_b, basis_b[:300]),
           code_b == M.E_CANNOT_PROVE)
     head_p = _label_suite([("'the value'", "mine.v >= 1")])
@@ -1369,22 +1305,10 @@ def _exact_cases(check):
                          ("'the value (as read)'", "mine.v == 2")])
     code_p, basis_p = _suite_red("stamp-red-paren-", head_p, wt_p)
     check("sr67 THE ALLOW CASE for sr65: a genuinely new label holding a "
-          "parenthesis still proves beside a shorter exact literal HEAD holds - "
-          "the longest exact match wins: exit=%r %s" % (code_p, basis_p[:300]),
+          "parenthesis still proves beside an older, shorter label HEAD's run "
+          "printed, because the task's run prints that older label again: "
+          "exit=%r %s" % (code_p, basis_p[:300]),
           code_p == M.E_PROVED and "the value (as read)" in basis_p)
-    rows = {
-        "an f-string": ("check(f'the {kind} is read', ok)\n", True),
-        "str.format": ("check('the {} is read'.format(kind), ok)\n", True),
-        "a value joined in": ("check('the ' + kind + ' is read', ok)\n", True),
-        "a value on both sides": ("check(a + b, ok)\n", False),
-    }
-    got = dict((k, M._carries_label(src, "the next value is read"))
-               for k, (src, _w) in rows.items())
-    check("sr68 a label built at run time - an f-string field, a .format field, "
-          "a value joined with + - is a template open where the value goes: %r"
-          % (got,), got == dict((k, w) for k, (_s, w) in rows.items()))
-
-
 def _command_cases(check):
     echoed = ("FAIL: test_new_rule (test_u.T)\n----\nRan 3 tests in 0.001s\n\n"
               "FAILED (failures=1)\nFAIL %s\n" % (_OLD_LABEL,)
@@ -1419,11 +1343,10 @@ def _mixed_cases(check):
           code_c == M.E_CANNOT_PROVE and "test_old" in basis_c)
 
 
-# --- a case's label literal outranks every other literal ---
-# A literal the task adds that spells an existing case's printed FAIL line,
-# detail and all - a test asserting on the harness's own output - is longer than
-# the exact label beside it; what makes the label the case's is that it is the
-# argument naming the case, directly or through a suite's own wrapper.
+# --- a literal spelling an existing case's FAIL line verbatim ---
+# A test asserting on the harness's own output may spell an existing case's
+# printed FAIL line, detail and all; the case stays HEAD's, directly or named
+# through a suite's own wrapper.
 def _wrapped_suite(label_src, cond, extra=()):
     """A suite naming its case through a wrapper, the way most suites here do:
     `_expect(name, ok)` passes `name` on to `check`, with a detail."""
@@ -1434,7 +1357,7 @@ def _wrapped_suite(label_src, cond, extra=()):
     return suite
 
 
-def _role_cases(check):
+def _verbatim_cases(check):
     verbatim = "EXPECT = 'the next value is read (saw 1)'"
     head = _label_suite([("'the next value is read'", "mine.v >= 1")])
     wt = _label_suite([("'the next value is read'", "mine.v == 2")],
@@ -1442,8 +1365,8 @@ def _role_cases(check):
     code, basis = _suite_red("stamp-red-verbatim-", head, wt)
     check("sr72 an EXISTING case edited to go red is not the task's own when the "
           "working tree adds a literal spelling its printed FAIL line VERBATIM, "
-          "detail included: the case's own label argument outranks any other "
-          "literal, however long: exit=%r %s" % (code, basis[:300]),
+          "detail included - HEAD's own run named the case, whatever the "
+          "source holds: exit=%r %s" % (code, basis[:300]),
           code == M.E_CANNOT_PROVE)
     head_w = _wrapped_suite("'the next value is read'", "mine.v >= 1")
     wt_w = _wrapped_suite("'the next value is read'", "mine.v == 2",
@@ -1460,34 +1383,13 @@ def _role_cases(check):
         "    check(lb, mine.v == want)"])
     code_t, basis_t = _suite_red("stamp-red-table-", head_t, wt_t)
     check("sr74 THE ALLOW CASE for sr72: a new case whose label comes from a "
-          "table rather than a label argument still proves - other literals are "
-          "consulted when no label literal renders the label: exit=%r %s"
+          "table still proves - HEAD's own run never printed it: exit=%r %s"
           % (code_t, basis_t[:300]),
           code_t == M.E_PROVED and "the table row is read" in basis_t)
-    src = "\n".join([
-        "import _harness", "def body(record):", "    record('the r label', True)",
-        "    _harness.skip(record, 'the s label', 'm', True)",
-        "def _expect(name, ok):", "    check(name, ok)",
-        "def _twice(tag, name):", "    _expect(name, tag)",
-        "_expect('the e label', True)", "_twice('the t tag', 'the t label')",
-        "_harness.run(body)"])
-    got = _role_labels(src)
-    check("sr75 the calls that name a case are derived from the suite: `check`, "
-          "the harness's `skip` at its second argument, a body's own name for "
-          "the check it is handed, and wrappers followed through more than one "
-          "hop - and only the label position is a label: %r" % (got,),
-          got == ["the e label", "the r label", "the s label", "the t label"])
-
-
-def _role_labels(src):
-    """The fixed text of every label-role literal `_source_view` finds in `src`."""
-    return sorted("".join(p) for p in M._source_view(src)["labels"])
-
-
-# --- a disagreement between the rankings fails closed; wrappers read whole ---
-# An existing case whose label is not a derived label argument, edited to go red,
-# beside a new passing case whose label template renders it, must not read as
-# the task's own; and a new case named through a wrapper the derivation missed
+# --- labels named every way a suite names them ---
+# An existing case - named through a table, a method, a keyword, a constant, a
+# dict - edited to go red beside a new passing case whose label template fits
+# it, must not read as the task's own; and a new case named through a wrapper
 # must not be refused by a generic template HEAD holds.
 _L = "the next value is read"
 _NEWT = "check('the next value is %s' % ('x',), True)"
@@ -1509,7 +1411,7 @@ def _extra_red(prefix, head_extra, wt_extra, siblings=None):
     return code, (got.get("redFirst") or {}).get("basis", json.dumps(got))
 
 
-def _disagree_cases(check):
+def _naming_cases(check):
     table = ["ROWS = [(%r, 1)]" % (_L,), "for lb, want in ROWS:",
              "    check(lb, mine.v >= want)"]
     table_w = ["ROWS = [(%r, 2)]" % (_L,), "for lb, want in ROWS:",
@@ -1539,23 +1441,22 @@ def _disagree_cases(check):
                               "check(ROWS['k'], mine.v == 2)"])
     check("sr80 an EXISTING case whose label is not a label argument at all (a "
           "dict value), edited to go red with no new literal, stays "
-          "could-not-prove - HEAD's other literals count as held: exit=%r %s"
+          "could-not-prove - HEAD's own run named it: exit=%r %s"
           % (code, basis[:260]), code == M.E_CANNOT_PROVE)
     code_b, basis_b = _extra_red("stamp-red-blind-", held,
                                  ["ROWS = {'k': %r}" % (_L,),
                                   "check(ROWS['k'], mine.v == 2)", _NEWT])
     check("sr87 ...and beside a new PASSING case whose label template renders "
-          "that label, it still stays could-not-prove: the role-first ranking "
-          "picks the new template, the role-blind one picks the literal HEAD "
-          "holds, and the disagreement fails closed: exit=%r %s"
+          "that label, it still stays could-not-prove: HEAD's own run named the "
+          "failing case, and the passing one fails nothing: exit=%r %s"
           % (code_b, basis_b[:260]), code_b == M.E_CANNOT_PROVE)
     code_n, basis_n = _extra_red(
         "stamp-red-others-", ["check('the old one holds', True)"],
         ["check('the old one holds', True)",
          "ROWS = {'k': 'the dict row is read'}", "check(ROWS['k'], mine.v == 2)"])
     check("sr88 THE ALLOW CASE for sr80: a genuinely new case whose label no "
-          "case call spells (a dict value) still proves - the other literals "
-          "are read when no label literal renders the label: exit=%r %s"
+          "case call spells (a dict value) still proves - HEAD's own run never "
+          "printed it: exit=%r %s"
           % (code_n, basis_n[:260]),
           code_n == M.E_PROVED and "the dict row is read" in basis_n)
 
@@ -1585,16 +1486,6 @@ def _wrapper_cases(check):
               "holds a generic label template that fits it: exit=%r %s"
               % (cid, how, code, basis[:260]),
               code == M.E_PROVED and _NEW_RULE in basis)
-    src = "\n".join(["import subprocess", "def run(name, ok):",
-                     "    check(name, ok)",
-                     "subprocess.run('echo the value is read', True)",
-                     "run('the run label', True)"])
-    got = _role_labels(src)
-    check("sr85 a wrapper's name is matched on a plain call only: a module's "
-          "attribute call that shares the name (`subprocess.run`) is not a case "
-          "call: %r" % (got,), got == ["the run label"])
-
-
 def _pytest_command_cases(check):
     text = ("FAILED t.py::test_x - assert 1 == 2\n"
             "===== 1 failed, 2 passed in 0.12s =====\n"
@@ -1610,6 +1501,145 @@ def _pytest_command_cases(check):
           got == {"pytest": "pytest", "python -m pytest": "pytest", "bare": None})
 
 
+# --- the task's own case is measured, not read off the source ---
+# HEAD's own test files are run in the throwaway with the same command, and a
+# failing case is the task's own exactly when that run did not name it. The
+# shapes below are the ones no reading of the source settled.
+def _measured_cases(check):
+    dict_head = ["ROWS = {'k': %r}" % (_L,),
+                 "check(ROWS['k'], mine.v >= 1, 'saw %r' % (mine.v,))"]
+    dict_wt = ["ROWS = {'k': %r}" % (_L,),
+               "check(ROWS['k'], mine.v == 2, 'saw %r' % (mine.v,))",
+               "EXPECT = 'the next value is read (saw 1)'"]
+    code, basis = _extra_red("stamp-red-dictval-", dict_head, dict_wt)
+    check("sr89 an EXISTING case whose label is held only as a dict value, "
+          "edited to go red beside an added literal spelling its FAIL line "
+          "verbatim, is not the task's own: HEAD's own run named it: exit=%r %s"
+          % (code, basis[:300]), code == M.E_CANNOT_PROVE)
+
+    code_u, text_u = _real_unittest_verbose()
+    check("sr90 a real `unittest -v` run names every case, passing or failing: "
+          "%r" % (M.run_names(text_u, "unittest"),),
+          M.run_names(text_u, "unittest") == ["test_assert", "test_pass",
+                                              "test_raise"])
+    quiet = {"code": 1, "text": "F\n" + "=" * 20 + "\nFAIL: test_a (t.T)\n"
+             "Ran 2 tests in 0.001s\n\nFAILED (failures=1)\n", "problem": None}
+    none = {"code": 2, "text": "python3: can't open file 'tests/t.py'\n",
+            "problem": None}
+    got = dict((k, M.head_names(h, None, "unittest", new))
+               for k, h, new in (("quiet", quiet, False), ("no tally", none, False),
+                                 ("no tally, new file", none, True),
+                                 ("not made", {"problem": "timed out"}, False)))
+    check("sr91 HEAD's own run fails closed when it cannot list its cases: a run "
+          "naming fewer cases than it collected, one with no tally while the "
+          "test file exists at HEAD, one that could not be made - and a run of a "
+          "test file new at HEAD names nothing: %r" % (got,),
+          [got[k][0] for k in ("quiet", "no tally", "not made")] == [None] * 3
+          and all(got[k][1] for k in ("quiet", "no tally", "not made"))
+          and "every case is named" in got["quiet"][1]
+          and got["no tally, new file"] == ([], None))
+    runs_new = ["the value", "the value (as read) (saw 1)"]
+    runs_edit = ["the value (saw 1)"]
+    fail = lambda lb: {"id": None, "label": lb, "assertion": True,
+                       "why": "house FAIL"}
+    held = (M._held_by_head(fail(runs_new[1]), set(["the value"]), set(runs_new)),
+            M._held_by_head(fail(runs_edit[0]), set(["the value"]), set(runs_edit)))
+    check("sr92 a failing line is HEAD's when HEAD printed its label and the "
+          "task's run did not print that label again - an existing case now "
+          "failing - and NOT when the task's run prints HEAD's label as well, "
+          "which leaves the longer failing label new: %r" % (held,),
+          held == (False, True))
+
+    unit_head = _unit_suite(["    def test_old(self):",
+                             "        self.assertTrue(mine.v >= 1)"])
+    unit_new = _unit_suite(["    def test_old(self):",
+                            "        self.assertTrue(mine.v >= 1)",
+                            "    def test_new(self):",
+                            "        self.assertEqual(mine.v, 2)"])
+    unit_edit = _unit_suite(["    def test_old(self):",
+                             "        self.assertEqual(mine.v, 2)"])
+    verbose = [sys.executable, "tests/test_mine.py", "-v"]
+    runs = dict((k, _suite_red("stamp-red-unit-%s-" % (k,), unit_head, wt, cmd))
+                for k, wt, cmd in (("new", unit_new, verbose),
+                                   ("edited", unit_edit, verbose),
+                                   ("quiet", unit_new,
+                                    [sys.executable, "tests/test_mine.py"])))
+    check("sr93 under unittest -v, a NEW failing test proves and an EXISTING one "
+          "edited to fail does not; without -v HEAD's run cannot list its "
+          "passing tests, so even the new one is could-not-prove and says why: "
+          "%r" % (dict((k, (c, b[-160:])) for k, (c, b) in runs.items()),),
+          runs["new"][0] == M.E_PROVED and "test_new" in runs["new"][1]
+          and runs["edited"][0] == M.E_CANNOT_PROVE
+          and runs["quiet"][0] == M.E_CANNOT_PROVE
+          and "every case is named" in runs["quiet"][1])
+
+    new_rel = "tests/test_new.py"
+    root, man = _red_repo("stamp-red-newfile-", _red_test("import mine", "True"),
+                          extra={new_rel: _red_test("import mine", "mine.v == 2",
+                                                    label="the new file holds a case")},
+                          files=["src/mine.py", new_rel])
+    code_f, got_f = _red(root, man, [sys.executable, new_rel])
+    head_run = (got_f.get("run") or {}).get("head") or {}
+    check("sr94 a test file that is new at HEAD proves - HEAD's own run of it has "
+          "nothing to run and names nothing - and the payload records HEAD's run "
+          "with its exit and how long it took: exit=%r %r"
+          % (code_f, head_run),
+          code_f == M.E_PROVED and isinstance(head_run.get("seconds"), float)
+          and head_run.get("exit") not in (None, 0))
+
+    fam = {"id": "t3", "label": "t3 5 is not a tier (saw 5)", "assertion": True,
+           "why": "house FAIL"}
+    check("sr95 an id-led FAIL line is HEAD's when HEAD's run printed that id, "
+          "whatever the rest of the label says - the id is the key the harness "
+          "hands out: %r"
+          % (M._held_by_head(fam, set(["t3 0 is not a tier"]), set()),),
+          M._held_by_head(fam, set(["t3 0 is not a tier"]), set()) is True)
+    # pytest is not installed here, so these lines are copied from its manual's
+    # `-v` and `-rA` output shapes rather than captured from a run.
+    verbose = ("tests/test_x.py::test_a PASSED                  [ 50%]\n"
+               "tests/test_x.py::test_b FAILED                  [100%]\n")
+    reported = ("=== short test summary info ===\n"
+                "PASSED tests/test_x.py::test_a\n"
+                "FAILED tests/test_x.py::test_b - assert 1 == 2\n")
+    got_p = (M.run_names(verbose, "pytest"), M.run_names(reported, "pytest"))
+    check("sr96 pytest's `-v` lines and its `-rA` summary each name every case, "
+          "passing ones included: %r" % (got_p,),
+          got_p == (["tests/test_x.py::test_a", "tests/test_x.py::test_b"],) * 2)
+    with open(os.path.join(M_PLUGIN, "agents", "audit-executor.md"), "r",
+              encoding="utf-8") as fh:
+        brief = " ".join(fh.read().split())
+    with open(os.path.join(M_PLUGIN, "reference", "execute-task.md"), "r",
+              encoding="utf-8") as fh:
+        ref = " ".join(fh.read().split())
+    check("sr97 the executor brief and execute-task.md both say the task's own "
+          "case is one HEAD's own run did not name, and that the command must "
+          "name every case (pytest -rA or -v, unittest -v)",
+          all("HEAD's own test files" in t and "-rA" in t and "`-v`" in t
+              for t in (brief, ref)))
+
+
+def _unit_suite(methods):
+    return "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
+                      "class T(unittest.TestCase):"] + list(methods)
+                     + ["if __name__ == '__main__':", "    unittest.main()"]) + "\n"
+
+
+def _real_unittest_verbose():
+    """`(code, text)` from a real `python -m unittest -v` over one assertion,
+    one pass and one body exception."""
+    where = _harness.fixture_root("stamp-unittest-v-")
+    _write(os.path.join(where, "test_u.py"), "\n".join([
+        "import unittest", "", "", "class T(unittest.TestCase):",
+        "    def test_assert(self):", "        self.assertEqual(1, 2)", "",
+        "    def test_pass(self):", "        pass", "",
+        "    def test_raise(self):", "        raise TypeError('a body that raised')",
+        ""]))
+    proc = subprocess.run([sys.executable, "-m", "unittest", "-v", "test_u"],
+                          cwd=where, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, universal_newlines=True)
+    return proc.returncode, proc.stdout
+
+
 def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
@@ -1623,16 +1653,16 @@ def _cases(check):
     _harness.stage(check, "sr-label-id", _label_id_cases)
     _harness.stage(check, "sr-runner", _runner_cases)
     _harness.stage(check, "sr-specific", _specific_cases)
-    _harness.stage(check, "sr-linear", _linear_cases)
     _harness.stage(check, "sr-nodeid", _nodeid_cases)
     _harness.stage(check, "sr-wording", _wording_cases)
     _harness.stage(check, "sr-exact", _exact_cases)
     _harness.stage(check, "sr-command", _command_cases)
     _harness.stage(check, "sr-mixed", _mixed_cases)
-    _harness.stage(check, "sr-role", _role_cases)
-    _harness.stage(check, "sr-disagree", _disagree_cases)
+    _harness.stage(check, "sr-verbatim", _verbatim_cases)
+    _harness.stage(check, "sr-naming", _naming_cases)
     _harness.stage(check, "sr-wrapper", _wrapper_cases)
     _harness.stage(check, "sr-pytest-command", _pytest_command_cases)
+    _harness.stage(check, "sr-measured", _measured_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

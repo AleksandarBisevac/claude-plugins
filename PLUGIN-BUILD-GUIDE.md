@@ -3658,23 +3658,21 @@ output carries the tallies of more than one runner, the command decides if it na
 `could-not-prove` and names every tally it saw:
 a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
 `assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
-assertions. `proved` needs one of those failures to be the TASK'S OWN - a case present in the
-working tree's copy of a declared test file and absent from HEAD's, known by its id when its label
-leads with an id-shaped token and otherwise by the whole label. A label counts as the task's own
-when HEAD's copy does not hold the MOST SPECIFIC literal in the working tree that renders it.
-Literals are ranked by ROLE first: one that names a case - a case call's label argument, by
-position or by keyword, or what a name passed there was bound to (an assignment, a loop over a
-literal table) - outranks every other literal, and the others are read only when no label literal
-renders the label. The case calls are derived from the file: `check`, the harness's `skip`, a
-body's own name for the check it is handed, and any wrapper (a def, a method past its `self`, a
-lambda, or one imported from a sibling test module) that passes its parameter on to one; a method
-is matched only on an attribute call and a plain wrapper only on a plain call. The role-first
-answer fails closed: the case is HEAD's when HEAD holds the closest literal under either the
-role-first or a role-blind ranking. Within a role, a literal equal to the label (its FAIL-line detail set aside)
-outranks any template, the longest such match wins, and only then does the template with the most
-fixed text decide. A label built at run
-time - a value joined with `+`, an f-string or `.format` field - is a template open where the value
-goes, and a template with no two-letter run in its fixed text (`'%dx%d'`) names no label. `--case` narrows to the ids or labels it names and is held to the same test, because the flag is chosen by the party being checked; the
+assertions. `proved` needs one of those failures to be the TASK'S OWN, and that is MEASURED, not
+read off the source: when the run is red, HEAD's own copies of the test files are put back in the
+same throwaway and the SAME command runs again, and a failing case is the task's own exactly when
+that run of HEAD did not name it (`head_names()`, `own_failures()`). A house run names every case
+by its PASS/FAIL label; a FAIL line carries its detail, so a case failing now that passed at HEAD is
+HEAD's when it shares a label form with a name HEAD printed that the task's run did not print again,
+and an id-led label is HEAD's when HEAD printed that id. pytest names its passing cases only under
+`-rA` or `-v`, unittest only under `-v`: a HEAD run naming fewer cases than it collected, one with
+no tally while a declared test file exists at HEAD, and one that could not be made are all
+`could-not-prove` with that reason; a test file new at HEAD names nothing, so every case in it is
+new. The extra run is paid only when the first one is red, and the payload records its exit and
+seconds. Four review rounds each found a shape a reading of the source got wrong - a label built
+by a wrapper, looked up in a dict, spelled again by an unrelated literal - and the measurement has
+none of them to get wrong. `--case` narrows to the ids or labels it names and is held to the same
+measurement, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task

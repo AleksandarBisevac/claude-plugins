@@ -118,10 +118,12 @@ not need to.
      task's declared test files from the working tree over it, runs the command there,
      removes the throwaway in a `finally` and reports whether the removal held, and prints
      the `redFirst` block, naming the failing case it rests on — which must be one of the
-     task's own: a case present in the working tree's test file and absent from HEAD's,
-     by its id or, for a label that leads with none, by the whole label.
-     `--case` narrows to the ids or labels it names, held to that same test, so naming a case HEAD
-     already carries proves nothing. Its
+     task's own: a case that HEAD's own test files, run with the same command in the same
+     throwaway, did not name. That run is made only when the first is red, and it needs a
+     command that names every case, passing ones included (the house harness does; pytest
+     wants `-rA` or `-v`, unittest `-v`) — otherwise the answer is `could-not-prove`.
+     `--case` narrows to the ids or labels it names, held to that same test, so naming a case
+     HEAD's run already named proves nothing. Its
      `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
      identifier absent from HEAD's copy of every declared implementation file and present
      in the working tree's, a final import/attribute/name error naming it, and a second run

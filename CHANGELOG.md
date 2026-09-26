@@ -304,25 +304,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   test file already held, was refused as not the task's own, and the red read `could-not-prove`
   while the run held exactly that one failing case. A house case is now named by its full label,
   with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
-  hands out) as its id only when present. It is the task's own when the working tree's test file
-  holds a string literal that renders that label (wrapped and `%`-formatted literals included) and
-  HEAD's copy does not hold the MOST SPECIFIC such literal. A literal naming a case - a case call's
-  label argument by position or keyword, or what a name passed there was bound to - outranks every
-  other literal; the case calls are derived from the file (`check`, the harness's `skip`, and any
-  wrapper passing its parameter on: a def, a method past its `self`, a lambda, or one imported from
-  a sibling test module). The answer fails closed: HEAD holds the case when it holds the closest
-  literal under either the role-first or a role-blind ranking. Within
-  that role a literal equal to the label outranks any template (the longest such match wins), and
-  only then does the template with the most fixed text decide - so a generic template HEAD already
-  has (`'%s is %s'`) no longer refuses a new case it happens to fit, a constant spelling the printed
-  FAIL line, even verbatim, no longer outranks the label argument naming the case, and a template
-  whose fixed text is a lone letter (`'%dx%d'`) renders no label at all.
-  A label built at run time (a value joined with `+`, an f-string or `.format` field) is a template
-  open where the value goes, so a generic template the task adds no longer outranks it. The FAIL line's detail is set aside at every
-  ` (`, so a detail spanning lines no longer hides the label, and templates are matched in linear
-  time rather than by a backtracking pattern. `--case` takes the id or the full label (the usage
-  line, the flag's help and the executor brief now say so), and a name is refused by the same match
-  that decides the proof, so a pytest nodeid is no longer reported as one HEAD already carries.
+  hands out) as its id only when present. Whether a failing case is the task's own is now MEASURED
+  rather than read off the test file's source: when the run is red, HEAD's own copies of the test
+  files are put back in the same throwaway and the same command runs again, and a failing case is
+  the task's own exactly when that run of HEAD did not name it. A label built by a wrapper, looked up
+  in a dict, or spelled again by an unrelated literal - each a shape some reading of the source got
+  wrong - is therefore decided the same way as any other. The command must name every case it runs,
+  passing ones included: the house harness does, pytest does under `-rA` or `-v`, unittest under
+  `-v`; a HEAD run naming fewer cases than it collected, or with no tally while the test file exists
+  at HEAD, is `could-not-prove` with that reason, and a test file new at HEAD names nothing. The
+  extra run is paid only when the first is red; `--json` records its exit and seconds under
+  `run.head`. The FAIL line's detail is set aside at every ` (`, so a detail spanning lines no
+  longer hides the label. `--case` takes the id or the full label (the usage line, the flag's help
+  and the executor brief say so), and is held to the same measurement, so a pytest nodeid is judged
+  as its test.
   Cases are now read only from the runner whose tally the verdict was read from; when tallies of
   more than one runner appear, the test command decides if it names one (`pytest`, `-m unittest`,
   a house `--selftest`), and otherwise the red is `could-not-prove` naming every tally. So an

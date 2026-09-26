@@ -111,10 +111,12 @@ Hard rules (non-negotiable):
   plan gate grades which files you touch, not why — so this is kept by reading it.
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
   failing cases, and a red counts only when one of them is the task's own: a case
-  present in the working tree's test file and absent from HEAD's (by its id, or by its
-  whole label when the label does not lead with one). `--case` narrows to the ids or
-  labels you name and is held to that same test, so naming a case HEAD already
-  carries proves nothing. An existing case going red, or a test body raising an
+  that HEAD's own test files, run with the same command in the same throwaway, did not
+  name. The helper makes that run itself when yours is red, so the command must name
+  every case it runs, passing ones included — the house harness does; pass `-rA` or
+  `-v` to pytest and `-v` to unittest, or the answer is `could-not-prove` and says so.
+  `--case` narrows to the ids or labels you name and is held to that same measurement,
+  so naming a case HEAD's run already named proves nothing. An existing case going red, or a test body raising an
   exception, is not a proof about your test. A compile error, an import error or
   zero tests collected exits non-zero with no assertion ever evaluated, so it is
   `could-not-prove`, not `proved` — unless the task introduces the symbol the run
