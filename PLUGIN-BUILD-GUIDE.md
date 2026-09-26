@@ -157,6 +157,7 @@ claude-plugins/                           # this repo (personal, public)
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
+          derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -384,6 +385,7 @@ L7:
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _tree_stamp
+  derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
@@ -3740,6 +3742,50 @@ gets no word at all (exit `1`): a test that passes without the fix is work left,
 record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
 every word it can print is one the schema's enum declares.
 
+### `plugins/audit/scripts/governance/derive-phase-gate.py`
+Observe, derive, record: a PHASE's sign-off gate, computed rather than declared. `_gate_derive.derive()`
+is PURE — every observation it needs arrives through a `facts` dict, and it never shells out or
+reads git — so this is the one caller that gathers those observations for real and hands the
+result to `derive()` unchanged. The runner never derives; it only measures what the phase
+declares.
+
+**`meta.phaseGate.derived.runner` names a `meta.buildCommands` key**, resolved and run alone
+(`meta.nodePreamble` applied exactly the way `run-test-gate._resolved` applies it): that is the
+FULL listing, every suite file the runner would collect. **`meta.phaseGate.derived.spelling` is a
+separate raw template** carrying a `{paths}` placeholder, filled with the shell-quoted union of the
+phase's own tasks' `files`: that is the RELATED listing. Both listings write one line of output per
+path and never execute a test — a listing that ran a suite would make derivation as expensive as
+the thing it exists to narrow. Each subprocess runs through `_proc_group`, the same module
+`run-test-gate.py` and `stamp-verification.py red` share, so a listing that hangs is torn down
+whole rather than left running past this process's own patience.
+
+**`meta.phaseGate.mode` ABSENT means no derivation was ever asked for** — this prints why and
+writes nothing, exit 0, before a single subprocess runs.
+
+**`derived-empty` is not reachable from this runner either**, and that is stated rather than
+merely true: `_gate_derive.derive`'s own docstring explains why its one shape source
+(`path_scoped_sibling`, a sibling task's own path-scoped gate) can never return an empty
+`test_paths` once a shape exists at all, and this file introduces no alternate shape source — it
+reads `meta.phaseGate.derived.runner`/`.spelling` as an ADDITIONAL arm beside
+`path_scoped_sibling`, never a replacement for it. So `shape is None` is still the only way a
+phase has nothing to narrow to, reported as `phase-no-spelling` (already in `derive()`'s own
+vocabulary).
+
+**WRITE, under the index lock, snapshot before, validate after, roll back byte for byte on a
+finding** — the same four-step shape `set-priority.py` and `audit-task.py` already hold, reached
+through `_panel_write` rather than copied, because an entry point may not import another entry
+point. `mode == "shadow"` writes `testGateDerived` and `testGateBasis` only, `phase.testGate`
+untouched — the wide gate still signs a shadow-mode phase off. `mode == "enforce"` writes all
+three. None of the three fields is a `_manifest_io._STUB_KEYS` mirror (`id`, `title`, `status`),
+so the write touches only the phase's own shard in the sharded layout (or the one file, in the
+single-file layout) and never the index — one journal row, `phase.gateDerived`, names the phase,
+the mode, which fields moved and the recorded basis.
+
+**`--brief` prints the reviewer's one-line basis only** — a count of derived vs. full test files,
+the coupling count, the smoke verdict, `testGateBasis` and a timestamp — never a path and never
+runner output: the full human line (and `--json`'s `lines` array) carries the per-arm breakdown,
+`--brief` never does.
+
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'
 15-field new-task template into the model's hands per add — a class of error (a missed field,
@@ -3914,6 +3960,17 @@ written and read with.
 hand as max+1; a moved task no longer is one - `move` takes the same allocator's answer in process. It reads the same allocator every scripted writer does, suffix and
 reservations included, and writes nothing. Not `phase`: a phase is minted only by `add-phase`, which
 writes it under the lock, where a task's phase is fixed before its id is asked for.
+
+`couple --test <path> --sources <comma-separated paths> --basis-run <runId> --basis-head <sha>
+[--phases <comma-separated ids>]` and `uncouple --test <path>` are the only writers of
+`meta.coupling` - the record `derive-phase-gate.py`'s coupling arm reads to widen a derived gate
+past what an importer listing alone would find. `couple` appends a new entry, or unions
+`--sources` into an existing one for the same `test` and keeps that entry's first `learnedAt`
+rather than overwriting it, because the couple is a fact learned once and re-confirmed, not
+re-dated on every call. `uncouple` drops the one entry naming `--test` and refuses, exit 2, when
+no entry names it - the same "an operation on something that is not there is an error, never a
+silent no-op" rule every other verb here holds.
+
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model

@@ -224,7 +224,7 @@
     {
       "id": "P79.4",
       "title": "couple / uncouple write meta.coupling",
-      "status": "in_progress",
+      "status": "done",
       "description": "audit-task.py couple --test <path> --sources <p,p> --basis-run <runId> --basis-head <sha> --phases <ids> and uncouple --test <path> are the only writers of meta.coupling. couple appends {test, sources, basis {runId, head, phases}, learnedAt} or, for a test already coupled, unions the sources and keeps the first learnedAt (a coupling is widened, never silently replaced); uncouple removes the entry and refuses exit 2 when the test is not coupled. Both run under _under_lock, write the index through _write_add(..., phase_id=None, index_fields=('meta',)) - the index-only path P69 gave _write_add - revalidate with roll-back, and journal coupling.learned / coupling.dropped with the entry. --test must be one path that tests_add_path and is_suite_path accept; each source must be a path; --basis-run must name a row the ledger holds (_evidence_io.row_by_run), refused otherwise, because a coupling says what taught it. retarget --gate-drop stays about gate entries and never touches couplings; the two verbs share no flag. No change to _phase_gate here: L1's default is already today's set (always only reorders it, exclude is declared and printed), so a shadow phase's gate is the wide one the comparison needs. New dests in VERB_FLAGS, the command choices in build_parser, commands/task.md argument-hint and a section, the /audit:task README row (_refs.command_flag_drift). Red-first: couple writes the entry and one journal row; coupling the same test twice unions the sources (mutation: overwrite -> red); uncouple of an unknown test refused; a runId the ledger lacks refused (mutation: skip the lookup -> red).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -258,18 +258,32 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6e00eddb170afd7edda25320056581d3a47ec8d9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: cmd_couple/_locked_couple and cmd_uncouple/_locked_uncouple under the index lock with revalidate-or-roll-back and coupling.learned / coupling.dropped journal rows. --test and each --sources value must pass tests_add_path and is_suite_path; --basis-run is looked up with _evidence_io.row_by_run and refused when absent; a re-couple unions sources and keeps the first learnedAt. VERB_FLAGS and build_parser extended; task.md section and README /audit:task row; test__refs tk3/pf2 hand-written verb literals widened (scope widened mid-attempt to test__refs.py). Task review: intent matches, redFirst proved; inheritedTests not-asked - the gate's selftests entry is the whole sweep. Review findings carried to sign-off: no cp case reads the journal row (med); cp2 does not pin basis on re-couple (low); executor stamp dirtyDigest stale from sibling edits, scopeDigest agrees (low).",
+        "descriptive": "Two new /audit:task verbs, couple and uncouple, are the only writers of meta.coupling: couple records which source files a test depends on, learned from a named evidence run, and widens an existing entry rather than replacing it; uncouple drops one entry and refuses when there is none."
       },
       "startedAt": "2026-09-26T13:09:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T16:01:27Z",
+      "verifiedBy": [
+        "cp1",
+        "cp2",
+        "cp3",
+        "cp4",
+        "cp5",
+        "cp6",
+        "tk3",
+        "pf2"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T15:50:39Z.3d1d04",
         "status": "passed",
         "at": "2026-09-26T15:50:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6e00eddb170afd7edda25320056581d3a47ec8d9",
+        "at": "2026-09-26T16:01:27Z"
       }
     },
     {
