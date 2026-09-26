@@ -497,7 +497,7 @@
     {
       "id": "P77",
       "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P77.json"
     },
     {
