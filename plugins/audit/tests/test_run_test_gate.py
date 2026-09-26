@@ -5612,10 +5612,57 @@ def _group_cases(check):
         _harness.remove_tree(root)
 
 
+def _crowd_cases(check):
+    """The machine line reads the ledger's windows: runs recorded one after another
+    are not a crowd, a run that genuinely overlapped is, and one whole-second
+    stamps cannot place is said to be unknowable rather than shared."""
+    root = _harness.fixture_root("run-test-gate-crowd-")
+    try:
+        os.makedirs(os.path.join(root, ".claude"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        evidence = _ev_io.evidence_dir(root)
+        os.makedirs(evidence)
+        prev = {"runId": "A", _ev_io.STARTED_KEY: "2026-09-26T15:48:37Z",
+                "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
+
+        def line_for(row, others):
+            with open(os.path.join(evidence, "2026-09.t.jsonl"), "w") as fh:
+                for r in others + [row]:
+                    fh.write(json.dumps(r) + "\n")
+            lines = []
+            M._say_who_else_was_running(root, {"status": "passed"}, row,
+                                        out=lines.append)
+            return [ln for ln in lines if "machine:" in ln]
+        mine = {"runId": "B", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
+                "ts": "2026-09-26T15:50:39Z", "scope": "task", "status": "passed"}
+        got = line_for(mine, [prev])
+        check("gc1 a run that started in the second the previous run's row was "
+              "written had the machine to itself - not a crowd: %r" % (got,),
+              len(got) == 1 and "had the machine to itself" in got[0])
+        got = line_for(dict(mine, **{_ev_io.STARTED_KEY: "2026-09-26T15:49:30Z"}),
+                       [prev])
+        check("gc2 SECOND DIRECTION: a run that began seven seconds before the "
+              "previous one ended shared the window, and the line names it: %r"
+              % (got,),
+              len(got) == 1 and "1 other gate run(s) shared this window (A)" in got[0])
+        blip = {"runId": "Z", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
+                "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
+        got = line_for(prev, [blip])
+        check("gc3 a sub-second run stamped in the second this one ended is said to "
+              "be unknowable from whole-second stamps, never asserted as sharing "
+              "the window: %r" % (got,),
+              len(got) == 1 and "whole-second" in got[0] and "Z" in got[0]
+              and "shared this window" not in got[0])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _group_cases(check)
+        _crowd_cases(check)
     return _harness.run(body)
 
 

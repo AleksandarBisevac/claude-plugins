@@ -1707,10 +1707,57 @@ def _cases(check):
               "for two causes: %r / %r"
               % (gate_side, [r.get("runId") for r in out_side]),
               gate_side == [] and [r.get("runId") for r in out_side] == ["OUT"])
-        check("wr10 an inclusive endpoint counts: two runs that met for one "
-              "second met",
-              M._overlaps((10, 20), (20, 30)) and M._overlaps((20, 30), (10, 20))
-              and not M._overlaps((10, 20), (21, 30)))
+        check("wr10 a run that STARTS in the second the other's row was written is "
+              "sequential, not overlapping - half-open at the end, in both orders: "
+              "%r / %r" % (M.overlap_state((10, 20), (20, 30)),
+                           M.overlap_state((20, 30), (10, 20))),
+              M.overlap_state((10, 20), (20, 30)) == M.OVERLAP_NO
+              and M.overlap_state((20, 30), (10, 20)) == M.OVERLAP_NO
+              and M.overlap_state((10, 20), (21, 30)) == M.OVERLAP_NO)
+        check("wr10b SECOND DIRECTION: windows that genuinely share a second or more "
+              "still overlap - %r / %r" % (M.overlap_state((10, 20), (19, 30)),
+                                           M.overlap_state((15, 15), (10, 20))),
+              M.overlap_state((10, 20), (19, 30)) == M.OVERLAP_YES
+              and M.overlap_state((19, 30), (10, 20)) == M.OVERLAP_YES
+              and M.overlap_state((15, 15), (10, 20)) == M.OVERLAP_YES)
+        check("wr10c a run shorter than a second, stamped in the very second the other "
+              "started or ended, is one whole-second stamps cannot place either side "
+              "of it - UNDECIDED, never asserted either way: %r"
+              % (M.overlap_state((20, 20), (10, 20)),),
+              M.overlap_state((20, 20), (10, 20)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((10, 10), (10, 20)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((12, 12), (12, 12)) == M.OVERLAP_UNDECIDED)
+        # The reported shape: three task gates recorded strictly one after another,
+        # each starting in the second the previous row was written.
+        _seq = [{"runId": "A", M.STARTED_KEY: "2026-09-26T15:48:37Z",
+                 "ts": "2026-09-26T15:49:37Z"},
+                {"runId": "B", M.STARTED_KEY: "2026-09-26T15:49:37Z",
+                 "ts": "2026-09-26T15:50:39Z"},
+                {"runId": "C", M.STARTED_KEY: "2026-09-26T15:50:39Z",
+                 "ts": "2026-09-26T15:51:38Z"}]
+        _crowd = [M.shared_the_machine(_seq, r)[0] for r in _seq]
+        check("wr10d runs recorded strictly one after another are not a crowd - each "
+              "run finds nobody else in its window: %r"
+              % ([[o.get("runId") for o in c] for c in _crowd],),
+              _crowd == [[], [], []])
+        _over = [dict(_seq[0]), dict(_seq[1], **{M.STARTED_KEY:
+                                                 "2026-09-26T15:49:30Z"})]
+        check("wr10e SECOND DIRECTION: a run that began seven seconds before the other "
+              "ended IS in its window: %r"
+              % ([o.get("runId") for o in M.shared_the_machine(_over, _over[1])[0]],),
+              [o.get("runId") for o in M.shared_the_machine(_over, _over[1])[0]]
+              == ["A"])
+        _blip = {"runId": "Z", M.STARTED_KEY: "2026-09-26T15:49:37Z",
+                 "ts": "2026-09-26T15:49:37Z"}
+        check("wr10f ...and a sub-second run stamped in the second the other ended is "
+              "reported as undecided, not as sharing the window: shared %r, "
+              "undecided %r"
+              % (M.shared_the_machine([_blip], _seq[0])[0],
+                 [o.get("runId") for o in
+                  M.undecided_neighbours([_blip], _seq[0], M.RUNNER_GATE)]),
+              M.shared_the_machine([_blip], _seq[0])[0] == []
+              and [o.get("runId") for o in
+                   M.undecided_neighbours([_blip], _seq[0], M.RUNNER_GATE)] == ["Z"])
 
         verdict = M.attribution_of(_mine, [_outside])
         check("wr11 a red with an outside suite in its window is CONTESTED, and "

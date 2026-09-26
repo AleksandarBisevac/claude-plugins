@@ -3266,7 +3266,16 @@ def _say_who_else_was_running(project, res, row, out=print):
             % (len(others), ", ".join(str(o.get("runId") or "?")
                                       for o in others)))
     else:
-        out("  machine:  this run had the machine to itself")
+        # A run whose whole-second stamps cannot be placed either side of this
+        # one is said as that, never counted as the crowd nor as solitude.
+        unsure = _ev.undecided_neighbours(rows, row, _ev.RUNNER_GATE)
+        if unsure:
+            out("  machine:  whether %s ran alongside this run is not knowable from "
+                "whole-second stamps - a run shorter than a second was stamped in "
+                "the second this one started or ended"
+                % (", ".join(str(o.get("runId") or "?") for o in unsure),))
+        else:
+            out("  machine:  this run had the machine to itself")
     # An EMPTY gate measured nothing, so there is no verdict to attribute.
     if res.get("status") in ("passed", EMPTY_GATE):
         return

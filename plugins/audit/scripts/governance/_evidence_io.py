@@ -1422,10 +1422,40 @@ def window_of(row):
             % (STARTED_KEY,))
 
 
+OVERLAP_YES, OVERLAP_NO, OVERLAP_UNDECIDED = "yes", "no", "undecided"
+
+
+def overlap_state(one, other):
+    """Whether two `(start, end)` windows, in WHOLE seconds, share a moment:
+    `OVERLAP_YES`, `OVERLAP_NO`, or `OVERLAP_UNDECIDED` when the stamps cannot say.
+
+    A stamp names the second an instant fell in, never the instant, so a window
+    is compared HALF-OPEN at its end: a run that ended in second t and one that
+    started in second t are sequential - the next run started after the last row
+    was written, which is how a single executor's runs are recorded one after
+    another. Windows sharing a whole second or more overlap.
+
+    ONE SHAPE STAYS UNDECIDED: a run shorter than a second (start == end)
+    stamped in the very second the other started or ended. Both fell inside that
+    one second, in an order no field records - `ts` and `startedAt` are whole
+    seconds, `durationMs` is relative to a start that is itself rounded, and the
+    ledger's file order records when rows were written, not when runs began. That
+    is said as undecided rather than asserted either way."""
+    s1, e1 = one
+    s2, e2 = other
+    if s1 == e1 or s2 == e2:
+        point, (s, e) = (s1, (s2, e2)) if s1 == e1 else (s2, (s1, e1))
+        if s == e:
+            return OVERLAP_UNDECIDED if point == s else OVERLAP_NO
+        if s < point < e:
+            return OVERLAP_YES
+        return OVERLAP_UNDECIDED if point in (s, e) else OVERLAP_NO
+    return OVERLAP_YES if (s1 < e2 and s2 < e1) else OVERLAP_NO
+
+
 def _overlaps(one, other):
-    """Whether two `(start, end)` pairs share any moment. Inclusive at the
-    endpoints, because two runs that met for one second met."""
-    return one[0] <= other[1] and other[0] <= one[1]
+    """Whether two windows DEFINITELY share a moment (`overlap_state`)."""
+    return overlap_state(one, other) == OVERLAP_YES
 
 
 def overlapping_runs(rows, row, runner):
@@ -1468,6 +1498,28 @@ def overlapping_runs(rows, row, runner):
         if _overlaps((start, end), (o_start, o_end)):
             found.append(other)
     return (found, basis)
+
+
+def undecided_neighbours(rows, row, runner):
+    """The OTHER runs by `runner` whose window whole-second stamps cannot place
+    either side of `row`'s (`OVERLAP_UNDECIDED`) - reported apart from the runs
+    that did overlap, so a surface says it cannot tell rather than that the
+    window was shared. `[]` when `row` has no window: nothing was compared."""
+    start, end, _basis = window_of(row)
+    if start is None:
+        return []
+    mine = str((row or {}).get("runId") or "")
+    out = []
+    for other in (rows or []):
+        if not isinstance(other, dict) or runner_of(other) != runner:
+            continue
+        if mine and str(other.get("runId") or "") == mine:
+            continue
+        o_start, o_end, _why = window_of(other)
+        if o_start is not None and overlap_state(
+                (start, end), (o_start, o_end)) == OVERLAP_UNDECIDED:
+            out.append(other)
+    return out
 
 
 def contested_by(rows, row):

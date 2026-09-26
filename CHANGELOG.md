@@ -343,6 +343,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **run-test-gate's machine line no longer calls runs recorded one after another a crowd.**
+  Overlap was inclusive at both ends over whole-second stamps, so a run that started in the second
+  the previous row was written always "shared this window". Windows now compare half-open at the
+  end: a run ending in second t and one starting in t are sequential, windows sharing a second or
+  more still overlap, and a sub-second run stamped in the other's start or end second - which no
+  field can order - is said to be not knowable rather than asserted either way.
 - **`close-phase.py` stamps the landing in the tree the merge lands in, whatever manifest path it
   was given.** Run from the main checkout with the WORKTREE's manifest - the command its own
   dry-run printed - it merged, then wrote `mergedAt`, the derived status and the index stub into
