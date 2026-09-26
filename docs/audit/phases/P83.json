@@ -84,7 +84,7 @@
     {
       "id": "P83.2",
       "title": "guard-secrets-read joins continuations before reading a path and grades an interpreter's here-string",
-      "status": "in_progress",
+      "status": "done",
       "description": "Close the guard-secrets-read residuals: its secret-read arm joins line continuations before reading a path, and a here-string fed to an interpreter is graded as inline evaluation, the way -c/-e already are. Deny cases red first with an allow case beside each; SECURITY.md's list and CHANGELOG updated.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -120,14 +120,20 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9f15607d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_shell_text joins continuations; interpreter here-strings found via _clause_words and program_candidates are graded as inline eval.",
+        "descriptive": "The secrets guard now refuses a secret read split across a line continuation, or hidden in a here-string handed to an interpreter."
       },
       "startedAt": "2026-09-26T11:10:32Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T11:16:37Z",
+      "verifiedBy": [
+        "test_guard_secrets_read b5j1",
+        "test_guard_secrets_read b5j2",
+        "test_guard_secrets_read b5h1",
+        "test_guard_secrets_read b5h3",
+        "test_guard_secrets_read b5h5"
+      ]
     }
   ],
   "startedAt": "2026-09-26T10:59:58Z"
