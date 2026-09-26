@@ -1,7 +1,7 @@
 {
   "id": "P72",
   "title": "Every hook judges the tree the work is in, and blames only what it can show",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "every hook that reads the manifest or the plugin's state resolves the tree of the path or command it judges through one helper, so an executor in a linked worktree is held to that worktree's plan (and a lint keeps a bare repo_root from coming back); journal-writes derives completions in a worktree; the bash write guard names the plugin's own writers and a merge as what they are, from the rows and the merge refs; and the history guard reads git only in command position",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "036e98e87346dfb55f49ffe233b7dfab1e8a5bbc",
   "branch": "audit/p72-every-hook-judges-the-tree-the",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T02:44:06Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
