@@ -3662,10 +3662,15 @@ assertions. `proved` needs one of those failures to be the TASK'S OWN - a case p
 working tree's copy of a declared test file and absent from HEAD's, known by its id when its label
 leads with an id-shaped token and otherwise by the whole label. A label counts as the task's own
 when HEAD's copy does not hold the MOST SPECIFIC literal in the working tree that renders it.
-Literals are ranked by ROLE first: one that is a case call's label argument - `check`'s first
-argument, the harness's `skip`, and any suite wrapper that passes its parameter on to one, derived
-from the file - outranks every other literal, and the others are read only when no label argument
-renders the label. Within a role, a literal equal to the label (its FAIL-line detail set aside)
+Literals are ranked by ROLE first: one that names a case - a case call's label argument, by
+position or by keyword, or what a name passed there was bound to (an assignment, a loop over a
+literal table) - outranks every other literal, and the others are read only when no label literal
+renders the label. The case calls are derived from the file: `check`, the harness's `skip`, a
+body's own name for the check it is handed, and any wrapper (a def, a method past its `self`, a
+lambda, or one imported from a sibling test module) that passes its parameter on to one; a method
+is matched only on an attribute call and a plain wrapper only on a plain call. The role-first
+answer fails closed: the case is HEAD's when HEAD holds the closest literal under either the
+role-first or a role-blind ranking. Within a role, a literal equal to the label (its FAIL-line detail set aside)
 outranks any template, the longest such match wins, and only then does the template with the most
 fixed text decide. A label built at run
 time - a value joined with `+`, an f-string or `.format` field - is a template open where the value

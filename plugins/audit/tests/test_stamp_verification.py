@@ -25,7 +25,6 @@ everything a caller can get wrong, and everything the exit code promises.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
-import ast
 import hashlib
 import io
 import json
@@ -1466,18 +1465,149 @@ def _role_cases(check):
           % (code_t, basis_t[:300]),
           code_t == M.E_PROVED and "the table row is read" in basis_t)
     src = "\n".join([
-        "import _harness", "def body(record):", "    record('x', True)",
-        "    _harness.skip(record, 'y', 'm', True)",
+        "import _harness", "def body(record):", "    record('the r label', True)",
+        "    _harness.skip(record, 'the s label', 'm', True)",
         "def _expect(name, ok):", "    check(name, ok)",
         "def _twice(tag, name):", "    _expect(name, tag)",
+        "_expect('the e label', True)", "_twice('the t tag', 'the t label')",
         "_harness.run(body)"])
-    got = M._case_callees(ast.parse(src))
+    got = _role_labels(src)
     check("sr75 the calls that name a case are derived from the suite: `check`, "
           "the harness's `skip` at its second argument, a body's own name for "
           "the check it is handed, and wrappers followed through more than one "
-          "hop: %r" % (got,),
-          got.get("check") == 0 and got.get("skip") == 1 and got.get("record") == 0
-          and got.get("_expect") == 0 and got.get("_twice") == 1)
+          "hop - and only the label position is a label: %r" % (got,),
+          got == ["the e label", "the r label", "the s label", "the t label"])
+
+
+def _role_labels(src):
+    """The fixed text of every label-role literal `_source_view` finds in `src`."""
+    return sorted("".join(p) for p in M._source_view(src)["labels"])
+
+
+# --- a disagreement between the rankings fails closed; wrappers read whole ---
+# An existing case whose label is not a derived label argument, edited to go red,
+# beside a new passing case whose label template renders it, must not read as
+# the task's own; and a new case named through a wrapper the derivation missed
+# must not be refused by a generic template HEAD holds.
+_L = "the next value is read"
+_NEWT = "check('the next value is %s' % ('x',), True)"
+_GENERIC = "check('%s is %s' % ('a', 'b'), True)"
+_NEW_RULE = "the new rule is honoured"
+
+
+def _extra_red(prefix, head_extra, wt_extra, siblings=None):
+    """`(exit, basis)` of a red over suites built from `extra` lines alone;
+    `siblings` are further test modules committed at HEAD beside the suite."""
+    root, man = _red_repo(prefix, _label_suite([], extra=wt_extra),
+                          head_test=_label_suite([], extra=head_extra))
+    for rel, text in (siblings or {}).items():
+        _write(os.path.join(root, *rel.split("/")), text)
+        _git(root, "add", rel)
+    if siblings:
+        _git(root, "commit", "-q", "-m", "siblings")
+    code, got = _red(root, man, [sys.executable, "tests/test_mine.py"])
+    return code, (got.get("redFirst") or {}).get("basis", json.dumps(got))
+
+
+def _disagree_cases(check):
+    table = ["ROWS = [(%r, 1)]" % (_L,), "for lb, want in ROWS:",
+             "    check(lb, mine.v >= want)"]
+    table_w = ["ROWS = [(%r, 2)]" % (_L,), "for lb, want in ROWS:",
+               "    check(lb, mine.v == want)"]
+    method = ["class Suite:", "    def expect(self, name, ok):",
+              "        check(name, ok, 'saw %r' % (mine.v,))", "s = Suite()"]
+    shapes = [
+        ("sr76", "a table row fed to check by a loop", table, table_w + [_NEWT]),
+        ("sr77", "a method wrapper", method + ["s.expect(%r, mine.v >= 1)" % (_L,)],
+         method + ["s.expect(%r, mine.v == 2)" % (_L,), _NEWT]),
+        ("sr78", "a keyword label", ["check(label=%r, ok=mine.v >= 1)" % (_L,)],
+         ["check(label=%r, ok=mine.v == 2)" % (_L,), _NEWT]),
+        ("sr79", "a label held in a constant, beside a verbatim FAIL line",
+         ["LABEL = %r" % (_L,), "check(LABEL, mine.v >= 1, 'saw %r' % (mine.v,))"],
+         ["LABEL = %r" % (_L,), "check(LABEL, mine.v == 2, 'saw %r' % (mine.v,))",
+          "EXPECT = 'the next value is read (saw 1)'"]),
+    ]
+    for cid, how, head, wt in shapes:
+        code, basis = _extra_red("stamp-red-%s-" % (cid,), head, wt)
+        check("%s an EXISTING case named by %s, edited to go red, is not the "
+              "task's own beside a new literal that renders its label: "
+              "exit=%r %s" % (cid, how, code, basis[:260]),
+              code == M.E_CANNOT_PROVE)
+    held = ["ROWS = {'k': %r}" % (_L,), "check(ROWS['k'], mine.v >= 1)"]
+    code, basis = _extra_red("stamp-red-held-", held,
+                             ["ROWS = {'k': %r}" % (_L,),
+                              "check(ROWS['k'], mine.v == 2)"])
+    check("sr80 an EXISTING case whose label is not a label argument at all (a "
+          "dict value), edited to go red with no new literal, stays "
+          "could-not-prove - HEAD's other literals count as held: exit=%r %s"
+          % (code, basis[:260]), code == M.E_CANNOT_PROVE)
+    code_b, basis_b = _extra_red("stamp-red-blind-", held,
+                                 ["ROWS = {'k': %r}" % (_L,),
+                                  "check(ROWS['k'], mine.v == 2)", _NEWT])
+    check("sr87 ...and beside a new PASSING case whose label template renders "
+          "that label, it still stays could-not-prove: the role-first ranking "
+          "picks the new template, the role-blind one picks the literal HEAD "
+          "holds, and the disagreement fails closed: exit=%r %s"
+          % (code_b, basis_b[:260]), code_b == M.E_CANNOT_PROVE)
+    code_n, basis_n = _extra_red(
+        "stamp-red-others-", ["check('the old one holds', True)"],
+        ["check('the old one holds', True)",
+         "ROWS = {'k': 'the dict row is read'}", "check(ROWS['k'], mine.v == 2)"])
+    check("sr88 THE ALLOW CASE for sr80: a genuinely new case whose label no "
+          "case call spells (a dict value) still proves - the other literals "
+          "are read when no label literal renders the label: exit=%r %s"
+          % (code_n, basis_n[:260]),
+          code_n == M.E_PROVED and "the dict row is read" in basis_n)
+
+
+def _wrapper_cases(check):
+    lam = ["expect = lambda n, c: check(n, c, 'saw %r' % (mine.v,))"]
+    method = ["class Suite:", "    def expect(self, name, ok):",
+              "        check(name, ok, 'saw %r' % (mine.v,))", "s = Suite()"]
+    helper = ("def expect(check, name, ok):\n"
+              "    check(name, ok, 'saw %r' % (ok,))\n")
+    shapes = [
+        ("sr81", "a lambda wrapper", lam,
+         "expect(%r, mine.v == 2)" % (_NEW_RULE,), None),
+        ("sr82", "a method wrapper", method,
+         "s.expect(%r, mine.v == 2)" % (_NEW_RULE,), None),
+        ("sr83", "a keyword label", [],
+         "check(label=%r, ok=mine.v == 2)" % (_NEW_RULE,), None),
+        ("sr84", "a wrapper imported from a sibling test module",
+         ["from _helpers import expect"],
+         "expect(check, %r, mine.v == 2)" % (_NEW_RULE,),
+         {"tests/_helpers.py": helper}),
+    ]
+    for cid, how, base, new, siblings in shapes:
+        code, basis = _extra_red("stamp-red-%s-" % (cid,), base + [_GENERIC],
+                                 base + [_GENERIC, new], siblings)
+        check("%s a genuinely NEW case named through %s proves, though HEAD "
+              "holds a generic label template that fits it: exit=%r %s"
+              % (cid, how, code, basis[:260]),
+              code == M.E_PROVED and _NEW_RULE in basis)
+    src = "\n".join(["import subprocess", "def run(name, ok):",
+                     "    check(name, ok)",
+                     "subprocess.run('echo the value is read', True)",
+                     "run('the run label', True)"])
+    got = _role_labels(src)
+    check("sr85 a wrapper's name is matched on a plain call only: a module's "
+          "attribute call that shares the name (`subprocess.run`) is not a case "
+          "call: %r" % (got,), got == ["the run label"])
+
+
+def _pytest_command_cases(check):
+    text = ("FAILED t.py::test_x - assert 1 == 2\n"
+            "===== 1 failed, 2 passed in 0.12s =====\n"
+            + _TALLY % ("SELFTEST FAILED", 0, 1) + "\n")
+    py = sys.executable
+    got = dict((name, (M.classify_run(1, text, cmd)[1] or {}).get("runner"))
+               for name, cmd in (("pytest", ["pytest", "-q", "t.py"]),
+                                 ("python -m pytest", [py, "-m", "pytest", "t.py"]),
+                                 ("bare", [py, "t.py"])))
+    check("sr86 with a pytest summary beside a house tally, the command decides "
+          "for pytest too - under `pytest` and `python -m pytest` - and a bare "
+          "command reads mixed: %r" % (got,),
+          got == {"pytest": "pytest", "python -m pytest": "pytest", "bare": None})
 
 
 def _cases(check):
@@ -1500,6 +1630,9 @@ def _cases(check):
     _harness.stage(check, "sr-command", _command_cases)
     _harness.stage(check, "sr-mixed", _mixed_cases)
     _harness.stage(check, "sr-role", _role_cases)
+    _harness.stage(check, "sr-disagree", _disagree_cases)
+    _harness.stage(check, "sr-wrapper", _wrapper_cases)
+    _harness.stage(check, "sr-pytest-command", _pytest_command_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

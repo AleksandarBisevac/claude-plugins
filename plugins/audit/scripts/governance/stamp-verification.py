@@ -426,7 +426,7 @@ def command_runner(cmd):
     for i, arg in enumerate(args):
         base = os.path.basename(arg)
         follows_m = i > 0 and args[i - 1] == "-m"
-        if base in ("pytest", "py.test") or (follows_m and arg == "pytest"):
+        if base in ("pytest", "py.test"):
             named.add("pytest")
         elif follows_m and arg == "unittest":
             named.add("unittest")
@@ -718,71 +718,196 @@ def _label_forms(label):
     return [label] + [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
 
 
-def _callee(call):
+# --- which calls name a case ---
+def _imports(tree):
+    """`(modules, names)` - `{alias: module}` for each `import M [as a]`, and
+    `{local: (module, name)}` for each `from M import n [as local]`."""
+    modules, names = {}, {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                modules[alias.asname or alias.name.split(".")[0]] = alias.name
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            for alias in node.names:
+                names[alias.asname or alias.name] = (node.module, alias.name)
+    return modules, names
+
+
+def _call_key(call, modules):
+    """How a call is keyed: `("name", f)` for a plain `f(...)`, `("mod", a, f)`
+    for `a.f(...)` on an imported module, `("attr", f)` for any other
+    `x.f(...)` - so a method wrapper is never matched by a module's function
+    that shares its name (`subprocess.run`), nor a plain wrapper by either."""
     func = call.func
     if isinstance(func, ast.Name):
-        return func.id
-    return func.attr if isinstance(func, ast.Attribute) else None
+        return ("name", func.id)
+    if not isinstance(func, ast.Attribute):
+        return None
+    if isinstance(func.value, ast.Name) and func.value.id in modules:
+        return ("mod", func.value.id, func.attr)
+    return ("attr", func.attr)
 
 
-def _case_callees(tree):
-    """`{name: position}` - the calls in a suite whose argument at `position`
-    names a case.
-
-    Derived from the file rather than listed: `check` and every body's own name
-    for it (the first parameter of a function handed to the harness's `stage`
-    or `run`) take the label first, the harness's `skip` takes it second, and a
-    suite's wrapper that passes one of its parameters on to such a call at a
-    label position (`_expect(name, ...)` calling `check(name, ...)`) names a
-    case at that parameter's position - followed until nothing new appears."""
-    callees = {"check": 0, "skip": 1}
-    defs = [n for n in ast.walk(tree)
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    by_name = dict((d.name, d) for d in defs)
-    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
-        if _callee(call) not in ("stage", "run"):
-            continue
-        for arg in call.args:
-            body = by_name.get(arg.id) if isinstance(arg, ast.Name) else None
-            if body is not None and body.args.args:
-                callees.setdefault(body.args.args[0].arg, 0)
-    grew = True
-    while grew:
-        grew = False
-        for fn in defs:
-            params = [a.arg for a in fn.args.args]
-            for call in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
-                at = callees.get(_callee(call))
-                arg = call.args[at] if at is not None and len(call.args) > at else None
-                if (isinstance(arg, ast.Name) and arg.id in params
-                        and fn.name not in callees):
-                    callees[fn.name] = params.index(arg.id)
-                    grew = True
-    return callees
+def _call_arg(call, spec):
+    """The argument a `(position, keyword)` spec names in `call`, or None."""
+    at, word = spec
+    if len(call.args) > at and not any(isinstance(a, ast.Starred)
+                                       for a in call.args[:at + 1]):
+        return call.args[at]
+    return next((k.value for k in call.keywords if k.arg == word), None)
 
 
-def _case_label_nodes(tree):
-    """The argument nodes that name a case, by identity."""
-    callees = _case_callees(tree)
-    out = set()
-    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
-        at = callees.get(_callee(call))
-        if at is not None and len(call.args) > at:
-            out.add(id(call.args[at]))
+def _wrappers(tree):
+    """`[(key, params, offset, node)]` - every function-like that could wrap a
+    case call: a def (a method, whose first parameter is `self` or `cls`, is
+    keyed as an attribute call and its positions shifted past that parameter)
+    and a lambda bound to a name."""
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            params = [a.arg for a in node.args.args]
+            method = bool(params) and params[0] in ("self", "cls")
+            out.append(((("attr" if method else "name"), node.name), params,
+                        1 if method else 0, node))
+        elif (isinstance(node, ast.Assign) and isinstance(node.value, ast.Lambda)
+              and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
+            out.append((("name", node.targets[0].id),
+                        [a.arg for a in node.value.args.args], 0, node.value))
     return out
 
 
-def _source_view(text):
+def _sibling_callees(mod, sibling):
+    """The case calls a sibling module defines, or nothing when it cannot be read."""
+    text = sibling(mod) if sibling is not None else None
+    if not text:
+        return {}
+    try:
+        return _case_callees(ast.parse(text))
+    except (SyntaxError, ValueError):
+        return {}
+
+
+def _case_callees(tree, sibling=None):
+    """`{key: (position, keyword)}` - the calls in a suite whose argument at
+    `position`, or passed as `keyword`, names a case; keys as `_call_key`.
+
+    Derived from the file rather than listed: `check` and every body's own name
+    for it (the first parameter of a function handed to the harness's `stage`
+    or `run`) take the label first, the harness's `skip` takes it second, and
+    a wrapper - a def, a method, a lambda bound to a name - that passes one of
+    its parameters on to such a call at a label position names a case at that
+    parameter's position, followed until nothing new appears. A wrapper
+    imported from a sibling module (`from M import w`, or `import M` then
+    `M.w(...)`) is read from that module when `sibling(M)` returns its text.
+
+    WHAT THIS CANNOT SEE: a wrapper reached through a sibling's own imports
+    (one hop is read), a label assembled from a parameter (`'the rule ' +
+    name`), or a wrapper stored in a container or built by a factory."""
+    modules, names = _imports(tree)
+    harness = set(a for a, m in modules.items() if m == "_harness")
+    callees = {("name", "check"): (0, "label"), ("name", "skip"): (1, "label")}
+    for alias in harness:
+        callees[("mod", alias, "skip")] = (1, "label")
+    for mod in sorted(set(list(modules.values()) + [m for m, _n in names.values()])):
+        theirs = _sibling_callees(mod, sibling)
+        for local, (module, name) in names.items():
+            if module == mod and ("name", name) in theirs:
+                callees.setdefault(("name", local), theirs[("name", name)])
+        for alias, module in modules.items():
+            for key, spec in (theirs.items() if module == mod else ()):
+                if key[0] == "name":
+                    callees.setdefault(("mod", alias, key[1]), spec)
+    wrappers = _wrappers(tree)
+    defs = dict((key[1], params) for key, params, _o, _n in wrappers)
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        key = _call_key(call, modules)
+        runs = (key == ("name", "stage")
+                or (key is not None and key[0] == "mod" and key[1] in harness
+                    and key[2] in ("stage", "run")))
+        for arg in (call.args if runs else ()):
+            params = defs.get(arg.id) if isinstance(arg, ast.Name) else None
+            if params:
+                callees.setdefault(("name", params[0]), (0, "label"))
+    grew = True
+    while grew:
+        grew = False
+        for key, params, offset, node in wrappers:
+            if key in callees:
+                continue
+            for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+                spec = callees.get(_call_key(call, modules))
+                arg = _call_arg(call, spec) if spec is not None else None
+                if isinstance(arg, ast.Name) and arg.id in params[offset:]:
+                    callees[key] = (params.index(arg.id) - offset, arg.id)
+                    grew = True
+                    break
+    return callees
+
+
+def _loop_rows(node, assigned):
+    """The literal rows a `for` loop or comprehension iterates, when it iterates
+    a literal list or tuple, or a name bound to one."""
+    if isinstance(node.iter, (ast.List, ast.Tuple)):
+        return list(node.iter.elts)
+    tables = assigned.get(node.iter.id, []) if isinstance(node.iter, ast.Name) else []
+    return [row for t in tables if isinstance(t, (ast.List, ast.Tuple)) for row in t.elts]
+
+
+def _bound_values(tree):
+    """`{name: [value nodes]}` - what a name a case call is handed was bound to:
+    an assignment `NAME = value`, and a loop over literal rows whose target is
+    the name or unpacks to it."""
+    assigned = {}
+    for node in ast.walk(tree):
+        for target in (node.targets if isinstance(node, ast.Assign) else ()):
+            if isinstance(target, ast.Name):
+                assigned.setdefault(target.id, []).append(node.value)
+    out = dict((k, list(v)) for k, v in assigned.items())
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.For, ast.comprehension)):
+            continue
+        for row in _loop_rows(node, assigned):
+            if isinstance(node.target, ast.Name):
+                out.setdefault(node.target.id, []).append(row)
+            elif (isinstance(node.target, ast.Tuple)
+                  and isinstance(row, (ast.List, ast.Tuple))
+                  and len(row.elts) == len(node.target.elts)):
+                for name, item in zip(node.target.elts, row.elts):
+                    if isinstance(name, ast.Name):
+                        out.setdefault(name.id, []).append(item)
+    return out
+
+
+def _case_label_nodes(tree, sibling=None):
+    """The nodes that name a case, by identity: each case call's label
+    argument, and - when that argument is a name - what the name was bound to."""
+    callees = _case_callees(tree, sibling)
+    modules, _names = _imports(tree)
+    bound = _bound_values(tree)
+    out = set()
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        spec = callees.get(_call_key(call, modules))
+        arg = _call_arg(call, spec) if spec is not None else None
+        if arg is None:
+            continue
+        out.add(id(arg))
+        if isinstance(arg, ast.Name):
+            out.update(id(v) for v in bound.get(arg.id, ()))
+    return out
+
+
+# --- which literal a label was written from ---
+def _source_view(text, sibling=None):
     """`{"text", "labels", "others"}` for one copy of a test file: the fixed
-    pieces of every literal it spells, split by ROLE - the ones that are a case
-    call's label argument, and every other one - or both None when it is not
-    Python."""
+    pieces of every literal it spells, split by ROLE - the ones that name a
+    case (`_case_label_nodes`), and every other one - or both None when it is
+    not Python. `sibling(module)` is the text of a sibling test module."""
     text = text or ""
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
         return {"text": text, "labels": None, "others": None}
-    naming = _case_label_nodes(tree)
+    naming = _case_label_nodes(tree, sibling)
     labels, others = set(), set()
     for node in ast.walk(tree):
         pieces = _fold(node)
@@ -842,17 +967,22 @@ def _standing(wt, head, name):
     """`added` / `at-head` / `absent` - case `name` in one test file's two copies.
 
     A single token is a whole name. A label is judged by the working tree's
-    closest literal (`_closest_literals`): the task added it when HEAD's copy
-    holds none of those literals. HEAD is never asked whether some looser
-    literal of its own renders the label too - a generic message template
-    there would refuse every new case whose label it happens to fit.
+    closest literal, and the task added it when HEAD's copy holds none of the
+    closest literals under EITHER ranking - role first (`_closest_literals`)
+    or role blind, every literal in one pool. A case whose label the role
+    derivation missed would otherwise be judged by whichever label template
+    the task adds that happens to fit it; when the two rankings disagree, the
+    answer fails closed. HEAD is never asked whether some looser literal of its
+    own renders the label too - a generic message template there would refuse
+    every new case whose label it happens to fit.
 
     WHAT THIS CANNOT SEE. A label that no literal in HEAD spells even in part -
     read from a file, computed, assembled from values alone - has no literal
     at HEAD, so a literal the task adds that renders it reads as the task's
-    own. And a label that no case call's argument spells (a table row fed to
-    `check` by a loop) is judged among the other literals, where a longer one
-    the task adds - a verbatim FAIL line, detail included - outranks it."""
+    own. And a label no case call's argument spells and no name bound to one
+    holds - a dict value, an attribute, a call's result - is judged only among
+    the other literals under both rankings, where a longer one the task adds
+    (a verbatim FAIL line, detail included) outranks the literal it came from."""
     if len(name.split()) <= 1:
         in_wt, at_head = _names(wt["text"], name), _names(head["text"], name)
     elif wt["labels"] is None or head["labels"] is None:
@@ -861,18 +991,29 @@ def _standing(wt, head, name):
         at_head = any(form in head["text"] for form in forms)
     else:
         closest = _closest_literals(wt, name)
+        blind = _closest_in(wt["labels"] + wt["others"], _label_forms(name))
         held = set(head["labels"]) | set(head["others"])
         in_wt = bool(closest)
-        at_head = (any(lit in held for lit in closest) if closest
+        at_head = (any(lit in held for lit in closest + blind) if closest
                    else bool(_closest_literals(head, name)))
     if at_head:
         return "at-head"
     return "added" if in_wt else "absent"
 
 
+def _sibling_reader(root, rel, read):
+    """`sibling(module)` for `rel`: the text `read` gives for `module`'s file
+    in the same directory, or None."""
+    where = rel.rsplit("/", 1)[0] + "/" if "/" in rel else ""
+    return lambda module: read(root, where + module.replace(".", "/") + ".py")
+
+
 def _test_views(root, tests):
-    """`[(wt_view, head_view)]` - each declared test file, parsed once."""
-    return [(_source_view(_wt_text(root, rel)), _source_view(_head_text(root, rel)))
+    """`[(wt_view, head_view)]` - each declared test file, parsed once, with its
+    sibling modules read from the same copy of the tree."""
+    return [(_source_view(_wt_text(root, rel), _sibling_reader(root, rel, _wt_text)),
+             _source_view(_head_text(root, rel),
+                          _sibling_reader(root, rel, _head_text)))
             for rel in tests]
 
 

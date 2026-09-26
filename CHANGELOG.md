@@ -306,8 +306,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
   hands out) as its id only when present. It is the task's own when the working tree's test file
   holds a string literal that renders that label (wrapped and `%`-formatted literals included) and
-  HEAD's copy does not hold the MOST SPECIFIC such literal. A case call's label argument (`check`'s,
-  the harness's `skip`, or a suite wrapper's that passes it on) outranks every other literal; within
+  HEAD's copy does not hold the MOST SPECIFIC such literal. A literal naming a case - a case call's
+  label argument by position or keyword, or what a name passed there was bound to - outranks every
+  other literal; the case calls are derived from the file (`check`, the harness's `skip`, and any
+  wrapper passing its parameter on: a def, a method past its `self`, a lambda, or one imported from
+  a sibling test module). The answer fails closed: HEAD holds the case when it holds the closest
+  literal under either the role-first or a role-blind ranking. Within
   that role a literal equal to the label outranks any template (the longest such match wins), and
   only then does the template with the most fixed text decide - so a generic template HEAD already
   has (`'%s is %s'`) no longer refuses a new case it happens to fit, a constant spelling the printed
