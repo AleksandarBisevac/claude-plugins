@@ -485,7 +485,7 @@
     {
       "id": "P75",
       "title": "verify-invariants reports what is new, and user tooling can share the cross-worktree lock",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P75.json"
     },
     {
@@ -592,13 +592,17 @@
       "P72.7-ttl",
       "P72.8-ttl",
       "P73.1",
-      "P75.1",
       "P76.2",
       "P77.2",
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P75.1",
+      "P75.2-j5h",
+      "P75.3-j5h",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -664,7 +668,12 @@
       "P79.2",
       "P79.3",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P75.1",
+      "P75.2-j5h",
+      "P75.3-j5h",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "README.md": [
       "P2.3",
@@ -694,7 +703,8 @@
       "P72.6-ttl",
       "P72.7-ttl",
       "P72.8-ttl",
-      "P80.11"
+      "P80.11",
+      "P75.2-j5h"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -809,7 +819,8 @@
       "P80.12",
       "P81.2",
       "P81.8",
-      "P72.3-ttl"
+      "P72.3-ttl",
+      "P75.2-j5h"
     ],
     "plugins/audit/agents/audit-executor.md": [
       "P4.1",
@@ -952,7 +963,8 @@
       "P57.1",
       "P57.4",
       "P70.3-fos",
-      "P80.6"
+      "P80.6",
+      "P75.2-j5h"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -1261,7 +1273,8 @@
       "P34.5",
       "P36.10",
       "P55.3",
-      "P57.1"
+      "P57.1",
+      "P75.4-j5h"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -1344,7 +1357,9 @@
       "P51.2",
       "P53.3",
       "P50.5",
-      "P50.9"
+      "P50.9",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2"
@@ -1452,7 +1467,9 @@
       "P59.10",
       "P63.5",
       "P63.8",
-      "P80.6"
+      "P80.6",
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -1557,7 +1574,8 @@
       "P51.5",
       "P69.3",
       "P69.4-j6r",
-      "P78.5"
+      "P78.5",
+      "P75.4-j5h"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -1722,7 +1740,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P75.4-j5h"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -1732,7 +1751,10 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P75.3-j5h",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -1747,7 +1769,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P75.4-j5h"
     ],
     "plugins/audit/tests/test__help.py": [
       "P18.2",
@@ -1762,14 +1785,18 @@
       "P57.3",
       "P61.14",
       "P69.1",
-      "P75.1"
+      "P75.1",
+      "P75.2-j5h",
+      "P75.3-j5h",
+      "P75.4-j5h"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
       "P18.9",
       "P47.2",
       "P49.3",
-      "P54.2"
+      "P54.2",
+      "P75.2-j5h"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6",
@@ -1778,7 +1805,8 @@
     ],
     "plugins/audit/tests/test__doctor_hygiene.py": [
       "P18.6",
-      "P18.9"
+      "P18.9",
+      "P75.2-j5h"
     ],
     "plugins/audit/tests/test__doctor_policy.py": [
       "P18.6",
@@ -2061,12 +2089,18 @@
       "P61.2",
       "P63.8",
       "P69.3",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
       "P29.5",
-      "P59.7"
+      "P59.7",
+      "P75.2-j5h",
+      "P75.3-j5h",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -2074,7 +2108,9 @@
       "P61.2",
       "P63.8",
       "P69.3",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -2233,7 +2269,8 @@
       "P78.1",
       "P78.2",
       "P79.1",
-      "P80.1"
+      "P80.1",
+      "P75.4-j5h"
     ],
     "plugins/audit/tests/test__manifest_phases.py": [
       "P22.4",
@@ -2249,7 +2286,8 @@
       "P78.1",
       "P78.2",
       "P79.1",
-      "P80.1"
+      "P80.1",
+      "P75.4-j5h"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2262,7 +2300,9 @@
       "P52.5",
       "P55.1",
       "P55.2",
-      "P75.1"
+      "P75.1",
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -2274,7 +2314,9 @@
       "P52.5",
       "P55.1",
       "P55.2",
-      "P75.1"
+      "P75.1",
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
       "P22.11"
@@ -2354,7 +2396,10 @@
       "P53.2",
       "P57.1",
       "P57.3",
-      "P77.1"
+      "P77.1",
+      "P75.3-j5h",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -2392,7 +2437,9 @@
       "P63.5",
       "P63.8",
       "P69.3",
-      "P80.6"
+      "P80.6",
+      "P75.2-j5h",
+      "P75.3-j5h"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2417,7 +2464,11 @@
     "plugins/audit/tests/test__invariants.py": [
       "P28.2",
       "P29.5",
-      "P59.7"
+      "P59.7",
+      "P75.2-j5h",
+      "P75.3-j5h",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -2547,7 +2598,9 @@
       "P60.5",
       "P61.1",
       "P61.7",
-      "P67.1"
+      "P67.1",
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -2728,7 +2781,8 @@
       "P78.5",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P75.4-j5h"
     ],
     "examples/acme-store/phases/BF1.json": [
       "P32.2"
@@ -2740,14 +2794,16 @@
       "P52.3",
       "P52.5",
       "P55.3",
-      "P75.1"
+      "P75.1",
+      "P75.2-j5h"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
       "P52.1",
       "P55.1",
       "P59.13",
-      "P75.1"
+      "P75.1",
+      "P75.2-j5h"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -2921,7 +2977,8 @@
       "P49.3"
     ],
     "plugins/audit/tests/test__panel_runstate.py": [
-      "P49.3"
+      "P49.3",
+      "P75.2-j5h"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
@@ -2993,8 +3050,11 @@
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
+      "P76.1",
       "P75.1",
-      "P76.1"
+      "P75.2-j5h",
+      "P75.3-j5h",
+      "P75.4-j5h"
     ],
     "tools/check-report-interactive.mjs": [
       "P55.7",
@@ -3111,7 +3171,8 @@
     ],
     "plugins/audit/scripts/manifest/_id_shape.py": [
       "P61.1",
-      "P61.8"
+      "P61.8",
+      "P75.2-j5h"
     ],
     "plugins/audit/tests/test__id_shape.py": [
       "P61.1",
@@ -3125,7 +3186,9 @@
       "P74.1",
       "P78.11",
       "P79.7",
-      "P80.12"
+      "P80.12",
+      "P75.1",
+      "P75.2-j5h"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
@@ -3214,9 +3277,6 @@
     "plugins/audit/scripts/manifest/_commit_trail.py": [
       "P69.4-j6r"
     ],
-    "plugins/audit/tests/test_verify_invariants.py": [
-      "P75.1"
-    ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2"
     ],
@@ -3251,6 +3311,29 @@
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11"
+    ],
+    "plugins/audit/tests/test_verify_invariants.py": [
+      "P75.1",
+      "P75.2-j5h",
+      "P75.3-j5h",
+      "P75.4-j5h"
+    ],
+    "plugins/audit/scripts/manifest/_manifest_ado.py": [
+      "P75.4-j5h",
+      "P75.5-j5h"
+    ],
+    "plugins/audit/scripts/manifest/_ado_conventions.py": [
+      "P75.4-j5h"
+    ],
+    "plugins/audit/scripts/manifest/_ado_fields.py": [
+      "P75.4-j5h"
+    ],
+    "plugins/audit/scripts/manifest/_ado_parent.py": [
+      "P75.4-j5h",
+      "P75.5-j5h"
+    ],
+    "plugins/audit/scripts/manifest/_ado_tracked.py": [
+      "P75.4-j5h"
     ],
     "plugins/audit/tests/_harness.py": [
       "P72.1"

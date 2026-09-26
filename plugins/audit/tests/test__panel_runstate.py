@@ -96,6 +96,34 @@ def _cases(check):
           li["phases"]["P1"].get("live") is not None)
     os.remove(os.path.join(ld, "phase-P2.lock"))
     os.remove(os.path.join(ld, "phase-P3.lock"))
+    # A USER LOCK IS NOT AN AUDIT RUN. Worktree tooling takes `user-<name>` in this
+    # same directory, and the panel must neither badge it as a phase nor refuse a
+    # composition write because of it.
+    _uld = os.path.join(tmp, "audit-locks-user")
+    os.makedirs(_uld)
+    _atomic_write_json(os.path.join(_uld, "user-e2e.lock"),
+                       {"hostname": "hu", "startedAt": "t"})
+    _uli = M._lock_info(_uld)
+    _real_dir = M._audit_lock_dir
+    M._audit_lock_dir = lambda _p, _c: _uld
+    try:
+        _u_held = M._audit_lock_held(proj, M.read_config(proj))
+    finally:
+        M._audit_lock_dir = _real_dir
+    check("ul1 a directory holding only a user lock reads as NO audit lock held, "
+          "and the lock is neither the index nor a phase: %r / %r"
+          % (_u_held, _uli),
+          _u_held is False and _uli["index"] is None and _uli["phases"] == {})
+    _atomic_write_json(os.path.join(_uld, "index.lock"),
+                       {"hostname": "hi", "startedAt": "t"})
+    M._audit_lock_dir = lambda _p, _c: _uld
+    try:
+        _i_held = M._audit_lock_held(proj, M.read_config(proj))
+    finally:
+        M._audit_lock_dir = _real_dir
+    check("ul2 ...while the same directory with the index lock in it DOES read as "
+          "held - the case that fails if ul1 passes because the reader stopped "
+          "looking", _i_held is True)
     # --- v0.34 C5 (lv): the data fingerprint -------------------------------------
     # Pure stats per request, folded into /api/runstatus so the existing 5s
     # poll carries it. The browser half (refreshFromDisk) is driven in

@@ -151,7 +151,7 @@ def _check_unique_ids(index):
     seen = set()
     for i in _live_ids(index):
         if i in seen:
-            f.append("duplicate id: %s" % i)
+            f.append(_output.finding("crossrefs.unique_ids.value", "duplicate id: %s" % i))
         seen.add(i)
     return (f, [])
 
@@ -167,15 +167,15 @@ def _ref_findings(refs_val, where, field, universe, kind):
     """
     findings = []
     if refs_val is not None and not isinstance(refs_val, list):
-        findings.append("%s: %s must be an array, got %s"
-                        % (where, field, type(refs_val).__name__))
+        findings.append(_output.finding("crossrefs.%s.not-array" % (field,), "%s: %s must be an array, got %s"
+                        % (where, field, type(refs_val).__name__)))
     for ref in _safe_list(refs_val):
         if not isinstance(ref, str):
-            findings.append("%s: %s entry must be a string id, got %r"
-                            % (where, field, ref))
+            findings.append(_output.finding("crossrefs.%s.entry-not-string" % (field,), "%s: %s entry must be a string id, got %r"
+                            % (where, field, ref)))
         elif ref not in universe:
-            findings.append("%s: %s '%s' does not resolve to %s"
-                            % (where, field, ref, kind))
+            findings.append(_output.finding("crossrefs.%s.unresolved" % (field,), "%s: %s '%s' does not resolve to %s"
+                            % (where, field, ref, kind)))
     return findings
 
 
@@ -278,8 +278,8 @@ def _cycle_findings(phases, findings):
                 if key not in reported:
                     reported.add(key)
                     findings.append(
-                        "dependency cycle (blockedBy/dependsOn can never be "
-                        "satisfied): %s" % " -> ".join(str(x) for x in cyc))
+                        _output.finding("crossrefs.cycle_findings.value", "dependency cycle (blockedBy/dependsOn can never be "
+                        "satisfied): %s" % " -> ".join(str(x) for x in cyc)))
             elif c == WHITE:
                 color[nxt] = GRAY
                 stack.append((nxt, iter(edges.get(nxt, ()))))
@@ -488,7 +488,12 @@ def _check_ado_parents(manifest, phases):
     # split by tier that used to live on these two lines could not see the
     # thing that actually decides it, which is whether an AUTHORED `adoParent`
     # is in the loop at all.
-    findings = [e["message"] for e in result["findings"]]
+    # THE ENTRY'S OWN CODE IS THE RULE. `_ado_parent` already names each
+    # hierarchy rule (A1 self-parent, A2 loop, A3 phase-phase loop), so the
+    # finding carries that and not a second name for the same rule.
+    findings = [_output.finding("crossrefs.ado_parents.%s" % (e["code"],),
+                                e["message"])
+                for e in result["findings"]]
     warnings = list(inv["warnings"])
     warnings.extend(e["message"] for e in result["warnings"])
     warnings.extend(_require_parent_warnings(ado, inv["rows"]))
@@ -532,21 +537,21 @@ def _check_file_index(manifest, index):
         key = _strip_line_suffix(fpath)
         bucket = stripped_index.setdefault(key, set())
         if not isinstance(refs, list):
-            f.append("fileIndex['%s']: value must be an array of task ids, "
-                     "got %s" % (fpath, type(refs).__name__))
+            f.append(_output.finding("crossrefs.file_index.value-array-task", "fileIndex['%s']: value must be an array of task ids, "
+                     "got %s" % (fpath, type(refs).__name__)))
             continue
         for ref in refs:
             if isinstance(ref, str):
                 bucket.add(ref)  # only hashable str ids enter the set
             if ref not in task_ids:
-                f.append("fileIndex['%s']: task '%s' does not exist" % (fpath, ref))
+                f.append(_output.finding("crossrefs.file_index.task-does-exist", "fileIndex['%s']: task '%s' does not exist" % (fpath, ref)))
     for tid, files in index["task_files"].items():
         for fentry in files:
             key = _strip_line_suffix(fentry)
             if tid not in stripped_index.get(key, set()):
-                f.append("task %s: file '%s' %s "
+                f.append(_output.finding("crossrefs.file_index.file-fileindex-include", "task %s: file '%s' %s "
                          "(fileIndex['%s'] must include '%s')"
-                         % (tid, fentry, FILEINDEX_PAIRING, key, tid))
+                         % (tid, fentry, FILEINDEX_PAIRING, key, tid)))
     return (f, [])
 
 
@@ -561,41 +566,41 @@ def _check_bugs(manifest, index):
     f, w = [], []
     bugs = manifest.get("bugs")
     if bugs is not None and not isinstance(bugs, list):
-        f.append("bugs: not an array")
+        f.append(_output.finding("crossrefs.bugs.array", "bugs: not an array"))
     task_ids = index["task_ids"]
     for bi, bug in enumerate(index["bug_list"]):
         if not isinstance(bug, dict):
-            f.append("bugs[%d]: not an object" % bi)
+            f.append(_output.finding("crossrefs.bugs.object", "bugs[%d]: not an object" % bi))
             continue
         bid = bug.get("id")
         bwhere = "bug %s" % (bid or ("bugs[%d]" % bi))
         _require_fields(bug, bwhere, f)
         _unknown_keys(bug, KNOWN_BUG, bwhere, w)
         if bid and not BUG_ID_RE.match(str(bid)):
-            f.append("%s: id must match BUG-<number> or, minted off the development "
-                     "branch, BUG-<number>-<suffix>" % bwhere)
+            f.append(_output.finding("crossrefs.bugs.id-match-bug", "%s: id must match BUG-<number> or, minted off the development "
+                     "branch, BUG-<number>-<suffix>" % bwhere))
         if bug.get("status") not in BUG_STATUS:
-            f.append("%s: status %r not in %s" % (bwhere, bug.get("status"), list(BUG_STATUS)))
+            f.append(_output.finding("crossrefs.bugs.status", "%s: status %r not in %s" % (bwhere, bug.get("status"), list(BUG_STATUS))))
         _check_ado(bug, bwhere, f)
         if bug.get("taskId"):
             if bug["taskId"] not in task_ids:
-                f.append("%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"]))
+                f.append(_output.finding("crossrefs.bugs.taskid-does-resolve", "%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"])))
             else:
                 linked = index["task_by_id"].get(bug["taskId"]) or {}
                 if linked.get("bugId") != bid:
-                    f.append("%s: taskId '%s' but that task's bugId is %r — "
+                    f.append(_output.finding("crossrefs.bugs.taskid-task-bugid", "%s: taskId '%s' but that task's bugId is %r — "
                              "link must be reciprocal"
-                             % (bwhere, bug["taskId"], linked.get("bugId")))
+                             % (bwhere, bug["taskId"], linked.get("bugId"))))
 
     for twhere, tid, bug_ref in index["bug_links"]:
         if bug_ref not in index["bug_ids"]:
-            f.append("%s: bugId '%s' does not resolve to a bug" % (twhere, bug_ref))
+            f.append(_output.finding("crossrefs.bugs.bugid-does-resolve", "%s: bugId '%s' does not resolve to a bug" % (twhere, bug_ref)))
         else:
             linked = index["bug_by_id"].get(bug_ref) or {}
             if linked.get("taskId") != tid:
-                f.append("%s: bugId '%s' but that bug's taskId is %r — "
+                f.append(_output.finding("crossrefs.bugs.bugid-bug-taskid", "%s: bugId '%s' but that bug's taskId is %r — "
                          "link must be reciprocal"
-                         % (twhere, bug_ref, linked.get("taskId")))
+                         % (twhere, bug_ref, linked.get("taskId"))))
     return (f, w)
 
 
@@ -681,18 +686,18 @@ def _check_decisions(manifest, index):
                  "decision record - `decisions` is a list of DEC- entries")
     for di, dec in enumerate(index.get("decision_list") or []):
         if not isinstance(dec, dict):
-            f.append("decisions[%d]: not an object" % di)
+            f.append(_output.finding("crossrefs.decisions.object", "decisions[%d]: not an object" % di))
             continue
         did = dec.get("id")
         dwhere = "decision %s" % (did or ("decisions[%d]" % di))
         _require_fields(dec, dwhere, f)
         _unknown_keys(dec, KNOWN_DECISION, dwhere, w)
         if did and not DEC_ID_RE.match(str(did)):
-            f.append("%s: id must match DEC-<number>" % dwhere)
+            f.append(_output.finding("crossrefs.decisions.id-match-dec", "%s: id must match DEC-<number>" % dwhere))
         status = dec.get("status")
         if status not in STATUS:
-            f.append("%s: status %r not in %s"
-                     % (dwhere, status, list(STATUS)))
+            f.append(_output.finding("crossrefs.decisions.status", "%s: status %r not in %s"
+                     % (dwhere, status, list(STATUS))))
         if status == "done":
             for field, why in (("answer", "an approval with no words is the "
                                           "second-hand approval this record "
@@ -700,8 +705,8 @@ def _check_decisions(manifest, index):
                                ("decidedBy", "an approval nobody is named for "
                                              "cannot be held to anyone")):
                 if not str(dec.get(field) or "").strip():
-                    f.append("%s: status is \"done\" but %s is empty - %s"
-                             % (dwhere, field, why))
+                    f.append(_output.finding("crossrefs.decisions.status-done-empty", "%s: status is \"done\" but %s is empty - %s"
+                             % (dwhere, field, why)))
     return (f, w)
 
 
@@ -717,7 +722,7 @@ def _check_proposals(manifest, index):
     f, w = [], []
     proposals = manifest.get("proposals")
     if proposals is not None and not isinstance(proposals, list):
-        f.append("proposals: not an array")
+        f.append(_output.finding("crossrefs.proposals.array", "proposals: not an array"))
     prop_list = proposals if isinstance(proposals, list) else []
     phase_ids = index["phase_ids"]
     live_ids = set(_live_ids(index))
@@ -726,38 +731,38 @@ def _check_proposals(manifest, index):
     staged_refs = []       # (where, ref) — blockedBy/dependsOn inside payloads
     for xi, prop in enumerate(prop_list):
         if not isinstance(prop, dict):
-            f.append("proposals[%d]: not an object" % xi)
+            f.append(_output.finding("crossrefs.proposals.object", "proposals[%d]: not an object" % xi))
             continue
         prid = prop.get("id")
         xwhere = "proposal %s" % (prid or ("proposals[%d]" % xi))
         _unknown_keys(prop, KNOWN_PROPOSAL, xwhere, w)
         if prid:
             if prid in prop_ids_seen:
-                f.append("duplicate proposal id: %s" % prid)
+                f.append(_output.finding("crossrefs.proposals.value", "duplicate proposal id: %s" % prid))
             prop_ids_seen.add(prid)
         payload = prop.get("payload")
         if "payload" in prop and payload is not None and not isinstance(payload, dict):
-            f.append("%s: payload must be an object or null, got %s"
-                     % (xwhere, type(payload).__name__))
+            f.append(_output.finding("crossrefs.proposals.payload-object-null", "%s: payload must be an object or null, got %s"
+                     % (xwhere, type(payload).__name__)))
             payload = None
         if not isinstance(payload, dict):
             continue  # legacy free-form entry — tolerated as-is
         if not PROP_ID_RE.match(str(prid or "")):
-            f.append("%s: id must match PROP-<number> or, minted off the development "
-                     "branch, PROP-<number>-<suffix>" % xwhere)
+            f.append(_output.finding("crossrefs.proposals.id-match-prop", "%s: id must match PROP-<number> or, minted off the development "
+                     "branch, PROP-<number>-<suffix>" % xwhere))
         status = prop.get("status")
         if status not in PROPOSAL_STATUS:
-            f.append("%s: status %r not in %s"
-                     % (xwhere, status, list(PROPOSAL_STATUS)))
+            f.append(_output.finding("crossrefs.proposals.status", "%s: status %r not in %s"
+                     % (xwhere, status, list(PROPOSAL_STATUS))))
         mat = prop.get("materializedAs")
         if mat is not None:
             if mat not in phase_ids:
-                f.append("%s: materializedAs '%s' does not resolve to a phase"
-                         % (xwhere, mat))
+                f.append(_output.finding("crossrefs.proposals.materializedas-does-resolve", "%s: materializedAs '%s' does not resolve to a phase"
+                         % (xwhere, mat)))
             if status != "materialized":
-                f.append("%s: materializedAs is set but status is %r — must be "
+                f.append(_output.finding("crossrefs.proposals.materializedas-set-status", "%s: materializedAs is set but status is %r — must be "
                          "'materialized' (/audit:propose writes both together)"
-                         % (xwhere, status))
+                         % (xwhere, status)))
         # The DROP pair, mirroring the materialize pair above. `propose.md` has
         # always asked for the justification, but prose cannot enforce it and the
         # panel can drop too now — an archive whose entries do not say WHY is a
@@ -765,26 +770,26 @@ def _check_proposals(manifest, index):
         # find why the work was declined.
         notes = prop.get("notes")
         if status == "dropped" and not str(notes or "").strip():
-            f.append("%s: status is 'dropped' but there is no `notes` "
+            f.append(_output.finding("crossrefs.proposals.status-dropped-there", "%s: status is 'dropped' but there is no `notes` "
                      "justification — a dropped proposal is history rather than a "
                      "deletion, so it has to say why the work was declined"
-                     % (xwhere,))
+                     % (xwhere,)))
         dropped_at = prop.get("droppedAt")
         if dropped_at is not None and status != "dropped":
-            f.append("%s: droppedAt is set but status is %r — must be 'dropped'"
-                     % (xwhere, status))
+            f.append(_output.finding("crossrefs.proposals.droppedat-set-status", "%s: droppedAt is set but status is %r — must be 'dropped'"
+                     % (xwhere, status)))
         pphase = payload.get("phase")
         if not isinstance(pphase, dict):
-            f.append("%s: payload.phase must be an object (the parked phase), "
-                     "got %s" % (xwhere, type(pphase).__name__))
+            f.append(_output.finding("crossrefs.proposals.payload-phase-object", "%s: payload.phase must be an object (the parked phase), "
+                     "got %s" % (xwhere, type(pphase).__name__)))
             continue
         for key in ("id", "title"):
             if not pphase.get(key):
-                f.append("%s: payload.phase missing required '%s'" % (xwhere, key))
+                f.append(_output.finding("crossrefs.proposals.payload-phase-missing", "%s: payload.phase missing required '%s'" % (xwhere, key)))
         if not isinstance(pphase.get("tasks"), list):
-            f.append("%s: payload.phase.tasks must be an array — park the full "
+            f.append(_output.finding("crossrefs.proposals.payload-phase-tasks", "%s: payload.phase.tasks must be an array — park the full "
                      "synthesized phase so materialization is a move, not a "
-                     "rebuild" % xwhere)
+                     "rebuild" % xwhere))
         # Reserved-id bookkeeping applies only while the proposal is parked: a
         # materialized payload id now living as a real phase is the SUCCESS
         # state, not a collision, and a dropped proposal releases its ids.
@@ -796,13 +801,13 @@ def _check_proposals(manifest, index):
                 if not sid:
                     continue
                 if sid in live_ids:
-                    f.append("%s: reserved id '%s' collides with a live id — "
+                    f.append(_output.finding("crossrefs.proposals.reserved-id-collides", "%s: reserved id '%s' collides with a live id — "
                              "/audit:propose materialize re-allocates on "
                              "collision, but a parked payload should never "
-                             "share an id with the live plan" % (xwhere, sid))
+                             "share an id with the live plan" % (xwhere, sid)))
                 elif sid in reserved_ids:
-                    f.append("%s: reserved id '%s' is already reserved by "
-                             "another proposal" % (xwhere, sid))
+                    f.append(_output.finding("crossrefs.proposals.reserved-id-already", "%s: reserved id '%s' is already reserved by "
+                             "another proposal" % (xwhere, sid)))
                 reserved_ids.add(sid)
             for ref in _safe_list(pphase.get("blockedBy")):
                 if isinstance(ref, str):

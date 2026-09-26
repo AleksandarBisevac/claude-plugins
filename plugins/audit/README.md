@@ -435,7 +435,8 @@ evidence already exists in git, the shard, the journal and the ledger, and what 
 missing is the checker that reads it. The rows that carried that mark for a commit's file
 list, a plain `push`, a stash, a high-risk task's model and `phase.baseRef` have moved —
 `verify-invariants.py` reads them now, and a breach exits 1 at sign-off and under
-`--fail-on invariant-breach`. The ones left here still say `post-hoc` because nothing
+`--fail-on invariant-breach` — once an `invariants-baseline.json` sits beside the manifest,
+a breach it does not hold, for both alike, since both read it through `_invariants`. The ones left here still say `post-hoc` because nothing
 reads them yet, and until something does they are policy, not guarantee.
 
 The rows marked **nothing** cannot move at all without recording something that is not

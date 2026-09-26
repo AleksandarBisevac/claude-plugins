@@ -87,6 +87,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   count and the `--verbose` pointer; `audit-lookup` answers a
   bug's and a phase's status from the derivation and prints `stored X, derived Y (basis)` where
   they differ.
+- **`verify-invariants.py` and the invariant gate can count only what is new.** A long history
+  carries breaches nobody will repair, and printing all of them on every run buried the one made
+  today - an operator was left grepping for the day's SHAs. `--write-baseline` records the current
+  breaches in `invariants-baseline.json` beside the manifest; once that file exists a run prints the
+  new breaches and how many baselined ones are still reported, and exits 1 only on a new one.
+  `/audit:status --gate --fail-on invariant-breach` reads the same baseline through the same
+  `_invariants` functions, so the gate and the CLI give one verdict; its JSON keeps the full list
+  as `allBreaches`, and its text names the baseline and what it counted on both paths. An entry
+  is matched on its phase, check, subject and commit SHA - keys every check now returns beside its
+  sentence, with the SHA resolved to the full id through git and a validator finding keyed on
+  the code of the rule that raised it (every validator finding now carries one, and a lint fails a
+  finding site without it), its locus and the ids it quotes, an allowed-values list left out -
+  never on the printed sentence, so a reworded message or a
+  count that moves between runs does not bring the flood back. An entry that no
+  longer matches is printed with what git says about its commit and stays in the file; one whose
+  check had a gap this run, or whose phase was not examined, is set aside with that reason rather
+  than called repaired, and one read from a clone's own evidence (a reflog, the stash, a
+  remote-tracking ref, the gitignored usage ledger) carries that clone's id - a random token kept
+  in its git common dir, published whole, so it moves with the clone and no two clones share it (a
+  byte copy of the git dir is the same clone); a write with a local breach and no id is refused -
+  and goes stale
+  only there. A rebase, squash or amend re-reports its breaches as new beside the old
+  unmatched entries, and the output says so. `--write-baseline` refuses while a phase it covers is
+  in flight, takes the `index` lock around its read-then-write and refuses a hold it did not take
+  itself, keeps every set-aside entry and
+  names each one it removes, and exits 0 once written (2 when refused, and 2 when a check raises); the baseline is a human's commit on the development branch, outside
+  any phase commit. An unreadable baseline, one in the sentence-keyed shape an earlier build of
+  this change wrote, or an explicit `--baseline` that is not there is exit 2 and trips the gate.
+- **User tooling can share the cross-worktree lock: `audit-lock.py acquire user-<name>`.** The
+  lock under the git common dir spans every worktree of a clone, but it refused every name except
+  `index`, `usage` and `phase-<id>`, so a guard driving one backend from several worktrees had to
+  invent a lockfile each worktree saw only in its own tree. `_locks.valid_name` now admits a
+  namespaced `user-<name>` under rules `_locks.USER_NAME_RULES` states, printed by a refused
+  `acquire` or `release`: lower case, digits, `-` and `_`, bounded length, and never a name whose
+  own part is itself a lock name, so `user-index` or `user-phase-p1` cannot pass for the plugin's.
+  A user lock excludes by holder: a second acquire from the same session and pid - which is what
+  parallel subagents of one Claude Code session look like - is refused rather than answered as
+  re-entry. `/audit:worktree` documents it as the lock worktree tooling shares, with a one-shell
+  POSIX-shell recipe that runs under sh, bash and zsh - a test runs it under each where installed,
+  and skips Git Bash on Windows, whose `$$` is not the pid the lock probes - and `/audit:doctor`
+  advises an abandoned user lock by its own `--takeover` path.
 
 ### Changed
 - **The gate says whose gate graded the work, and how wide it was.** Under `--task` the preamble
@@ -159,6 +200,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A phase lock name is ASCII, and one spelling per folded name.** `phase-<id>` accepted any
+  `str.isalnum()` character, so letters of every script were lock names, and `phase-P1` and
+  `phase-p1` were two claims on Linux and one file on macOS and Windows. The id is now ASCII
+  `[A-Za-z0-9._-]`, acquiring a spelling that differs only in case from a lock already held is
+  refused on every platform, and releasing one is refused only where the filesystem folds case -
+  where both spellings are two files, the exact one is released, `--force` included.
+- **A finished phase no longer carries another phase's unpaired `fileIndex` rows as its own
+  breach.** `manifest-revalidated`'s live pairing re-check validated the whole manifest and
+  charged every unpaired row to the phase being checked, so a phase in flight elsewhere - which
+  has such rows by construction - broke a phase that was done. It keeps only rows naming the
+  checked phase's own tasks.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,

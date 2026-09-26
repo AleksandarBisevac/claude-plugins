@@ -162,23 +162,63 @@ def invariants_block(manifest, manifest_path):
     An exception comes back as a BLOCK WITH NO `breaches` KEY rather than as an
     empty one. `_status_facts.invariant_breaches` reads that as "nothing was
     verified" and trips the gate; an empty list would have read as a clean bill of
-    health produced by a crash.
+    health produced by a crash. A baseline beside the manifest that cannot be
+    read comes back the same way, for the same reason.
+
+    THE BASELINE IS APPLIED HERE, THROUGH `_invariants`, so the gate and
+    `verify-invariants.py` count the same breaches: `breaches` is what the
+    verdict is taken on - every breach, or only the new ones when a baseline is
+    in use - and `allBreaches` keeps the full list beside it.
     """
     project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     try:
-        return _invariants.check_manifest(
-            manifest, manifest_path,
-            _invariants.git_root_for(manifest, project), project,
+        git_root = _invariants.git_root_for(manifest, project)
+        result = _invariants.check_manifest(
+            manifest, manifest_path, git_root, project,
             ledger_dir=_invariants.ledger_dir_for(manifest, manifest_path))
+        block, why = _invariants.apply_baseline(result, manifest_path, git_root)
     except Exception as exc:                       # defensive; the checks fail soft
         return {"error": "the invariant checks could not run: %s" % (exc,)}
+    if why:
+        return {"error": "the invariant baseline could not be applied: %s"
+                % (why,)}
+    if block:
+        result["baseline"] = block
+    result["allBreaches"] = result["breaches"]
+    result["breaches"] = _invariants.counted_breaches(result)
+    return result
 
 
 def _invariant_detail(summary):
-    """What `GATE FAILED: invariant-breach (...)` says after the name."""
+    """What `GATE FAILED: invariant-breach (...)` says after the name.
+
+    A block that carries its own `error` is said in its own words: a baseline
+    that could not be read means the checks RAN, and the generic "did not run"
+    sentence would send the reader after the wrong failure.
+    """
+    block = (summary or {}).get("invariants")
+    if isinstance(block, dict) and block.get("error"):
+        return str(block["error"])
     found = invariant_breaches(summary) or []
-    return "%d breach(es): %s" % (len(found),
-                                  _output.some_of(found, sep="; "))
+    counted = "%d breach(es)" % (len(found),)
+    if isinstance(block, dict) and block.get("baseline"):
+        counted = "%d breach(es) the baseline does not hold" % (len(found),)
+    return "%s: %s" % (counted, _output.some_of(found, sep="; "))
+
+
+def _invariant_baseline_note(summary):
+    """What the baseline counted as known, or None when none was applied.
+
+    SAID ON BOTH PATHS, for `_evidence_excuse_note`'s reason: a baseline is an
+    excuse that turns a red gate green, and `GATE PASSED` carries no detail.
+    """
+    block = ((summary or {}).get("invariants") or {}).get("baseline")
+    if not block:
+        return None
+    return ("invariant-breach: %d breach(es) held by the baseline %s; %d new; "
+            "%d no longer match; %d set aside"
+            % (block["matched"], block["path"], len(block["new"]),
+               len(block["unmatched"]), block["notCompared"]))
 
 
 def portability_block(manifest, project):
@@ -1806,6 +1846,10 @@ def main(argv):
         # so a gate that never read the boundary stays byte-for-byte as it was.
         if "no-test-evidence" in conditions:
             note = _evidence_excuse_note(summary)
+            if note:
+                say(note)
+        if "invariant-breach" in conditions:
+            note = _invariant_baseline_note(summary)
             if note:
                 say(note)
         failed = summary["gate"]["failed"]

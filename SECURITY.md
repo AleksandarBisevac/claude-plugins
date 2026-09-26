@@ -440,6 +440,11 @@ orchestrator its own bookkeeping. A hook subprocess inherits the parent environm
 compares against all three ids and treats any match as its own lock. The tie goes to "ours":
 matching too eagerly costs a missed denial, failing to match breaks the run.
 
+**A lock name is a coordination convention, not an access boundary.** Any process that can run
+`audit-lock.py` can take `index` or a `phase-<id>`, or remove any claim with `release --force`, and
+the `user-<name>` namespace for worktree tooling changes neither: its prefix keeps a user lock from
+being read as the plugin's, and nothing more.
+
 It is scoped to `manifestPath` and `<manifest dir>/phases/*.json` and touches nothing else —
 ordinary source files remain entirely the plan gate's business. The point is narrow: two live
 sessions writing one shard in one working tree produce **no git conflict**, because git never
