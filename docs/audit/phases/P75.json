@@ -1,7 +1,7 @@
 {
   "id": "P75",
   "title": "verify-invariants reports what is new, and user tooling can share the cross-worktree lock",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "verify-invariants can show only breaches that are new against a committed baseline, a baseline entry that no longer matches is reported, and user tooling can take the plugin's cross-worktree lock under a namespaced name",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
   "branch": "audit/p75-verify-invariants-reports-what",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T03:58:02Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
