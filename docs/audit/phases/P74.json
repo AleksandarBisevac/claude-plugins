@@ -721,7 +721,7 @@
     {
       "id": "P74.7-qq5",
       "title": "close-phase writes the landing stamp into the copy that survives, whatever manifest path it is given",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reported while landing P78: `close-phase.py <wt>/docs/audit/audit-plan.json P78 --project <wt> --dry-run` printed \"cleanup is not finished. From <main>, run: close-phase.py <wt>/docs/audit/audit-plan.json P78 --project .\". Run as printed from main, it merged with --ff-only, then wrote mergedAt and the derived status into the WORKTREE's shard and re-mirrored the WORKTREE's index stub - the copy removed moments later - so the worktree removal refused on those writes, while its phase.merged journal row went into MAIN's journal. The rule: the landing stamp is written to the manifest of the tree the merge lands in (the parent branch's checkout), never to a copy inside the phase's own worktree, whatever path is passed; and the dry-run's follow-up command names that surviving manifest. Red-first: close-phase given the worktree's manifest from the main checkout writes nothing under the worktree, stamps main's copies, and the worktree removal succeeds; plus the printed follow-up names main's manifest.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -754,14 +754,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bee68fdd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "surviving_copy picks the tree holding the resolved path; follow-up names the surviving manifest; no_survivor_refusal exits 2 before any merge.",
+        "descriptive": "Landing a phase from the main checkout now writes the landing record into the copy that stays, and refuses when no such copy exists."
       },
       "startedAt": "2026-09-26T15:32:09Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T17:24:24Z",
+      "verifiedBy": [
+        "test_close_phase sv1",
+        "test_close_phase sv2",
+        "test_close_phase sv3",
+        "test_close_phase ns1"
+      ]
     },
     {
       "id": "P74.8-qq5",
