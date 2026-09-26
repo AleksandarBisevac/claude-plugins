@@ -31,7 +31,7 @@
     {
       "id": "P79.1",
       "title": "meta.phaseGate mode/derived/smoke, meta.coupling, phase.testGateBasis/testGateDerived: schema, vocabulary, validator",
-      "status": "in_progress",
+      "status": "done",
       "description": "Schema additions, each saying what absence means. meta.phaseGate.mode: 'shadow' | 'enforce'; ABSENT MEANS NO DERIVATION. The previous phase made phaseGate meaningful without derivation (always, exclude), so the presence of the block can no longer be read as a request to derive: init writes shadow explicitly and enforce is the owner's choice. meta.phaseGate.derived: object or null with runner (a buildCommands key), spelling (the path-scoped entry with a {paths} placeholder), listing (null, or {related: a command with {paths} that LISTS without executing, all: a command listing every suite}) and verifiedOn ({command, answer}: the version command init ran and its output verbatim; a bare '<runner> <version>' string names no command to re-ask, so it could only be compared against a guess). meta.phaseGate.smoke: a buildCommands key or null. meta.coupling: array of {test, sources[], basis {runId, head, phases[]}, learnedAt}; absent means the derivation has no learned arm. phase.testGateBasis: open vocabulary, read as an unnarrowed default when absent (the tests.gateBasis rule). phase.testGateDerived: {tests[], entry, listed, full, arms {tests.add, coupling, importers, changed, lastFailed}, always[], smoke, narrowed, listing {command, exit, durationMs} or null, at}; absent means no derived gate and the runner prints no NARROWED line. _manifest_vocab.py: KNOWN_META += coupling; KNOWN_PHASE += testGateBasis, testGateDerived; the phase basis words derived, derived-empty and 'wide: importers resolved to the full suite' (in GATE_BASIS, or a PHASE_GATE_BASIS tuple if a task must never be offered them - decide by who reads them and say so in the comment). Validator WARNINGS, never findings: mode outside the two words; derived.runner or smoke not a buildCommands key; a spelling without {paths}; a listing with no verifiedOn; a coupling entry missing test, sources or basis.runId, or a duplicate test. Phase-level checks ride _walk_phases in _manifest_phases.py, meta checks _check_meta in _manifest_rules.py. SCHEMA_EXEMPTIONS rows in gen-demo-manifest.py for every new field no rendered surface shows yet, with the reason. Red-first: mode 'enforced' warns naming both words (on the code this phase starts from nothing reads mode); a coupling without basis warns (mutation: accept it -> red). Allow case: a plan with phaseGate {always: [lint]} and nothing else gains no new warning (mutation: warn on an absent mode -> red).",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -69,18 +69,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "60c22818889b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Extended audit-plan.schema.json, _manifest_vocab.py, _manifest_phases.py (+ a doc-comment update in _manifest_rules.py) and gen-demo-manifest.py's SCHEMA_EXEMPTIONS to declare and shape-validate meta.phaseGate.{mode,derived,smoke}, meta.coupling[], phase.testGateBasis and phase.testGateDerived - all additive WARNINGS, never findings, per COMPATIBILITY.md. Cases mv50-mv52, c36, c37; redFirst proved via stamp-verification red at HEAD; four live mutations each red (including an over-fire allow case). Gate run 2026-09-26T12:08:36Z.fa325b green; reviewer matches, no findings.",
+        "descriptive": "The manifest now recognizes and shape-checks the vocabulary a later derive-phase-gate.py task will populate, with no behavioural change to sign-off yet (mode/derived stay inert until a task actually reads them)."
       },
       "startedAt": "2026-09-26T11:54:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T12:15:21Z",
+      "verifiedBy": [
+        "mv50",
+        "mv51",
+        "mv52",
+        "c36",
+        "c37"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T12:08:36Z.fa325b",
         "status": "passed",
         "at": "2026-09-26T12:08:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "60c22818889b",
+        "at": "2026-09-26T12:15:21Z"
       }
     },
     {
