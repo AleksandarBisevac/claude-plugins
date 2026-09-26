@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id] | uncouple --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -15,6 +15,8 @@ or subcommand `scope` followed by a task id and any of its flags;
 or subcommand `move` followed by a task id and `--to <phaseId>`;
 or subcommand `block` followed by a task id and `--reason "<why>"`;
 or subcommand `note` followed by a task id and `--text TEXT`;
+or subcommand `couple` followed by `--test <path> --sources a,b --basis-run <runId> --basis-head <sha>`;
+or subcommand `uncouple` followed by `--test <path>`;
 or subcommand `cancel` followed by an id and `--reason "<why>"`;
 or subcommand `priority`, the legacy spelling covered at the end of this file.
 Unknown/empty subcommand → print usage and stop.
@@ -626,6 +628,38 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" note P3.2 \
 
 One `task.note` row per call. **Refused:** empty text, a phase id, and a `notes` value that is
 not a list (an append onto another shape would replace it). A note never changes status.
+
+## Subcommand: `couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id]` / `uncouple --test <path>`
+
+Both write `meta.coupling`, the record a derived phase gate reads back to widen itself onto a
+test whose own run named a source it depends on. Neither takes a task or phase id — the
+positional slot is the manifest, the same way `settle` reads it.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" couple \
+  --test plugins/audit/tests/test_<name>.py --sources src/a.ts,src/b.ts \
+  --basis-run <runId> --basis-head <sha> [--phases P2,P3] [--json]
+```
+
+`--test` names the entry, and it must read as a suite path the project already recognises
+(`tests_add_path` and `is_suite_path` both have to accept it). `--sources` names every file
+this test is coupled to, and each one is checked the same way. `--basis-run` is looked up in
+the evidence ledger, never merely typed — a run id the ledger does not hold is refused,
+because a coupling states what taught it. A test coupled for the first time gets a new entry;
+a test already coupled has its `sources` WIDENED (unioned) with the ones just named, and its
+`learnedAt` stays the one the first call wrote — a coupling is a fact that grows and is
+never silently replaced.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" uncouple \
+  --test plugins/audit/tests/test_<name>.py [--json]
+```
+
+`uncouple --test` drops the one entry it names. **Refused, exit 2:** `--test` naming a test
+`meta.coupling` carries no entry for, and (on `couple`) an empty `--sources`, a missing
+`--basis-run`/`--basis-head`, or a `--basis-run` the evidence ledger does not hold.
+`--sources` and `--basis-run`/`--basis-head`/`--phases` belong to `couple` alone; `--test` is
+the one flag the two verbs share.
 
 ## Subcommand: `cancel <id> --reason "<why>"`
 

@@ -63,6 +63,11 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py reopen <taskId> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py couple --test <path> --sources p,p --basis-run <runId>
+                --basis-head <sha> [--phases id,id] [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py uncouple --test <path> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -128,6 +133,16 @@ Usage:
   tree it has never run. `--gate`/`--gate-clear` still work, for a caller who
   already knows the real command and would rather not run `/audit:task
   retarget` a second time.
+  `couple` and `uncouple` are the only writers of `meta.coupling`, the record
+  a derived phase gate reads to widen itself back onto a test whose own run
+  named a source it depends on. `couple` appends a new entry or, for a test
+  already coupled, WIDENS the existing one -- unions `--sources` in, keeps
+  the first `learnedAt` -- because a coupling is a fact that grows and is
+  never silently replaced. `--basis-run` names a row the evidence ledger
+  actually holds (looked up, never parsed) and `--basis-head` the HEAD that
+  row examined; a coupling with no run to point at teaches nothing.
+  `uncouple` drops one entry by `--test` alone, and refuses, exit 2, a test
+  that carries none.
 
 Exit codes:
   0  written, manifest valid
@@ -6370,6 +6385,233 @@ def _locked_settle(args, project, config, mpath, out):
     return 0
 
 
+# --- couple / uncouple: meta.coupling, an index-only write ----------------------
+# THE ENTRY `_manifest_phases._check_coupling` ALREADY GRADES: `{test, sources,
+# basis: {runId, head, phases}, learnedAt}`, one entry per `test` -- a second
+# entry for the same test is the validator's own duplicate-test finding, so
+# `couple` widens an existing entry's `sources` rather than appending a
+# second one, and never invents a shape the checker does not already accept.
+#
+# THESE TWO READS STAY OUT OF EVERY OTHER VERB'S CLOSURE. `vf6` derives what a
+# verb reads by walking the call graph from its door, so a helper this pair
+# calls that also read `args.sources` from `add` or `scope` would put
+# `sources` in both derived sets at once and the table could not describe
+# both truthfully. `_coupling_test_refusal` and `_coupling_sources_refusal`
+# take plain values, never `args`, for the same reason `_files_refusal` does;
+# `_locked_couple` and `_locked_uncouple` are the only functions that read
+# `args.test` / `args.sources` / `args.basis_run` / `args.basis_head` /
+# `args.phases` at all, the way `retarget`'s own `--gate-set`/`--gate-drop`
+# pair stayed inside `_retarget_gate_contradiction` and `_retarget_gate_now`.
+def _coupling_test_refusal(test):
+    """Whether `--test <path>` names something a coupling can be about, or
+    None. The same two readings `tests.add` and a suite path already share
+    (`_rules.tests_add_path`, `_phases.is_suite_path`) -- a coupling is a
+    file a runner ran, never free prose."""
+    if not test:
+        return ("[audit-task] couple/uncouple needs --test <path>")
+    if _rules.tests_add_path(test) is None or not _phases.is_suite_path(test):
+        return ("[audit-task] --test %r does not read as a suite path this "
+                "project already recognises a test by (`tests_add_path` and "
+                "`is_suite_path` both have to accept it) -- a coupling names "
+                "a file a runner ran, not a sentence about one" % (test,))
+    return None
+
+
+def _coupling_sources_refusal(sources):
+    """Whether every `--sources` value is a path `tests_add_path` accepts, or
+    the refusal naming the ones that are not."""
+    bad = [s for s in sources if _rules.tests_add_path(s) is None]
+    if not bad:
+        return None
+    return ("[audit-task] --sources names %s that does not read as a path -- "
+            "each source is a file the test failed alongside, not free prose"
+            % (_output.some_of(bad, render=repr),))
+
+
+def cmd_couple(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    if args.title and not args.manifest:          # `settle`'s own rule:
+        args.manifest = args.title                # this verb takes no id, so
+        args.title = ""                            # a lone positional is the manifest
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_couple(
+                           args, project, config, mpath, out))
+
+
+def _locked_couple(args, project, config, mpath, out):
+    """Learn (or widen) one `meta.coupling` entry, under lock.
+
+    THE THREE REQUIRED FLAGS ARE THE ENTRY'S OWN REQUIRED FIELDS, asked in the
+    same order `_check_coupling` grades them in: `--test`, `--sources`, then
+    `--basis-run` -- a coupling with no source names nothing this test is
+    coupled to, and one with no run id points at nothing, the exact reason
+    `_check_coupling`'s own docstring gives for requiring `basis.runId`.
+
+    `--basis-run` IS LOOKED UP, NEVER TRUSTED AS TYPED, `_failing_from_lookup`'s
+    own reason: `_evidence_io.row_by_run` is the one answer this project keeps
+    to "does a run with this id exist", and reading structure into the string
+    here would be a second, silently different answer to a question that
+    lookup already settles.
+
+    WIDENED, NEVER SILENTLY REPLACED: a test already coupled gets its
+    `sources` UNIONED with the ones just named, `basis` and `learnedAt` left
+    exactly as the first call wrote them -- so the entry records what first
+    taught the coupling and grows only the list of what it now covers, the
+    same shape `_check_coupling`'s docstring reads a widened entry as ("each
+    test should carry ONE entry with every source it is coupled to").
+    """
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    sources = _split_csv(args.sources)
+    if not sources:
+        out("[audit-task] couple needs --sources <path,path> -- a coupling "
+            "with no source names nothing this test is coupled to")
+        return E_USAGE
+    refusal = _coupling_sources_refusal(sources)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    run_id = (args.basis_run or "").strip()
+    if not run_id:
+        out("[audit-task] couple needs --basis-run <runId> -- a coupling "
+            "says what taught it, and a run id is the pointer")
+        return E_USAGE
+    head = (args.basis_head or "").strip()
+    if not head:
+        out("[audit-task] couple needs --basis-head <sha> -- the HEAD the "
+            "run examined, so a later mismatch has a real answer to compare "
+            "against")
+        return E_USAGE
+    try:
+        rows = _evidence_io.read_rows(project)["rows"]
+    except Exception as exc:
+        out("[audit-task] --basis-run %s: the evidence ledger could not be "
+            "read (%s)" % (run_id, exc))
+        return E_USAGE
+    if _evidence_io.row_by_run(rows, run_id) is None:
+        out("[audit-task] --basis-run %s: no run with this id is in the "
+            "evidence ledger -- a coupling says what taught it, and this run "
+            "taught nothing recorded" % (run_id,))
+        return E_USAGE
+    phases = _split_csv(args.phases)
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    coupling = [dict(e) for e in (meta.get("coupling") or [])
+               if isinstance(e, dict)]
+    idx = next((i for i, e in enumerate(coupling) if e.get("test") == test),
+               None)
+    if idx is None:
+        entry = {"test": test, "sources": sources,
+                 "basis": {"runId": run_id, "head": head, "phases": phases},
+                 "learnedAt": _utc_now()}
+        coupling.append(entry)
+        summary = "%s coupled to %s (basis %s)" % (
+            test, ", ".join(sources), run_id)
+    else:
+        was = list(coupling[idx].get("sources") or [])
+        merged = list(was)
+        for s in sources:
+            if s not in merged:
+                merged.append(s)
+        coupling[idx]["sources"] = merged
+        entry = coupling[idx]
+        summary = "%s widened: sources %s -> %s (learnedAt kept)" % (
+            test, was, merged)
+    meta["coupling"] = coupling
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the coupling", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "coupling.learned", summary,
+                        {"field": test, "to": entry.get("sources"),
+                         "runId": run_id, "commit": head})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "entry": entry,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "coupling.learned", warnings, written_manifest,
+                written, index_note)
+    return 0
+
+
+def cmd_uncouple(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    if args.title and not args.manifest:
+        args.manifest = args.title
+        args.title = ""
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_uncouple(
+                           args, project, config, mpath, out))
+
+
+def _locked_uncouple(args, project, config, mpath, out):
+    """Drop one `meta.coupling` entry by `--test <path>`, under lock. Refused,
+    exit 2, when the test carries no entry -- an uncouple of a test nothing
+    coupled would otherwise be a no-op reporting success."""
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    coupling = [dict(e) for e in (meta.get("coupling") or [])
+               if isinstance(e, dict)]
+    idx = next((i for i, e in enumerate(coupling) if e.get("test") == test),
+               None)
+    if idx is None:
+        out("[audit-task] uncouple: %r carries no meta.coupling entry -- "
+            "nothing to drop" % (test,))
+        return E_USAGE
+    entry = coupling.pop(idx)
+    meta["coupling"] = coupling
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the uncoupling", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "coupling.dropped",
+                        "%s uncoupled from %s" % (
+                            test, ", ".join(entry.get("sources") or [])),
+                        {"field": test, "from": entry.get("sources")})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "dropped": entry,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s uncoupled" % (test,))
+    _report_tail(out, jres, "coupling.dropped", warnings, written_manifest,
+                written, index_note)
+    return 0
+
+
 # --- next-id: the id a hand-written record takes ---------------------------------
 # A bug, a parked proposal and a bug's fix task are the records the model still
 # writes by hand (`commands/bug.md`, `init.md`), so they were also the ids the model
@@ -6724,6 +6966,14 @@ VERB_FLAGS = {
     "block": ("reason",),
     # `note` appends one entry, and its text is its one flag.
     "note": ("text",),
+    # `couple` writes `meta.coupling`: the test, what it is coupled to, and
+    # the run that taught it. `--phases` is the only one of the five that may
+    # be absent -- a coupling learned off a run with no phase scope narrows
+    # nothing by phase, which is a legal answer and not a hole.
+    "couple": ("test", "sources", "basis_run", "basis_head", "phases"),
+    # `uncouple` drops one entry by the test alone; it shares `--test` with
+    # `couple` and reads nothing else `couple` does.
+    "uncouple": ("test",),
 }
 
 
@@ -6755,7 +7005,7 @@ def build_parser():
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
-                            "note"])
+                            "note", "couple", "uncouple"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -6879,6 +7129,24 @@ def build_parser():
                    metavar="RUNID",
                    help="add: point the new task's gate at the suites this "
                         "run's own steps named as failing")
+    # `couple`/`uncouple` only. `--test` names the entry both verbs act on;
+    # `--sources`, `--basis-run`, `--basis-head` and `--phases` belong to
+    # `couple` alone (`VERB_FLAGS["couple"]`), one per field of the
+    # `meta.coupling` entry `_check_coupling` grades.
+    p.add_argument("--test", default=None, metavar="PATH",
+                   help="couple/uncouple: the test file the entry is about")
+    p.add_argument("--sources", action="append", default=None,
+                   help=_list_help("repo-relative source paths",
+                                   "--sources src/a.ts,src/b.ts",
+                                   empties=False))
+    p.add_argument("--basis-run", dest="basis_run", default=None,
+                   metavar="RUNID",
+                   help="couple: the evidence row that taught this coupling")
+    p.add_argument("--basis-head", dest="basis_head", default=None,
+                   metavar="SHA",
+                   help="couple: the HEAD the run examined")
+    p.add_argument("--phases", action="append", default=None,
+                   help=_list_help("phase ids", "--phases P2,P3"))
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p
@@ -7083,7 +7351,7 @@ def _dispatch(args, argv, out):
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
              "signoff": cmd_signoff, "settle": cmd_settle,
              "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
-             "note": cmd_note}
+             "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

@@ -3936,6 +3936,13 @@ def _cases(check):
              "verifiedBy": []})
         _VF_SHA = "0123456789abcdef0123456789abcdef01234567"
         vf_proj, vf_mp = mk("vf-flags", _vf_fx)
+        # `couple`'s own second-direction row needs a run its own project's
+        # evidence ledger actually holds - `_evidence_io.row_by_run`'s answer,
+        # never a string the call merely types.
+        import _evidence_io as _vf_ev
+        _vf_ev.append_row(vf_proj, {
+            "v": 1, "runId": "RUN-VF", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
         with open(vf_mp, "rb") as _fh:
             _vf_before = _fh.read()
         code, txt = run(["add-phase", "Later work", "--outcome", "shipped",
@@ -4013,7 +4020,12 @@ def _cases(check):
                    # fixture carries, with the one flag each requires.
                    "move": ["move", "P2.3", "--to", "P3"],
                    "block": ["block", "P2.3", "--reason", "r"],
-                   "note": ["note", "P2.3", "--text", "t"]}
+                   "note": ["note", "P2.3", "--text", "t"],
+                   # `couple`/`uncouple` take no id at all - the misplaced-flag
+                   # check this grid drives fires BEFORE either verb's own
+                   # body runs, so a bare `--test` is enough to reach it.
+                   "couple": ["couple", "--test", "src/a.ts"],
+                   "uncouple": ["uncouple", "--test", "src/a.ts"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4069,7 +4081,13 @@ def _cases(check):
                   "--verified-by", "t_one,t_two", "--json"], "done/--commit"),
                 (["cancel", "P3", "--reason", "dropped", "--json"],
                  "cancel/--json"),
-                (["next-id", "bug", "--json"], "next-id/--json")):
+                (["next-id", "bug", "--json"], "next-id/--json"),
+                (["couple", "--test", "tests/test_vf.py",
+                  "--sources", "src/a.ts", "--basis-run", "RUN-VF",
+                  "--basis-head", "deadbeef", "--json"],
+                 "couple/--sources"),
+                (["uncouple", "--test", "tests/test_vf.py",
+                  "--json"], "uncouple/--test")):
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
         # `signoff` against a project whose P2 is finished, because on `vf_proj`
         # P2 still has open work and the verb rightly refuses it.
@@ -5661,6 +5679,11 @@ def _cases(check):
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL)
         _tw_sha = _tw_head.stdout.decode("utf-8", "replace").strip()
+        # `couple`'s row needs a run its OWN project's evidence ledger holds.
+        import _evidence_io as _tw_ev
+        _tw_ev.append_row(tw_all, {
+            "v": 1, "runId": "RUN-TW", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
         # `seed` gets its OWN pair: every row below relies on a manifest
         # already being at `tw_all`, and `seed` refuses for exactly that
         # reason -- its row has to stand in a tree that diverges from a
@@ -5689,6 +5712,11 @@ def _cases(check):
             ("note", ["note", "P2.3", "--text", "t"]),
             ("block", ["block", "P2.3", "--reason", "r"]),
             ("move", ["move", "P2.3", "--to", "P4"]),
+            ("couple", ["couple", "--test", "tests/test_tw.py",
+                        "--sources", "src/a.ts", "--basis-run", "RUN-TW",
+                        "--basis-head", "deadbeef"]),
+            ("uncouple", ["uncouple", "--test",
+                          "tests/test_tw.py"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -7490,6 +7518,96 @@ def _cases(check):
               "run named as failing: %r" % (txtff[:140],),
               codeff == 2 and "not phase P1's" in txtff
               and task_in(ff_mp, "P1.5") is None)
+
+        # ---- (cp) couple / uncouple: `meta.coupling`, an index-only write --
+        import _evidence_io as _cp_ev
+
+        def cp_meta(mpath):
+            try:
+                return _mio.load_manifest(mpath).get("meta") or {}
+            except Exception:
+                return {}
+
+        def cp_coupling(mpath):
+            return cp_meta(mpath).get("coupling") or []
+
+        cp_proj, cp_mp = mk("cp-couple", base_manifest())
+        _cp_ev.append_row(cp_proj, {
+            "v": 1, "runId": "RUN-CP1", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
+
+        codecp, txtcp = run(
+            ["couple", "--test", "tests/test_a.py",
+             "--sources", "src/a.ts,src/b.ts",
+             "--basis-run", "RUN-CP1", "--basis-head", "deadbeef",
+             "--phases", "P2", "--project-dir", cp_proj])
+        check("cp1 RED-FIRST: `couple` is an unknown verb on current code, "
+              "so this must exit 2 (usage) rather than write an entry -- "
+              "green here means `meta.coupling` can only be written by hand: "
+              "%r" % ((codecp, cp_coupling(cp_mp)),),
+              codecp == 0
+              and cp_coupling(cp_mp) == [
+                  {"test": "tests/test_a.py",
+                   "sources": ["src/a.ts", "src/b.ts"],
+                   "basis": {"runId": "RUN-CP1", "head": "deadbeef",
+                            "phases": ["P2"]},
+                   "learnedAt": cp_coupling(cp_mp)[0]["learnedAt"]}])
+        _cp_learned_at = cp_coupling(cp_mp)[0]["learnedAt"] if cp_coupling(cp_mp) else None
+
+        # ---- MUTATION GUARD: coupling the SAME test twice UNIONS the -------
+        # sources and keeps the first `learnedAt` -- an implementation that
+        # OVERWRITES the entry instead of widening it would drop the first
+        # source and/or move `learnedAt`, and this is the case that catches it.
+        codecp2, txtcp2 = run(
+            ["couple", "--test", "tests/test_a.py",
+             "--sources", "src/c.ts",
+             "--basis-run", "RUN-CP1", "--basis-head", "deadbeef",
+             "--project-dir", cp_proj])
+        check("cp2 MUTATION GUARD: a second `couple` on the same test widens "
+              "`sources` (union, order-preserving) and keeps the FIRST "
+              "`learnedAt` rather than replacing the entry: %r"
+              % (cp_coupling(cp_mp),),
+              codecp2 == 0 and len(cp_coupling(cp_mp)) == 1
+              and cp_coupling(cp_mp)[0]["sources"]
+              == ["src/a.ts", "src/b.ts", "src/c.ts"]
+              and cp_coupling(cp_mp)[0]["learnedAt"] == _cp_learned_at)
+
+        # ---- ALLOW CASE: a runId the ledger lacks is refused, exit 2 -------
+        codecp3, txtcp3 = run(
+            ["couple", "--test", "tests/test_b.py",
+             "--sources", "src/z.ts", "--basis-run", "NO-SUCH-RUN",
+             "--basis-head", "deadbeef", "--project-dir", cp_proj])
+        check("cp3 ALLOW CASE: --basis-run naming a run the evidence ledger "
+              "does not hold is refused exit 2, and nothing is written -- a "
+              "coupling says what taught it: %r" % (txtcp3[:140],),
+              codecp3 == 2 and "no run with this id" in txtcp3
+              and len(cp_coupling(cp_mp)) == 1)
+
+        # ---- ALLOW CASE: --test naming no real path is refused -------------
+        codecp4, txtcp4 = run(
+            ["couple", "--test", "not a path at all",
+             "--sources", "src/z.ts", "--basis-run", "RUN-CP1",
+             "--basis-head", "deadbeef", "--project-dir", cp_proj])
+        check("cp4 ALLOW CASE: --test that neither `tests_add_path` nor "
+              "`is_suite_path` accepts is refused exit 2: %r" % (txtcp4[:140],),
+              codecp4 == 2 and len(cp_coupling(cp_mp)) == 1)
+
+        # ---- (cp) uncouple -------------------------------------------------
+        codecp5, txtcp5 = run(
+            ["uncouple", "--test", "tests/test_a.py",
+             "--project-dir", cp_proj])
+        check("cp5 `uncouple --test` drops the entry it names: %r"
+              % (cp_coupling(cp_mp),),
+              codecp5 == 0 and cp_coupling(cp_mp) == [])
+
+        # ---- ALLOW CASE: uncoupling an unknown test is refused, exit 2 -----
+        codecp6, txtcp6 = run(
+            ["uncouple", "--test", "tests/test_a.py",
+             "--project-dir", cp_proj])
+        check("cp6 RED-FIRST/ALLOW CASE: `uncouple` of a test carrying no "
+              "coupling entry is refused exit 2 - a no-op reporting success "
+              "would hide that nothing was there to drop: %r" % (txtcp6[:140],),
+              codecp6 == 2 and "carries no meta.coupling entry" in txtcp6)
 
     finally:
         _harness.remove_tree(tmp)

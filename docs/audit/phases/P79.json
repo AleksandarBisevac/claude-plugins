@@ -343,7 +343,7 @@
     {
       "id": "P79.6",
       "title": "The doctor prints test recall and change recall over the shadow runs",
-      "status": "in_progress",
+      "status": "done",
       "description": "check_shadow_recall(rep, project, manifest_rel, manifest, config=None) in _doctor_trail.py, wired after the economy row. Over ledger rows carrying shadow (fixtures built through _evidence_io.row_for, so the shape is the writer's): test recall = failing suites the derived set would have listed / failing suites; change recall = red shadow runs with at least one covered failure / red shadow runs - the definitions from Meta's predictive test selection paper. Printed with both counts as the basis and the shadow run count; computed from the ledger every time and never written anywhere. No meta.phaseGate.mode: an OK row saying no derivation is declared (a row that vanished would read as checked). Mode shadow and no shadow row yet: an OK row saying none recorded. The recall row's remedy: 'set meta.phaseGate.mode to \"enforce\" when this recall is enough - nothing switches it for you'; no threshold switches anything. Red-first: a fixture of shadow rows yields the recall figures with their counts; mutation: count RUNS instead of SUITES for test recall -> red on a fixture where the two differ. Allow case: rows without shadow contribute nothing.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -376,18 +376,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a70001b4bb751532fa7cb339f9a18fa384d48551",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "check_shadow_recall in _doctor_trail.py, wired after check_gate_economy in audit-doctor.py. Test recall = sum(shadow.listed)/sum(shadow.full) over rows carrying shadow; change recall = red shadow rows (full > 0) with listed > 0 over red shadow rows. _read_gate_rows now also returns the ledger's unreadable count; an unreadable ledger warns before any figure. Live mutations named in the executor report, each red then restored green. Task review: intent matches, redFirst proved; inheritedTests not-asked - the gate's selftests entry is the whole sweep, so no bounded pre-existing test set exists to ask about. One low review finding (the executor's stamp dirtyDigest graded stale from sibling edits; scopeDigest agrees) is carried to sign-off.",
+        "descriptive": "The doctor now prints test recall and change recall over the phase-gate shadow runs recorded in the evidence ledger, with the command that switches meta.phaseGate.mode to enforce; it says so when no mode is set, when no shadow run is recorded, and when the ledger could not be read."
       },
       "startedAt": "2026-09-26T13:09:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T15:58:07Z",
+      "verifiedBy": [
+        "dsr1",
+        "dsr2",
+        "dsr2b",
+        "dsr3",
+        "dsr3b",
+        "dsr3c",
+        "dsr4",
+        "dsr5",
+        "dsr6"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T15:49:37Z.28e86c",
         "status": "passed",
         "at": "2026-09-26T15:49:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a70001b4bb751532fa7cb339f9a18fa384d48551",
+        "at": "2026-09-26T15:58:07Z"
       }
     },
     {
