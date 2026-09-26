@@ -1,7 +1,7 @@
 {
   "id": "P78",
   "title": "A phase gate that says where it came from and what it cost",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A new phase's gate lists meta.phaseGate.always first and drops no buildCommands key unless meta.phaseGate.exclude names it, with that exclusion printed by add-phase, the validator and the sign-off run alike (and 'phase gate runs no suite' when nothing suite-running is left); a gate-only task left with no test file gets the always entries; retarget --gate-drop and --gate-set change a phase's gate in one validated write; the SAME SUITE line, the doctor's economy row and a fix task opened from a red sign-off run each name the next command; and an executor's own tests run through run-test-gate.py --own --quiet with the whole output in a local log file.",
   "testGate": [
@@ -20,7 +20,7 @@
   ],
   "baseRef": "10a3e3daf8c679f3e8773a94ad71bdb992d8a4a9",
   "branch": "audit/p78-a-phase-gate-that-says-where-i",
-  "mergedAt": null,
+  "mergedAt": "2026-09-26T11:52:10Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
