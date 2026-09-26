@@ -138,7 +138,12 @@ E_OK, E_FAIL, E_USAGE = 0, 1, 2
 # finish by hand. The phase id goes in the subject, where it is still greppable.
 COMMIT_TYPE = "chore"
 COMMIT_SCOPE = "audit-index"
-DEFAULT_SUBJECT = "the shared index, carried alone so no phase's work rides with it"
+# WHAT THE COMMIT CARRIES, and it names the row because the commit carries it.
+# The subject is prose for a person reading `git log`: nothing reads it back -
+# every reader finds this class by the `audit-index` SCOPE, which is unchanged -
+# so the commits already in history keep the older subject, and are found
+# exactly as before.
+DEFAULT_SUBJECT = "the shared index and the row naming it, no phase's work"
 
 # `SUBJECT_LEAD` for `commit-audit-state.py`'s reason, and this file carried
 # the identical defect: with the phase id first, the subject after the colon IS
@@ -462,6 +467,7 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
             skipped, foreign=foreign,
             refused="the git index already holds paths this commit may not "
                     "carry. A manifest-index commit carries the shared index and "
+                    "the one journal file holding the row that names it, and "
                     "nothing else, so it refuses rather than sweeping them in - "
                     "unstage them and re-run")
     # AHEAD OF THE DO-NOTHING ANSWERS: `git status` does not list an ignored

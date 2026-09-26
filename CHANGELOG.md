@@ -307,10 +307,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   its contents, no shared prefix) and the same re-chain. No marker row is written into the
   ledger, whose every row is read as a recorded run; the merge is recorded by an `evidence.merge`
   journal row naming the file, whose `stateHash` also anchors the re-chained bytes. For both
-  records, a same-second tie whose rows touch disjoint targets - a journal row's `target`, a run's
-  task or phase - is now ordered by content, identically whichever side is ours, instead of
+  records, a same-second tie whose rows touch disjoint targets is now ordered by content instead of
   refused, and the order is written in the merge's record; a tie on one target, or on a row that
-  names none, is still refused.
+  names none, is still refused. A journal row's target is its `target`; a run's targets are the
+  keys every ledger reader files it under - `latest_by_subject`'s `(scope, id)` key, now one
+  function (`_evidence_io.subject_key`), and the `taskId`/`phaseId` pair a verdict is matched by -
+  with the plan's moved task ids mapped onto the ids held now, so a `--task` run measured under
+  its phase's gate ties with that phase's sign-off run, and a moved task's old-id run ties with
+  its new-id run; a plan that cannot be read orders no ledger tie at all. The rule does not depend
+  on which side is ours, and an identical tie is ordered by content too, so both branches
+  resolving a conflict get the same order of rows - byte for byte the same file for the ledger,
+  which takes no marker row; a journal file's marker row still records its own time, actor and
+  inputs. The merge output names the journal file holding the `evidence.merge` row, which has to
+  be committed with the ledger it anchors.
+- **`audit-journal.py verify` chose between same-second anchor rows by file read order.** The row
+  that anchors a file was whichever row naming it was read last among those at the newest second,
+  so an `evidence.merge` row and a `record()` row written in one second reported the merged
+  ledger as drift or not depending on how the journal directory was listed. The choice is now
+  `_journal_io.newest_anchor`: the later row within one file, then an `evidence.merge` row over any
+  other (its hash covers bytes that already include the runs), then the greatest row content - a
+  total order the rows define. The winner is still graded, so a merge row whose hash does not
+  match the file is drift as before.
 - **A scoped commit carries the journal row that names it, so a phase can end with a clean tree.**
   `commit-task-work`, `commit-audit-state` and `commit-manifest-index` each appended the row naming
   their commit AFTER making it, so the row was never inside it: every run left the trail dirty on a
@@ -320,7 +337,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   staged into the same commit (`_scoped_commit.commit_with_rows`) - for the index commit, the one
   journal file the row landed in joins the index on its allow-list, and `index-scope` allows the
   journal beside the index. Readers resolve the SHA from the trailer with `git log --grep`
-  (`_invariants.commits_carrying`), which a rebase or cherry-pick does not break; a row still
+  (`_invariants.commits_carrying`), which an amend, a rebase, a cherry-pick (both copies are read)
+  or a squash merge (whose indented bodies are read too) does not break - a fixup or reword that
+  drops the trailer leaves the row naming no commit, which is a gap, never a pass; a row still
   carrying `commit` is read as before. A commit refused after its row was written - a hook, or git -
   leaves an `audit.commit.withdrawn` row naming the nonce, so no row claims a commit that does not
   exist; one whose nonce no commit carries and nobody withdrew is a gap in `audit-state-scope` and

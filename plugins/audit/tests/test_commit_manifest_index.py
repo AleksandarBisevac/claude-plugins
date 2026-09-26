@@ -601,6 +601,25 @@ def _cases(check):
               code == 0 and sorted(lone) == sorted([INDEX_REL] + trail)
               and len(trail) == 1 and trail[0] in _row_files(fx))
 
+        # THE SUBJECT CHANGED AND HISTORY DID NOT: a commit made under the
+        # subject this class used to write is found by the same search as one
+        # made now, because what finds the class is its scope.
+        old_subject = ("%s(%s): %s %s - the shared index, carried alone so no "
+                       "phase's work rides with it"
+                       % (M.COMMIT_TYPE, M.COMMIT_SCOPE, M.SUBJECT_LEAD, PHASE))
+        TI._git(fx["root"], "commit", "-q", "--allow-empty", "-m", old_subject)
+        opening = "%s(%s): " % (M.COMMIT_TYPE, M.COMMIT_SCOPE)
+        by_scope = TI._git(fx["root"], "log", "--format=%s", "--fixed-strings",
+                           "--grep=" + opening).splitlines()
+        check("cmi40 the index commit's subject now names the row it carries, "
+              "and a commit under the OLD subject is still found by the search "
+              "that finds this class - the scope, which did not move: %r"
+              % (by_scope,),
+              old_subject in by_scope
+              and any(line.endswith(" - " + M.DEFAULT_SUBJECT)
+                      for line in by_scope)
+              and "row naming it" in M.DEFAULT_SUBJECT)
+
         fx = repos.make()
         index = _mio.read_json(fx["manifest"])
         index["phases"].append({"id": "P3", "title": "new phase",

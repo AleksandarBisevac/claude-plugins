@@ -2376,6 +2376,131 @@ def _cases(check):
     with_env(None, lambda: _merge_cases(check))
     _gone_cases(check)
     _tie_order_cases(check)
+    _anchor_tie_cases(check)
+
+
+# --- at: which anchor row a same-second tie leaves, in any read order ------------
+def _anchor_project(tmp, name):
+    root = os.path.join(tmp, name)
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({}, fh)
+    return root
+
+
+def _anchor(root, target, action, session, stamp):
+    """A row naming `target`, its `stateHash` the file's bytes now, filed in
+    the journal file named for `session` - which is how a case picks the
+    order two files are read in."""
+    return M.append(root, {"action": action, "target": target, "ts": stamp,
+                           "summary": "%s by %s" % (action, session),
+                           "actor": {"sessionId": session, "via": "fixture"}})
+
+
+def _put(root, target, text):
+    path = os.path.join(root, *target.split("/"))
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _drift(root, target):
+    return [w for w in M.verify(root)["warnings"]
+            if target in w and "changed since" in w]
+
+
+def _both_orders(root, target):
+    """`_drift` with the journal directory listed in its own order and then
+    REVERSED - the two read orders two machines can list one directory in."""
+    held = M.journal_files
+    try:
+        forward = _drift(root, target)
+        M.journal_files = lambda directory: list(reversed(held(directory)))
+        backward = _drift(root, target)
+    finally:
+        M.journal_files = held
+    return forward, backward
+
+
+# The action's spelling, read off the module when it has one: a build that
+# predates it still runs every case below to its assertion instead of raising.
+_MERGED = getattr(M, "EVIDENCE_MERGE_ACTION", "evidence.merge")
+
+
+def _anchor_tie_cases(check):
+    tmp = _harness.fixture_root("journal-anchor-tie-")
+    target = "docs/audit/evidence/2026-06.s.jsonl"
+    stamp = "2026-06-02T10:00:00Z"
+    record = "test.evidence.recorded"
+    try:
+        # A RECORD, THEN THE MERGE THAT RE-CHAINED THE FILE, in one second and
+        # in two journal files.
+        root = _anchor_project(tmp, "merge-and-record")
+        _put(root, target, "one side's bytes\n")
+        _anchor(root, target, record, "s-record", stamp)
+        _put(root, target, "the merged bytes\n")
+        _anchor(root, target, _MERGED, "s-merge", stamp)
+        seen = _both_orders(root, target)
+        check("at1 a merge row and a record row for one file in ONE second give "
+              "no drift in EITHER read order - the merge's `stateHash` covers "
+              "bytes that already include that run, so it is the anchor, "
+              "whichever journal file is read last: %r" % (seen,),
+              seen == ([], []))
+
+        # TWO UNRELATED ANCHORS in one second, one matching the file, one not.
+        root = _anchor_project(tmp, "two-records")
+        _put(root, target, "older bytes\n")
+        _anchor(root, target, record, "s-one", stamp)
+        _put(root, target, "newer bytes\n")
+        _anchor(root, target, record, "s-two", stamp)
+        forward, backward = _both_orders(root, target)
+        check("at2 two unrelated same-second anchors give ONE verdict in both "
+              "read orders - the tie is settled by what the rows say, never by "
+              "which file was listed last: %r" % ((forward, backward),),
+              forward == backward)
+
+        # THE OVER-FIRE DIRECTION: a merge row wins the tie, and is still graded.
+        root = _anchor_project(tmp, "stale-merge")
+        _put(root, target, "one side's bytes\n")
+        _anchor(root, target, record, "s-record", stamp)
+        _put(root, target, "the merged bytes\n")
+        _anchor(root, target, _MERGED, "s-merge", stamp)
+        _put(root, target, "edited after the merge\n")
+        forward, backward = _both_orders(root, target)
+        check("at3 ...and a merge row whose `stateHash` does NOT match the file "
+              "is drift in both read orders - winning the tie makes it the "
+              "anchor, not an exemption: %r" % ((forward, backward),),
+              len(forward) == 1 and len(backward) == 1
+              and _MERGED == M.EVIDENCE_MERGE_ACTION)
+
+        # TWO ROWS FOR ONE FILE IN ONE JOURNAL FILE, one second: the chain
+        # records which came later. A row in another journal file, naming
+        # something else, is what makes the two read orders differ.
+        root = _anchor_project(tmp, "one-file-twice")
+        _put(root, target, "older bytes\n")
+        _anchor(root, target, record, "s-same", stamp)
+        _put(root, target, "newer bytes\n")
+        _anchor(root, target, record, "s-same", stamp)
+        _anchor(root, "docs/audit/other.json", record, "s-other", stamp)
+        rows = [r for r in M.read_all(root) if r.get("target") == target]
+        forward, backward = _both_orders(root, target)
+        check("at4 two rows for one file in ONE journal file at one second: the "
+              "LATER row wins in both read orders, so a file matching the later "
+              "row reports no drift - chain order is a recorded order: %r / %r"
+              % ((forward, backward), [r.get("_file") for r in rows]),
+              len(rows) == 2 and rows[0].get("_file") == rows[1].get("_file")
+              and rows[0].get("stateHash") != rows[1].get("stateHash")
+              and forward == [] and backward == [])
+        _put(root, target, "older bytes\n")
+        forward, backward = _both_orders(root, target)
+        check("at5 ...and the reverse: with the file back at the EARLIER row's "
+              "bytes it is drift in both read orders - the earlier row of the "
+              "tie is not the anchor: %r" % ((forward, backward),),
+              len(forward) == 1 and len(backward) == 1)
+    finally:
+        _harness.remove_tree(tmp)
 
 
 # --- mt: a same-second tie over disjoint targets is ordered, not refused ---------
@@ -2402,9 +2527,11 @@ def _tie_order_cases(check):
     swapped = M.merge_rows(theirs, ours, name)
     order = [r.get("summary") for r in res["rows"][:-1]]
     check("mt1 a same-second tie whose rows touch DISJOINT targets is ordered "
-          "rather than refused, and the order is the same whichever side is "
-          "called ours - so both branches resolving the conflict write one "
-          "file: %r / %r" % (order, res["refusals"]),
+          "rather than refused, and every row EXCEPT THE MARKER comes out in the "
+          "same order whichever side is called ours - the marker itself differs "
+          "between the two resolutions (its time, its actor, which input it "
+          "calls which), so the claim is the order of rows and not the bytes: "
+          "%r / %r" % (order, res["refusals"]),
           res["ok"] and swapped["ok"] and len(order) == 3
           and order == [r.get("summary") for r in swapped["rows"][:-1]])
     marker = (res["rows"] or [{}])[-1]
@@ -2425,6 +2552,20 @@ def _tie_order_cases(check):
           not refused["ok"] and not refused["rows"]
           and len(refused["refusals"]) == 1
           and stamp in refused["refusals"][0])
+
+    x = _row(stamp, "task.note", "docs/x.json", "x")
+    y = _row(stamp, "task.note", "docs/y.json", "y")
+    one = _chained(name, base + [x, y])
+    two = _chained(name, base + [y, x])
+    both = M.merge_rows(one, two, name)
+    back = M.merge_rows(two, one, name)
+    check("mt5 an IDENTICAL tie whose rows each side holds in a different chain "
+          "order is ordered by content too, so every row but the marker lands "
+          "in one order whichever side is ours: %r"
+          % ([r.get("summary") for r in both["rows"][:-1]],),
+          both["ok"] and back["ok"]
+          and [M.row_content(r) for r in both["rows"][:-1]]
+          == [M.row_content(r) for r in back["rows"][:-1]])
 
     blank = _chained(name, base + [_row(stamp, "config.edit", "",
                                         "theirs names no target")])

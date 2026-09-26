@@ -3189,9 +3189,10 @@ it carries. Widening `commit-audit-state.py`'s list would have satisfied that sc
 verification — its allow-list and its staged set are one list, so nothing there could notice —
 while destroying the property both scope checks exist to defend.
 
-**What it stages: the index, and nothing else.** Not the shard, not the journal, not the evidence,
-not the task's `files`. The allow-list is one entry long and nothing downstream widens it. The
-path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
+**What it stages: the index, and the one journal file holding the row that names the commit, and
+nothing else.** Not the shard, not the rest of the journal, not the evidence, not the task's
+`files`. The allow-list is the index; `commit_with_rows` adds the row's file to it, and nothing
+else widens it. Each path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
 with `git diff --cached --name-only` and compared against the same list **before** the commit —
 and read **before** staging too, so work somebody else had already staged is refused while the git
 index is still exactly as it was found. Both reads are `_scoped_commit`'s, shared with its sibling.

@@ -553,7 +553,8 @@ not need to.
           `audit-journal.py merge --file <journal or evidence file>` is what resolves that without
           recomputing anything a row says: one implementation for both records, the same
           refusals, and a same-second tie ordered by content only when its rows touch different
-          targets (a journal row's `target`, a run's task or phase), with the order written down -
+          targets (a journal row's `target`; for a run, every key a ledger reader files it under,
+          the plan's moved task ids included), with the order written down -
           in the journal file's `journal.merge` row, or for a ledger file in an `evidence.merge`
           journal row naming it, because every row in the ledger is read as a recorded run.
         - **The explicit pathspec is the script's, and it is what makes the gate's

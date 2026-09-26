@@ -1547,6 +1547,12 @@ def append_from_cli(project, entry, config=None):
 # nobody reads again.
 MERGE_ACTION = "journal.merge"
 MERGE_VIA = "merge"
+# The row recording a merge of an EVIDENCE ledger file, which lives in the
+# journal because the ledger takes no row that is not a run. Spelled here rather
+# than in `_evidence_io`, which re-exports it, because `verify` below reads it:
+# at one second, this row's `stateHash` covers bytes that already include every
+# run recorded against the file, so it is the anchor that supersedes theirs.
+EVIDENCE_MERGE_ACTION = "evidence.merge"
 # What git writes into a working copy it could not merge, in every conflict style
 # it offers: the opening run, the base run the diff3 styles add, the separator and
 # the closing run. `conflicted_text` reads them, and reads them as PREFIXES because
@@ -1640,17 +1646,25 @@ def row_target(row):
     return str(row.get("target") or "") if isinstance(row, dict) else ""
 
 
+def _targets(target_of, row):
+    """`target_of(row)` as a set: one target (a string) or several (a tuple, a
+    row a reader could file under more than one subject), empties dropped."""
+    got = target_of(row)
+    got = [got] if isinstance(got, str) else list(got or ())
+    return set(str(t) for t in got if t)
+
+
 def _disjoint(mine, yours, target_of):
     """True when every row of both groups names a target and no target is in both.
 
     A row with no target is unknown, and unknown is never disjoint: the order
     this licenses is only safe for rows that provably touch different things.
     """
-    left = [target_of(r) for r in mine]
-    right = [target_of(r) for r in yours]
+    left = [_targets(target_of, r) for r in mine]
+    right = [_targets(target_of, r) for r in yours]
     if not all(left) or not all(right):
         return False
-    return not (set(left) & set(right))
+    return not (set().union(*left) & set().union(*right))
 
 
 def _tie_faults(ours_tail, theirs_tail, target_of=None):
@@ -1675,11 +1689,20 @@ def _tie_faults(ours_tail, theirs_tail, target_of=None):
     records, so either order is a true reading and the only harm is choosing
     one invisibly. The order is therefore DETERMINISTIC - the side whose rows'
     sorted contents compare lower goes first, a rule that does not depend on
-    which side is called ours, so both branches resolving the conflict produce
-    the same file - and it is RETURNED in `ordered`, each entry
-    `{"ts", "first", "firstRows", "thenRows"}`, for the marker to say. `target_of`
-    names what a row touched (`row_target` for the journal); a row it answers ""
-    for is never disjoint from anything.
+    which side is called ours - and it is RETURNED in `ordered`, each entry
+    `{"ts", "first", "firstRows", "thenRows", "identical"}`, for the marker to
+    say. So both branches resolving the conflict get the same ORDER OF ROWS; a
+    ledger file, which takes no marker row, comes out byte for byte the same,
+    while a journal file's marker differs between the two resolutions in its
+    time, its actor and which input it calls which. `target_of` names what a
+    row touched - a string, or several (`row_target` for the journal); a row it
+    answers nothing for is never disjoint from anything.
+
+    AN IDENTICAL TIE IS ORDERED THE SAME WAY, for the same property: its rows
+    say the same things but each side may hold them in a different chain order,
+    so the side whose sequence compares lower goes first. It is an `ordered`
+    entry with `identical` set, and the marker's sentence leaves it out, since
+    either order reads the same.
 
     CROSS-SIDE ONLY. Two rows within one tail sharing a timestamp are already in a
     recorded order that the chain fixes, and this must not disturb it."""
@@ -1697,11 +1720,17 @@ def _tie_faults(ours_tail, theirs_tail, target_of=None):
             # Both sides' rows, because both are KEPT: a count of one side would
             # under-report what the note is about by half.
             identical += len(mine) + len(yours)
+            seq_mine = [row_content(r) for r in ours_at[stamp]]
+            seq_yours = [row_content(r) for r in theirs_at[stamp]]
+            ordered.append({"ts": stamp, "identical": True,
+                            "first": ("ours" if seq_mine <= seq_yours
+                                      else "theirs"),
+                            "firstRows": [], "thenRows": []})
             continue
         if _disjoint(ours_at[stamp], theirs_at[stamp], target_of):
             first = "ours" if mine < yours else "theirs"
             lead, follow = (mine, yours) if first == "ours" else (yours, mine)
-            ordered.append({"ts": stamp, "first": first,
+            ordered.append({"ts": stamp, "first": first, "identical": False,
                             "firstRows": [_summarise_row(c, target_of)
                                           for c in lead],
                             "thenRows": [_summarise_row(c, target_of)
@@ -1731,7 +1760,8 @@ def _summarise_row(content, target_of=None):
     except Exception:
         return "(unreadable row)"
     what = obj.get("action") or obj.get("runId") or "?"
-    return "%s(%s)" % (what, (target_of or row_target)(obj))
+    return "%s(%s)" % (what, ", ".join(sorted(_targets(target_of or row_target,
+                                                      obj))))
 
 
 def _merge_tails(ours, theirs, theirs_first=()):
@@ -1789,13 +1819,14 @@ def order_sentence(ordered):
     The count first and then, per timestamp, which rows it put first, so the
     order a merge chose is written down rather than left for a reader to
     re-derive - and a summary cut to its bound still says how many it chose."""
-    if not ordered:
+    chosen = [o for o in ordered or () if not o.get("identical")]
+    if not chosen:
         return ""
     return (" %d same-second tie(s) over disjoint targets ordered by content, "
-            "not refused: %s." % (len(ordered), "; ".join(
+            "not refused: %s." % (len(chosen), "; ".join(
                 "at %s, %s before %s" % (o["ts"], ", ".join(o["firstRows"]),
                                          ", ".join(o["thenRows"]))
-                for o in ordered)))
+                for o in chosen)))
 
 
 def merge_summary(rows, name, counts, ordered=()):
@@ -1854,8 +1885,9 @@ def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
         {"ok", "refusals", "notes", "rows", "shared", "oursOnly", "theirsOnly",
          "relinked", "divergent", "identical", "ordered", "summary", "name"}
 
-    `ordered` lists the same-second ties over disjoint targets and the order
-    each was given (`_tie_faults`); `summary` is the sentence the merge is
+    `ordered` lists the same-second ties that were given an order - over
+    disjoint targets, or identical (`identical` set) - and which side went
+    first at each (`_tie_faults`); `summary` is the sentence the merge is
     recorded under, "" when nothing was re-chained.
 
     and `rows` is EMPTY whenever `ok` is false -- a refusal never also hands back
@@ -1951,8 +1983,9 @@ def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
             "%d row(s) sit at a timestamp both copies used and say the same "
             "thing; BOTH copies are kept, because dropping one is a guess that "
             "two identical rows were one event" % (identical,))
-    if ordered:
-        out["notes"].append(order_sentence(ordered).strip())
+    sentence = order_sentence(ordered).strip()
+    if sentence:
+        out["notes"].append(sentence)
     return out
 
 
@@ -2666,6 +2699,36 @@ def _git_anchor_finding(path):
         return _anchor_unasked("the anchor failed while asking: %s" % (exc,))
 
 
+def newest_anchor(candidates):
+    """`(ts, stateHash, file)` of the row that anchors one target, out of every
+    `(file, index, row)` naming it - chosen the same way in any read order.
+
+    THE NEWEST `ts` WINS, and a tie at that second is settled by what the rows
+    SAY, never by which journal file happened to be read last:
+      * within one file, the later row wins - chain order is a recorded order;
+      * across files, an `EVIDENCE_MERGE_ACTION` row wins over the others,
+        because its `stateHash` covers the merged bytes, which already include
+        every run recorded against the file in that second;
+      * any other tie goes to the greatest row content, then the greatest file
+        name - a total order derived from the rows, so two readers listing the
+        directory differently reach one verdict.
+    The winner's `stateHash` is then compared with the file like any other; a
+    merge row whose hash does not match is drift, as any row's is.
+    """
+    top = max(str(row.get("ts") or "") for _where, _i, row in candidates)
+    last = {}
+    for where, i, row in candidates:
+        if str(row.get("ts") or "") != top:
+            continue
+        if where not in last or i > last[where][0]:
+            last[where] = (i, row)
+    where, (_i, row) = max(
+        last.items(),
+        key=lambda item: (item[1][1].get("action") == EVIDENCE_MERGE_ACTION,
+                          row_content(item[1][1]), item[0]))
+    return (top, row.get("stateHash"), where)
+
+
 def verify(project, config=None):
     """Does the chain hold, and does the world still match its last row?
 
@@ -2722,7 +2785,7 @@ def verify(project, config=None):
     # Keyed by journal-relative path -- `where` below, never the
     # basename, so a live and an archived twin never answer for one another.
     status_sets = _git_status_sets(directory)
-    latest = {}                    # target -> (ts, stateHash, file)
+    anchors = {}                   # target -> [(file, index, row)]
     seen_names = {}                # basename -> [journal-relative paths]
     for path in journal_files(directory):
         name = os.path.basename(path)
@@ -2757,10 +2820,8 @@ def verify(project, config=None):
                     % (where, i + 1, row.get("action") or "?"))
             prev = stored if isinstance(stored, str) else None
             tgt = row.get("target")
-            if tgt and (tgt not in latest
-                        or str(row.get("ts") or "") >= latest[tgt][0]):
-                latest[tgt] = (str(row.get("ts") or ""), row.get("stateHash"),
-                               where)
+            if tgt:
+                anchors.setdefault(tgt, []).append((where, i, row))
         if torn:
             entry["warnings"].append(
                 "%s ends with a partial line -- a writer was interrupted. The rows "
@@ -2805,6 +2866,7 @@ def verify(project, config=None):
                 "(a hand copy or an interrupted archive, never something "
                 "`archive` produces)" % (name, ", ".join(places)))
 
+    latest = dict((tgt, newest_anchor(found)) for tgt, found in anchors.items())
     for tgt, (_ts, state, name) in sorted(latest.items()):
         if not state:
             continue

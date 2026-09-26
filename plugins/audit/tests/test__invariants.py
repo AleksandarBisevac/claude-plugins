@@ -1549,6 +1549,51 @@ def _trailer_cases(check):
               % (scope["breaches"],),
               scope["verdict"] == M.BREACH and len(scope["breaches"]) == 1
               and "src/a.py" in scope["breaches"][0])
+
+        # A SQUASH MERGE INDENTS EVERY SQUASHED BODY, trailer included.
+        _nonce_row(root, M.ACTION_STATE_COMMITTED, "eeee000000000005",
+                   "docs/audit/evidence")
+        _git(root, "add", "--", "docs/audit/journal")
+        _git(root, "commit", "-q", "-m", "squashed", "-m",
+             "    chore(audit-state): phase P1 - fixture\n\n"
+             "    %s: eeee000000000005" % (M.ROW_TRAILER,))
+        squashed = _head(root)
+        found, _why = M.commits_carrying(root, ["eeee000000000005"])
+        check("it8 a trailer INDENTED the way a squash merge writes a squashed "
+              "commit's body still resolves - that commit really does contain "
+              "the row: %r" % (found,),
+              found == {"eeee000000000005": [squashed]})
+
+        # A COMMIT CHERRY-PICKED ALONGSIDE ITSELF: both copies reachable.
+        _git(root, "checkout", "-q", "-b", "side")
+        _evidence_file(audit, "passed")
+        _write(os.path.join(audit, "evidence", "side.jsonl"), "{}\n")
+        _nonce_row(root, M.ACTION_STATE_COMMITTED, "ffff000000000006",
+                   "docs/audit/evidence")
+        picked = _commit_carrying(root, ["docs/audit/evidence",
+                                         "docs/audit/journal"],
+                                  "chore(audit-state): phase P1 - side",
+                                  "ffff000000000006")
+        _git(root, "checkout", "-q", "-")
+        # The line moves on first, so the pick lands on a different parent and
+        # is a different commit - picked in the same second onto the same
+        # parent it would hash to the very same object.
+        _write(os.path.join(root, "README.md"), "moved on\n")
+        _git(root, "commit", "-q", "-am", "fixture: the line moved on")
+        _git(root, "cherry-pick", picked)
+        copy = _head(root)
+        _git(root, "merge", "-q", "--no-edit", "side")
+        found, _why = M.commits_carrying(root, ["ffff000000000006"])
+        shas, _u, _w, unresolved = M.audit_state_commits(root, "P1",
+                                                         git_root=root)
+        state = _check(_phase_answer(fx), "audit-state-scope")
+        check("it9 a commit cherry-picked alongside itself is carried by BOTH "
+              "copies, and the reader returns both and grades every commit it "
+              "returns: %r / %r / examined %r"
+              % (found, shas, state["examined"]),
+              state["examined"] == len(shas) and
+              sorted(found.get("ffff000000000006", [])) == sorted([picked, copy])
+              and picked in shas and copy in shas and unresolved == [])
     finally:
         _harness.remove_tree(tmp)
 

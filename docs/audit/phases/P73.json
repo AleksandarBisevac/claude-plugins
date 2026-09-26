@@ -21,10 +21,53 @@
   "branch": "audit/p73-the-trail-names-each-commit-fr",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P73-S1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "merge_target decides a ledger tie is disjoint using a subject rule no reader of the ledger uses. It returns 'task <taskId>' whenever taskId is set, whatever the scope. latest_by_subject (_evidence_io.py:1628) keys a row by (scope, taskId if scope=='task' else phaseId) and applies subject_aliases. Two cases get through as a result: (a) a `--task` run measured under the phase gate (scope 'phase' plu",
+        "resolution": "fix task P73.3-9h1"
+      },
+      {
+        "id": "P73-S2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "commits_carrying only accepts a trailer line that STARTS with 'Audit-Row: '. `git merge --squash` (SQUASH_MSG) indents each squashed commit's body by four spaces, so after a squash-merge `--grep` finds the commit but the parser rejects every line and every nonce comes back unresolved. That shows up as a gap rather than a pass, which is the honest direction. But the comment says the row 'keeps nami",
+        "resolution": "fix task P73.3-9h1"
+      },
+      {
+        "id": "P73-S3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "Three sentences now contradict what the index commit does. index_scope's docstring still opens with 'THE ALLOW-LIST IS ONE ENTRY LONG, and that is the point', and the paragraph this diff added right under it says the journal is also allowed. The _scoped_commit module docstring still describes commit-manifest-index as '(the manifest INDEX, and nothing at all beside it)'. The build guide's commit-ma",
+        "resolution": "fix task P73.3-9h1"
+      },
+      {
+        "id": "P73-S4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_journal_io.py",
+        "issue": "The _tie_faults docstring says the order rule is side-independent 'so both branches resolving the conflict produce the same file', and the commit message says 'both branches produce the same bytes'. For a ledger file that is true, because no marker row is written. For a journal file the marker row differs between the two resolutions: its ts is now, its actor is whoever ran it, and oursOnly/theirsO",
+        "resolution": "fix task P73.3-9h1"
+      },
+      {
+        "id": "P73-S5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/audit-journal.py",
+        "issue": "The evidence.merge row, which anchors the re-chained ledger bytes, goes to a journal file the operator is never told to stage. The closing line says only '`git add` it', meaning the ledger. g22 does `git add -- <ledger>` and commits the merge with the journal row still uncommitted, and asserts nothing about it. So the merge commit holds the re-chained ledger without its anchor. In a clone at that ",
+        "resolution": "fix task P73.3-9h1"
+      },
+      {
+        "id": "P73-S6",
+        "severity": "low",
+        "file": "tools/check-git-pipeline.py",
+        "issue": "g21's rebase half asserts what git's own `git log --grep` returns. It never calls the product reader (_invariants.index_commits / commits_carrying), so the reader's record separator and prefix parsing are never run against a really rebased history (it3 covers amend only, in-process). The cherry-picked-alongside-itself branch the docstring describes (several SHAs for one nonce) has no case at all.",
+        "resolution": "fix task P73.3-9h1"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -150,6 +193,66 @@
         "test__evidence_io em1",
         "check-git-pipeline g22"
       ]
+    },
+    {
+      "id": "P73.3-9h1",
+      "title": "Review findings: a ledger tie is ordered only when latest_by_subject keys its rows apart, a squashed trailer still resolves, and the evidence merge names the row to stage",
+      "status": "in_progress",
+      "description": "Phase review findings, all to be fixed. Orchestrator decisions: (R1) disjoint only when the rows differ under the (scope, subject) key with aliases that latest_by_subject uses AND under the _same_subject pair; red-first case for a --task run vs a phase sign-off run, and old-id vs moved id. (R2) match the trailer on the stripped line so squash and fixup bodies resolve; a case with a four-space-indented trailer. (R4) narrow the byte-identity claim to ledger files in code, docs and CHANGELOG. (R5) the merge output names the journal file carrying evidence.merge as a path to stage with the ledger, and g22 stages it and asserts a clone at the merge commit shows no drift. (R6) g21 asserts through the product reader, plus a cherry-picked nonce carried by two commits. (R7, pre-existing) an identical same-second tie is ordered by content too, so both sides give the same file. R3 as the review says.\nR1 (med) plugins/audit/scripts/governance/_evidence_io.py:841-854: merge_target decides a ledger tie is disjoint using a subject rule no reader of the ledger uses. It returns 'task <taskId>' whenever taskId is set, whatever the scope. latest_by_subject (_evidence_io.py:1628) keys a row by (scope, taskId if scope=='task' else phaseId) and applies subject_aliases. Two cases get through as a result: (a) a `--task` run measured under the phase gate (scope 'phase' plus a taskId, which verdict_binding documents) and a phase sign-off run of the same phase in the same second; (b) runs recorded under a moved task's old id and its new id. merge_target calls both pairs disjoint, so the tie is ordered by content instead of refused. latest_by_subject then maps both rows to one key, and its `>=` tie rule means the LATER row wins, so the order the merge picked decides the phase's pointer. That is exactly the order-matters tie the refusal protected. This is judged from reading the code; no case exercises it. -> Treat two ledger rows as disjoint only if they differ under every subject rule a reader uses: the latest_by_subject (scope, subject) key and the _same_subject taskId/phaseId pair. A simpler option is to refuse whenever the two rows share a phaseId and either one is phase-scope. Add a red-first case pairing a scope:'phase'+taskId run with a phase sign-off run at the same second, and assert it is refused.\nR2 (low) plugins/audit/scripts/governance/_invariants.py:55-62 (claim at 17-20): commits_carrying only accepts a trailer line that STARTS with 'Audit-Row: '. `git merge --squash` (SQUASH_MSG) indents each squashed commit's body by four spaces, so after a squash-merge `--grep` finds the commit but the parser rejects every line and every nonce comes back unresolved. That shows up as a gap rather than a pass, which is the honest direction. But the comment says the row 'keeps naming the commit it is inside' after a rewrite, and that holds only for amend, rebase and cherry-pick. A `fixup` or a reword that drops the trailer has the same effect. -> Either match on `line.strip()` so an indented trailer line still resolves (a squash commit really does contain those rows), or name squash-merge and fixup in the comment and in the CHANGELOG entry as rewrites that leave a gap. Add a case either way.\nR3 (low) plugins/audit/scripts/governance/_invariants.py:714; plugins/audit/scripts/governance/_scoped_commit.py:8; PLUGIN-BUILD-GUIDE.md:3192-3193: Three sentences now contradict what the index commit does. index_scope's docstring still opens with 'THE ALLOW-LIST IS ONE ENTRY LONG, and that is the point', and the paragraph this diff added right under it says the journal is also allowed. The _scoped_commit module docstring still describes commit-manifest-index as '(the manifest INDEX, and nothing at all beside it)'. The build guide's commit-manifest-index section still says 'What it stages: the index, and nothing else. Not the shard, not the journal ... The allow-list is one entry long', a few lines above the paragraph this diff added saying it also carries the journal file holding its row. All three files are in P73.1's declared files. -> Reword all three to the shape the code has now: the index plus the one journal file holding the row that names the commit, and nothing else.\nR4 (low) plugins/audit/scripts/governance/_journal_io.py:1672-1682 (and commit 04145ddf message): The _tie_faults docstring says the order rule is side-independent 'so both branches resolving the conflict produce the same file', and the commit message says 'both branches produce the same bytes'. For a ledger file that is true, because no marker row is written. For a journal file the marker row differs between the two resolutions: its ts is now, its actor is whoever ran it, and oursOnly/theirsOnly and the two input digests swap in its summary. mt1 compares only rows[:-1], so it checks the order and not the file. -> Say 'the same order of rows' for the journal and keep 'the same bytes' for the ledger only. Alternatively, make mt1's name and message state that it covers every row except the marker.\nR5 (low) plugins/audit/scripts/governance/audit-journal.py:750-757, 800-805; tools/check-git-pipeline.py:1760-1766: The evidence.merge row, which anchors the re-chained ledger bytes, goes to a journal file the operator is never told to stage. The closing line says only '`git add` it', meaning the ledger. g22 does `git add -- <ledger>` and commits the merge with the journal row still uncommitted, and asserts nothing about it. So the merge commit holds the re-chained ledger without its anchor. In a clone at that commit, the newest anchoring row for the ledger is one side's record() row, whose stateHash no longer matches, and that is the 'changed since' warning me2 asserts the row prevents. -> When res['recorded'] is True, name the journal file the row landed in and tell the operator to `git add` it with the ledger, or return it in --json. In g22, assert that the row file is named in the output, or that it is inside the merge commit once staged.\nR6 (low) tools/check-git-pipeline.py:1690-1702; plugins/audit/scripts/governance/_invariants.py:38-39: g21's rebase half asserts what git's own `git log --grep` returns. It never calls the product reader (_invariants.index_commits / commits_carrying), so the reader's record separator and prefix parsing are never run against a really rebased history (it3 covers amend only, in-process). The cherry-picked-alongside-itself branch the docstring describes (several SHAs for one nonce) has no case at all. -> After the rebase in g21, assert `_invariants.index_commits(root, 'P1', git_root=root)[0] == [rebased]`. Add an it-case that cherry-picks a trailer-carrying commit onto the same line and asserts both SHAs are returned and graded.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "tools/check-git-pipeline.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - a --task run and a phase sign-off run of one phase in the same second are ordered instead of refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T08:04:47Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T04:55:13Z"

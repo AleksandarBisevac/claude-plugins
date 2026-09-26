@@ -1694,12 +1694,18 @@ def check_index_commit_carries_only_the_index(fx):
                  git(fx, "log", "--format=%H", "--fixed-strings",
                      "--grep=%s%s" % (prefix, nonces[0]))[1].splitlines()
                  if ln.strip()]
-        ok = code == 0 and rebased != head and found == [rebased]
+        # AND THROUGH THE PRODUCT'S OWN READER, which is what grades the commit:
+        # its record separator and trailer parsing, run over a history git
+        # really rewrote rather than one amended in-process.
+        import _invariants
+        read = _invariants.index_commits(fx["root"], "P1", git_root=fx["root"])
+        ok = (code == 0 and rebased != head and found == [rebased]
+              and read[0] == [rebased] and read[3] == [])
         return ok, ("the index commit %s was rebased to %s (exit %r: %s); `git "
-                    "log --grep` for its trailer found %r (want exactly the "
-                    "rebased commit)" % (head[:12], rebased[:12], code,
-                                         (rebase_out or "").strip()[:200],
-                                         found))
+                    "log --grep` for its trailer found %r and the reader "
+                    "resolved %r (want exactly the rebased commit from both)"
+                    % (head[:12], rebased[:12], code,
+                       (rebase_out or "").strip()[:200], found, read[0]))
     finally:
         git(fx, "reset", "--hard", "-q", before)
         from _suite import remove_tree   # tools/_suite.py says why it is here
@@ -1707,9 +1713,12 @@ def check_index_commit_carries_only_the_index(fx):
         write_manifest(fx, manifest_body())
 
 
-def _ledger_append(fx, rel, run_id, ts, task):
+def _ledger_append(fx, rel, run_id, ts, task, session):
     """One run appended to the ledger file `rel`, chained by the product's own
-    `chain_onto` - the link a recorded run gets, not one spelled here."""
+    `chain_onto`, and anchored by a journal row naming the file - the pair
+    `_evidence_io.record` writes. `session` names the journal file the anchor
+    lands in, so two branches anchor in two files and only the ledger
+    conflicts."""
     import _evidence_io
     import _journal_io
     path = os.path.join(fx["root"], rel.replace("/", os.sep))
@@ -1724,6 +1733,17 @@ def _ledger_append(fx, rel, run_id, ts, task):
         tail, os.path.basename(path))
     with io.open(path, "a", encoding="utf-8") as fh:
         fh.write(_journal_io.canonical(row) + "\n")
+    # Dated NOW, as a real anchor row is: the fixture is fast enough that the
+    # merge's own row can land in the same second as these, and then `verify`
+    # has to choose between them by what they say, not by file order.
+    return _journal_io.append(fx["root"], {
+        "action": _evidence_io.ACTION_RECORDED, "target": rel,
+        "summary": "run %s recorded" % (run_id,),
+        "actor": {"sessionId": session, "via": "fixture"}})
+
+
+def _git_rel(fx, path):
+    return _output.posix_rel(path, fx["root"])
 
 
 def check_evidence_ledger_merge(fx):
@@ -1735,42 +1755,70 @@ def check_evidence_ledger_merge(fx):
     chain and completes the merge. Both branches append at the SAME second on
     different tasks, so the result also rests on the tie being ordered rather
     than refused.
+
+    AND THAT THE MERGE COMMIT HOLDS THE LEDGER'S ANCHOR. The verb names the
+    journal file its `evidence.merge` row landed in; staged with the ledger,
+    a fresh CLONE at the merge commit reports no drift on the re-chained
+    file - without that row the clone's newest row for the file would record
+    one side's bytes.
     """
     import _evidence_io
     import _journal_io
     found = git(fx, "rev-parse", "HEAD")[1].strip()
     rel = "docs/audit/evidence/2026-06.s-pipe.jsonl"
+    clone = tempfile.mkdtemp(prefix="audit-ledger-clone-")
     try:
-        _ledger_append(fx, rel, "run-base", "2026-06-01T10:00:00Z", "P1.1")
-        git(fx, "add", "--", rel)
-        git(fx, "commit", "-q", "-m", "fixture: a ledger file", "--", rel)
+        anchors = [_ledger_append(fx, rel, "run-base", "2026-06-01T10:00:00Z",
+                                  "P1.1", "s-base")]
+        git(fx, "add", "--", rel, *[_git_rel(fx, a) for a in anchors if a])
+        git(fx, "commit", "-q", "-m", "fixture: a ledger file")
         git(fx, "checkout", "-q", "-b", "ledger-side")
-        _ledger_append(fx, rel, "run-side", "2026-06-02T10:00:00Z", "P1.2")
-        git(fx, "commit", "-q", "-am", "fixture: the side branch's run")
+        side = _ledger_append(fx, rel, "run-side", "2026-06-02T10:00:00Z",
+                              "P1.2", "s-side")
+        git(fx, "add", "--", rel, _git_rel(fx, side))
+        git(fx, "commit", "-q", "-m", "fixture: the side branch's run")
         git(fx, "checkout", "-q", FIXTURE_BRANCH)
-        _ledger_append(fx, rel, "run-main", "2026-06-02T10:00:00Z", "P1.1")
-        git(fx, "commit", "-q", "-am", "fixture: this branch's run")
+        mine = _ledger_append(fx, rel, "run-main", "2026-06-02T10:00:00Z",
+                              "P1.1", "s-main")
+        git(fx, "add", "--", rel, _git_rel(fx, mine))
+        git(fx, "commit", "-q", "-m", "fixture: this branch's run")
         code, out = git(fx, "merge", "-q", "--no-edit", "ledger-side")
         if code == 0:
             return False, "the fixture did not conflict: %s" % (out or "")[:200]
         code, out = script(fx, "audit-journal.py", "merge", "--file", rel,
-                           "--project", ".")
+                           "--project", ".", "--json")
+        try:
+            payload = json.loads(out or "")
+        except ValueError:
+            payload = {}
+        anchor = payload.get("recordedIn")
         rows = [r for r in _journal_io.read_file(os.path.join(
             fx["root"], rel.replace("/", os.sep)))[0]
             if not r.get("_unparseable")]
         verdict = _evidence_io.verify_rows(rows, os.path.basename(rel))
-        git(fx, "add", "--", rel)
+        git(fx, "add", "--", rel, *([anchor] if anchor else []))
         done, done_out = git(fx, "commit", "-q", "--no-edit")
+        head = git(fx, "rev-parse", "HEAD")[1].strip()
+        git(fx, "clone", "-q", "--no-hardlinks", fx["root"], clone)
+        git(fx, "-C", clone, "checkout", "-q", head)
+        drift = [w for w in _journal_io.verify(clone)["warnings"]
+                 if rel in w and "changed since" in w]
         ok = (code == 0 and [r.get("runId") for r in rows][:1] == ["run-base"]
               and sorted(r.get("runId") for r in rows)
               == ["run-base", "run-main", "run-side"]
-              and not verdict["findings"] and done == 0)
-        return ok, ("merge exit %r (%s); rows %r; chain findings %r; the merge "
-                    "commit exit %r (%s)"
-                    % (code, (out or "").strip()[:200],
-                       [r.get("runId") for r in rows], verdict["findings"],
-                       done, (done_out or "").strip()[:120]))
+              and not verdict["findings"] and done == 0
+              and payload.get("recorded") is True and bool(anchor)
+              and drift == [])
+        return ok, ("merge exit %r (%s); recorded %r in %r; rows %r; chain "
+                    "findings %r; the merge commit exit %r (%s); drift in a "
+                    "clone at it %r"
+                    % (code, (out or "").strip()[:160], payload.get("recorded"),
+                       anchor, [r.get("runId") for r in rows],
+                       verdict["findings"], done,
+                       (done_out or "").strip()[:120], drift))
     finally:
+        from _suite import remove_tree   # tools/_suite.py says why it is here
+        remove_tree(clone)
         _cleanup(fx, found, "ledger-side", files=(rel,))
 
 

@@ -16,7 +16,8 @@ Prose cannot refuse. This can.
 
 THE THIRD SCOPED COMMIT, AND THE SHAPE IS ITS SIBLINGS'. `commit-audit-state.py`
 carries the RECORD of a run and never the work; `commit-manifest-index.py`
-carries the shared index and nothing else; this one carries the WORK. Each
+carries the shared index and the one journal file holding the row that names
+the commit, and nothing else; this one carries the WORK. Each
 derives its own allow-list and none of them shares a builder, because a shared
 builder taking a flag would be one function holding three safety properties -
 the shape in which a widened list stops being noticed. What they do share is

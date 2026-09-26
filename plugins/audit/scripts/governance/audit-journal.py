@@ -666,8 +666,14 @@ def cmd_merge(args, out):
     actor = {"author": args.author, "sessionId": args.session,
              "via": MERGE_VIA}
     if evidence:
+        # THE PLAN'S MOVED IDS, because a run recorded under a task's old id and
+        # one under its new id are ONE subject to every reader. Unreadable means
+        # unknown, and then no same-second tie in the ledger is ordered.
+        aliases, alias_why = _evidence_io.plan_aliases(project, config)
         res = _evidence_io.merge_rows(sides[0][0], sides[1][0], name,
-                                      torn=tuple(torn))
+                                      torn=tuple(torn), aliases=aliases)
+        if alias_why:
+            res["notes"] = list(res["notes"]) + [alias_why]
     else:
         res = merge_rows(sides[0][0], sides[1][0], name, actor=actor,
                          torn=tuple(torn))
@@ -735,6 +741,10 @@ def cmd_merge(args, out):
             return 1
         for line in res["refusals"]:
             out("REFUSED: " + line)
+        # A note can be the reason for a refusal - an unread plan is why a
+        # ledger tie was refused rather than ordered - so it is said here too.
+        for line in res["notes"]:
+            out("NOTE: " + line)
         out("\n[audit-journal] nothing written: %d refusal(s) in %s. A merge "
             "that dropped or reordered a row would be worse than the conflict "
             "it replaces, so it refuses rather than guessing."
@@ -751,10 +761,16 @@ def cmd_merge(args, out):
     # `stateHash` is the merged bytes - and only when the bytes changed: a
     # re-run over a file already resolved writes the same bytes and has
     # nothing new to record.
-    res["recorded"] = None
+    res["recorded"], res["recordedIn"] = None, None
     if evidence and written and found.get("text") != merge_text(res["rows"]):
-        res["recorded"] = bool(_evidence_io.record_merge(
-            project, path, res, actor=actor, config=config))
+        landed = _evidence_io.record_merge(project, path, res, actor=actor,
+                                           config=config)
+        res["recorded"] = bool(landed)
+        # NAMED, because the row is the re-chained ledger's anchor and has to
+        # be committed WITH it: a merge commit holding the ledger without it is
+        # a clone whose newest row for the file records bytes it no longer has.
+        res["recordedIn"] = (_journal_io.repo_relative_or_token(project, landed)
+                             if landed else None)
     if args.as_json:
         out(_merge_json(res, args.dry_run, written, error))
         return 1 if error is not None else 0
@@ -772,8 +788,10 @@ def cmd_merge(args, out):
         return 1
     if res["recorded"] is True:
         out("[audit-journal] the merge of %s is recorded in the journal as an "
-            "`%s` row naming it, which also anchors the re-chained bytes"
-            % (name, _evidence_io.ACTION_MERGED))
+            "`%s` row naming it, which also anchors the re-chained bytes - it "
+            "is in %s, and that file has to be committed WITH the ledger: "
+            "`git add` both" % (name, _evidence_io.ACTION_MERGED,
+                                res["recordedIn"]))
     elif res["recorded"] is False:
         out("[audit-journal] the merge of %s was written and the journal row "
             "recording it could NOT be, so nothing in the trail says it was "

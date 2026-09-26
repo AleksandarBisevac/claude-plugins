@@ -1324,7 +1324,10 @@ is the case the naming scheme does not cover, ordinary while a phase is paused, 
 `audit-journal.py merge` is what resolves it: it re-chains the union in timestamp order,
 changing no row's content and refusing rather than guessing when two rows claim the same
 moment about one target (rows about different targets are ordered by content, and the order is
-recorded). An evidence ledger file is merged by the same verb. Do NOT add the journal directory to
+recorded). An evidence ledger file is merged by the same verb, where two runs are about one
+target whenever any reader of the ledger would file them under one subject, moved task ids
+included; commit the journal file the merge names with the ledger, since its row anchors the
+re-chained bytes. Do NOT add the journal directory to
 `.gitignore` — git history is one of the trail's three anchors, and it can only pin what is
 committed; an ignored journal quietly downgrades the trail from three anchors to two.
 (`/audit:doctor` warns when journal files sit uncommitted for more than a week.) Edits to it

@@ -434,9 +434,12 @@ AUDIT_STATE_SCOPE_BASIS = (
 # ends the commit message with `ROW_TRAILER: <nonce>`; a reader goes from the row
 # to the commit by searching the history for that line. Spelled here, beside the
 # actions, for their reason: `_scoped_commit` writes the trailer and this module
-# reads it, and this is the lowest module both halves reach. A message survives a
-# rebase and a cherry-pick where a SHA does not, so the row keeps naming the
-# commit it is inside after either.
+# reads it, and this is the lowest module both halves reach. A message survives an
+# amend, a rebase and a cherry-pick where a SHA does not, so the row keeps naming
+# the commit it is inside after each; the line is matched with its indent
+# stripped, so a squash merge, which indents every squashed body, still resolves.
+# A fixup or a reword that DROPS the line leaves the row naming no commit, which
+# a reader reports as a gap rather than a pass.
 ROW_TRAILER = "Audit-Row"
 NONCE_KEY = "commitNonce"
 
@@ -476,6 +479,7 @@ def commits_carrying(git_root, nonces):
         if not sha:
             continue
         for line in body.splitlines():
+            line = line.strip()
             value = line[len(prefix):].strip() if line.startswith(prefix) else ""
             if value in wanted and sha not in found.get(value, []):
                 found.setdefault(value, []).append(sha)
@@ -711,7 +715,8 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel,
                 journal_rel=None, config=None):
     """A manifest-index commit carried the index and the trail, and nothing else.
 
-    THE ALLOW-LIST IS ONE ENTRY LONG, and that is the point rather than an
+    THE ALLOW-LIST IS THE INDEX AND THE ONE JOURNAL FILE HOLDING THE ROW THAT
+    NAMES THE COMMIT, AND NOTHING ELSE, and that is the point rather than an
     austerity. `/audit:task add --files` and `/audit:phase add` write `fileIndex`
     and a phase stub into the shared index, and step 4c forbids a task commit from
     staging it -- so until this class existed nothing committed the index at all
@@ -720,8 +725,9 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel,
     re-derived on its own, while a commit carrying the index AND a phase's work
     cannot be separated from the work when two branches meet on that file.
 
-    THE JOURNAL IS THE ONE OTHER THING ALLOWED, because the row naming the
-    commit is inside it. A journal file is named for one writer and one
+    THE JOURNAL IS ALLOWED because the row naming the commit is inside it; this
+    reader cannot tell which journal file that row is in, so it allows the
+    directory, and the writer stages only the one file. A journal file is named for one writer and one
     worktree, so it is not a file two phases meet on, and the separability above
     is untouched by it.
 

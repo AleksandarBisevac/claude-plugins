@@ -5,7 +5,8 @@ What a commit-a-narrow-allow-list command is made of, in one place.
 WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMAND. Three entry points
 stage a fixed set of paths and commit them -- `commit-audit-state.py` (the
 phase's manifest file, the journal and the evidence), `commit-manifest-index.py`
-(the manifest INDEX, and nothing at all beside it) and `commit-task-work.py` (a
+(the manifest INDEX and the one journal file holding the row that names the
+commit, and nothing else) and `commit-task-work.py` (a
 task's declared files and the records beside them) -- and everything except the
 list itself is the same in all three: stage EXPLICITLY, each path by what git
 holds for it (`classify`, `stage`), never `git add -A`; read the index back;
@@ -19,7 +20,8 @@ a refusal rule is how one commit comes to carry what the other forbids.
 WHAT IS DELIBERATELY NOT HERE: THE ALLOW-LIST ITSELF. Each command derives its
 own, and they differ in exactly the entries that matter -- one may stage the
 phase's shard and the records beside it and never the shared index, another may
-stage only the shared index and never a phase's file. A shared builder taking a
+stage only the shared index and the row naming its commit, and never a phase's
+file. A shared builder taking a
 flag would be one function holding several safety properties, which is the
 shape in which a widened list stops being noticed.
 
