@@ -594,7 +594,8 @@
       "P75.1",
       "P75.2-j5h",
       "P75.3-j5h",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -664,7 +665,8 @@
       "P75.1",
       "P75.2-j5h",
       "P75.3-j5h",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "README.md": [
       "P2.3",
@@ -1323,7 +1325,8 @@
       "P53.3",
       "P50.5",
       "P50.9",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2"
@@ -1713,7 +1716,8 @@
       "P80.1",
       "P81.1",
       "P75.3-j5h",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -2043,7 +2047,8 @@
       "P63.8",
       "P69.3",
       "P69.4-j6r",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2051,7 +2056,8 @@
       "P59.7",
       "P75.2-j5h",
       "P75.3-j5h",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -2060,7 +2066,8 @@
       "P63.8",
       "P69.3",
       "P69.4-j6r",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -2337,7 +2344,8 @@
       "P57.3",
       "P77.1",
       "P75.3-j5h",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -2405,7 +2413,8 @@
       "P59.7",
       "P75.2-j5h",
       "P75.3-j5h",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -2518,7 +2527,8 @@
       "P61.1",
       "P61.7",
       "P67.1",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -3222,7 +3232,8 @@
       "P75.4-j5h"
     ],
     "plugins/audit/scripts/manifest/_manifest_ado.py": [
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/scripts/manifest/_ado_conventions.py": [
       "P75.4-j5h"
@@ -3231,7 +3242,8 @@
       "P75.4-j5h"
     ],
     "plugins/audit/scripts/manifest/_ado_parent.py": [
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P75.5-j5h"
     ],
     "plugins/audit/scripts/manifest/_ado_tracked.py": [
       "P75.4-j5h"
