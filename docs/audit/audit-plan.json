@@ -592,7 +592,8 @@
       "P80.12",
       "P81.8",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -661,7 +662,8 @@
       "P80.10",
       "P77.1",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "README.md": [
       "P2.3",
@@ -817,7 +819,8 @@
       "P55.18",
       "P78.11",
       "P77.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1014,7 +1017,8 @@
       "P72.1",
       "P69.3",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1066,7 +1070,8 @@
       "P59.3",
       "P62.2",
       "P72.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -1931,7 +1936,8 @@
       "P80.9",
       "P81.6",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2062,7 +2068,8 @@
       "P59.3",
       "P62.2",
       "P72.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -2506,7 +2513,8 @@
       "P80.12",
       "P81.8",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/commands/logs.md": [
       "P31.2",
@@ -2717,7 +2725,8 @@
       "P80.9",
       "P81.6",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     ".claude/skills/before-you-claim/SKILL.md": [
       "P37.1"
@@ -2771,7 +2780,8 @@
       "P63.10",
       "P72.1",
       "P69.3",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2809,7 +2819,8 @@
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
       "P77.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/tests/test__tree_stamp.py": [
       "P43.4",
@@ -2818,7 +2829,8 @@
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4",
       "P77.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "tools/orchestrator-state.py": [
       "P43.5",
@@ -2911,7 +2923,8 @@
       "P63.8",
       "P63.10",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
@@ -2923,7 +2936,8 @@
       "P63.8",
       "P63.10",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
