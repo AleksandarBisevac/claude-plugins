@@ -176,7 +176,11 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   failure alone, which is exactly today's behaviour for a plan that has never coupled a test to
   a source by hand. **`phase.testGateDerived` absent means `run-test-gate.py` prints no NARROWED
   line and grades no derived-mismatch `could-not-run`** — a run against a phase that has never
-  derived a gate reads exactly as it did before either key existed. Ceasing to read any of the
+  derived a gate reads exactly as it did before either key existed. **`phase.testGateBasis`
+  absent means the undeclared default** — the same reading `tests.gateBasis` carries at task
+  scope: nothing has narrowed the gate and there is no reason string to read.
+  `derive-phase-gate.py` writes `testGateBasis` together with `testGateDerived`, so the two
+  are absent or present as a pair. Ceasing to read any of the
   four, or reversing what its absence means, is a major.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,

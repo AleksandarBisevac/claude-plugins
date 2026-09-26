@@ -20,7 +20,11 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    **If the resolved review skill is set**, spawn the plugin's reviewer agent
    (`subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`) with the diff scope
    (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, the resolved skill name, and
-   **`mode: phase`** — it invokes the
+   **`mode: phase`**. The derived gate basis is a conditional input: hand `derive-phase-gate.py
+   --brief`'s line and the runId only when `phase.testGateDerived` is already recorded — a
+   re-review after a gate has run. This step runs before step 2a, so at a first sign-off nothing
+   is recorded yet; hand nothing, and the reviewer reads the input as absent rather than assuming
+   one. It invokes the
    skill itself and returns structured findings (it has no edit tools by design, and the diff stays out of YOUR
    context). The mode is what tells it there is no single task description or executor claim to bind
    here: the intent question was already asked per task, against each task's own description and its own
@@ -99,6 +103,13 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES: ...` basis: that run answered
    a narrower question than the phase recorded, so its exit code is not this run's verdict —
    re-derive and re-run, the same repair as any other `could-not-run`, never a retry on the task.
+   **In exactly that case the NARROWED line itself changes, and it replaces the measured one
+   rather than sitting beside it**: `NARROWED sign-off: the derived gate was declared for this
+   phase, but this run did not name every listed suite, so it certifies nothing about that gate
+   - see the GATE COULD NOT RUN line above for what it did not measure.` This run reached no
+   verdict on the derived gate — read it as `could-not-run` exactly as the basis line above says,
+   and fix the runner or the listing before signing off on it. The two NARROWED wordings are
+   mutually exclusive per run: the measured one and this one never both print.
 
    **A red sign-off gate's fix is a NEW TASK, gated on what this run named as failing** — the
    same rule step 1 states for a review finding, and the same reason: sign-off has no running

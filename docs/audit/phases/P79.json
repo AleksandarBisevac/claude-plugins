@@ -617,7 +617,7 @@
     {
       "id": "P79.8-5bh",
       "title": "derive-phase-gate runs the schema's listings, times both, and names every skipped arm",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review findings on the listing plumbing. (1) derive-phase-gate.py _gather_facts reads meta.phaseGate.derived.runner as the FULL listing and derived.spelling as the RELATED listing; the schema ($defs/meta/properties/phaseGate/properties/derived) defines the listings as derived.listing.all and derived.listing.related (related carries {paths}), while runner is a buildCommands key and spelling is the path-scoped RUN command. Read listing.all and listing.related; a listing never executes a test. The test fixture's listing: {} stub goes; fixtures declare real listing.related / listing.all commands. Correct the PLUGIN-BUILD-GUIDE.md derive-phase-gate section and the module docstring to the schema's reading. (2) Time both listings: fullListing carries durationMs like the related one, and testGateDerived records both costs. (3) Version check: a verifiedOn.command that cannot be run or exits non-zero is its own printed skip reason (the version command failed), distinct from a machine that answers a different version; never render it as 'this machine answers None'. (4) An empty listing never narrows silently: an ALL listing that ran, exited 0 and named no suite turns the whole derivation wide with basis derived-empty (the vocabulary word already exists) and a printed reason, before anything runs; a RELATED listing that named none while ALL named some makes the importers arm contribute nothing with a printed reason (_gate_derive._importers_arm's final fallback currently returns no reason). Update the docstrings that call derived-empty unreachable. (5) _gate_derive.derive(): cases for the always-on arm (a changedSince path that is a suite is added, one that is not is dropped; a lastFailedSuites path is added and deduped against another arm), and for newest_red_phase_row (newest failed phase-scope row by ts; a green row does not override; another phase or scope is excluded). No plan ids in comments; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/governance/derive-phase-gate.py",
@@ -650,18 +650,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e0e9c7d574ae865f906df0d11049bb1a667bd05a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "derive-phase-gate._gather_facts runs meta.phaseGate.derived.listing.all / .related ({paths} shell-quoted in related), both timed and recorded on testGateDerived; a failed version command is its own skip reason. _gate_derive: resolve_shape (a sibling task's path-scoped entry first, derived.spelling second, phase-no-spelling when neither); derived-empty from an ALL listing naming no suite and from a spelling with nothing to substitute; derive() is the only derivation and returns the per-arm attribution, None whenever narrowed is False (the full-suite branch included); the renderers key off narrowed and basis, so every wide basis prints the wide headline with measured counts only. Cases dp-listing, dp2d, dp-empty, dp-empty-brief, dp-spelling-empty, dp-spelling-empty-brief, dp-spelling-space, dp-full-honest, dp-full-honest-brief; dg-empty, dg-changed, dg-lastfailed, dg-red, dg-nonerelated, dg-vfail, dg-spelling, dg-neither, dg-both, dg-spelling-nopaths, dg-spelling-empty, dg-spelling-empty-allow. Task reviews over six rounds: the first matched with findings, two delta reviews diverged (the parallel _breakdown derivation, then the full-suite count), each fixed in the next round; the final check drove the CLI over every basis and was clean. redFirst proved; inheritedTests not-asked.",
+        "descriptive": "The derived sign-off gate now runs the listing commands the schema names, times both, names every skipped arm, uses a declared spelling as the gate's shape when no sibling task has one, and never prints a narrowed-looking line for a gate that runs wide."
       },
       "startedAt": "2026-09-26T16:31:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T20:47:35Z",
+      "verifiedBy": [
+        "dp-listing",
+        "dp-empty",
+        "dp-spelling-empty",
+        "dp-full-honest",
+        "dg-empty",
+        "dg-spelling",
+        "dg-spelling-empty",
+        "dg-changed",
+        "dg-red",
+        "dg-vfail"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T20:39:32Z.0a2767",
         "status": "passed",
         "at": "2026-09-26T20:39:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e0e9c7d574ae865f906df0d11049bb1a667bd05a",
+        "at": "2026-09-26T20:47:35Z"
       }
     },
     {

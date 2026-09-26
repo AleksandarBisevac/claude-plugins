@@ -201,17 +201,49 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   named suites — writing the result on `phase.testGateDerived` and `phase.testGateBasis`.
   **`shadow` records the derived gate beside the wide one and changes nothing about what signs a
   phase off; `enforce` runs the derived gate instead.** `run-test-gate.py` reads what
-  `derive-phase-gate.py` wrote: an `enforce`-mode run prints a `NARROWED sign-off` line and, when
-  the derived step's own output did not name every suite the phase recorded, reads that step as
-  `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES` basis rather than trusting its
-  exit code; a `shadow`-mode run over a real failure prints how many of the failing suites the
-  derived set would have listed. `meta.coupling` is learned and dropped by
+  `derive-phase-gate.py` wrote: an `enforce`-mode run prints a `NARROWED sign-off` line reporting
+  the measured narrower set; when the derived step's own output did not name every suite the
+  phase recorded, that step reads `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES`
+  basis rather than trusting its exit code, and the `NARROWED sign-off` line changes with it —
+  it says the run certifies nothing about the derived gate, in place of the measured wording,
+  never beside it; a `shadow`-mode run over a real failure prints how many of the failing suites
+  the derived set would have listed. `meta.coupling` is learned and dropped by
   `audit-task.py couple --test <path> --sources <path,path> --basis-run <runId> --basis-head <sha>`
   and `uncouple --test <path>`, journaled as `coupling.learned`/`coupling.dropped`; a derivation
   run is journaled as `phase.gateDerived`. `/audit:doctor`'s new shadow-recall row reads the
   evidence ledger for two recall figures over every shadow run — suite-weighted test recall and
   run-weighted change recall — as the basis for deciding when a shadow phase is ready for
   `"enforce"`; nothing switches the mode for you.
+- **The derived gate's own observations are configured under `meta.phaseGate.derived`, beside
+  `spelling` (covered in its own bullet below).** `derived.listing.related` is a command carrying
+  `{paths}`, filled with the shell-quoted union of the phase's own tasks' `files`, that lists —
+  never runs — the suites related to those paths; `derived.listing.all` lists every suite the
+  runner would collect, with no path filter, which is what "the full suite" means for this
+  runner. Neither listing executes a test, and both are timed: the cost of each is recorded on
+  `phase.testGateDerived`. `derived.runner` names a `meta.buildCommands` key, carried through
+  only as the display label the printed `DERIVED` line and `testGateDerived` name the gate under
+  — never resolved or run for a listing itself.
+- **`audit-task.py couple` refuses a `--basis-head` git does not have and a `--phases` id the plan
+  does not hold.** A SHA git cannot be asked about at all is written anyway and reported
+  unverified, rather than refused, since a refusal there would be a claim about the SHA that
+  nothing checked.
+- **`meta.phaseGate.derived.spelling` is a second shape source for the narrowed gate, read only
+  when no task in the phase carries a path-scoped gate entry of its own.** A sibling task's own
+  entry is preferred over it — the runner has already accepted that one — so `spelling` is read
+  second, never in its place. The template must carry a literal `{paths}` placeholder; one that
+  does not is ignored, with the reason printed. Once read, `{paths}` is filled with the resolved
+  test paths. A spelling shape left with no test path to substitute turns the gate wide under
+  basis `derived-empty` too, with its own reason printed — a spelling carries no task gate behind
+  it the way a sibling entry does, so an empty substitution is never narrowed to nothing silently.
+  The printed `DERIVED` line and `testGateDerived` both name which of the two sources — the
+  sibling task or the spelling — supplied the shape.
+- **An ALL-listing naming no suite turns the derived gate wide, with `phase.testGateBasis:
+  derived-empty`.** When the ALL listing ran, exited clean and named no suite, the derivation
+  widens to the phase's ordinary wide gate before anything else runs — coupling, the related
+  (import-graph) listing, changed-since and last-failed are none of them consulted in that case,
+  since a listing that already said "nothing" is not evidence for a narrower guess; the basis
+  line says why. This is one of two ways `derived-empty` is reached — the other is the
+  spelling-sourced shape left with nothing to substitute, in the bullet above.
 
 ### Changed
 - **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the
