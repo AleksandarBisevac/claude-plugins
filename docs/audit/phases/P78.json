@@ -549,7 +549,7 @@
     {
       "id": "P78.9",
       "title": "The doctor names a gate entry that never failed and costs more than meta.gateBudgetMs",
-      "status": "in_progress",
+      "status": "done",
       "description": "Constraint: _doctor_trail.check_gate_patterns already reads 'never failed past the floor' off _evidence_io.gate_tally / gate_names_seen and MIN_HISTORY_RUNS; a second function computing that tally would be a second reading of one ledger. Rule: extract the per-name tally loop into one helper both call, and add check_gate_economy(rep, project, manifest_rel, manifest, config=None) to plugins/audit/scripts/status/_doctor_trail.py (the module holding the ledger-reading checks; _doctor_policy compares declarations against the machine and reads no ledger), wired in audit-doctor.py right after check_gate_patterns. No meta.gateBudgetMs: an OK row 'no budget declared (meta.gateBudgetMs), so no gate entry is graded on cost'. With one: for each entry name past the floor with no failure whose MEAN cost (gate_cost_ms / ran; None means unmeasured, never zero) exceeds the budget, a WARNING naming the entry, its runs, the mean (_fmt.human_duration) and the budget, with the remedy '/audit:phase retarget <phaseId> --gate-drop <entry>' for each phase not yet signed off whose testGate carries it, and, so new phases leave it out, 'add it to meta.phaseGate.exclude' - plus 'take it out of meta.phaseGate.always' when it is listed there, because always only orders the default and wins over exclude. An entry below the floor is named as not established and folded into neither answer; otherwise an OK row saying how many entries were graded. Advisory: the exit status is unchanged and nothing refuses. Red-first: a ledger fixture where an entry passes on every run past the floor at a mean above the budget produces the warning and the remedy; mutation: compare the TOTAL instead of the mean -> red on an allow fixture whose total exceeds the budget and whose mean does not. Allow cases: the same history with no budget -> the no-budget OK row; an entry that failed once -> not named; steps carrying no durationMs -> named as unmeasured, not as cheap. test_audit_doctor.py pins the wiring order. Blocked on L1.d because the remedy it prints must be a command that exists.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -584,18 +584,32 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "26bd7c8d416e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_doctor_trail: shared _read_gate_rows and _gate_tally_classes; check_gate_economy (no budget OK; failed entries not named; past floor, never failed, mean over budget warns with retarget --gate-drop, phaseGate.exclude and phaseGate.always remedies; unmeasured named). Wired after gate patterns. Cases dge1-dge8 and a wiring case; live mutations total-vs-mean, failed guard, unmeasured-as-zero all red. redFirst: proved for test__doctor_trail via --introduces; could-not-prove for test_audit_doctor, verbatim, because the red-first classifier misreads house labels (recorded as F513 by the other session; raw HEAD output shows the single new failure). Gate run 2026-09-26T09:33:08Z.6995af green; reviewer matches; one low finding (mean diluted by partially measured history) carried to sign-off.",
+        "descriptive": "The doctor now names a gate step that has never caught anything and costs more than the plan's declared budget, with the command that drops it."
       },
       "startedAt": "2026-09-26T08:51:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T09:39:47Z",
+      "verifiedBy": [
+        "dge1",
+        "dge2",
+        "dge3",
+        "dge4",
+        "dge5",
+        "dge6",
+        "dge7",
+        "dge8"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T09:33:08Z.6995af",
         "status": "passed",
         "at": "2026-09-26T09:33:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "26bd7c8d416e",
+        "at": "2026-09-26T09:39:47Z"
       }
     },
     {
