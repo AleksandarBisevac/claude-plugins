@@ -434,6 +434,16 @@ LAYERS = (
     # nothing at L3 and nothing at L3 reaches it; its only consumer is
     # `render-report` at L7, which reads the disk and hands the answer down.
     ("usage_ledger", "_panel_settings", "_manifest_rules", "_evidence_view",
+     # `_gate_derive` is the gate helpers' one home (`is_shared_key`,
+     # `path_scoped_sibling`, `repointed` -- moved out of `audit-task.py`) plus
+     # the phase-level `derive()`. It reaches `_manifest_phases` and
+     # `_evidence_io`, both here at L2, so this is the first layer strictly
+     # above both; `_manifest_rules` is NOT one of its edges -- its
+     # `tests_add_path` only re-exports `_manifest_phases`' own, and this
+     # module calls that directly rather than moving up a layer for a
+     # re-export. Its only consumer today is `audit-task.py` (L7), which keeps
+     # thin aliases.
+     "_gate_derive",
      # `_usage_bench` drives all four analytics passes (each L2), so L3 is the
      # lowest layer that can reach them; `render-report` loads it for `_time_best`.
      "_usage_bench",

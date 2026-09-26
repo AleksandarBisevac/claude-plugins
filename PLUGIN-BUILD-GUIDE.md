@@ -142,6 +142,7 @@ claude-plugins/                           # this repo (personal, public)
           audit-lock.py                   # the CLI over it: acquire/release/status as exit codes
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
+          _gate_derive.py                 # the gate helpers' one home (is_shared_key/path_scoped_sibling/repointed) and a pure derive() for a phase's sign-off gate
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
@@ -330,6 +331,7 @@ L3:
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
+  _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
@@ -374,7 +376,7 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -3052,6 +3054,47 @@ reader can act on. An evidence directory outside the git root is **not-applicabl
 it cannot be committed there at all, so the plan is not at fault for naming rows git was never going
 to hold. A torn committed row is a **gap**: it says a row could not be read, never that a pointer is
 unsupported.
+
+### `plugins/audit/scripts/governance/_gate_derive.py`
+The gate helpers' one home, and a pure `derive()`.
+
+`is_shared_key`, `path_scoped_sibling` and `repointed` used to live only inside
+`audit-task.py`, answering the same three questions a TASK's own narrow gate is
+derived from. A PHASE-level derivation needs the identical questions asked one
+level up, and an entry point cannot import another entry point — so the phase
+side could only ever have copied the three. They moved here, unchanged, and
+`audit-task.py` keeps thin aliases so no existing caller or case had to change
+its spelling.
+
+`derive(manifest, phase, facts)` is the phase-level answer: what
+`meta.phaseGate.mode` computes for one phase's sign-off gate, replacing only
+the part of the wide default that is not `meta.phaseGate.always` — read once,
+through `_manifest_phases.phase_gate_default`, so a fallback can never run
+fewer suites than `/audit:phase add` would already have written. It is PURE:
+every observation (a listing's exit code and paths, the installed version's
+answer, which paths changed since `baseRef`, the newest red phase-scope row's
+named failures, the plan gate's exempt verdict per touched file) arrives
+through `facts`, supplied by the caller — no subprocess, no git, inside the
+function itself.
+
+Four arms, each additive to the test-path set before it is re-pointed through
+the sibling's own spelling: the union of path-scoped paths in each task's OWN
+gate (never a task that fell back to its phase's wide one — that fallback IS
+the wide gate, and reading it as evidence of a narrow one would be the
+derivation citing itself), every `meta.coupling[].test` whose `sources` overlap
+the phase's own touched files, an importer listing (only trusted when its
+`verifiedOn` answer matches the machine asking, dg23, and only narrowing when
+its paths are a **strict** subset of the full listing — equal to the full
+listing means the wide gate already **is** the narrow answer, dg1), and the
+always-on additions (changed test files, the last-failed suites). `meta.
+phaseGate.smoke` is added unless every file the phase touched is exempt or a
+test file itself — **never** decided by `meta.runtimeBoot.appRootPath` (dg10):
+a source file outside an app's own root is still a source file. No path-scoped
+sibling, or nothing to narrow to after all four arms, falls back to
+`meta.phaseGate.always` plus the default's non-`always` part — never an empty
+gate. Every narrowed answer's basis carries one pinned sentence (dg4):
+"selected by import graph and recorded couplings only" — naming the ceiling on
+what this derivation is allowed to have used.
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that

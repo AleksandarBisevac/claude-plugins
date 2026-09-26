@@ -307,6 +307,11 @@ import _id_shape              # noqa: E402  (the one answer to which id comes ne
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
+import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
+                              # repointed: a TASK's own gate and a PHASE's derived
+                              # one ask the same three questions, so both entry
+                              # points share one body instead of two that could
+                              # drift)
 import _id_refs               # noqa: E402  (rename: one id rewritten everywhere the plan
                               # points at it - `move`'s references, from the one list of
                               # fields that hold an id)
@@ -2129,73 +2134,13 @@ def _waiting_on(assembled, node):
 _gate_entry_paths = _phases.gate_entry_paths
 
 
-def _is_shared_key(entry, build):
-    """True when the entry is a `meta.buildCommands` KEY rather than a command.
-
-    Asked of the declaration and never of the shape. `commands/init.md` has
-    entries resolve through `meta.buildCommands` wherever the scope is SHARED
-    and be literal commands wherever it differs per task, so what makes an entry
-    wide is that the manifest declares it -- not that it looks short. A key
-    someone spelled `e2e.spec` would otherwise read as path-scoped on its
-    punctuation alone.
-    """
-    return isinstance(build, dict) and entry in build
-
-
-def _path_scoped_sibling(phase, build):
-    """`(entries, taskId)` for the first task in this phase whose `tests.gate`
-    carries a path-scoped entry, or `(None, None)`.
-
-    THE PLAN IS THE ONLY RECORD OF THE RUNNER'S SPELLING. `commands/init.md`
-    step 5.3 says it plainly: nothing persists how this project narrows a gate
-    except the gates themselves, so a task added later reads the shape off its
-    siblings rather than re-detecting it. Which makes the sibling EVIDENCE and
-    not a resemblance -- that entry was accepted by this project's runner once,
-    so the same entry with different paths in it is a command that can run.
-
-    Document order, and the id comes back with the entries because the operator
-    has to be able to go and read the gate the shape was taken from.
-    """
-    for task in (phase.get("tasks") or []):
-        if not isinstance(task, dict):
-            continue
-        tests = task.get("tests")
-        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
-        entries = [e for e in entries if isinstance(e, str) and e.strip()]
-        if any(not _is_shared_key(e, build) and _gate_entry_paths(e)
-               for e in entries):
-            return entries, task.get("id")
-    return None, None
-
-
-def _repointed(entries, build, paths):
-    """`entries` with every path-scoped entry re-pointed at `paths`.
-
-    THE FLAGS ARE KEPT AND ONLY THE PATHS MOVE: the sibling's tokens are rebuilt
-    in order, the paths it named are dropped, and this task's paths go in where
-    the first of them stood. That is what carries a source-to-test flag, a `--`
-    separator or a project selector through a substitution nobody wrote a parser
-    for.
-
-    A shared key and an entry naming no path are copied THROUGH rather than
-    dropped: a gate of `["lint", "npm test -- <a suite>"]` narrows the suite and
-    still lints, because only one of those two entries has a scope that differs
-    per task.
-    """
-    out = []
-    for entry in entries:
-        if _is_shared_key(entry, build) or not _gate_entry_paths(entry):
-            out.append(entry)
-            continue
-        rebuilt, placed = [], False
-        for token in entry.split():
-            if not _rules.tests_add_path(token):
-                rebuilt.append(token)
-            elif not placed:
-                rebuilt.extend(paths)
-                placed = True
-        out.append(" ".join(rebuilt))
-    return out
+# THIN ALIASES, NOT COPIES: `is_shared_key`, `path_scoped_sibling` and
+# `repointed` moved to `_gate_derive.py` so a PHASE-level derivation and this
+# TASK-level one share one body apiece rather than two that could drift. See
+# that module for the (unchanged) docstrings.
+_is_shared_key = _gate_derive.is_shared_key
+_path_scoped_sibling = _gate_derive.path_scoped_sibling
+_repointed = _gate_derive.repointed
 
 
 def _failing_from_lookup(project, phase, run_id):

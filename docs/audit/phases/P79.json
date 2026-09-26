@@ -245,7 +245,7 @@
     {
       "id": "P79.5",
       "title": "The runner prints NARROWED, grades a derived run that skipped a listed suite as could-not-run, and records shadow",
-      "status": "in_progress",
+      "status": "done",
       "description": "Observations on a PHASE-scope run, read off the plan and the run, none deriving anything. (1) NARROWED: when phase.testGateBasis is derived and testGateDerived.narrowed is true, print after the verdict banner 'NARROWED sign-off: this run measured the DERIVED gate (<listed> of <full> listed checks; basis on phase.testGateBasis). It is evidence about this phase's own tests and their recorded couplings. The full suite was not run here and is owed before <P> is whole.' and put narrowed {listed, full} on the row. (2) derived-mismatch (dg3): the step whose entry equals testGateDerived.entry must name every listed test file (files_named plus _manifest_phases.subject_of stems, the matching coverage already uses); when it names k of N, the step's outcome becomes could-not-run with outcomeBasis 'DERIVED RUN NAMED k OF N LISTED SUITES: <sample>', printed as that line. NOT a new status word: the schema's testEvidence.status description says which member of the no-verdict class a run was is a per-step observation rather than a word of its own, and could-not-run already lands in _status_facts.NO_VERDICT_EVIDENCE and NOT_REUSABLE_STATUS. The printed repair is re-derive (derive-phase-gate.py) and re-run. A runner that names no path makes the question unanswerable, and the line says so instead of passing or failing it. (3) shadow (dg19): only on a run whose gate is the WIDE one (testGateBasis not derived) of a phase in mode shadow that carries testGateDerived, the row gets shadow {listed, full, missed} where missed = the steps' failingSuites with a named basis that testGateDerived.tests does not hold, and the terminal prints 'shadow: derived would have listed k of n failing suites'. _evidence_io.row_for allow-lists what crosses into a row (an inventive caller cannot widen it): add narrowed and shadow, bounded by MAX_PATHS and redacted as _paths does. Red-first: dg3 ends could-not-run with the line, never passed (mutation: skip the comparison -> red); dg19 records missed of one (mutation: record shadow on a derived run -> red; allow: a plan without mode records no shadow); NARROWED only for a narrowed derived gate (allow: narrowed false prints nothing). test__evidence_io.py: row_for keeps both fields and cuts missed at MAX_PATHS with a count.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -280,18 +280,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ec61467b7c36",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate.py: derived_gate_check/narrowed_gate_claim/shadow_gate_claim + derived_step_gap wired into run_gate's per-step loop and main(); a derived (enforce) run naming fewer than every testGateDerived.tests suite now grades could-not-run with a DERIVED RUN NAMED k OF N LISTED SUITES basis line via the existing no-verdict rendering; NARROWED sign-off and shadow lines added to _render_verdict. _evidence_io.row_for allow-lists narrowed/shadow, missed bounded at MAX_PATHS. Fixture paths respelled to a bare tests/ form after _refs c5 flagged the anchored spelling. redFirst proved; four live mutations red. Gate run 2026-09-26T12:59:50Z.be4b88 green (an earlier red row failed the sweep on those fixture paths). Reviewer matches; three findings carried to sign-off (the NARROWED line contradicting the same run's derived-mismatch, one guard with no independent case, a basis overwritten instead of appended).",
+        "descriptive": "A derived-gate run that skips a listed suite can no longer read as green; shadow-mode runs now say what the derived gate would have caught."
       },
       "startedAt": "2026-09-26T12:15:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T13:09:27Z",
+      "verifiedBy": [
+        "dg3",
+        "dg3n",
+        "dg3-allow",
+        "dg3s",
+        "dg19",
+        "dg19-allow",
+        "dgr1",
+        "dgr2",
+        "dgr3",
+        "dgr4"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T12:59:50Z.be4b88",
         "status": "passed",
         "at": "2026-09-26T12:59:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ec61467b7c36",
+        "at": "2026-09-26T13:09:27Z"
       }
     },
     {

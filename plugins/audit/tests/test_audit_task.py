@@ -38,6 +38,7 @@ import _manifest_io as _mio                        # noqa: E402  (as audit-task 
 import _manifest_rules as _rules                   # noqa: E402  (the validator, to ask what a written plan warns about)
 import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis words the validator grades against)
 import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an alias, not a second body)
+import _gate_derive                                # noqa: E402  (the identity pin below: an alias, not a second body)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
@@ -5472,6 +5473,17 @@ def _cases(check):
               "run-test-gate.py",
               getattr(M, "_gate_entry_paths", None)
               is getattr(_phases, "gate_entry_paths", object()))
+        check("tg14 `_is_shared_key`/`_path_scoped_sibling`/`_repointed` are "
+              "ALIASES of `_gate_derive`'s own bodies, not copies re-pasted "
+              "here - `is`, not merely behaviour-equal, for tg13's exact "
+              "reason: a phase-level derivation and this task-level one must "
+              "share one body or risk drifting the moment either changes",
+              getattr(M, "_is_shared_key", None)
+              is getattr(_gate_derive, "is_shared_key", object())
+              and getattr(M, "_path_scoped_sibling", None)
+              is getattr(_gate_derive, "path_scoped_sibling", object())
+              and getattr(M, "_repointed", None)
+              is getattr(_gate_derive, "repointed", object()))
 
         # ---- (gb) the derivation's arm, recorded where a rule can read it -----
         # The basis above is a SENTENCE: printed once, then gone. So a narrow
