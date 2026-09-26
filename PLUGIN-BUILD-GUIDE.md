@@ -374,7 +374,7 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -402,7 +402,7 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _proc_group, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_phases, _manifest_vocab, _output, _proc_group, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _locks, _manifest_io, _output, _proc_group, _tree_stamp
   validate-config -> _config_rules, _output

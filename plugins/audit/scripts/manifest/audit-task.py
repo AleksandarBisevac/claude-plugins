@@ -282,6 +282,14 @@ import _manifest_rules as _rules  # noqa: E402  (tests_add_path: the ONE answer 
 #                                            the shape grades the same field this verb
 #                                            writes - two parses would be two opinions
 #                                            about what `commit_scope` then judges)
+import _manifest_phases as _phases  # noqa: E402  (gate_entry_paths: the same filename
+#                                            bound asked of a gate entry instead of a
+#                                            `tests.add` one. A downward edge, L7 -> L2,
+#                                            kept separate from the `_rules` edge above
+#                                            because `run-test-gate.py`'s `--own` reads
+#                                            the identical function and a second copy
+#                                            here is exactly what an entry point cannot
+#                                            import out of the other)
 import _commit_trail          # noqa: E402  (is a SHA still in this clone? A downward
 #                                            edge, L7 -> L1, and the ONE answer the
 #                                            doctor and `repair-commits.py` already
@@ -2083,27 +2091,13 @@ def _waiting_on(assembled, node):
 
 
 # --- the add -------------------------------------------------------------------
-def _gate_entry_paths(entry):
-    """Every file path a gate entry NAMES, in the order they appear in it.
-
-    THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
-    token instead of the leading one. `_rules.tests_add_path` is the ONE answer
-    to "does this string name a file", and a gate entry is the other
-    place a path has to be recognized inside free text -- a second spelling of
-    the filename bound would be two opinions about the same token, and the one
-    that drifted would either miss a suite or read `--selectProjects` as a path.
-
-    A token has to carry an extension or be a dotfile to count, which is what
-    keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
-    """
-    if not isinstance(entry, str):
-        return []
-    found = []
-    for token in entry.split():
-        path = _rules.tests_add_path(token)
-        if path:
-            found.append(path)
-    return found
+# A THIN ALIAS, NOT A COPY: `_manifest_phases.gate_entry_paths` is the SAME
+# question `tests.add` is asked (`_rules.tests_add_path` above), asked of each
+# whitespace-separated token in a gate entry instead of the leading one - and
+# `run-test-gate.py`'s `--own` narrowing reads the identical function. Two
+# entry points needing one answer could only have copied it before this moved;
+# now both alias one body.
+_gate_entry_paths = _phases.gate_entry_paths
 
 
 def _is_shared_key(entry, build):

@@ -1,7 +1,7 @@
 {
   "id": "P78",
   "title": "A phase gate that says where it came from and what it cost",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "A new phase's gate lists meta.phaseGate.always first and drops no buildCommands key unless meta.phaseGate.exclude names it, with that exclusion printed by add-phase, the validator and the sign-off run alike (and 'phase gate runs no suite' when nothing suite-running is left); a gate-only task left with no test file gets the always entries; retarget --gate-drop and --gate-set change a phase's gate in one validated write; the SAME SUITE line, the doctor's economy row and a fix task opened from a red sign-off run each name the next command; and an executor's own tests run through run-test-gate.py --own --quiet with the whole output in a local log file.",
   "testGate": [
@@ -18,8 +18,8 @@
     "P70",
     "P71"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "10a3e3daf8c679f3e8773a94ad71bdb992d8a4a9",
+  "branch": "audit/p78-a-phase-gate-that-says-where-i",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -32,7 +32,7 @@
     {
       "id": "P78.1",
       "title": "The test-shaped predicate and the gate-path reader live beside tests_add_path",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Constraint: 'is this path a test file' is answered in run-test-gate.py (_TEST_MARKS, _TEST_DIRS, _subject_of, _segments, _is_suite_path) and 'which paths does a gate entry name' in audit-task.py (_gate_entry_paths). Both files are entry points and an entry point cannot import another, so the gate-only narrowing (audit-task) and --own (run-test-gate) could only reach them by copying. Rule: MOVE them, bodies and docstrings unchanged, into plugins/audit/scripts/manifest/_manifest_phases.py beside tests_add_path (the file-naming question both build on) as public TEST_MARKS, TEST_DIRS, subject_of, path_segments, is_suite_path, gate_entry_paths. run-test-gate.py and audit-task.py import _manifest_phases and keep thin module aliases (_is_suite_path = _phases.is_suite_path, and so on) so every caller and every existing case keeps its name: an alias, never a second body. Not _manifest_vocab: its docstring says it holds no rule, and _task_outputs was moved out of it because a path rule is not vocabulary. One widening, classification only: is_suite_path also answers True for a basename starting with test_ (pytest's prefix form, which the plan gate's default exemptGlobs already treats as a test file via **/test_*.*); subject_of stays suffix-only, because it re-spells a path onto another file's stem and the prefix must not start doing that. The widening also reaches run-test-gate's suite_paths and evidence_paths classification, in the same direction; run the whole of test_run_test_gate.py and read any case that moved. Reuse: tests_add_path (_manifest_phases.py), the moved bodies as they are. Red-first: test__manifest_phases.py asserts is_suite_path('pkg/test_orders.py') is True; mutation that must turn it red: drop the prefix clause; allow cases: subject_of('pkg/test_orders.py') stays None and is_suite_path('src/testing.py') stays False. Identity pins in test_run_test_gate.py and test_audit_task.py assert each alias IS the _manifest_phases function (the is operator), so a re-pasted copy goes red. House: stdlib only, no typing/annotations/walrus/f-strings, %-formatting, Python 3.8, cases in plugins/audit/tests/, no register ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -40,7 +40,8 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test__manifest_phases.py",
         "plugins/audit/tests/test_run_test_gate.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -56,27 +57,30 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T04:53:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T05:14:12Z.c95b88",
+        "status": "passed",
+        "at": "2026-09-26T05:14:12Z"
+      }
     },
     {
       "id": "P78.2",
@@ -109,11 +113,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -156,11 +158,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -205,11 +205,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -256,11 +254,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -304,11 +300,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -351,11 +345,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -398,11 +390,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -447,11 +437,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -493,11 +481,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -542,11 +528,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -575,5 +559,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-26T04:53:57Z"
 }

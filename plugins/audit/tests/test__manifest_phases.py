@@ -276,6 +276,42 @@ def _cases(check):
           [M.tests_add_path(v) for v in (None, 7, "", "   ", [])]
           == [None] * 5)
 
+    # --- what a runner printed AS A TEST IT RAN, moved here from
+    # `run-test-gate.py` (_TEST_MARKS, _TEST_DIRS, _subject_of, _segments,
+    # _is_suite_path) and from `audit-task.py` (_gate_entry_paths), beside
+    # `tests_add_path` above - the same filename bound, asked of a different
+    # field by two entry points that cannot import one another. -------------
+    check("sp1 `is_suite_path` is public here and gained ONE widening in the "
+          "move: a pytest `test_` PREFIX outside a test directory reads as a "
+          "suite path too - the plan gate's own default `exemptGlobs` already "
+          "grants `**/test_*.*` a test-file reading, and this file had none "
+          "at all: %r" % (getattr(M, "is_suite_path", None),),
+          hasattr(M, "is_suite_path")
+          and M.is_suite_path("pkg/test_orders.py") is True)
+    check("sp2 ...and the widening is CLASSIFICATION ONLY: `subject_of` stays "
+          "SUFFIX-only, because a bare prefix would re-spell a path onto "
+          "another file's stem, and an ordinary `testing.py` outside a test "
+          "directory still reads as ordinary source - the ALLOW pair this "
+          "widening must not touch",
+          hasattr(M, "subject_of") and hasattr(M, "is_suite_path")
+          and M.subject_of("pkg/test_orders.py") is None
+          and M.is_suite_path("src/testing.py") is False)
+    check("sp3 `gate_entry_paths` moved here too, beside the filename bound "
+          "it shares with `tests_add_path` - a gate entry's flags, selectors "
+          "and shard fractions read as what they are and not as paths: %r"
+          % (getattr(M, "gate_entry_paths", None),),
+          hasattr(M, "gate_entry_paths")
+          and M.gate_entry_paths("npm test -- src/a.test.ts")
+          == ["src/a.test.ts"]
+          and M.gate_entry_paths("yarn test --shard 1/4") == [])
+    check("sp4 `TEST_MARKS`, `TEST_DIRS` and `path_segments` are public here "
+          "too - the whole group `run-test-gate.py` used to carry under a "
+          "leading underscore, MOVED rather than copied",
+          hasattr(M, "TEST_MARKS") and ".test" in M.TEST_MARKS
+          and hasattr(M, "TEST_DIRS") and "tests" in M.TEST_DIRS
+          and hasattr(M, "path_segments")
+          and M.path_segments("src/a/b.py") == ["src", "a"])
+
     # THE RULE, driven through the WALK it now rides - one phase carrying the
     # same offending entry at four statuses, so what separates the verdicts is
     # the status and nothing else about the task.

@@ -37,6 +37,7 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-task imports it)
 import _manifest_rules as _rules                   # noqa: E402  (the validator, to ask what a written plan warns about)
 import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis words the validator grades against)
+import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an alias, not a second body)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
@@ -5367,6 +5368,13 @@ def _cases(check):
               and M._gate_entry_paths("lint") == []
               and M._gate_entry_paths("pytest tests/.coveragerc") \
                   == ["tests/.coveragerc"])
+        check("tg13 `_gate_entry_paths` is an ALIAS of `_manifest_phases."
+              "gate_entry_paths`, not a second body - `is`, not merely "
+              "behaviour equal, because a re-pasted copy would pass tg11 "
+              "and still be the copy an entry point cannot import out of "
+              "run-test-gate.py",
+              getattr(M, "_gate_entry_paths", None)
+              is getattr(_phases, "gate_entry_paths", object()))
 
         # ---- (gb) the derivation's arm, recorded where a rule can read it -----
         # The basis above is a SENTENCE: printed once, then gone. So a narrow

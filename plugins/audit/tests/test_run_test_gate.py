@@ -37,6 +37,8 @@ import _proc_group as _pg                          # noqa: E402  (the teardown `
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
+import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an
+#                                  alias, not a second body)
 import io as _io
 import contextlib as _ctx
 
@@ -2094,6 +2096,22 @@ def _cases(check):
           repr([M._subject_of(p) for p in
                 ("src/foo.ts", "src/foo.test.ts", "tests/foo_spec.rb",
                  "src/.spec.ts")]))
+    check("mp1 `_subject_of`, `_is_suite_path`, `_TEST_MARKS`, `_TEST_DIRS` "
+          "and `_segments` are ALIASES of `_manifest_phases`'s public "
+          "functions, not a second body: `is` rather than a behavioural "
+          "match, because a re-pasted copy would pass every case above and "
+          "still be the second definition an entry point cannot share with "
+          "audit-task.py",
+          getattr(M, "_subject_of", None)
+          is getattr(_phases, "subject_of", object())
+          and getattr(M, "_is_suite_path", None)
+          is getattr(_phases, "is_suite_path", object())
+          and getattr(M, "_TEST_MARKS", None)
+          is getattr(_phases, "TEST_MARKS", object())
+          and getattr(M, "_TEST_DIRS", None)
+          is getattr(_phases, "TEST_DIRS", object())
+          and getattr(M, "_segments", None)
+          is getattr(_phases, "path_segments", object()))
     check("cv6 `files_named` reads a path out of runner prose and leaves the "
           "words alone - a grammar that swallowed `Passed` or `2` would make "
           "every run overlap everything: %r"

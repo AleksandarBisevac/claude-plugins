@@ -131,6 +131,10 @@ import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading
 #                                  `files` entry's `:line-range` suffix, shared with
 #                                  `commit-task-work.py` and `audit-task.py` rather
 #                                  than re-parsed a fourth time here)
+import _manifest_phases as _phases  # noqa: E402  (subject_of/is_suite_path/gate_entry_paths:
+#                                  the one filename bound "is this path a test file" builds
+#                                  on, moved out from under a leading underscore here rather
+#                                  than copied)
 import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one spelling
 #                           the terminal and the rendered report both print it in)
 
@@ -1599,33 +1603,16 @@ def files_named(text):
     return found or None
 
 
-# The suffixes a test file carries in front of its extension, across the runners
-# this script actually meets. Used to relate `src/foo.test.ts` to `src/foo.ts`
-# and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
-_TEST_MARKS = (".test", ".spec", "_test", "_spec", "-test", "-spec")
-
-
-def _subject_of(path):
-    """The file a TEST path is about, or None when the path is not test-shaped.
-
-    `tests/foo.spec.ts` -> `foo`, `src/foo.test.ts` -> `foo`, `src/foo.ts` -> None.
-    The basename alone, because the two live in different directories as often as
-    not - `src/foo.ts` tested from `tests/foo.spec.ts` is the ordinary layout.
-
-    DELIBERATELY NARROW. `_PATHISH` above can over-match harmlessly because a
-    spurious path only ADDS overlap and overlap is reported rather than enforced.
-    That reasoning does NOT carry here: a false overlap tells the reader their work
-    was exercised when it was not, which is the exact false comfort `NO OVERLAP`
-    exists to prevent. So this fires only on a path that really is spelled like a
-    test, and only onto a file whose stem it matches exactly.
-    """
-    base = str(path or "").rsplit("/", 1)[-1]
-    stem = base.rsplit(".", 1)[0] if "." in base else base
-    for mark in _TEST_MARKS:
-        if stem.endswith(mark) and len(stem) > len(mark):
-            return stem[:-len(mark)]
-    return None
-
+# Thin module aliases, not copies: these five names moved to `_manifest_phases.py`
+# (beside `tests_add_path`, which asks the same "is this string a path" question of
+# a different field) with one deliberate widening on `is_suite_path` alone - see its
+# own docstring there. Kept under their historic underscored spellings so no caller
+# here, and no case that already existed, had to change.
+_TEST_MARKS = _phases.TEST_MARKS
+_subject_of = _phases.subject_of
+_TEST_DIRS = _phases.TEST_DIRS
+_segments = _phases.path_segments
+_is_suite_path = _phases.is_suite_path
 
 # The directory names a vendored dependency tree wears. A path inside one is code
 # NOBODY'S task declares, so it can never be evidence about the work under test -
@@ -1634,14 +1621,6 @@ def _subject_of(path):
 _VENDOR_DIRS = frozenset((
     "node_modules", "bower_components", "site-packages", "vendor", "venv",
     ".venv", ".tox",
-))
-# ...and the directory names a suite lives in when its FILE NAME does not say so.
-# `__tests__/order.ts` is jest's own layout and carries no `.test` mark at all, so
-# `_subject_of` cannot see it. Read for the CLASSIFICATION only and never for the
-# match - a directory is far too weak to re-spell a path onto another file's stem,
-# which is the thing `_subject_of` guards.
-_TEST_DIRS = frozenset((
-    "__tests__", "__test__", "test", "tests", "spec", "specs", "e2e",
 ))
 
 
@@ -1659,26 +1638,6 @@ def _extension(path):
 def _kinds(paths):
     """The extensions a path set is spelled with, ordered, `""` shown as itself."""
     return sorted(set(_extension(p) or "(no extension)" for p in (paths or ())))
-
-
-def _segments(path):
-    """A path's directory segments, POSIX-spelled, without its basename."""
-    return str(path or "").replace("\\", "/").split("/")[:-1]
-
-
-def _is_suite_path(path):
-    """Whether the runner printed this as a TEST IT RAN rather than as a file it
-    processed.
-
-    TWO READINGS, and the second is why this is not `_subject_of` under another
-    name: a suite says so in its FILE NAME (`order.test.ts`) or in its DIRECTORY
-    (`__tests__/order.ts`, jest's own layout, which carries no mark).
-    `_subject_of` may use only the first, because it re-spells a path onto
-    another file's stem and a directory is far too weak to justify that.
-    Classifying is the weaker job, so it may read the weaker signal.
-    """
-    return (_subject_of(path) is not None
-            or any(seg in _TEST_DIRS for seg in _segments(path)))
 
 
 def evidence_paths(owned, named):

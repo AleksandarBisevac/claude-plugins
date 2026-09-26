@@ -542,6 +542,104 @@ def tests_add_repair(entry):
     return (REPAIR_REWRITE, "%s: %s" % (mentioned[0], entry.strip()))
 
 
+# --- what a runner printed AS A TEST IT RAN --------------------------------------
+# Moved here from `run-test-gate.py` (`_TEST_MARKS`, `_TEST_DIRS`, `_subject_of`,
+# `_segments`, `_is_suite_path`) and from `audit-task.py` (`_gate_entry_paths`),
+# beside `tests_add_path` above for the reason that group is here at all: "is
+# this string a path" and "is this path a test file" are the SAME filename bound,
+# asked of two different fields by two different entry points, and an entry
+# point cannot import another - so the gate-only narrowing in `audit-task.py`
+# and `--own` in `run-test-gate.py` could each only ever reach it by copying.
+# Both files keep the historic underscored names as thin aliases
+# (`_is_suite_path = _phases.is_suite_path`, and so on), so no caller and no
+# case that already existed had to change its spelling.
+
+# The suffixes a test file carries in front of its extension, across the
+# runners this is asked about. Used to relate `src/foo.test.ts` to `src/foo.ts`
+# and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
+TEST_MARKS = (".test", ".spec", "_test", "_spec", "-test", "-spec")
+
+
+def subject_of(path):
+    """The file a TEST path is about, or None when the path is not test-shaped.
+
+    `tests/foo.spec.ts` -> `foo`, `src/foo.test.ts` -> `foo`, `src/foo.ts` -> None.
+    The basename alone, because the two live in different directories as often as
+    not - `src/foo.ts` tested from `tests/foo.spec.ts` is the ordinary layout.
+
+    DELIBERATELY NARROW. `_PATHISH` above can over-match harmlessly because a
+    spurious path only ADDS overlap and overlap is reported rather than enforced.
+    That reasoning does NOT carry here: a false overlap tells the reader their work
+    was exercised when it was not, which is the exact false comfort `NO OVERLAP`
+    exists to prevent. So this fires only on a path that really is spelled like a
+    test, and only onto a file whose stem it matches exactly.
+    """
+    base = str(path or "").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    for mark in TEST_MARKS:
+        if stem.endswith(mark) and len(stem) > len(mark):
+            return stem[:-len(mark)]
+    return None
+
+
+# ...and the directory names a suite lives in when its FILE NAME does not say so.
+# `__tests__/order.ts` is jest's own layout and carries no `.test` mark at all, so
+# `subject_of` cannot see it. Read for the CLASSIFICATION only and never for the
+# match - a directory is far too weak to re-spell a path onto another file's stem,
+# which is the thing `subject_of` guards.
+TEST_DIRS = frozenset((
+    "__tests__", "__test__", "test", "tests", "spec", "specs", "e2e",
+))
+
+
+def path_segments(path):
+    """A path's directory segments, POSIX-spelled, without its basename."""
+    return str(path or "").replace("\\", "/").split("/")[:-1]
+
+
+def is_suite_path(path):
+    """Whether the runner printed this as a TEST IT RAN rather than as a file it
+    processed.
+
+    THREE READINGS, and the second and third are why this is not `subject_of`
+    under another name: a suite says so in its FILE NAME (`order.test.ts`), in
+    the basename PREFIX pytest's own convention uses (`test_orders.py`, which
+    carries none of `TEST_MARKS`), or in its DIRECTORY (`__tests__/order.ts`,
+    jest's own layout, which carries no mark either). `subject_of` may use only
+    the first, because it re-spells a path onto another file's stem and neither
+    a bare prefix nor a directory is strong enough to justify that - the plan
+    gate's own default `exemptGlobs` already reads `**/test_*.*` as a test file,
+    and classifying is the weaker job, so it may read the weaker signal.
+    """
+    base = str(path or "").rsplit("/", 1)[-1]
+    return (subject_of(path) is not None
+            or base.startswith("test_")
+            or any(seg in TEST_DIRS for seg in path_segments(path)))
+
+
+def gate_entry_paths(entry):
+    """Every file path a gate entry NAMES, in the order they appear in it.
+
+    THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
+    token instead of the leading one. `tests_add_path` is the ONE answer to
+    "does this string name a file", and a gate entry is the other
+    place a path has to be recognized inside free text -- a second spelling of
+    the filename bound would be two opinions about the same token, and the one
+    that drifted would either miss a suite or read `--selectProjects` as a path.
+
+    A token has to carry an extension or be a dotfile to count, which is what
+    keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
+    """
+    if not isinstance(entry, str):
+        return []
+    found = []
+    for token in entry.split():
+        path = tests_add_path(token)
+        if path:
+            found.append(path)
+    return found
+
+
 # --- the walk --------------------------------------------------------------------
 def _moved_from_conflicts(task_by_id, task_ids):
     """WARNINGS for a `movedFrom` chain no verb would have written.
