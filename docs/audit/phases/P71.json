@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P71-R1",
@@ -163,9 +163,10 @@
         "issue": "Take a task whose every declared entry is a directory with no file git lists under it (empty, or holding only ignored files), while a record path is dirty so the commit reaches the verdict. scope_digest returns None on both sides, but scope_list_digest is not None, so field_state answers UNANSWERABLE on every re-record. --override-verdict is the only way on.",
         "resolution": "fix task P71.4-zso"
       }
-    ]
+    ],
+    "outcome": "matches after the fixes; two review passes, every finding fixed in P71.2-P71.4; P71.1 was committed by hand over a red gate verdict that came from an open bug elsewhere in the plan, which this phase now makes refusable"
   },
-  "summary": null,
+  "summary": "A task commit carries what the index says and the verdict it was measured under. commit-task-work, commit-audit-state and commit-manifest-index share one staging sequence in _scoped_commit: a staged rename or deletion commits both halves, a tracked file or directory under an ignore rule is staged without -f, an ignored untracked path is named, every refusal after staging puts the allowed paths' index entries back as they were found, every commit uses a pathspec, and the one commit made from an index is built in a temporary index and still runs the project's hooks. The commit is bound to the task's newest gate verdict: passed and current for a declared scope normalised once on both sides (line ranges stripped, directories expanded, the plugin's own record paths excluded), measured under the gate declared now (a digest of the resolved gate), a red retired only by a green or a journaled --override-verdict, and a cleared task bound on its empty-gate record. The task-or-phase gate rule has one home, _manifest_io.gate_entries, read by every surface. Reviewed twice, every finding fixed; merged with main before the gate; phase gate green with the tree unchanged; the invariant check found no breach. P71.1 itself was committed by hand while its recorded gate was red from an unrelated open bug - the case this phase now refuses without an override.",
   "tasks": [
     {
       "id": "P71.1",
@@ -420,8 +421,8 @@
   ],
   "startedAt": "2026-09-25T14:32:08Z",
   "testEvidence": {
-    "runId": "2026-09-25T22:02:29Z.5ccf66",
+    "runId": "2026-09-26T04:49:35Z.4d0f83",
     "status": "passed",
-    "at": "2026-09-25T22:02:29Z"
+    "at": "2026-09-26T04:49:35Z"
   }
 }
