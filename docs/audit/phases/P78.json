@@ -173,7 +173,7 @@
     {
       "id": "P78.3",
       "title": "A new phase's gate is always first, then every other key, minus exclude; a gate-only task with no test file left gets the always entries",
-      "status": "in_progress",
+      "status": "done",
       "description": "Derivations in plugins/audit/scripts/manifest/audit-task.py. (1) _phase_gate(args, assembled): after --gate-clear and --gate, the default is _manifest_phases.phase_gate_default(meta)['entries']: meta.phaseGate.always first, then every other buildCommands key in buildCommands order, minus meta.phaseGate.exclude. So always is an ORDER and never a narrowing, and exclude is the only declared way to drop a key. The basis comes from the same call: no phaseGate -> today's 'from meta.buildCommands' exactly, with the same entries in the same order; always only -> 'from meta.buildCommands, meta.phaseGate.always first'; with exclude -> '...; excluded by meta.phaseGate.exclude: <keys> - declared out of this phase's gate, and the sign-off run prints it too'; an empty result -> the empty-gate basis naming meta.phaseGate.exclude as its cause, with the validator's 'phase gate runs no suite' warning printed among the post-write warnings. (2) _task_gate(args, phase, assembled, add_paths, files), for a task whose tests.mode is gate-only ONLY: the files arm points the sibling spelling (_path_scoped_sibling + _repointed) only at the files _manifest_phases.is_suite_path accepts. When none is left, the gate is the always entries: meta.phaseGate.always when declared, else the sibling entries _repointed already copies through unchanged (shared buildCommands keys and entries naming no path), in their order; source word gate-only-no-suite and a sentence naming which of the two it took. Never the phase's wide testGate: that is the wide gate per attempt the validator already warns about. When that list is empty too the gate is empty and _empty_task_gate_note is what prints. tdd and regression tasks keep today's files arm, and --gate / --gate-clear still answer first. Reuse _path_scoped_sibling, _repointed, _empty_task_gate_note, _manifest_phases.is_suite_path; value and basis still come out of one derivation (_build_phase's rule). Red-first (dg18): a gate-only task in a phase whose sibling gate is 'vitest run src/a.test.ts', with files src/Button.tsx and README.md and meta.phaseGate.always [lint, typecheck], gets ['lint', 'typecheck'] and tests.gateBasis gate-only-no-suite. Mutations that must turn it red: return the phase testGate in that arm; drop the is_suite_path filter. Allow cases: the same task with src/Button.test.tsx among its files narrows to 'vitest run src/Button.test.tsx' with basis files; a regression task with only src/Button.tsx keeps today's gate; gb1/gb2 stay green. Red-first for (1), one case per arm. ALWAYS-ONLY: always [lint] over {test, lint, coverage} writes [lint, test, coverage] (mutation: write always alone -> red, because test and coverage vanish). EXCLUDE-TO-NOTHING: exclude naming every key and no always writes [], with a basis naming meta.phaseGate.exclude and the 'phase gate runs no suite' warning printed (mutation: ignore exclude -> red, because the gate is not empty). ABSENT phaseGate = TODAY: the written gate and basis equal what the code this phase starts from writes for the same plan, captured as a fixture (mutation: build the default from sorted keys -> red, because today's order is buildCommands order). House rules as in the repo.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -206,24 +206,37 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8725a9e30a55",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_phase_gate takes its default and basis from _manifest_phases.phase_gate_default (no phaseGate is byte-identical to HEAD: pg4 compares against HEAD's own _phase_gate via ast extraction, plus a literal). _task_gate: gate-only tasks filter the files arm through is_suite_path; with none left the gate is meta.phaseGate.always or the sibling's shared entries, basis gate-only-no-suite, never the wide testGate. tg2 fixture moved to a .test.ts path so it keeps covering the files arm. Cases dg1-dg3, pg1-pg4; redFirst proved (HEAD 518/523; pg3 and pg4 by targeted mutations). Gate run 2026-09-26T08:07:32Z.b0e773 green; reviewer matches, no findings in this diff; one low pre-existing edge (blank buildCommands key) carried to sign-off.",
+        "descriptive": "A new phase's gate keeps every build key with phaseGate.always first and drops only what phaseGate.exclude names, saying so in its basis; a gate-only task with no test file gets the always entries instead of a test run pointed at source files."
       },
       "startedAt": "2026-09-26T07:40:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T08:13:53Z",
+      "verifiedBy": [
+        "dg1",
+        "dg2",
+        "dg3",
+        "pg1",
+        "pg2",
+        "pg3",
+        "pg4"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T08:07:32Z.b0e773",
         "status": "passed",
         "at": "2026-09-26T08:07:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8725a9e30a55",
+        "at": "2026-09-26T08:13:53Z"
       }
     },
     {
       "id": "P78.4",
       "title": "retarget --gate-drop and --gate-set, one write each",
-      "status": "pending",
+      "status": "in_progress",
       "description": "audit-task.py retarget <phaseId> gains --gate-drop <entry> (repeatable, argparse append) and --gate-set <entry> [<entry> ...] (nargs='*', so an empty set reaches this verb's own refusal rather than argparse's usage error). Both go through _locked_retarget: one lock, one revalidate-or-roll-back, one phase.retarget row through _journal_retarget with the same changes shape. --gate-drop: every named entry must be in the phase's testGate (refuse exit 2 naming the missing entry and the gate as it stands); a drop that would leave the gate empty is refused exit 2 with 'an empty gate is --gate-clear, which says so'. --gate-set: replaces the gate; empty or all-blank refused exit 2 with the same sentence (dg11). FACT TO FIX ALONG THE WAY: retarget's existing --gate already REPLACES the gate (_locked_retarget: now = [] if args.gate_clear else list(args.gate)) while commands/phase.md says '--gate appends' and commands/task.md says 'That verb *appends* to testGate'; measured on a scratch plan, retarget P2 --gate typecheck turned ['lint', 'test'] into ['typecheck']. So --gate-set is the multi-value spelling of the replace --gate already performs: resolve both into the same now list through one helper, give an all-blank --gate the same empty refusal, and correct both documents to say replaces. _gate_contradiction(args) refuses any two of --gate, --gate-set, --gate-clear, --gate-drop together, asked in the same position every verb asks it. Add gate_drop and gate_set to VERB_FLAGS['retarget'] (the vf group grades the table against the dispatch), to build_parser, to commands/phase.md's argument-hint and retarget section, and to the /audit:phase row of the plugin README (_refs.command_flag_drift fails a hinted flag the row omits). Red-first: the drop writes [test] and one journal row; dropping the only entry is refused with the sentence (mutation: allow it -> red); --gate-set with no value refused with the sentence (mutation: nargs='+' -> red because argparse's message differs); allow case: --gate-set lint writes [lint]. A drop on a signed-off phase is refused by the existing past-sign-off rule, unchanged.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -256,16 +269,21 @@
       "dependsOn": [
         "P78.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-26T08:13:53Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T08:42:07Z.74a960",
+        "status": "passed",
+        "at": "2026-09-26T08:42:07Z"
+      }
     },
     {
       "id": "P78.5",
@@ -316,7 +334,12 @@
       },
       "startedAt": "2026-09-26T07:40:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T08:43:09Z.f42072",
+        "status": "passed",
+        "at": "2026-09-26T08:43:09Z"
+      }
     },
     {
       "id": "P78.6",

@@ -50,7 +50,9 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
-                [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT|-]
+                [--gate CMD ... | --gate-clear | --gate-set entry ...
+                 | --gate-drop entry ...]
+                [--area a,b] [--outcome TEXT|-]
                 [--rename TITLE|-]
                 [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
   audit-task.py seed ["<phase title>"] [manifest]
@@ -982,13 +984,22 @@ def stdin_notes_key(args):
 def _gate_contradiction(args):
     """The refusal line for `--gate` with `--gate-clear`, or None.
 
-    ONE SENTENCE, THREE VERBS. `add`, `scope` and `retarget` all take both flags
+    ONE SENTENCE, THREE VERBS. `add`, `scope` and `seed` all take both flags
     off the same global parser and the rule is one rule about one field: two
     answers to one question, and guessing which the caller meant is how a task
     ends up gated on a command nobody asked for. `scope` and `retarget` each
-    carried their own copy of the sentence; `add` needed a third when it learned
-    to read the flag, and three copies of a refusal is how one of them
+    carried their own copy of the sentence; `add` needed a third when it
+    learned to read the flag, and three copies of a refusal is how one of them
     eventually stops matching the other two.
+
+    RETARGET ASKS THE WIDER VERSION, `_retarget_gate_contradiction`, NOT THIS
+    ONE -- `gate_set` and `gate_drop` are declared on the shared parser but
+    live in `VERB_FLAGS["retarget"]` alone, and `vf6` (the call-graph closure
+    the manifest test suite derives `VERB_FLAGS` against) would read a call to
+    a FOUR-flag version here as every verb reaching all four fields, which
+    none but `retarget` actually may. Two functions, not one parametrized by a
+    caller nobody passes a different value from, is what keeps `add`, `scope`
+    and `seed`'s derived flag sets equal to their declared ones.
 
     Every caller asks it in the SAME POSITION -- under the lock, after the target
     has been resolved and before anything is mutated -- so the order a caller
@@ -997,6 +1008,23 @@ def _gate_contradiction(args):
     if args.gate and args.gate_clear:
         return ("[audit-task] --gate and --gate-clear say opposite things about "
                 "the same field -- pass one")
+    return None
+
+
+def _retarget_gate_contradiction(args):
+    """The refusal line for two of `--gate` / `--gate-clear` / `--gate-set` /
+    `--gate-drop` together, or None -- `retarget`'s own superset of
+    `_gate_contradiction`, for the reason that function's docstring gives.
+    """
+    present = [flag for flag, given in (
+        ("--gate", bool(args.gate)),
+        ("--gate-clear", bool(args.gate_clear)),
+        ("--gate-set", args.gate_set is not None),
+        ("--gate-drop", bool(args.gate_drop)),
+    ) if given]
+    if len(present) > 1:
+        return ("[audit-task] %s say opposite things about the same field -- "
+                "pass one" % " and ".join(present))
     return None
 
 
@@ -5009,8 +5037,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
     the operation this verb exists to replace.
 
     THE EMPTY GATE NEEDS ITS OWN FLAG HERE TOO, for a reason that is NOT
-    `retarget`'s. That verb appends to `testGate`, so the append itself left the
-    empty gate unspellable; this one REPLACES `tests.gate` outright. The gap is
+    `retarget`'s. That verb replaces `testGate` too, so the replacement itself
+    still left the empty gate unspellable; this one REPLACES `tests.gate`
+    outright. The gap is
     in the values: no `--gate` VALUE says "none" - `--gate ""` writes a gate
     holding an empty command, which is a gate that cannot run rather than the
     absence of one. Measured live: a phase retargeted to `testGate: []` because
@@ -5548,6 +5577,61 @@ def _locked_scope(args, project, config, mpath, tid, out):
     return 0
 
 
+_EMPTY_GATE_REFUSAL = ("[audit-task] an empty gate is --gate-clear, which says "
+                      "so")
+
+
+def _retarget_gate_now(args, current):
+    """`(now, refusal)` -- the phase's NEXT `testGate`, or the refusal line,
+    for whichever ONE of `--gate` / `--gate-clear` / `--gate-set` /
+    `--gate-drop` is present. Exactly one of the two return values is not
+    `None`; the caller already asked `_gate_contradiction` that at most one of
+    the four is present at all, so this never has to choose between them.
+
+    `--gate` AND `--gate-set` ARE ONE OPERATION, kept in this one function
+    rather than each carrying its own emptiness rule: both REPLACE the gate
+    outright, `--gate` one value per repeat of the flag, `--gate-set` several
+    values under one flag. `--gate-set` is the stricter of the two on purpose
+    -- an ALL-BLANK value set is refused the same way an empty one is, where
+    plain `--gate ""` still writes the odd literal gate it always has, because
+    `--gate-set`'s whole reason to exist is a caller who wants to name several
+    entries at once, and a caller who typed nothing but blanks almost always
+    meant the empty gate and not a gate of blank commands.
+
+    `--gate-drop` is the other operation, narrowing the CURRENT gate by name --
+    the only one of the four that reads `current` at all. Every named entry
+    must already be in it (refused by name otherwise, with the gate as it
+    stands, so a typo is not silently a no-op), and a drop that would leave
+    nothing is the same empty-gate refusal as the other three: the state is
+    reached through `--gate-clear` alone, which SAYS it is choosing that,
+    rather than through an operation that arrives there as a side effect of
+    what it dropped.
+    """
+    if args.gate_clear:
+        return [], None
+    if args.gate_set is not None:
+        now = [g for g in args.gate_set if isinstance(g, str)]
+        if not now or all(not g.strip() for g in now):
+            return None, _EMPTY_GATE_REFUSAL
+        return now, None
+    if args.gate:
+        return list(args.gate), None
+    if args.gate_drop:
+        missing = [g for g in args.gate_drop if g not in current]
+        if missing:
+            return None, (
+                "[audit-task] --gate-drop names %s, which %s not in this "
+                "phase's testGate (%s)"
+                % (_output.some_of(missing, render=repr),
+                   "is" if len(missing) == 1 else "are", json.dumps(current)))
+        drop = set(args.gate_drop)
+        now = [g for g in current if g not in drop]
+        if not now:
+            return None, _EMPTY_GATE_REFUSAL
+        return now, None
+    return None, None
+
+
 def _locked_retarget(args, project, config, mpath, pid, out):
     """Correct a phase's gate, area, outcome or description, under lock.
 
@@ -5565,7 +5649,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     is a phase sign-off signs on review alone. That is a designed state, it
     validates clean, and `/audit:phase add --gate` can reach it for a NEW phase.
     An imported phase could not, which is what made a guessed gate a trap rather
-    than a default: `--gate` appends, so without an explicit clear there is no
+    than a default: `--gate` replaces, so without an explicit clear there is no
     spelling for "there is nothing here that can prove this".
 
     NOT PAST SIGN-OFF. A done or cancelled phase - and one whose verdict is
@@ -5624,15 +5708,17 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             "of what this branch was cut for." % (pid, node.get("branch")))
         return E_USAGE
 
-    contradiction = _gate_contradiction(args)
+    contradiction = _retarget_gate_contradiction(args)
     if contradiction:
         out(contradiction)
         return E_USAGE
-    if not (args.gate or args.gate_clear or args.area is not None
+    if not (args.gate or args.gate_clear or args.gate_set is not None
+            or args.gate_drop or args.area is not None
             or args.outcome or args.description or args.rename):
-        out("[audit-task] retarget needs one of --gate / --gate-clear / --area / "
-            "--outcome / --description / --rename -- a call that changes nothing "
-            "is a lock taken for no reason")
+        out("[audit-task] retarget needs one of --gate / --gate-clear / "
+            "--gate-set / --gate-drop / --area / --outcome / --description / "
+            "--rename -- a call that changes nothing is a lock taken for no "
+            "reason")
         return E_USAGE
 
     changes = []
@@ -5641,9 +5727,12 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         if was != now:
             changes.append({"id": pid, "field": field, "from": was, "to": now})
 
-    if args.gate or args.gate_clear:
+    if args.gate or args.gate_clear or args.gate_set is not None or args.gate_drop:
         was = list(node.get("testGate") or [])
-        now = [] if args.gate_clear else list(args.gate)
+        now, refusal = _retarget_gate_now(args, was)
+        if refusal:
+            out(refusal)
+            return E_USAGE
         _moved("testGate", was, now)
         node["testGate"] = now
     if args.area is not None:
@@ -6488,8 +6577,8 @@ VERB_FLAGS = {
              "intent_basis", "no_change", "reason"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
-    "retarget": ("gate", "gate_clear", "area", "outcome", "description",
-                 "rename"),
+    "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
+                 "outcome", "description", "rename"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
     # tag or rename -- only the one pair every gate-bearing verb offers, for a
     # caller who already knows the real command.
@@ -6578,15 +6667,28 @@ def build_parser():
     p.add_argument("--tests-add", dest="tests_add", action="append",
                    default=None)
     p.add_argument("--gate", action="append", default=None)
-    # `retarget` AND `scope`, and the two need it for different reasons that
-    # reach the same state. On a phase `--gate` APPENDS, so without an explicit
-    # clear there is no spelling for the empty gate at all; on a task `--gate`
-    # replaces, and the gap is that no VALUE of it spells "none" - `--gate ""`
-    # writes a gate holding an empty command, which is a gate that cannot run
-    # rather than the absence of one. `_phase_gate` documents the empty gate as
-    # a designed state, and it is what a wrongly-guessed gate needs.
+    # `retarget` AND `scope`, for the SAME reason: `--gate` REPLACES on both a
+    # phase and a task, and the gap is that no VALUE of it spells "none" -
+    # `--gate ""` writes a gate holding an empty command, which is a gate that
+    # cannot run rather than the absence of one. `_phase_gate` documents the
+    # empty gate as a designed state, and it is what a wrongly-guessed gate
+    # needs.
     p.add_argument("--gate-clear", dest="gate_clear",
                    action="store_true")
+    # `retarget` only (`VERB_FLAGS["retarget"]`). `--gate-drop` names entries to
+    # REMOVE one at a time (`append`, so it can repeat); `--gate-set` REPLACES
+    # the whole gate, which is `--gate`'s own operation under a name that takes
+    # several values without the repeated-flag spelling `--gate` already uses
+    # for the same thing. `nargs="*"` and not `"+"`: a caller who passes NO
+    # value is answering "the empty gate", which is THIS verb's own refusal
+    # ("an empty gate is --gate-clear, which says so") -- argparse's own usage
+    # error for a starved `"+"` would answer instead, in argparse's words and
+    # not this project's.
+    p.add_argument("--gate-drop", dest="gate_drop", action="append",
+                   default=None,
+                   help="retarget: drop one testGate entry (repeatable)")
+    p.add_argument("--gate-set", dest="gate_set", nargs="*", default=None,
+                   help="retarget: replace testGate with these entries")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None, help=_PROSE_HELP)
     p.add_argument("--verdict", default=None, choices=list(_mio.SIGNOFF_VERDICTS),

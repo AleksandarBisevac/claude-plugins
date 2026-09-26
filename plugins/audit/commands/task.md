@@ -676,9 +676,10 @@ back. Readiness is the **whole** rule, all four of its terms, and the owning pha
 said opposite things about one manifest for as long as there were two copies of it.
 
 **`--gate-clear` is how a task reaches the EMPTY gate**, and it is here for a reason
-that is not `/audit:phase retarget`'s. That verb *appends* to `testGate`, so the append
-itself left the empty gate unspellable; `scope` **replaces** `tests.gate` outright, and
-the gap is in the values — no `--gate` value says *none*, because `--gate ""` writes a
+that is not `/audit:phase retarget`'s. That verb *replaces* `testGate` too, so the
+replacement itself still left the empty gate unspellable; `scope` **replaces**
+`tests.gate` outright, and the gap is in the values — no `--gate` value says *none*,
+because `--gate ""` writes a
 gate holding an empty command, which is a gate that cannot run rather than the absence
 of one. It refuses alongside `--gate` exactly as `retarget` does. Measured live: a phase
 retargeted to `testGate: []` (nothing in that repo could grade markdown and config) left

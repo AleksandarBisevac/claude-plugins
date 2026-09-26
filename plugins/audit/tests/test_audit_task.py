@@ -50,7 +50,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # sharded/single), j (--json + journal row), h (A4 heal at this write site),
 # n (named-manifest project resolution), c (cancel), p (add-phase, both
 # layouts), w (the _waiting_on index), u (usage errors), sc (scope), rt
-# (retarget), gc (the empty gate a task could not reach), jf (the prior state
+# (retarget, extended by P78.4's rt10-rt18 for --gate-drop/--gate-set),
+# gc (the empty gate a task could not reach), jf (the prior state
 # the trail attests), ag (the empty gate at CREATION), fn (the files row for a
 # change that did not happen), sf (the three task fields `scope` did not
 # reach), sn (the task with no `tests` object), qg (add-phase's empty gate),
@@ -1953,9 +1954,10 @@ def _cases(check):
         # ---- (rt) a plan can be CORRECTED, not only created ------------------
         # `init` and `pull sprint` synthesize a phase and choose its `testGate`;
         # until `retarget` that choice was unreachable, and one wrong choice made
-        # the phase unable to pass its own sign-off. `--gate` APPENDS, so the
+        # the phase unable to pass its own sign-off. `--gate` REPLACES, so the
         # empty gate - which `_phase_gate` documents as a designed state, sign-off
-        # on review alone - had no spelling at all after import.
+        # on review alone - had no spelling at all after import: no VALUE of
+        # `--gate` means "none".
         rt_proj, rt_mp = mk("p-retarget", base_manifest())
         code, txt = run(["retarget", "P3", "--gate", "test",
                          "--project-dir", rt_proj])
@@ -1966,8 +1968,8 @@ def _cases(check):
         code, txt = run(["retarget", "P3", "--gate-clear",
                          "--project-dir", rt_proj])
         _rtp = _mio.load_manifest(rt_mp)["phases"][2]
-        check("rt2 ...and --gate-clear reaches the EMPTY gate, which `--gate` "
-              "cannot because it appends - the designed state a guessed gate "
+        check("rt2 ...and --gate-clear reaches the EMPTY gate, which no `--gate` "
+              "VALUE can spell - the designed state a guessed gate "
               "took away, and the report SAYS what it means rather than leaving "
               "silence to read as breakage: %r" % (txt[-90:],),
               code == 0 and _rtp.get("testGate") == []
@@ -2113,6 +2115,90 @@ def _cases(check):
         check("rt8 a call that changes nothing is refused rather than taking the "
               "index lock for it: %r" % (txt[:70],),
               code == 2 and "retarget needs one of" in txt)
+
+        # ---- (rt10-18) retarget --gate-drop and --gate-set, one write each ---
+        # `--gate-set` is `--gate`'s own REPLACE operation under a name that
+        # takes several values under one flag instead of one value per repeat;
+        # `--gate-drop` is the other operation, narrowing the CURRENT gate by
+        # name. Both go through `_locked_retarget`, one lock, one
+        # revalidate-or-roll-back, one `phase.retarget` journal row.
+        def _gs_manifest():
+            m = base_manifest()
+            m["phases"][2]["testGate"] = ["test", "coverage"]
+            return m
+        gs_proj, gs_mp = mk("p-gate-drop-set", _gs_manifest())
+        import _journal_io
+
+        def gs_gate():
+            return _mio.load_manifest(gs_mp)["phases"][2].get("testGate")
+
+        code, txt = run(["retarget", "P3", "--gate-drop", "coverage",
+                         "--project-dir", gs_proj])
+        _gs_rows = [r for r in _journal_io.read_all(gs_proj)
+                   if r.get("action") == "phase.retarget"]
+        check("rt10 RED-FIRST: --gate-drop coverage on a phase gated "
+              "[test, coverage] writes [test] with ONE phase.retarget journal "
+              "row - today's parser does not declare the flag at all, so "
+              "argparse refuses the call outright instead of writing anything: "
+              "%r" % ((code, gs_gate(), len(_gs_rows)),),
+              code == 0 and gs_gate() == ["test"] and len(_gs_rows) == 1)
+        code, txt = run(["retarget", "P3", "--gate-drop", "test",
+                         "--project-dir", gs_proj])
+        check("rt11 dropping the ONLY remaining entry is refused with the "
+              "empty-gate sentence rather than silently emptied - that state is "
+              "reached through --gate-clear alone, which SAYS it is choosing "
+              "it: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-drop", "nope",
+                         "--project-dir", gs_proj])
+        check("rt12 --gate-drop naming an entry NOT in the phase's testGate is "
+              "refused, naming the missing entry and the gate as it stands - a "
+              "typo is not silently a no-op: %r" % (txt[:130],),
+              code == 2 and "nope" in txt and '["test"]' in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set",
+                         "--project-dir", gs_proj])
+        check("rt13 RED-FIRST: --gate-set with NO value is refused with the "
+              "SAME empty-gate sentence, not argparse's own usage error for a "
+              "starved flag: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set", "", "  ",
+                         "--project-dir", gs_proj])
+        check("rt14 SECOND DIRECTION: --gate-set of all-BLANK values is refused "
+              "the same way as no values at all - a caller who typed nothing "
+              "but blanks almost always meant the empty gate: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set", "lint",
+                         "--project-dir", gs_proj])
+        check("rt15 ALLOW CASE: --gate-set lint REPLACES the gate outright, "
+              "the same operation --gate performs under a name that takes "
+              "several values at once - declared, not narrowed or guessed: %r"
+              % (gs_gate(),),
+              code == 0 and gs_gate() == ["lint"])
+        code, txt = run(["retarget", "P3", "--gate-set", "typecheck", "test",
+                         "--project-dir", gs_proj])
+        check("rt16 --gate-set takes SEVERAL values under one flag, unlike "
+              "--gate's repeated spelling of the same operation: %r"
+              % (gs_gate(),),
+              code == 0 and gs_gate() == ["typecheck", "test"])
+        code, txt = run(["retarget", "P3", "--gate-drop", "test", "--gate-set",
+                         "lint", "--project-dir", gs_proj])
+        check("rt17 --gate-drop with --gate-set is refused exactly as --gate "
+              "with --gate-clear is - two answers to one question, and "
+              "guessing which was meant is the fault this closes: %r"
+              % (txt[:90],),
+              code == 2 and "opposite things" in txt
+              and gs_gate() == ["typecheck", "test"])
+        code, txt = run(["retarget", "P1", "--gate-drop", "test",
+                         "--project-dir", gs_proj])
+        check("rt18 a DONE phase refuses --gate-drop too, by the SAME "
+              "past-sign-off rule --gate-clear already uses, unchanged: %r"
+              % (txt[:90],),
+              code == 2 and "was given against the gate it had" in txt)
+
         # THE OTHER half of the pending rule: an attempted task keeps an
         # outcome describing work judged under the scope it had.
         #
@@ -2141,10 +2227,11 @@ def _cases(check):
         # `scope` its `--gate`, and `scope` did not take the clear - so a phase
         # could say "nothing here can prove this" and a task could not. THE
         # REASON DIFFERS FROM `retarget`'s, which is why the same flag needed its
-        # own justification: that verb APPENDS to `testGate`, so the append is
-        # what left the empty gate unspellable, while this one REPLACES
-        # `tests.gate` outright. The gap here is in the values - no `--gate`
-        # VALUE says "none". Measured live: a phase retargeted to `testGate: []`
+        # own justification: that verb REPLACES `testGate` too, so the
+        # replacement is what left the empty gate unspellable, and this one
+        # REPLACES `tests.gate` outright as well. The gap here is in the
+        # values - no `--gate` VALUE says "none". Measured live: a phase
+        # retargeted to `testGate: []`
         # left its pending tasks holding the `["lint"]` inherited at creation,
         # and the only routes to the phase's own new state were a rescope mid-run
         # or the hand edit `commands/task.md` forbids.
@@ -7210,54 +7297,34 @@ def _cases(check):
               and "meta.phaseGate.exclude" in txt
               and "phase gate runs no suite" in txt)
 
-        # pg4: ABSENT phaseGate = TODAY - captured by RUNNING HEAD's own
-        # `_phase_gate`, never by reading or retyping it. `git show HEAD:...`
-        # gets the pre-fix source; `ast.get_source_segment` pulls out exactly
-        # the `_phase_gate` function's text (HEAD's version calls nothing this
-        # module does not already have - no `_manifest_phases`, no `_output`),
-        # and `exec` runs THAT text in an empty namespace. The fixed module's
-        # own `_phase_gate` is never touched by this, so a bug in one cannot
-        # hide behind an accidental agreement with the other - the expected
-        # value is HEAD's answer, run, not this task's answer read back at
-        # itself.
-        import ast
+        # pg4: ABSENT phaseGate = TODAY - locked to the literal, now that P78.3
+        # (which made this derivation call `phase_gate_default` at all) is
+        # itself the committed HEAD this suite runs against. This case used to
+        # capture its expected value by loading HEAD's OWN `_phase_gate` text
+        # dynamically and running it - the right proof while HEAD still held
+        # the PRE-fix code, so a hand-derived expectation could not be an
+        # inference from the same function being tested. Once P78.3 landed,
+        # HEAD's `_phase_gate` IS this module's, so that comparison had become
+        # `M._phase_gate` read back at itself (and broke outright: the
+        # extracted function text called `_phases.phase_gate_default`, a name
+        # that exists in THIS module's namespace and not in the bare one the
+        # extracted text was `exec`'d into - `NameError: name '_phases' is not
+        # defined`). The mutation this case exists to catch (building the
+        # default from SORTED keys) was proved live during P78.3's own
+        # red-first pass; the literal here is what stays to keep proving it.
         import types
-        _pg4_src = subprocess.run(
-            ["git", "show",
-             "HEAD:plugins/audit/scripts/manifest/audit-task.py"],
-            cwd=_output.REPO_ROOT, capture_output=True, text=True,
-            check=True).stdout
-        _pg4_sha = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=_output.REPO_ROOT,
-            capture_output=True, text=True, check=True).stdout.strip()
-        _pg4_tree = ast.parse(_pg4_src)
-        _pg4_node = next(n for n in ast.walk(_pg4_tree)
-                         if isinstance(n, ast.FunctionDef)
-                         and n.name == "_phase_gate")
-        _pg4_ns = {}
-        exec(compile(ast.get_source_segment(_pg4_src, _pg4_node),
-                    "<HEAD %s _phase_gate>" % (_pg4_sha,), "exec"), _pg4_ns)
-        _HEAD_phase_gate = _pg4_ns["_phase_gate"]
         _pg4_args = types.SimpleNamespace(gate=None, gate_clear=False)
-        # Deliberately NON-sorted `buildCommands`, so a fix that silently
-        # started building the default from SORTED keys would answer
-        # differently from what this fixture's declared ORDER (and HEAD's own
-        # code) both agree on.
         _pg4_manifest = {"meta": {
             "version": 2,
             "buildCommands": {"test": "npm test", "lint": "npm run lint",
                               "coverage": "npm run coverage"}}}
-        _pg4_expected = _HEAD_phase_gate(_pg4_args, _pg4_manifest)
         _pg4_got = M._phase_gate(_pg4_args, _pg4_manifest)
         check("pg4 ABSENT phaseGate = TODAY: with no `meta.phaseGate` at all, "
-              "this derivation writes exactly what HEAD %s wrote for the SAME "
-              "fixture (run, not read) - a fix that built the default from "
-              "SORTED keys would answer differently from the buildCommands "
-              "ORDER both HEAD and this fixture declare: %r"
-              % (_pg4_sha, (_pg4_got, _pg4_expected)),
-              _pg4_got == _pg4_expected
-              and _pg4_got == (["test", "lint", "coverage"],
-                                "from meta.buildCommands"))
+              "the gate is every buildCommands key in ITS OWN declared order "
+              "(`test, lint, coverage`), never sorted, with basis 'from "
+              "meta.buildCommands': %r" % (_pg4_got,),
+              _pg4_got == (["test", "lint", "coverage"],
+                          "from meta.buildCommands"))
 
     finally:
         _harness.remove_tree(tmp)
