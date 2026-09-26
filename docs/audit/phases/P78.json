@@ -940,7 +940,7 @@
     {
       "id": "P78.14-msc",
       "title": "Comments state their rule instead of citing plan ids",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review findings (med and low). Constraint: the repo's rule is that a comment speaks to the code - it states the constraint of its block and never cites a phase, task, fault or bug id, because the register is private and the code is public. This phase added such citations: run-test-gate.py (a suiteReader comment citing a task id, the --own flag comment citing another phase's flag by phase id, a comment citing the tasks behind the excluded line), test_audit_task.py's suite-index comments naming task ids per case group, and test_run_test_gate.py. One older comment in run-test-gate.py of the same class (a section marker citing an old phase id) goes too. Rule: rewrite each to say the reason in its own terms (for the --own comment: name the other flag it must not collide with, without dating it). Also in audit-lookup.py: the comment over _RUN_STEP_KEYS says it drops only retry bookkeeping, while it also drops ran, measured, timeoutSeconds, teardown and suiteReader; make it name what is dropped and why. Sweep these four files with a grep for a P or F followed by digits inside comments and docstrings, and fix every hit this phase added. Section markers the navigability lint counts (# --- name ---) must survive with a name.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -969,18 +969,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "188bc251ccf5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Comment-only (AST identical): removed the phase and task ids this phase added in run-test-gate.py, test_run_test_gate.py and test_audit_task.py, plus one older section marker in run-test-gate.py; the _RUN_STEP_KEYS comment now names every dropped key. Older citations from earlier phases left, each listed with its reason. Gate run 2026-09-26T11:34:07Z.5cb4b1 green; reviewer matches. Resolves sign-off findings P78-R3 and P78-R6.",
+        "descriptive": "Comments in the gate runner, the lookup and their tests now state their own constraint instead of citing a phase, task or fault id."
       },
       "startedAt": "2026-09-26T11:22:33Z",
-      "completedAt": null,
+      "completedAt": "2026-09-26T11:39:20Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-26T11:34:07Z.5cb4b1",
         "status": "passed",
         "at": "2026-09-26T11:34:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "188bc251ccf5",
+        "at": "2026-09-26T11:39:20Z"
       }
     },
     {

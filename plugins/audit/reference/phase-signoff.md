@@ -131,8 +131,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    this plan mints.
 
    **`SAME SUITE COUNTED ONCE` prints its own remedy line** — `/audit:phase retarget <phaseId>
-   --gate-drop <name>` for the duplicate entry — when two gate entries reported the same check
-   count over the same suite file(s): read it before signing off, because a duplicated entry costs
+   --gate-drop <name>` for the duplicate entry — when two or more gate entries reported the same
+   check count over the same suite file(s): read it before signing off, because a duplicated entry costs
    wall clock and exposure to flakiness without adding assurance.
 
    **It brackets the gate, and that is why it is a script.** A gate is a MEASUREMENT.

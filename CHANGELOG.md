@@ -337,7 +337,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
-- **A correction to the `1.4.1` entry above: `/audit:phase retarget --gate` has always REPLACED
+- **A correction to the `1.4.1` entry below: `/audit:phase retarget --gate` has always REPLACED
   a phase's gate, never appended to it.** That released entry said `--gate` appends; it did not,
   then or now — `--gate-clear` is the load-bearing half precisely because `--gate` replaces, so an
   emptied gate needed its own spelling. History stays as written; this line is the correction, not
