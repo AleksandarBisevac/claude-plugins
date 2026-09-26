@@ -461,7 +461,7 @@
     {
       "id": "P71",
       "title": "A task commit carries what the index says and the verdict it was measured under",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P71.json"
     },
     {
