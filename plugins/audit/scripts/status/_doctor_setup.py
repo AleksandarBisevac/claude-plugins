@@ -346,18 +346,48 @@ def _archive_files(clone, sha, sub):
 _CODE_DIRS = ("hooks", "scripts")
 
 
+def _fresh_bytecode(plugin_root, rel, published):
+    """Whether `rel` is a `__pycache__` file Python wrote from a PUBLISHED source
+    and that still matches it: a source-stamped header (flags 0) whose recorded
+    source mtime and size are the cache copy's own `.py`. Hash-stamped or
+    unreadable bytecode is not called fresh - it is named instead."""
+    parts = rel.split("/")
+    if len(parts) < 2 or parts[-2] != "__pycache__" or not parts[-1].endswith(".pyc"):
+        return False
+    source = "/".join(parts[:-2] + [parts[-1].split(".")[0] + ".py"])
+    if source not in published:
+        return False
+    try:
+        with open(os.path.join(plugin_root, *rel.split("/")), "rb") as fh:
+            head = fh.read(16)
+        st = os.stat(os.path.join(plugin_root, *source.split("/")))
+    except OSError:
+        return False
+    if len(head) < 16 or int.from_bytes(head[4:8], "little") != 0:
+        return False
+    return (int.from_bytes(head[8:12], "little") == int(st.st_mtime) & 0xFFFFFFFF
+            and int.from_bytes(head[12:16], "little") == st.st_size & 0xFFFFFFFF)
+
+
 def _unpublished(plugin_root, published):
-    """Every file under `_CODE_DIRS` that `published` does not hold, sorted."""
-    extras = []
+    """`(extras, fresh)` - every file under `_CODE_DIRS` that `published` does not
+    hold, sorted, except bytecode Python wrote from a published source that still
+    matches it, which is only counted: that is every install's own bytecode, and a
+    line naming it on every run is read past. Stale or foreign bytecode is named."""
+    extras, fresh = [], 0
     for sub in _CODE_DIRS:
         for base, dirs, names in os.walk(os.path.join(plugin_root, sub)):
             dirs.sort()
             for name in names:
                 rel = os.path.relpath(os.path.join(base, name),
                                       plugin_root).replace(os.sep, "/")
-                if rel not in published:
+                if rel in published:
+                    continue
+                if _fresh_bytecode(plugin_root, rel, published):
+                    fresh += 1
+                else:
                     extras.append(rel)
-    return sorted(extras)
+    return sorted(extras), fresh
 
 
 def cache_integrity(plugin_root, home):
@@ -369,7 +399,9 @@ def cache_integrity(plugin_root, home):
     and it is not harmless either: `__pycache__/*.pyc` beside a published `.py`
     is what Python executes when its recorded source size and mtime match. So
     every such file under `hooks/` and `scripts/`, where the code that runs
-    lives, is NAMED in `extras`; the verdict stays about the published files.
+    lives, is NAMED in `extras` - except bytecode whose header still records its
+    published source's size and mtime, which Python wrote itself and is counted
+    in `freshBytecode`; the verdict stays about the published files.
     Unverifiable only when a side is missing: no install record, no recorded
     commit, no clone, or a clone that does not hold the commit."""
     out = {"verdict": "unverifiable", "detail": "", "modified": [], "commit": None}
@@ -405,7 +437,9 @@ def cache_integrity(plugin_root, home):
             same = False
         if not same:
             changed.append(rel)
-    out["extras"] = _unpublished(plugin_root, files)
+    extras, fresh = _unpublished(plugin_root, files)
+    out["extras"] = extras
+    out["freshBytecode"] = fresh
     out["commit"] = sha[:12]
     out["basis"] = ("git archive of %s from the marketplace clone at %s, the "
                     "commit installed_plugins.json records for this copy - %s, "
@@ -501,6 +535,9 @@ def check_plugin_files(rep, project, plugin_root=None, integrity=None):
     if state.get("extras"):
         basis += ("; not compared, because the commit does not publish them - and "
                   "bytecode executes: %s" % (_output.some_of(state["extras"]),))
+    if state.get("freshBytecode"):
+        basis += ("; %d bytecode file(s) matching its published source by recorded "
+                  "size and mtime not listed" % (state["freshBytecode"],))
     if state["verdict"] == "modified":
         rep.warn("plugin files",
                  "the installed plugin's tracked files do NOT match %s (%s): %s. "

@@ -165,16 +165,18 @@ So there are **three** outcomes, not two, and the row says which it is:
   cleared. Relay it as *unknown*, never as *they agree*.
 
 **Live and history.** A stamp's age is the last prompt or guarded tool call of the session
-that wrote it: every prompt re-stamps, and `guard-secrets-read` refreshes the stamp on Read,
-Grep, Bash and MCP calls. A copy other than the one this command runs from is **history** only
-when its newest stamp is older than the idle bound, which the row prints with its number — a
-session that ended, whose stamp state GC keeps for days. History is reported as the file, the
-copy it names and its age, with the path to delete if you want it gone, and it never turns the
-row yellow. A foreign copy inside the bound is **live**: a WARNING that says when it was last
-active and that it may still be running. The session asking is never the measure — it has
-always just prompted — so relay a live foreign copy as a possible stale session, and history as
-history. One limit: Edit, Write, Glob and agent calls do not refresh the stamp, so a session
-doing only those for longer than the bound reads as history until its next prompt.
+that wrote it: every prompt re-stamps, and `guard-secrets-read` refreshes the stamp on every
+call its `hooks.json` matcher, `Read|Grep|Bash|mcp__.*`, selects - a subagent's calls included,
+since they carry the parent's session. A copy other than the one this command runs from is
+**history** only when its newest stamp is older than the idle bound, which the row prints with
+its number: no guarded tool call within it, so the session ended or is idle waiting on its
+user. History is reported as the file, the copy it names and its age, with the path to delete
+if you want it gone, and it never turns the row yellow. A foreign copy inside the bound is
+**live**: a WARNING that says when it was last active and that it may still be running. The
+session asking is never the measure — it has always just prompted — so relay a live foreign
+copy as a possible stale session, and history as history. The limit: a tool OUTSIDE that
+matcher refreshes nothing, so a session using only such tools, or waiting on its user, for
+longer than the bound reads as history until its next prompt or matched call.
 
 It is a WARNING at worst in every branch. A stale plugin copy is a thing to tell someone,
 not a thing to block on, so a run that exits 0 today still exits 0 with this row present.

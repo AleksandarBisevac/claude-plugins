@@ -32,6 +32,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -39,6 +40,7 @@ import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _tree_stamp                                 # noqa: E402
+import _proc_group                                 # noqa: E402
 
 M = _loader.load_script("stamp-verification.py", modname="stamp_verification")
 M_PLUGIN = _output.PLUGIN_ROOT
@@ -692,11 +694,33 @@ def _process_cases(check):
     check("sr24 a throwaway an earlier run could not remove (SIGKILL cannot be "
           "caught) is REPORTED by name, and never pruned - it may be another "
           "run's, still going: %r" % (got_l.get("leftovers"),),
-          [os.path.realpath(x) for x in got_l.get("leftovers") or []]
+          [os.path.realpath(x["path"]) for x in got_l.get("leftovers") or []]
           == [os.path.realpath(leftover)]
           and os.path.realpath(leftover) in _worktrees(root)
           and code_l == M.E_PROVED)
     _git(root, "worktree", "remove", "--force", leftover)
+
+    # A leftover is LEFT BEHIND only when no live process holds it: a sibling's
+    # `red` running now registers a throwaway exactly like one SIGKILL stranded.
+    states = {}
+    for label, pid in (("dead", 2 ** 22 + 12345), ("live", os.getpid())):
+        holder = os.path.join(_harness.fixture_root("stamp-red-held-"),
+                              M.THROWAWAY_PREFIX + label)
+        tree = os.path.join(holder, "tree")
+        _git(root, "worktree", "add", "--detach", "--quiet", tree, "HEAD")
+        with open(os.path.join(holder, M.OWNER_FILE), "w", encoding="utf-8") as fh:
+            json.dump({"pid": pid}, fh)
+        states[label] = tree
+    _code_h, got_h = _red(root, man, [py, "tests/test_mine.py"])
+    by = dict((os.path.realpath(x["path"]), x["state"])
+              for x in got_h.get("leftovers") or [])
+    check("sr31 a registered throwaway whose owning process is gone is `left "
+          "behind`; one whose owner is alive is `running`, never called left "
+          "behind: %r" % (by,),
+          by.get(os.path.realpath(states["dead"])) == "left-behind"
+          and by.get(os.path.realpath(states["live"])) == "running")
+    for tree in states.values():
+        _git(root, "worktree", "remove", "--force", tree)
 
 
 def _own_case_cases(check):
@@ -740,9 +764,13 @@ def _env_cases(check):
     mark = os.path.join(_harness.fixture_root("stamp-red-envmark-"), "env.json")
     probe = ("import json, os\njson.dump(sorted(os.environ), open(%r, 'w'))\n"
              % (mark,))
-    planted = {"PYTHONPATH": root, "CLAUDE_PROJECT_DIR": root,
-               "GIT_DIR": os.path.join(root, "nope"), "GIT_WORK_TREE": root,
-               "GIT_INDEX_FILE": os.path.join(root, "nope-index")}
+    # Values OUTSIDE the shared root for the named variables: they go because of
+    # what they are - a redirection of git or of Python's import path - and not
+    # because they happen to name the root.
+    elsewhere = os.path.join(_harness.fixture_root("stamp-red-elsewhere-"), "x")
+    planted = {"PYTHONPATH": elsewhere, "CLAUDE_PROJECT_DIR": root,
+               "GIT_DIR": os.path.join(elsewhere, "git"), "GIT_WORK_TREE": elsewhere,
+               "GIT_INDEX_FILE": os.path.join(elsewhere, "index")}
     held = dict((k, os.environ.get(k)) for k in planted)
     os.environ.update(planted)
     try:
@@ -772,6 +800,130 @@ def _env_cases(check):
           "in the throwaway" in (got.get("note") or ""))
 
 
+# Captured from `pytest -q` over a test whose module imports a name the module
+# under test does not define yet - pytest's collection-error shape.
+_PYTEST_COLLECT = (
+    "==================================== ERRORS ====================================\n"
+    "__________________________ ERROR collecting test_b.py __________________________\n"
+    "ImportError while importing test module '/tmp/x/test_b.py'.\n"
+    "Hint: make sure your test modules/packages have valid Python names.\n"
+    "Traceback:\n"
+    "test_b.py:1: in <module>\n"
+    "    from newmod import helper_fn\n"
+    "E   ImportError: cannot import name 'helper_fn' from 'newmod' (/tmp/x/newmod.py)\n"
+    "=========================== short test summary info ============================\n"
+    "ERROR test_b.py\n"
+    "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n"
+    "1 error in 0.04s\n")
+
+
+def _final_pass_cases(check):
+    py = sys.executable
+    env = {"PATH": os.pathsep.join(["/repo/x/.venv/bin", "/usr/bin", "/bin"]),
+           "TMPDIR": "/repo/x/.tmp", "PWD": "/repo/x", "SIBLING": "/repo/x-other/lib",
+           "NOTE": "see /repo/x for details", "HOME": "/home/me",
+           "PYTHONPATH": "/elsewhere"}
+    kept, dropped = M.child_env("/repo/x", environ=env)
+    check("sr32 the scrub is by PATH, not by substring: an in-root PATH entry is "
+          "removed while PATH itself survives, a variable whose value IS a path "
+          "under the root goes, a sibling directory that merely shares the "
+          "prefix stays, and so does text that mentions the root: %r %r"
+          % (kept, dropped),
+          kept.get("PATH") == os.pathsep.join(["/usr/bin", "/bin"])
+          and "TMPDIR" not in kept and "PWD" not in kept
+          and kept.get("SIBLING") == "/repo/x-other/lib"
+          and kept.get("NOTE") == "see /repo/x for details"
+          and kept.get("HOME") == "/home/me" and "PYTHONPATH" not in kept
+          and "PATH entry /repo/x/.venv/bin" in dropped)
+
+    root, man = _red_repo("stamp-red-envbasis-", _red_test("import mine", "mine.v == 2"))
+    held = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = root
+    try:
+        _c, got = _red(root, man, [py, "tests/test_mine.py"])
+    finally:
+        if held is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = held
+    check("sr33 every redFirst basis names what the environment lost, so a proof "
+          "made without a variable says so: %r"
+          % ((got.get("redFirst") or {}).get("basis", "")[-160:],),
+          "PYTHONPATH" in (got.get("redFirst") or {}).get("basis", "")
+          .split("run without")[-1])
+
+    err = M.final_error(_PYTEST_COLLECT)
+    check("sr34 pytest's `E   ` prefix is read: the final error of a collection "
+          "failure is the ImportError naming the symbol, so --introduces can "
+          "reach its second run under pytest: %r" % (err,),
+          err is not None and err[0] == "ImportError"
+          and M.qualifying_error(_PYTEST_COLLECT, "helper_fn") is not None)
+    attr = "Traceback (most recent call last):\nAttributeError: module 'newmod' has no attribute 'helper_fn'\n"
+    check("sr35 ...and a bare AttributeError with no tally is a collection error, "
+          "so it reaches the second run too, not no-tally: %r"
+          % (M.classify_run(1, attr)[0],),
+          M.classify_run(1, attr)[0] == M.V_COLLECT
+          and M._wants_second(1, attr, ["helper_fn"]))
+
+    two = _house_test("import mine", [("old1", "mine.v == 2"), ("new1", "True")])
+    root_c, man_c = _red_repo("stamp-red-caseold-", two)
+    code_c, got_c = _red(root_c, man_c, [py, "tests/test_mine.py"], "--case", "old1")
+    check("sr36 --case cannot name a case HEAD's test file already carries: the "
+          "flag is chosen by the party being checked, so it is held to the same "
+          "absent-from-HEAD test as a derived id: exit=%r %r"
+          % (code_c, (got_c.get("redFirst") or {}).get("basis", "")[-160:]),
+          code_c != M.E_PROVED
+          and "old1" in (got_c.get("redFirst") or {}).get("basis", ""))
+    root_d, man_d = _red_repo("stamp-red-casenew-",
+                              _red_test("import mine", "mine.v == 2"))
+    code_d, got_d = _red(root_d, man_d, [py, "tests/test_mine.py"], "--case", "new1")
+    check("sr37 ...and a proved basis says whether the case was NAMED by --case or "
+          "derived: exit=%r %r" % (code_d, (got_d.get("redFirst") or {}).get("basis")),
+          code_d == M.E_PROVED
+          and "named by --case" in (got_d.get("redFirst") or {}).get("basis", ""))
+
+    big = _run(["red", "--project", root_d, "--manifest", man_d, "--task", "P1.1",
+                "--timeout", str(M.HOST_BASH_LIMIT), "--", py, "tests/test_mine.py"])
+    check("sr38 a --timeout that would outlive the host's Bash limit is refused: "
+          "the helper's own deadline has to fire first: exit=%r" % (big[0],),
+          big[0] == M.E_USAGE)
+    files = ["src/mine.py", "src/newmod.py", "tests/test_mine.py"]
+    slow = _house_test("import time\ntime.sleep(2)\nfrom newmod import helper_fn",
+                       [("new1", "helper_fn() == 2")])
+    root_s, man_s = _red_repo("stamp-red-deadline-", slow,
+                              extra={"src/newmod.py": "def helper_fn():\n    return 2\n"},
+                              files=files)
+    started = time.time()
+    code_s, got_s = _red(root_s, man_s, [py, "tests/test_mine.py"],
+                         "--introduces", "newmod", "--timeout", "3")
+    spent = time.time() - started
+    check("sr39 ONE deadline covers both runs: the second run gets what the first "
+          "left, so a two-run proof cannot take twice the budget - here the "
+          "second run is cut off and the proof is could-not-prove: exit=%r in "
+          "%.1f s %r" % (code_s, spent,
+                         (got_s.get("redFirst") or {}).get("basis", "")[-140:]),
+          code_s == M.E_CANNOT_PROVE and spent < 3 + 3 * _proc_group.GRACE_SECONDS
+          and "timed out" in (got_s.get("redFirst") or {}).get("basis", ""))
+
+    root_t, man_t = _red_repo("stamp-red-tmpdir-",
+                              _red_test("import mine", "mine.v == 2"))
+    inside = os.path.join(root_t, "untracked-tmp")
+    os.makedirs(inside)
+    held_tmp = tempfile.tempdir
+    tempfile.tempdir = inside
+    try:
+        code_t, got_t = _red(root_t, man_t, [py, "tests/test_mine.py"])
+    finally:
+        tempfile.tempdir = held_tmp
+    where = (got_t.get("throwaway") or {}).get("path") or ""
+    check("sr40 a temp directory inside the shared tree is never where the "
+          "throwaway goes - it would be a worktree siblings see in `git status`: "
+          "%r (inside: %r)" % (where, os.listdir(inside)),
+          where and not os.path.realpath(where).startswith(
+              os.path.realpath(root_t) + os.sep)
+          and os.listdir(inside) == [] and code_t == M.E_PROVED)
+
+
 def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
@@ -782,6 +934,7 @@ def _cases(check):
     _harness.stage(check, "sr-process", _process_cases)
     _harness.stage(check, "sr-own", _own_case_cases)
     _harness.stage(check, "sr-env", _env_cases)
+    _harness.stage(check, "sr-final", _final_pass_cases)
 
 
 def _selftest():

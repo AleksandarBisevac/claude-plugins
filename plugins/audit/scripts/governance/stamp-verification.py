@@ -82,6 +82,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -108,6 +109,7 @@ _output.install_path()
 import _tree_stamp  # noqa: E402  (the ONE tree identity, shared with run-test-gate)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
+import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
 
 USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
 
@@ -223,13 +225,23 @@ V_COLLECT, V_NO_TALLY, V_NOT_RUN = "collection-error", "no-tally", "could-not-ru
 # the teardown, so the helper's own timeout is the one that fires.
 HOST_BASH_LIMIT = 600
 DEFAULT_TIMEOUT = 480
+# The deadline covers BOTH runs, and each can end in a teardown given
+# `_proc_group.GRACE_SECONDS` twice over, then the throwaway's removal: so the
+# largest `--timeout` accepted leaves that much of the host's limit unspent.
+TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS
+MAX_TIMEOUT = HOST_BASH_LIMIT - TEARDOWN_MARGIN
 
 # Every throwaway's temp directory starts with this, which is how a leftover from
 # a run nobody could clean up is recognised in `git worktree list`.
 THROWAWAY_PREFIX = "audit-red-"
+# ...and the file in that directory naming the process that made it, which is
+# what tells a stranded throwaway from one a sibling's run is still using.
+OWNER_FILE = "owner.json"
 
-# What the child's environment loses: the variables that point a test, or git,
-# back at the shared tree, and any variable whose value names the shared root.
+# What the child's environment loses: these variables whole, and - by PATH, not
+# by substring - every other value that IS a path under the shared root, or the
+# entries of a path list that are. A variable that merely mentions the root in
+# text, or names a sibling directory sharing its prefix, is kept.
 SCRUBBED_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
                 "GIT_OBJECT_DIRECTORY", "PYTHONPATH", "CLAUDE_PROJECT_DIR")
 
@@ -267,10 +279,13 @@ _UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
 _UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)", re.M)
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
-_COMPILE_ERROR = re.compile(r"^\s*(SyntaxError|IndentationError|TabError|ImportError|"
-                            r"ModuleNotFoundError|NameError)\b", re.M)
+_COMPILE_ERROR = re.compile(r"^\s*(?:E\s+)?(SyntaxError|IndentationError|TabError|"
+                            r"ImportError|ModuleNotFoundError|NameError|"
+                            r"AttributeError)\b", re.M)
 _ERROR_LINE = re.compile(r"^\s*(\w*(?:Error|Exception)\b.*)$", re.M)
-_FINAL_ERROR = re.compile(r"^\s*([A-Za-z_][\w.]*(?:Error|Exception)):\s?(.*)$", re.M)
+# pytest prints a collection error's exception behind an `E   ` gutter.
+_FINAL_ERROR = re.compile(r"^\s*(?:E\s+)?([A-Za-z_][\w.]*(?:Error|Exception)):\s?(.*)$",
+                          re.M)
 
 # The error classes a missing symbol produces. A syntax error never qualifies: it
 # is the test's own text failing to parse, and it survives any fix.
@@ -405,13 +420,41 @@ def split_scope(task):
     return [f for f in files if f not in tests], tests
 
 
-def child_env(root):
-    """`(env, dropped)` - this process's environment without what reaches the
-    shared tree: `SCRUBBED_ENV`, and any variable whose value names its root."""
-    spellings = set(p for p in (root, os.path.realpath(root)) if p)
-    dropped = sorted(k for k, v in os.environ.items()
-                     if k in SCRUBBED_ENV or any(s in v for s in spellings))
-    return dict((k, v) for k, v in os.environ.items() if k not in dropped), dropped
+def _under(value, roots):
+    """Whether `value` is one of `roots` or a path beneath one - a separator
+    boundary, so `/repo-other` is not under `/repo`."""
+    if not value or not os.path.isabs(value):
+        return False
+    spellings = set((value, os.path.realpath(value)))
+    return any(v == r or v.startswith(r.rstrip("/\\") + sep)
+               for v in spellings for r in roots for sep in ("/", os.sep))
+
+
+def child_env(root, environ=None):
+    """`(env, dropped)` - the environment without what reaches the shared tree.
+
+    `SCRUBBED_ENV` goes whole; any other variable whose value IS a path under the
+    root goes; a path list keeps its other entries and loses the ones under the
+    root, so an in-repo `.venv/bin` leaves PATH without taking PATH with it.
+    `dropped` names every variable and every list entry removed."""
+    source = os.environ if environ is None else environ
+    roots = [r for r in set((root, os.path.realpath(root))) if r]
+    env, dropped = {}, []
+    for key in sorted(source):
+        value = source[key]
+        if key in SCRUBBED_ENV:
+            dropped.append(key)
+            continue
+        parts = value.split(os.pathsep) if os.pathsep in value else [value]
+        gone = [p for p in parts if _under(p, roots)]
+        if not gone:
+            env[key] = value
+        elif len(parts) == 1 or len(gone) == len(parts):
+            dropped.append(key)
+        else:
+            env[key] = os.pathsep.join(p for p in parts if p not in gone)
+            dropped.extend("%s entry %s" % (key, p) for p in gone)
+    return env, dropped
 
 
 def _git_env():
@@ -476,25 +519,29 @@ def introduced(root, implementation, symbol):
                   % (", ".join(implementation), ", ".join(in_wt)))
 
 
-def own_failures(root, tests, failing, cases):
-    """The failing cases that are the TASK'S OWN and failed an assertion.
+def _added_by_task(root, tests, cid):
+    """Whether case id `cid` is a whole name in the working tree's copy of a
+    declared test file and absent from HEAD's copy of that same file."""
+    return any(_names(_wt_text(root, rel), cid)
+               and not _names(_head_text(root, rel) or "", cid) for rel in tests)
 
-    Own means named by `--case` when any is given; otherwise a case whose id is a
-    whole name in the working tree's copy of a declared test file and absent from
-    HEAD's copy of that file - a case the task added. An existing case going red
-    because the working tree's test file was edited to match other work is not a
-    proof about this task's test."""
+
+def own_failures(root, tests, failing, cases):
+    """`(own, refused)` - the failing cases that are the TASK'S OWN and failed an
+    assertion, and the `--case` ids refused because HEAD already carries them.
+
+    Own means a case the task ADDED: its id is a whole name in the working
+    tree's copy of a declared test file and absent from HEAD's copy of it.
+    `--case` narrows to the ids it names and is held to the same test, because
+    the flag is chosen by the party whose proof is being checked - an existing
+    case going red because its test file was edited to match other work is not
+    a proof about this task's test, whoever names it."""
     asserting = [f for f in failing if f["assertion"] and f["id"]]
+    refused = [c for c in cases if not _added_by_task(root, tests, c)]
     if cases:
-        return [f for f in asserting if f["id"] in cases]
-    added = []
-    for f in asserting:
-        for rel in tests:
-            if (_names(_wt_text(root, rel), f["id"])
-                    and not _names(_head_text(root, rel) or "", f["id"])):
-                added.append(f)
-                break
-    return added
+        asserting = [f for f in asserting if f["id"] in cases]
+    return ([f for f in asserting if _added_by_task(root, tests, f["id"])],
+            refused)
 
 
 def _names_shared_tree(cmd, root, project):
@@ -510,16 +557,60 @@ def _names_shared_tree(cmd, root, project):
 
 # --- the throwaway tree itself ---
 def leftover_throwaways(root):
-    """Registered worktrees whose path carries `THROWAWAY_PREFIX`: throwaways an
-    earlier run could not remove. Reported, never pruned."""
+    """`[{"path", "state", "pid"}]` - registered worktrees whose path carries
+    `THROWAWAY_PREFIX`, each graded by the process its `OWNER_FILE` names:
+    `running` while that process is alive (a sibling's `red`, still going),
+    `left-behind` once it is gone, `unknown` with no owner record. Reported,
+    never pruned. A reused pid reads as `running`, the safe direction."""
     code, listing = _git(root, ["worktree", "list", "--porcelain"])
     if code != 0:
         return []
-    paths = [ln[len("worktree "):] for ln in listing.splitlines()
-             if ln.startswith("worktree ")]
-    return [p for p in paths
-            if any(part.startswith(THROWAWAY_PREFIX) for part in
-                   p.replace("\\", "/").split("/"))]
+    out = []
+    for ln in listing.splitlines():
+        if not ln.startswith("worktree "):
+            continue
+        path = ln[len("worktree "):]
+        if not any(part.startswith(THROWAWAY_PREFIX)
+                   for part in path.replace("\\", "/").split("/")):
+            continue
+        pid = None
+        try:
+            with open(os.path.join(os.path.dirname(path), OWNER_FILE), "r",
+                      encoding="utf-8") as fh:
+                pid = json.load(fh).get("pid")
+        except (OSError, ValueError, AttributeError):
+            pid = None
+        alive = _locks.pid_alive(pid) if pid is not None else None
+        out.append({"path": path, "pid": pid,
+                    "state": {True: "running", False: "left-behind"}.get(alive,
+                                                                         "unknown")})
+    return out
+
+
+def leftover_line(left):
+    """One leftover throwaway as the human output says it: what its owner record
+    establishes, and never more."""
+    if left["state"] == "running":
+        return "registered by a run still going (pid %s) - not pruned" % (left["pid"],)
+    if left["state"] == "left-behind":
+        return ("LEFT BEHIND by an earlier run (pid %s is gone) - not pruned"
+                % (left["pid"],))
+    return ("registered by another run - left behind, or still running (no owner "
+            "record) - not pruned")
+
+
+def holder_base(root):
+    """A temp directory OUTSIDE the shared tree, or None. A TMPDIR pointing inside
+    the repository would put the throwaway worktree where siblings' `git status`
+    sees it, so the platform's own temp directories are tried next."""
+    roots = [r for r in set((root, os.path.realpath(root))) if r]
+    candidates = [tempfile.gettempdir()]
+    if os.name != "nt":
+        candidates += ["/tmp", "/var/tmp"]
+    for cand in candidates:
+        if os.path.isdir(cand) and not _under(os.path.abspath(cand), roots):
+            return cand
+    return None
 
 
 def _build_throwaway(root, path, tests):
@@ -612,11 +703,12 @@ def red_verdict(run, ctx):
     "dropped"}`."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
+    env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
     if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
             "status": RED_CANNOT, "at": at,
-            "basis": "`%s` in a throwaway tree at HEAD: %s"
-                     % (shown, run["problem"])}, None
+            "basis": "`%s` in a throwaway tree at HEAD: %s%s"
+                     % (shown, run["problem"], env_clause)}, None
     code, text = run["code"], run["text"]
     verdict, tally = classify_run(code, text)
     line = _decisive_line(text, tally)
@@ -628,21 +720,25 @@ def red_verdict(run, ctx):
             "it proves nothing yet; fix the test, there is no redFirst word to "
             "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
     failing = failing_cases(text)
+    how = ("named by --case and absent from HEAD's test files" if ctx["cases"]
+           else "added by the task, absent from HEAD's test files")
     if verdict == V_RED:
-        own = own_failures(ctx["root"], ctx["tests"], failing, ctx["cases"])
+        own, refused = own_failures(ctx["root"], ctx["tests"], failing, ctx["cases"])
+        refused_clause = ("; --case %s names a case HEAD's test file already "
+                          "carries, so it is not the task's" % (", ".join(refused),)
+                          if refused else "")
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
                 "basis": "%s with %d of %d collected tests failing an assertion, "
-                         "the task's own among them - %s: %s"
-                         % (where, tally["assertions"], tally["collected"],
-                            _ids(own), line)}, None
+                         "the task's own among them (%s) - %s: %s%s%s"
+                         % (where, tally["assertions"], tally["collected"], how,
+                            _ids(own), line, refused_clause, env_clause)}, None
         return E_CANNOT_PROVE, verdict, {
             "status": RED_CANNOT, "at": at,
             "basis": "%s, but none of the failing cases is the task's own (%s): %s "
-                     "- %s" % (where, "named by --case" if ctx["cases"] else
-                               "added by the task, absent from HEAD's test files",
-                               _ids(failing), line)}, None
+                     "- %s%s%s" % (where, how, _ids(failing), line, refused_clause,
+                                   env_clause)}, None
     why_not = []
     for symbol in (ctx["symbols"] if verdict == V_COLLECT else ()):
         holds, why = introduced(ctx["root"], ctx["implementation"], symbol)
@@ -672,8 +768,8 @@ def red_verdict(run, ctx):
                 "basis": "%s on %r, and the task introduces %r: %s; a second run "
                          "with the working tree's implementation copied in exited "
                          "%s without that error, its tests reaching their "
-                         "assertions" % (where, error, symbol, why,
-                                         second["code"])}, None
+                         "assertions%s" % (where, error, symbol, why,
+                                           second["code"], env_clause)}, None
     reason = ("no test was collected or none reached an assertion"
               if verdict == V_COLLECT else
               "its output carries no test tally this command reads, so an "
@@ -683,9 +779,9 @@ def red_verdict(run, ctx):
         reason += "; failing without an assertion: %s" % (_ids(failing),)
     return E_CANNOT_PROVE, verdict, {
         "status": RED_CANNOT, "at": at,
-        "basis": "%s, but %s: %s%s" % (where, reason, line,
-                                       ("; " + "; ".join(why_not)) if why_not
-                                       else "")}, None
+        "basis": "%s, but %s: %s%s%s" % (where, reason, line,
+                                         ("; " + "; ".join(why_not)) if why_not
+                                         else "", env_clause)}, None
 
 
 def _wants_second(code, text, symbols):
@@ -702,6 +798,11 @@ def _red_scope(args, cmd):
     if not (args.task and args.manifest) or args.files:
         return None, ("red takes its scope off the plan: pass --manifest and "
                       "--task, and no --files")
+    if not 1 <= args.timeout <= MAX_TIMEOUT:
+        return None, ("--timeout %s is outside 1..%d: one deadline covers both runs, "
+                      "and it must leave the host's %d-second Bash limit room for "
+                      "the teardown, or the host kills the helper before its own "
+                      "cleanup runs" % (args.timeout, MAX_TIMEOUT, HOST_BASH_LIMIT))
     bad = [s for s in args.introduces if not _SYMBOL_SHAPE.match(s)]
     if bad:
         return None, ("--introduces takes an identifier (letters, digits, `_`, "
@@ -754,8 +855,20 @@ def run_red(args, cmd, out):
     leftovers = leftover_throwaways(root)
     env, dropped = child_env(root)
     _c, head = _git(root, ["rev-parse", "HEAD"])
-    holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX)
+    base = holder_base(root)
+    if base is None:
+        sys.stderr.write("ERROR: every temp directory this machine offers is inside "
+                         "the shared tree %s, and a throwaway there would be a "
+                         "worktree siblings see; set TMPDIR outside it\n" % (root,))
+        return E_USAGE
+    holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX, dir=base)
     path = os.path.join(holder, "tree")
+    try:
+        with open(os.path.join(holder, OWNER_FILE), "w", encoding="utf-8") as fh:
+            json.dump({"pid": os.getpid()}, fh)
+    except OSError:
+        pass
+    deadline = time.time() + args.timeout
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None}
     copied = []
     previous = _arm()
@@ -768,7 +881,13 @@ def run_red(args, cmd, out):
             if run["problem"] is None and _wants_second(run["code"], run["text"],
                                                         args.introduces):
                 _lay_over(root, path, scope["implementation"])
-                code2, text2, problem2 = _run_in(path, cmd, args.timeout, env)
+                left = int(deadline - time.time())
+                if left < 1:
+                    code2, text2, problem2 = None, "", (
+                        "the run timed out: no time was left of the %s-second "
+                        "deadline" % (args.timeout,))
+                else:
+                    code2, text2, problem2 = _run_in(path, cmd, left, env)
                 run["second"] = {"code": code2, "text": text2, "problem": problem2}
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
@@ -801,7 +920,7 @@ def run_red(args, cmd, out):
         out("  from the working tree: %s" % (", ".join(copied) or "(none)"))
         out("  environment: inherited, without %s" % (", ".join(dropped) or "nothing"))
         for left in leftovers:
-            out("  LEFT BEHIND by an earlier run (not pruned): %s" % (left,))
+            out("  %s: %s" % (leftover_line(left), left["path"]))
         out(note if block is None else "redFirst: %s" % (json.dumps(block),))
     if not removed:
         sys.stderr.write("ERROR: the throwaway tree at %s could not be removed; "

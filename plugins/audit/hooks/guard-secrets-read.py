@@ -1960,14 +1960,16 @@ def decide(data, *, cfg=None):
     root = _config.repo_root(data)
     if cfg is None:
         cfg = _config.load(root)
-    # This guard runs on Read, Grep, Bash and MCP calls, so it is where a
-    # session's running-plugin stamp learns the session is still working: the
-    # doctor grades liveness on that mtime. Throttled and never raising.
-    _config.refresh_running_stamp(_config.state_dir(root, cfg),
-                                  str((data or {}).get("session_id") or ""))
     verdict, msg = _decide_core(data, root, cfg)
     if verdict in ("block", "ask"):
         _append_verdict_event(root, cfg, data, verdict, msg)
+    # AFTER the verdict, and through a call that cannot raise: `main` exits 0
+    # on an exception, which is allow, so bookkeeping that could raise before
+    # the decision - a stateDir that is not a string was enough - turned a
+    # blocked secret read into an allowed one. This guard runs on Read, Grep,
+    # Bash and MCP calls, which is why the running-plugin stamp is refreshed
+    # here: the doctor grades a session's liveness on that mtime.
+    _config.refresh_session_stamp(root, cfg, (data or {}).get("session_id"))
     return (verdict, msg)
 
 

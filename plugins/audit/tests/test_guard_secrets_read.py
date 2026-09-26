@@ -67,6 +67,20 @@ def _refresh_cases(check):
               "and a session mid-turn is not filed as idle: moved %r"
               % (os.path.getmtime(str(slot)) - old,),
               os.path.getmtime(str(slot)) > old + 60)
+        bad = dict(cfg, stateDir=5)
+        secret = str(root / "apps" / ("." + "env"))
+        try:
+            verdict = M.decide({"tool_name": "Read", "session_id": "sess-live",
+                                "cwd": str(root),
+                                "tool_input": {"file_path": secret}}, cfg=bad)[0]
+        except Exception as exc:
+            verdict = "raised %s - main() exits 0 on that, which allows" % (
+                type(exc).__name__,)
+        check("gs-live2 THE REFRESH CANNOT CHANGE A VERDICT: with a stateDir that "
+              "is not a string - so the stamp's path cannot even be built - a "
+              "read of a secret file still blocks. Bookkeeping that raised before "
+              "the guard decided made `main` exit 0, which is allow: %r"
+              % (verdict,), verdict == "block")
     finally:
         if held is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

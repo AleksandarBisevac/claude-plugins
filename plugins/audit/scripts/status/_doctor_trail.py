@@ -434,8 +434,8 @@ def check_running_plugin(rep, project, cfg, cfg_mod, now=None):
     history_clause = ""
     if history:
         history_clause = (
-            "; history, idle past the %d-minute bound (no guarded tool call "
-            "for longer than a live session goes between two): %s - prune by "
+            "; history, no guarded tool call within the %d-minute bound - "
+            "ended, or idle waiting on its user: %s - prune by "
             "deleting %s (session stamps are local scratch, and a session still "
             "running that copy re-stamps on its next prompt or tool call)"
             % (IDLE_BOUND_SECONDS // 60,
@@ -450,7 +450,8 @@ def check_running_plugin(rep, project, cfg, cfg_mod, now=None):
                  "inside the %d-minute idle bound - may still be running)"
                  % (_copy_name(c), _age(clock - c.get("mtime", clock)),
                     IDLE_BOUND_SECONDS // 60)
-                 for c in _distinct(state["others"])]
+                 for c in _distinct(sorted(state["others"],
+                                           key=lambda st: -st.get("mtime", 0)))]
         parts.extend(_drift_phrase(d) for d in state["drift"])
         rep.warn("running plugin",
                  "%s, while this command is running %s (basis: %s)%s%s"

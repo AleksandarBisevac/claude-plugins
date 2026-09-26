@@ -944,6 +944,60 @@ def _cases(check):
         check("rh7 ...and the history clause states the idle bound WITH its "
               "number, so a reader can argue with it: %r" % (said,),
               "%d-minute" % (M.IDLE_BOUND_SECONDS // 60,) in said)
+        check("rh8 ...and history is worded as what the bound can know - no "
+              "guarded tool call inside it, so ENDED OR IDLE waiting on its user - "
+              "not as a claim the session is gone: %r" % (said,),
+              "ended, or idle waiting on its user" in said)
+
+        proj3 = os.path.join(tmp, "rp3-proj")
+        state3 = os.path.join(proj3, ".claude", "state")
+        os.makedirs(state3)
+        for session, age_s in (("a-older", 300), ("b-younger", 30)):
+            path3 = os.path.join(state3, cfgmod.RUNNING_STAMP % session)
+            with open(path3, "w", encoding="utf-8") as fh:
+                json.dump(elsewhere, fh)
+            when3 = time.time() - age_s
+            os.utime(path3, (when3, when3))
+        rep = base.Report()
+        M.check_running_plugin(rep, proj3, {}, cfgmod)
+        said3 = _detail(rep, "running plugin")
+        check("rh9 two sessions on one foreign copy: 'last active' is the YOUNGER "
+              "stamp, whatever order the files sort in - the older session's age "
+              "is not the copy's last activity: %r" % (said3,),
+              "30 seconds ago" in said3 and "5 minutes ago" not in said3)
+
+        class _NameOrder(object):
+            """The hooks config, with its stamp reader returning FILENAME order -
+            the order a reader that did not sort by mtime would hand over."""
+            def __getattr__(self, name):
+                return getattr(cfgmod, name)
+
+            def running_plugin_stamps(self, state_dir):
+                read = cfgmod.running_plugin_stamps(state_dir)
+                return dict(read, stamps=sorted(read["stamps"],
+                                                key=lambda st: st["session"]))
+        rep = base.Report()
+        M.check_running_plugin(rep, proj3, {}, _NameOrder())
+        said4 = _detail(rep, "running plugin")
+        check("rh9b ...and that holds when the stamps arrive in filename order: the "
+              "row picks the newest stamp per copy itself rather than trusting the "
+              "reader's order: %r" % (said4,),
+              "30 seconds ago" in said4 and "5 minutes ago" not in said4)
+
+        with open(os.path.join(_harness.HOOKS_DIR, "hooks.json"), "r",
+                  encoding="utf-8") as fh:
+            wiring = json.load(fh)
+        matcher = [m.get("matcher") for m in wiring["hooks"]["PreToolUse"]
+                   if any("guard-secrets-read.py" in h.get("command", "")
+                          for h in m.get("hooks", []))]
+        with open(os.path.join(_output.PLUGIN_ROOT, "commands", "doctor.md"), "r",
+                  encoding="utf-8") as fh:
+            doc = fh.read()
+        check("rh10 doctor.md states the refresh limit as the refreshing hook's "
+              "MATCHER, the one hooks.json wires, rather than a partial list of "
+              "tools it misses: %r" % (matcher,),
+              len(matcher) == 1 and ("`%s`" % (matcher[0],)) in doc
+              and "hooks.json" in doc)
     finally:
         _harness.remove_tree(tmp)
 

@@ -2526,6 +2526,18 @@ def refresh_running_stamp(state_dir, session_id, now=None):
         return False
 
 
+def refresh_session_stamp(root, cfg, session_id):
+    """`refresh_running_stamp` for a guard: EVERYTHING it computes - the state
+    directory from a config that may be malformed, the session id from a payload
+    that may carry anything - happens inside one never-raise, because a guard's
+    `main` exits 0 on an exception and 0 is allow. True when the stamp moved."""
+    try:
+        return refresh_running_stamp(state_dir(root, cfg),
+                                     str(session_id or ""))
+    except Exception:
+        return False
+
+
 def running_plugin_stamps(state_dir):
     """Every copy that has stamped itself in `state_dir`.
 

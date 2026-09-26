@@ -404,7 +404,7 @@ L7:
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _proc_group, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _manifest_io, _output, _proc_group, _tree_stamp
+  stamp-verification -> _locks, _manifest_io, _output, _proc_group, _tree_stamp
   validate-config -> _config_rules, _output
   validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
@@ -2540,7 +2540,9 @@ copy, byte for byte, and names each file that differs or is missing. A file the 
 the commit does not publish is not compared - there is nothing to compare it with - and it is not
 harmless: `__pycache__/*.pyc` beside a published `.py` is what Python executes when its recorded
 source size and mtime match. So every such file under `hooks/` and `scripts/` is named in the row
-as an extra, beside a verdict that stays about the published files. Unverifiable only when a side
+as an extra, beside a verdict that stays about the published files - except bytecode whose header
+still records its published source's size and mtime, which Python wrote itself on the first run
+and is only counted, because a line naming it on every install would be read past. Unverifiable only when a side
 is missing.
 
 **`check_sandbox` (P0-S) is the same question one layer down**, which is why it sits beside
@@ -2657,7 +2659,11 @@ as HISTORY only when its newest stamp is older than `IDLE_BOUND_SECONDS`, and th
 bound with its number; a foreign copy inside it is live, a WARNING that says when it was last
 active and that it may still be running. The limit is stated rather than hidden: Edit, Write,
 Glob and agent calls do not refresh the stamp, so a session doing only those for longer than the
-bound reads as history until its next prompt or refreshing call.
+bound reads as history until its next prompt or refreshing call. History is worded as what the
+bound can know - no guarded tool call within it, so ENDED, OR IDLE WAITING ON ITS USER - and the
+refresh runs after the guard's verdict, through `_config.refresh_session_stamp`, which computes
+the state directory inside its own never-raise: a guard's `main` exits 0 on an exception, and a
+refresh that raised before the decision once turned a blocked secret read into an allowed one.
 
 **`check_task_restarts`/`check_gate_patterns` answer what KEEPS HAPPENING, not only what is
 true now** — a task started more times than any other (`task.start` rows grouped by
@@ -3524,12 +3530,17 @@ refused before anything is built, because it would run the shared files and grad
 **The run is one process group, and a stop signal is an exception.** `_proc_group` is the module
 `run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
-`DEFAULT_TIMEOUT` stays under `HOST_BASH_LIMIT`, so the helper's own timeout fires before the host
-kills it. SIGKILL cannot be caught; a throwaway left that way is reported by name the next time -
-`leftover_throwaways` reads `git worktree list` for `THROWAWAY_PREFIX` - and never pruned, because
-it may be another run's, still going. The child runs with its environment scrubbed of
-`SCRUBBED_ENV` and of any variable whose value names the shared root, and the output names what
-was dropped. The throwaway holds only tracked files, so a suite that needs an untracked dependency
+ONE deadline, `--timeout`, covers both runs - the second gets what the first left - and it is
+refused above `MAX_TIMEOUT`, which leaves `HOST_BASH_LIMIT` room for the teardowns, so the
+helper's own deadline fires before the host kills it. SIGKILL cannot be caught; a throwaway left
+that way is reported by name the next time - `leftover_throwaways` reads `git worktree list` for
+`THROWAWAY_PREFIX` and grades each by the pid its `OWNER_FILE` records: `running` while that
+process lives (a sibling's `red`), `left-behind` once it is gone, `unknown` with no record - and
+never pruned. The throwaway's temp directory is never inside the shared tree: `holder_base`
+skips a TMPDIR that points there. The child runs with `SCRUBBED_ENV` removed and, by path rather
+than by substring, every value that is a path under the shared root - a path list loses only its
+entries under the root, so an in-repo `.venv/bin` leaves PATH intact otherwise - and every
+`redFirst` basis names what was dropped. The throwaway holds only tracked files, so a suite that needs an untracked dependency
 (`node_modules`, an in-repo `.venv`, generated files) cannot run there and comes back
 `could-not-prove`; and it shares the repository's git directory, so a test that runs git in its
 own cwd writes shared refs.
@@ -3539,14 +3550,16 @@ reads the house harness's line, pytest's summary (framed, or bare under `-q`) or
 `Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion:
 a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
 `assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
-assertions. `proved` needs one of those failures to be the TASK'S OWN - named by `--case`, or else
-a case id present in the working tree's copy of a declared test file and absent from HEAD's - and
-the basis names it. A house suite whose every failure is a block that raised while being built, a
+assertions. `proved` needs one of those failures to be the TASK'S OWN - a case id present in the
+working tree's copy of a declared test file and absent from HEAD's. `--case` narrows to the ids it
+names and is held to the same test, because the flag is chosen by the party being checked; the
+basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task
 **introduces the symbol**: `--introduces S` needs an identifier, absent from HEAD's copy of every
 declared implementation file and present in the working tree's; a final error of the
-import/attribute/name class naming `S` whole, never a syntax error; and a SECOND run in the
+import/attribute/name class naming `S` whole (pytest's `E   ` gutter is read, and a tally-less
+AttributeError counts as a collection error), never a syntax error; and a SECOND run in the
 throwaway, with the working tree's implementation copied in, that no longer ends on that error and
 reaches its assertions. A runner whose tally it does not read is `no-tally`, also
 `could-not-prove`. A green run

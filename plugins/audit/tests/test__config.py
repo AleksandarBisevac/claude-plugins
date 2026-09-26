@@ -1789,6 +1789,13 @@ def _cases(check):
               missing is False and not os.path.exists(
                   os.path.join(state, M.RUNNING_STAMP % "never-prompted"))
               and M.refresh_running_stamp(state, "") is False)
+        try:
+            guarded = M.refresh_session_stamp(rp_tmp, {"stateDir": 5}, "sess-1")
+        except Exception as exc:
+            guarded = "raised %s" % (type(exc).__name__,)
+        check("rp15 the guard's entry point never raises, whatever the config "
+              "holds - a guard's main exits 0 on an exception, and 0 is allow: %r"
+              % (guarded,), guarded is False)
     finally:
         import shutil as _sh_rp
         _sh_rp.rmtree(rp_tmp, ignore_errors=True)

@@ -964,6 +964,24 @@ def _cache_install_cases(check):
           and "bytecode executes" in said_x)
     os.remove(os.path.join(cache, "scripts", "stray.py"))
 
+    import py_compile
+    fresh = os.path.join(cache, "hooks", "__pycache__",
+                         "guard.%s.pyc" % (sys.implementation.cache_tag,))
+    py_compile.compile(os.path.join(cache, "hooks", "guard.py"), cfile=fresh,
+                       doraise=True)
+    got_f = M.plugin_integrity(cache, project=project, home=home)
+    rep = base.Report()
+    M.check_plugin_files(rep, project, plugin_root=cache, integrity=got_f)
+    said_f = _detail(rep, "plugin files")
+    check("pc6 bytecode that MATCHES its published source - Python's own, written "
+          "the first time a hook ran - is counted, not named: a line naming it on "
+          "every install is read past. Bytecode that does not match is still "
+          "named: %r %r" % (got_f.get("extras"), said_f),
+          got_f.get("extras") == ["hooks/__pycache__/guard.pyc"]
+          and got_f.get("freshBytecode") == 1
+          and "matching its published source" in said_f)
+    os.remove(fresh)
+
     with open(os.path.join(cache, "hooks", "guard.py"), "w",
               encoding="utf-8") as fh:
         fh.write("x = 2\n")

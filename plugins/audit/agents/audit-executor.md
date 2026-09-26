@@ -110,9 +110,10 @@ Hard rules (non-negotiable):
   beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the
   plan gate grades which files you touch, not why — so this is kept by reading it.
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
-  failing cases, and a red counts only when one of them is the task's own — the id
-  you pass as `--case`, or else a case present in the working tree's test file and
-  absent from HEAD's. An existing case going red, or a test body raising an
+  failing cases, and a red counts only when one of them is the task's own: a case
+  present in the working tree's test file and absent from HEAD's. `--case` narrows to
+  the ids you name and is held to that same test, so naming a case HEAD already
+  carries proves nothing. An existing case going red, or a test body raising an
   exception, is not a proof about your test. A compile error, an import error or
   zero tests collected exits non-zero with no assertion ever evaluated, so it is
   `could-not-prove`, not `proved` — unless the task introduces the symbol the run
