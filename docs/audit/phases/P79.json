@@ -23,105 +23,105 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P79-R1",
         "severity": "high",
         "file": "plugins/audit/scripts/governance/derive-phase-gate.py:242",
         "issue": "_gather_facts runs meta.phaseGate.derived.runner as the full listing and derived.spelling as the related listing, while the schema defines the listings as derived.listing.all / derived.listing.related (spelling is the path-scoped run command); a schema-correct manifest never runs its listings, the suite stubs listing: {} and the build guide documents the code's reading",
-        "resolution": "open: fix task P79.8-5bh"
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
       },
       {
         "id": "P79-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/derive-phase-gate.py:248",
         "issue": "the full listing is not timed: fullListing carries no durationMs and testGateDerived records only the related listing's cost",
-        "resolution": "open: fix task P79.8-5bh"
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
       },
       {
         "id": "P79-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_gate_derive.py:286",
         "issue": "_importers_arm's final fallback returns no reason for a related listing that exited 0 and named no suite, and an all listing that named none does not turn the derivation wide with basis derived-empty",
-        "resolution": "open: fix task P79.8-5bh"
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
       },
       {
         "id": "P79-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/derive-phase-gate.py:234",
         "issue": "a verifiedOn.command that cannot run or exits non-zero is not its own printed reason; it surfaces later as 'this machine answers None', conflated with a real version mismatch",
-        "resolution": "open: fix task P79.8-5bh"
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
       },
       {
         "id": "P79-R5",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_gate_derive.py:371",
         "issue": "the always-on arm (changedSince filtered by is_suite_path, lastFailedSuites, dedup) has no case",
-        "resolution": "open: fix task P79.8-5bh"
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
       },
       {
         "id": "P79-R6",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_gate_derive.py:158",
         "issue": "newest_red_phase_row has no case",
-        "resolution": "open: fix task P79.8-5bh"
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
       },
       {
         "id": "P79-R7",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:3448",
         "issue": "_render_verdict prints 'this run measured the DERIVED gate' even when derived_step_gap graded the same run could-not-run; the dg3n case asserts both lines together",
-        "resolution": "open: fix task P79.9-5bh"
+        "resolution": "fixed in P79.9-5bh (356be6dc3268)"
       },
       {
         "id": "P79-R8",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:2110",
         "issue": "shadow_gate_claim's testGateBasis == 'derived' guard has no independent case",
-        "resolution": "open: fix task P79.9-5bh"
+        "resolution": "fixed in P79.9-5bh (356be6dc3268)"
       },
       {
         "id": "P79-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:2954",
         "issue": "derived_step_gap overwrites a step's existing no-verdict outcome and outcomeBasis instead of keeping it and appending",
-        "resolution": "open: fix task P79.9-5bh"
+        "resolution": "fixed in P79.9-5bh (356be6dc3268)"
       },
       {
         "id": "P79-R10",
         "severity": "med",
         "file": "plugins/audit/tests/test_audit_task.py:7539",
         "issue": "cp1 and cp5 never read the coupling.learned / coupling.dropped journal row or its details",
-        "resolution": "open: fix task P79.10-5bh"
+        "resolution": "fixed in P79.10-5bh (c45e9405a20c)"
       },
       {
         "id": "P79-R11",
         "severity": "low",
         "file": "plugins/audit/tests/test_audit_task.py:7561",
         "issue": "cp2 does not pin basis {runId, head, phases} after a re-couple",
-        "resolution": "open: fix task P79.10-5bh"
+        "resolution": "fixed in P79.10-5bh (c45e9405a20c)"
       },
       {
         "id": "P79-R12",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:6485",
         "issue": "couple accepts --basis-head as typed with no git check and stores --phases ids unchecked against the plan; _check_coupling validates neither basis.head nor basis.phases",
-        "resolution": "open: fix task P79.10-5bh"
+        "resolution": "fixed in P79.10-5bh (c45e9405a20c)"
       },
       {
         "id": "P79-R13",
         "severity": "med",
         "file": "plugins/audit/agents/audit-reviewer.md:36",
         "issue": "states unconditionally that the reviewer is handed the derive-phase-gate.py --brief line and runId, while phase-signoff.md spawns the sign-off reviewer at step 1, before step 2a derives",
-        "resolution": "open: fix task P79.11-5bh"
+        "resolution": "fixed in P79.11-5bh (8fe49f898b25)"
       },
       {
         "id": "P79-R14",
         "severity": "low",
         "file": "COMPATIBILITY.md:170",
         "issue": "the new bullet promises an absence reading for four keys and states three; phase.testGateBasis has none",
-        "resolution": "open: fix task P79.11-5bh"
+        "resolution": "fixed in P79.11-5bh (8fe49f898b25)"
       },
       {
         "id": "P79-R15",
@@ -129,10 +129,46 @@
         "file": "docs/audit/phases/P79.json",
         "issue": "each executor's audit-stamp grades stale: dirtyDigest moved with sibling edits in the shared worktree while scopeDigest agreed",
         "resolution": "triaged, no change: the stamps' own-file digests agreed, and each task commit was bound by commit-task-work to that task's recorded green gate run, which is the measurement that decides a task"
+      },
+      {
+        "id": "P79-R16",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:132",
+        "issue": "meta.phaseGate.derived.spelling, which the schema declares as the path-scoped shape when no sibling task carries one, was read nowhere, so a project declaring it still got phase-no-spelling",
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
+      },
+      {
+        "id": "P79-R17",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/derive-phase-gate.py:311",
+        "issue": "_breakdown re-derived the arms in parallel with derive() and missed the spelling-with-nothing-to-substitute widen, so a wide gate printed 'over 0 test file(s)'",
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
+      },
+      {
+        "id": "P79-R18",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py:481",
+        "issue": "the importers-resolved-to-the-full-suite branch returned a pre-importer attribution, so a wide gate printed a narrowed-looking test-file count",
+        "resolution": "fixed in P79.8-5bh (e0e9c7d574ae)"
+      },
+      {
+        "id": "P79-R19",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:356",
+        "issue": "_check_phase_gate_derived did not check derived.listing.related for {paths} or listing.all for a non-blank command without {paths}, though derive-phase-gate.py runs both",
+        "resolution": "fixed in P79.12-5bh (340c68ed5ab8)"
+      },
+      {
+        "id": "P79-R20",
+        "severity": "med",
+        "file": "CHANGELOG.md:221",
+        "issue": "the derived-empty bullet named the import-graph and coupling listings as the trigger; the code widens on the ALL listing alone, before any other arm",
+        "resolution": "fixed in P79.11-5bh (8fe49f898b25)"
       }
-    ]
+    ],
+    "outcome": "code-review over the phase diff: 20 findings (4 high, 9 med, 7 low), 19 fixed in P79.8-5bh to P79.12-5bh and 1 triaged with its reason; phase gate green on all eight entries (2026-09-26T20:53:41Z.1d6c55); invariants clean with two partials that name missing evidence"
   },
-  "summary": null,
+  "summary": "The derived sign-off gate exists, in shadow first. With meta.phaseGate.mode set, derive-phase-gate.py computes a phase's gate from its tasks' tests.add, recorded couplings (couple / uncouple, checked against the ledger, git and the plan), an importer listing gated on the runner's recorded version answer, test files changed since baseRef, the newest red phase run's failing suites, and the always and smoke entries; the shape comes from a sibling task's path-scoped entry or the declared spelling. It records testGateDerived and testGateBasis beside the wide gate in shadow mode and writes testGate in enforce mode; anything it cannot bound (no shape, an empty listing, nothing to substitute, importers resolving to the full suite) runs the wide gate with the reason printed, and no wide gate renders as narrowed. run-test-gate prints NARROWED on a derived run, grades a derived run that did not name every listed suite could-not-run with a line that certifies nothing about it, and records shadow on wide runs in shadow mode; the doctor prints test and change recall over those shadow runs. Absent meta.phaseGate.mode, nothing changes. This repo's own plan sets no mode, so the dogfood gate stays wide; shadow on a real project is what measures recall next.",
   "tasks": [
     {
       "id": "P79.1",
@@ -803,7 +839,7 @@
     {
       "id": "P79.11-5bh",
       "title": "the reviewer's derived-gate input is conditional, and every promised absence reading is stated",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review findings on the docs. (1) agents/audit-reviewer.md says unconditionally that when meta.phaseGate.mode is set the orchestrator has already derived the gate and hands the reviewer the derive-phase-gate.py --brief line and the runId; but reference/phase-signoff.md spawns the sign-off reviewer at step 1, before step 2a derives (and the derivation must follow the fix tasks the review creates, so it cannot move before the review). Make both documents say the same thing: the basis line and runId are handed only when a derivation is already recorded for the phase (phase.testGateDerived present, e.g. a re-review after a gate), and at a first sign-off the input is absent and the reviewer reads it as absent rather than assuming one; phase-signoff.md step 1's reviewer spawn names that conditional input. (2) COMPATIBILITY.md's new bullet promises an absence reading for each of meta.phaseGate.mode, meta.coupling, phase.testGateDerived and phase.testGateBasis and states three; state phase.testGateBasis's own reading (read as the undeclared default, the same rule as tests.gateBasis; derive-phase-gate.py writes it together with testGateDerived). (3) CHANGELOG.md [Unreleased]: add that couple refuses a --basis-head git does not have and a --phases id the plan does not hold, and that an ALL listing naming no suite turns the derived gate wide with basis derived-empty. No plan ids; no numbers in prose.",
       "files": [
         "plugins/audit/agents/audit-reviewer.md",
@@ -832,18 +868,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8fe49f898b25b3d2555133ef0bf8bdda01de4e27",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-reviewer.md handed-input row and must-not line conditional on phase.testGateDerived; phase-signoff.md step 1 names that input and step 2 routes the new NARROWED could-not-run line; COMPATIBILITY.md phase.testGateBasis absence reading; CHANGELOG [Unreleased]: listing.related / .all / runner configuration, the spelling shape source, couple's refusals, both derived-empty triggers. Task review matched with one finding (the derived-empty trigger misdescribed), fixed; later bullets checked read-only against the final code by the P79.8-5bh reviews, no mismatch. redFirst not-attempted (gate-only docs task); inheritedTests not-asked.",
+        "descriptive": "The reviewer brief and the sign-off reference now agree that the derived-gate basis line is handed only when a derivation is already recorded; COMPATIBILITY states every new key's absence; the sign-off reference routes the certifies-nothing NARROWED line; the changelog names the listing, runner and spelling keys and both derived-empty triggers as the code has them."
       },
       "startedAt": "2026-09-26T16:31:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T20:47:36Z",
+      "verifiedBy": [
+        "selftests",
+        "gate-parity"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T20:41:33Z.46df3a",
         "status": "passed",
         "at": "2026-09-26T20:41:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8fe49f898b25b3d2555133ef0bf8bdda01de4e27",
+        "at": "2026-09-26T20:47:36Z"
       }
     },
     {
@@ -907,5 +951,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-26T11:54:49Z"
+  "startedAt": "2026-09-26T11:54:49Z",
+  "testEvidence": {
+    "runId": "2026-09-26T20:53:41Z.1d6c55",
+    "status": "passed",
+    "at": "2026-09-26T20:53:41Z"
+  }
 }
