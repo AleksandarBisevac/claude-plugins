@@ -151,7 +151,10 @@ def check_evidence_pointers(rep, project, manifest):
                 pointers.append((scope, subject, str(block["runId"])))
     try:
         read = _evidence_io.read_rows(project)
-        latest = _evidence_io.latest_by_subject(read["rows"])
+        # Through `movedFrom`: a run recorded under a moved task's old id is that
+        # task's run, not a subject the plan no longer has.
+        latest = _evidence_io.latest_by_subject(
+            read["rows"], aliases=_evidence_io.subject_aliases(manifest))
     except Exception as exc:
         # NOT an ok line. A reader who could not open the ledger has cleared
         # nothing, and saying so is the whole point of the level.

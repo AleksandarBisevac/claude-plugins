@@ -112,7 +112,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   flag more than once and still split each value on commas, and `--help` says so on each, with an
   example - the separator used to be guessed.
 - **The argv gap refusal is short and says what it most likely saw.** It is the heredoc to retype,
-  the marked span and one line of cause; for a leading or doubled space it names backtick command
+  the marked span and one line of cause; for a leading, doubled or trailing space it names backtick command
   substitution as likely and points at the shell's `command not found` lines, and for every other
   shape it says the check cannot tell substitution from code quoted into the brief.
 - **The start that enters a phase warns about an empty `testGate` or a missing `desiredOutcome`**,
@@ -195,8 +195,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   re-appending, and always passed `fileIndex` as changed; it now touches only the rows it claims or
   releases, and the index write is skipped when its bytes would come out identical - so the note
   appears only when there is something for `commit-manifest-index.py` to land.
-- **The argv guard refused `params :id and :key`.** A colon that starts an identifier or a line
-  number (`:2680`) no longer reads as a hole; one with whitespace on both sides still does.
+- **The argv guard refused `params :id and :key`.** A colon that starts an identifier no longer
+  reads as a hole. A colon before a digit after whitespace is still refused on purpose: it is
+  exactly what a substituted "`path`:line" citation leaves, so a line reference after a space goes
+  in on stdin.
+- **A no-change close could mark a bug fixed with no fix commit.** `done --no-change` on a bug's fix
+  task is refused and names `/audit:bug close <id> not_a_bug|wontfix`.
+- **A moved task's old id could be minted again.** Every id in a live task's `movedFrom` chain
+  (a second move keeps the first as `movedFrom.previous`) now counts as taken, and the evidence
+  readers - `/audit:doctor` and `--reconcile` - join runs recorded under an old id to the live task.
+  `move` reports the runs it leaves keyed to the old id.
+- **`move` checked the task's status before the target phase**, against its documented order, and a
+  signed-off target's refusal spoke of adding a task; both follow the move now. `scope`/`retarget`
+  no-ops under `--json` print an object, `start`'s ceiling refusal names `audit-task.py block`, and
+  `scope`/`add` key a `:line-range` entry's `fileIndex` row by its path.
 - **A gate step that never asked its question is `could-not-run`, not red.** A gate entry the
   shell could not find (exit 127 beside the shell's own `command not found` / `not found`) and
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,

@@ -590,6 +590,22 @@ def _cases(check):
           % (_levels(rep, "evidence"),),
           _levels(rep, "evidence") == ["OK"])
 
+    # A MOVED TASK: the run was recorded under P1.1, the task is P1.2 now with
+    # `movedFrom` naming P1.1, and its pointer names the run. Keyed on the id
+    # alone the doctor saw a phantom subject P1.1 "ahead of the plan" and sent the
+    # reader to a reconcile aimed at an id that no longer exists.
+    rep = base.Report()
+    proj = _ledger_project("dcev-moved", [ROW])
+    _moved_plan = _plan({"runId": "R1", "status": "failed", "at": ROW["ts"]})
+    _moved_plan["phases"][0]["tasks"][0].update(
+        id="P1.2", movedFrom={"id": "P1.1", "phase": "P1", "at": ROW["ts"]})
+    M.check_evidence_pointers(rep, proj, _moved_plan)
+    check("dc39 a run recorded under a task's OLD id joins the task through "
+          "`movedFrom` - one ok line, and no phantom subject ahead of the plan: %r"
+          % (_detail(rep, "evidence"),),
+          _levels(rep, "evidence") == ["OK"]
+          and "P1.1" not in _detail(rep, "evidence"))
+
     rep = base.Report()
     proj = _ledger_project("dcev-dangling", [ROW])
     M.check_evidence_pointers(rep, proj, _plan(

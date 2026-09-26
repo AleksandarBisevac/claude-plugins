@@ -19,10 +19,67 @@
   "branch": "audit/p76-the-verbs-cover-what-operators",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P76-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`done --no-change` is accepted on a bug's fix task, and nothing stops the close from marking the bug fixed. `_locked_done` runs `_settle` over every bug whose `taskId == tid`. `effective_bug_status` treats any fix task with status `done` as `fixed`, whatever its commit. So a no-change close stores the bug as `fixed` with `fixedIn: null`. `bug_basis` then reads 'fix task X is done at no commit'. A ",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The allocator can hand out a moved task's old id again. `move` takes the id away from the source phase. `_allocate_id`/`next_task_id` count only live task ids and parked-proposal ids, and never `movedFrom.id`. When the moved task had the highest number in its phase (the usual case: the task just added to the wrong phase), the next `add --phase <source>` mints the old id again. `_allocate_id`'s own",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`move` handles the evidence ledger only by leaving it alone, and every evidence reader keys on the old id. A `blocked` task, which `move` explicitly allows, usually carries red gate runs and a `testEvidence` pointer. The pointer moves with the task under its new id, but the evidence rows keep subject `(task, <oldId>)`. `check_evidence_pointers` then reports 'the record is ahead of the plan for tas",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The colon exemption lets through one real kind of shell damage, and it is common in this repo's prose. A brief written as \"see `run-test-gate.py`:2680\" in double quotes reaches argv as 'see :2680'. That is exactly the ':digit after whitespace' shape now exempted. The measurement over existing texts shows the legitimate shape (':2680-2701') exists. But the damaged form of the plan's most common cit",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R5",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md",
+        "issue": "The new doc sentence says that under `--json` 'a caller parsing stdout never meets prose'. `scope` and `retarget` no-ops still print '[audit-task] X already reads that way -- nothing written' and exit 0 under `--json`. `main` wraps only when `code != 0`, so that prose reaches the JSON caller unchanged. The refusal half of the claim holds; the 'never meets prose' half does not.",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R6",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md",
+        "issue": "The move refusals are documented 'in this order' with an unknown target phase in item 1, but `_locked_move` checks the task's status (items 2-4) before it resolves the target phase. So `move <doneTask> --to P99` gets the 'done' refusal, not the 'no phase' one. Also, a signed-off target returns `_signed_off_refusal(ph, \"a task added now\")`, whose wording talks about adding, not moving.",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R7",
+        "severity": "low",
+        "file": "plugins/audit/commands/run.md",
+        "issue": "Undoing a block is still a hand edit, and that edit leaves `blockedReason` behind. manifest-conventions now sends a cross-session dependency to `block`, but `/audit:run` refuses a blocked task and offers a 'confirmed reset of attempts to 0 (back to pending)'. Nothing clears `blockedReason` on that path, so a pending task keeps a stale reason. Only `start` clears it, per the schema. Separately, `st",
+        "resolution": "fix task P76.3-6qa"
+      },
+      {
+        "id": "P76-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`_SUBSTITUTION_SHAPES` names only a leading space and a doubled space as the shapes a substituted backtick span leaves 'on its own'. A span at the end of the text (\"fix `make`\") leaves trailing whitespace just as mechanically. That case is labelled 'whitespace after the last word' and gets the 'cannot tell' line, so the docstring's and task.md's claim about which shapes substitution produces by it",
+        "resolution": "fix task P76.3-6qa"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -147,6 +204,62 @@
         "test_audit_task ew1",
         "test_audit_task gd1"
       ]
+    },
+    {
+      "id": "P76.3-6qa",
+      "title": "Review findings: a bug is never fixed without a commit, a moved id is never reissued, and moved evidence still joins",
+      "status": "in_progress",
+      "description": "Phase review findings, all to be fixed, the pre-existing one included. Orchestrator decisions: (R1) --no-change is refused on a bug's fix task and points at /audit:bug close <id> not_a_bug|wontfix - a bug is never fixed without a fix commit; (R2) every live task's movedFrom.id counts as taken for the allocator; (R3) evidence readers map a subject through movedFrom, and move says what it leaves; (R4) the colon exemption narrows to a colon starting an IDENTIFIER - ':<digit>' after whitespace is exactly what a substituted backtick path leaves, so it stays refused and the stdin route stays the way in; (R5) --json no-op paths print a JSON object; (R6-R8) as the review says.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:3645-3670 (with plugins/audit/scripts/manifest/_manifest_io.py:568-600, 721-739): `done --no-change` is accepted on a bug's fix task, and nothing stops the close from marking the bug fixed. `_locked_done` runs `_settle` over every bug whose `taskId == tid`. `effective_bug_status` treats any fix task with status `done` as `fixed`, whatever its commit. So a no-change close stores the bug as `fixed` with `fixedIn: null`. `bug_basis` then reads 'fix task X is done at no commit'. A bug whose answer was that nothing needed to change is `not_a_bug` or `wontfix`, a human verdict. With this path it reads as fixed without any fix commit, and `.claude/hooks/guard-release.py` stops counting it as an open bug. The release guard was the reason commits were required here in the first place. -> In `_done_flags_refusal`/`_locked_done`, refuse `--no-change` on a task with a `bugId`, or one that any `bugs[].taskId` names. Point the operator at `/audit:bug close <bugId> not_a_bug|wontfix`. Alternatively, make `_fix_task` or `effective_bug_status` skip a task where `_commit_trail.no_change_close(task)` is set. Add an nc case where the fix task carries `bugId`, and assert the bug does not derive `fixed`.\nR2 (med) plugins/audit/scripts/manifest/audit-task.py:4272 (with plugins/audit/scripts/manifest/_id_shape.py:170-182): The allocator can hand out a moved task's old id again. `move` takes the id away from the source phase. `_allocate_id`/`next_task_id` count only live task ids and parked-proposal ids, and never `movedFrom.id`. When the moved task had the highest number in its phase (the usual case: the task just added to the wrong phase), the next `add --phase <source>` mints the old id again. `_allocate_id`'s own docstring rules this out ('Gaps are history ... never P2.2 again'). Three things go wrong silently when it happens. Usage-ledger, evidence and journal rows written under the old id attach to an unrelated new task. Another branch's `blockedBy`/`dependsOn` on the old id binds to the wrong task after merge, where it should become a validator finding. And the join the move report promises ('movedFrom plus the task.move row are what join the two') becomes ambiguous. mv1 moves P2.3 while P2.4 exists, so it never reaches this case. -> In `next_task_id`, or via `extra_ids` in `_allocate_id`, count every live task's `movedFrom.id` as taken, and add the moved-away id to the taken set for the rest of the call. Add a case: move the highest-numbered task, then `add --phase <source>`, and assert the new id is not the old one. In commands/task.md -> move, also say that references to the old id on other branches are not rewritten and surface as findings at merge.\nR3 (med) plugins/audit/scripts/manifest/audit-task.py:4251-4340 (with plugins/audit/scripts/status/_doctor_completions.py:144-190): `move` handles the evidence ledger only by leaving it alone, and every evidence reader keys on the old id. A `blocked` task, which `move` explicitly allows, usually carries red gate runs and a `testEvidence` pointer. The pointer moves with the task under its new id, but the evidence rows keep subject `(task, <oldId>)`. `check_evidence_pointers` then reports 'the record is ahead of the plan for task <oldId>' on every doctor run and prescribes `run-test-gate.py --reconcile`. That reconcile targets an id that no longer exists, or a different task once finding 2 re-mints it. The task.md wording 'every reference rewritten' does not cover this cross-store reference, and no reader applies `movedFrom`. -> Have the evidence readers map a subject through `movedFrom` (`latest_by_subject` joined against the plan's movedFrom ids, in `_doctor_completions` and `_invariants` evidence-committed). Alternatively, have `move` drop the task's `testEvidence` pointer and say so in its report. Add an mv case: move a task that has a recorded run, then show the doctor names no phantom subject.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:586 (and plugins/audit/commands/task.md:284-287): The colon exemption lets through one real kind of shell damage, and it is common in this repo's prose. A brief written as \"see `run-test-gate.py`:2680\" in double quotes reaches argv as 'see :2680'. That is exactly the ':digit after whitespace' shape now exempted. The measurement over existing texts shows the legitimate shape (':2680-2701') exists. But the damaged form of the plan's most common citation style ('`path`:line') is identical to it, and the doc/CHANGELOG present the narrowing as having no cost. -> Either keep ':<digits>' refused unless the text already contains a 'path:NNN' citation, or document the residual next to the exemption: 'a backtick-quoted path followed by :line reads the same after substitution and is let through; the shell's `command not found` on stderr is the only sign'. Add a gs/cg case that pins whichever choice is made.\nR5 (low) plugins/audit/commands/task.md:326-330 (with plugins/audit/scripts/manifest/audit-task.py:5172-5174, 5535-5537, 6651): The new doc sentence says that under `--json` 'a caller parsing stdout never meets prose'. `scope` and `retarget` no-ops still print '[audit-task] X already reads that way -- nothing written' and exit 0 under `--json`. `main` wraps only when `code != 0`, so that prose reaches the JSON caller unchanged. The refusal half of the claim holds; the 'never meets prose' half does not. -> Either emit `{ok: true, changed: false, ...}` on those two no-op paths when `args.as_json`, or have `main` also wrap exit-0 output that is not one JSON object. Or narrow the sentence to 'every refusal'. Add a jr case for `scope --json` with no change.\nR6 (low) plugins/audit/commands/task.md:771-781 (with plugins/audit/scripts/manifest/audit-task.py:4223-4270, 1439): The move refusals are documented 'in this order' with an unknown target phase in item 1, but `_locked_move` checks the task's status (items 2-4) before it resolves the target phase. So `move <doneTask> --to P99` gets the 'done' refusal, not the 'no phase' one. Also, a signed-off target returns `_signed_off_refusal(ph, \"a task added now\")`, whose wording talks about adding, not moving. -> Either resolve the target in `_locked_move` before `_move_refusal` so the order matches the doc, or reword the doc to the code's order. Pass the calling verb's noun into `_resolve_phase`'s signed-off refusal.\nR7 (low) plugins/audit/commands/run.md:49-50 (with plugins/audit/scripts/manifest/audit-task.py:3136-3143): Undoing a block is still a hand edit, and that edit leaves `blockedReason` behind. manifest-conventions now sends a cross-session dependency to `block`, but `/audit:run` refuses a blocked task and offers a 'confirmed reset of attempts to 0 (back to pending)'. Nothing clears `blockedReason` on that path, so a pending task keeps a stale reason. Only `start` clears it, per the schema. Separately, `start`'s max-attempts refusal still says the orchestrator's move is 'blocked plus a human' and does not name `audit-task.py block`, which the reference docs now require. -> Have run.md's reset path go through a verb that clears `blockedReason` (or state that the reset removes it). Have the start refusal name `audit-task.py block <id> --reason ...`.\nR8 (low) plugins/audit/scripts/manifest/audit-task.py:787-792, 816-823: `_SUBSTITUTION_SHAPES` names only a leading space and a doubled space as the shapes a substituted backtick span leaves 'on its own'. A span at the end of the text (\"fix `make`\") leaves trailing whitespace just as mechanically. That case is labelled 'whitespace after the last word' and gets the 'cannot tell' line, so the docstring's and task.md's claim about which shapes substitution produces by itself is incomplete. -> Add 'whitespace after the last word' to `_SUBSTITUTION_SHAPES`, update the task.md/CHANGELOG sentence, and add a gs case.\nR1 (low) plugins/audit/scripts/manifest/audit-task.py:5107-5121 (scope fileIndex keys): `scope` keys `fileIndex` rows by the raw `files` entry, including any `:line-range` suffix, while the validator matches on the stripped key. Both the old and new derivation do this; the diff only narrowed which rows are touched. -> Key the rows by `_strip_line_suffix(entry)` when claiming and releasing.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_id_shape.py",
+        "plugins/audit/tests/test__id_shape.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/run.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - done --no-change on a bug fix task stores the bug as fixed with no fixedIn"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-25T22:58:37Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:40Z"

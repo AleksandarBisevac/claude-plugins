@@ -281,14 +281,15 @@ the marker is what lets you tell your own punctuation from real damage without
 reading the regex. **This is the route to reach for whether or not you see a
 backtick** — `--help` on the flag says as much now, which it did not before.
 
-**A colon that starts a word is not a hole**: `params :id and :key`, a line reference
-`at :2680`. Measured over this plan's own texts before the rule was narrowed, those were
-the shapes the colon arm fired on at an identifier or a digit, so a space before `:id` is
-written as typed while a colon with whitespace on both sides (` : `) is still refused.
+**A colon that starts an identifier is not a hole**: `params :id and :key` is written as
+typed. **A colon before a digit after whitespace is still refused, on purpose**: the plan's
+commonest citation is "`path`:line", and inside double quotes the shell substitutes the
+backticked path and leaves exactly ` :2680` — so a line reference written after a space goes
+in on stdin. A colon with whitespace on both sides (` : `) is refused as before.
 
 **The refusal is short**: the heredoc to retype, the marked span, and one line of cause.
-For a **leading space or two spaces in a row** — the two shapes a substituted backtick
-span leaves on its own — it names command substitution as the likely cause and points at
+For a **leading space, two spaces in a row or a trailing space** — the shapes a
+substituted backtick span leaves on its own, at the start, between two words or at the end — it names command substitution as the likely cause and points at
 the shell's own stderr, which says `<word>: command not found` for every span it ran. For
 the other shapes it says the check cannot tell substitution from code quoted into the
 brief.
@@ -326,8 +327,9 @@ from disk — and writes nothing: no manifest, no journal row. A finding exits `
 `FINDING:` lines, as the real add would have rolled back on; a clean one prints the id it
 would take. **Under `--json` every refusal is one JSON object** —
 `{"ok": false, "exit": <code>, "refused": "<message>", "findings": [...]}` — the validator's,
-the argv-gap refusal and every usage refusal alike, so a caller parsing stdout never meets
-prose; a success is the verb's own object, unwrapped. (An argparse error, before any verb
+the argv-gap refusal and every usage refusal alike; a success is the verb's own object,
+unwrapped, and a `scope` or `retarget` call that changes nothing is `{"ok": true,
+"changed": false, ...}` — so a caller parsing stdout does not meet prose. (An argparse error, before any verb
 runs, still goes to stderr as argparse prints it.)
 
 **A gate entry that is a directory is warned about**, on `add` and on `scope --gate`: an
@@ -490,7 +492,10 @@ written `null`, and **said**, when git cannot name one. The `task.done` row carr
 in its summary and in `details.reason`. `/audit:doctor`'s *done task(s) carry no commit SHA*
 warning leaves such a task out and names it on a line of its own. `--commit` and `--no-change`
 together are refused, as are `--no-change` with no `--reason` and a `--reason` on a close
-that is not a no-change close. Everything else about the verb is unchanged — including the
+that is not a no-change close. **A bug's fix task is refused a no-change close**: a done fix
+task derives its bug `fixed`, and a bug is never fixed without a fix commit — if nothing
+needed to change, that is a verdict on the bug (`/audit:bug close <bugId> not_a_bug|wontfix`),
+and the task is then cancelled. Everything else about the verb is unchanged — including the
 refusal of a task that was never started.
 
 **Refusals, all before any write:** an id that resolves to nothing; a **phase** id (a
@@ -794,10 +799,19 @@ the two phase SHARDS while `fileIndex`/`bugs[]`/`proposals[]` edits go to the in
    payloads included — the reference most often missed), every `fileIndex` value, every
    `bugs[].taskId`. The task's other fields travel unchanged; `movedFrom` is never rewritten.
 3. **Moves the task object** into the target phase's `tasks[]` with its new id and
-   `movedFrom: {"id": "<oldId>", "phase": "<oldPhaseId>", "at": "<ISO now>"}`.
+   `movedFrom: {"id": "<oldId>", "phase": "<oldPhaseId>", "at": "<ISO now>"}`; a task moved
+   before keeps its earlier record as `movedFrom.previous`. **Every id in that chain stays
+   taken**: the allocator never mints one again, so rows written under an old id cannot attach
+   to an unrelated task.
 4. **Revalidates from disk** and rolls every written file back on findings.
 5. **Journals one `task.move` row** — `fromId`, `toId`, `fromPhase`, `toPhase` — the explicit
    mapping; the completion events stay hook-only.
+
+**What it leaves behind, and says.** The evidence ledger is append-only, so runs recorded
+under the old id keep that id; the report counts them, and the evidence readers
+(`/audit:doctor`, `run-test-gate.py --reconcile`) join them to the live task through the
+`movedFrom` chain. A `blockedBy`/`dependsOn` on the old id written on **another branch** is not
+rewritten here, and surfaces as a validator finding at the merge.
 
 It **reports** the old id, the new id, the number of references rewritten, whether the task is
 **ready now**, and the ledger note: *historical ledger rows keep the old taskId — history is

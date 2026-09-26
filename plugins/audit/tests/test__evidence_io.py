@@ -1155,6 +1155,47 @@ def _cases(check):
               again["moved"] == []
               and sorted(again["already"]) == ["phase P1", "task P1.1"])
 
+        # A MOVED TASK'S RUNS STILL JOIN. The ledger keeps the subject a run was
+        # recorded under, and `move` gives the task a new id - so a reader keyed on
+        # the id alone sees a subject the plan no longer has, and a reconcile
+        # would aim at it. The plan's `movedFrom` chain is the map.
+        _mv_plan = {"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.2", "movedFrom": {"id": "P1.1", "phase": "P1",
+                                         "previous": {"id": "P0.9", "phase": "P0"}}}]}]}
+        _mv_alias = M.subject_aliases(_mv_plan)
+        _mv_best = M.latest_by_subject(
+            [{"runId": "RO", "ts": "2026-08-26T09:00:00Z", "scope": "task",
+              "taskId": "P0.9"},
+             {"runId": "RM", "ts": "2026-08-26T10:00:00Z", "scope": "task",
+              "taskId": "P1.1"}], aliases=_mv_alias)
+        check("mvr1 `subject_aliases` maps every id a task was moved FROM onto the id "
+              "it holds now, and `latest_by_subject` keys the runs through it - the "
+              "newest of all of them, under the live id: %r"
+              % ((_mv_alias, dict((k, v["runId"]) for k, v in _mv_best.items())),),
+              _mv_alias == {("task", "P1.1"): ("task", "P1.2"),
+                            ("task", "P0.9"): ("task", "P1.2")}
+              and dict((k, v["runId"]) for k, v in _mv_best.items())
+              == {("task", "P1.2"): "RM"})
+        mvproj, mvpath = _manifest_project("recon-moved")
+        with open(os.path.join(mvproj, "docs", "audit", "phases", "P1.json"),
+                  "w") as fh:
+            _json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                        "testGate": [], "tasks": [
+                            {"id": "P1.2", "title": "t", "status": "blocked",
+                             "movedFrom": {"id": "P2.1", "phase": "P2",
+                                           "at": "2026-08-26T11:00:00Z"}}]}, fh)
+        M.append_row(mvproj, {"v": 1, "runId": "RM", "ts": "2026-08-26T10:00:00Z",
+                              "scope": "task", "taskId": "P2.1", "phaseId": "P2",
+                              "status": "failed", "steps": []})
+        mvrep = M.reconcile(mvproj, mvpath)
+        mvbody = _json.loads(io.open(os.path.join(mvproj, "docs", "audit", "phases",
+                                                  "P1.json"), encoding="utf-8").read())
+        check("mvr2 reconcile points a MOVED task at the runs recorded under its old "
+              "id, in the phase it lives in now - not at an id the plan no longer "
+              "has: %r" % ((mvrep["moved"], mvrep["refused"]),),
+              mvrep["moved"] == ["task P1.2 -> RM"] and mvrep["refused"] == []
+              and mvbody["tasks"][0].get("testEvidence", {}).get("runId") == "RM")
+
         orphan = _manifest_project("orphan")[0]
         M.append_row(orphan, {"v": 1, "runId": "RX", "ts": "2026-08-26T09:00:00Z",
                               "scope": "task", "status": "passed", "steps": []})

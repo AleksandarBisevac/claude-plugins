@@ -46,8 +46,11 @@ Execute exactly `<taskId>`, with status guards:
    reader nothing but a disagreement between the plan and the record, which
    `/audit:doctor` will then report. What marks the verdict as stale is the task
    reading `pending` again beside an `at` stamp older than the reopen, not a missing block.
-2. `status == "blocked"` → refuse: report why (exhausted attempts / blockers). Offer a confirmed
-   reset of `attempts` to 0 (back to `pending`), then execute.
+2. `status == "blocked"` → refuse: report why (exhausted attempts / blockers, and the
+   `blockedReason` `audit-task.py block` recorded). Offer a confirmed reset of `attempts` to 0
+   (back to `pending`), then execute. The reset removes `blockedReason` with the status it
+   explained — a pending task carrying one reads as still waiting — and the `audit-task.py start`
+   that execution begins with clears it too, recording the old reason in its `task.start` row.
 3. `status == "in_progress"` → warn: likely an interrupted run — point to `/audit:resume`.
    Proceed only if the human explicitly confirms re-execution.
 4. Unmet blockers → refuse and list them.

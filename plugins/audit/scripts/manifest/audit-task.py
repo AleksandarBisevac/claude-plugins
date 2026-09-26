@@ -294,6 +294,8 @@ import _journal_io            # noqa: E402  (read_all: the phase.add rows a side
                               # warning is read back from)
 import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
                               # branch suffix that keeps two branches from minting it twice)
+import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
+                              # to the old id, which `move` reports)
 import _id_refs               # noqa: E402  (rename: one id rewritten everywhere the plan
                               # points at it - `move`'s references, from the one list of
                               # fields that hold an id)
@@ -576,14 +578,15 @@ def _parse_skills(val):
 _GAP_SHAPES = (
     (re.compile(r"(?<=[^\s.!?])[ \t]{2,}"),
      "a run of spaces inside a sentence"),
-    # A COLON THAT STARTS A WORD IS NOT A HOLE: `params :id and :key`, a line
-    # reference `at :2680`. Measured before narrowing, over the prose strings
-    # this plan, the shipped example and the starter template carry: the arm
-    # fired at a colon on three strings - those two shapes and a pytest `::` -
-    # and the narrowing releases the first two only, so a colon followed by an
-    # identifier character or a digit is left alone and one followed by
-    # whitespace, punctuation or the end is still the gap it was.
-    (re.compile(r"[ \t](?:[,;)]|:(?![A-Za-z0-9_]))"),
+    # A COLON THAT STARTS AN IDENTIFIER IS NOT A HOLE: `params :id and :key`.
+    # Measured over the prose strings this plan, the shipped example and the
+    # starter template carry, the arm fired at a colon on three strings - that
+    # shape, a line reference `and :2680`, and a pytest `::` - and only the first
+    # is released. A colon before a DIGIT stays refused on purpose: the plan's
+    # commonest citation is "`path`:line", and inside double quotes the shell
+    # substitutes the backticked path and leaves exactly ` :2680`, so a line
+    # reference after whitespace goes in on stdin.
+    (re.compile(r"[ \t](?:[,;)]|:(?![A-Za-z_]))"),
      "whitespace before a mark that hugs the word in front of it"),
     # The full stop has to be a full stop and not an ARGUMENT. A bare `.` is a
     # path, and this plan's own prose quotes `git fetch . b:p`, which the loose
@@ -784,12 +787,13 @@ def read_brief(value, flag, stream=None):
     return text, True, None
 
 
-# The two shapes a substituted backtick span leaves when it sat at the start of
-# the text or between two words: nothing where the span was, so a leading space
-# or two spaces in a row. The other shapes are just as often code quoted into
-# prose, which is why only these two are named as likely substitution.
+# The three shapes a substituted backtick span leaves on its own, wherever it sat:
+# at the start (a leading space), between two words (two spaces in a row), or at
+# the end (a trailing space). The other shapes are just as often code quoted into
+# prose, which is why only these are named as likely substitution.
 _SUBSTITUTION_SHAPES = ("a run of spaces inside a sentence",
-                        "whitespace before the first word")
+                        "whitespace before the first word",
+                        "whitespace after the last word")
 
 
 def brief_gap_refusal(flag, what, excerpt, rel_start, rel_end):
@@ -805,8 +809,8 @@ def brief_gap_refusal(flag, what, excerpt, rel_start, rel_end):
     IT NAMES WHAT MATCHED, NOT A CAUSE THE CHECK NEVER TESTED FOR. The shapes are
     whitespace adjacency and no backtick, and a nested ternary passed through a
     list-form call with no shell anywhere trips the same one. So substitution is
-    named as LIKELY only for the two shapes it leaves on its own - a leading or a
-    doubled space - with a pointer at the shell's own stderr, which says
+    named as LIKELY only for the shapes it leaves on its own - a leading, a
+    doubled or a trailing space - with a pointer at the shell's own stderr, which says
     `command not found` for every span it ran; for the rest the line says the
     check cannot tell substitution from code quoted into the brief.
     """
@@ -998,6 +1002,19 @@ def _model_floor(risk):
     opus" would be two answers about what a rescoped task runs on.
     """
     return "opus" if risk == "high" else "sonnet"
+
+
+def _unchanged(args, out, ident):
+    """The no-op answer of a correcting verb: exit 0, nothing written - one JSON
+    object under `--json`, because a caller parsing stdout must never meet prose
+    on a path that succeeded."""
+    if args.as_json:
+        result = {"ok": True, "changed": False, "id": ident, "written": []}
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        out("[audit-task] %s already reads that way -- nothing written" % (ident,))
+    return 0
 
 
 def _gate_directory_notes(project, entries, meta):
@@ -1418,7 +1435,8 @@ def _reserved_refusal(pid, prop_id):
             "by hand would collide)." % (pid, prop_id, prop_id))
 
 
-def _resolve_phase(assembled, want, out, branch=None, basis=None):
+def _resolve_phase(assembled, want, out, branch=None, basis=None,
+                   what="a task added now"):
     """The target phase dict, or an int exit code after printing why not.
 
     `branch` is the one checked out beside the manifest. With several phases
@@ -1436,7 +1454,7 @@ def _resolve_phase(assembled, want, out, branch=None, basis=None):
                         "immutable history. Pick an open phase, or create a "
                         "new one with /audit:phase add." % want)
                     return E_USAGE
-                refusal = _signed_off_refusal(ph, "a task added now")
+                refusal = _signed_off_refusal(ph, what)
                 if refusal:
                     out(refusal)
                     return E_USAGE
@@ -2390,7 +2408,9 @@ def _locked_add(args, project, config, mpath, title, out):
     phase.setdefault("tasks", []).append(task)
     fidx = assembled.setdefault("fileIndex", {})
     for fpath in task["files"]:
-        entry = fidx.setdefault(fpath, [])
+        # By the PATH, which is what the validator and the plan gate match on -
+        # a `:line-range` suffix is part of the declaration, not of the row.
+        entry = fidx.setdefault(_vocab._strip_line_suffix(fpath), [])
         if task_id not in entry:
             entry.append(task_id)
     # v0.37 A4, at THIS write site too: reused from _panel_write, scoped to
@@ -3137,9 +3157,10 @@ def _locked_start(args, project, config, mpath, tid, out):
         out("[audit-task] %s records %s attempt(s) against a maxAttempts of "
             "%s, so this start would spend one past the ceiling -- refused. "
             "The orchestrator's move here is `blocked` plus a human "
-            "(reference/orchestrator.md, Execute the task, step 2), which this "
-            "verb will not write on its own because that transition also owes "
-            "an ADO echo." % (tid, attempts, ceiling))
+            "(reference/orchestrator.md, Execute the task, step 2) - "
+            "`audit-task.py block %s --reason \"<attempts exhausted: the last red "
+            "gate's reason>\"` - which this verb will not do on its own because "
+            "that transition also owes an ADO echo." % (tid, attempts, ceiling, tid))
         return E_USAGE
 
     git_root = os.path.abspath(os.path.join(project,
@@ -3645,6 +3666,22 @@ def _locked_done(args, project, config, mpath, tid, out):
                                             (config or {}).get("gitRoot") or "."))
     no_change, unverified = None, None
     if args.no_change:
+        # A BUG IS NEVER FIXED WITHOUT A FIX COMMIT. A done fix task derives its
+        # bug `fixed` whatever its commit, so a no-change close would store the bug
+        # fixed with no `fixedIn` - and the release guard stops counting it as
+        # open. "Nothing needed to change" about a bug is a human verdict on the
+        # bug, which `/audit:bug close` records.
+        bugs = sorted(set(
+            [str(node["bugId"])] if node.get("bugId") else []) | set(
+            str(b.get("id")) for b in (assembled.get("bugs") or [])
+            if isinstance(b, dict) and b.get("taskId") == tid and b.get("id")))
+        if bugs:
+            out("[audit-task] %s is the fix task of %s -- a no-change close would "
+                "mark the bug fixed with no fix commit. If nothing needed to "
+                "change, that is a verdict on the bug: /audit:bug close %s "
+                "not_a_bug|wontfix, then cancel this task (/audit:task cancel %s "
+                "--reason ...)" % (tid, ", ".join(bugs), bugs[0], tid))
+            return E_USAGE
         sha = None
         no_change = {"reason": args.reason.strip(),
                      "examinedAt": _examined_head(git_root)}
@@ -4239,6 +4276,17 @@ def _move_refusal(node, phase, target_id):
     return None
 
 
+def _runs_under(project, tid):
+    """How many ledger rows name `tid` as their task, or None when the ledger
+    cannot be read - an unread ledger is said as such, never counted as none."""
+    try:
+        rows = _evidence_io.read_rows(project)["rows"]
+    except Exception:
+        return None
+    return len([r for r in rows if isinstance(r, dict) and r.get("scope") == "task"
+                and str(r.get("taskId")) == str(tid)])
+
+
 def _changed_phases(before, after):
     """The ids of the phases whose body differs between two assembled plans."""
     def bodies(doc):
@@ -4258,13 +4306,16 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
         out("[audit-task] %s; tasks: %s" % (refusal, ", ".join(
             sorted(str(k) for k in _mio.tasks_by_id(assembled))) or "(none)"))
         return E_USAGE
+    # THE TARGET RESOLVES FIRST, in `commands/task.md`'s documented order: a phase
+    # that does not exist is item 1, and naming a task's status instead would send
+    # the caller to fix the wrong half of the call.
+    target = _resolve_phase(assembled, target_id, out, what="a task moved into it now")
+    if isinstance(target, int):
+        return target
     refusal = _move_refusal(node, phase, target_id)
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
-    target = _resolve_phase(assembled, target_id, out)
-    if isinstance(target, int):
-        return target
     if _mio.effective_phase_status(target) == "cancelled":
         out("[audit-task] phase %s is cancelled -- a task moved into it would be "
             "open work under a phase that will not run" % (target_id,))
@@ -4287,7 +4338,13 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
                 else:
                     keep.append(t)
             ph["tasks"] = keep
+    # THE CHAIN IS KEPT: a second move nests the first one's record as
+    # `previous`, so every id this task ever held stays taken for the allocator
+    # and joinable for the evidence readers.
+    prior = moved.get("movedFrom")
     moved["movedFrom"] = {"id": tid, "phase": from_phase, "at": _utc_now()}
+    if isinstance(prior, dict):
+        moved["movedFrom"]["previous"] = prior
     for ph in (renamed.get("phases") or []):
         if isinstance(ph, dict) and ph.get("id") == target_id:
             ph["tasks"] = list(ph.get("tasks") or []) + [moved]
@@ -4311,6 +4368,7 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
                          "phaseId": target_id})
     index_note = _index_dirty_note(written, mpath, project, target_id)
     waiting = _waiting_on(renamed, moved)
+    left_runs = _runs_under(project, tid)
     # A BLOCKED task moves with its status, and readiness over its references
     # alone would print a copyable `/audit:run` for work that is not runnable.
     blocked = moved.get("status") == "blocked"
@@ -4319,6 +4377,7 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
                         "fromPhase": from_phase, "phase": target_id,
                         "status": moved.get("status"),
                         "referencesRewritten": refs, "waitingOn": waiting,
+                        "evidenceRunsLeft": left_runs,
                         "ready": not waiting and not blocked, "written": written},
                        args, jres, warnings, written_manifest, index_note))
         return 0
@@ -4333,6 +4392,16 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
     out("  ledger: historical rows keep %s - history is never rewritten; new spend "
         "attributes to %s, and movedFrom plus the task.move row are what join the "
         "two" % (tid, new_id))
+    if left_runs is None:
+        out("  evidence: the ledger could not be read, so what it holds under %s "
+            "is unknown" % (tid,))
+    elif left_runs:
+        out("  evidence: %d recorded run(s) stay keyed to %s in the append-only "
+            "ledger; the evidence readers and --reconcile join them to %s through "
+            "movedFrom" % (left_runs, tid, new_id))
+    out("  other branches: a blockedBy/dependsOn on %s written there is not "
+        "rewritten here, and surfaces as a validator finding at the merge"
+        % (tid,))
     _report_tail(out, jres, "task.move", warnings, written_manifest, written,
                  index_note)
     return 0
@@ -5170,8 +5239,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
                             "from": was_refs, "to": now_refs})
         node[field] = now_refs
     if not changes:
-        out("[audit-task] %s already reads that way -- nothing written" % (tid,))
-        return 0
+        return _unchanged(args, out, tid)
 
     # THE WIDENING GUARD, and it is placed HERE for two reasons that both come from
     # what it grades. It asks about the CHANGE and not about the flags, so it
@@ -5207,19 +5275,36 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # which is merge-conflict material in the one file two phases both write.
     # `released` and `claimed` ARE the derivation, so the index is rewritten for
     # exactly those paths and a row the task keeps stays as it was.
+    #
+    # KEYED BY THE PATH, not the entry: a `files` entry may carry a `:line-range`
+    # suffix the schema allows, and the validator and the plan gate both match
+    # `fileIndex` on the stripped path. Two entries naming one path are one row,
+    # released only when neither is left; a row left keyed by a raw entry by an
+    # older writer is released as well.
     released = [f for f in was_files if f not in (node.get("files") or [])]
     claimed = [f for f in (node.get("files") or []) if f not in was_files]
+    now_keys = set(_vocab._strip_line_suffix(f) for f in (node.get("files") or []))
+    was_keys = set(_vocab._strip_line_suffix(f) for f in was_files)
     fidx = assembled.setdefault("fileIndex", {})
+    moved_rows = False
     for fpath in released:
-        entry = fidx.get(fpath)
-        if isinstance(entry, list) and tid in entry:
-            entry.remove(tid)
-            if not entry:
-                del fidx[fpath]
+        for key in (_vocab._strip_line_suffix(fpath), fpath):
+            if key in now_keys:
+                continue
+            entry = fidx.get(key)
+            if isinstance(entry, list) and tid in entry:
+                entry.remove(tid)
+                moved_rows = True
+                if not entry:
+                    del fidx[key]
     for fpath in claimed:
-        entry = fidx.setdefault(fpath, [])
+        key = _vocab._strip_line_suffix(fpath)
+        if key in was_keys and tid in (fidx.get(key) or []):
+            continue
+        entry = fidx.setdefault(key, [])
         if tid not in entry:
             entry.append(tid)
+            moved_rows = True
 
     # SAME REPAIR AS `add`'s, AND FOR THE SAME REASON: the entry may carry a
     # `:line-range` suffix the schema allows, and stating a declaration is
@@ -5232,7 +5317,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
         written = _write_add(project, mpath, raw_index, assembled, phase_id,
-                             bool(released or claimed))
+                             moved_rows)
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -5533,8 +5618,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         _moved("description", node.get("description") or "", args.description)
         node["description"] = args.description
     if not changes:
-        out("[audit-task] %s already reads that way -- nothing written" % (pid,))
-        return 0
+        return _unchanged(args, out, pid)
 
     snap = _snapshot(_write_paths(project, mpath, raw_index, pid))
     try:

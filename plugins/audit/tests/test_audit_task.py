@@ -6778,15 +6778,15 @@ def _cases(check):
         # ---- (cg) the colon that starts an identifier is not a hole ------------
         projcg, mpcg = mk("cg-colon", base_manifest())
         _cg_texts = ("params :id and :key are validated",
-                     "the retry comment at :2680-2701 moved")
+                     "the route takes :slug and :_token")
         _cg = [run(["add", "Colon %d" % i, "--phase", "P2", "--description", t,
                     "--project-dir", projcg])[0] for i, t in enumerate(_cg_texts)]
         _cg_stored = sorted(t.get("description") for t in
                             _mio.tasks_by_id(_mio.load_manifest(mpcg)).values()
                             if (t.get("title") or "").startswith("Colon"))
-        check("cg1 a colon that STARTS an identifier or a line number (`:id`, "
-              "`:2680`) is written verbatim - measured over this plan's own texts, "
-              "the only shapes the old rule fired on at a colon: %r" % (_cg_stored,),
+        check("cg1 a colon that STARTS an identifier (`:id`, `:slug`, `:_token`) "
+              "is written verbatim - the shape this plan's own texts carry: %r"
+              % (_cg_stored,),
               _cg == [0, 0] and _cg_stored == sorted(_cg_texts))
         code, txt = run(["add", "Spaced colon", "--phase", "P2", "--description",
                          "the value : is gone", "--project-dir", projcg])
@@ -6867,6 +6867,143 @@ def _cases(check):
               "NAMES a directory draw no such warning: %s" % (txt[-200:],),
               code == 0 and not [ln for ln in txt.splitlines()
                                  if "directory" in ln and ln.startswith("WARNING")])
+
+        # ---- (rv) P76 review findings --------------------------------------------
+        # R1: a no-change close on a bug's FIX TASK would derive the bug `fixed`
+        # with no fixedIn - a bug marked fixed with no fix commit, which the
+        # release guard then stops counting as open.
+        rvbug = pd_fixture()
+        rvbug["phases"][1]["tasks"][-1]["bugId"] = "BUG-1"
+        rvbug["bugs"] = [{"id": "BUG-1", "title": "b", "status": "in_progress",
+                          "severity": "low", "taskId": "P2.4"}]
+        projrv1, mprv1 = mk("rv-nochange-bug", rvbug)
+        with open(mprv1, "rb") as _fh:
+            _rv1_before = _fh.read()
+        code, txt = run(["done", "P2.4", "--no-change", "--reason", "not a bug",
+                         "--project-dir", projrv1])
+        with open(mprv1, "rb") as _fh:
+            _rv1_after = _fh.read()
+        _rv1_bug = (_mio.load_manifest(mprv1).get("bugs") or [{}])[0]
+        check("nc5 `done --no-change` on a bug's FIX TASK is refused and names "
+              "`/audit:bug close <id> not_a_bug|wontfix` - a bug is never fixed "
+              "without a fix commit - and the bug stays open: %s" % (txt,),
+              code == 2 and "/audit:bug close BUG-1" in txt
+              and "not_a_bug" in txt and _rv1_after == _rv1_before
+              and _rv1_bug.get("status") == "in_progress")
+        # R2: the moved-away id is never minted again.
+        projrv2, mprv2 = mk("rv-move-reissue", base_manifest())
+        run(["move", "P2.3", "--to", "P3", "--project-dir", projrv2])
+        code, txt = run(["add", "After the move", "--phase", "P2", "--json",
+                         "--project-dir", projrv2])
+        try:
+            _rv2_id = json.loads(txt).get("id")
+        except ValueError:
+            _rv2_id = None
+        check("mv3 moving a phase's HIGHEST task and then adding to that phase does "
+              "not reissue the moved-away id: %r" % (_rv2_id,),
+              code == 0 and _rv2_id == "P2.4")
+        code, txt = run(["move", "P3.1", "--to", "P2", "--project-dir", projrv2])
+        _rv2_m = _mio.tasks_by_id(_mio.load_manifest(mprv2))
+        _rv2_back = [t for t in _rv2_m.values()
+                     if (t.get("movedFrom") or {}).get("id") == "P3.1"]
+        check("mv4 a second move keeps the first one's origin in the chain - so both "
+              "old ids stay taken and a reader can still join the oldest rows: %r"
+              % ([t.get("movedFrom") for t in _rv2_back],),
+              code == 0 and len(_rv2_back) == 1
+              and (_rv2_back[0]["movedFrom"].get("previous") or {}).get("id")
+              == "P2.3" and _rv2_back[0]["id"] == "P2.5")
+        # R3: move says what it leaves behind in the evidence ledger.
+        import _evidence_io
+        projrv3, mprv3 = mk("rv-move-evidence", base_manifest())
+        _evidence_io.append_row(projrv3, {
+            "v": 1, "runId": "RV1", "ts": "2026-08-26T10:00:00Z", "scope": "task",
+            "taskId": "P2.3", "phaseId": "P2", "status": "failed", "steps": []})
+        code, txt = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv3])
+        check("mv5 a move over recorded runs SAYS they stay keyed to the old id in "
+              "the ledger and that readers join them through movedFrom: %s" % (txt,),
+              code == 0 and "evidence:" in txt and "P2.3" in txt
+              and "movedFrom" in txt)
+        # R6: the target resolves before the task's own status is judged, and a
+        # signed-off target's refusal speaks of the move.
+        projrv6, _mprv6 = mk("rv-move-order", base_manifest())
+        code, txt = run(["move", "P2.1", "--to", "P99", "--project-dir", projrv6])
+        check("mv6 `move <done task> --to <no such phase>` names the missing phase - "
+              "item 1 of the documented order - before the task's status: %s"
+              % (txt,), code == 2 and "no phase P99" in txt)
+        rvso = base_manifest()
+        rvso["phases"][2].update(status="in_progress", branch="audit/p3",
+                                 review={"status": "passed"})
+        rvso["phases"][2]["tasks"] = [{"id": "P3.1", "title": "x", "status": "done"}]
+        projrv6b, _mprv6b = mk("rv-move-signed", rvso)
+        code, txt = run(["move", "P2.3", "--to", "P3", "--project-dir", projrv6b])
+        check("mv7 ...and a signed-off target's refusal is about the MOVE, not about "
+              "adding a task: %s" % (txt,),
+              code == 2 and "signed off" in txt and "moved" in txt
+              and "a task added now" not in txt)
+        # R5: a --json no-op is a JSON object.
+        projrv5, _mprv5 = mk("rv-json-noop", base_manifest())
+        code, txt = run(["scope", "P2.3", "--risk", "low", "--json",
+                         "--project-dir", projrv5])
+        code2, txt2 = run(["scope", "P2.3", "--risk", "low", "--json",
+                           "--project-dir", projrv5])
+        code3, txt3 = run(["retarget", "P3", "--area", "", "--json",
+                           "--project-dir", projrv5])
+        code4, txt4 = run(["retarget", "P3", "--area", "", "--json",
+                           "--project-dir", projrv5])
+        def _rv_obj(t):
+            try:
+                o = json.loads(t)
+            except ValueError:
+                return None
+            return o if isinstance(o, dict) else None
+        check("jr3 a `--json` call that changes nothing - `scope` and `retarget` "
+              "alike - prints one object saying so, never prose: %r"
+              % ((_rv_obj(txt2), _rv_obj(txt4)),),
+              code2 == 0 and (_rv_obj(txt2) or {}).get("changed") is False
+              and (_rv_obj(txt2) or {}).get("ok") is True
+              and code4 == 0 and (_rv_obj(txt4) or {}).get("changed") is False)
+        # R7: the ceiling refusal names the verb the reference docs now require.
+        rvcap = base_manifest()
+        rvcap["phases"][1]["tasks"][1].update(attempts=3, maxAttempts=3)
+        projrv7, _mprv7 = mk("rv-ceiling", rvcap)
+        code, txt = run(["start", "P2.3", "--project-dir", projrv7])
+        check("bk4 the start refused at maxAttempts names `audit-task.py block <id> "
+              "--reason`, the verb the orchestrator is told to use: %s" % (txt,),
+              code == 2 and "audit-task.py block P2.3 --reason" in txt)
+        # Pre-existing: fileIndex rows keyed through the line-range suffix.
+        projrvx, mprvx = mk("rv-line-suffix", base_manifest())
+        code, txt = run(["scope", "P2.3", "--files", "src/q.ts:10-20",
+                         "--project-dir", projrvx])
+        code2, txt2 = run(["add", "Ranged", "--phase", "P2", "--files",
+                           "src/r.ts:1-5", "--project-dir", projrvx])
+        _rvx = _mio.load_manifest(mprvx).get("fileIndex") or {}
+        check("fx1 `scope` and `add` key a `:line-range` entry's fileIndex row by the "
+              "PATH - the key the plan gate and the validator match on: %r" % (_rvx,),
+              code == 0 and code2 == 0 and _rvx.get("src/q.ts") == ["P2.3"]
+              and _rvx.get("src/r.ts") == ["P2.4"]
+              and "src/q.ts:10-20" not in _rvx and "src/r.ts:1-5" not in _rvx)
+        code, txt = run(["scope", "P2.3", "--files", "src/a.ts",
+                         "--project-dir", projrvx])
+        _rvx2 = _mio.load_manifest(mprvx).get("fileIndex") or {}
+        check("fx2 ...and releasing that entry removes the task from the PATH's row: "
+              "%r" % (_rvx2,),
+              code == 0 and "P2.3" not in (_rvx2.get("src/q.ts") or [])
+              and "P2.3" in (_rvx2.get("src/a.ts") or []))
+        # R4: a colon before a DIGIT after whitespace is what a substituted
+        # "`path`:line" citation leaves, so it stays refused.
+        projrv4, _mprv4 = mk("rv-colon-digit", base_manifest())
+        code, txt = run(["add", "Cite", "--phase", "P2", "--description",
+                         "see :2680 for the retry", "--project-dir", projrv4])
+        check("cg3 SECOND DIRECTION: ` :2680` - what \"`run-test-gate.py`:2680\" "
+              "leaves after substitution - is still refused: %s" % (txt[:120],),
+              code == 2 and "hugs the word" in txt)
+        # R8: a span substituted at the END leaves trailing whitespace on its own.
+        code, txt = run(["add", "Trail", "--phase", "P2", "--description",
+                         "fix the build ", "--project-dir", projrv4])
+        check("gs3 trailing whitespace is named as likely COMMAND SUBSTITUTION too - a "
+              "span at the end of the text leaves it as mechanically as one at the "
+              "start: %s" % (txt,),
+              code == 2 and "Likely COMMAND SUBSTITUTION" in txt)
 
     finally:
         _harness.remove_tree(tmp)
