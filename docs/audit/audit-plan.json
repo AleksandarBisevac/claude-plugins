@@ -592,7 +592,8 @@
       "P79.7",
       "P80.12",
       "P81.8",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -659,7 +660,8 @@
       "P79.3",
       "P80.5",
       "P80.10",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "README.md": [
       "P2.3",
@@ -908,7 +910,8 @@
       "P70.3-fos",
       "P78.4",
       "P74.1",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
@@ -1227,7 +1230,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1676,7 +1680,8 @@
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -1799,7 +1804,8 @@
       "P63.7",
       "P63.9",
       "P69.3",
-      "P80.8"
+      "P80.8",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/ui/panel/branch-convention.js": [
       "P18.7",
@@ -1823,7 +1829,8 @@
       "P18.7",
       "P32.7",
       "P63.9",
-      "P80.8"
+      "P80.8",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -1882,7 +1889,8 @@
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
       "P32.7",
-      "P80.8"
+      "P80.8",
+      "P74.3-qq5"
     ],
     "tools/bench-hooks.py": [
       "P20.3",
@@ -1969,7 +1977,8 @@
       "P80.4",
       "P81.3",
       "P81.4",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -2004,7 +2013,8 @@
       "P80.4",
       "P81.3",
       "P81.4",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -2120,7 +2130,8 @@
       "P81.2",
       "P81.5",
       "P74.1",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -2175,7 +2186,8 @@
       "P81.2",
       "P81.5",
       "P74.1",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -2445,7 +2457,8 @@
       "P80.3",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2573,7 +2586,8 @@
       "P80.3",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -2586,7 +2600,8 @@
       "P63.8",
       "P70.3-fos",
       "P80.6",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2598,11 +2613,13 @@
       "P63.8",
       "P70.3-fos",
       "P80.6",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
-      "P80.7"
+      "P80.7",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -2797,7 +2814,8 @@
       "P43.4",
       "P46.3",
       "P55.5",
-      "P56.5"
+      "P56.5",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2805,7 +2823,8 @@
     ],
     "plugins/audit/tests/test__tree_stamp.py": [
       "P43.4",
-      "P46.3"
+      "P46.3",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4",
@@ -2901,7 +2920,8 @@
       "P63.5",
       "P63.8",
       "P63.10",
-      "P77.2"
+      "P77.2",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
@@ -2912,7 +2932,8 @@
       "P63.5",
       "P63.8",
       "P63.10",
-      "P77.2"
+      "P77.2",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -3057,7 +3078,8 @@
       "P79.7",
       "P80.12",
       "P74.1",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7"
@@ -3090,7 +3112,8 @@
     ],
     "plugins/audit/scripts/ui/panel/composition.js": [
       "P63.9",
-      "P63.12"
+      "P63.12",
+      "P74.3-qq5"
     ],
     "tools/ui-tests/phase-signoff-note.test.mjs": [
       "P63.9",
@@ -3116,11 +3139,13 @@
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
-      "P73.1"
+      "P73.1",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
-      "P73.1"
+      "P73.1",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
