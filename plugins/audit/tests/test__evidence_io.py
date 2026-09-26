@@ -1929,6 +1929,19 @@ def _cases(check):
           "claim as a run that cost nothing",
           M.gate_cost_ms([{"steps": [{"name": "lint", "exit": 0}]}], "lint")
           is None)
+    check("ev47 gate_cost_measured is the denominator a MEAN divides by - "
+          "the count of steps that carried a durationMs, not `gate_tally`'s "
+          "`ran` (which counts every matching step, measured or not): "
+          "3 of the 4 rows above carry one: %r"
+          % (M.gate_cost_measured(cost_rows, "lint"),),
+          M.gate_cost_measured(cost_rows, "lint") == 3
+          and M.gate_tally(cost_rows, "lint")[0] == 4)
+    check("ev48 ...and a gate with no measured step at all reports 0, "
+          "agreeing with gate_cost_ms's own None for the same rows - the "
+          "two never disagree about which steps counted, because both "
+          "read the one walk",
+          M.gate_cost_measured([{"steps": [{"name": "lint", "exit": 0}]}],
+                               "lint") == 0)
 
     _worktree_ledger_cases(check)
 

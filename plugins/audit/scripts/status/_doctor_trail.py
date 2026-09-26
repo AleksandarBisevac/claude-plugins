@@ -1061,10 +1061,15 @@ def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
     one has not been told its gates are cheap - it has been told nothing.
 
     MEAN, NEVER TOTAL. `_evidence_io.gate_cost_ms` sums every recorded run;
-    dividing by the SAME `ran` `gate_tally` counted is what makes the
-    number comparable to a budget written for one run, and comparing the
-    total instead would flag an entry that has simply run MANY times at a
-    perfectly ordinary cost each.
+    dividing by the number of runs that actually contributed a `durationMs`
+    (`_evidence_io.gate_cost_measured`) is what makes the number comparable
+    to a budget written for one run, and comparing the total instead would
+    flag an entry that has simply run MANY times at a perfectly ordinary
+    cost each. `gate_tally`'s `ran` is NOT that denominator - it counts
+    every matching step whether or not it carries a `durationMs`, so a
+    history mixing measured and unmeasured runs would dilute `total / ran`
+    downward and could hide a gate that is over budget on the runs actually
+    measured.
 
     UNMEASURED IS NOT CHEAP. A step that never carried a `durationMs` -
     `gate_cost_ms` returning `None` - says nothing about what it costs, and
@@ -1107,11 +1112,12 @@ def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
     over, graded, unmeasured = [], 0, []
     for name, ran in classes["never_failed"]:
         total = _evidence_io.gate_cost_ms(rows, name)
-        if total is None:
+        measured = _evidence_io.gate_cost_measured(rows, name)
+        if total is None or not measured:
             unmeasured.append(name)
             continue
         graded += 1
-        mean = total / float(ran)
+        mean = total / float(measured)
         if mean > budget:
             over.append((name, ran, mean))
     if over:

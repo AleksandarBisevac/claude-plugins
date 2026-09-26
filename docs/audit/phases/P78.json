@@ -830,7 +830,7 @@
     {
       "id": "P78.12-msc",
       "title": "A blank buildCommands key stays out of a new phase's default gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review finding (high). Constraint: absence of meta.phaseGate must keep today's new-phase gate exactly. The previous _phase_gate filtered build keys with `isinstance(k, str) and k.strip()`; _manifest_phases._phase_gate_lists now takes build.keys() unfiltered, so a blank-string buildCommands key enters phase_gate_default(meta)['entries'] (and so a new phase's gate) where it used to be dropped. Rule: _phase_gate_lists applies the same filter to build_keys, once, so every caller (phase_gate_default, phase_gate_suite_gap, _check_phase_gate) reads the same key set. Red-first: a meta with buildCommands {\"\": \"x\", \"lint\": \"y\"} and no phaseGate gives entries ['lint'] (mutation: drop the filter -> red). Allow case: a meta whose keys are all non-blank gives exactly buildCommands order, unchanged. Also remove any plan or task id cited in a comment this phase added to these two files; state the constraint instead.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -859,18 +859,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2b68f3369a13",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_phase_gate_lists filters build keys to non-blank strings, the filter the previous _phase_gate applied, so phase_gate_default, phase_gate_suite_gap and _check_phase_gate share one key set. Case pg6; redFirst proved at HEAD (102/103); mutation dropping the filter red. Lint and the sweep are in the recorded gate run 2026-09-26T11:31:40Z.d1a515 (green). Reviewer matches. Resolves sign-off finding P78-R1.",
+        "descriptive": "A blank-string buildCommands key can no longer sneak into a new phase's default gate when meta.phaseGate is absent."
       },
       "startedAt": "2026-09-26T11:22:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T11:39:19Z",
+      "verifiedBy": [
+        "pg6"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T11:31:40Z.d1a515",
         "status": "passed",
         "at": "2026-09-26T11:31:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2b68f3369a13",
+        "at": "2026-09-26T11:39:19Z"
       }
     },
     {

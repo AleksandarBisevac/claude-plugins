@@ -1025,12 +1025,14 @@ def gate_last_caught(rows, name):
     return caught[-1] if caught else None
 
 
-def gate_cost_ms(rows, name):
-    """Total recorded run time (ms) for the named gate across `rows`, summed
-    over every matching step that carries one. `None` when not one step did --
-    absent means UNMEASURED, never zero, which is `phase_budgets`' rule read
-    for a run's own cost rather than for the plan's declared one."""
-    total, seen = 0, False
+def _gate_cost_walk(rows, name):
+    """`(total, measured)` for the named gate across `rows`, walked ONCE --
+    the total ms summed over every matching step that carries a `durationMs`,
+    beside a count of exactly those steps. `gate_cost_ms` and
+    `gate_cost_measured` both read this one walk rather than each summing and
+    counting for itself, so a future step key can never make the sum and the
+    count disagree about which steps contributed."""
+    total, measured = 0, 0
     for row in (rows or []):
         for step in (row.get("steps") or []):
             if not (isinstance(step, dict) and step.get("name") == name):
@@ -1038,8 +1040,28 @@ def gate_cost_ms(rows, name):
             duration = step.get("durationMs")
             if isinstance(duration, (int, float)) and not isinstance(duration, bool):
                 total += duration
-                seen = True
-    return total if seen else None
+                measured += 1
+    return total, measured
+
+
+def gate_cost_ms(rows, name):
+    """Total recorded run time (ms) for the named gate across `rows`, summed
+    over every matching step that carries one. `None` when not one step did --
+    absent means UNMEASURED, never zero, which is `phase_budgets`' rule read
+    for a run's own cost rather than for the plan's declared one."""
+    total, measured = _gate_cost_walk(rows, name)
+    return total if measured else None
+
+
+def gate_cost_measured(rows, name):
+    """How many recorded runs of the named gate across `rows` carried a
+    `durationMs` -- the denominator a MEAN must divide by. `gate_tally`'s
+    `ran` counts every matching step whether or not it carries one, so a
+    history that mixes measured and unmeasured runs dilutes `total / ran`
+    toward zero and can hide a gate that is over budget on the runs actually
+    measured; this is the count that keeps the two questions from being
+    answered as if they were one."""
+    return _gate_cost_walk(rows, name)[1]
 
 
 def gate_names_seen(rows):

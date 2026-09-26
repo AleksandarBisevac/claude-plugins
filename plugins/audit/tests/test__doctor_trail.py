@@ -1272,6 +1272,43 @@ def _cases(check):
     finally:
         shutil.rmtree(econ4, ignore_errors=True)
 
+    econ5 = _harness.fixture_root("doctor-trail-economy-mixed-measured-")
+    try:
+        os.makedirs(os.path.join(econ5, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        # RED-FIRST (this task): two runs that carried a durationMs of 600ms
+        # each, beside two that carried none - `gate_tally` counts all four
+        # as `ran`, so a mean that divides the measured total by `ran`
+        # (1200 / 4 = 300) clears a 500ms budget and hides a gate that is, on
+        # every run actually measured, 100ms over it. Dividing by the number
+        # of steps that contributed a durationMs (1200 / 2 = 600) must warn.
+        for i in range(2):
+            _evidence_io.append_row(econ5, {"v": 1, "runId": "m%d" % i,
+                "ts": "2026-01-0%dT00:00:00Z" % (i + 1), "scope": "task",
+                "status": "passed",
+                "steps": [{"name": "lint", "command": "lint", "exit": 0,
+                          "durationMs": 600}], "failed": []})
+        for i in range(2):
+            _evidence_io.append_row(econ5, {"v": 1, "runId": "n%d" % i,
+                "ts": "2026-01-0%dT00:00:00Z" % (i + 3), "scope": "task",
+                "status": "passed",
+                "steps": [{"name": "lint", "command": "lint", "exit": 0}],
+                "failed": []})
+        rep = base.Report()
+        M.check_gate_economy(rep, econ5, manifest_rel,
+                             {"meta": {"gateBudgetMs": 500}, "phases": []})
+        check("dge9 a history mixing measured and unmeasured runs must not "
+              "dilute the mean toward the unmeasured runs - the mean is "
+              "taken over the runs that carried a durationMs (600ms), over "
+              "the 500ms budget, and must warn: %r"
+              % (_detail(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["WARNING"]
+              and "lint" in _detail(rep, "gate economy")
+              and "600 ms" in _detail(rep, "gate economy")
+              and "500 ms" in _detail(rep, "gate economy"))
+    finally:
+        shutil.rmtree(econ5, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)
