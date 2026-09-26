@@ -3157,7 +3157,10 @@ commit message with an `Audit-Row: <nonce>` trailer, and stages the row with the
 row is in the commit it names and the run leaves no trail behind (`_scoped_commit.commit_with_rows`,
 shared by every scoped commit). A row inside a commit cannot hold that commit's SHA, which is
 why it holds the nonce; `_invariants.audit_state_scope()` resolves it with `git log --grep`, which a
-rebase does not break. A commit refused after the row was written — a hook, git itself — leaves an
+rebase does not break. A commit carrying the trailer is graded only when its subject opens with the
+class header (`_invariants.STATE_HEADER`, `INDEX_HEADER`) and the trailer is in its last paragraph;
+any other carrier - a squash merge, or a commit that gained a paragraph after its trailer - is
+reported as a gap naming it and the test it failed, and is never graded. A commit refused after the row was written — a hook, git itself — leaves an
 `audit.commit.withdrawn` row naming the nonce, and a reader drops a withdrawn nonce instead of
 reporting a commit that does not exist. Because the row is inside its commit, a journal holding
 only other writers' rows is committed like the other two records; a second run finds nothing

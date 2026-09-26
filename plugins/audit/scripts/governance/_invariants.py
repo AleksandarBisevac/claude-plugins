@@ -660,36 +660,44 @@ def absorbed_gaps(absorbed, noun, header):
     """One gap per commit that carries a row's trailer and was not graded as
     the commit the row names, saying which test it failed and what that leaves.
 
-    OBSERVED, NOT DIAGNOSED. The check knows only that the carrier's subject
-    does not open with `header`, or that the trailer is not in its last
-    paragraph; a squash merge absorbing the scoped commit is the common cause,
-    a note appended after the trailer block is another, and the sentence names
-    the cause as the likely one rather than as the fact. "Not in this history"
-    is said only when no scoped carrier resolved for the row; when one did, that
-    commit was graded and is named."""
+    OBSERVED, NOT DIAGNOSED - and the reading follows the test that failed.
+    A subject without `header` is a commit that absorbed the scoped one, a
+    squash merge most often; with nothing else graded for the row, the named
+    commit is then not in this history as a commit of its own. A subject WITH
+    the header whose trailer is not in its last paragraph may be the scoped
+    commit itself with a paragraph added after its trailer block, by a hook or
+    an amend, so no absence is claimed for it. When another carrier of the row
+    was graded, that one is named instead."""
     out = []
     for entry in absorbed:
         failed = entry.get("failed") or []
+        sha = entry["sha"][:12]
         tests = []
         if "header" in failed:
             tests.append("its subject does not open with `%s`" % (header,))
         if "last" in failed:
             tests.append("the trailer is not in its last paragraph")
-        why = " and ".join(tests)
+        if "header" in failed:
+            cause = ("most often a commit that absorbed the scoped one - a "
+                     "squash merge")
+        else:
+            cause = ("its subject is the class header, so this may be the "
+                     "scoped commit itself with a paragraph added after its "
+                     "trailer block (a hook or an amend)")
         graded = entry.get("graded") or []
         if graded:
-            tail = ("The row resolved to %s, graded as %s; %s's files were "
-                    "not" % (", ".join(sha[:12] for sha in graded), noun,
-                             entry["sha"][:12]))
+            tail = ("The row resolved to %s, graded as %s; %s's files were not "
+                    "graded" % (", ".join(g[:12] for g in graded), noun, sha))
+        elif "header" in failed:
+            tail = ("No carrier of it passed both tests, so the commit the row "
+                    "names is not in this history as a commit of its own, and "
+                    "%s's files are not graded as that commit's" % (sha,))
         else:
-            tail = ("No carrier of it passed both tests, so the commit the "
-                    "row names is not in this history as a commit of its own, "
-                    "and %s's files are not graded as its" % (entry["sha"][:12],))
+            tail = ("It was not graded, and no other carrier of the row was")
         out.append("commit %s carries the `%s` trailer of the row keyed %s but "
-                   "was not graded as %s: %s - most often a squash merge that "
-                   "absorbed it, or a note added after the trailer. %s"
-                   % (entry["sha"][:12], ROW_TRAILER, entry["nonce"], noun, why,
-                      tail))
+                   "was not graded as %s: %s - %s. %s"
+                   % (sha, ROW_TRAILER, entry["nonce"], noun,
+                      " and ".join(tests), cause, tail))
     return out
 
 
@@ -698,8 +706,8 @@ INDEX_NOUN = "a manifest-index commit"
 
 
 def audit_state_commits(project, phase_id, config=None, git_root=None):
-    """`(shas, unnamed, why, unresolved)` - the audit-state commits this phase's
-    trail records.
+    """`(shas, unnamed, why, unresolved, absorbed)` - the audit-state commits
+    this phase's trail records; `recorded_commits` gives each entry's shape.
 
     A name of its own rather than the generic call at each site: the action and
     the noun that belong to this class are decided ONCE here, so a caller cannot
@@ -810,8 +818,8 @@ INDEX_SCOPE_BASIS = (
 
 
 def index_commits(project, phase_id, config=None, git_root=None):
-    """`(shas, unnamed, why, unresolved)` - the manifest-index commits this
-    phase's trail records.
+    """`(shas, unnamed, why, unresolved, absorbed)` - the manifest-index commits
+    this phase's trail records; `recorded_commits` gives each entry's shape.
 
     A name of its own beside `audit_state_commits`, for that function's reason:
     the action and the noun belonging to this class are decided once, here, so no

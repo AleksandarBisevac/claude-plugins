@@ -1753,6 +1753,13 @@ def _carrier_cases(check):
               "count the carrier as examined: %r / examined %r"
               % (scope["verdict"], scope["examined"]),
               scope["verdict"] != M.CLEAN and scope["examined"] == 0)
+        gap = " ".join(scope["gaps"])
+        check("it19 a carrier that failed BOTH tests keeps the squash reading, "
+              "names both tests, and ends its sentence: %r" % (scope["gaps"],),
+              "subject does not open" in gap
+              and "not in its last paragraph" in gap
+              and "squash" in gap and "not in this history" in gap
+              and gap.rstrip().endswith("that commit's"))
 
         # THE SAME ABSORPTION WITH A MESSAGE THAT KEEPS THE CLASS HEADER but
         # moves the trailer out of the last paragraph, as a forge's squash does.
@@ -1804,6 +1811,17 @@ def _carrier_cases(check):
               body.splitlines()[-1].strip().startswith(M.ROW_TRAILER)
               and scope["breaches"] == [] and scope["examined"] == 0
               and any(squash[:12] in g for g in scope["gaps"]))
+        gap = " ".join(scope["gaps"])
+        check("it18 a carrier that failed ONLY the header test is read as a "
+              "commit that absorbed the scoped one - a squash - and, nothing "
+              "else having resolved, the named commit is not in this history as "
+              "a commit of its own; a note after the trailer, which fails the "
+              "other test, is not offered: %r" % (scope["gaps"],),
+              "subject does not open" in gap
+              and "not in its last paragraph" not in gap
+              and "squash" in gap and "not in this history" in gap
+              and "paragraph added" not in gap
+              and gap.rstrip().endswith("that commit's"))
 
         # THE AUDIT-STATE HALF, which wires its own header and its own gap line.
         fx, squash = _squashed_side(tmp, "squash-state", kind="state")
@@ -1838,7 +1856,10 @@ def _carrier_cases(check):
               "not claim its subject lacks the header: %r" % (scope["gaps"],),
               scope["breaches"] == [] and noted[:12] in gap
               and "not in its last paragraph" in gap
-              and "subject does not open" not in gap)
+              and "subject does not open" not in gap
+              and "not in this history" not in gap
+              and "paragraph added after its trailer block" in gap
+              and "squash" not in gap)
 
         # A ROW WITH A SCOPED COMMIT THAT RESOLVED *AND* A SECOND CARRIER.
         root = os.path.join(tmp, "both")

@@ -150,6 +150,27 @@
         "file": "plugins/audit/tests/test_commit_manifest_index.py",
         "issue": "The suite's own 'what this file is about' line still says 'the commit carries the INDEX and nothing else'. That is the S2/R3 class, left in the suite of the very command whose contract changed. Claim 3's grep covered the guide, reference/, commands/, README and governance/, but not tests/. cmi13 at :431 ('it is the index alone') is correct, because stage_targets' list really is the index by itself",
         "resolution": "fix task P73.5-9h1"
+      },
+      {
+        "id": "P73-V1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "The gap sentence reads `failed` only for the 'which test' clause. The cause clause is the same text for every entry: '- most often a squash merge that absorbed it, or a note added after the trailer'. The tail picks one of two sentences from `graded` alone. Probes on a scratch export of HEAD (scratchpad/p73d/probe_carriers_full.py) show two results that contradict what was observed. (a) P3 (a commi",
+        "resolution": "fix task P73.6-9h1"
+      },
+      {
+        "id": "P73-V2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py",
+        "issue": "Both docstrings say the return is `(shas, unnamed, why, unresolved)`. Both return recorded_commits' five-tuple, which ends in `absorbed` and now holds dict entries. The base said a three-tuple. This phase added `unresolved` and then `absorbed` without updating either docstring. The shape change itself broke no caller. The only readers of element 4 are absorbed_gaps and the `not absorbed` truthines",
+        "resolution": "fix task P73.6-9h1"
+      },
+      {
+        "id": "P73-V3",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md",
+        "issue": "The architecture section describes the nonce row and resolving it with `git log --grep` ('which a rebase does not break'). It never states the grading rule this phase added: a carrier is graded only when its subject opens with the class header and the trailer is in its last paragraph, and a squash merge or any other carrier is a named gap, so the phase check answers no-basis. That rule is in the C",
+        "resolution": "fix task P73.6-9h1"
       }
     ]
   },
@@ -471,6 +492,64 @@
         "test__invariants it17",
         "check-git-pipeline g24"
       ]
+    },
+    {
+      "id": "P73.6-9h1",
+      "title": "Round-4 review findings: the absorbed-carrier gap is worded from the test that failed, and the guide states the grading rule",
+      "status": "in_progress",
+      "description": "Round-4 phase review findings, all to be fixed. Orchestrator decisions: (V1) the gap's cause and ending are built from `failed`, not from one fixed sentence: a header failure names a squash or another absorbing commit as the likely cause; a last-paragraph failure alone (the subject carries the header) names a paragraph added after the trailer and makes NO claim that the commit is absent from this history; the ending no longer dangles; it16 asserts the absence claim is not made, proved red, and a case per failed-test combination. (V2) audit_state_commits and index_commits docstrings give the five-value return. (V3) the build guide states the grading rule: a carrier counts only when its subject opens with the class header and its trailer is in the last paragraph, and any other carrier is a gap naming it.\nR1 (low) plugins/audit/scripts/governance/_invariants.py:686-692 (absorbed_gaps: the cause clause and the no-graded tail); plugins/audit/tests/test__invariants.py:1834-1841 (it16): The gap sentence reads `failed` only for the 'which test' clause. The cause clause is the same text for every entry: '- most often a squash merge that absorbed it, or a note added after the trailer'. The tail picks one of two sentences from `graded` alone. Probes on a scratch export of HEAD (scratchpad/p73d/probe_carriers_full.py) show two results that contradict what was observed. (a) P3 (a commit-msg hook appends a paragraph) and P4 (an amend adds a note) give failed == ['last'], and the subject DOES open with the header. The gap still says 'No carrier of it passed both tests, so the commit the row names is not in this history as a commit of its own'. But the carrier IS the commit the row names, carrying one extra paragraph. So the commit-message claim that 'a genuine commit that gained a note paragraph ... is no longer misdescribed' is not what the code prints. it16 checks the 'which test' clause, but not the absence of 'not in this history', so nothing would notice. (b) P6, P7, it14 and g24 give failed == ['header'] only. For them the offered cause 'a note added after the trailer' is impossible, because a note after the trailer fails the 'last' test, not the header test. My round-3 resolution ('say not in this history only when no scoped carrier resolved') left case (a) open, so this is partly a gap in my own earlier resolution. The direction is still loud: no-basis, never clean, never a hidden pass. The no-graded tail also ends in a dangling 'are not graded as its'. -> Build the cause and the tail from `failed` as well as `graded`. header only: 'a commit that absorbed it - a squash merge, most often - so the commit the row names is not in this history as a commit of its own'. last only: 'its subject is the class header, so this may be the scoped commit itself with a paragraph added after its trailer block (a hook or an amend); it was not graded', and make no absence claim. both: keep the squash reading. Finish the sentence ('...are not graded as that commit's'). Add `\"not in this history\" not in gap` to it16, and prove it red by forcing the absence tail back on.\nR2 (low) plugins/audit/scripts/governance/_invariants.py:701 (audit_state_commits docstring), :813 (index_commits docstring): Both docstrings say the return is `(shas, unnamed, why, unresolved)`. Both return recorded_commits' five-tuple, which ends in `absorbed` and now holds dict entries. The base said a three-tuple. This phase added `unresolved` and then `absorbed` without updating either docstring. The shape change itself broke no caller. The only readers of element 4 are absorbed_gaps and the `not absorbed` truthiness tests at :733 and :863. Every other caller slices `[:4]` or reads `[0]`/`[3]`: test__invariants.py:1472/1497/1513/1588, test_commit_manifest_index.py:618 and check-git-pipeline.py:1701. -> Say `(shas, unnamed, why, unresolved, absorbed)` in both, and point to recorded_commits for the entry shape.\nR3 (low) PLUGIN-BUILD-GUIDE.md:3155-3160: The architecture section describes the nonce row and resolving it with `git log --grep` ('which a rebase does not break'). It never states the grading rule this phase added: a carrier is graded only when its subject opens with the class header and the trailer is in its last paragraph, and a squash merge or any other carrier is a named gap, so the phase check answers no-basis. That rule is in the CHANGELOG and the _invariants docstrings only. A reader of the guide on a squash-merge workflow would expect the row to resolve and grade. -> Add one sentence after the `git log --grep` clause naming `_invariants.INDEX_HEADER`/`STATE_HEADER` and the last-paragraph test, and saying a carrier failing either is reported as a gap and never graded.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "tools/check-git-pipeline.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: repro that FAILS on current code - a genuine commit that gained a note paragraph is said not to be in this history"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T10:54:18Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T04:55:13Z"
