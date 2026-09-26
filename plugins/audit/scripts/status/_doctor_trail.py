@@ -916,20 +916,30 @@ def check_task_restarts(rep, project, config=None):
 
 
 def _read_gate_rows(project, manifest_rel):
-    """`(eproject, econfig, rows)` off the evidence ledger the manifest at
-    `manifest_rel` points to, or `(None, None, None)` plus the exception text
-    - the ONE read `check_gate_patterns` and `check_gate_economy` both open
-    with, so neither can resolve the ledger a different way the day
-    `project_config_for` learns a new rule."""
+    """`(eproject, econfig, rows, exc, unreadable)` off the evidence ledger
+    the manifest at `manifest_rel` points to - the ONE read
+    `check_gate_patterns`, `check_gate_economy` and `check_shadow_recall`
+    all open with, so none of the three can resolve the ledger a different
+    way the day `project_config_for` learns a new rule.
+
+    `exc` is the raised exception, or `None` when the read itself succeeded
+    - `eproject`/`econfig`/`rows` are `None` exactly when `exc` is not.
+    `unreadable` is `_evidence_io.read_rows`'s own count of rows or files it
+    could not parse, always `0` when `exc` is set (nothing was read at all)
+    and NEVER folded into an empty `rows`: a caller that only checked
+    `rows` for zero would read a torn ledger as a clean one that simply has
+    no history yet, which is the exact silence `check_shadow_recall` is
+    written to refuse."""
     manifest_path = os.path.join(project, manifest_rel or
                                  "docs/audit/audit-plan.json")
     try:
         eproject, econfig = _evidence_io.project_config_for(
             manifest_path, project_dir=project)
-        rows = _evidence_io.read_rows(eproject, econfig).get("rows") or []
-        return eproject, econfig, rows, None
+        read = _evidence_io.read_rows(eproject, econfig)
+        return (eproject, econfig, read.get("rows") or [], None,
+               read.get("unreadable") or 0)
     except Exception as exc:
-        return None, None, None, exc
+        return None, None, None, exc, 0
 
 
 def _gate_tally_classes(rows, names):
@@ -971,7 +981,8 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     here either - a gate that has run fewer times than the floor a verdict
     needs is NOT ESTABLISHED, named as such, and never folded into either the
     clean OK or the never-failed warning."""
-    eproject, econfig, rows, exc = _read_gate_rows(project, manifest_rel)
+    eproject, econfig, rows, exc, _unreadable = _read_gate_rows(
+        project, manifest_rel)
     if exc is not None:
         rep.warn("gate patterns", "could not read the evidence ledger: %s"
                  % (exc,))
@@ -1091,7 +1102,8 @@ def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
                "no budget declared (meta.gateBudgetMs), so no gate entry is "
                "graded on cost")
         return
-    eproject, econfig, rows, exc = _read_gate_rows(project, manifest_rel)
+    eproject, econfig, rows, exc, _unreadable = _read_gate_rows(
+        project, manifest_rel)
     if exc is not None:
         rep.warn("gate economy", "could not read the evidence ledger: %s"
                  % (exc,))
@@ -1141,6 +1153,138 @@ def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
         detail += ("; %d unmeasured (no recorded durationMs): %s"
                    % (len(unmeasured), ", ".join(unmeasured)))
     rep.ok("gate economy", detail)
+
+
+def _pct(numerator, denominator):
+    """A share as a reader reads one - whole-number percent, never a bare
+    ratio a decimal point could hide a rounding difference inside."""
+    return "%d%%" % round(100.0 * numerator / denominator)
+
+
+def check_shadow_recall(rep, project, manifest_rel, manifest, config=None):
+    """While a phase's sign-off gate is still derived IN SHADOW, would the
+    derived set have caught what actually failed?
+
+    TWO DIFFERENT RECALLS, because they answer two different questions and a
+    single number would blur them - the definitions are Meta's own, from the
+    predictive-test-selection paper this feature's design cites:
+
+      TEST recall   - of every FAILING SUITE seen across every shadow run,
+                      what share did the derived set list? Suite-weighted: a
+                      run with three failing suites contributes three to
+                      both the numerator's ceiling and the denominator, not
+                      one. `sum(listed) / sum(full)` over the ledger.
+      CHANGE recall - of every RED shadow run - `shadow.full > 0`, meaning
+                      at least one failing suite was actually seen, never
+                      every row that merely carries a `shadow` key - what
+                      share had at least one failing suite the derived set
+                      listed? Run-weighted, on purpose: a change either got
+                      SOME signal from the derived set or it got none, and a
+                      run with many failing suites must not outweigh one
+                      with a single failing suite in THIS count the way it
+                      rightly does in the other.
+
+    `run-test-gate.shadow_gate_claim` never records a row with `full == 0`
+    TODAY - it returns `None` on an empty failing-suite list, so every row
+    this reads currently already is red. The filter is kept anyway, because
+    the definition itself says "RED shadow run" and not "every recorded
+    shadow row": a future writer that started recording a green wide run
+    (to carry a `narrowed`-style claim, say) would otherwise silently dilute
+    CHANGE recall's denominator with runs that had nothing to catch,
+    without this file's own tests ever seeing the difference.
+
+    COUNTING RUNS WHERE SUITES ARE OWED IS THE BUG THIS SPLIT EXISTS TO
+    REFUSE. A history with several failing suites in one run and one in
+    another, where every run "caught" at least one, reads as a PERFECT
+    per-run share if the shares are averaged - while the suite-weighted
+    figure is lower whenever a run's uncaught suites outnumber its caught
+    one, and only the second is what an operator deciding whether to trust
+    the derived set for REAL coverage needs. `check_gate_economy`'s
+    mean-vs-total split above is the same lesson about a different pair of
+    numbers.
+
+    COMPUTED FROM THE LEDGER EVERY TIME, NEVER WRITTEN ANYWHERE: this is a
+    read of history, not a new fact stapled onto a phase or a row.
+
+    NO `meta.phaseGate.mode` MEANS NOTHING IS DERIVED, so there is nothing to
+    grade recall over - said as an OK row rather than silence, the same rule
+    `check_gate_economy` follows for `meta.gateBudgetMs`: a row that simply
+    stopped appearing would read as "checked and clean" to a doctor render
+    nobody diffs against yesterday's.
+
+    A MODE DECLARED WITH NO SHADOW ROW YET IS ALSO AN OK ROW, not a warning
+    that recall could not be established - `run-test-gate.shadow_gate_claim`
+    only ever records `shadow` on a row that observed a REAL failure, so a
+    project that has not hit one yet has asked the question honestly and
+    gotten "none recorded" rather than failed to earn an answer.
+
+    AN UNREADABLE LEDGER IS SAID, NEVER READ AS "NO SHADOW RUNS" - the same
+    distinction `check_gate_patterns` and `check_gate_economy` draw for the
+    same evidence read, because folding "could not open the file" into "the
+    file has nothing in it" tells an operator their coverage is thin when
+    the true problem is that this check could not look. TWO WAYS A LEDGER
+    CAN BE UNREADABLE, and both are said the same way: `_read_gate_rows`
+    itself raising (a directory it cannot even list) is one, and
+    `_evidence_io.read_rows`'s own `unreadable` count on an otherwise
+    successful read - a torn line, a file that would not decode - is the
+    other. A row lost to the second is not a row that never existed, and
+    folding it into "none recorded" is the same overclaim the first branch
+    exists to refuse.
+
+    ADVISORY, ALWAYS, LIKE EVERY CHECK IN THIS MODULE'S SECOND HALF - the row
+    carries the same remedy sentence whatever the two numbers say, because
+    NO THRESHOLD HERE DECIDES ANYTHING: the plan's own `mode` switch is
+    the only thing that turns shadow into enforce, and that is a judgement
+    call this command has no basis to make for its reader."""
+    meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    phase_gate = meta.get("phaseGate")
+    phase_gate = phase_gate if isinstance(phase_gate, dict) else {}
+    mode = phase_gate.get("mode")
+    if not mode:
+        rep.ok("shadow recall",
+               "no meta.phaseGate.mode declared, so no derivation is "
+               "declared and there is nothing to grade recall over")
+        return
+    eproject, econfig, rows, exc, unreadable = _read_gate_rows(
+        project, manifest_rel)
+    if exc is not None:
+        rep.warn("shadow recall", "could not read the evidence ledger: %s"
+                 % (exc,))
+        return
+    if unreadable:
+        rep.warn("shadow recall",
+                 "could not read the evidence ledger: %d row(s) or file(s) "
+                 "could not be parsed - recall is not printed over a "
+                 "ledger this check could not fully read"
+                 % (unreadable,))
+        return
+    shadow_rows = [r for r in (rows or [])
+                   if isinstance(r.get("shadow"), dict)]
+    if not shadow_rows:
+        rep.ok("shadow recall",
+               "meta.phaseGate.mode is %r but no shadow run is recorded yet "
+               "- none recorded, so test and change recall cannot be "
+               "measured" % (mode,))
+        return
+    total_listed = sum(r["shadow"].get("listed") or 0 for r in shadow_rows)
+    total_full = sum(r["shadow"].get("full") or 0 for r in shadow_rows)
+    # CHANGE recall's denominator is RED shadow runs - `full > 0` - never
+    # every row carrying a `shadow` key: see the docstring's note on why the
+    # filter is kept even though no writer today emits a green one.
+    red_rows = [r for r in shadow_rows if (r["shadow"].get("full") or 0) > 0]
+    hits = sum(1 for r in red_rows if (r["shadow"].get("listed") or 0) > 0)
+    n_runs = len(red_rows)
+    rep.warn("shadow recall",
+             "test recall %s (%d/%d failing suite(s) across every shadow "
+             "run the derived gate would have listed), change recall %s "
+             "(%d/%d red shadow run(s) with at least one failing suite the "
+             "derived gate listed)"
+             % (_pct(total_listed, total_full) if total_full else "n/a",
+                total_listed, total_full,
+                _pct(hits, n_runs) if n_runs else "n/a", hits, n_runs),
+             "set meta.phaseGate.mode to \"enforce\" when this recall is "
+             "enough - nothing switches it for you")
 
 
 # --- cli ------------------------------------------------------------------------

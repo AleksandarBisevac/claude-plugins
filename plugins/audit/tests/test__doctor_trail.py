@@ -1309,6 +1309,178 @@ def _cases(check):
     finally:
         shutil.rmtree(econ5, ignore_errors=True)
 
+    # --- check_shadow_recall: its own fresh project --------------------------
+    recall = _harness.fixture_root("doctor-trail-shadow-recall-")
+
+    def _shadow_row(project, run_id, ts, listed, full, missed=None):
+        """One evidence row through `_evidence_io.row_for` - THE WRITER'S OWN
+        SHAPE, not a hand-built dict, per this task's instruction that these
+        fixtures ride the same function `run-test-gate.py` calls."""
+        result = {"status": "failed", "durationMs": 900,
+                  "failed": missed or [], "ranTotal": full,
+                  "coverageBasis": None, "treeBasis": "b", "treeMutated": [],
+                  "overlap": None, "steps": [],
+                  "shadow": {"listed": listed, "full": full,
+                            "missed": missed or []}}
+        ident = {"runId": run_id, "ts": ts, "attempt": 1, "via": "cli"}
+        row = _evidence_io.row_for(project, result, "phase", {"phaseId": "P1"},
+                                   ident, published=[])
+        _evidence_io.append_row(project, row)
+        return row
+
+    def _plain_row(project, run_id, ts):
+        """A recorded run that computed NO derived gate at all - the allow
+        case `check_shadow_recall` must contribute nothing for."""
+        result = {"status": "passed", "durationMs": 100, "failed": [],
+                  "ranTotal": 1, "coverageBasis": None, "treeBasis": "b",
+                  "treeMutated": [], "overlap": None, "steps": []}
+        ident = {"runId": run_id, "ts": ts, "attempt": 1, "via": "cli"}
+        row = _evidence_io.row_for(project, result, "phase", {"phaseId": "P1"},
+                                   ident, published=[])
+        _evidence_io.append_row(project, row)
+        return row
+
+    try:
+        os.makedirs(os.path.join(recall, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel,
+                              {"meta": {}, "phases": []})
+        check("dsr1 no meta.phaseGate.mode at all: an OK row saying no "
+              "derivation is declared - a row that vanished here would "
+              "read as checked: %r" % (_levels(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["OK"]
+              and "no derivation is declared" in _detail(rep, "shadow recall"))
+
+        shadow_mode = {"meta": {"phaseGate": {"mode": "shadow"}}, "phases": []}
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr2 mode shadow declared and no shadow row recorded yet: an "
+              "OK row saying none recorded, never a warning that recall "
+              "could not be established: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["OK"]
+              and "none recorded" in _detail(rep, "shadow recall"))
+
+        # dsr2b ALLOW, and the case the "count a plain row as a shadow run"
+        # mutation actually needs: a ledger that carries rows, but none of
+        # them a `shadow` field, must still read "none recorded" - not a
+        # computed recall with `n/a` percentages. dsr4 below adds a plain
+        # row ALONGSIDE two shadow rows, where a plain row's (0, 0)
+        # contributes nothing to either sum and so cannot tell this
+        # mutation from the fix; this case is a ledger with ONLY a plain
+        # row, where the mutation flips the branch itself (OK -> WARNING).
+        _plain_row(recall, "s0", "2026-01-01T12:00:00Z")
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr2b ALLOW: a ledger holding only a row with no `shadow` "
+              "field still reads 'none recorded', not a computed recall: "
+              "%r" % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["OK"]
+              and "none recorded" in _detail(rep, "shadow recall"))
+
+        # dsr3 (RED-FIRST, and the mutation pin): two shadow runs whose
+        # SUITE-weighted and RUN-weighted recall disagree - one failing
+        # suite listed of one (a run that "caught" its only failure) beside
+        # three failing suites with none listed (a run that caught nothing).
+        # The suite-weighted TEST recall the assertion below pins is lower
+        # than a version that counted RUNS instead of SUITES (the mutation
+        # this case pins) would read it as, because that version reads it
+        # as CHANGE recall's own number instead - so the two must print
+        # DIFFERENT percentages below or the mutation has gone unnoticed.
+        _shadow_row(recall, "s1", "2026-01-01T00:00:00Z", 1, 1, missed=[])
+        _shadow_row(recall, "s2", "2026-01-02T00:00:00Z", 0, 3,
+                   missed=["tests/test_a.py", "tests/test_b.py",
+                          "tests/test_c.py"])
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr3 test recall is SUITE-weighted (1/4 = 25%%), not "
+              "RUN-weighted (which would read 50%%, change recall's own "
+              "number) - the mutation this case exists to catch: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["WARNING"]
+              and "25%" in _detail(rep, "shadow recall")
+              and "1/4" in _detail(rep, "shadow recall"))
+        check("dsr3b change recall is RUN-weighted (1/2 = 50%%): one of the "
+              "two shadow runs had at least one failing suite listed: %r"
+              % (_detail(rep, "shadow recall"),),
+              "50%" in _detail(rep, "shadow recall")
+              and "1/2" in _detail(rep, "shadow recall"))
+        check("dsr3c the remedy is the fixed 'switch to enforce' sentence, "
+              "with no threshold deciding anything for the reader: %r"
+              % (_fix(rep, "shadow recall"),),
+              "meta.phaseGate.mode" in _fix(rep, "shadow recall")
+              and "enforce" in _fix(rep, "shadow recall"))
+
+        # dsr4 ALLOW CASE: a run that computed no derived gate at all must
+        # contribute nothing to either recall - not a phantom failing suite,
+        # not a phantom run.
+        _plain_row(recall, "s3", "2026-01-03T00:00:00Z")
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr4 ALLOW: a row with no `shadow` field leaves both counts "
+              "exactly where they were - 1/4 and 1/2, never 1/3 runs: %r"
+              % (_detail(rep, "shadow recall"),),
+              "25%" in _detail(rep, "shadow recall")
+              and "1/4" in _detail(rep, "shadow recall")
+              and "1/2" in _detail(rep, "shadow recall"))
+    finally:
+        shutil.rmtree(recall, ignore_errors=True)
+
+    # --- check_shadow_recall: an unreadable ledger is SAID, never folded --
+    # --- into "no shadow runs recorded" ---------------------------------------
+    unread = _harness.fixture_root("doctor-trail-shadow-recall-unreadable-")
+    try:
+        os.makedirs(os.path.join(unread, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        _shadow_row(unread, "u1", "2026-01-01T00:00:00Z", 1, 1, missed=[])
+        files = _evidence_io.ledger_files(unread)
+        with open(files[0], "a", encoding="utf-8") as fh:
+            fh.write("{not json at all\n")
+        rep = base.Report()
+        M.check_shadow_recall(rep, unread, manifest_rel,
+                              {"meta": {"phaseGate": {"mode": "shadow"}}})
+        check("dsr5 RED-FIRST: an unparseable ledger line is a WARNING that "
+              "the evidence ledger could not be read, never folded into "
+              "'no shadow runs recorded' - no recall figure is printed "
+              "over a ledger this check could not fully read: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["WARNING"]
+              and "could not read the evidence ledger"
+                  in _detail(rep, "shadow recall")
+              and "none recorded" not in _detail(rep, "shadow recall")
+              and "%" not in _detail(rep, "shadow recall"))
+    finally:
+        shutil.rmtree(unread, ignore_errors=True)
+
+    # --- check_shadow_recall: CHANGE recall's denominator is RED shadow ---
+    # --- runs, never every row that merely carries a `shadow` key ------------
+    denom = _harness.fixture_root("doctor-trail-shadow-recall-denominator-")
+    try:
+        os.makedirs(os.path.join(denom, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        # dsr6 (RED-FIRST, denominator): a GREEN wide shadow row (full == 0,
+        # nothing failed - `run-test-gate.shadow_gate_claim` records no
+        # such row today, but this reads the ledger's OWN shape rather than
+        # trusting the one writer that currently exists) beside a RED one
+        # that caught its only failing suite. Counting the green row into
+        # the denominator would dilute a clean full catch into a half one.
+        _shadow_row(denom, "d1", "2026-01-01T00:00:00Z", 0, 0, missed=[])
+        _shadow_row(denom, "d2", "2026-01-02T00:00:00Z", 1, 1, missed=[])
+        shadow_mode2 = {"meta": {"phaseGate": {"mode": "shadow"}}, "phases": []}
+        rep = base.Report()
+        M.check_shadow_recall(rep, denom, manifest_rel, shadow_mode2)
+        check("dsr6 CHANGE recall's denominator is RED shadow runs only - "
+              "one red run, fully caught, reads 100%% and never the 50%% "
+              "counting the green row into the denominator would give: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["WARNING"]
+              and "100%" in _detail(rep, "shadow recall")
+              and "1/1 red shadow run" in _detail(rep, "shadow recall"))
+    finally:
+        shutil.rmtree(denom, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)
