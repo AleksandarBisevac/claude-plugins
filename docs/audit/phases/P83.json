@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P83-R1",
@@ -177,9 +177,10 @@
         "issue": "The resolution of round-2 finding 1 asked for allow twins: the same compound shapes written into notes.md. None was added for gp61 (a then-branch emitter), gp62 (a loop piped after done), gp64 (a receiving group) or gp68-gp71. The allow rows that were added (gp63, gp65-gp67) pin the three narrowings and the comment rule, not the new group reading. So an over-firing mutation would stay green on eve",
         "resolution": "fix task P83.5-wkm"
       }
-    ]
+    ],
+    "outcome": "matches with a stated residual; three review passes, the first two fixed in P83.3-P83.4, the third's findings filed as BUG-12 for a human maintainer"
   },
-  "summary": null,
+  "summary": "The history guard and guard-secrets-read now read the command shapes that SECURITY.md listed as open the way the shell reads them.\n\nChanges to the join, the history guard and guard-secrets-read:\n- The line-continuation join follows the word the shell assembles.\n- A here-string's reader is found past its wrapper.\n- A case body is read to its real esac, at any nesting.\n- A git command quoted as one phrase is read as a command wherever a text emitter prints it and that output is run: piped into a program that runs its stdin, or written by a redirect or tee into a git hook, an unresolvable target, or a file the same command runs. Operators count only outside quotes and comments, and a compound command carries its pipe or redirect to every stage inside it.\n- guard-secrets-read joins continuations before reading a path. It grades a here-string fed to an interpreter as inline evaluation, exempting only an interpreter that already runs a program of its own, which is decided per interpreter. It reads Perl's open() shapes.\n\nReview and verification:\n- Three phase reviews; the findings of the first two were fixed in P83.3 and P83.4.\n- The third review measured that nothing main refuses now passes, and that the branch over-refuses nothing main allows.\n- The third review's remaining findings are gaps inside the new, wider reading. They are filed as BUG-12 and handed to a human maintainer, because a safety classifier stopped the automated session on this work. P83.5 is cancelled with that reason, and its red tests are kept for the maintainer.\n- Main was merged in before the gate. The phase gate was green with the tree unchanged, bench-hooks passed, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P83.1",
@@ -452,5 +453,10 @@
       "verifiedBy": []
     }
   ],
-  "startedAt": "2026-09-26T10:59:58Z"
+  "startedAt": "2026-09-26T10:59:58Z",
+  "testEvidence": {
+    "runId": "2026-09-26T22:02:10Z.74b27f",
+    "status": "passed",
+    "at": "2026-09-26T22:02:10Z"
+  }
 }
