@@ -560,7 +560,8 @@
       "P72.1",
       "P71.1",
       "P71.2-zso",
-      "P71.3-zso"
+      "P71.3-zso",
+      "P71.4-zso"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -647,7 +648,8 @@
       "P70.1",
       "P70.3-fos",
       "P71.1",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1192,7 +1194,8 @@
       "P70.3-fos",
       "P71.1",
       "P71.2-zso",
-      "P71.3-zso"
+      "P71.3-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1393,7 +1396,8 @@
       "P41.1",
       "P42.1",
       "P61.9",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1455,7 +1459,8 @@
       "P55.14",
       "P70.1",
       "P70.3-fos",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1496,14 +1501,16 @@
       "P29.5",
       "P31.5",
       "P71.1",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
       "P46.3",
       "P55.5",
       "P56.5",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -1532,7 +1539,8 @@
       "P31.6",
       "P32.7",
       "P34.4",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -1543,12 +1551,14 @@
       "P54.6",
       "P68.1",
       "P68.2-v4q",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
       "P71.2-zso",
-      "P71.3-zso"
+      "P71.3-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6"
@@ -1579,7 +1589,8 @@
       "P70.1",
       "P70.3-fos",
       "P71.1",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4"
@@ -1852,7 +1863,8 @@
       "P53.7"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
-      "P32.7"
+      "P32.7",
+      "P71.4-zso"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
@@ -2166,10 +2178,12 @@
       "P55.5",
       "P56.5",
       "P59.13",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
-      "P32.7"
+      "P32.7",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test__gate_feed.py": [
       "P48.3",
@@ -2365,7 +2379,8 @@
     ],
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -2383,7 +2398,8 @@
     "plugins/audit/tests/test__tree_stamp.py": [
       "P43.4",
       "P46.3",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test__ui_theme.py": [
       "P20.5",
@@ -2521,19 +2537,22 @@
       "P29.5",
       "P31.5",
       "P34.4",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
       "P34.4",
       "P68.1",
       "P68.2-v4q",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
       "P71.2-zso",
-      "P71.3-zso"
+      "P71.3-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1"
@@ -2553,7 +2572,8 @@
       "P34.6",
       "P40.2",
       "P50.8",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -2710,7 +2730,8 @@
       "P59.13",
       "P70.1",
       "P70.3-fos",
-      "P71.2-zso"
+      "P71.2-zso",
+      "P71.4-zso"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
