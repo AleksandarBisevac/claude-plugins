@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **`stamp-verification.py red` proves a red-first without touching the shared tree.** The executor
+  brief used to prove a red by undoing the fix in the working tree for the length of the run, which a
+  host refused beside a sibling's uncommitted work. `red --manifest M --task T -- <cmd>` checks HEAD
+  out with `git worktree add --detach` into a temp directory, copies the task's test files over it,
+  runs the command there, removes the throwaway in a `finally` and checks git no longer lists it, and
+  prints the `redFirst` block the executor returns. `--introduces SYM` is where "the task introduces
+  the symbol" is decided. The executor, reviewer and `execute-task.md` briefs point at it.
 - **`/audit:task` has verbs for what operators were hand-editing.** `move <taskId> --to <phaseId>`
   performs the procedure `commands/task.md` used to describe as Edits: the new id from the
   allocator `next-id task` prints, every reference rewritten (dependencies, `fileIndex`, a bug's
@@ -147,6 +154,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   advises an abandoned user lock by its own `--takeover` path.
 
 ### Changed
+- **One `redFirst` vocabulary.** The reviewer graded with `not-applicable` and `not-proved` while
+  the executor and the schema said `proved|could-not-prove|not-attempted`, and the reviewer brief
+  misquoted what the executor sends. The schema enum is now the one source: the reviewer echoes the
+  executor's word when its basis holds, `not-attempted` replaces `not-applicable`, and `not-proved`
+  stays as a declared reviewer-only grade. `_refs.red_first_vocabulary_drift()` fails the build when
+  either return shape strays from that.
+- **The Claude Code record readers moved to `scripts/status/_claude_home.py`**, so `/audit:version`
+  and `/audit:doctor` read `installed_plugins.json` and `known_marketplaces.json` through one module
+  instead of two.
 - **Under `--json`, every `audit-task.py` refusal is one JSON object**, `{ok: false, exit, refused,
   findings}`, where it used to be prose on the stdout a caller was about to parse.
 - **The list flags repeat.** `--files`, `--blocked-by`, `--depends-on` and `--verified-by` take the
@@ -231,6 +247,53 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`/audit:doctor`'s `running plugin` row no longer stays yellow over a dead session's stamp.** It
+  counted every stamp not naming this copy as drift and never read the stamp's age, so one ended
+  session's file - which state GC keeps for days - held the row at WARNING while every newer stamp
+  named the running copy, and "start a new session" could not clear it. It now grades the newest
+  stamp per copy: a copy superseded by a newer stamp since is reported as history, named, aged and
+  offered for pruning by path, and a live foreign stamp carries its age. Liveness is each copy's
+  own age against an idle bound the row prints, never the asking session's stamp - that session
+  has always just prompted - and `guard-secrets-read` now refreshes the calling session's stamp on
+  Read, Grep, Bash and MCP calls, throttled, so a session mid-turn on an older copy stays a
+  WARNING.
+- **`/audit:doctor`'s `plugin files` row verifies a marketplace-cache install** instead of warning on
+  every one that it is "not inside a git checkout". Claude Code's `installed_plugins.json` records
+  the commit the cache copy was made from and the marketplace clone holds it, so the copy is
+  compared byte for byte with `git archive` of that commit and each differing or missing file is
+  named. Both records are undocumented Claude Code files, read fail-open, and the row says so; it is
+  unverifiable only when a record, the commit or the clone is missing.
+- **A compile error is no longer credited as a proved red.** The briefs graded any named command
+  with a non-zero exit as `proved`; `proved` now needs at least one test collected and an assertion
+  failing - a named case of the task's own - and a compile, import or collection error is
+  `could-not-prove` unless the task introduces the symbol the run fails on: an identifier, a final
+  import/attribute/name error naming it (never a syntax error), and a second run with the working
+  tree's implementation copied in that loses the error.
+- **`stamp-verification.py red` always accounts for its throwaway.** A SIGTERM left the throwaway
+  registered in git and a timeout left a test runner's grandchildren writing into it. The run is
+  now one process group torn down whole, SIGINT/SIGTERM raise so the cleanup runs, the default
+  timeout stays under the host's Bash limit, a throwaway left by SIGKILL is reported by name on the
+  next run, and the child's environment is scrubbed of what points at the shared tree. The
+  teardown and the interrupt handling moved to `scripts/governance/_proc_group.py`, shared with
+  `run-test-gate.py`. `pytest -q`'s unframed summary is now read as a tally.
+- **The `plugin files` row names unpublished files under `hooks/` and `scripts/`**, bytecode
+  included - bytecode beside a published `.py` is what Python executes - instead of calling them
+  harmless; bytecode is counted rather than named only when its header records its published
+  source AND its body matches a fresh compile of that source, since a matching header alone is
+  what makes Python run a stale body. The `redFirst` lint now also refuses a retired word anywhere in the two briefs.
+- **The running-plugin stamp refresh can no longer change `guard-secrets-read`'s verdict.** It ran
+  before the decision, and a `stateDir` that was not a string made it raise, which the hook's exit
+  0 turned into an allowed read of a secret file. It now runs after the verdict, with everything
+  it computes inside one never-raise.
+- **`red`'s environment scrub goes by path, not substring**: only a variable whose value is a path
+  under the shared root, or the entries of a path list that are, are removed, so PATH survives an
+  in-repo `.venv/bin`; the basis names what was dropped. One deadline now covers both runs and a
+  `--timeout` past the host's limit is refused; `--case` is held to the same absent-from-HEAD test
+  as a derived case; pytest collection errors and a bare AttributeError reach `--introduces`'
+  second run; a leftover throwaway is `left behind` only when its owning process is gone; and the
+  throwaway is never built under a TMPDIR inside the shared tree. The deadline covers the build and
+  the first run too, with the teardown and removal bounded inside the host's limit, and a kept
+  variable that carries a path under the shared root is named in the basis.
 - **`scope` said the index was DIRTY when its bytes had not changed, and reordered a shared
   `fileIndex` row on a call that moved nothing.** It re-derived every row it held by removing and
   re-appending, and always passed `fileIndex` as changed; it now touches only the rows it claims or

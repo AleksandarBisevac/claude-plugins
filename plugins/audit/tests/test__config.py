@@ -1829,6 +1829,37 @@ def _cases(check):
               % (M.running_plugin_stamps(os.path.join(rp_tmp, "nope")),),
               M.running_plugin_stamps(os.path.join(rp_tmp, "nope"))
               == {"stamps": [], "unreadable": []})
+        # -- the stamp's mtime means the last GUARDED TOOL CALL, not the last prompt
+        # One prompt can drive hours of tool calls, so a stamp written only on a
+        # prompt made every session mid-turn look idle beside the one asking.
+        stale_at = time.time() - M.RUNNING_STAMP_REFRESH_SECONDS - 5
+        slot = os.path.join(state, M.RUNNING_STAMP % "sess-1")
+        os.utime(slot, (stale_at, stale_at))
+        touched = M.refresh_running_stamp(state, "sess-1")
+        check("rp12 a guarded tool call REFRESHES its session's stamp once the "
+              "stamp is older than the throttle: %r mtime moved %r"
+              % (touched, os.path.getmtime(slot) > stale_at + 1),
+              touched is True and os.path.getmtime(slot) > stale_at + 1)
+        before = os.path.getmtime(slot)
+        again = M.refresh_running_stamp(state, "sess-1")
+        check("rp13 THE THROTTLE: a second call inside the throttle only stats - "
+              "it writes nothing, so a tool call pays one stat and not a write: "
+              "%r" % (again,),
+              again is False and os.path.getmtime(slot) == before)
+        missing = M.refresh_running_stamp(state, "never-prompted")
+        check("rp14 ...and a session with no stamp gets none CREATED here - the "
+              "prompt hook owns the payload, and this path only moves a clock: %r"
+              % (missing,),
+              missing is False and not os.path.exists(
+                  os.path.join(state, M.RUNNING_STAMP % "never-prompted"))
+              and M.refresh_running_stamp(state, "") is False)
+        try:
+            guarded = M.refresh_session_stamp(rp_tmp, {"stateDir": 5}, "sess-1")
+        except Exception as exc:
+            guarded = "raised %s" % (type(exc).__name__,)
+        check("rp15 the guard's entry point never raises, whatever the config "
+              "holds - a guard's main exits 0 on an exception, and 0 is allow: %r"
+              % (guarded,), guarded is False)
     finally:
         import shutil as _sh_rp
         _sh_rp.rmtree(rp_tmp, ignore_errors=True)

@@ -154,7 +154,7 @@ against a copy too old to have ever stamped anything.
 
 So there are **three** outcomes, not two, and the row says which it is:
 
-- **OK** — every stamp here names the copy this command is running from.
+- **OK** — every live stamp here names the copy this command is running from.
 - **WARNING, they differ** — a stamp names another copy, or a state file's shape proves one
   did. The line names both copies and the basis (`stamp`, `state shape`, or both), and the
   fix is the only one that works: **start a new session**. A running session cannot be made
@@ -163,6 +163,20 @@ So there are **three** outcomes, not two, and the row says which it is:
   and could not be read. This is deliberately not an OK line: the same class as `sandbox`
   and `secret rules` above, a fact this command could not establish rather than one it
   cleared. Relay it as *unknown*, never as *they agree*.
+
+**Live and history.** A stamp's age is the last prompt or guarded tool call of the session
+that wrote it: every prompt re-stamps, and `guard-secrets-read` refreshes the stamp on every
+call its `hooks.json` matcher, `Read|Grep|Bash|mcp__.*`, selects - a subagent's calls included,
+since they carry the parent's session. A copy other than the one this command runs from is
+**history** only when its newest stamp is older than the idle bound, which the row prints with
+its number: no guarded tool call within it, so the session ended or is idle waiting on its
+user. History is reported as the file, the copy it names and its age, with the path to delete
+if you want it gone, and it never turns the row yellow. A foreign copy inside the bound is
+**live**: a WARNING that says when it was last active and that it may still be running. The
+session asking is never the measure — it has always just prompted — so relay a live foreign
+copy as a possible stale session, and history as history. The limit: a tool OUTSIDE that
+matcher refreshes nothing, so a session using only such tools, or waiting on its user, for
+longer than the bound reads as history until its next prompt or matched call.
 
 It is a WARNING at worst in every branch. A stale plugin copy is a thing to tell someone,
 not a thing to block on, so a run that exits 0 today still exits 0 with this row present.

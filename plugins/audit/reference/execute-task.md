@@ -96,20 +96,51 @@ not need to.
      **Ask what happened to the PROOF, not only to the gate.** A gate verdict says the
      suite is green; it cannot say whether the new assertion was ever watched failing, and
      an assertion nobody has seen fail may be asserting nothing. So the outcome carries
-     `redFirst` = `{status, basis}` beside the gates, in one of three words: `proved` (it
-     was watched going red, and the basis is the command and its exit code),
-     `could-not-prove` (the proof was attempted and something that is not the work refused
-     it — typically the host's own permission classifier declining the edit that
-     temporarily undoes the fix, which from outside looks like removing a test; the basis
-     is that refusal **verbatim**), or `not-attempted` (none was owed, and the basis says
-     why). `agents/audit-executor.md` states the rule for the executor and
-     `schema/audit-plan.schema.json`'s `redFirst` block declares the words. **Nothing
-     checks that a returned outcome carries the block** — `red_first_drift()` in
-     `plugins/audit/scripts/_refs.py` holds only that every document naming a red-first
-     proof offers the third word, and the `redFirst` enum refuses a fourth spelling only
-     once one is written down and only under the `ajv` step CI and `tools/verify.sh` run;
-     nothing under `scripts/` reads this vocabulary. So asking for the block is yours, and
-     one that did not come back is recorded as absent rather than filled in.
+     `redFirst` = `{status, basis, at}` beside the gates, in one of three words: `proved` (it
+     was watched going red — at least one test collected and an assertion failing — and the
+     basis is the command, its exit code and the tally), `could-not-prove` (the proof was
+     attempted and something that is not the work refused it, or the run reached no
+     assertion: a compile error, an import error or zero tests collected is not a red
+     unless the task introduces the symbol the run fails on; a refusal goes in the basis
+     **verbatim**), or `not-attempted` (none was owed, and the basis says why).
+     `agents/audit-executor.md` states the rule for the executor and
+     `schema/audit-plan.schema.json`'s `redFirst` block declares the words.
+
+     **A red proved after the fix is in runs in a throwaway tree, never in the shared one.**
+     Put the resolved helper in the spawn prompt beside the stamp command below:
+
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/stamp-verification.py" red \
+         --project <gitRoot> --manifest <manifestPath> --task <taskId> -- <test command>
+     ```
+
+     It checks HEAD out with `git worktree add --detach` into a temp directory, copies the
+     task's declared test files from the working tree over it, runs the command there,
+     removes the throwaway in a `finally` and reports whether the removal held, and prints
+     the `redFirst` block, naming the failing case it rests on — which must be one of the
+     task's own: a case present in the working tree's test file and absent from HEAD's.
+     `--case` narrows to the ids it names, held to that same test, so naming a case HEAD
+     already carries proves nothing. Its
+     `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
+     identifier absent from HEAD's copy of every declared implementation file and present
+     in the working tree's, a final import/attribute/name error naming it, and a second run
+     with the working tree's implementation copied in that loses that error and reaches its
+     assertions. The throwaway holds tracked files only and runs with a scrubbed
+     environment, so a suite needing an untracked dependency comes back `could-not-prove`. The executor used to be
+     told to undo its fix in the shared tree for the length of the run, which is a write
+     over ground siblings are editing; a host refused it beside a sibling's uncommitted
+     work. Nothing stops an executor overwriting a file anyway — the plan gate grades which
+     files it touches, not why — so asking for the helper is yours.
+
+     **One vocabulary, checked.** The schema enum is the one source: the executor's return
+     offers exactly its words, and the reviewer's offers those plus its declared
+     reviewer-only `not-proved` — `red_first_vocabulary_drift()` in
+     `plugins/audit/scripts/_refs.py` fails the build otherwise, and `red_first_drift()`
+     beside it holds that every document naming a red-first proof offers the third word.
+     **Nothing checks that a returned outcome carries the block**: the `redFirst` enum
+     refuses a fourth spelling only once one is written down and only under the `ajv` step
+     CI and `tools/verify.sh` run. So asking for the block is yours, and one that did not
+     come back is recorded as absent rather than filled in.
    - **A reported verification carries the tree it was taken on.** Evidence names a command and
      an exit code; it does not say *which tree*, and a claim about a tree that has since moved
      reads exactly like one that is still true. That is one structure behind five separate
@@ -360,7 +391,8 @@ not need to.
      looks afterwards exactly like one briefed well.
    - The subagent does **not** commit — the orchestrator commits (step 4).
    - **The subagent must NEVER run `git stash`** (a stash in a shared working tree destroys sibling tasks' work).
-     For baselines it should use `git diff`/`git show HEAD:<file>` instead. Put this in every subagent prompt.
+     To read a baseline it should use `git diff`/`git show HEAD:<file>` to stdout instead, never redirected
+     over a file; a red against HEAD is `stamp-verification.py red`'s job. Put this in every subagent prompt.
    - **No usable return** (the subagent died, timed out, or came back with no parseable outcome / no
      file changes) is a **failure**, not a success — handle it exactly like a test failure in step 4
      (leave `in_progress`, do not commit; retry until `attempts >= maxAttempts`, then `blocked`

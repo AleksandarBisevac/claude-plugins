@@ -35,6 +35,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -47,8 +48,49 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-secrets-read.py"),
 
 
 # --- cases --------------------------------------------------------------------
+def _refresh_cases(check):
+    """A guarded tool call moves its session's running-plugin stamp's clock."""
+    root = Path(_harness.fixture_root("guard-secrets-stamp-"))
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+    try:
+        cfg = _config._deep_merge(_config.DEFAULTS, {})
+        state = _config.state_dir(root, cfg)
+        _config.stamp_running_plugin(state, "sess-live")
+        slot = state / (_config.RUNNING_STAMP % "sess-live")
+        old = time.time() - 3600
+        os.utime(str(slot), (old, old))
+        M.decide({"tool_name": "Read", "session_id": "sess-live", "cwd": str(root),
+                  "tool_input": {"file_path": str(root / "README.md")}}, cfg=cfg)
+        check("gs-live1 a Read through the guard refreshes the calling session's "
+              "running-plugin stamp, so /audit:doctor reads the LAST TOOL CALL "
+              "and a session mid-turn is not filed as idle: moved %r"
+              % (os.path.getmtime(str(slot)) - old,),
+              os.path.getmtime(str(slot)) > old + 60)
+        bad = dict(cfg, stateDir=5)
+        secret = str(root / "apps" / ("." + "env"))
+        try:
+            verdict = M.decide({"tool_name": "Read", "session_id": "sess-live",
+                                "cwd": str(root),
+                                "tool_input": {"file_path": secret}}, cfg=bad)[0]
+        except Exception as exc:
+            verdict = "raised %s - main() exits 0 on that, which allows" % (
+                type(exc).__name__,)
+        check("gs-live2 THE REFRESH CANNOT CHANGE A VERDICT: with a stateDir that "
+              "is not a string - so the stamp's path cannot even be built - a "
+              "read of a secret file still blocks. Bookkeeping that raised before "
+              "the guard decided made `main` exit 0, which is allow: %r"
+              % (verdict,), verdict == "block")
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
+    _harness.stage(check, "gs-live", _refresh_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
 

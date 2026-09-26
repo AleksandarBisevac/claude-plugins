@@ -153,6 +153,19 @@ LAYERS = (
      # is a second answer waiting to disagree with the first. It reaches nothing
      # but `_output` and git.
      "_commit_trail",
+     # `_claude_home` reads Claude Code's own install records - which commit a
+     # copy was installed from, and where the marketplace clone that holds it
+     # lives. L1 because `audit-version` (an entry point) and `_doctor_setup` (L5)
+     # both need the SAME reading of two undocumented files, and a second reader
+     # would be a second answer about what is installed. It reaches nothing but
+     # `_output`.
+     "_claude_home",
+     # `_proc_group` runs one child tree so it can be stopped WHOLE, and turns a
+     # stop signal into an exception so a caller's `finally` runs. L1 because two
+     # entry points - `run-test-gate` and `stamp-verification` - need the same
+     # teardown, and a second copy is a second answer to "is it stopped". It
+     # reaches nothing but `_output`.
+     "_proc_group",
      # `_worktrees` answers "which worktrees exist, whose phase is each, and what
      # may be reaped". At L1 for `_commit_trail`'s reason word for word: FOUR
      # surfaces need the SAME answer - `_doctor_hygiene` and `_doctor_policy` (both

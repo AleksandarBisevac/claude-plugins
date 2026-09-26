@@ -250,7 +250,7 @@ def _same_copy(a, b):
             and ((a or {}).get("version") or "") == ((b or {}).get("version") or ""))
 
 
-def running_plugin_verdict(here, stamps, drift, unreadable=None):
+def running_plugin_verdict(here, stamps, drift, unreadable=None, now=None):
     """Which copy is executing the hooks, and WHAT MAKES THAT SAYABLE.
 
     `{"verdict", "basis", "others", "drift"}` where verdict is one of:
@@ -277,15 +277,76 @@ def running_plugin_verdict(here, stamps, drift, unreadable=None):
     reason. Sessions in one checkout can run different copies -- that is the
     situation this whole check is about -- so one session stamping agreement says
     nothing about the one beside it that never stamped at all."""
-    others = [st for st in stamps if not _same_copy(st, here)]
+    live, history = split_history(stamps, here, now)
+    others = [st for st in live if not _same_copy(st, here)]
     basis = (["stamp"] if others else []) + (["state shape"] if drift else [])
     if basis:
         return {"verdict": "differ", "basis": basis, "others": others,
-                "drift": drift}
-    if stamps and not (unreadable or []):
+                "drift": drift, "history": history}
+    if live and not (unreadable or []):
         return {"verdict": "match", "basis": ["stamp"], "others": [],
-                "drift": []}
-    return {"verdict": "unestablished", "basis": [], "others": [], "drift": []}
+                "drift": [], "history": history}
+    return {"verdict": "unestablished", "basis": [], "others": [], "drift": [],
+            "history": history}
+
+
+def _copy_key(stamp):
+    """One installation, as `_same_copy` reads it. A stamp naming no root is its
+    own copy, because it names nothing another stamp could be the same as."""
+    root = stamp.get("root") or ""
+    if not root:
+        return ("", stamp.get("version") or "", stamp.get("session") or "")
+    return (os.path.realpath(root), stamp.get("version") or "")
+
+
+# How long a session may go without a guarded tool call and still be counted as
+# running. A stamp's mtime is refreshed by `guard-secrets-read` on Read, Grep,
+# Bash and MCP calls, at most once a `RUNNING_STAMP_REFRESH_SECONDS` apart
+# (`hooks/_config.py`), and one Bash call may run for the host's ten-minute
+# limit with no hook firing; the bound is more than twice that sum, so a busy
+# session is never filed as history between two refreshes.
+IDLE_BOUND_SECONDS = 30 * 60
+
+
+def split_history(stamps, here, now=None):
+    """`(live, history)` - every stamp, split on each copy's OWN age.
+
+    A stamp's mtime is the last prompt or guarded tool call of the session that
+    wrote it. A copy other than `here` whose newest stamp is older than
+    `IDLE_BOUND_SECONDS` has made no guarded tool call for longer than a live
+    session goes between two: its stamps are HISTORY, named and aged. Every
+    other stamp is LIVE. Measured from `now`, never from another stamp: the
+    session asking for this row has always just prompted, and grading the rest
+    against it would call every session mid-turn on another copy history - the
+    stale copy this row exists to find. Stamps naming `here` are never history;
+    an old one is no evidence of drift."""
+    clock = time.time() if now is None else now
+    newest = {}
+    for st in stamps:
+        key = _copy_key(st)
+        if key not in newest or st.get("mtime", 0) > newest[key]:
+            newest[key] = st.get("mtime", 0)
+
+    def idle(st):
+        return (not _same_copy(st, here)
+                and clock - newest[_copy_key(st)] > IDLE_BOUND_SECONDS)
+    return ([st for st in stamps if not idle(st)],
+            [st for st in stamps if idle(st)])
+
+
+def _age(seconds):
+    """A stamp's age as a reader says it, in the largest whole unit."""
+    seconds = max(0, int(seconds))
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            n = seconds // size
+            return "%d %s%s" % (n, unit, "" if n == 1 else "s")
+    return "%d second%s" % (seconds, "" if seconds == 1 else "s")
+
+
+def _stamp_file(state_dir, cfg_mod, stamp):
+    return os.path.join(str(state_dir),
+                        cfg_mod.RUNNING_STAMP % (stamp.get("session") or ""))
 
 
 def _copy_name(copy):
@@ -333,7 +394,7 @@ _STALE_FIX = ("start a new Claude Code session to pick the installed copy up - "
               "session cannot be made to reload it")
 
 
-def check_running_plugin(rep, project, cfg, cfg_mod):
+def check_running_plugin(rep, project, cfg, cfg_mod, now=None):
     """Is the plugin protecting this repo the one this command is describing?
 
     ADVISORY, ALWAYS. Every outcome here is OK or WARNING and never a FINDING:
@@ -361,25 +422,51 @@ def check_running_plugin(rep, project, cfg, cfg_mod):
                  "hooks could only be compared by stamp" % (exc,))
         drift = []
     torn = read["unreadable"]
-    state = running_plugin_verdict(here, read["stamps"], drift, torn)
+    clock = time.time() if now is None else now
+    state = running_plugin_verdict(here, read["stamps"], drift, torn, now=clock)
     torn_clause = ("; %d stamp(s) here could not be read (%s)"
                    % (len(torn), _output.some_of(torn)) if torn else "")
 
+    def aged(stamp):
+        return "%s old" % (_age(clock - stamp.get("mtime", clock)),)
+
+    history = state["history"]
+    history_clause = ""
+    if history:
+        history_clause = (
+            "; history, no guarded tool call within the %d-minute bound - "
+            "ended, or idle waiting on its user: %s - prune by "
+            "deleting %s (session stamps are local scratch, and a session still "
+            "running that copy re-stamps on its next prompt or tool call)"
+            % (IDLE_BOUND_SECONDS // 60,
+               _output.some_of(["%s naming %s, %s" % (
+                cfg_mod.RUNNING_STAMP % h.get("session"), _copy_name(h), aged(h))
+                for h in history]),
+               _output.some_of([_stamp_file(state_dir, cfg_mod, h)
+                                for h in history])))
+
     if state["verdict"] == "differ":
-        parts = ["the hooks in this project ran from %s" % _copy_name(c)
-                 for c in _distinct(state["others"])]
+        parts = ["the hooks in this project ran from %s (last active %s ago, "
+                 "inside the %d-minute idle bound - may still be running)"
+                 % (_copy_name(c), _age(clock - c.get("mtime", clock)),
+                    IDLE_BOUND_SECONDS // 60)
+                 for c in _distinct(sorted(state["others"],
+                                           key=lambda st: -st.get("mtime", 0)))]
         parts.extend(_drift_phrase(d) for d in state["drift"])
         rep.warn("running plugin",
-                 "%s, while this command is running %s (basis: %s)%s"
+                 "%s, while this command is running %s (basis: %s)%s%s"
                  % ("; ".join(parts), _copy_name(here), ", ".join(state["basis"]),
-                    torn_clause),
+                    torn_clause, history_clause),
                  _STALE_FIX)
         return
     if state["verdict"] == "match":
+        live = [st for st in read["stamps"] if st not in history
+                and _same_copy(st, here)]
         rep.ok("running plugin",
-               "%d session stamp(s) in %s, every one naming %s - the copy this "
-               "command is running from"
-               % (len(read["stamps"]), state_dir, _copy_name(here)))
+               "%d live session stamp(s) in %s, every one naming %s - the copy "
+               "this command is running from - the newest %s%s"
+               % (len(live), state_dir, _copy_name(here),
+                  aged((live or read["stamps"])[0]), history_clause))
         return
     if torn:
         seen = ("%d stamp(s) here could not be read (%s)"

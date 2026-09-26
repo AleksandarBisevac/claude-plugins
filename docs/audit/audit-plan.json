@@ -497,7 +497,7 @@
     {
       "id": "P77",
       "title": "Red-first has one vocabulary and a safe mechanism, and doctor's plugin rows say what is true",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P77.json"
     },
     {
@@ -592,19 +592,22 @@
       "P72.7-ttl",
       "P72.8-ttl",
       "P73.1",
-      "P76.2",
-      "P77.2",
-      "P78.11",
-      "P79.7",
-      "P80.12",
-      "P81.8",
       "P75.1",
       "P75.2-j5h",
       "P75.3-j5h",
       "P75.4-j5h",
       "P75.5-j5h",
+      "P76.2",
       "P76.3-6qa",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P77.2",
+      "P77.3-6u9",
+      "P77.4-6u9",
+      "P77.5-6u9",
+      "P78.11",
+      "P79.7",
+      "P80.12",
+      "P81.8"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -678,7 +681,12 @@
       "P75.5-j5h",
       "P76.1",
       "P76.3-6qa",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P77.1",
+      "P77.2",
+      "P77.3-6u9",
+      "P77.4-6u9",
+      "P77.5-6u9"
     ],
     "README.md": [
       "P2.3",
@@ -709,7 +717,8 @@
       "P72.7-ttl",
       "P72.8-ttl",
       "P80.11",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P77.2"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -842,8 +851,10 @@
       "P56.4",
       "P50.5",
       "P55.18",
+      "P78.11",
       "P77.1",
-      "P78.11"
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -861,8 +872,9 @@
       "P47.4",
       "P49.4",
       "P50.5",
+      "P79.7",
       "P77.1",
-      "P79.7"
+      "P77.3-6u9"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -1048,7 +1060,9 @@
       "P72.4-ttl",
       "P72.5-ttl",
       "P72.6-ttl",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1104,7 +1118,9 @@
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -1263,21 +1279,21 @@
       "P47.4",
       "P48.2",
       "P49.1",
+      "P49.4",
       "P51.8",
       "P54.4",
       "P54.5",
-      "P49.4",
       "P57.5",
       "P61.1",
       "P61.8",
       "P70.1",
+      "P76.1",
+      "P76.4-6qa",
       "P77.1",
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1",
-      "P76.1",
-      "P76.4-6qa"
+      "P81.1"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -1328,7 +1344,9 @@
       "P80.5",
       "P80.10",
       "P72.2-ttl",
-      "P72.5-ttl"
+      "P72.5-ttl",
+      "P77.2",
+      "P77.3-6u9"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1864,7 +1882,8 @@
       "P50.8",
       "P72.1",
       "P72.2-ttl",
-      "P72.5-ttl"
+      "P72.5-ttl",
+      "P77.1"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -2003,11 +2022,14 @@
       "P50.8",
       "P59.13",
       "P72.8-ttl",
-      "P77.2",
       "P78.9",
       "P79.6",
       "P80.9",
-      "P81.6"
+      "P81.6",
+      "P77.2",
+      "P77.3-6u9",
+      "P77.4-6u9",
+      "P77.5-6u9"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2046,7 +2068,8 @@
       "P79.5",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P77.3-6u9"
     ],
     "plugins/audit/tests/test_run_test_gate.py": [
       "P22.1",
@@ -2080,7 +2103,8 @@
       "P79.5",
       "P80.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P77.3-6u9"
     ],
     "plugins/audit/tests/test_require_plan.py": [
       "P22.2",
@@ -2147,7 +2171,9 @@
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl",
-      "P72.6-ttl"
+      "P72.6-ttl",
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -2399,7 +2425,8 @@
       "P57.1",
       "P57.3",
       "P59.6",
-      "P77.1"
+      "P77.1",
+      "P77.3-6u9"
     ],
     "plugins/audit/tests/test__refs.py": [
       "P23.1",
@@ -2425,7 +2452,8 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P76.1"
+      "P76.1",
+      "P77.3-6u9"
     ],
     "test__refs.py: a flag named only in a comment is not carried; one argparse defines is": [
       "P23.1"
@@ -2630,7 +2658,9 @@
       "P61.7",
       "P67.1",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P77.2",
+      "P77.3-6u9"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -2639,7 +2669,10 @@
       "P78.11",
       "P79.7",
       "P80.12",
-      "P81.8"
+      "P81.8",
+      "P77.2",
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/commands/logs.md": [
       "P31.2",
@@ -2861,11 +2894,13 @@
       "P53.5",
       "P53.10",
       "P72.8-ttl",
-      "P77.2",
       "P78.9",
       "P79.6",
       "P80.9",
-      "P81.6"
+      "P81.6",
+      "P77.2",
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     ".claude/skills/before-you-claim/SKILL.md": [
       "P37.1"
@@ -2924,7 +2959,9 @@
       "P72.4-ttl",
       "P72.5-ttl",
       "P72.6-ttl",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P77.3-6u9",
+      "P77.4-6u9"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -2961,7 +2998,10 @@
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
-      "P77.1"
+      "P77.1",
+      "P77.3-6u9",
+      "P77.4-6u9",
+      "P77.5-6u9"
     ],
     "plugins/audit/tests/test__tree_stamp.py": [
       "P43.4",
@@ -2969,7 +3009,10 @@
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4",
-      "P77.1"
+      "P77.1",
+      "P77.3-6u9",
+      "P77.4-6u9",
+      "P77.5-6u9"
     ],
     "tools/orchestrator-state.py": [
       "P43.5",
@@ -3063,7 +3106,10 @@
       "P63.5",
       "P63.8",
       "P63.10",
-      "P77.2"
+      "P77.2",
+      "P77.3-6u9",
+      "P77.4-6u9",
+      "P77.5-6u9"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
@@ -3074,7 +3120,10 @@
       "P63.5",
       "P63.8",
       "P63.10",
-      "P77.2"
+      "P77.2",
+      "P77.3-6u9",
+      "P77.4-6u9",
+      "P77.5-6u9"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -3140,13 +3189,15 @@
       "P55.21",
       "P64.3",
       "P68.1",
-      "P70.1",
       "P69.3",
+      "P70.1",
       "P70.3-fos",
       "P73.1",
+      "P76.1",
       "P77.1",
-      "P78.11",
-      "P76.1"
+      "P77.3-6u9",
+      "P77.5-6u9",
+      "P78.11"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -3281,11 +3332,13 @@
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
-      "P67.3-2e7"
+      "P67.3-2e7",
+      "P77.2"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
-      "P67.3-2e7"
+      "P67.3-2e7",
+      "P77.2"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
@@ -3381,6 +3434,18 @@
     ],
     "plugins/audit/tests/_harness.py": [
       "P72.1"
+    ],
+    "plugins/audit/scripts/status/_claude_home.py": [
+      "P77.2"
+    ],
+    "plugins/audit/tests/test__claude_home.py": [
+      "P77.2"
+    ],
+    "plugins/audit/scripts/governance/_proc_group.py": [
+      "P77.3-6u9"
+    ],
+    "plugins/audit/tests/test__proc_group.py": [
+      "P77.3-6u9"
     ]
   },
   "bugs": [
