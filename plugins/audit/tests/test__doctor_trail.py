@@ -1101,6 +1101,386 @@ def _cases(check):
     finally:
         shutil.rmtree(patt, ignore_errors=True)
 
+    # --- check_gate_economy: its own fresh project, for the same reason ------
+    # `patt` is not reused - fixture rows above already carry a "lint" gate
+    # that has failed once, and this block needs full control over which
+    # gate name has failed, which is thin, and what each run's durationMs is.
+    econ = _harness.fixture_root("doctor-trail-economy-")
+
+    def _step(name, ms=None, exitcode=0):
+        step = {"name": name, "command": name, "exit": exitcode}
+        if ms is not None:
+            step["durationMs"] = ms
+        return step
+
+    def _row(run_id, ts, *steps):
+        _evidence_io.append_row(econ, {"v": 1, "runId": run_id, "ts": ts,
+                                       "scope": "task", "status": "passed",
+                                       "steps": list(steps), "failed": []})
+
+    try:
+        os.makedirs(os.path.join(econ, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        no_budget = {"meta": {}, "phases": []}
+
+        rep = base.Report()
+        M.check_gate_economy(rep, econ, manifest_rel, no_budget)
+        check("dge1 no meta.gateBudgetMs at all: an OK row saying so, never "
+              "a warning - the budget is opt-in and an unset one is not a "
+              "claim that anything costs too much: %r"
+              % (_levels(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["OK"]
+              and "no budget declared" in _detail(rep, "gate economy")
+              and "meta.gateBudgetMs" in _detail(rep, "gate economy"))
+
+        budgeted = {"meta": {"gateBudgetMs": 500}, "phases": []}
+        rep = base.Report()
+        M.check_gate_economy(rep, econ, manifest_rel, budgeted)
+        check("dge2 a budget with no evidence rows at all is NOT ESTABLISHED, "
+              "the same taxonomy check_gate_patterns uses for the same "
+              "reason - a fresh plan has not earned a claim about cost: %r"
+              % (_levels(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["WARNING"]
+              and "cannot be" not in _detail(rep, "gate economy")
+              and "no evidence rows recorded yet" in _detail(rep, "gate economy"))
+
+        # dge3 (RED-FIRST): past the floor, never failed, mean cost over the
+        # budget - the repro this task exists to make FAIL on current code
+        # (check_gate_economy did not exist before this change).
+        _row("e1", "2026-01-01T00:00:00Z", _step("lint", 600))
+        _row("e2", "2026-01-02T00:00:00Z", _step("lint", 600))
+        phased = {"meta": {"gateBudgetMs": 500},
+                 "phases": [{"id": "P1", "testGate": ["lint"]}]}
+        rep = base.Report()
+        M.check_gate_economy(rep, econ, manifest_rel, phased)
+        check("dge3 past the floor, never failed, mean 600ms over a 500ms "
+              "budget: a WARNING naming the entry, its runs and both "
+              "numbers: %r" % (_detail(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["WARNING"]
+              and "lint" in _detail(rep, "gate economy")
+              and "ran 2" in _detail(rep, "gate economy")
+              and "600 ms" in _detail(rep, "gate economy")
+              and "500 ms" in _detail(rep, "gate economy"))
+        check("dge3b the remedy names the phase that carries the entry and "
+              "is not signed off, PLUS the new-phase remedy - two different "
+              "questions, both answered: %r" % (_fix(rep, "gate economy"),),
+              "/audit:phase retarget P1 --gate-drop lint"
+                  in _fix(rep, "gate economy")
+              and "add it to meta.phaseGate.exclude" in _fix(rep, "gate economy")
+              and "meta.phaseGate.always" not in _fix(rep, "gate economy"))
+
+        # dge4: the phase is signed off - retargeting it changes nothing an
+        # operator can act on, so it must not be named; the exclude line
+        # still is, because a NEW phase is unaffected by any phase's sign-off.
+        signed_off = {"meta": {"gateBudgetMs": 500},
+                     "phases": [{"id": "P1", "testGate": ["lint"],
+                               "review": {"status": "passed"}}]}
+        rep = base.Report()
+        M.check_gate_economy(rep, econ, manifest_rel, signed_off)
+        check("dge4 a signed-off phase draws no retarget remedy, but the "
+              "plan-wide exclude line still fires: %r" % (_fix(rep, "gate economy"),),
+              "retarget" not in _fix(rep, "gate economy")
+              and "add it to meta.phaseGate.exclude" in _fix(rep, "gate economy"))
+
+        # dge5: the entry is ALSO listed in meta.phaseGate.always, which
+        # OUTRANKS exclude (phase_gate_default's own rule) - so the exclude
+        # line alone would not actually stop it recurring, and the always
+        # line must be named too.
+        always_listed = {"meta": {"gateBudgetMs": 500,
+                                 "phaseGate": {"always": ["lint"]}},
+                         "phases": [{"id": "P1", "testGate": ["lint"]}]}
+        rep = base.Report()
+        M.check_gate_economy(rep, econ, manifest_rel, always_listed)
+        check("dge5 listed in meta.phaseGate.always too: the remedy also "
+              "says to take it out of there, because always wins over "
+              "exclude: %r" % (_fix(rep, "gate economy"),),
+              "take it out of meta.phaseGate.always" in _fix(rep, "gate economy"))
+    finally:
+        shutil.rmtree(econ, ignore_errors=True)
+
+    # --- allow cases, each its own project so one history cannot leak into --
+    # --- another's classification. ------------------------------------------
+    econ2 = _harness.fixture_root("doctor-trail-economy-failed-")
+    try:
+        os.makedirs(os.path.join(econ2, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        _evidence_io.append_row(econ2, {"v": 1, "runId": "f1",
+            "ts": "2026-01-01T00:00:00Z", "scope": "task", "status": "passed",
+            "steps": [{"name": "slow", "command": "slow", "exit": 0,
+                      "durationMs": 9000}], "failed": []})
+        _evidence_io.append_row(econ2, {"v": 1, "runId": "f2",
+            "ts": "2026-01-02T00:00:00Z", "scope": "task", "status": "failed",
+            "steps": [{"name": "slow", "command": "slow", "exit": 1,
+                      "durationMs": 9000}], "failed": ["slow"]})
+        rep = base.Report()
+        M.check_gate_economy(rep, econ2, manifest_rel,
+                             {"meta": {"gateBudgetMs": 100}, "phases": []})
+        check("dge6 ALLOW CASE: an entry that has failed once, however far "
+              "over budget, is not named at all - only a gate that never "
+              "fails is graded on cost: %r" % (_detail(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["OK"]
+              and "slow" not in _detail(rep, "gate economy"))
+    finally:
+        shutil.rmtree(econ2, ignore_errors=True)
+
+    econ3 = _harness.fixture_root("doctor-trail-economy-total-vs-mean-")
+    try:
+        os.makedirs(os.path.join(econ3, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        # MUTATION PIN, both directions: three runs at 400ms each - a TOTAL
+        # of 1200ms clears the 1000ms budget while the MEAN (400ms) does
+        # not. The correct code reads mean, not total, and must stay quiet;
+        # a version that compared the total instead would warn here, which
+        # is exactly the case that looks vacuous and is not (no-silent-pass:
+        # "mutate in both directions").
+        for i in range(3):
+            _evidence_io.append_row(econ3, {"v": 1, "runId": "t%d" % i,
+                "ts": "2026-01-0%dT00:00:00Z" % (i + 1), "scope": "task",
+                "status": "passed",
+                "steps": [{"name": "steady", "command": "steady", "exit": 0,
+                          "durationMs": 400}], "failed": []})
+        rep = base.Report()
+        M.check_gate_economy(rep, econ3, manifest_rel,
+                             {"meta": {"gateBudgetMs": 1000}, "phases": []})
+        check("dge7 MUTATION PIN (total vs mean): total 1200ms clears a "
+              "1000ms budget, mean 400ms does not - reading the mean must "
+              "stay quiet here: %r" % (_levels(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["OK"]
+              and "steady" not in _detail(rep, "gate economy"))
+    finally:
+        shutil.rmtree(econ3, ignore_errors=True)
+
+    econ4 = _harness.fixture_root("doctor-trail-economy-unmeasured-")
+    try:
+        os.makedirs(os.path.join(econ4, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        for i in range(2):
+            _evidence_io.append_row(econ4, {"v": 1, "runId": "u%d" % i,
+                "ts": "2026-01-0%dT00:00:00Z" % (i + 1), "scope": "task",
+                "status": "passed",
+                "steps": [{"name": "silent", "command": "silent",
+                          "exit": 0}], "failed": []})
+        rep = base.Report()
+        M.check_gate_economy(rep, econ4, manifest_rel,
+                             {"meta": {"gateBudgetMs": 1000}, "phases": []})
+        check("dge8 ALLOW CASE: past the floor, never failed, but no step "
+              "ever carried a durationMs - named as UNMEASURED, never as "
+              "cheap, and never a warning: %r" % (_detail(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["OK"]
+              and "silent" in _detail(rep, "gate economy")
+              and _detail(rep, "gate economy").count("unmeasured") == 1)
+    finally:
+        shutil.rmtree(econ4, ignore_errors=True)
+
+    econ5 = _harness.fixture_root("doctor-trail-economy-mixed-measured-")
+    try:
+        os.makedirs(os.path.join(econ5, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        # RED-FIRST (this task): two runs that carried a durationMs of 600ms
+        # each, beside two that carried none - `gate_tally` counts all four
+        # as `ran`, so a mean that divides the measured total by `ran`
+        # (1200 / 4 = 300) clears a 500ms budget and hides a gate that is, on
+        # every run actually measured, 100ms over it. Dividing by the number
+        # of steps that contributed a durationMs (1200 / 2 = 600) must warn.
+        for i in range(2):
+            _evidence_io.append_row(econ5, {"v": 1, "runId": "m%d" % i,
+                "ts": "2026-01-0%dT00:00:00Z" % (i + 1), "scope": "task",
+                "status": "passed",
+                "steps": [{"name": "lint", "command": "lint", "exit": 0,
+                          "durationMs": 600}], "failed": []})
+        for i in range(2):
+            _evidence_io.append_row(econ5, {"v": 1, "runId": "n%d" % i,
+                "ts": "2026-01-0%dT00:00:00Z" % (i + 3), "scope": "task",
+                "status": "passed",
+                "steps": [{"name": "lint", "command": "lint", "exit": 0}],
+                "failed": []})
+        rep = base.Report()
+        M.check_gate_economy(rep, econ5, manifest_rel,
+                             {"meta": {"gateBudgetMs": 500}, "phases": []})
+        check("dge9 a history mixing measured and unmeasured runs must not "
+              "dilute the mean toward the unmeasured runs - the mean is "
+              "taken over the runs that carried a durationMs (600ms), over "
+              "the 500ms budget, and must warn: %r"
+              % (_detail(rep, "gate economy"),),
+              _levels(rep, "gate economy") == ["WARNING"]
+              and "lint" in _detail(rep, "gate economy")
+              and "600 ms" in _detail(rep, "gate economy")
+              and "500 ms" in _detail(rep, "gate economy"))
+    finally:
+        shutil.rmtree(econ5, ignore_errors=True)
+
+    # --- check_shadow_recall: its own fresh project --------------------------
+    recall = _harness.fixture_root("doctor-trail-shadow-recall-")
+
+    def _shadow_row(project, run_id, ts, listed, full, missed=None):
+        """One evidence row through `_evidence_io.row_for` - THE WRITER'S OWN
+        SHAPE, not a hand-built dict, per this task's instruction that these
+        fixtures ride the same function `run-test-gate.py` calls."""
+        result = {"status": "failed", "durationMs": 900,
+                  "failed": missed or [], "ranTotal": full,
+                  "coverageBasis": None, "treeBasis": "b", "treeMutated": [],
+                  "overlap": None, "steps": [],
+                  "shadow": {"listed": listed, "full": full,
+                            "missed": missed or []}}
+        ident = {"runId": run_id, "ts": ts, "attempt": 1, "via": "cli"}
+        row = _evidence_io.row_for(project, result, "phase", {"phaseId": "P1"},
+                                   ident, published=[])
+        _evidence_io.append_row(project, row)
+        return row
+
+    def _plain_row(project, run_id, ts):
+        """A recorded run that computed NO derived gate at all - the allow
+        case `check_shadow_recall` must contribute nothing for."""
+        result = {"status": "passed", "durationMs": 100, "failed": [],
+                  "ranTotal": 1, "coverageBasis": None, "treeBasis": "b",
+                  "treeMutated": [], "overlap": None, "steps": []}
+        ident = {"runId": run_id, "ts": ts, "attempt": 1, "via": "cli"}
+        row = _evidence_io.row_for(project, result, "phase", {"phaseId": "P1"},
+                                   ident, published=[])
+        _evidence_io.append_row(project, row)
+        return row
+
+    try:
+        os.makedirs(os.path.join(recall, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel,
+                              {"meta": {}, "phases": []})
+        check("dsr1 no meta.phaseGate.mode at all: an OK row saying no "
+              "derivation is declared - a row that vanished here would "
+              "read as checked: %r" % (_levels(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["OK"]
+              and "no derivation is declared" in _detail(rep, "shadow recall"))
+
+        shadow_mode = {"meta": {"phaseGate": {"mode": "shadow"}}, "phases": []}
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr2 mode shadow declared and no shadow row recorded yet: an "
+              "OK row saying none recorded, never a warning that recall "
+              "could not be established: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["OK"]
+              and "none recorded" in _detail(rep, "shadow recall"))
+
+        # dsr2b ALLOW, and the case the "count a plain row as a shadow run"
+        # mutation actually needs: a ledger that carries rows, but none of
+        # them a `shadow` field, must still read "none recorded" - not a
+        # computed recall with `n/a` percentages. dsr4 below adds a plain
+        # row ALONGSIDE two shadow rows, where a plain row's (0, 0)
+        # contributes nothing to either sum and so cannot tell this
+        # mutation from the fix; this case is a ledger with ONLY a plain
+        # row, where the mutation flips the branch itself (OK -> WARNING).
+        _plain_row(recall, "s0", "2026-01-01T12:00:00Z")
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr2b ALLOW: a ledger holding only a row with no `shadow` "
+              "field still reads 'none recorded', not a computed recall: "
+              "%r" % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["OK"]
+              and "none recorded" in _detail(rep, "shadow recall"))
+
+        # dsr3 (RED-FIRST, and the mutation pin): two shadow runs whose
+        # SUITE-weighted and RUN-weighted recall disagree - one failing
+        # suite listed of one (a run that "caught" its only failure) beside
+        # three failing suites with none listed (a run that caught nothing).
+        # The suite-weighted TEST recall the assertion below pins is lower
+        # than a version that counted RUNS instead of SUITES (the mutation
+        # this case pins) would read it as, because that version reads it
+        # as CHANGE recall's own number instead - so the two must print
+        # DIFFERENT percentages below or the mutation has gone unnoticed.
+        _shadow_row(recall, "s1", "2026-01-01T00:00:00Z", 1, 1, missed=[])
+        _shadow_row(recall, "s2", "2026-01-02T00:00:00Z", 0, 3,
+                   missed=["tests/test_a.py", "tests/test_b.py",
+                          "tests/test_c.py"])
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr3 test recall is SUITE-weighted (1/4 = 25%%), not "
+              "RUN-weighted (which would read 50%%, change recall's own "
+              "number) - the mutation this case exists to catch: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["WARNING"]
+              and "25%" in _detail(rep, "shadow recall")
+              and "1/4" in _detail(rep, "shadow recall"))
+        check("dsr3b change recall is RUN-weighted (1/2 = 50%%): one of the "
+              "two shadow runs had at least one failing suite listed: %r"
+              % (_detail(rep, "shadow recall"),),
+              "50%" in _detail(rep, "shadow recall")
+              and "1/2" in _detail(rep, "shadow recall"))
+        check("dsr3c the remedy is the fixed 'switch to enforce' sentence, "
+              "with no threshold deciding anything for the reader: %r"
+              % (_fix(rep, "shadow recall"),),
+              "meta.phaseGate.mode" in _fix(rep, "shadow recall")
+              and "enforce" in _fix(rep, "shadow recall"))
+
+        # dsr4 ALLOW CASE: a run that computed no derived gate at all must
+        # contribute nothing to either recall - not a phantom failing suite,
+        # not a phantom run.
+        _plain_row(recall, "s3", "2026-01-03T00:00:00Z")
+        rep = base.Report()
+        M.check_shadow_recall(rep, recall, manifest_rel, shadow_mode)
+        check("dsr4 ALLOW: a row with no `shadow` field leaves both counts "
+              "exactly where they were - 1/4 and 1/2, never 1/3 runs: %r"
+              % (_detail(rep, "shadow recall"),),
+              "25%" in _detail(rep, "shadow recall")
+              and "1/4" in _detail(rep, "shadow recall")
+              and "1/2" in _detail(rep, "shadow recall"))
+    finally:
+        shutil.rmtree(recall, ignore_errors=True)
+
+    # --- check_shadow_recall: an unreadable ledger is SAID, never folded --
+    # --- into "no shadow runs recorded" ---------------------------------------
+    unread = _harness.fixture_root("doctor-trail-shadow-recall-unreadable-")
+    try:
+        os.makedirs(os.path.join(unread, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        _shadow_row(unread, "u1", "2026-01-01T00:00:00Z", 1, 1, missed=[])
+        files = _evidence_io.ledger_files(unread)
+        with open(files[0], "a", encoding="utf-8") as fh:
+            fh.write("{not json at all\n")
+        rep = base.Report()
+        M.check_shadow_recall(rep, unread, manifest_rel,
+                              {"meta": {"phaseGate": {"mode": "shadow"}}})
+        check("dsr5 RED-FIRST: an unparseable ledger line is a WARNING that "
+              "the evidence ledger could not be read, never folded into "
+              "'no shadow runs recorded' - no recall figure is printed "
+              "over a ledger this check could not fully read: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["WARNING"]
+              and "could not read the evidence ledger"
+                  in _detail(rep, "shadow recall")
+              and "none recorded" not in _detail(rep, "shadow recall")
+              and "%" not in _detail(rep, "shadow recall"))
+    finally:
+        shutil.rmtree(unread, ignore_errors=True)
+
+    # --- check_shadow_recall: CHANGE recall's denominator is RED shadow ---
+    # --- runs, never every row that merely carries a `shadow` key ------------
+    denom = _harness.fixture_root("doctor-trail-shadow-recall-denominator-")
+    try:
+        os.makedirs(os.path.join(denom, "docs", "audit"))
+        manifest_rel = "docs/audit/audit-plan.json"
+        # dsr6 (RED-FIRST, denominator): a GREEN wide shadow row (full == 0,
+        # nothing failed - `run-test-gate.shadow_gate_claim` records no
+        # such row today, but this reads the ledger's OWN shape rather than
+        # trusting the one writer that currently exists) beside a RED one
+        # that caught its only failing suite. Counting the green row into
+        # the denominator would dilute a clean full catch into a half one.
+        _shadow_row(denom, "d1", "2026-01-01T00:00:00Z", 0, 0, missed=[])
+        _shadow_row(denom, "d2", "2026-01-02T00:00:00Z", 1, 1, missed=[])
+        shadow_mode2 = {"meta": {"phaseGate": {"mode": "shadow"}}, "phases": []}
+        rep = base.Report()
+        M.check_shadow_recall(rep, denom, manifest_rel, shadow_mode2)
+        check("dsr6 CHANGE recall's denominator is RED shadow runs only - "
+              "one red run, fully caught, reads 100%% and never the 50%% "
+              "counting the green row into the denominator would give: %r"
+              % (_detail(rep, "shadow recall"),),
+              _levels(rep, "shadow recall") == ["WARNING"]
+              and "100%" in _detail(rep, "shadow recall")
+              and "1/1 red shadow run" in _detail(rep, "shadow recall"))
+    finally:
+        shutil.rmtree(denom, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

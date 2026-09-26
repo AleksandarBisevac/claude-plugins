@@ -23,6 +23,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                      # noqa: E402
 import _journal_io                                  # noqa: E402
+import _evidence_io as _evio                        # noqa: E402
 
 M = _loader.load_script("audit-lookup.py", modname="audit_lookup")
 
@@ -232,6 +233,84 @@ def _cases(check):
                "lastStatus": None},
           ])
 
+    # --- run ------------------------------------------------------------------
+    # A long gate runs in the background under `run_in_background` and its
+    # verdict is read from the evidence ledger, not from a truncated terminal -
+    # these rows are shaped exactly as `_evio.row_for` writes them, MAX_FAILING
+    # truncation already applied by the writer, never re-derived here.
+    r1 = {"v": 1, "runId": "R-1", "ts": "2026-06-01T10:00:00Z",
+          "scope": "task", "taskId": "P1.1", "status": "passed", "failed": [],
+          "steps": [{"name": "lint", "exit": 0, "durationMs": 120}]}
+    r2 = {"v": 1, "runId": "R-2", "ts": "2026-06-02T10:00:00Z",
+          "scope": "task", "taskId": "P1.1", "status": "failed",
+          "failed": ["gate"],
+          "steps": [{"name": "gate", "exit": 1, "durationMs": 500,
+                     "outcome": "failed",
+                     "failing": ["AssertionError: x != y"],
+                     "failingBasis": "jest summary line",
+                     "failingSuites": ["tests/test_x.py"],
+                     "failingSuitesBasis": "1 suite named"}],
+          "verdictSource": "reused",
+          "reusedFrom": {"runId": "R-1", "ts": "2026-06-01T10:00:00Z",
+                         "status": "passed"}}
+    r3 = {"v": 1, "runId": "R-3", "ts": "2026-06-03T10:00:00Z",
+          "scope": "phase", "phaseId": "P1", "status": "passed", "failed": [],
+          "steps": [{"name": "selftests", "exit": 0, "durationMs": 300}]}
+    run_rows = [r1, r2, r3]
+
+    found, payload = M.run_lookup(run_rows, "R-2")
+    check("rl1 a known runId answers the bounded render of that one row - "
+          "status, per-step exit/duration/outcome, the failing lines and "
+          "failingSuites with their bases EXACTLY as recorded, and "
+          "verdictSource/reusedFrom because this row is a repeat: %r"
+          % (payload,),
+          found is True and payload["status"] == "failed"
+          and payload["steps"][0]["failing"] == ["AssertionError: x != y"]
+          and payload["steps"][0]["failingSuites"] == ["tests/test_x.py"]
+          and payload["verdictSource"] == "reused"
+          and payload["reusedFrom"]["runId"] == "R-1")
+
+    found, msg = M.run_lookup(run_rows, "R-9")
+    check("rl2 an unknown runId is a miss worded like `bug`'s own unknown-id "
+          "miss - never 'no such run', which reads as a stronger claim than "
+          "an unreadable ledger is entitled to: %r" % (msg,),
+          found is False and "R-9" in msg)
+
+    found, payload = M.run_lookup(run_rows, "latest", task_id="P1.1")
+    check("rl3 'latest' with --task answers the NEWEST recorded row for that "
+          "task - never the first with a matching subject, which is exactly "
+          "the mutation this case is written to catch on a fixture holding "
+          "two rows for the same task: %r" % (payload,),
+          found is True and payload["runId"] == "R-2")
+
+    found, payload = M.run_lookup(run_rows, "latest", phase_id="P1")
+    check("rl4 'latest' with --phase reads the phase's own subject key, not "
+          "the task's: %r" % (payload,),
+          found is True and payload["runId"] == "R-3")
+
+    found, msg = M.run_lookup(run_rows, "latest", task_id="P9.9")
+    check("rl5 'latest' for a subject with no recorded run at all is a miss "
+          "too, worded for the subject rather than a runId: %r" % (msg,),
+          found is False and "P9.9" in msg)
+
+    found, msg = M.run_lookup([], "R-9", unreadable=2)
+    check("rl6 an unreadable ledger is SAID, never read as 'no such run' - "
+          "the miss folds in how many ledger files could not be read, so a "
+          "caller does not mistake a run that is genuinely absent for one "
+          "sitting in a file nothing here could open: %r" % (msg,),
+          found is False and "2" in msg and "could not be read" in msg)
+
+    aliased_rows = [{"v": 1, "runId": "R-old", "ts": "2026-06-01T10:00:00Z",
+                     "scope": "task", "taskId": "P1.1old", "status": "passed",
+                     "failed": [], "steps": []}]
+    found, payload = M.run_lookup(
+        aliased_rows, "latest", task_id="P1.9",
+        aliases={("task", "P1.1old"): ("task", "P1.9")})
+    check("rl7 a task moved to a new id still answers 'latest' under the new "
+          "id - the alias map `subject_aliases` builds is read exactly as "
+          "`_evio.latest_by_subject` reads it elsewhere: %r" % (payload,),
+          found is True and payload["runId"] == "R-old")
+
     # --- CLI: main(), a real manifest on disk, --json and the exit code ----
     tmp = _harness.fixture_root("audit-lookup-")
     try:
@@ -271,6 +350,58 @@ def _cases(check):
               "exits 0 on a match: %r" % (payload,),
               rc == M.E_OK and payload["found"] is True
               and payload["answer"]["files"][0]["last"] == "P1.2")
+
+        # --- CLI: run, through a real evidence ledger on disk -----------------
+        # `mpath` already sits at the DEFAULT `docs/audit/audit-plan.json`
+        # location, so the ledger's own default resolution finds it with no
+        # config override - the same path `project_config_for` would compute.
+        _evio.append_row(tmp, dict(r1))
+        _evio.append_row(tmp, dict(r2))
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = M.main([mpath, "run", "R-2", "--json"])
+        payload = json.loads(out.getvalue())
+        check("al20 the CLI answers `run` for a real evidence ledger on disk, "
+              "read through the same `--project` resolution `cancel` already "
+              "uses: %r" % (payload,),
+              rc == M.E_OK and payload["found"] is True
+              and payload["answer"]["runId"] == "R-2"
+              and payload["answer"]["verdictSource"] == "reused")
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = M.main([mpath, "run", "latest", "--task", "P1.1", "--json"])
+        payload = json.loads(out.getvalue())
+        check("al21 the CLI wires `latest` --task through to the newest "
+              "recorded run for that task: %r" % (payload,),
+              rc == M.E_OK and payload["found"] is True
+              and payload["answer"]["runId"] == "R-2")
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = M.main([mpath, "run", "latest"])
+        check("al22 `run latest` with NEITHER --phase nor --task is a usage "
+              "error (exit 2), not a miss (exit 1) - the caller asked an "
+              "ambiguous question, not one this ledger could answer 'no' to: "
+              "%r" % (rc,),
+              rc == M.E_USAGE)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = M.main([mpath, "run", "latest", "--phase", "P1", "--task",
+                        "P1.1"])
+        check("al23 SECOND DIRECTION: `run latest` with BOTH --phase and "
+              "--task is the same usage error, not a silent pick of one: %r"
+              % (rc,), rc == M.E_USAGE)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = M.main([mpath, "run", "R-9"])
+        check("al24 an unknown runId through the real CLI exits non-zero "
+              "with the miss sentence, exactly as `bug`/`file`/`brief` do "
+              "for their own unknowns: %r" % (rc,),
+              rc == M.E_NOMATCH and "no" in out.getvalue().lower())
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

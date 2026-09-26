@@ -434,6 +434,17 @@ LAYERS = (
     # nothing at L3 and nothing at L3 reaches it; its only consumer is
     # `render-report` at L7, which reads the disk and hands the answer down.
     ("usage_ledger", "_panel_settings", "_manifest_rules", "_evidence_view",
+     # `_gate_derive` is the gate helpers' one home (`is_shared_key`,
+     # `path_scoped_sibling`, `repointed` -- moved out of `audit-task.py`) plus
+     # the phase-level `derive()`. It reaches `_manifest_phases` and
+     # `_evidence_io`, both here at L2, so this is the first layer strictly
+     # above both; `_manifest_rules` is NOT one of its edges -- its
+     # `tests_add_path` only re-exports `_manifest_phases`' own, and this
+     # module calls that directly rather than moving up a layer for a
+     # re-export. Its consumers are `audit-task.py` (L7), which keeps thin
+     # aliases, and `derive-phase-gate` (L7), which reaches its arm helpers
+     # directly to REPORT the breakdown `derive()` itself does not expose.
+     "_gate_derive",
      # `_usage_bench` drives all four analytics passes (each L2), so L3 is the
      # lowest layer that can reach them; `render-report` loads it for `_time_best`.
      "_usage_bench",
@@ -735,6 +746,18 @@ LAYERS = (
      # `_manifest_io` (L1) to take a task's declared files off the plan instead
      # of off a hand-typed list, which is the held model of state it is about.
      "stamp-verification",
+     # `derive-phase-gate` computes a PHASE's sign-off gate from
+     # `_gate_derive.derive` (L3) rather than deriving it itself: it gathers the
+     # observations that pure function needs -- the version answer, the two
+     # importer listings, changed paths since `baseRef`, the newest red
+     # phase-scope row (`_evidence_io`, L2) and the plan gate's own exempt
+     # verdict (`_loader.load_hooks_config()`, L1, the one door scripts/ has
+     # into `hooks/_config.py`) -- and writes the result under the index lock
+     # through `_panel_write` (L6), the same lock/snapshot/rollback pair every
+     # other manifest writer uses. `_proc_group` (L1) runs each listing so a
+     # runaway child cannot outlive the timeout the way a bare
+     # `subprocess.run` would.
+     "derive-phase-gate",
      # `set-priority` is the writer behind `/audit:phase priority`: one integer on
      # the index stub, under the index lock, revalidated. A command rather than a
      # prose instruction because the rule it enforces (tier 1 is unique, and a

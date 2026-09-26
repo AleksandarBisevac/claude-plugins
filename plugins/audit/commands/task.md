@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id] | uncouple --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -15,6 +15,8 @@ or subcommand `scope` followed by a task id and any of its flags;
 or subcommand `move` followed by a task id and `--to <phaseId>`;
 or subcommand `block` followed by a task id and `--reason "<why>"`;
 or subcommand `note` followed by a task id and `--text TEXT`;
+or subcommand `couple` followed by `--test <path> --sources a,b --basis-run <runId> --basis-head <sha>`;
+or subcommand `uncouple` followed by `--test <path>`;
 or subcommand `cancel` followed by an id and `--reason "<why>"`;
 or subcommand `priority`, the legacy spelling covered at the end of this file.
 Unknown/empty subcommand → print usage and stop.
@@ -153,6 +155,11 @@ per add is the class of error the script exists to delete.
      `run-test-gate.py --task` reads: such a task resolves EMPTY at task scope
      rather than borrowing the phase's gate, while a task that merely declares no
      gate still falls back to the phase's and says so.
+   - `--failing-from <runId>` — for a FIX task opened after a red sign-off run:
+     point the new task's gate at the suite(s) that run's own steps NAMED as
+     failing, unioned with this task's `--tests-add` paths, in the phase's
+     path-scoped spelling. See *A failed-first fix task is gated on what the run
+     named* below for the refusals and the fall-through.
    - `--model` (default `sonnet` — the floor for all fix work; the script escalates
      `risk: high` to `opus` when no model is passed; do NOT use `haiku` for
      audit-fix work), `--risk` (`low`/`med`/`high`).
@@ -241,12 +248,21 @@ rather than the entries: a narrow gate and a wide one look alike once written, a
 sentence is what tells them apart without opening the shard.
 
 **And the arm is written down, not only printed.** The same derivation sets
-`tests.gateBasis` — `tests.add`, `files`, `phase-no-spelling`, `phase-no-paths`, or
-`declared`/`cleared` for the two flags. The sentence is for a person and is gone after
+`tests.gateBasis` — `tests.add`, `files`, `phase-no-spelling`, `phase-no-paths`,
+`gate-only-no-suite`, or `declared`/`cleared` for the two flags. **`gate-only-no-suite` is
+`gate-only`'s own arm**, and it fires only for that mode: a `gate-only` task names no `tests.add`
+case at all, so a source file among its `files` is not evidence the project's suite-running
+command has anything of this task's to run, and narrowing to it would buy a green on work nobody
+wrote. When none of the task's `files` is a suite path (`_manifest_phases.is_suite_path`), the
+gate becomes `meta.phaseGate.always` where the plan declares one, else the sibling's own shared
+keys and path-less entries carried through — **never** the phase's wide `testGate`, which an
+operator already gets warned about running every attempt. The sentence is for a person and is gone after
 one screen; the word is what `validate-manifest.py` reads when it asks whether a task
 carrying its phase's gate verbatim is holding a default or an answer. It is silent on
 `phase-no-spelling` (this project records no path-scoped spelling, so there is nothing to
-narrow with) and on `declared` (a caller named these commands), and it names everything
+narrow with), on `gate-only-no-suite` (a `gate-only` task's own files name no suite to narrow to,
+which is its own answer) and on
+`declared` (a caller named these commands), and it names everything
 else — including a task that records no basis at all, which is what a hand-written or
 generated plan carries.
 
@@ -255,6 +271,38 @@ to `declared`, and it does so **even when the command list does not move** — d
 wide gate outright is exactly the call an operator makes here, and a verb that compared
 lists alone would report "already reads that way", write nothing, and leave the only
 remaining route a sentence in the `description` that no rule opens.
+
+### A failed-first fix task is gated on what the run named
+
+**`--failing-from <runId>` reads the evidence ledger before the three ordinary defaults,
+never instead of them** — `--gate`/`--gate-clear` still answer first, exactly as they do
+for every other verb. The runId is looked up (`_evidence_io.row_by_run`), never parsed:
+the schema calls a runId opaque, and reading structure into one here would be a second,
+silently different answer to a question the lookup already answers.
+
+**Three things have to be true of the row, each refused by naming the actual value:**
+it must EXIST (a mistyped runId is told there is no such run, never handed the ordinary
+derivation in silence); it must be scoped to **this phase** (a task's own run, or another
+phase's, cannot license a gate narrowed to suites this phase never ran); and it must carry
+`status: "failed"` (a fix task opened from a run that PASSED is not failed-first, and the
+sentence names the actual status).
+
+**Only a suite the row's failed steps NAMED counts.** A step's `failingSuites` is read —
+never `failing`, which carries a CHECK's own title and no path — and only when its
+`failingSuitesBasis` says the runner NAMED them; `run-test-gate.py` falls back to a capped
+tail of a step's own output when no runner it recognises wrote a summary, and a tail
+excerpt is not a list of failing tests. The suites are UNIONED with this task's own
+`--tests-add` paths — a fix task may still be asked to write a NEW case beside the failure
+it repairs — and pointed through the phase's path-scoped sibling spelling exactly as the
+three ordinary defaults are. `tests.gateBasis` is written `failing-from-run:<runId>`:
+compare the word before the colon, and look the runId up rather than parsing further.
+
+**The gate is never empty just because `--failing-from` could not narrow anything.** A row
+whose failed steps named no suite (a tail basis) or a phase with no path-scoped sibling to
+narrow through falls all the way through to the ordinary `tests.add` → `files` →
+phase-wide chain, with the reason it fell through printed FIRST in the `gate:` line — the
+same three defaults a call with no `--failing-from` gets, never silence and never the
+empty gate as though `--failing-from` were a second spelling of `--gate-clear`.
 
 ### A brief the shell has eaten is refused
 
@@ -581,6 +629,46 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" note P3.2 \
 One `task.note` row per call. **Refused:** empty text, a phase id, and a `notes` value that is
 not a list (an append onto another shape would replace it). A note never changes status.
 
+## Subcommand: `couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id]` / `uncouple --test <path>`
+
+Both write `meta.coupling`, the record a derived phase gate reads back to widen itself onto a
+test whose own run named a source it depends on. Neither takes a task or phase id — the
+positional slot is the manifest, the same way `settle` reads it.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" couple \
+  --test plugins/audit/tests/test_<name>.py --sources src/a.ts,src/b.ts \
+  --basis-run <runId> --basis-head <sha> [--phases P2,P3] [--json]
+```
+
+`--test` names the entry, and it must read as a suite path the project already recognises
+(`tests_add_path` and `is_suite_path` both have to accept it). `--sources` names every file
+this test is coupled to, and each one is checked the same way. `--basis-run` is looked up in
+the evidence ledger, never merely typed — a run id the ledger does not hold is refused,
+because a coupling states what taught it. `--basis-head` is asked of git the same way
+`done`'s own SHA is: refused, exit 2, when git can be asked and the SHA resolves to
+nothing in this project's repository; written and reported unverified, never refused, when
+git cannot be asked at all (no git on PATH, or a shallow clone). `--phases` is checked against
+the plan this call is writing into — an id that plan does not hold is refused, exit 2, naming
+it. A test coupled for the first time gets a new entry; a test already coupled has its
+`sources` WIDENED (unioned) with the ones just named, and its `basis` (`runId`/`head`/`phases`)
+and `learnedAt` stay exactly what the first call wrote — a re-couple's own `--basis-run`/
+`--basis-head`/`--phases` are still validated, but never written over the first call's basis.
+A coupling is a fact that grows and is never silently replaced.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" uncouple \
+  --test plugins/audit/tests/test_<name>.py [--json]
+```
+
+`uncouple --test` drops the one entry it names. **Refused, exit 2:** `--test` naming a test
+`meta.coupling` carries no entry for, and (on `couple`) an empty `--sources`, a missing
+`--basis-run`/`--basis-head`, a `--basis-run` the evidence ledger does not hold, a
+`--basis-head` that is not a commit SHA or that git can be asked about and does not have, or a
+`--phases` id this plan does not hold.
+`--sources` and `--basis-run`/`--basis-head`/`--phases` belong to `couple` alone; `--test` is
+the one flag the two verbs share.
+
 ## Subcommand: `cancel <id> --reason "<why>"`
 
 **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
@@ -676,9 +764,10 @@ back. Readiness is the **whole** rule, all four of its terms, and the owning pha
 said opposite things about one manifest for as long as there were two copies of it.
 
 **`--gate-clear` is how a task reaches the EMPTY gate**, and it is here for a reason
-that is not `/audit:phase retarget`'s. That verb *appends* to `testGate`, so the append
-itself left the empty gate unspellable; `scope` **replaces** `tests.gate` outright, and
-the gap is in the values — no `--gate` value says *none*, because `--gate ""` writes a
+that is not `/audit:phase retarget`'s. That verb *replaces* `testGate` too, so the
+replacement itself still left the empty gate unspellable; `scope` **replaces**
+`tests.gate` outright, and the gap is in the values — no `--gate` value says *none*,
+because `--gate ""` writes a
 gate holding an empty command, which is a gate that cannot run rather than the absence
 of one. It refuses alongside `--gate` exactly as `retarget` does. Measured live: a phase
 retargeted to `testGate: []` (nothing in that repo could grade markdown and config) left

@@ -474,6 +474,7 @@ scripts/status/audit-lookup.py <manifest> cancel <taskOrPhaseId>
 scripts/status/audit-lookup.py <manifest> bug <bugId>
 scripts/status/audit-lookup.py <manifest> file <path>
 scripts/status/audit-lookup.py <manifest> brief <taskId>
+scripts/status/audit-lookup.py <manifest> run <runId|latest> [--phase <id> | --task <id>]
 ```
 
 Run it and relay its answer — do not re-derive the same fact by grepping the manifest or the
@@ -481,6 +482,16 @@ journal by hand once this exists to answer it. **A match that finds nothing says
 and never returns the nearest id or a similar path as if it had answered; an id that exists but
 does not apply to the question (a task that was never cancelled) is a different, legitimate
 answer and not a miss.
+
+**`run` reads the evidence ledger, not the manifest or the journal — it is what a background
+gate's verdict is read back from.** A gate expected to outlast the Bash tool's foreground bound
+runs under `run_in_background`, so its own terminal may never be read to the end; the run
+records its row in the ledger **before** it prints anything (`--record`'s row write happens
+strictly after the measurement completes and strictly before the banner), so the verdict is
+never lost to a truncated terminal. Read it back with the `runId` the run's own `evidence:
+recorded <runId>` line named, or with `run latest --phase <id>` / `run latest --task <id>` when
+that id was not kept. **Never read a background gate's verdict off a truncated terminal** — the
+ledger row is what the recording already made durable, and it is a lookup rather than a search.
 
 **`brief` is the one of the four you do not wait to be asked.** `cancel`/`bug`/`file` answer a
 question a human or a reviewing agent puts to you; `brief` answers the question an EXECUTOR

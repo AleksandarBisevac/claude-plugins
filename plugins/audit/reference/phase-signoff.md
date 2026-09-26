@@ -20,7 +20,11 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    **If the resolved review skill is set**, spawn the plugin's reviewer agent
    (`subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`) with the diff scope
    (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, the resolved skill name, and
-   **`mode: phase`** — it invokes the
+   **`mode: phase`**. The derived gate basis is a conditional input: hand `derive-phase-gate.py
+   --brief`'s line and the runId only when `phase.testGateDerived` is already recorded — a
+   re-review after a gate has run. This step runs before step 2a, so at a first sign-off nothing
+   is recorded yet; hand nothing, and the reviewer reads the input as absent rather than assuming
+   one. It invokes the
    skill itself and returns structured findings (it has no edit tools by design, and the diff stays out of YOUR
    context). The mode is what tells it there is no single task description or executor claim to bind
    here: the intent question was already asked per task, against each task's own description and its own
@@ -70,6 +74,16 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    own commit, its own gate run and its own evidence row. Widening a finished task would make it
    claim a file its recorded commit never staged, and its `outcome` describe a run that did not
    happen.
+2a. **When `meta.phaseGate.mode` is set, derive before you gate.** Run this first, before the
+   `run-test-gate.py --record` call below:
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/derive-phase-gate.py" <manifestPath> <phaseId>
+   ```
+   Read the `DERIVED sign-off gate for <phaseId>: ...` line it prints (or the "could not be
+   bounded" line, when no sibling task carries a path-scoped gate for it to repoint) before
+   moving to step 2. This is what writes `phase.testGateDerived` and `phase.testGateBasis` —
+   `run-test-gate.py` reads them, it never derives them itself.
+
 2. **`testGateGreen`** — run the gate **through the script**, not by hand:
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
@@ -77,6 +91,39 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    ```
    (the script applies `meta.nodePreamble` itself). All commands must pass **after** any
    review-driven changes. Tests are the final signer. Surface manual items as human action items.
+
+   **Route on the two lines a derived gate adds, after the verdict.** In `shadow` mode, over a
+   run that measured a real failure, a `shadow: derived would have listed N of M failing
+   suite(s)` line reports what the derived set would have caught — advisory, and it moves
+   nothing: the wide gate just run is still the phase's whole answer. In `enforce` mode, a
+   `NARROWED sign-off: this run measured the DERIVED gate (N of M listed checks; basis on
+   phase.testGateBasis)` line says the run you just took as evidence measured the narrower set
+   and not the wide one — read `phase.testGateBasis` for why. And when the derived step's own
+   output did not name every suite `phase.testGateDerived` listed, the step reads
+   `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES: ...` basis: that run answered
+   a narrower question than the phase recorded, so its exit code is not this run's verdict —
+   re-derive and re-run, the same repair as any other `could-not-run`, never a retry on the task.
+   **In exactly that case the NARROWED line itself changes, and it replaces the measured one
+   rather than sitting beside it**: `NARROWED sign-off: the derived gate was declared for this
+   phase, but this run did not name every listed suite, so it certifies nothing about that gate
+   - see the GATE COULD NOT RUN line above for what it did not measure.` This run reached no
+   verdict on the derived gate — read it as `could-not-run` exactly as the basis line above says,
+   and fix the runner or the listing before signing off on it. The two NARROWED wordings are
+   mutually exclusive per run: the measured one and this one never both print.
+
+   **A red sign-off gate's fix is a NEW TASK, gated on what this run named as failing** — the
+   same rule step 1 states for a review finding, and the same reason: sign-off has no running
+   task open, so a fix cannot edit anywhere until one exists.
+   ```
+   /audit:task add "<the fix>" --phase <phaseId> --files <the files it touches> \
+       --failing-from <runId>
+   /audit:run <the id that add printed>
+   ```
+   `<runId>` is this run's own `evidence: recorded <runId>` line. `--failing-from` reads the row's
+   steps for the suite(s) they NAMED as failing and narrows the new task's gate to them, unioned
+   with whatever it also declares in `--tests-add` — see `commands/task.md` → *A failed-first fix
+   task is gated on what the run named* for the refusals and the fall-through to the ordinary
+   derivation when the row named no suite.
 
    **Why the gate is step 2 and not step 1 — it measures the phase ONCE.** A reviewer's findings
    become fix tasks, and a fix task's edits invalidate a gate taken before them: a gate run ahead
@@ -92,6 +139,34 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    level, a **refused pointer is not a failure**: the row stands and `--reconcile` catches the plan
    up. Everything it writes happens after the verdict is complete, so the recording can never
    appear in the tree comparison it is being judged by.
+
+   **A phase gate expected to outlast the Bash tool's foreground bound runs under
+   `run_in_background`, and its verdict is read from the ledger, never from a truncated
+   terminal.** The command is unchanged; `evidence: recorded <runId>` prints only once the row is
+   already written, so the run has recorded before its own terminal is ever read again. Read the
+   verdict back with `scripts/status/audit-lookup.py <manifestPath> run <runId>` (the id off that
+   line) or `run latest --phase <phaseId>` — never by re-reading a background job's scrolled-past
+   output — exactly as `reference/orchestrator.md`'s **Answering one question about the trail**
+   describes.
+
+   **`PHASE GATE RAN NO SUITE` and the `excluded:` line are what the phase's own gate has to say
+   about `meta.phaseGate.exclude` before you read the verdict as coverage.** `excluded:` names the
+   `meta.buildCommands` keys `meta.phaseGate.exclude` declares out of THIS run — only the ones this
+   run actually did not execute, never the whole declared list — so a phase whose `testGate` still
+   carries a since-excluded key is not told it skipped a suite it in fact ran. `PHASE GATE RAN NO
+   SUITE` fires when none of the steps that DID run carry a recognised test runner's summary
+   (`suiteReader`, read off the counts reader `summary_reader` already computes per step): a green
+   verdict built entirely of lint and typecheck entries is not evidence that any behaviour was
+   exercised, and this line is what says so before you sign off on it. Neither line moves the exit
+   code. The remedy is the same one `/audit:doctor`'s gate-economy row prints for the same
+   condition: `/audit:phase retarget <phaseId> --gate-drop <entry>` for a phase not yet signed off,
+   or `meta.phaseGate.exclude`/taking the entry out of `meta.phaseGate.always` for the next phase
+   this plan mints.
+
+   **`SAME SUITE COUNTED ONCE` prints its own remedy line** — `/audit:phase retarget <phaseId>
+   --gate-drop <name>` for the duplicate entry — when two or more gate entries reported the same
+   check count over the same suite file(s): read it before signing off, because a duplicated entry costs
+   wall clock and exposure to flakiness without adding assurance.
 
    **It brackets the gate, and that is why it is a script.** A gate is a MEASUREMENT.
    Exit 1 is not one answer, and the output says which: a command failed, the gate

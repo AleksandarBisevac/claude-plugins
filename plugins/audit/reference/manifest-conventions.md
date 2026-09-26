@@ -418,7 +418,23 @@ The journal's **completion-record actions**:
   touched and stays true whatever happens to it afterwards, so a plan-movement claim hung on it
   would assert a transition that had not happened yet and might never happen
 - `audit.state.committed` — an audit-state commit was made for work no task commit will carry
-  (details: commit, phaseId)
+  (details: commitNonce, phaseId; older rows: commit, phaseId). Written before the commit and
+  carried by it, so it names the commit by the nonce its `Audit-Row` trailer carries
+- `audit.index.committed`, `audit.task.committed` — the same, for a manifest-index commit and a
+  task commit (details: commitNonce, phaseId, and taskId on the task row)
+- `audit.commit.withdrawn` — a scoped commit whose rows were already written was NOT made (a hook
+  or git refused it), so the rows keyed by this nonce name no commit (details: commitNonce,
+  phaseId, taskId?, reason)
+- `coupling.learned` — `audit-task.py couple` recorded (or widened) one `meta.coupling` entry
+  (details: field = the coupled test path, to = its `sources` after the write, runId, commit = the
+  `basis.head` the entry was learned against). A test already coupled has its `sources` UNIONED
+  rather than replaced, so a widening still writes this action, once, over the same entry
+- `coupling.dropped` — `audit-task.py uncouple` removed one `meta.coupling` entry by its test path
+  (details: field = the test path, from = the `sources` the dropped entry carried)
+- `phase.gateDerived` — `derive-phase-gate.py` computed a phase's derived sign-off gate (details:
+  phaseId, mode, changes — which of `testGateDerived`/`testGateBasis`/`testGate` this run wrote,
+  `testGate` only in `enforce` mode — and basis, `phase.testGateBasis`'s own word). Written **only
+  after the write lands**, the same rule every completion row here follows
 
 **Each action has exactly ONE writer**, and which one differs — never append any of them by hand,
 because two writers means duplicate rows and a doctor that can no longer trust the count.
@@ -436,11 +452,12 @@ derived, and an old, unrelated completion of the same task is a different record
 by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot tell one sign-off
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
-`task.move`, `task.block` and `task.note` are written **in process** by `audit-task.py`, the
-same way its `task.done`, `task.reopen` and `plan.settle` rows are. The evidence actions are
-written **in process** by `_evidence_io` and `commit-audit-state.py`, because the hook sees edit
-*tools* and those writers use `os.replace` and `git commit` — the same blindness `audit-task.py`
-already works around.
+`task.move`, `task.block`, `task.note`, `coupling.learned` and `coupling.dropped` are written **in
+process** by `audit-task.py`, the same way its `task.done`, `task.reopen` and `plan.settle` rows
+are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
+for the identical reason. The evidence actions are written **in process** by `_evidence_io` and
+`commit-audit-state.py`, because the hook sees edit *tools* and those writers use `os.replace` and
+`git commit` — the same blindness `audit-task.py` already works around.
 Tokens are deliberately absent from these rows (metering lands on Stop/SessionEnd);
 spend is joined from the ledger by `taskId`.
 

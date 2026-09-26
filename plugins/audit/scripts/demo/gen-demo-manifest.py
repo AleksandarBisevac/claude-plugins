@@ -862,6 +862,38 @@ SCHEMA_EXEMPTIONS = {
         "hand-typed copy of the schema URL (there is no shared constant) or file "
         "I/O inside a generate() documented as pure; CI validates the generated "
         "manifest against the schema BY PATH instead.",
+    # `meta.phaseGate` and `meta.gateBudgetMs` shape what `/audit:phase add`
+    # derives a NEW phase's gate from and what its cost is graded against - no
+    # rendered surface shows either one yet, not the report, not the panel, not
+    # /audit:status. The fixture is generated already-finished phases with
+    # gates that already ran, so a demo carrying either field would be a lever
+    # nothing downstream reads. REVISIT when a rendered surface reads one.
+    "meta.phaseGate":
+        "the one phase-gate default (`always`/`exclude`), read by "
+        "`_manifest_phases.phase_gate_default` when a NEW phase is added, plus "
+        "`mode`/`derived`/`smoke` - what a derived sign-off gate would run and "
+        "whether it replaces the wide one. No rendered surface shows any of "
+        "it yet - the demo's phases are already generated with a testGate, so "
+        "this field would be a lever nothing downstream reads. REVISIT when "
+        "derive-phase-gate.py has a rendered surface.",
+    "meta.gateBudgetMs":
+        "advisory cost budget for a phase's gate, in milliseconds. No "
+        "rendered surface shows it yet, same reason as meta.phaseGate above.",
+    "meta.coupling":
+        "what a derived phase gate LEARNED beside its declared arms - no "
+        "derivation has run yet to learn anything from this fixture, and no "
+        "rendered surface reads the field either. REVISIT when "
+        "derive-phase-gate.py has a rendered surface.",
+    "phase.testGateBasis":
+        "which derivation produced `testGateDerived` beside it - unreachable "
+        "for the same reason: the fixture's phases carry a plain `testGate` "
+        "with no derivation ever having run against it, and no rendered "
+        "surface reads the field. REVISIT when derive-phase-gate.py has a "
+        "rendered surface.",
+    "phase.testGateDerived":
+        "what `derive-phase-gate.py` computed for a phase's sign-off gate, "
+        "beside the wide `testGate` array - unreachable and unread for "
+        "`testGateBasis`'s own reason above, the pair this follows exactly.",
     # `meta.branch` WAS EXEMPT HERE and is carried now. Its row read "REVISIT
     # when the panel grows a meta.branch card: the demo is where its screenshot
     # comes from" -- and the panel grew one, and nothing said so. The trigger had

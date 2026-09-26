@@ -59,6 +59,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _evidence_io as _ev  # noqa: E402  (the ledger: suite_keys, project/config resolution)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_rules  # noqa: E402  (the rules this command is a front end for)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
@@ -139,6 +140,46 @@ def main(argv):
         % (pid, key, "nothing" if was is None else was, now,
            _manifest_rules.SETTLE_COMMAND)
         for pid, key, was, now in stale]
+
+    # THE EVIDENCE ARM OF THE SAME 'RUNS NO SUITE' WARNING. `validate()` already
+    # asked the CERTAIN arm with no evidence at all (`_manifest_rules._check_meta`
+    # -> `phase_gate_suite_gap(manifest)`, `suite_keys=None`) - that answers only
+    # a default left EMPTY after `meta.phaseGate.exclude`. This command is the one
+    # caller that HAS the ledger, because it holds the manifest PATH
+    # `_evidence_io.project_config_for` needs to resolve it; asked again only
+    # when the certain arm stayed quiet, and only when `exclude` actually
+    # declares something, so an ordinary plan with no `phaseGate` never pays for
+    # a ledger read it has no question to ask of.
+    _meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    _gate = (_meta or {}).get("phaseGate") if isinstance(_meta, dict) else None
+    _exclude = (_gate or {}).get("exclude") if isinstance(_gate, dict) else None
+    gap = _manifest_rules.phase_gate_suite_gap(manifest)
+    if gap is None and isinstance(_exclude, list) and _exclude:
+        _project, _config = _ev.project_config_for(paths[0])
+        _read = _ev.read_rows(_project, _config)
+        if _read["unreadable"]:
+            # AN UNREADABLE LEDGER IS SAID, NEVER READ AS 'NO SUITE'. A torn
+            # line, an unparseable row or a file this could not even open
+            # means `suite_keys` would be computed over LESS than the ledger
+            # actually holds - and the missing part is exactly as likely to be
+            # the row that would have answered `running` as the one that
+            # would not. THE CHOICE: `phase_gate_suite_gap` is not asked at
+            # all here, rather than asked over the readable remainder and
+            # presented as an answer the ledger cannot back - a partial read
+            # is not a partial answer to THIS question, because one missing
+            # row can flip `running` for the one key left after `exclude`.
+            warnings = warnings + [
+                "the evidence ledger could not be fully read (%s), so "
+                "whether the phase gate runs a suite could not be checked "
+                "against it - this is not 'phase gate runs no suite'"
+                % (_output.some_of(
+                    [_output.posix_rel(p, _project)
+                     for p in _read["unreadableFiles"]]),)]
+        else:
+            gap = _manifest_rules.phase_gate_suite_gap(
+                manifest, suite_keys=_ev.suite_keys(_read["rows"]))
+    if gap is not None:
+        warnings = warnings + [gap]
 
     # `hint` is this command's own spelling of the flag, because on its own
     # output "validate-manifest.py --verbose" would be telling the reader to run

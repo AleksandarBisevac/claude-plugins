@@ -7,6 +7,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **A phase's gate has a declared default and a declared way to narrow it: `meta.phaseGate`.**
+  `/audit:phase add` (and a task's own derivation) used to default to every `meta.buildCommands`
+  key with no way to keep one out short of retargeting every phase by hand afterward.
+  `{always, exclude}` fixes the DEFAULT rather than one phase's gate: `always` puts named keys
+  first, `exclude` leaves named keys out (an entry in both stays IN — `always` outranks
+  `exclude`), and absence is today's behaviour exactly. `meta.gateBudgetMs` is the matching
+  advisory cost budget, read by `/audit:doctor`'s new gate-economy row against a gate that has
+  never failed, naming the entries costing more than the budget and the retarget/exclude/always
+  remedy for each.
+- **`/audit:doctor`'s gate-economy row**, printed after `gate patterns`: a gate `gate patterns`
+  already calls a candidate to drop, graded on its recorded cost against `meta.gateBudgetMs`. No
+  budget declared is an OK row saying so; an unmeasured step is named on its own line rather than
+  folded into a passing count.
+- **`/audit:phase retarget --gate-drop <entry>` and `--gate-set <entry> ...`.** `--gate-set`
+  replaces a phase's gate with an explicit list and refuses the empty one (`--gate-clear` is the
+  declared route to that); `--gate-drop` removes one named entry from the current gate rather than
+  restating the rest of it. `--gate` still REPLACES the gate outright, as it always has.
+- **`PHASE GATE RAN NO SUITE` and the `excluded:` line.** A phase-scope gate run now says when
+  none of the steps it actually ran carries a recognised test runner's summary
+  (`suiteReader`), and names only the `meta.buildCommands` keys `meta.phaseGate.exclude` left out
+  of THIS run — never the whole declared list, so a phase whose `testGate` still runs a
+  since-excluded key is not told it skipped a suite it in fact ran. Neither line moves the exit
+  code; `validate-manifest.py` gains the matching 'phase gate runs no suite' warning.
+  `tests.gateBasis` gains `gate-only-no-suite`, for a `gate-only` task whose own files name no
+  suite path to narrow to.
+- **`/audit:task add --failing-from <runId>`** gates a fix task on the suite(s) a red run's own
+  steps NAMED as failing, unioned with whatever the task also declares in `--tests-add`, in the
+  phase's path-scoped spelling. `tests.gateBasis` records `failing-from-run:<runId>`; a run that
+  named no suite falls through to the ordinary derivation, with the reason printed first.
+- **`run-test-gate.py <m> <P> --task <T> --own [--quiet]`** runs a task's own tests through the
+  same bracket and coverage answer as the recorded run, writes no row and no pointer, ever, and
+  keeps its whole output on disk at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`)
+  rather than spending a subagent's context on it. `--record` and `--reconcile` are refused
+  alongside it — there is nothing here for either to act on.
+- **`audit-lookup.py <manifest> run <runId|latest> [--phase <id> | --task <id>] [--json]`** —
+  the bounded evidence-ledger row a background gate's verdict is read back from, never re-derived
+  from a truncated terminal. A gate expected to outlast the Bash tool's foreground bound runs
+  under `run_in_background`; the row is written before the run's own banner prints
+  (`evidence: recorded <runId>`), so the verdict is durable the moment that line exists.
 - **`stamp-verification.py red` proves a red-first without touching the shared tree.** The executor
   brief used to prove a red by undoing the fix in the working tree for the length of the run, which a
   host refused beside a sibling's uncommitted work. `red --manifest M --task T -- <cmd>` checks HEAD
@@ -152,6 +191,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   POSIX-shell recipe that runs under sh, bash and zsh - a test runs it under each where installed,
   and skips Git Bash on Windows, whose `$$` is not the pid the lock probes - and `/audit:doctor`
   advises an abandoned user lock by its own `--takeover` path.
+- **A phase's sign-off gate can be DERIVED from what its own tasks already declare, rather than
+  running the wide gate every time: `meta.phaseGate.mode` and `derive-phase-gate.py`.** With
+  `mode` set to `"shadow"` or `"enforce"`, `derive-phase-gate.py <manifestPath> <phaseId>` narrows
+  a path-scoped sibling task's own gate to a test-file set built from that task's `tests.add`, any
+  `meta.coupling` entry whose sources overlap the phase's touched files, an import-graph listing
+  (verified against the runner's own version answer, so a listing checked on one machine is never
+  trusted on another), the paths changed since `phase.baseRef`, and the newest recorded failure's
+  named suites — writing the result on `phase.testGateDerived` and `phase.testGateBasis`.
+  **`shadow` records the derived gate beside the wide one and changes nothing about what signs a
+  phase off; `enforce` runs the derived gate instead.** `run-test-gate.py` reads what
+  `derive-phase-gate.py` wrote: an `enforce`-mode run prints a `NARROWED sign-off` line reporting
+  the measured narrower set; when the derived step's own output did not name every suite the
+  phase recorded, that step reads `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES`
+  basis rather than trusting its exit code, and the `NARROWED sign-off` line changes with it —
+  it says the run certifies nothing about the derived gate, in place of the measured wording,
+  never beside it; a `shadow`-mode run over a real failure prints how many of the failing suites
+  the derived set would have listed. `meta.coupling` is learned and dropped by
+  `audit-task.py couple --test <path> --sources <path,path> --basis-run <runId> --basis-head <sha>`
+  and `uncouple --test <path>`, journaled as `coupling.learned`/`coupling.dropped`; a derivation
+  run is journaled as `phase.gateDerived`. `/audit:doctor`'s new shadow-recall row reads the
+  evidence ledger for two recall figures over every shadow run — suite-weighted test recall and
+  run-weighted change recall — as the basis for deciding when a shadow phase is ready for
+  `"enforce"`; nothing switches the mode for you.
+- **The derived gate's own observations are configured under `meta.phaseGate.derived`, beside
+  `spelling` (covered in its own bullet below).** `derived.listing.related` is a command carrying
+  `{paths}`, filled with the shell-quoted union of the phase's own tasks' `files`, that lists —
+  never runs — the suites related to those paths; `derived.listing.all` lists every suite the
+  runner would collect, with no path filter, which is what "the full suite" means for this
+  runner. Neither listing executes a test, and both are timed: the cost of each is recorded on
+  `phase.testGateDerived`. `derived.runner` names a `meta.buildCommands` key, carried through
+  only as the display label the printed `DERIVED` line and `testGateDerived` name the gate under
+  — never resolved or run for a listing itself.
+- **`audit-task.py couple` refuses a `--basis-head` git does not have and a `--phases` id the plan
+  does not hold.** A SHA git cannot be asked about at all is written anyway and reported
+  unverified, rather than refused, since a refusal there would be a claim about the SHA that
+  nothing checked.
+- **`meta.phaseGate.derived.spelling` is a second shape source for the narrowed gate, read only
+  when no task in the phase carries a path-scoped gate entry of its own.** A sibling task's own
+  entry is preferred over it — the runner has already accepted that one — so `spelling` is read
+  second, never in its place. The template must carry a literal `{paths}` placeholder; one that
+  does not is ignored, with the reason printed. Once read, `{paths}` is filled with the resolved
+  test paths. A spelling shape left with no test path to substitute turns the gate wide under
+  basis `derived-empty` too, with its own reason printed — a spelling carries no task gate behind
+  it the way a sibling entry does, so an empty substitution is never narrowed to nothing silently.
+  The printed `DERIVED` line and `testGateDerived` both name which of the two sources — the
+  sibling task or the spelling — supplied the shape.
+- **An ALL-listing naming no suite turns the derived gate wide, with `phase.testGateBasis:
+  derived-empty`.** When the ALL listing ran, exited clean and named no suite, the derivation
+  widens to the phase's ordinary wide gate before anything else runs — coupling, the related
+  (import-graph) listing, changed-since and last-failed are none of them consulted in that case,
+  since a listing that already said "nothing" is not evidence for a narrower guess; the basis
+  line says why. This is one of two ways `derived-empty` is reached — the other is the
+  spelling-sourced shape left with nothing to substitute, in the bullet above.
 
 ### Changed
 - **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the
@@ -321,6 +413,78 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   script's input, decided per interpreter (`perl -c` compiles stdin and `python -E` names no
   program, so neither exempts it). Perl's own `open` shapes - two-argument, with or without a
   `<` mode, and three-argument with `'<'` - are reads the inline-eval arm names.
+- **A squash merge of a phase branch no longer reads as a scope breach.** A `git merge --squash`
+  keeps the squashed messages, `Audit-Row` trailers included, so the row naming an index or
+  audit-state commit resolved to the squash commit, and `index-scope` / `audit-state-scope` graded
+  that commit's whole file list - work included - as the scoped commit's, a breach nothing made. A
+  commit carrying a row's trailer is now graded as the scoped commit only when its subject opens
+  with the class's header (`_invariants.INDEX_HEADER` / `STATE_HEADER`, pinned equal to each
+  writer's own type and scope) and the trailer is a line of its last paragraph, indented or not.
+  Any other carrier is a gap naming it and the test it failed - the header, or the trailer's
+  place - never graded, and never a pass. A carrier without the header is read as a commit that
+  absorbed the scoped one (a squash), and the named commit is then not in this history as a commit
+  of its own unless another carrier was graded, which the gap names; a carrier with the header
+  whose trailer is not last is a copy of the scoped commit (a cherry-pick or a rebase) when that
+  commit was graded, and otherwise may be the scoped commit with a paragraph added after its
+  trailer or a squash that kept its subject - no absence is claimed for it either way. This
+  holds for a squash whose message ends with the index commit's trailer (the index commit made
+  before the work), where only the subject header tells the two apart. The
+  index commit's breach sentence and the docs now say it carries the index and the journal file
+  holding its row; the ledger merge names the shard that would not parse, when it is a shard.
+- **`audit-journal.py merge` resolves the evidence ledger too.** The ledger is hash-chained with
+  the journal's own chain and, before the per-worktree writer key, was appended on two branches
+  under one name, but `merge --file` accepted only a journal file, so every ledger conflict was
+  resolved by hand - interleaved by timestamp and re-chained with the journal's `row_hash`. A
+  `--file` in the evidence directory is now merged by the same `_journal_io.merge_rows`, with the
+  same refusals (a same-second tie that disagrees, a torn tail, a row that no longer hashes to
+  its contents, no shared prefix) and the same re-chain. No marker row is written into the
+  ledger, whose every row is read as a recorded run; the merge is recorded by an `evidence.merge`
+  journal row naming the file, whose `stateHash` also anchors the re-chained bytes. For both
+  records, a same-second tie whose rows touch disjoint targets is now ordered by content instead of
+  refused, and the order is written in the merge's record; a tie on one target, or on a row that
+  names none, is still refused. A journal row's target is its `target`; a run's targets are the
+  keys every ledger reader files it under - `latest_by_subject`'s `(scope, id)` key, now one
+  function (`_evidence_io.subject_key`), and the `taskId`/`phaseId` pair a verdict is matched by -
+  with the plan's moved task ids mapped onto the ids held now, so a `--task` run measured under
+  its phase's gate ties with that phase's sign-off run, and a moved task's old-id run ties with
+  its new-id run; a plan that cannot be read orders no ledger tie at all. The rule does not depend
+  on which side is ours, and an identical tie is ordered by content too, so both branches
+  resolving a conflict get the same order of rows - byte for byte the same file for the ledger,
+  which takes no marker row; a journal file's marker row still records its own time, actor and
+  inputs. The merge output names the journal file holding the `evidence.merge` row, which has to
+  be committed with the ledger it anchors.
+- **`audit-journal.py verify` chose between same-second anchor rows by file read order.** The row
+  that anchors a file was whichever row naming it was read last among those at the newest second,
+  so an `evidence.merge` row and a `record()` row written in one second reported the merged
+  ledger as drift or not depending on how the journal directory was listed. The choice is now
+  `_journal_io.newest_anchor`: the later row within one file, then an `evidence.merge` row over any
+  other (its hash covers bytes that already include the runs), then the greatest row content - a
+  total order the rows define. The winner is still graded, so a merge row whose hash does not
+  match the file is drift as before.
+- **A scoped commit carries the journal row that names it, so a phase can end with a clean tree.**
+  `commit-task-work`, `commit-audit-state` and `commit-manifest-index` each appended the row naming
+  their commit AFTER making it, so the row was never inside it: every run left the trail dirty on a
+  tree it had just reported as committed, and the last commit of every phase left one for somebody
+  to commit by hand. The row is now written first, keyed by a random nonce in a new `commitNonce`
+  detail, the commit message ends with an `Audit-Row: <nonce>` trailer, and the row's file is
+  staged into the same commit (`_scoped_commit.commit_with_rows`) - for the index commit, the one
+  journal file the row landed in joins the index on its allow-list, and `index-scope` allows the
+  journal beside the index. Readers resolve the SHA from the trailer with `git log --grep`
+  (`_invariants.commits_carrying`), which an amend, a rebase, a cherry-pick (both copies are read)
+  or a squash merge (whose indented bodies are read too) does not break - a fixup or reword that
+  drops the trailer leaves the row naming no commit, which is a gap, never a pass; a row still
+  carrying `commit` is read as before. A commit refused after its row was written - a hook, or git -
+  leaves an `audit.commit.withdrawn` row naming the nonce, so no row claims a commit that does not
+  exist; one whose nonce no commit carries and nobody withdrew is a gap in `audit-state-scope` and
+  `index-scope`, never a pass. `commit-audit-state` now commits a journal holding only other
+  writers' rows instead of declining it, since a row inside its commit ends the loop that declining
+  existed to prevent. An `--override-verdict` whose row cannot be written is refused before
+  anything is staged, where it used to commit and then report the missing row.
+- **A correction to the `1.4.1` entry below: `/audit:phase retarget --gate` has always REPLACED
+  a phase's gate, never appended to it.** That released entry said `--gate` appends; it did not,
+  then or now — `--gate-clear` is the load-bearing half precisely because `--gate` replaces, so an
+  emptied gate needed its own spelling. History stays as written; this line is the correction, not
+  an edit of it.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path

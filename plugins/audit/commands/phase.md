@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT] | settle'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT] | settle'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -301,10 +301,26 @@ already prints, and `/audit:status` to see the phase in the plan.
 
 ## Subcommand: `retarget <phaseId>`
 
-Correct a phase that already exists: `--gate <entry>` (repeatable) or `--gate-clear`,
+Correct a phase that already exists: `--gate <entry>` (repeatable), `--gate-clear`,
+`--gate-set <entry> ...` (repeatable-in-one-flag), `--gate-drop <entry>` (repeatable),
 `--area a,b`, `--outcome TEXT`, `--description TEXT`, `--rename TITLE`. Runs
 `scripts/manifest/audit-task.py retarget` — same lock, same revalidate-or-roll-back,
 same journal shape as `add`.
+
+**`--gate-set` is `--gate`'s own operation under a name that takes several values at
+once** — both REPLACE the gate outright; `--gate-set lint typecheck` and two repeats of
+`--gate` write the identical list. An empty `--gate-set` (no value at all, or every value
+blank) is refused with the same sentence `--gate-drop`-to-nothing uses below, because a
+caller who typed nothing meant the empty gate and not a gate of blank commands — unlike
+plain `--gate ""`, which still writes that odd literal, since `--gate-set` exists for a
+caller naming several entries at once rather than for one flag repeated.
+
+**`--gate-drop <entry>` narrows the CURRENT gate by name, the other operation.** Every
+named entry must already be in the phase's `testGate` — an entry it does not name is
+refused, naming the missing entry and the gate as it stands, so a typo is never a silent
+no-op. A drop that would leave nothing is refused with **the same empty-gate sentence**:
+`an empty gate is --gate-clear, which says so` — that state is reached by SAYING so, not
+as a side effect of what got dropped.
 
 **`--rename` is the flag, not `--title`** — the positional slot on this verb is called
 `title` and carries the phase id, so a `--title` flag would shadow it.
@@ -327,7 +343,7 @@ was outside the plugin — a hand edit the plugin forbids, a `buildCommands` val
 a shell hack, or installing a third-party tool to satisfy a gate the plugin itself
 picked.
 
-**`--gate-clear` is the point, not a convenience.** `--gate` appends, so without an
+**`--gate-clear` is the point, not a convenience.** `--gate` replaces, so without an
 explicit clear there is no spelling for the EMPTY gate — and the empty gate is a
 designed state, not a hole: `audit-task.py:_phase_gate` returns it with a basis, and its
 docstring says why it needs one, because *a phase nothing can prove done is a phase
@@ -351,8 +367,9 @@ gate and returns before writing a row, so the report and the panel read the phas
 every task in it that declares no `tests.gate` of its own — as `No gate configured`,
 *nothing could have run*, rather than as a run that answered nothing.
 
-`--gate` and `--gate-clear` together are refused: two answers about one field, and
-guessing which was meant is the fault this closes. `--area` with an empty value REMOVES
+Any TWO of `--gate`, `--gate-clear`, `--gate-set` and `--gate-drop` together are refused:
+two answers about one field, and guessing which was meant is the fault this closes.
+`--area` with an empty value REMOVES
 the key rather than writing `null`, because the conventions default it to absent and a
 `null` would make an untagged phase claim to have considered the question.
 

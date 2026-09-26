@@ -379,6 +379,116 @@ def _cases(check):
                         published=["pytest -q"]
                         )["observations"]["coverageBasis"] is None)
 
+        # --- ef8-ef10: THE OTHER FIELD A RUNNER'S OWN OUTPUT WROTE -------------
+        # `failingSuites`/`failingSuitesBasis` are `failing`'s own two rules
+        # (STEP_KEYS, redaction, a bound the writer trusts from nobody) asked of
+        # a PATH instead of a line of prose - a suite file is exactly the shape
+        # `treeMutated` and `overlap` already answer that question for.
+        _suite_leak = os.path.join(tmp, "elsewhere", "cart.test.ts")
+        _fs_step = dict(RESULT["steps"][0])
+        _fs_step["failingSuites"] = ["src/cart.test.ts", _suite_leak]
+        _fs_step["failingSuitesBasis"] = ("the 2 suite file(s) jest named as "
+                                          "failing, read from jest's FAIL "
+                                          "<path> header(s)")
+        _with_fs = dict(RESULT)
+        _with_fs["steps"] = [_fs_step]
+        _rfs = M.row_for(plain, _with_fs, "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("ef8 `failingSuites` CROSSES INTO THE ROW beside `failing`, "
+              "which is what `STEP_KEYS` decides: %r"
+              % (_rfs["steps"][0].get("failingSuites"),),
+              "failingSuites" in M.STEP_KEYS and "failingSuitesBasis" in M.STEP_KEYS
+              and _rfs["steps"][0]["failingSuites"][0] == "src/cart.test.ts"
+              and "jest" in _rfs["steps"][0]["failingSuitesBasis"])
+        check("ef9 ...and a path OUTSIDE the repository is tokenised on the way "
+              "in, by the same redactor `treeMutated` uses - this row is "
+              "committed, and a suite path naming somebody's machine is the "
+              "same leak one door over: %r" % (_rfs["steps"][0]["failingSuites"],),
+              _journal_io.OUTSIDE_TOKEN in _rfs["steps"][0]["failingSuites"]
+              and not any(x.startswith(tmp)
+                         for x in _rfs["steps"][0]["failingSuites"]))
+
+        _over_fs = dict(RESULT)
+        _over_fs["steps"] = [dict(RESULT["steps"][0], failingSuites=[
+            "src/s%d.test.ts" % (n,) for n in range(M.MAX_PATHS + 5)],
+            failingSuitesBasis="a caller that did not cut its own list")]
+        _rofs = M.row_for(plain, _over_fs, "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("ef10 ...and CUT BY THE WRITER at `MAX_PATHS`, never trusted "
+              "from the caller - the same backstop `failing`'s `ef3` holds: %r"
+              % (len(_rofs["steps"][0]["failingSuites"]),),
+              len(_rofs["steps"][0]["failingSuites"]) == M.MAX_PATHS)
+
+        # --- suiteReader and suite_keys, the ledger's own answer to "was a
+        # test suite even run" for a gate key that is not test-shaped by name.
+        def _row_with(steps, run_id="R-sk", ts="2026-09-01T00:00:00Z"):
+            r = dict(RESULT, steps=steps)
+            return M.row_for(plain, r, "task", {"taskId": "P1.2"},
+                             dict(IDENT, runId=run_id, ts=ts),
+                             published=["pytest -q"])
+
+        sk_rows = [
+            _row_with([dict(RESULT["steps"][0], name="lint",
+                            suiteReader="none")]),
+            _row_with([dict(RESULT["steps"][0], name="test",
+                            suiteReader="jest")]),
+            _row_with([dict(RESULT["steps"][0], name="test",
+                            suiteReader="none")]),
+            _row_with([{k: v for k, v in RESULT["steps"][0].items()}]),
+        ]
+        # the fourth row's step is named the same as `RESULT["steps"][0]`
+        # ("unit") and carries NO `suiteReader` at all - unknown, unless some
+        # OTHER row answers for that name too.
+        sk = M.suite_keys(sk_rows)
+        check("sk1 a name recorded RUNNING even once is RUNNING - one row "
+              "naming `jest` for `test` settles the question for that name, "
+              "whatever another row recorded beside it: %r" % (sk,),
+              sk["running"] == ["test"])
+        check("sk2 a name that carried the field and was NEVER anything but "
+              "`none` is SILENT: %r" % (sk,),
+              sk["silent"] == ["lint"])
+        check("sk3 a name recorded ONLY in rows from before this field "
+              "existed - the key absent outright, never `none` - is UNKNOWN: "
+              "%r" % (sk,),
+              sk["unknown"] == ["unit"])
+
+        _sk_absent_then_running = [
+            _row_with([{k: v for k, v in RESULT["steps"][0].items()}]),
+            _row_with([dict(RESULT["steps"][0], suiteReader="jest")]),
+        ]
+        check("sk4 SECOND DIRECTION: a name seen BOTH ways - once with no "
+              "field, once running - is not unknown. The moment any row "
+              "answers for a name, `unknown` no longer names it: %r"
+              % (M.suite_keys(_sk_absent_then_running),),
+              M.suite_keys(_sk_absent_then_running)["unknown"] == []
+              and M.suite_keys(_sk_absent_then_running)["running"] == ["unit"])
+
+        check("sk5 ALLOW: no rows at all answers every key with an empty "
+              "list rather than raising - a plan with no ledger yet has "
+              "asked a real question and gotten a real, empty answer: %r"
+              % (M.suite_keys([]),),
+              M.suite_keys([]) == {"running": [], "silent": [], "unknown": []})
+
+        rb_rows = [
+            _row_with([RESULT["steps"][0]], run_id="R-old",
+                      ts="2026-09-01T00:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-new",
+                      ts="2026-09-02T00:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-new",
+                      ts="2026-09-03T00:00:00Z"),
+        ]
+        check("rr1 `row_by_run` finds the row carrying that `runId`, newest "
+              "by `ts` when more than one writer recorded the same id: %r"
+              % (M.row_by_run(rb_rows, "R-new") or {}).get("ts"),
+              (M.row_by_run(rb_rows, "R-new") or {}).get("ts")
+              == "2026-09-03T00:00:00Z")
+        check("rr2 ALLOW: an id no row carries answers None, never the newest "
+              "row in the list - a caller asking for a run that was never "
+              "recorded must not be handed somebody else's",
+              M.row_by_run(rb_rows, "R-does-not-exist") is None
+              and M.row_by_run([], "R-new") is None
+              and M.row_by_run(rb_rows, None) is None)
+
         # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
         # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
         # `no-checks` off `ranTotal` -- but a run a stop signal cut short keeps
@@ -1819,8 +1929,85 @@ def _cases(check):
           "claim as a run that cost nothing",
           M.gate_cost_ms([{"steps": [{"name": "lint", "exit": 0}]}], "lint")
           is None)
+    check("ev47 gate_cost_measured is the denominator a MEAN divides by - "
+          "the count of steps that carried a durationMs, not `gate_tally`'s "
+          "`ran` (which counts every matching step, measured or not): "
+          "3 of the 4 rows above carry one: %r"
+          % (M.gate_cost_measured(cost_rows, "lint"),),
+          M.gate_cost_measured(cost_rows, "lint") == 3
+          and M.gate_tally(cost_rows, "lint")[0] == 4)
+    check("ev48 ...and a gate with no measured step at all reports 0, "
+          "agreeing with gate_cost_ms's own None for the same rows - the "
+          "two never disagree about which steps counted, because both "
+          "read the one walk",
+          M.gate_cost_measured([{"steps": [{"name": "lint", "exit": 0}]}],
+                               "lint") == 0)
 
     _worktree_ledger_cases(check)
+    _merge_ledger_cases(check)
+    _narrowed_shadow_cases(check)
+
+
+def _narrowed_shadow_cases(check):
+    """(dgr) `row_for`'s two derived-gate fields - `narrowed`, two counts and
+    no path, and `shadow`, which carries `missed`, a path list a runner's
+    own output produced and so gets the same bound and redaction
+    `treeMutated`/`overlap` already get.
+    """
+    tmp = _harness.fixture_root("audit-evidence-derived-")
+    try:
+        plain = _project(os.path.join(tmp, "plain"), {})
+        base = {"status": "passed", "durationMs": 900, "failed": [],
+                "ranTotal": 3, "coverageBasis": None, "treeBasis": "b",
+                "treeMutated": [], "overlap": None, "steps": []}
+        ident = {"runId": "R-dgr", "attempt": 1, "via": "cli"}
+        with_both = dict(base, narrowed={"listed": 1, "full": 3},
+                         shadow={"listed": 1, "full": 2,
+                                 "missed": ["tests/test_x.py"]})
+        row = M.row_for(plain, with_both, "phase", {"phaseId": "P1"}, ident,
+                        published=[])
+        check("dgr1 RED-FIRST: `row_for` carries `narrowed` and `shadow` "
+              "when the run computed them - dropped before this task, an "
+              "inventive caller's own two keys read back as absent: %r"
+              % ((row.get("narrowed"), row.get("shadow")),),
+              row.get("narrowed") == {"listed": 1, "full": 3}
+              and row.get("shadow", {}).get("listed") == 1
+              and row.get("shadow", {}).get("full") == 2
+              and row.get("shadow", {}).get("missed")
+              == ["tests/test_x.py"])
+
+        no_derived = M.row_for(plain, base, "phase", {"phaseId": "P1"}, ident,
+                               published=[])
+        check("dgr2 ALLOW: a run that computed neither field carries "
+              "neither key - absence is not a zero-length dict, and a "
+              "writer that defaulted one in would tell every other reader "
+              "this phase has a derived gate when it does not",
+              "narrowed" not in no_derived and "shadow" not in no_derived)
+
+        many_missed = ["tests/test_%d.py" % i
+                       for i in range(M.MAX_PATHS + 5)]
+        over = dict(base, shadow={"listed": 0, "full": len(many_missed),
+                                  "missed": many_missed})
+        row_over = M.row_for(plain, over, "phase", {"phaseId": "P1"}, ident,
+                             published=[])
+        check("dgr3 `shadow.missed` is cut at MAX_PATHS with a count beside "
+              "it, the same bound `treeMutated` and `overlap` already carry "
+              "- an unbounded runner-produced path list is exactly the "
+              "unbounded row size this file's own rule refuses: %r"
+              % ((len(row_over["shadow"]["missed"]),
+                 row_over["shadow"].get("missedDropped")),),
+              len(row_over["shadow"]["missed"]) == M.MAX_PATHS
+              and row_over["shadow"]["missedDropped"] == 5)
+
+        no_widen = dict(base, narrowed={"listed": 1, "full": 2, "extra": "x"})
+        row_widen = M.row_for(plain, no_widen, "phase", {"phaseId": "P1"},
+                              ident, published=[])
+        check("dgr4 an inventive caller cannot widen `narrowed` past the "
+              "two counts this file names, the same rule every other field "
+              "on this row already keeps",
+              "extra" not in row_widen["narrowed"])
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _worktree_ledger_cases(check):
@@ -1894,6 +2081,152 @@ def _worktree_ledger_cases(check):
           "files as it reads the old one", not gaps
           and {"run-a", "run-b", "run-m"} <= set(committed),
           repr((sorted(committed), gaps)))
+
+
+
+# --- em: a ledger file that diverged, merged by the journal's one merge ----------
+def _em_run(run_id, ts, task, scope="task", phase="P1"):
+    row = {"v": 1, "runId": run_id, "ts": ts, "scope": scope,
+           "phaseId": phase, "status": "passed", "steps": [], "failed": []}
+    if task is not None:
+        row["taskId"] = task
+    return row
+
+
+def _em_merge(ours, theirs, name, aliases):
+    """`merge_rows` under a plan's `aliases`. A build whose `merge_rows` takes
+    none is called without them, so a case aimed at the reader's key fails on
+    its ASSERTION there rather than raising and taking the rest down."""
+    try:
+        return M.merge_rows(ours, theirs, name, aliases=aliases)
+    except TypeError:
+        return M.merge_rows(ours, theirs, name)
+
+
+def _em_pair(name, mine, yours):
+    base = [_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1")]
+    return (M.chain_file(base + [mine], name),
+            M.chain_file(base + [yours], name))
+
+
+def _merge_ledger_cases(check):
+    name = "2026-06.s-em.jsonl"
+    stamp = "2026-06-02T10:00:00Z"
+
+    # THE READER'S KEY, FIRST. A `--task` run measured under its phase's gate is
+    # recorded `scope: phase` with a task id, and `latest_by_subject` files it
+    # under the phase - the key a phase sign-off run is filed under too.
+    ours, theirs = _em_pair(name, _em_run("run-task", stamp, "P1.2",
+                                          scope="phase"),
+                            _em_run("run-signoff", stamp, None, scope="phase"))
+    res = _em_merge(ours, theirs, name, {})
+    check("em7 a --task run measured under the phase gate and a phase sign-off "
+          "run of that phase in ONE second are REFUSED, not ordered - "
+          "`latest_by_subject` files both under the phase, so their order is "
+          "which one becomes the phase's pointer: %r"
+          % (res["refusals"] or res.get("ordered"),),
+          not res["ok"] and not res["rows"] and len(res["refusals"]) == 1)
+
+    ours, theirs = _em_pair(name, _em_run("run-old", stamp, "P1.9"),
+                            _em_run("run-new", stamp, "P1.2"))
+    moved = {("task", "P1.9"): ("task", "P1.2")}
+    res = _em_merge(ours, theirs, name, moved)
+    apart = _em_merge(ours, theirs, name, {})
+    check("em8 ...and so are runs under a moved task's OLD id and its NEW one: "
+          "the plan's aliases make them one subject to every reader. The pair: "
+          "under a plan that moved nothing the same two runs ARE disjoint and "
+          "are ordered: %r / %r" % (res["refusals"], apart.get("ordered")),
+          not res["ok"] and len(res["refusals"]) == 1
+          and apart["ok"] and len(apart["ordered"]) == 1)
+
+    ours, theirs = _em_pair(name, _em_run("run-o", stamp, "P1.1"),
+                            _em_run("run-t", stamp, "P1.2"))
+    res = _em_merge(ours, theirs, name, {})
+    swapped = _em_merge(theirs, ours, name, {})
+    check("em9 two task runs of DIFFERENT tasks in one second are ordered, the "
+          "order is written for the record of the merge, and the ledger - which "
+          "takes no marker row - comes out BYTE FOR BYTE the same whichever "
+          "side is ours: %r" % (res["ordered"],),
+          res["ok"] and len(res["rows"]) == 3
+          and all(r.get("runId") for r in res["rows"])
+          and not M.verify_rows(res["rows"], name)["findings"]
+          and _journal_io.merge_text(res["rows"])
+          == _journal_io.merge_text(swapped["rows"])
+          and stamp in res["summary"] and len(res["ordered"]) == 1)
+
+    blind = M.merge_rows(ours, theirs, name)
+    check("em10 ...and with the plan NOT read (no aliases at all) which ids were "
+          "moved is unknown, so the same tie is refused rather than ordered: %r"
+          % (blind["refusals"],),
+          not blind["ok"] and len(blind["refusals"]) == 1)
+
+    x = _em_run("run-x", stamp, "P1.3")
+    y = _em_run("run-y", stamp, "P1.3")
+    one = M.chain_file([_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1"),
+                        x, y], name)
+    two = M.chain_file([_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1"),
+                        y, x], name)
+    res = _em_merge(one, two, name, {})
+    swapped = _em_merge(two, one, name, {})
+    check("em11 an IDENTICAL tie held in two chain orders is ordered by content "
+          "too, so both resolutions of a ledger file are one file: %r"
+          % ([r.get("runId") for r in res["rows"]],),
+          res["ok"] and swapped["ok"]
+          and _journal_io.merge_text(res["rows"])
+          == _journal_io.merge_text(swapped["rows"]))
+
+    row = _em_run("run-t", stamp, "P1.2", scope="phase")
+    check("em12 a run's targets are the readers' keys - `subject_key`, which "
+          "`latest_by_subject` files a pointer under, and the `_same_subject` "
+          "pair, a moved id mapped in both - and nothing when the plan is "
+          "unread: %r" % (M.merge_targets(row, {}),),
+          M.merge_targets(row, {}) == ("key phase P1",
+                                       "pair task=P1.2 phase=P1")
+          and M.merge_targets(_em_run("r", stamp, "P1.9"), moved)
+          == ("key task P1.2", "pair task=P1.2 phase=P1")
+          and M.merge_targets(row, None) == ()
+          and M.subject_key(row) == ("phase", "P1")
+          and M.latest_by_subject([dict(row, ts=stamp)])
+          == {("phase", "P1"): dict(row, ts=stamp)})
+
+    # THE TIE ONLY THE VERDICT PAIR PROTECTS: a task-scope run and a phase-scope
+    # run carrying the same task id are filed under different `subject_key`s, and
+    # a task commit's verdict (`_same_subject`) reads both as that task's.
+    ours, theirs = _em_pair(name, _em_run("run-task", stamp, "P1.2"),
+                            _em_run("run-under-phase", stamp, "P1.2",
+                                    scope="phase"))
+    res = _em_merge(ours, theirs, name, {})
+    check("em13 a scope:task run and a scope:phase run carrying the SAME task id "
+          "in one second are refused: their keys differ, but the verdict a task "
+          "commit is bound to reads both as that task's, so their order is "
+          "which one is newest: %r" % (res["refusals"] or res.get("ordered"),),
+          not res["ok"] and len(res["refusals"]) == 1)
+
+    tmp = _harness.fixture_root("audit-evidence-plan-")
+    try:
+        proj = _project(os.path.join(tmp, "sharded"),
+                        {"manifestPath": "docs/audit/audit-plan.json"})
+        audit = os.path.join(proj, "docs", "audit")
+        os.makedirs(os.path.join(audit, "phases"))
+        with open(os.path.join(audit, "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {}, "phases": [
+                {"id": "P1", "shard": "phases/P1.json"},
+                {"id": "P2", "shard": "phases/P2.json"}]}, fh)
+        with open(os.path.join(audit, "phases", "P1.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": "P1", "tasks": []}, fh)
+        with open(os.path.join(audit, "phases", "P2.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("<<<<<<< ours\n{}\n=======\n{}\n>>>>>>> theirs\n")
+        aliases, why = M.plan_aliases(proj)
+        check("em14 a plan whose SHARD will not parse is named by that shard, "
+              "not by the index that parses - the operator is sent to the file "
+              "that failed: %r" % (why,),
+              aliases is None and "docs/audit/phases/P2.json" in why
+              and "docs/audit/audit-plan.json" not in why)
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _selftest():
