@@ -134,6 +134,48 @@
         "file": "SECURITY.md",
         "issue": "The 'Not followed' list still reads as complete, and it is not. Missing: a phrase split across several quoted emitter arguments that the emitter joins (_prints_phrases reads each word separately; named in R5 and still absent); a here-string printed by cat or another non-emitter into a shell (followed under P83.1 through words[1:], dropped by the emitter-only rule, with no case pinning either side;",
         "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-T1",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "The per-interpreter rewrite skips any word that starts with '-' as an option. It then treats the first operand ending in a script extension as the script. Three shapes now return True (exempt), although the interpreter still reads its program from stdin. (a) A bare '-' stdin marker followed by a script-named argument, or followed by an inline flag given as argv. (b) An option this table does not l",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T2",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "Pattern mode is re-entered on ANY word 'in' while the innermost open compound is a case. That includes an ordinary argument inside an arm body. From that point, the arm's '(' is dropped and its ')' is read as the end of a pattern, so a subshell loses its group. A pipe after the subshell then lands on an empty stage. Measured on benign text: in `case x in a) echo in; ( echo hello ) | sh ;; esac`, _",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T3",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "Each of the three over-refusal narrowings from round-2 finding 6 dropped a shape that P83.3 read, and SECURITY.md names none of them. Each was measured on benign text as _output_runs True on P83.3 and False on HEAD. (a) A process substitution whose own command writes, through tee or a redirect, into a hook or an unresolvable target: `echo hello > >(tee .git/hooks/pre-commit)` and `echo hello > >(c",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T4",
+        "severity": "low",
+        "file": "SECURITY.md",
+        "issue": "The restated Not-followed list still omits two shapes, both unchanged since P83.3 and measured on benign text as not read on either tree. (1) A pass-through filter's own redirect after the pipe, e.g. `echo hello | cat > .git/hooks/pre-commit`. _output_runs follows a receiver's targets only when the receiver is tee, so 'written ... through tee' reads as the whole rule, while 'a file written by anot",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T5",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py",
+        "issue": "The CHANGELOG says 'three-argument with '<'' is a read. The alternatives require parentheses and an exact '<' mode. So idiomatic Perl, `open my $fh, '<', PATH` with no parentheses, and a mode with a layer ('<:raw', '<:encoding(UTF-8)'), yield no read target. Measured with a benign path: _eval_read_targets returns [] for both on HEAD. This is not a regression, because main read neither. It is a cla",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T6",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_history_rewrite.py",
+        "issue": "The resolution of round-2 finding 1 asked for allow twins: the same compound shapes written into notes.md. None was added for gp61 (a then-branch emitter), gp62 (a loop piped after done), gp64 (a receiving group) or gp68-gp71. The allow rows that were added (gp63, gp65-gp67) pin the three narrowings and the comment rule, not the new group reading. So an over-firing mutation would stay green on eve",
+        "resolution": "fix task P83.5-wkm"
       }
     ]
   },
@@ -359,6 +401,55 @@
         "test__config ro1",
         "test_guard_secrets_read b5p1"
       ]
+    },
+    {
+      "id": "P83.5-wkm",
+      "title": "Round-3 review findings: wrappers are parsed by their own options, an interpreter is exempt only in its unambiguous shape, and the dropped shapes are read again",
+      "status": "cancelled",
+      "description": "Round-3 review findings, all to be fixed. Decisions: (T1) runs_own_program exempts only the unambiguous shape - the interpreter, options it is known to take with no value (or known to take one, value skipped), then a script operand or its inline flag; an unknown option, a `-` operand or any expansion means not exempt. (T2) pattern mode starts only at the `in` that follows `case WORD`. (T3) a process substitution whose own command tees or redirects into a running target counts as running; a relative target is joined to a preceding `cd` in the same command; program_candidates parses each wrapper's own options from a table, so behind a known wrapper the program is exact (a variable there is the program), and only an unknown wrapper option falls back to every word. (T4) a pass-through `cat` receiving the pipe carries its own redirect, and a receiving loop that reads lines and evals or runs a variable runs its input. (T5) perl open reads cover the unparenthesised form and a layered read mode; a unit case pins the write-mode exclusion. (T6) allow twins for gp61, gp62, gp64 and gp68-gp71.\nR1 (med) plugins/audit/hooks/_config.py:1457-1480 (runs_own_program): The per-interpreter rewrite skips any word that starts with '-' as an option. It then treats the first operand ending in a script extension as the script. Three shapes now return True (exempt), although the interpreter still reads its program from stdin. (a) A bare '-' stdin marker followed by a script-named argument, or followed by an inline flag given as argv. (b) An option this table does not list as taking a value, whose separate value is script-named; node's --title and -C are examples. (c) An operand that carries an expansion; unquoted, it can word-split into the stdin marker plus a script name. Measured on word lists: runs_own_program returns True on HEAD for ['python3','-','x.py'], ['node','-','x.js'], ['perl','-','x.pl'], ['ruby','-','x.rb'], ['node','--title','x.js'] and ['python3','$S.py']. The same lists return False on the P83.3 tree (221926e3), whose _plain_script_run refused a '-' operand and any word carrying '$'. So this is a regression inside the phase. It is not a regression against main, which had no here-string arm. The case the '-' shape shares with P83.3 is ['python3','-','-c'], which is True on both. Not run as an evasion; the check is at word-list level only. -> In the option walk, return False on a bare '-'. Treat '--' as the end of options, so the next word is the script. Return False for an operand that carries '$', a backquote, a quote or a glob, which is the rule _plain_script_run applied. Better still, list per interpreter the options that take NO value and grade anything unknown, instead of assuming an unknown option takes none. Add ro1 rows for each shape, plus a deny case beside b5h11/b5h12: a here-string fed to an interpreter given the stdin marker and a script-named argument.\nR2 (med) plugins/audit/hooks/guard-history-rewrite.py:_stages (the `elif top == \"case\" and text == \"in\": pattern = True` branch): Pattern mode is re-entered on ANY word 'in' while the innermost open compound is a case. That includes an ordinary argument inside an arm body. From that point, the arm's '(' is dropped and its ')' is read as the end of a pattern, so a subshell loses its group. A pipe after the subshell then lands on an empty stage. Measured on benign text: in `case x in a) echo in; ( echo hello ) | sh ;; esac`, _output_runs is False for the `echo hello` stage on HEAD and True on P83.3. The shape is an arm body that contains the word 'in' before a parenthesised group whose output is piped into a shell. That phrase is not read. This is a new defect in P83.4's case tracking in the stage model; _substitution_end tracks by command position and does not have it. -> Enter pattern mode on 'in' only when it is the case stage's own third word (cur[\"words\"] is exactly ['case', <subject>]), and after ';;' as now. Add a deny case (an arm with an 'in' argument, then a subshell piped into a shell) and its allow twin (the same piped into cat).\nR3 (med) plugins/audit/hooks/guard-history-rewrite.py:_redirect_target, _is_hook_path, _runs_input (the rest[0] expansion test); SECURITY.md:245-259: Each of the three over-refusal narrowings from round-2 finding 6 dropped a shape that P83.3 read, and SECURITY.md names none of them. Each was measured on benign text as _output_runs True on P83.3 and False on HEAD. (a) A process substitution whose own command writes, through tee or a redirect, into a hook or an unresolvable target: `echo hello > >(tee .git/hooks/pre-commit)` and `echo hello > >(cat > .git/hooks/pre-commit)`. _redirect_target asks only _runs_input of the inner stages. (b) A bare hook name written after a cd into the hooks directory: `cd .git/hooks && echo hello > pre-commit`. _is_hook_path needs a parent directory named '*hook*' in the target text itself. (c) An expanded program behind a wrapper option that takes a separate value: `echo hello | sudo -u root \"$SH\"` and `echo hello | xargs -I {} \"$SH\"`. program_candidates leaves the option's value as rest[0]. SECURITY.md says a program named by a variable is followed, and that a process substitution counts when it runs its input. (c) contradicts the first statement, and (a) is not a run of its input but a write into a hook, which the list says is followed at top level. -> (a) Grade the inner stages of a process substitution with the same _output_runs/_target_runs question used at top level (tee targets and redirect targets), not only _runs_input. (b) Count a target with no directory part and a hook name as a hook when an earlier stage of the command is a cd. (c) Count a '$'/backquote candidate as the program unless an earlier candidate names a known program. This keeps gp65 allowed and reads the wrapper-value shape. Otherwise, name each shape in the Not-followed list. Add a deny case for each, next to gp65-gp67.\nR4 (low) SECURITY.md:245-259: The restated Not-followed list still omits two shapes, both unchanged since P83.3 and measured on benign text as not read on either tree. (1) A pass-through filter's own redirect after the pipe, e.g. `echo hello | cat > .git/hooks/pre-commit`. _output_runs follows a receiver's targets only when the receiver is tee, so 'written ... through tee' reads as the whole rule, while 'a file written by another program (dd, cp, an editor)' reads as a different case. (2) A receiving loop that reads lines and evals the variable, e.g. `echo hello | while read l; do eval \"$l\"; done`. eval with an argument is not a stdin runner, even inside the receiving group P83.4 now walks. Commit claim 3 says the list 'is restated from what the code now reads'. -> Either follow both: treat a receiver that passes its stdin through (cat and the like) as carrying its own redirect targets, the way tee does; inside a receiving group, treat eval/source of a variable set by read as running the input. Or add both to the Not-followed list, together with the shapes in findings 1-3 that stay open.\nR5 (low) plugins/audit/hooks/guard-secrets-read.py:608-615 (perl open alternatives); CHANGELOG.md (the 'Perl's own open shapes' sentence): The CHANGELOG says 'three-argument with '<'' is a read. The alternatives require parentheses and an exact '<' mode. So idiomatic Perl, `open my $fh, '<', PATH` with no parentheses, and a mode with a layer ('<:raw', '<:encoding(UTF-8)'), yield no read target. Measured with a benign path: _eval_read_targets returns [] for both on HEAD. This is not a regression, because main read neither. It is a claim broader than the code, and SECURITY.md says nothing about Perl. Separately, the two-argument alternative also matches a Python two-argument open whose second argument is a quoted mode, and reports the mode as a read target: open(p, 'w') gives ['w'], open(p, 'a') gives ['a'], webbrowser.open(url, 'new') gives ['new']. This changed no verdict in any command I measured on main and HEAD: Python writes, a webbrowser call, window.open, and a Perl open of an ordinary file all allowed on both. It cannot turn a Python or Node write into a secret read, because a quoted first argument fails the handle pattern and a mode string is never a secret name. No case pins the Perl write-mode exclusion ([^'\"<>|+\\s]). -> Make the parentheses optional (`open\\s*\\(?\\s*(?:my\\s+)?...`) and accept a layered mode (`'<(?::[^'\"]*)?'`). Otherwise, narrow the CHANGELOG sentence and add the residual to SECURITY.md. To stop mode strings being reported as paths, require a Perl-shaped handle ('my $x', '$x' or an uppercase bareword) in the two-argument form. Add helper-level cases: a Perl '>'/'+<'/'|' open yields no read target, and a Python open(p, 'w') yields none.\nR6 (low) plugins/audit/tests/test_guard_history_rewrite.py:743-770 (gp61-gp71): The resolution of round-2 finding 1 asked for allow twins: the same compound shapes written into notes.md. None was added for gp61 (a then-branch emitter), gp62 (a loop piped after done), gp64 (a receiving group) or gp68-gp71. The allow rows that were added (gp63, gp65-gp67) pin the three narrowings and the comment rule, not the new group reading. So an over-firing mutation would stay green on every case, for example treating every member of any receiving group as a runner, or giving a compound's redirect to stages outside it. I measured the corresponding commands as allowed on HEAD, so the code is right today; what is missing is the pin. Commit claim 3 says every finding is addressed. -> Add allow twins: `if true; then echo '<phrase>'; fi > notes.md`, `for x in 1; do echo '<phrase>'; done | cat`, `echo '<phrase>' | (cd /tmp && cat)`, and `echo 'git push' '--force' > notes.md`. Prove each red against the over-fire mutation it guards.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: repro that FAILS on current code - a variable program behind sudo -u is not asked whether it runs its stdin"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: The automated session was stopped by a safety classifier while writing this guard-hardening code; per the user's decision the phase lands with P83.1-P83.4 and the round-3 findings go to a human maintainer as an open bug. The red tests written for it are kept in quality-gates-internal/probes/fr15-16/p83-handoff/p83.5-red-tests.patch."
+      },
+      "startedAt": "2026-09-26T12:20:27Z",
+      "completedAt": "2026-09-26T21:53:28Z",
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T10:59:58Z"
