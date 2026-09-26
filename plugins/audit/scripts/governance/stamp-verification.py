@@ -36,7 +36,7 @@ Usage:
   stamp-verification.py compare [--project DIR] [--stamp TEXT | --stamp-file F]
                                 [--json]
   stamp-verification.py red     [--project DIR] --manifest M --task T
-                                [--case ID ...] [--introduces SYMBOL ...]
+                                [--case ID|LABEL ...] [--introduces SYMBOL ...]
                                 [--timeout S] [--json] -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
@@ -290,6 +290,8 @@ _UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)", re.M)
 # and is named by the whole label: its first word is one HEAD's test file almost
 # always carries too, so reading it as an id refuses the task's own case.
 _HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
+# A template's fixed text names a label only when it holds a run of two letters.
+_ANCHORING_WORD = re.compile(r"[^\W\d_]{2}")
 # A %-placeholder inside a label literal; `%%` is the one that stands for itself.
 _PLACEHOLDER = re.compile(r"%(?:\([^)]*\))?[#0 +-]*(?:\*|\d+)?(?:\.(?:\*|\d+))?"
                           r"[A-Za-z%]")
@@ -318,39 +320,57 @@ def house_case_id(label):
     return head[0]
 
 
-def failing_cases(text):
-    """`[{"id", "label", "assertion", "why"}]` - every failing case a runner named.
+def _house_cases(text):
+    out = []
+    for ln in text.splitlines():
+        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
+            label = ln[len("FAIL "):].strip()
+            out.append({"id": house_case_id(label), "label": label,
+                        "assertion": True, "why": "house FAIL"})
+    return out
 
-    Each runner's lines are read only when that runner's tally is in the output:
-    a passing house case may print `ERROR: <path> is not a directory` because it
-    asserts on that message, and a test under another runner may print a line
-    that opens with `FAIL `. `label` is the whole name as printed; `id` is the
-    part a case is keyed by, None for a house label with no id-shaped lead.
+
+def _pytest_cases(text):
+    out = []
+    for kind, node, why in _PYTEST_FAILED.findall(text):
+        why = (why or "").strip()
+        out.append({"id": node.split("::")[-1], "label": node,
+                    "assertion": kind == "FAILED"
+                    and (why.startswith("assert") or why.startswith("AssertionError")),
+                    "why": why or kind})
+    return out
+
+
+def _unittest_cases(text):
+    return [{"id": name, "label": name, "assertion": kind == "FAIL", "why": kind}
+            for kind, name in _UNITTEST_CASE.findall(text)]
+
+
+CASE_READERS = {"house": _house_cases, "pytest": _pytest_cases,
+                "unittest": _unittest_cases}
+
+
+def failing_cases(text, runner=None):
+    """`[{"id", "label", "assertion", "why"}]` - every failing case the runner
+    that ran named; `runner` defaults to the one `read_tally()` selects.
+
+    Only that runner's lines are read, never another's whose tally line merely
+    appears in the output: a passing house case may print
+    `ERROR: <path> is not a directory` because it asserts on that message, or
+    echo a whole captured unittest transcript, `Ran N tests` line included; a
+    test under another runner may print a line that opens with `FAIL `. No
+    tally, no runner, no cases. `label` is the whole name as printed; `id` is
+    the part a case is keyed by, None for a house label with no id-shaped lead.
 
     `assertion` is True only where the runner says the case failed an assertion:
     a house `FAIL` line that is not an escape, a pytest `FAILED` whose reason is
     an `assert` or an `AssertionError`, a unittest `FAIL:`. A pytest `ERROR`, a
     pytest body exception and a unittest `ERROR:` are named with it False."""
-    out = []
-    if _HOUSE_TALLY.search(text):
-        for ln in text.splitlines():
-            if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
-                label = ln[len("FAIL "):].strip()
-                out.append({"id": house_case_id(label), "label": label,
-                            "assertion": True, "why": "house FAIL"})
-    if _PYTEST_SUMMARY.search(text):
-        for kind, node, why in _PYTEST_FAILED.findall(text):
-            why = (why or "").strip()
-            out.append({"id": node.split("::")[-1], "label": node,
-                        "assertion": kind == "FAILED"
-                        and (why.startswith("assert")
-                             or why.startswith("AssertionError")),
-                        "why": why or kind})
-    if _UNITTEST_RAN.search(text):
-        for kind, name in _UNITTEST_CASE.findall(text):
-            out.append({"id": name, "label": name, "assertion": kind == "FAIL",
-                        "why": kind})
-    return out
+    if runner is None:
+        tally = read_tally(text)
+        runner = tally["runner"] if tally is not None else None
+    reader = CASE_READERS.get(runner)
+    return reader(text) if reader is not None else []
 
 
 def _house_tally(text):
@@ -358,7 +378,7 @@ def _house_tally(text):
     if not hits:
         return None
     passed, total = int(hits[-1][0]), int(hits[-1][1])
-    asserting = [c for c in failing_cases(text) if c["why"] == "house FAIL"]
+    asserting = _house_cases(text)
     return {"runner": "house", "collected": total, "failed": total - passed,
             "assertions": len(asserting)}
 
@@ -370,7 +390,7 @@ def _pytest_tally(text):
     counts = dict((kind.rstrip("s") if kind.startswith("error") else kind, int(n))
                   for n, kind in _PYTEST_COUNT.findall(hits[-1]))
     ran = sum(counts.get(k, 0) for k in ("failed", "passed", "xfailed", "xpassed"))
-    asserting = [c for c in failing_cases(text) if c["assertion"]]
+    asserting = [c for c in _pytest_cases(text) if c["assertion"]]
     return {"runner": "pytest", "collected": ran,
             "failed": counts.get("failed", 0) + counts.get("error", 0),
             "assertions": len(asserting)}
@@ -582,64 +602,141 @@ def _fold(node):
     return None
 
 
-def _label_pattern(literal):
-    """A pattern a label rendered from `literal` matches whole, each placeholder
-    standing for any text - or None when the text between its placeholders holds
-    no word character, because such a literal (`'%s %s'`, `' (%s)'`) renders
-    any label at all. A label a loop builds (`'%r validates clean' % v`) keeps
-    its fixed words, so it is still matched."""
-    parts, fixed, at = [], [], 0
+def _label_template(literal):
+    """`literal`'s fixed pieces, split where a placeholder stands for any text
+    (`%%` is a fixed `%`) - or None when the literal is too loose to name a
+    label: a template whose fixed text holds no run of two letters (`'%dx%d'`,
+    `' (%s)'`, `'%s: %s'`) renders labels it was never written for."""
+    pieces, cur, at = [], [], 0
     for hit in _PLACEHOLDER.finditer(literal):
-        fixed.append(literal[at:hit.start()])
-        parts.append(re.escape(literal[at:hit.start()]))
-        parts.append("%" if hit.group() == "%%" else ".*?")
+        cur.append(literal[at:hit.start()])
+        if hit.group() == "%%":
+            cur.append("%")
+        else:
+            pieces.append("".join(cur))
+            cur = []
         at = hit.end()
-    fixed.append(literal[at:])
-    parts.append(re.escape(literal[at:]))
-    if not re.search(r"\w", "".join(fixed)):
+    cur.append(literal[at:])
+    pieces.append("".join(cur))
+    if len(pieces) > 1 and not _ANCHORING_WORD.search("".join(pieces)):
         return None
-    return re.compile("".join(parts), re.S)
+    return pieces
+
+
+def _renders(pieces, form):
+    """Whether a template's pieces render `form` whole, each gap any text.
+
+    Linear and without a regex engine: the first piece anchors the start, the
+    last the end, the middle ones are found left to right. A pattern of lazy
+    wildcards backtracks combinatorially on a many-placeholder literal, and this
+    runs after the red run, outside what --timeout bounds."""
+    if len(pieces) == 1:
+        return form == pieces[0]
+    first, last = pieces[0], pieces[-1]
+    if (len(form) < len(first) + len(last) or not form.startswith(first)
+            or not form.endswith(last)):
+        return False
+    at, end = len(first), len(form) - len(last)
+    for middle in pieces[1:-1]:
+        hit = form.find(middle, at, end)
+        if hit < 0:
+            return False
+        at = hit + len(middle)
+    return True
 
 
 def _label_forms(label):
-    """The label as printed and, where it ends in `)`, the label before each
-    ` (` it holds - a house FAIL line appends its detail that way."""
-    forms = [label]
-    if label.endswith(")"):
-        forms += [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
-    return forms
+    """The label as printed and the label before each ` (` it holds - a house
+    FAIL line appends its detail that way, and a detail spanning lines leaves
+    the line with no closing paren."""
+    return [label] + [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
 
 
-def _carries_label(text, label):
-    """Whether a test file's source spells `label` - some string literal in it,
-    placeholders read as any text, renders the whole label. A file that does not
-    parse as Python carries it when it holds the label's text verbatim."""
-    if not text or not label:
-        return False
-    forms = _label_forms(label)
+def _source_view(text):
+    """`{"text", "templates"}` for one copy of a test file: every literal it
+    spells with its fixed pieces, or `templates` None when it is not Python."""
+    text = text or ""
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
-        return any(form in text for form in forms)
-    patterns = [p for p in (_label_pattern(s) for s in
-                            (_fold(n) for n in ast.walk(tree)) if s) if p]
-    return any(p.fullmatch(form) for p in patterns for form in forms)
+        return {"text": text, "templates": None}
+    literals = set(lit for lit in (_fold(n) for n in ast.walk(tree)) if lit)
+    templates = [(lit, pieces) for lit, pieces in
+                 ((lit, _label_template(lit)) for lit in sorted(literals)) if pieces]
+    return {"text": text, "templates": templates}
 
 
-def _carries(text, name):
-    """Whether `text` carries a case name: a single token as a whole name, a
-    label as a literal that renders it."""
-    if len(name.split()) > 1:
-        return _carries_label(text, name)
-    return _names(text, name)
+def _closest_literals(view, label):
+    """The literals of `view` that render `label` with the MOST fixed text -
+    the one the label was written from, when a looser template renders it too.
+    Empty when none renders it; None when the file is not Python."""
+    if view["templates"] is None:
+        return None
+    forms = _label_forms(label)
+    scored = [(len("".join(pieces)), lit) for lit, pieces in view["templates"]
+              if any(_renders(pieces, form) for form in forms)]
+    if not scored:
+        return []
+    best = max(score for score, _lit in scored)
+    return [lit for score, lit in scored if score == best]
+
+
+def _carries_label(text, label):
+    """Whether a test file's source spells `label`: some literal in it renders
+    the whole label, or - for a file that is not Python - it holds the text."""
+    if not text or not label:
+        return False
+    view = _source_view(text)
+    closest = _closest_literals(view, label)
+    if closest is None:
+        return any(form in text for form in _label_forms(label))
+    return bool(closest)
+
+
+def _standing(wt, head, name):
+    """`added` / `at-head` / `absent` - case `name` in one test file's two copies.
+
+    A single token is a whole name. A label is judged by the working tree's
+    closest literal: the task added it when HEAD's copy holds none of those
+    literals. HEAD is never asked whether some looser literal of its own
+    renders the label too - a generic message template there would refuse
+    every new case whose label it happens to fit."""
+    if len(name.split()) <= 1:
+        in_wt, at_head = _names(wt["text"], name), _names(head["text"], name)
+    elif wt["templates"] is None or head["templates"] is None:
+        forms = _label_forms(name)
+        in_wt = any(form in wt["text"] for form in forms)
+        at_head = any(form in head["text"] for form in forms)
+    else:
+        closest = _closest_literals(wt, name)
+        held = set(lit for lit, _pieces in head["templates"])
+        in_wt = bool(closest)
+        at_head = (any(lit in held for lit in closest) if closest
+                   else bool(_closest_literals(head, name)))
+    if at_head:
+        return "at-head"
+    return "added" if in_wt else "absent"
+
+
+def _test_views(root, tests):
+    """`[(wt_view, head_view)]` - each declared test file, parsed once."""
+    return [(_source_view(_wt_text(root, rel)), _source_view(_head_text(root, rel)))
+            for rel in tests]
+
+
+def _added_standing(views, name):
+    """The best standing any declared test file gives case `name`."""
+    got = [_standing(wt, head, name) for wt, head in views]
+    for word in ("added", "at-head"):
+        if word in got:
+            return word
+    return "absent"
 
 
 def _added_by_task(root, tests, name):
-    """Whether case `name` - an id, or a house label with no id - is carried by
-    the working tree's copy of a declared test file and not by HEAD's copy of
-    that same file."""
-    return any(_carries(_wt_text(root, rel), name)
-               and not _carries(_head_text(root, rel) or "", name) for rel in tests)
+    """Whether case `name` - an id, or a house label with no id - is one the
+    task added to a declared test file."""
+    return _added_standing(_test_views(root, tests), name) == "added"
 
 
 def _is_named(failure, name):
@@ -649,9 +746,14 @@ def _is_named(failure, name):
     return name == failure.get("id") or name in _label_forms(label)
 
 
+def _case_key(failure):
+    return failure["id"] or failure["label"]
+
+
 def own_failures(root, tests, failing, cases):
     """`(own, refused)` - the failing cases that are the TASK'S OWN and failed an
-    assertion, and the `--case` names refused because HEAD already carries them.
+    assertion, and `[(name, "at-head"|"absent")]` for each `--case` name that
+    is not one of the task's own cases.
 
     Own means a case the task ADDED: its id - or, for a house label with no
     id-shaped lead, its whole label - is carried by the working tree's copy of a
@@ -659,13 +761,21 @@ def own_failures(root, tests, failing, cases):
     cases it names, by id or by full label, and is held to the same test,
     because the flag is chosen by the party whose proof is being checked - an
     existing case going red because its test file was edited to match other work
-    is not a proof about this task's test, whoever names it."""
-    asserting = [f for f in failing if f["assertion"] and (f["id"] or f["label"])]
-    refused = [c for c in cases if not _added_by_task(root, tests, c)]
+    is not a proof about this task's test, whoever names it. A name is refused
+    by the same match that decides the proof: resolved to the failing cases it
+    names, and judged by their key, so a pytest nodeid is judged as its test."""
+    views = _test_views(root, tests)
+    refused = []
+    for name in cases:
+        keys = [_case_key(f) for f in failing if _is_named(f, name)] or [name]
+        got = [_added_standing(views, key) for key in keys]
+        if "added" not in got:
+            refused.append((name, "at-head" if "at-head" in got else "absent"))
+    asserting = [f for f in failing if f["assertion"] and _case_key(f)]
     if cases:
         asserting = [f for f in asserting if any(_is_named(f, c) for c in cases)]
-    return ([f for f in asserting
-             if _added_by_task(root, tests, f["id"] or f["label"])], refused)
+    return ([f for f in asserting if _added_standing(views, _case_key(f)) == "added"],
+            refused)
 
 
 def _names_shared_tree(cmd, root, project):
@@ -821,6 +931,20 @@ def _ids(cases):
                             for c in cases])
 
 
+def _refused_clause(refused):
+    """The basis clause for the `--case` names that are not the task's own."""
+    at_head = [name for name, why in refused if why == "at-head"]
+    absent = [name for name, why in refused if why != "at-head"]
+    clause = ""
+    if at_head:
+        clause += ("; --case %s names a case HEAD's test file already carries, "
+                   "so it is not the task's" % (", ".join(at_head),))
+    if absent:
+        clause += ("; --case %s names no case a declared test file in the "
+                   "working tree carries" % (", ".join(absent),))
+    return clause
+
+
 def red_verdict(run, ctx):
     """`(exit, verdict, block, note)` - what the run in the throwaway proved.
 
@@ -849,14 +973,12 @@ def red_verdict(run, ctx):
             "this task's test files, run with %s removed from its environment - so "
             "it proves nothing yet; fix the test, there is no redFirst word to "
             "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
-    failing = failing_cases(text)
+    failing = failing_cases(text, tally["runner"]) if tally is not None else []
     how = ("named by --case and absent from HEAD's test files" if ctx["cases"]
            else "added by the task, absent from HEAD's test files")
     if verdict == V_RED:
         own, refused = own_failures(ctx["root"], ctx["tests"], failing, ctx["cases"])
-        refused_clause = ("; --case %s names a case HEAD's test file already "
-                          "carries, so it is not the task's" % (", ".join(refused),)
-                          if refused else "")
+        refused_clause = _refused_clause(refused)
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
@@ -1098,7 +1220,8 @@ def build_parser():
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
                         help="seconds the red run may take; `red` only")
     parser.add_argument("--case", action="append", default=[],
-                        help="a case id the task added; `red` only - a red "
+                        help="the id or full label of a case the task added; "
+                             "`red` only - a red "
                              "counts only when one of the task's own cases "
                              "fails an assertion")
     parser.add_argument("--json", action="store_true", dest="as_json")

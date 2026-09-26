@@ -1153,6 +1153,164 @@ def _label_id_cases(check):
                   "another label": False, "not python": True})
 
 
+# --- only the runner that ran; the literal that renders a label most closely ---
+# A passing house case may print a captured unittest transcript, `Ran N tests`
+# line and all; a test file may hold a loose literal (`'%dx%d'`) or a generic
+# message template (`'%s is %s'`) that renders labels it was never written for;
+# and a FAIL line's detail may span lines, leaving ` (` with no closing paren.
+_TRANSCRIPT = ("TRANSCRIPT = 'FAIL: test_new_rule (test_u.T)\\n----\\n"
+               "Ran 3 tests in 0.001s\\n\\nFAILED (failures=1)'",
+               "print(TRANSCRIPT)")
+
+
+def _label_red(prefix, head_extra, wt_cases, wt_extra=(), flags=()):
+    """`(exit, basis)` of a red over a HEAD suite holding the old sentence case
+    and `head_extra`, and a working-tree suite adding `wt_cases`."""
+    old = [(repr(_OLD_LABEL), "mine.v >= 1")]
+    head = _label_suite(old, extra=head_extra)
+    wt = _label_suite(old + list(wt_cases),
+                      extra=list(head_extra) + list(wt_extra))
+    root, man = _red_repo(prefix, wt, head_test=head)
+    code, got = _red(root, man, [sys.executable, "tests/test_mine.py"], *flags)
+    return code, json.dumps(got.get("redFirst") or got.get("note") or got)
+
+
+def _runner_cases(check):
+    echoed = ("PASS the gate reports the unittest failure it ran\n"
+              "FAIL: test_new_rule (test_u.T)\n----\nRan 3 tests in 0.001s\n\n"
+              "FAILED (failures=1)\nFAIL %s\n" % (_OLD_LABEL,)
+              + _TALLY % ("SELFTEST FAILED", 1, 2) + "\n")
+    tally = M.classify_run(1, echoed)[1] or {}
+    check("sr55 a house run that PRINTS a captured unittest transcript is read "
+          "as the house run it is - the unittest lines are its output, not a "
+          "second runner's cases: %r %r"
+          % (_shape(M.failing_cases(echoed)), tally),
+          _shape(M.failing_cases(echoed)) == [(None, _OLD_LABEL, True)]
+          and tally.get("runner") == "house" and tally.get("assertions") == 1)
+    head = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")])
+    wt = _label_suite([(repr(_OLD_LABEL), "mine.v == 2"),
+                       ("'the gate reports the unittest failure it ran'",
+                        "'FAILED' in TRANSCRIPT")], extra=_TRANSCRIPT)
+    root, man = _red_repo("stamp-red-echo-", wt, head_test=head)
+    code, got = _red(root, man, [sys.executable, "tests/test_mine.py"])
+    check("sr56 ...so an EXISTING case edited to go red, beside a new passing "
+          "case that echoes a unittest `FAIL:`, is not proved on that phantom: "
+          "exit=%r %s" % (code, json.dumps(got.get("redFirst"))[:300]),
+          code == M.E_CANNOT_PROVE
+          and "test_new_rule" not in (got.get("redFirst") or {}).get("basis", "?"))
+
+
+def _specific_cases(check):
+    new = [("'the fix sets the next value'", "mine.v == 3")]
+    code, said = _label_red("stamp-red-loose-", ["VIEW = '%dx%d' % (1280, 720)"],
+                            new)
+    check("sr57 a genuinely new sentence case PROVES although HEAD's test file "
+          "holds a loose literal (`'%%dx%%d'`) whose only fixed text is one "
+          "letter the label also holds: exit=%r %s" % (code, said[:300]),
+          code == M.E_PROVED and "the fix sets the next value" in said)
+    code_g, said_g = _label_red(
+        "stamp-red-generic-", ["MSG = '%s is %s' % ('a', 'b')"],
+        [("'the next value is two once fixed'", "mine.v == 2")])
+    check("sr58 ...and although HEAD holds a generic template (`'%%s is %%s'`) "
+          "that renders it too: the label is judged by the MOST SPECIFIC "
+          "literal that renders it, which HEAD does not hold: exit=%r %s"
+          % (code_g, said_g[:300]),
+          code_g == M.E_PROVED and "the next value is two once fixed" in said_g)
+    base = _label_suite([("'the new pass is kept'", "True")])
+    multi = "'line one\\nline two'"
+    head = base.replace("n = sum(results)",
+                        "check('the next value is read', mine.v >= 1, %s)\n"
+                        "n = sum(results)" % (multi,))
+    wt = base.replace("n = sum(results)",
+                      "VIEW = '%%dx%%d' %% (1280, 720)\n"
+                      "check('the next value is read', mine.v == 2, %s)\n"
+                      "n = sum(results)" % (multi,))
+    root, man = _red_repo("stamp-red-edited-", wt, head_test=head)
+    code_e, got_e = _red(root, man, [sys.executable, "tests/test_mine.py"])
+    check("sr59 an EXISTING case whose condition was edited to go red is not "
+          "the task's own, though its detail spans lines and the working tree "
+          "added a loose literal that renders its label: exit=%r %s"
+          % (code_e, json.dumps(got_e.get("redFirst"))[:300]),
+          code_e == M.E_CANNOT_PROVE)
+    head_m = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")])
+    wt_m = head_m.replace("n = sum(results)",
+                          "check('the value is two after the fix', mine.v == 2, "
+                          "%s)\nn = sum(results)" % (multi,))
+    root_m, man_m = _red_repo("stamp-red-multiline-", wt_m, head_test=head_m)
+    code_m, got_m = _red(root_m, man_m, [sys.executable, "tests/test_mine.py"])
+    check("sr60 a genuinely new sentence case PROVES when its FAIL detail spans "
+          "lines - the printed line keeps ` (` and loses the closing paren: "
+          "exit=%r %s" % (code_m, json.dumps(got_m.get("redFirst"))[:300]),
+          code_m == M.E_PROVED)
+    rows = {
+        "a one-letter template": ("VIEW = '%dx%d' % (1280, 720)\n",
+                                  "the box is 3x4 wide", False),
+        "a generic template": ("MSG = '%s is %s' % (a, b)\n",
+                               "the value is read", True),
+        "a detail left open": ("check('the value is read', ok)\n",
+                               "the value is read (Traceback (most recent", True),
+        "fixed text past the end": ("check('%s is refused' % k, ok)\n",
+                                    "the thing is refused later", False),
+    }
+    got = dict((k, M._carries_label(src, lb)) for k, (src, lb, _w) in rows.items())
+    check("sr61 a literal whose fixed text is a lone letter renders no label; a "
+          "generic one still renders what it spells, anchored at both ends; a "
+          "detail that never closes is set aside: %r" % (got,),
+          got == dict((k, w) for k, (_s, _l, w) in rows.items()))
+
+
+def _linear_cases(check):
+    code = "\n".join([
+        "import sys", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
+        "import _harness, _loader",
+        "M = _loader.load_script('stamp-verification.py', modname='sv_linear')",
+        "src = \"check('\" + '%s ' * 12 + \"zq' % t, ok)\\n\"",
+        "print(M._carries_label(src, ' '.join(['w'] * 60)))"])
+    try:
+        proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, universal_newlines=True,
+                              timeout=60)
+        out = proc.stdout.strip()
+    except subprocess.TimeoutExpired:
+        out = "timed out"
+    check("sr62 a template of many placeholders against a long label is decided "
+          "in linear time - the red run's --timeout does not bound this step, so "
+          "backtracking would hang the helper after the run: %r" % (out[-200:],),
+          out == "False")
+
+
+def _nodeid_cases(check):
+    root = _seeded_repo("stamp-nodeid-")
+    rel = "tests/test_x.py"
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, rel), "def test_old():\n    assert True\n")
+    _git(root, "add", rel)
+    _git(root, "commit", "-q", "-m", "t")
+    _write(os.path.join(root, rel), "def test_old():\n    assert True\n\n\n"
+           "def test_a():\n    assert False\n")
+    failing = [{"id": "test_a", "label": rel + "::test_a", "assertion": True,
+                "why": "assert False"}]
+    own, refused = M.own_failures(root, [rel], failing, [rel + "::test_a"])
+    check("sr63 --case naming a pytest failure by its full nodeid is judged by "
+          "the same match as the proof: the case is the task's own, and it is "
+          "not also reported as one HEAD already carries: %r"
+          % ((_shape(own), refused),),
+          [f["id"] for f in own] == ["test_a"] and not refused)
+
+
+def _wording_cases(check):
+    with open(os.path.join(M_PLUGIN, "agents", "audit-executor.md"), "r",
+              encoding="utf-8") as fh:
+        brief = fh.read()
+    helps = [a.help for a in M.build_parser()._actions if "--case" in a.option_strings]
+    check("sr64 every place that spells --case says it takes an id OR a full "
+          "label - the usage line, the flag's help, and the executor brief's "
+          "command template: %r" % (helps,),
+          "[--case ID|LABEL ...]" in (M.__doc__ or "")
+          and helps and "full label" in helps[0]
+          and "[--case <id or full label of the case you added>]" in brief)
+
+
 def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
@@ -1164,6 +1322,11 @@ def _cases(check):
     _harness.stage(check, "sr-own", _own_case_cases)
     _harness.stage(check, "sr-label", _label_cases)
     _harness.stage(check, "sr-label-id", _label_id_cases)
+    _harness.stage(check, "sr-runner", _runner_cases)
+    _harness.stage(check, "sr-specific", _specific_cases)
+    _harness.stage(check, "sr-linear", _linear_cases)
+    _harness.stage(check, "sr-nodeid", _nodeid_cases)
+    _harness.stage(check, "sr-wording", _wording_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

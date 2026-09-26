@@ -304,12 +304,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   test file already held, was refused as not the task's own, and the red read `could-not-prove`
   while the run held exactly that one failing case. A house case is now named by its full label,
   with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
-  hands out) as its id only when present; it is the task's own when a string literal in the working
-  tree's test file renders that label (wrapped and `%`-formatted literals included) and none in
-  HEAD's does, and `--case` takes the id or the full label. Each runner's case lines are now read
-  only when that runner's tally is in the output, so an `ERROR: <path> is not a directory` a passing
-  house case printed on purpose is no longer a unittest case, and a line opening with `FAIL ` inside
-  a unittest or pytest run is no longer a house one. A real unittest `ERROR:` is still named and
+  hands out) as its id only when present. It is the task's own when the working tree's test file
+  holds a string literal that renders that label (wrapped and `%`-formatted literals included) and
+  HEAD's copy does not hold the MOST SPECIFIC such literal - so a generic template HEAD already has
+  (`'%s is %s'`) no longer refuses a new case it happens to fit, and a template whose fixed text is a
+  lone letter (`'%dx%d'`) renders no label at all. The FAIL line's detail is set aside at every
+  ` (`, so a detail spanning lines no longer hides the label, and templates are matched in linear
+  time rather than by a backtracking pattern. `--case` takes the id or the full label (the usage
+  line, the flag's help and the executor brief now say so), and a name is refused by the same match
+  that decides the proof, so a pytest nodeid is no longer reported as one HEAD already carries.
+  Cases are now read only from the runner whose tally the verdict was read from, so an
+  `ERROR: <path> is not a directory` a passing house case printed on purpose - or a whole unittest
+  transcript it echoed - is no longer a unittest case, and a line opening with `FAIL ` inside a
+  unittest or pytest run is no longer a house one. A real unittest `ERROR:` is still named and
   still not credited as an assertion.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is

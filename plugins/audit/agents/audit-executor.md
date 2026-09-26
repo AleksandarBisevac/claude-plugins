@@ -91,7 +91,7 @@ Hard rules (non-negotiable):
   ```
   python3 "<plugin root>/scripts/governance/stamp-verification.py" red \
       --project <gitRoot> --manifest <manifestPath> --task <taskId> \
-      [--case <id of the case you added>] -- <test command>
+      [--case <id or full label of the case you added>] -- <test command>
   ```
 
   It checks HEAD out into a temp directory with `git worktree add --detach`, copies
