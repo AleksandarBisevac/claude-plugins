@@ -346,6 +346,21 @@ def _check_phase_gate_derived(derived, build_keys):
     applies to nothing yet - a project that turned shadow mode on before
     telling the derivation how its own runner takes paths. That is not a shape
     problem, so it draws nothing here.
+
+    `listing` is what derive-phase-gate.py actually runs to list suites
+    without executing them: `related` takes a `{paths}` placeholder it fills
+    per phase, so a `related` without one would list the same thing for every
+    phase; `all` runs with NO path filter and `_gather_facts` never
+    substitutes into it, so a `{paths}` token left in `all` reaches the shell
+    literally and the command fails silently at gate time rather than
+    listing anything. Each of `related` and `all` splits its shape violation
+    (blank or non-string) from its value violation (a placeholder missing
+    where one is owed, or present where none is ever filled in) into its own
+    CODE, the way `budgetusd-number` and `budgetusd-greater-than` split type
+    from value below - a listing command is only ever produced by the
+    derivation itself, so a bad value here means the manifest was edited by
+    hand. A null or absent `listing`, or one where both fields are
+    well-formed, stays silent.
     """
     if derived is None:
         return []
@@ -376,6 +391,41 @@ def _check_phase_gate_derived(derived, build_keys):
         out.append("meta.phaseGate.derived.listing: must be an object or "
                    "null, got %s" % (type(listing).__name__,))
         listing = None
+    if isinstance(listing, dict):
+        related = listing.get("related")
+        if related is not None:
+            if not (isinstance(related, str) and related.strip()):
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-related-shape",
+                    "meta.phaseGate.derived.listing.related: must be a "
+                    "non-blank string, got %s - write a command that lists "
+                    "the suites related to a path set"
+                    % (type(related).__name__,)))
+            elif "{paths}" not in related:
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-related-placeholder",
+                    "meta.phaseGate.derived.listing.related: %r carries no "
+                    "{paths} placeholder - derive-phase-gate.py fills one in "
+                    "per phase, so every phase would list the same suites "
+                    "without it; add {paths} to the command" % (related,)))
+        all_cmd = listing.get("all")
+        if all_cmd is not None:
+            if not (isinstance(all_cmd, str) and all_cmd.strip()):
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-all-shape",
+                    "meta.phaseGate.derived.listing.all: must be a "
+                    "non-blank string, got %s - write a command that lists "
+                    "every suite this runner would collect, with no path "
+                    "filter" % (type(all_cmd).__name__,)))
+            elif "{paths}" in all_cmd:
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-all-paths-present",
+                    "meta.phaseGate.derived.listing.all: %r carries a "
+                    "{paths} placeholder - derive-phase-gate.py runs `all` "
+                    "with no path filter and never substitutes into it, so "
+                    "the literal token reaches the shell and the command "
+                    "fails silently at gate time; write `all` to list every "
+                    "suite directly, with no {paths} token" % (all_cmd,)))
     verified_on = derived.get("verifiedOn")
     if listing is not None and not (isinstance(verified_on, dict)
                                     and verified_on.get("command")):

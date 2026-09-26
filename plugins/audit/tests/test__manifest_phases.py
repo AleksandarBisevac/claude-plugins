@@ -1059,6 +1059,72 @@ def _cases(check):
           M._check_coupling(cp_ok, cp_phase_ids) == [])
 
 
+    # --- meta.phaseGate.derived.listing: the commands derive-phase-gate.py
+    # actually runs, coded like `_check_coupling`'s siblings - shape split
+    # from value the same way `budgetusd-number`/`budgetusd-greater-than`
+    # split below, since a reader filtering by code needs to tell "wrong
+    # type" from "wrong content" apart --------------------------------------
+    _dl_verified = {"command": "npm run list-tests", "at": "t"}
+    _dl_related_noplaceholder = M._check_phase_gate_derived(
+        {"listing": {"related": "find-related-tests"},
+         "verifiedOn": _dl_verified}, set())
+    check("dl1 a `listing.related` with no {paths} placeholder is the "
+          "PLACEHOLDER code naming it - derive-phase-gate.py fills {paths} "
+          "in per phase, so a related command without one lists the same "
+          "suites for every phase: %r" % (_dl_related_noplaceholder,),
+          len(_dl_related_noplaceholder) == 1
+          and M._output.finding_code(_dl_related_noplaceholder[0])
+          == "phases.phase_gate_derived.listing-related-placeholder"
+          and "find-related-tests" in _dl_related_noplaceholder[0])
+    _dl_related_blank = M._check_phase_gate_derived(
+        {"listing": {"related": "   "}, "verifiedOn": _dl_verified}, set())
+    check("dl2 ...and a blank `listing.related` string is the SHAPE code, "
+          "not the placeholder one - a blank string has no content to check "
+          "for {paths} in the first place: %r" % (_dl_related_blank,),
+          len(_dl_related_blank) == 1
+          and M._output.finding_code(_dl_related_blank[0])
+          == "phases.phase_gate_derived.listing-related-shape")
+    _dl_all_blank = M._check_phase_gate_derived(
+        {"listing": {"all": ""}, "verifiedOn": _dl_verified}, set())
+    check("dl3 a blank `listing.all` is the SHAPE code - derive-phase-gate.py "
+          "runs `all` as-is with no path filter, so a blank one runs an "
+          "empty command: %r" % (_dl_all_blank,),
+          len(_dl_all_blank) == 1
+          and M._output.finding_code(_dl_all_blank[0])
+          == "phases.phase_gate_derived.listing-all-shape")
+    _dl_all_nonstring = M._check_phase_gate_derived(
+        {"listing": {"all": 3}, "verifiedOn": _dl_verified}, set())
+    check("dl4 ...and a non-string `listing.all` is the same SHAPE code: %r"
+          % (_dl_all_nonstring,),
+          len(_dl_all_nonstring) == 1
+          and M._output.finding_code(_dl_all_nonstring[0])
+          == "phases.phase_gate_derived.listing-all-shape")
+    _dl_ok = M._check_phase_gate_derived(
+        {"listing": {"related": "find-related {paths}", "all": "list-all"},
+         "verifiedOn": _dl_verified}, set())
+    check("dl5 ALLOW CASE: a schema-correct listing (related carries {paths}, "
+          "all is a non-blank string with no {paths} in it) draws neither "
+          "coded warning: %r" % (_dl_ok,), _dl_ok == [])
+    _dl_null = M._check_phase_gate_derived({"listing": None}, set())
+    _dl_absent = M._check_phase_gate_derived({}, set())
+    check("dl6 ALLOW CASE: a null or absent `listing` draws nothing - no "
+          "listing command is known, and that is not a shape defect: %r"
+          % ((_dl_null, _dl_absent),),
+          _dl_null == [] and _dl_absent == [])
+    _dl_all_haspaths = M._check_phase_gate_derived(
+        {"listing": {"related": "find-related {paths}",
+                     "all": "list-all {paths}"},
+         "verifiedOn": _dl_verified}, set())
+    check("dl7 a `listing.all` carrying {paths} is the PATHS-PRESENT code - "
+          "`_gather_facts` never substitutes into `all`, so the literal "
+          "token reaches the shell and the command fails silently at gate "
+          "time: %r" % (_dl_all_haspaths,),
+          len(_dl_all_haspaths) == 1
+          and M._output.finding_code(_dl_all_haspaths[0])
+          == "phases.phase_gate_derived.listing-all-paths-present"
+          and "list-all {paths}" in _dl_all_haspaths[0])
+
+
 def _selftest():
     return _harness.run(_cases)
 

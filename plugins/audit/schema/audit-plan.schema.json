@@ -275,15 +275,15 @@
                 "null"
               ],
               "additionalProperties": true,
-              "description": "How this phase's gate is narrowed when meta.phaseGate.mode is set. null/absent = the mode above still applies to NOTHING, because there is no runner to ask; see `runner`, `spelling`, `listing` and `verifiedOn`.",
+              "description": "How this phase's gate is narrowed when meta.phaseGate.mode is set. null/absent = the mode above still applies to NOTHING, because no runner label or listing/spelling command is declared yet; see `runner`, `spelling`, `listing` and `verifiedOn`.",
               "properties": {
                 "runner": {
                   "type": "string",
-                  "description": "A meta.buildCommands key: the test runner derive-phase-gate.py asks for a related/changed/failed listing. Must be a key meta.buildCommands actually declares -- a runner this project has no command for cannot be asked anything."
+                  "description": "A meta.buildCommands key: carried through only as the DISPLAY LABEL the printed DERIVED line and phase.testGateDerived's `entry` name the gate under - never resolved or run, and never asked for a listing (see `listing.related` and `listing.all` for what derive-phase-gate.py actually runs to list suites). Must be a key meta.buildCommands actually declares -- a label naming no real buildCommands entry names nothing an operator could actually run."
                 },
                 "spelling": {
                   "type": "string",
-                  "description": "The path-scoped command spelling for `runner`, carrying a literal `{paths}` placeholder the derivation substitutes with the resolved file list (e.g. 'pytest {paths}'). Without one, the wide gate is the only answer this project's own commands can produce -- see the 'phase-no-spelling' task-level gateBasis word for the same idea one level down."
+                  "description": "The path-scoped command spelling for `runner` - the SECOND source `_gate_derive.resolve_shape` tries for a narrowed gate's shape, read only when no sibling task's own gate already carries a path-scoped entry (the sibling always wins: its entry is evidence this project's runner already accepted it, a declared `spelling` is not). Carries a literal `{paths}` placeholder the derivation substitutes with the resolved file list (e.g. 'pytest {paths}'). Without one, and with no sibling path-scoped entry either, the wide gate is the only answer this project's own commands can produce -- see the 'phase-no-spelling' task-level gateBasis word for the same idea one level down."
                 },
                 "listing": {
                   "type": [

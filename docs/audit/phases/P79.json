@@ -659,9 +659,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-26T17:04:45Z.b62036",
+        "runId": "2026-09-26T20:39:32Z.0a2767",
         "status": "passed",
-        "at": "2026-09-26T17:04:45Z"
+        "at": "2026-09-26T20:39:32Z"
       }
     },
     {
@@ -724,7 +724,7 @@
     {
       "id": "P79.10-5bh",
       "title": "couple checks its basis against git and the plan, and its cases read the journal",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review findings on couple/uncouple. (1) couple --basis-head is accepted as typed: verify it names a commit git has (in the project directory, the way 'done --commit' asks git), refuse exit 2 naming the SHA when git answers no, and when git cannot be asked (no git, a shallow clone) write it and report it as unverified rather than accusing it, exactly as 'done --commit' does. (2) --phases ids are stored unchecked: refuse exit 2 on an id the plan does not hold, naming it. (3) _manifest_phases._check_coupling validates test, sources and basis.runId only: add warnings (through _output.finding with a stable code, like its siblings) for a basis.head that is not an object-id-shaped string and a basis.phases entry that is not a phase id in the plan. (4) cp1 and cp5 assert on meta.coupling only: read the journal as the other verbs' cases do and assert exactly one coupling.learned row (details field/to/runId/commit) for couple and one coupling.dropped row (details field/from) for uncouple. (5) cp2 does not pin basis after a re-couple: assert the first call's basis {runId, head, phases} is kept when a second couple passes a different --basis-run / --basis-head / --phases, and state that rule where couple is documented (commands/task.md and the README /audit:task row), with the new refusals. No plan ids in comments; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -758,18 +758,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c45e9405a20cf13f8f032d640e5be6e8e72bffcd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py _locked_couple: _SHA_SHAPE then _commit_git_note (the done --commit helper) for --basis-head; _coupling_phases_refusal for --phases; unverified reported in text and --json. _manifest_phases._check_coupling(coupling, phase_ids) adds coded warnings phases.coupling.head-shape and phases.coupling.phase-id. Cases cp1b, cp2b, cp5b, cp7, cp8, cp9 and test__manifest_phases cp1-cp4; task.md and README state the kept-basis rule and the refusals. Task review: intent matches; redFirst proved for test_audit_task.py, could-not-prove for test__manifest_phases.py (the new cases hit the old one-argument signature as a TypeError), with mutation (g) as the substitute proof; inheritedTests not-asked. Review notes: stale stamp (no action, as P79-R15); preExisting: fc2 does not visit warnings _check_phase_gate emits through its warnings parameter - recorded as a fault.",
+        "descriptive": "couple now asks git whether --basis-head names a commit and refuses one git does not have, records one git cannot be asked about as unverified, refuses --phases ids the plan does not hold, keeps the first basis on a re-couple, and its cases read the journal rows couple and uncouple write."
       },
       "startedAt": "2026-09-26T16:31:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-26T17:17:17Z",
+      "verifiedBy": [
+        "cp1b",
+        "cp2b",
+        "cp5b",
+        "cp7",
+        "cp8",
+        "cp9"
+      ],
       "testEvidence": {
         "runId": "2026-09-26T17:06:46Z.194e50",
         "status": "passed",
         "at": "2026-09-26T17:06:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c45e9405a20cf13f8f032d640e5be6e8e72bffcd",
+        "at": "2026-09-26T17:17:17Z"
       }
     },
     {
@@ -813,9 +825,56 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-26T17:07:45Z.26fb08",
+        "runId": "2026-09-26T20:41:33Z.46df3a",
         "status": "passed",
-        "at": "2026-09-26T17:07:45Z"
+        "at": "2026-09-26T20:41:33Z"
+      }
+    },
+    {
+      "id": "P79.12-5bh",
+      "title": "the validator checks the listing commands derive-phase-gate runs",
+      "status": "in_progress",
+      "description": "Found by the P79.8-5bh delta review. _manifest_phases._check_phase_gate_derived (added in this phase) validates derived.runner (a buildCommands key) and derived.spelling (carries {paths}) but not derived.listing, which derive-phase-gate.py now actually runs: listing.related must be a non-blank string carrying a literal {paths} placeholder, listing.all a non-blank string with no {paths} requirement, and listing itself an object or null as the schema says. Add a warning for each violation through _output.finding with a stable code in the same family as its siblings, and say what the operator should write. The allow case: a schema-correct listing, and a null or absent listing, stay silent. No plan ids in comments; no numbers in prose.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/schema/audit-plan.schema.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: a meta.phaseGate.derived.listing.related without {paths}, and a blank or non-string listing.all, each produce a coded warning; a well-formed listing produces none - red at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T17:51:53Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T20:40:33Z.0edc86",
+        "status": "passed",
+        "at": "2026-09-26T20:40:33Z"
       }
     }
   ],
