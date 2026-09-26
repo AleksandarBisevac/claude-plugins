@@ -337,7 +337,7 @@
     {
       "id": "P82.5-fye",
       "title": "red-first knows which cases HEAD already has by running HEAD's own suite, not by reading literals",
-      "status": "in_progress",
+      "status": "done",
       "description": "Four review rounds each found a new corner in deciding \"is this failing case the task's own\" from the SOURCE of the test file (literal ranking, templates, roles, wrappers, bound names), and P82.4 still names limits that can produce a false proved. Replace the guess with a measurement. The throwaway tree at HEAD already exists; before copying the task's test files over it, run the SAME test command there on HEAD's own test files and record every case the runner names in that run, passing or failing (house PASS/FAIL labels, with a FAIL line's detail set aside as today; pytest node ids under -rA or -v; unittest test names). A failing case in the task's run is the task's own exactly when HEAD's own run did not name it. `--case` is checked against the same set. Fail closed: if HEAD's own run cannot be made or names no cases while its tally is non-empty, the verdict is could-not-prove with that reason. Remove the static literal-ranking machinery (_closest_literals, roles, _case_callees, templates, bound names) that this replaces - one mechanism, not two - and keep only what the measurement still needs. Keep every existing case that states a verdict (sr50-sr88 and the rest) passing or rewritten to the measured rule with a reason; the reviewer probes probe5-probe11 must all answer correctly. Record the cost of the extra run (timed twice with a gap). Update the guide, CHANGELOG, audit-executor.md and execute-task.md.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -372,14 +372,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "58b11909",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "red_verdict runs HEAD's own test files after a red run and credits only cases HEAD's run did not name; the static literal-ranking machinery is removed.",
+        "descriptive": "Red-first proof now knows which tests already existed by running the previous version of the suite, so it cannot be fooled by how a test file is written."
       },
       "startedAt": "2026-09-26T16:43:10Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-26T17:27:27Z",
+      "verifiedBy": [
+        "test_stamp_verification sr89",
+        "test_stamp_verification sr91",
+        "test_stamp_verification sr92",
+        "test_stamp_verification sr93",
+        "test_stamp_verification sr94",
+        "test_stamp_verification sr97"
+      ]
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"
