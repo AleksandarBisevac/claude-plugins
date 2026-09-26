@@ -661,7 +661,8 @@
       "P78.15-msc",
       "P82.1",
       "P83.1",
-      "P83.2"
+      "P83.2",
+      "P79.11-5bh"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -690,7 +691,8 @@
       "P80.12",
       "P81.8",
       "P72.4-ttl",
-      "P72.5-ttl"
+      "P72.5-ttl",
+      "P79.11-5bh"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -783,7 +785,8 @@
       "P78.1",
       "P78.5",
       "P78.10",
-      "P78.7"
+      "P78.7",
+      "P79.8-5bh"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -985,7 +988,8 @@
       "P76.1",
       "P76.2",
       "P73.2-9h1",
-      "P73.3-9h1"
+      "P73.3-9h1",
+      "P79.10-5bh"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1026,7 +1030,8 @@
       "P50.5",
       "P79.7",
       "P77.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P79.11-5bh"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -1215,7 +1220,8 @@
       "P81.5",
       "P76.1",
       "P76.3-6qa",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P79.10-5bh"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -1524,7 +1530,8 @@
       "P80.12",
       "P75.1",
       "P75.2-j5h",
-      "P78.15-msc"
+      "P78.15-msc",
+      "P79.11-5bh"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1559,7 +1566,8 @@
       "P78.2",
       "P79.1",
       "P80.1",
-      "P81.1"
+      "P81.1",
+      "P79.12-5bh"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -1957,7 +1965,8 @@
       "P81.3",
       "P81.4",
       "P77.3-6u9",
-      "P78.14-msc"
+      "P78.14-msc",
+      "P79.9-5bh"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2051,7 +2060,9 @@
       "P80.1",
       "P75.4-j5h",
       "P76.4-6qa",
-      "P78.12-msc"
+      "P78.12-msc",
+      "P79.10-5bh",
+      "P79.12-5bh"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -2162,7 +2173,8 @@
       "P76.1",
       "P72.3-ttl",
       "P76.3-6qa",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P79.10-5bh"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2810,7 +2822,9 @@
       "P80.1",
       "P75.4-j5h",
       "P76.4-6qa",
-      "P78.12-msc"
+      "P78.12-msc",
+      "P79.10-5bh",
+      "P79.12-5bh"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -2859,7 +2873,9 @@
       "P75.4-j5h",
       "P75.5-j5h",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P79.2",
+      "P79.3"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -2931,7 +2947,8 @@
       "P75.4-j5h",
       "P75.5-j5h",
       "P76.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P79.4"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -3112,7 +3129,8 @@
       "P72.3-ttl",
       "P76.3-6qa",
       "P76.4-6qa",
-      "P78.14-msc"
+      "P78.14-msc",
+      "P79.10-5bh"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3390,7 +3408,8 @@
       "P81.3",
       "P81.4",
       "P77.3-6u9",
-      "P78.14-msc"
+      "P78.14-msc",
+      "P79.9-5bh"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -3580,16 +3599,20 @@
       "P56.2"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
-      "P79.2"
+      "P79.2",
+      "P79.8-5bh"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
-      "P79.2"
+      "P79.2",
+      "P79.8-5bh"
     ],
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
-      "P79.3"
+      "P79.3",
+      "P79.8-5bh"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
-      "P79.3"
+      "P79.3",
+      "P79.8-5bh"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5"
