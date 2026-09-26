@@ -503,7 +503,7 @@
     {
       "id": "P78",
       "title": "A phase gate that says where it came from and what it cost",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P78.json"
     },
     {
