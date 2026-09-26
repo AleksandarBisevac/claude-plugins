@@ -281,6 +281,34 @@
         "file": "plugins/audit/scripts/ui/panel/composition.js",
         "issue": "The only vitest case for accepted commits uses an in-flight phase. The branch that shows them on a landed (done) phase is the one a later reader meets, and no case covers it. Deleting line 903 would leave every test green.",
         "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-V1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "U2's defect is still there on the could-not-ask branch. That is exactly where the operator's own review is the only check. When a merge has no recomputed tree (a git before 2.38, or an octopus merge), the refusal says 'Review it (`git show <sha>`)', and an accepted merge of that kind is listed as `git show <sha>` too. For a merge, `git show` prints the dense combined diff, which hides a dropped si",
+        "resolution": "fix task P74.6-qq5"
+      },
+      {
+        "id": "P74-V2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The waiting sentence promises something the code never checked. The code says '<m2> is a merge over <m1>, refused above - it is accounted once that one is', and the docs call m2 'a clean merge'. But `judge` is never called on a waiting merge, so nothing established that it is clean. I RAN two cases. First, r5b.py: m1 and m2 each add a file inside the merge commit. `--plan` said m2 'is accounted on",
+        "resolution": "fix task P74.6-qq5"
+      },
+      {
+        "id": "P74-V3",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py",
+        "issue": "The fix for U3 is not guarded. I ran a mutation in a git-archive export: `_clean_merge`'s octopus branch was changed to return MERGE_OWN, so a clean octopus is refused as 'carries content of its own'. The suite stayed ALL PASS (574 of 574). ga12 asserts only `\"octopus\" in txt and \"an edit\" not in txt`, and the octopus `why` string contains 'octopus' in both states.",
+        "resolution": "fix task P74.6-qq5"
+      },
+      {
+        "id": "P74-V4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The startswith guard has no test. I mutated it to `if code == 0 and full:` and test_audit_task stayed ALL PASS (574 of 574). That arm is what stops a branch or tag whose NAME is hex from being accepted by name. git prefers the ref, so the ref would re-resolve on every call, which is the U5 hole. I RAN r5a.py: a branch named `e1e6d3`, pointing at a different commit, is refused today. But its senten",
+        "resolution": "fix task P74.6-qq5"
       }
     ]
   },
@@ -623,6 +651,111 @@
         "test_audit_task ga14",
         "test_audit_task ga10"
       ]
+    },
+    {
+      "id": "P74.6-qq5",
+      "title": "Round-5 review findings: a merge git cannot recompute prints a review command that shows it, and a waiting merge is judged now",
+      "status": "in_progress",
+      "description": "Round-5 phase review findings, all to be fixed. Orchestrator decisions: (V1) on the could-not-ask branch the printed review command is `git show -m <sha>` (a diff against each parent), and ga11 runs it on a drop-a-side merge under the old-git shim and asserts the deletion shows. (V2) a merge waiting on a refused one is judged NOW as if that parent were accounted: clean is reported as waiting on <sha>, own content or could-not-ask is refused with its own reason in the same refusal; the wording in audit-task, phase-signoff.md and CHANGELOG says exactly that. (V3) ga12 asserts 'could not be asked' present and 'carries content of its own' absent. (V4) a hex-spelled name that resolves through a ref is refused with a sentence saying it names a ref, not a commit SHA, and a case pins it.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:6310-6317 (_review_command falls back to `git show <sha>`), :6322-6326 (_merge_refusal, could-not-ask branch), :6742-6744 (plan's accepted line): U2's defect is still there on the could-not-ask branch. That is exactly where the operator's own review is the only check. When a merge has no recomputed tree (a git before 2.38, or an octopus merge), the refusal says 'Review it (`git show <sha>`)', and an accepted merge of that kind is listed as `git show <sha>` too. For a merge, `git show` prints the dense combined diff, which hides a dropped side. I RAN this (scratchpad/p74r3/r5d.py, which is r4c's drop-side2 merge under the oldgit/git shim): the refusal named `git show 678cca0cb863...`, and that command printed 0 bytes. `git show -m --format= <sha> --stat` printed the deletion of src/p2.py. On old git, every merge takes this branch. -> When `_review_command` has a merge but no tree, name a per-parent diff that works on any git and on an octopus merge. That is `git show -m <sha>`, or `git diff <sha>^1 <sha>` plus one diff per further parent. `_review_command` needs the parent count. Extend ga11 with a drop-a-side fixture under `_old_git`: run the printed command and assert its output names the dropped file.\nR2 (low) plugins/audit/scripts/manifest/audit-task.py:6226-6230 (waiting sentence), :6368-6373 (_account's waiting branch never calls judge); plugins/audit/reference/phase-signoff.md:409-410; CHANGELOG.md:185: The waiting sentence promises something the code never checked. The code says '<m2> is a merge over <m1>, refused above - it is accounted once that one is', and the docs call m2 'a clean merge'. But `judge` is never called on a waiting merge, so nothing established that it is clean. I RAN two cases. First, r5b.py: m1 and m2 each add a file inside the merge commit. `--plan` said m2 'is accounted once' m1 is. With `--accept <m1>`, m2 was then refused as 'carries content of its own'. Second, r5c.py: on the old-git shim, `--accept <m1>` on the clean two-merge branch was followed by m2 refused as could-not-ask, so it is never 'accounted once that one is' there. The gate still holds, so this is not a safety hole. It is a claim without its basis, the same class as U1 and U4. -> Judge a waiting merge too. merge-tree can replay its two parents whether or not they are accounted. Then either say 'recomputes clean; accounted once <m1> is', or refuse it now with its own sentence. The weaker fix is to reword it to 'judged once <m1> is accounted', in the code, phase-signoff.md and the CHANGELOG. Add an evil-then-evil case to ga14 that asserts m2 is not promised accounting.\nR3 (low) plugins/audit/tests/test_audit_task.py:6474-6477 (ga12): The fix for U3 is not guarded. I ran a mutation in a git-archive export: `_clean_merge`'s octopus branch was changed to return MERGE_OWN, so a clean octopus is refused as 'carries content of its own'. The suite stayed ALL PASS (574 of 574). ga12 asserts only `\"octopus\" in txt and \"an edit\" not in txt`, and the octopus `why` string contains 'octopus' in both states. -> Make ga12 assert 'could not be asked' in txt and 'carries content of its own' not in txt, as ga11 does for old git.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:6206-6212 (`full.startswith(name.lower())` and its refusal); plugins/audit/tests/test_audit_task.py (no case): The startswith guard has no test. I mutated it to `if code == 0 and full:` and test_audit_task stayed ALL PASS (574 of 574). That arm is what stops a branch or tag whose NAME is hex from being accepted by name. git prefers the ref, so the ref would re-resolve on every call, which is the U5 hole. I RAN r5a.py: a branch named `e1e6d3`, pointing at a different commit, is refused today. But its sentence says 'does not resolve to exactly one commit', which misstates the cause: it resolved to a ref. -> Add a case: create a branch named with a hex prefix that points elsewhere, and assert refusal. Give that arm its own sentence, e.g. '--accept X resolves through a ref of that name to <sha>, not to a commit it prefixes'.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - under a pre-2.38 git the printed review command shows nothing for a merge that dropped a side"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T11:46:38Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P74.7-qq5",
+      "title": "close-phase writes the landing stamp into the copy that survives, whatever manifest path it is given",
+      "status": "pending",
+      "description": "Reported while landing P78: `close-phase.py <wt>/docs/audit/audit-plan.json P78 --project <wt> --dry-run` printed \"cleanup is not finished. From <main>, run: close-phase.py <wt>/docs/audit/audit-plan.json P78 --project .\". Run as printed from main, it merged with --ff-only, then wrote mergedAt and the derived status into the WORKTREE's shard and re-mirrored the WORKTREE's index stub - the copy removed moments later - so the worktree removal refused on those writes, while its phase.merged journal row went into MAIN's journal. The rule: the landing stamp is written to the manifest of the tree the merge lands in (the parent branch's checkout), never to a copy inside the phase's own worktree, whatever path is passed; and the dry-run's follow-up command names that surviving manifest. Red-first: close-phase given the worktree's manifest from the main checkout writes nothing under the worktree, stamps main's copies, and the worktree removal succeeds; plus the printed follow-up names main's manifest.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/commands/phase.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: repro that FAILS on current code - close-phase run from the main checkout with the worktree's manifest path writes mergedAt into the worktree copy"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-25T18:00:38Z"

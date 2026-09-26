@@ -406,8 +406,11 @@ parent does: it is refused by SHA, naming `git diff <recomputed tree> <sha>`, th
 check made (`git show --cc` hides a path whose result equals one parent, which is exactly how a
 dropped change looks). A merge the check could not recompute — an octopus merge, which
 merge-tree takes two parents at a time for, or a git before 2.38, which has no `--write-tree` —
-is refused as a question not asked, with git's own line, and never called an edit. A clean merge
-above a refused one is named as waiting on it, and is accounted once that one is. Any other
+is refused as a question not asked, with git's own line, and never called an edit; its review
+command is `git show -m <sha>`, a diff against each parent, which shows a dropped side on any git.
+A merge above a refused one is judged now, as if the one below were accounted: if it recomputes
+clean it is named as waiting on that one and is accounted once it is; if it carries content of
+its own, or could not be asked, it is refused with its own reason in the same refusal. Any other
 commit — a hand-made planning commit, a journal-only commit nobody recorded — is refused by SHA
 too, and `--accept <sha> --reason "<why>"` takes any of these into the review instead; an
 accepted commit counts as accounted for the merges above it. `--accept` takes a hex SHA or a

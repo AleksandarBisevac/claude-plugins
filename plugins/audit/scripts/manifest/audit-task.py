@@ -6205,6 +6205,13 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
                 full = (full or "").strip()
                 if code == 0 and full.startswith(name.lower()):
                     resolved[full] = name
+                elif code == 0 and full:
+                    # A REF WHOSE NAME IS HEX wins over the commit it spells: git
+                    # prefers the ref, which re-resolves on every call.
+                    refusals.append("--accept %s names a ref, not a commit SHA - git "
+                                    "resolves it through the ref of that name to %s, "
+                                    "a commit it does not prefix; name the commit by "
+                                    "its full SHA" % (name, full[:12]))
                 else:
                     refusals.append("--accept %s does not resolve to exactly one "
                                     "commit (`git rev-parse --verify %s^{commit}`) "
@@ -6221,13 +6228,14 @@ def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
             if unused:
                 refusals.append("--accept %s names no commit %r carries past its "
                                 "fork %s" % (", ".join(unused), branch, fork[:12]))
-            for sha in blocked:
-                refusals.append(_merge_refusal(sha, verdicts[sha]))
+            for sha, over in blocked:
+                refusals.append(_merge_refusal(sha, verdicts[sha], over))
             for sha, over in waiting:
                 refusals.append(
-                    "%s is a merge over %s, refused above - it is accounted once "
-                    "%s is" % (sha[:12], ", ".join(o[:12] for o in over),
-                               "that one" if len(over) == 1 else "those are"))
+                    "%s is a merge over %s, refused above - it recomputes clean, so "
+                    "it is accounted once %s" % (
+                        sha[:12], ", ".join(o[:12] for o in over),
+                        "that one is" if len(over) == 1 else "those are"))
             review = dict((sha, _review_command(sha, verdicts.get(sha)))
                           for sha in taken)
             if stray and journal_error:
@@ -6311,30 +6319,39 @@ def _review_command(sha, verdict):
     """What a reviewer runs to see what a commit carries. For a merge, the
     comparison the check made - the automatic merge's tree against the merge -
     because a combined diff hides a path whose result equals one parent, which
-    is exactly how a dropped change looks."""
+    is exactly how a dropped change looks. A merge with no recomputed tree gets a
+    diff against EACH parent (`git show -m`), which shows a drop on any git and
+    for any number of parents. `verdict` is set only for a merge."""
     if verdict and verdict.get("tree"):
         return "git diff %s %s" % (verdict["tree"], sha)
+    if verdict:
+        return "git show -m %s" % (sha,)
     return "git show %s" % (sha,)
 
 
-def _merge_refusal(sha, verdict):
-    """The refusal a merge the accounting could not take in earns."""
+def _merge_refusal(sha, verdict, over=None):
+    """The refusal a merge the accounting could not take in earns - with, when it
+    sits over merges refused above, those named too: it is judged on its own
+    account now, never promised accounting once they are."""
+    tail = ("; it is also a merge over %s, refused above"
+            % (", ".join(o[:12] for o in over),) if over else "")
     if verdict["state"] == MERGE_UNASKED:
-        return ("whether merge %s carries content of its own could not be asked "
-                "(%s). Review it (`git show %s`) and pass --accept %s --reason "
+        return ("merge %s: whether it adds or drops anything of its own could not "
+                "be asked (%s)%s. Review it (`%s`) and pass --accept %s --reason "
                 "\"<why>\" to take it into the group"
-                % (sha[:12], verdict["why"], sha, sha))
-    return ("merge %s carries content of its own - %s. Review what it adds or drops "
-            "with `%s`, and pass --accept %s --reason \"<why>\" to take it into "
-            "the group" % (sha[:12], verdict["why"], _review_command(sha, verdict),
-                           sha))
+                % (sha[:12], verdict["why"], tail, _review_command(sha, verdict),
+                   sha))
+    return ("merge %s carries content of its own - %s%s. Review what it adds or "
+            "drops with `%s`, and pass --accept %s --reason \"<why>\" to take it "
+            "into the group" % (sha[:12], verdict["why"], tail,
+                                _review_command(sha, verdict), sha))
 
 
 def _account(listing, known, accepted, judge):
     """`(stray, taken, used, blocked, waiting)` over `git rev-list --parents`
     output: the commits nothing accounts for, the ones `accepted` (full SHAs) took
     in, which of those matched, the merges `judge` could not take in, and the
-    merges held up only by those - `(sha, [the blocked merges below it])`.
+    clean merges held up only by those - both `(sha, [refused merges below it])`.
 
     A merge is accounted when every parent is accounted - an accepted commit
     included - or lies outside the listed range, which is the parent side of the
@@ -6364,11 +6381,18 @@ def _account(listing, known, accepted, judge):
                 if judge(sha, parents)["state"] == MERGE_CLEAN:
                     ok.add(sha)
                 else:
-                    blocked.append(sha)
+                    blocked.append((sha, []))
                     held.add(sha)
                 continue
             if all(p in held for p in pending):
-                waiting.append((sha, pending))
+                # JUDGED NOW, as if the refused merges below were accounted:
+                # merge-tree replays two parents whatever is known of them, so a
+                # promise of accounting is made only for a merge that recomputes
+                # clean, and any other is refused on its own account.
+                if judge(sha, parents)["state"] == MERGE_CLEAN:
+                    waiting.append((sha, pending))
+                else:
+                    blocked.append((sha, pending))
                 held.add(sha)
                 continue
         stray.append(sha)

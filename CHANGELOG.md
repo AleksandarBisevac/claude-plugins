@@ -182,7 +182,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the automatic merge of those parents; a merge carrying content of its own is refused, naming
   `git diff <recomputed tree> <sha>`, which shows a dropped change `git show --cc` hides. A merge
   that cannot be recomputed (an octopus merge, or a git before 2.38) is refused as not asked, never
-  as an edit, and a clean merge above a refused one is named as waiting on it.
+  as an edit, and its review command is `git show -m <sha>`. A merge above a refused one is judged
+  as if that one were accounted: a clean one is named as waiting on it, any other is refused with
+  its own reason. `--accept` refuses a hex-spelled name that resolves through a ref.
   Any other unrecorded commit can be taken into the review with `--accept <sha> --reason "<why>"`,
   which takes a hex SHA or unique hex prefix (never a ref) resolving to exactly one commit, is recorded on every member and is shown beside the
   sign-off in the report and the panel. The group-only flags are refused on a single phase's

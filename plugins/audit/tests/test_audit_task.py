@@ -6418,14 +6418,22 @@ def _cases(check):
             if how == "octopus":
                 gs_git(proj, "merge", "-q", "--no-ff", "-m", "octopus", "side1",
                        "side2")
-            elif how == "evil-then-clean":
+            elif how in ("evil-then-clean", "evil-then-evil"):
                 gs_git(proj, "merge", "-q", "--no-ff", "--no-commit", "side1")
                 with open(os.path.join(proj, "edit.txt"), "w") as fh:
                     fh.write("an edit inside the merge\n")
                 gs_git(proj, "add", "edit.txt")
                 gs_git(proj, "commit", "-q", "-m", "merge side1")
                 shas["m1"] = gs_git(proj, "rev-parse", "HEAD")
-                gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side2", "side2")
+                if how == "evil-then-evil":
+                    gs_git(proj, "merge", "-q", "--no-ff", "--no-commit", "side2")
+                    with open(os.path.join(proj, "edit2.txt"), "w") as fh:
+                        fh.write("a second edit inside a merge\n")
+                    gs_git(proj, "add", "edit2.txt")
+                    gs_git(proj, "commit", "-q", "-m", "merge side2")
+                else:
+                    gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side2",
+                           "side2")
                 shas["m2"] = gs_git(proj, "rev-parse", "HEAD")
             else:
                 gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side1", "side1")
@@ -6464,17 +6472,39 @@ def _cases(check):
               "could not be asked" in _o_text and "2.38" in _o_text
               and "unknown rev --write-tree" in _o_text
               and "an edit" not in _o_text and o_shas["m1"][:12] in _o_text)
-        check("ga11b ...and the merge above it is named as WAITING on it, not as a "
-              "commit no member records: %s" % (_o_text,),
-              ("%s is a merge over %s" % (o_shas["m2"][:12], o_shas["m1"][:12]))
-              in _o_text and "no member records" not in _o_text)
+        _o_m2 = [ln for ln in _o_plan["refusals"] if o_shas["m2"][:12] in ln
+                 and ln.find(o_shas["m2"][:12]) < 20]
+        check("ga11b ...and the merge above it is JUDGED now, not promised accounting "
+              "it was never checked for: under this git it too could not be asked, "
+              "said with its own reason and the refused merge below it: %s"
+              % (_o_m2,),
+              len(_o_m2) == 1 and "could not be asked" in _o_m2[0]
+              and ("also a merge over %s" % (o_shas["m1"][:12],)) in _o_m2[0]
+              and "accounted once" not in _o_text
+              and "no member records" not in _o_text)
+        od_proj, od_mp, od_shas = ga_merged("ga-oldgit-drop", "drop")
+        _od_plan = M.group_plan(_mio.load_manifest(od_mp), ["P1", "P2"], "combined",
+                                od_proj, run=_old_git, journal_rows=[])
+        _od_text = "\n".join(_od_plan["refusals"])
+        _od_cmd = [c for c in _od_text.split("`") if c.startswith("git show -m ")
+                   and od_shas["m2"] in c]
+        _od_out = (subprocess.run(_od_cmd[0].split(), cwd=od_proj,
+                                  stdout=subprocess.PIPE).stdout.decode()
+                   if _od_cmd else "")
+        check("ga11c a merge that DROPS a side, under a git that cannot recompute it, "
+              "names a review command that shows the drop - a diff against each "
+              "parent (`git show -m`), where `git show` alone shows nothing: "
+              "command %r, shows side2.txt %r" % (_od_cmd, "side2.txt" in _od_out),
+              len(_od_cmd) == 1 and "side2.txt" in _od_out)
         oc_proj, oc_mp, oc_shas = ga_merged("ga-octopus", "octopus")
         code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
                          "--project-dir", oc_proj])
         check("ga12 a clean OCTOPUS merge is refused as not established - merge-tree "
               "recomputes two parents only - and not as an edit: exit %r, %s"
               % (code, txt),
-              code == 2 and "octopus" in txt and "an edit" not in txt)
+              code == 2 and "octopus" in txt and "an edit" not in txt
+              and "could not be asked" in txt
+              and "carries content of its own" not in txt)
         d_proj, d_mp, d_shas = ga_merged("ga-drop", "drop")
         code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
                          "--project-dir", d_proj])
@@ -6501,6 +6531,15 @@ def _cases(check):
         check("ga14b ...and once the refused merge is accepted, the clean merge over "
               "it is accounted and the plan stands: exit %r, %s" % (code, txt),
               code == 0)
+        ww_proj, ww_mp, ww_shas = ga_merged("ga-evil-evil", "evil-then-evil")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", ww_proj])
+        check("ga14c a merge with content of its own over a refused merge is refused "
+              "NOW with its own reason - never promised accounting once the one below "
+              "is: exit %r, %s" % (code, txt),
+              code == 2 and "accounted once" not in txt
+              and ("merge %s carries content of its own" % (ww_shas["m2"][:12],))
+              in txt)
         # One --accept names ONE commit.
         p_proj, p_mp, _p = gs_fixture("ga-prefix")
         gs_git(p_proj, "checkout", "-q", "combined")
@@ -6534,6 +6573,15 @@ def _cases(check):
         check("ga9c SECOND DIRECTION: a unique short SHA resolves to its one commit, "
               "listed in full: exit %r, %s" % (code, txt),
               code == 0 and ("git show %s" % (_q_extra,)) in txt)
+        _q_ref = _q_extra[:6]
+        gs_git(q_proj, "branch", _q_ref, "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _q_ref, "--reason", "r", "--project-dir", q_proj])
+        check("ga10b a HEX-spelled name that is also a branch resolves through the ref, "
+              "not to the commit it prefixes - refused, saying it names a ref: exit %r, "
+              "%s" % (code, txt),
+              code == 2 and ("--accept %s names a ref" % (_q_ref,)) in txt)
+        gs_git(q_proj, "branch", "-D", _q_ref)
         for _ref in ("combined", "HEAD", "combined~0"):
             code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
                              "--accept", _ref, "--reason", "r",
