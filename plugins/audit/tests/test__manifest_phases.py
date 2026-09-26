@@ -1018,6 +1018,13 @@ def _cases(check):
           hasattr(M, "phase_gate_suite_gap")
           and M.phase_gate_suite_gap(
               {"meta": {"buildCommands": {"test": "x"}}}) is None)
+    check("pg6 a blank-string buildCommands key never enters the default gate, "
+          "with no meta.phaseGate at all (mutation: drop the build_keys filter "
+          "-> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"": "x", "lint": "y"}})["entries"]
+          == ["lint"])
 
 
 def _selftest():

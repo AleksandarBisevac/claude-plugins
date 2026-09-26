@@ -230,7 +230,8 @@ def _phase_gate_lists(meta):
     """
     meta = meta if isinstance(meta, dict) else {}
     build = meta.get("buildCommands")
-    build_keys = list(build.keys()) if isinstance(build, dict) else []
+    build_keys = ([k for k in build.keys() if isinstance(k, str) and k.strip()]
+                  if isinstance(build, dict) else [])
     gate = meta.get("phaseGate")
     gate = gate if isinstance(gate, dict) else {}
     always = [a for a in _safe_list(gate.get("always"))

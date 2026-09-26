@@ -22,10 +22,53 @@
   "branch": "audit/p78-a-phase-gate-that-says-where-i",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P78-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:226",
+        "issue": "_phase_gate_lists takes buildCommands keys unfiltered, so a blank-string key enters a new phase's default gate where the previous code dropped it; absence of meta.phaseGate is then not today's behaviour exactly",
+        "resolution": "fix task P78.12-msc: filter build keys once in _phase_gate_lists, red-first case with a blank key"
+      },
+      {
+        "id": "P78-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1100",
+        "issue": "check_gate_economy divides the summed duration of measured steps by the count of all steps, so partially measured history dilutes the mean and can hide an over-budget gate",
+        "resolution": "fix task P78.13-msc: divide by the measured count from one shared _evidence_io helper, red-first case with mixed history"
+      },
+      {
+        "id": "P78-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-lookup.py:299",
+        "issue": "the comment over _RUN_STEP_KEYS says only retry bookkeeping is dropped, while ran, measured, timeoutSeconds, teardown and suiteReader are dropped too",
+        "resolution": "fix task P78.14-msc: the comment names what is dropped and why"
+      },
+      {
+        "id": "P78-R4",
+        "severity": "low",
+        "file": "CHANGELOG.md:340",
+        "issue": "the [Unreleased] correction line points at 'the 1.4.1 entry above', which is below it in a newest-first file",
+        "resolution": "fix task P78.15-msc: drop the direction word"
+      },
+      {
+        "id": "P78-R5",
+        "severity": "low",
+        "file": "plugins/audit/reference/phase-signoff.md:134",
+        "issue": "says 'two gate entries' for the SAME SUITE remedy while shared_counts groups two or more",
+        "resolution": "fix task P78.15-msc: say two or more"
+      },
+      {
+        "id": "P78-R6",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3006",
+        "issue": "comments added in this phase cite phase and task ids (run-test-gate.py, test_audit_task.py, test_run_test_gate.py), and one older section marker in run-test-gate.py does too; comments must state their rule, not cite the private register",
+        "resolution": "fix task P78.14-msc: rewrite each comment in its own terms"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -720,7 +763,7 @@
     {
       "id": "P78.11",
       "title": "Docs: the always/exclude default, the economy row, --own, failed-first, and the background rule",
-      "status": "in_progress",
+      "status": "done",
       "description": "Docs owed by this phase's behaviour, written after the code lands, each sentence naming the function or command that makes it true. execute-task.md: the own-tests reading runs run-test-gate.py <m> <P> --task <T> --own --quiet instead of bare Bash; a retry brief carries the 'raw log:' path the last own run printed (tk3); a gate expected to outlast the Bash tool's foreground bound runs under run_in_background and its verdict is read with audit-lookup.py <m> run <runId> (the id from the 'evidence: recorded' line) or run latest --task <T>, never from a truncated terminal - the runner records before it prints its verdict (pinned by dg22). phase-signoff.md: the same background rule at step 2; the 'excluded:' and 'PHASE GATE RAN NO SUITE' lines and what the operator does with them; a red sign-off gate's fix task is created with /audit:task add ... --failing-from <runId>; what the SAME SUITE remedy line is for. agents/audit-executor.md: the own-tests bullet names --own --quiet and says a gate-only task hears 'nothing of its own to run'; every return field stays (_refs.return_shape_drift reads this brief against execute-task.md). commands/doctor.md: the economy row, what it never does, and that its remedy for new phases is meta.phaseGate.exclude. commands/task.md: gate-only-no-suite and failing-from-run:<runId> among the gateBasis words. README: meta.phaseGate.always, meta.phaseGate.exclude and meta.gateBudgetMs in the meta-block section, with the rule they hold (no state of a plan may make the sign-off gate run fewer suites than today unless the plan declares it and the gate prints it) and which predicate decides 'suite-running' (the counts reader's suiteReader, read back from the ledger). COMPATIBILITY.md: a paragraph per key saying what absence means (no phaseGate: add-phase defaults to every buildCommands key in buildCommands order; always alone only reorders that default; no exclude: nothing is dropped; no budget: nothing graded on cost), and that the gate-only derivation change moves no promise because the derived gate of a new task is not on the promised list. CHANGELOG.md [Unreleased]: the user-visible changes, including that retarget --gate was always a replace and two documents said append. No numbers written into prose (_deps.doc_prose_numbers), no register ids.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -765,18 +808,207 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "42c91670021e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Documented P78.1-P78.10 across orchestrator.md (the run lookup and the background rule), execute-task.md, phase-signoff.md, audit-executor.md, doctor.md, task.md, README, COMPATIBILITY (absence stated for meta.phaseGate and meta.gateBudgetMs) and CHANGELOG [Unreleased], including a correction line for the released entry that said retarget --gate appends. Gate run 2026-09-26T11:08:27Z.43cf25 green; reviewer matches; two low findings (the correction line points 'above' at an entry that is below; a plain count 'two gate entries' where the code groups two or more) carried to sign-off.",
+        "descriptive": "Phase P78's docs now describe the phase-gate default/narrowing keys, the gate-economy check, the failed-first fix-task route, the executor's own-tests script call, and the background-gate/evidence-ledger reading rule, everywhere the phase's code already does them."
       },
       "startedAt": "2026-09-26T10:56:16Z",
-      "completedAt": null,
+      "completedAt": "2026-09-26T11:13:22Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-26T11:08:27Z.43cf25",
         "status": "passed",
         "at": "2026-09-26T11:08:27Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "42c91670021e",
+        "at": "2026-09-26T11:13:22Z"
+      }
+    },
+    {
+      "id": "P78.12-msc",
+      "title": "A blank buildCommands key stays out of a new phase's default gate",
+      "status": "in_progress",
+      "description": "Sign-off review finding (high). Constraint: absence of meta.phaseGate must keep today's new-phase gate exactly. The previous _phase_gate filtered build keys with `isinstance(k, str) and k.strip()`; _manifest_phases._phase_gate_lists now takes build.keys() unfiltered, so a blank-string buildCommands key enters phase_gate_default(meta)['entries'] (and so a new phase's gate) where it used to be dropped. Rule: _phase_gate_lists applies the same filter to build_keys, once, so every caller (phase_gate_default, phase_gate_suite_gap, _check_phase_gate) reads the same key set. Red-first: a meta with buildCommands {\"\": \"x\", \"lint\": \"y\"} and no phaseGate gives entries ['lint'] (mutation: drop the filter -> red). Allow case: a meta whose keys are all non-blank gives exactly buildCommands order, unchanged. Also remove any plan or task id cited in a comment this phase added to these two files; state the constraint instead.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: repro that FAILS on current code - a blank-string buildCommands key appears in phase_gate_default(meta) entries when meta.phaseGate is absent"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T11:22:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T11:31:40Z.d1a515",
+        "status": "passed",
+        "at": "2026-09-26T11:31:40Z"
+      }
+    },
+    {
+      "id": "P78.13-msc",
+      "title": "The gate-economy mean divides by the runs that carried a duration",
+      "status": "in_progress",
+      "description": "Sign-off review finding (med). Constraint: check_gate_economy computes mean = gate_cost_ms(rows, name) / ran, where gate_cost_ms sums durationMs only over steps that carry one while ran counts every matching step, so a history that mixes measured and unmeasured runs dilutes the mean downward and can hide a gate that is over meta.gateBudgetMs on the runs actually measured. Rule: divide by the number of steps that contributed a durationMs. Prefer one shared answer: a helper in _evidence_io beside gate_cost_ms that returns the measured count (or the sum and the count together), used by check_gate_economy, never a second walk written in _doctor_trail. The row keeps naming unmeasured runs as unmeasured and never folds them into the OK count. Red-first: a gate with two measured runs over budget and two unmeasured runs warns (mutation: divide by ran -> red). Allow case: an all-measured history under budget stays OK; the existing total-vs-mean pin stays green. Also remove any plan or task id cited in a comment this phase added to these files; state the constraint instead.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_trail.py: repro that FAILS on current code - a gate whose measured runs average over the budget, beside runs that recorded no durationMs, draws no economy warning"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T11:22:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T11:32:46Z.8c04b0",
+        "status": "passed",
+        "at": "2026-09-26T11:32:46Z"
+      }
+    },
+    {
+      "id": "P78.14-msc",
+      "title": "Comments state their rule instead of citing plan ids",
+      "status": "in_progress",
+      "description": "Sign-off review findings (med and low). Constraint: the repo's rule is that a comment speaks to the code - it states the constraint of its block and never cites a phase, task, fault or bug id, because the register is private and the code is public. This phase added such citations: run-test-gate.py (a suiteReader comment citing a task id, the --own flag comment citing another phase's flag by phase id, a comment citing the tasks behind the excluded line), test_audit_task.py's suite-index comments naming task ids per case group, and test_run_test_gate.py. One older comment in run-test-gate.py of the same class (a section marker citing an old phase id) goes too. Rule: rewrite each to say the reason in its own terms (for the --own comment: name the other flag it must not collide with, without dating it). Also in audit-lookup.py: the comment over _RUN_STEP_KEYS says it drops only retry bookkeeping, while it also drops ran, measured, timeoutSeconds, teardown and suiteReader; make it name what is dropped and why. Sweep these four files with a grep for a P or F followed by digits inside comments and docstrings, and fix every hit this phase added. Section markers the navigability lint counts (# --- name ---) must survive with a name.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/status/audit-lookup.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T11:22:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T11:34:07Z.5cb4b1",
+        "status": "passed",
+        "at": "2026-09-26T11:34:07Z"
+      }
+    },
+    {
+      "id": "P78.15-msc",
+      "title": "Two doc sentences say what the code does",
+      "status": "in_progress",
+      "description": "Sign-off review findings (low). CHANGELOG.md: the [Unreleased] correction line says 'the 1.4.1 entry above', but the file is newest-first and that entry is below it; drop the direction word or say below. reference/phase-signoff.md: the SAME SUITE remedy paragraph says 'when two gate entries reported the same check count', while run-test-gate.shared_counts groups two or more; say that. No other change to either file; no number written into prose.",
+      "files": [
+        "CHANGELOG.md",
+        "plugins/audit/reference/phase-signoff.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T11:22:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-26T11:35:17Z.01532c",
+        "status": "passed",
+        "at": "2026-09-26T11:35:17Z"
       }
     }
   ],
