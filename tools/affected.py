@@ -695,7 +695,7 @@ def _cases(check):
           and _art[0][:2] == ["python3", "tools/check-rendered-artifacts.py"]
           and _art[0][2:] == ["--before-commit"])
 
-    shot =sel("docs/screenshots/panel-blocks.png")
+    shot = sel("docs/screenshots/panel-blocks.png")
     check("a11 a committed PNG selects no gate and does NOT widen - 'nothing "
           "covers this' is a real answer here, and it is not spelled the same "
           "way as 'I could not tell': %r" % (shot,),

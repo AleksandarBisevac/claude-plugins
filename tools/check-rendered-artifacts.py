@@ -27,12 +27,16 @@ went green here while a `git archive` of the commit still held the old bytes. Th
 reported apart: one is repaired by re-rendering and the other by committing, and a
 reader has to know which went red.
 
-AND THEY ARE ASKED AT DIFFERENT MOMENTS. The commit's question has no answer before
-the commit exists: asked of a tree that is about to become that commit, it is red for
-every change that re-renders a page with this repo's own recipe. So `--selftest` -
-which the pre-commit sweep runs - and `--before-commit` ask the fresh render alone,
-`--against-commit` asks HEAD alone, and a run with no flag asks both, which is what CI
-runs. `arm_verdict()` names an arm a run left out rather than going quiet about it.
+AND THEY ARE ASKED AT DIFFERENT MOMENTS. Before a commit, the commit's question is red
+for as long as a re-rendered page is uncommitted - every change that re-renders a page
+with this repo's own recipe, until its commit. So `--selftest` - which the pre-commit
+sweep runs - and `--before-commit` ask the fresh render alone, `--against-commit` asks
+HEAD alone, and a run with no flag asks both. After a commit, `tools/verify.sh
+--release` (`--against-commit`) and a no-flag run by hand are where the HEAD arm can
+catch a page committed without its re-render. CI runs with no flag, but there the
+checkout IS the commit, so that arm cannot fire. `arm_verdict()` names an arm a run
+left out rather than going quiet about it, and `run_arms()` reads which arms the runner
+and the workflow really ask.
 
 WHAT IT STILL DOES NOT COVER, and the direction: an artifact nobody listed in
 `ARTIFACTS`. That is an UNDER-count -- the quiet direction -- so a clean run means
@@ -72,10 +76,12 @@ either way, and a run that could look up NONE of them exits 1 saying so. Nothing
 written to the repo -- it renders into a temporary directory.
 """
 
+import ast
 import calendar
 import io
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -611,22 +617,30 @@ def committed_report(result):
 
 
 # --- which run asks which question --------------------------------------------
-# THE COMMIT'S QUESTION HAS NO ANSWER BEFORE THE COMMIT EXISTS. The fresh-render arm
-# is a question about the working tree and holds at any moment. The HEAD arm is a
-# question about a commit, and asked of a working tree that is about to BECOME that
-# commit it is red by construction: a task that re-renders a page with this repo's own
-# recipe differs from HEAD until its commit is made, and a gate that has to be green
-# before the commit may be made then refuses the one correct change. That is where the
-# HEAD arm used to sit - live in `--selftest`, which the pre-commit sweep runs - and
-# every task that regenerated a page could only land by overriding the verdict.
+# THE COMMIT'S QUESTION IS THE WRONG ONE TO ASK BEFORE THE COMMIT. The fresh-render
+# arm is a question about the working tree and holds at any moment. The HEAD arm is a
+# question about a commit: asked of a working tree that is about to BECOME that
+# commit, it is red for as long as a re-rendered page is uncommitted - which is every
+# task that re-renders a page with this repo's own recipe, right up to the commit a
+# gate has to be green before. That is where the HEAD arm used to sit - live in
+# `--selftest`, which the pre-commit sweep runs - and every task that regenerated a
+# page could only land by overriding the verdict.
+#
+# WHERE IT CAN CATCH SOMETHING. After a commit: a re-render committed without its
+# page staged is what the arm exists for, and `tools/verify.sh --release` or a no-flag
+# run by hand is where it is found before a push. On CI it cannot fire - the checkout
+# IS the commit - so CI's no-flag run holds it only as the same call everybody makes;
+# the fresh-render arm is what goes red there on a stale committed page.
 #
 # So each run names the arms it asks, and a run that leaves one out says so in its
 # output rather than printing a verdict that reads as covering both:
 #   * `--before-commit` - the fresh render only. The sweep (through `--selftest`,
-#     which asks exactly these arms) and a plain `tools/verify.sh` run.
+#     which asks `SELFTEST_ARMS`) and a plain or `--affected` `tools/verify.sh` run.
 #   * `--against-commit` - HEAD only. `tools/verify.sh --release`, whose plain half
 #     has already asked the fresh render on the same tree.
-#   * no flag - both. CI, where the checkout IS the commit, and anybody by hand.
+#   * no flag - both. CI, and a run by hand after a commit.
+# `run_arms()` reads those calls out of the runner and the workflow, so a flag moved
+# on either is a failing case here rather than a sentence that stopped being true.
 FRESH_ARM = "fresh"
 HEAD_ARM = "head"
 ALL_ARMS = (FRESH_ARM, HEAD_ARM)
@@ -634,6 +648,8 @@ BEFORE_COMMIT_ARMS = (FRESH_ARM,)
 AGAINST_COMMIT_ARMS = (HEAD_ARM,)
 ARM_FLAGS = (("--before-commit", BEFORE_COMMIT_ARMS),
              ("--against-commit", AGAINST_COMMIT_ARMS))
+# What `--selftest` asks of this checkout. The sweep that runs it is pre-commit.
+SELFTEST_ARMS = BEFORE_COMMIT_ARMS
 
 
 def arms_for(argv):
@@ -652,6 +668,91 @@ def arms_for(argv):
         return None, ("%s asks the working tree and %s asks the commit; with no "
                       "flag at all this tool asks both" % tuple(known))
     return (picked[0] if picked else ALL_ARMS), None
+
+
+# --- which arms the runner and the workflow really ask --------------------------
+_THIS_TOOL = "tools/check-rendered-artifacts.py"
+_VERIFY_REL = "tools/verify.sh"
+_CI_REL = ".github/workflows/ci.yml"
+_RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then\s*$')
+_SHELL_STOPS = (";", "&&", "||", "|")
+
+
+def invocations(text):
+    """[argv after the script] for every RUNNABLE line of `text` calling this tool.
+
+    A backslash continuation is joined first, because the runner writes its step
+    as `run "label" \\` above the call. A comment is not a call: both files talk
+    about this tool in prose right beside the step.
+    """
+    joined = re.sub(r"\\\n", " ", text)
+    out = []
+    for line in joined.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or _THIS_TOOL not in stripped:
+            continue
+        try:
+            words = shlex.split(stripped, comments=True)
+        except ValueError:
+            continue
+        at = [i for i, w in enumerate(words) if w.endswith(_THIS_TOOL)]
+        if not at:
+            continue
+        args = []
+        for word in words[at[0] + 1:]:
+            if word in _SHELL_STOPS:
+                break
+            args.append(word)
+        out.append(args)
+    return out
+
+
+def release_block(text):
+    """(inside, outside): the runner's `--release` block and everything else.
+
+    The block opens on `if [ "$RELEASE" -eq 1 ]; then` and closes on the first `fi`
+    at the start of a line after it. None for `inside` when no block was found, so a
+    runner that lost it is not read as one whose release asks nothing.
+    """
+    lines = text.splitlines()
+    opens = [i for i, line in enumerate(lines) if _RELEASE_OPEN.match(line)]
+    if not opens:
+        return None, text
+    closes = [i for i in range(opens[0] + 1, len(lines)) if lines[i] == "fi"]
+    if not closes:
+        return None, text
+    inside = "\n".join(lines[opens[0] + 1:closes[0]])
+    outside = "\n".join(lines[:opens[0]] + lines[closes[0] + 1:])
+    return inside, outside
+
+
+def run_arms(repo_root=None):
+    """{"plain", "release", "ci"}: the arms each run asks, as `arms_for` reads them.
+
+    Each value is a list with one entry per call found - an arms tuple, or the
+    usage problem `arms_for` returned - or None when the file or block could not be
+    read. "Found no call" and "could not look" must not print the same way.
+    """
+    root = repo_root if repo_root is not None else REPO
+    texts = {}
+    for rel in (_VERIFY_REL, _CI_REL):
+        try:
+            with io.open(os.path.join(root, rel.replace("/", os.sep)),
+                         encoding="utf-8") as fh:
+                texts[rel] = fh.read()
+        except (OSError, UnicodeDecodeError):
+            texts[rel] = None
+
+    def _arms(text):
+        if text is None:
+            return None
+        return [arms if arms is not None else problem
+                for arms, problem in (arms_for(a) for a in invocations(text))]
+
+    inside, outside = (release_block(texts[_VERIFY_REL])
+                       if texts[_VERIFY_REL] is not None else (None, None))
+    return {"plain": _arms(outside), "release": _arms(inside),
+            "ci": _arms(texts[_CI_REL])}
 
 
 def _recipe_lines(rel):
@@ -696,9 +797,9 @@ def arm_verdict(arms, root=None, subjects=None, drift=None):
         code = max(code, head_code)
     else:
         lines.append("NOT ASKED: whether %s carries these pages - before a commit "
-                     "exists that answer is red by construction; `--against-commit` "
-                     "asks it, and CI and `tools/verify.sh --release` run it"
-                     % (_HEAD,))
+                     "it is red while any re-rendered page is uncommitted; after "
+                     "one, `--against-commit` asks it (`tools/verify.sh --release` "
+                     "runs that), and so does a run with no flag" % (_HEAD,))
     return lines, code
 
 
@@ -822,11 +923,11 @@ def _cases(check):
     # render delays the whole report and the ordering buys no early news. What it
     # does buy is a report whose expensive case is the last line before the tally.
     #
-    # IT ASKS THE BEFORE-COMMIT ARMS AND NO OTHER, through the same constant the
-    # `--before-commit` flag spends: this suite runs in the pre-commit sweep, and
-    # asking it what the commit carries made every task that re-rendered a page red
-    # until its own commit existed. ra25 is what fails if that question comes back.
-    _live_lines, _live_code = arm_verdict(BEFORE_COMMIT_ARMS)
+    # IT ASKS `SELFTEST_ARMS`: this suite runs in the pre-commit sweep, and asking
+    # it what the commit carries made every task that re-rendered a page red until
+    # its own commit existed. ra25 asserts the constant leaves HEAD out; ra30 fails
+    # on a selftest call that asks this checkout's HEAD some other way.
+    _live_lines, _live_code = arm_verdict(SELFTEST_ARMS)
     check("ra5 every committed rendered artifact matches what its source renders "
           "today - %r" % (_live_lines,), _live_code == 0)
 
@@ -1090,6 +1191,7 @@ def _arm_cases(check):
           _pre_code == 0
           and _count(_pre_lines, "UNCOMMITTED") == 0
           and _count(_pre_lines, "NOT ASKED") == 1
+          and HEAD_ARM not in SELFTEST_ARMS
           and HEAD_ARM not in BEFORE_COMMIT_ARMS)
     # THE OTHER DIRECTION of ra25: an arm set that dropped the render along with the
     # commit would pass ra25 for ever while checking nothing at all.
@@ -1112,6 +1214,63 @@ def _arm_cases(check):
           and arms_for(["--against-commit"]) == (AGAINST_COMMIT_ARMS, None)
           and _both is None and _both_problem is not None
           and _typo is None and "--before-comit" in (_typo_problem or ""))
+
+    # THE CALLS THE RUNS REALLY MAKE, read out of the runner and the workflow.
+    # gate-parity names a gate by its script and ignores its flags, so without this
+    # a flag moved on either file left every check here green.
+    _runs = run_arms()
+    check("ra29 the runs ask what they are documented to ask: a plain verify.sh "
+          "asks the fresh render only, its --release block asks HEAD, and ci.yml's "
+          "call parses to both arms: %r" % (_runs,),
+          _runs["plain"] == [BEFORE_COMMIT_ARMS]
+          and _runs["release"] is not None
+          and any(isinstance(a, tuple) and HEAD_ARM in a
+                  for a in _runs["release"])
+          and _runs["ci"] == [ALL_ARMS])
+    _fx_runner = ("run \"x\" \\\n  python3 %s --before-commit\n"
+                  "# python3 %s --against-commit\n"
+                  "if [ \"$RELEASE\" -eq 1 ]; then\n"
+                  "  run \"y\" \\\n    python3 %s --against-commit\n"
+                  "fi\n" % ((_THIS_TOOL,) * 3))
+    _fx_in, _fx_out = release_block(_fx_runner)
+    check("ra29b ...and that reader joins a continued line, skips a commented-out "
+          "call, splits the release block from the rest, and reads a runner with "
+          "no release block as None rather than as one asking nothing: %r"
+          % ((invocations(_fx_out or ""), invocations(_fx_in or "")),),
+          invocations(_fx_out or "") == [["--before-commit"]]
+          and invocations(_fx_in or "") == [["--against-commit"]]
+          and release_block("python3 %s\n" % (_THIS_TOOL,))[0] is None)
+    _stray = _selftest_head_calls()
+    check("ra30 no selftest call asks THIS checkout's HEAD: every `uncommitted` "
+          "call names a root, and every `arm_verdict` call without one asks "
+          "SELFTEST_ARMS - the constant ra25 checks: %r" % (_stray,), _stray == [])
+
+
+def _selftest_head_calls(source=None):
+    """["<function>:<line> <call>"] - a selftest call that would ask this checkout's
+    HEAD: `uncommitted()` with no root, or `arm_verdict()` with no root whose arms
+    are anything but `SELFTEST_ARMS`. Read from this file's own AST, over the
+    functions the selftest runs. `source` lets a case hand it a planted text."""
+    if source is None:
+        with io.open(os.path.abspath(__file__), encoding="utf-8") as fh:
+            source = fh.read()
+    tree = ast.parse(source)
+    out = []
+    for fn in tree.body:
+        if not isinstance(fn, ast.FunctionDef) or not fn.name.endswith("_cases"):
+            continue
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            kws = [kw.arg for kw in node.keywords]
+            if node.func.id == "uncommitted" and not node.args \
+                    and "repo_root" not in kws:
+                out.append("%s:%d uncommitted()" % (fn.name, node.lineno))
+            if node.func.id == "arm_verdict" and "root" not in kws \
+                    and not (node.args and isinstance(node.args[0], ast.Name)
+                             and node.args[0].id == "SELFTEST_ARMS"):
+                out.append("%s:%d arm_verdict()" % (fn.name, node.lineno))
+    return out
 
 
 def _selftest():
@@ -1140,10 +1299,12 @@ def main():
                              % (copy_rel,))
             sys.stdout.write("      refresh %s FIRST, then\n" % (source_rel,))
             sys.stdout.write("      cp %s %s\n" % (source_rel, copy_rel))
-        sys.stdout.write("\nevery page above is also compared with what %s tracks. "
-                         "A refreshed page nobody committed is reported UNCOMMITTED "
-                         "and the repair is `git add` plus a commit, not another "
-                         "render.\n" % (_HEAD,))
+        sys.stdout.write("\na run that asks %s - no flag, or `--against-commit` - "
+                         "also compares every page above with what it tracks. A "
+                         "refreshed page nobody committed is then reported "
+                         "UNCOMMITTED and the repair is `git add` plus a commit, not "
+                         "another render. `--before-commit` does not ask it.\n"
+                         % (_HEAD,))
         return 0
     arms, problem = arms_for(argv)
     if problem is not None:

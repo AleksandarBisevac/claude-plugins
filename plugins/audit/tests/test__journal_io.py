@@ -3120,7 +3120,7 @@ def _details_key_cases(check):
                    "fx/store.py:3 %s" % (_unlisted,),
                    "fx/wrapper.py:3 %s" % (_unlisted,)])
     # THE OTHER DIRECTION, and it is the one that looks vacuous: a lint that named
-    # every key it read would pass dk2 for ever. The same four shapes carrying only
+    # every key it read would pass dk2 for ever. The same shapes carrying only
     # listed keys - and a dict with a `details` but no `action`, which is not a row.
     _clean = [(label, text.replace(_unlisted, "commit"))
               for label, text in _planted]

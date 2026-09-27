@@ -559,10 +559,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   line, any literal key the allow-list would drop. It found three more rows losing a field the
   reference documents. `ado.link` lost its work-item id, `phase.gateDerived` lost its `mode`
   and `basis`, and `task.blocked` handed over `attempts` where the trail keeps `attempt`.
-  All three are kept now. Because the trail lost the attempt and the work-item id, the hook's
-  check for a `task.blocked` or `ado.link` row the trail already holds never matched, so such
-  a row could be written twice. It is now withheld. A row written before this change has no
-  such key, so it matches nothing and may be written once more.
+  All three are kept now. The hook had keyed `task.blocked` and `ado.link` rows by that
+  attempt and work-item id to withhold a row the trail already holds, but neither names one
+  record: `reopen` sets attempts back to 0, and an unlink followed by a re-link keeps the same
+  id. So neither row is withheld any more. A merge may repeat one, and none is lost.
 - **Re-rendering a published page no longer fails the pre-commit sweep.**
   `tools/check-rendered-artifacts.py --selftest` compared every published page with what `HEAD`
   carries, and the sweep runs before the commit exists — so a change that re-rendered a page with
@@ -570,9 +570,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--before-commit` flag now compare with a fresh render only, and say in their output that the
   commit was not asked. `--against-commit` compares with `HEAD` only; `tools/verify.sh` runs
   `--before-commit`, and so does the check `--affected` selects; `--release` adds
-  `--against-commit`. CI's run with no flag compares
-  both, as before. An unknown flag, or both flags together, is now a usage error (exit 2)
-  instead of running both comparisons.
+  `--against-commit`. A run with no flag compares both, as before. After a commit, that run
+  and `--release` are where a page committed without its re-render is found. CI also runs it
+  with no flag, but there the checkout is the commit, so only the fresh-render comparison can
+  fail. The tool's selftest reads the calls in `tools/verify.sh` and `ci.yml`, so a moved flag
+  fails a case. An unknown flag, or both flags together, is now a usage error (exit 2) instead
+  of running both comparisons.
 - **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
   report and the panel each turned a failed read into a clean read of nothing, so a task or
   phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not

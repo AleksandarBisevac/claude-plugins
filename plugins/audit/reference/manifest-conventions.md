@@ -487,10 +487,12 @@ records (`task.complete`, `task.blocked`, `task.commit`, `phase.signoff`) plus `
 pull moves the plan by another branch's history, and it brings that branch's journal files with
 it - so a completion recorded where the work ran is found in the trail, keyed by what makes it that
 completion: `task.complete` by task and `completedAt`, `task.commit` by task and SHA,
-`task.blocked` by task and attempt, `phase.signoff` by phase and `mergedAt`, `ado.link` by item and
-work-item id. A `task.blocked` or `ado.link` row written before the trail kept its attempt or
-work-item id carries no key, so it matches nothing and the same record may be written once
-more: a repeated row, never a lost one, and no key is read out of a summary. The change itself is always recorded, and its row says how many derived rows it did
+`phase.signoff` by phase and `mergedAt`. **`task.blocked` and `ado.link` are never withheld**,
+because nothing in either names one record. `reopen` sets `attempts` back to 0, and a task can be
+blocked again without a start in between, so neither the attempt nor `startedAt` tells two
+blockings apart. A re-link to the same work item after an unlink carries the same id, and it
+**is** a new `ado.link` row. A merge may therefore repeat either row: a repeated row, never a
+lost one. The change itself is always recorded, and its row says how many derived rows it did
 not repeat. Git's dates and the reflog's wording are never read, so a completion this call made -
 whatever it then commits, rebases, cherry-picks or merges, however its commit is dated - is always
 derived, and an old, unrelated completion of the same task is a different record. **Not withheld,

@@ -299,9 +299,9 @@ run "claude plugin validate (plugin)" claude plugin validate plugins/audit
 
 echo "verify: rendered artifacts"
 # THE FRESH RENDER ONLY, because a plain run is a before-commit run. The tool's other
-# arm asks whether HEAD carries the pages on disk, and before the commit exists that
-# is red for every change that re-renders one - the correct change included. That arm
-# is asked by `--release` below, and by CI, whose checkout is the commit.
+# arm asks whether HEAD carries the pages on disk: before the commit it is red while a
+# re-rendered page is uncommitted - the correct change included. `--release` below
+# asks it after one, and on CI it cannot fire, because the checkout is the commit.
 run "committed artifacts match a fresh render" \
   python3 tools/check-rendered-artifacts.py --before-commit
 # THE HALF OF THAT CLAIM THE TOOL ABOVE DELIBERATELY DOES NOT MAKE, and the only gate

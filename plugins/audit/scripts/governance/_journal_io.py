@@ -266,9 +266,7 @@ DETAILS_VERSION = 2
 # `basis` is `phase.testGateBasis`'s word on that same row (derive-phase-gate).
 # Each was handed over and dropped here until the handover lint read them, and
 # each passes the three tests: a plan fact or a fixed vocabulary word, bounded like
-# any value, naming no machine and no person. `adoId` is also half of the key
-# journal-writes reads BACK to withhold a link the trail already holds, so while it
-# was dropped every recorded link read keyless and that withholding never fired.
+# any value, naming no machine and no person.
 # `commitNonce` joins a row to the commit that CARRIES it. A row inside a commit
 # cannot name that commit's SHA - the SHA is a hash over the row - so a scoped
 # commit writes its row first, keyed by a random nonce, and its message carries

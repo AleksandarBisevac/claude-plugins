@@ -646,20 +646,32 @@ def _cases(check):
         check("i6 a non-dict ado never crashes the diff and never links",
               M.semantic_diff(i_base, i_garbage) is None)
 
-        # --- ir: a blocked or link row, read back OUT OF THE TRAIL -------------
+        # --- ir: a derived row, read back OUT OF THE TRAIL ----------------------
         # hm1 builds its held keys from details written in the case, which proves
         # the key rule and nothing about the trail. These append the rows the hook
         # itself derives through the real journal, read the keys back the way the
-        # sweep lane does, and derive again. The journal keeps only allow-listed
-        # detail keys, so a key field it drops makes every recorded row keyless -
-        # and a keyless row matches nothing, so the dedup never fires.
+        # sweep lane does, and derive again.
+        #
+        # A ROW IS WITHHELD ONLY WHEN SOMETHING IN IT IDENTIFIES ONE RECORD. A
+        # blocking has no such value: `reopen` sets `attempts` back to 0, and a task
+        # can be blocked, unblocked and blocked again without a start in between,
+        # so neither the attempt nor `startedAt` tells two blockings apart. A link
+        # has none either: an unlink followed by a re-link to the same work item is
+        # the same id. Both are therefore written every time they are derived - a
+        # repeated row, never a lost one.
         _ir_entry = {"action": "manifest.edit", "target": "m.json",
                      "summary": "x", "actor": {"author": "a"}}
-        _ir_blocked = manifest_doc(status="blocked")
-        _ir_blocked["phases"][0]["tasks"][0]["attempts"] = 3
-        _ir_linked = manifest_doc(status="in_progress")
-        _ir_linked["phases"][0]["tasks"][0]["ado"] = {"id": 7, "url": "u"}
-        _ir_linked["phases"][0]["ado"] = {"id": 9, "url": "u"}
+
+        def _ir_doc(status="in_progress", attempts=None, task_ado=None,
+                    phase_ado=None, completed=None, commit=None):
+            doc = manifest_doc(status=status, completed=completed, commit=commit)
+            if attempts is not None:
+                doc["phases"][0]["tasks"][0]["attempts"] = attempts
+            if task_ado is not None:
+                doc["phases"][0]["tasks"][0]["ado"] = {"id": task_ado, "url": "u"}
+            if phase_ado is not None:
+                doc["phases"][0]["ado"] = {"id": phase_ado, "url": "u"}
+            return doc
 
         def _derived(old, new, recorded=None):
             _row, rows = M._manifest_rows(dict(_ir_entry), "m.json", old, new,
@@ -672,58 +684,70 @@ def _cases(check):
                             r["details"].get("phaseId")) for r in rows),
                           key=lambda t: tuple("" if v is None else v for v in t))
 
+        def _recorded_after(root, *pairs):
+            """Append what each (old, new) derives, then read the keys back."""
+            for old, new in pairs:
+                for row in _derived(old, new):
+                    _journal_io.append(root, row)
+            return M.recorded_keys(root)
+
         _ir_root = _harness.fixture_root("jw-recorded-roundtrip")
-        _ir_old_root = _harness.fixture_root("jw-recorded-oldrow")
         try:
-            for row in (_derived(i_base, _ir_blocked)
-                        + _derived(i_base, _ir_linked)):
-                _journal_io.append(_ir_root, row)
-            _ir_held = M.recorded_keys(_ir_root)
-            _ir_blk_again = _derived(i_base, _ir_blocked, recorded=_ir_held)
-            _ir_lnk_again = _derived(i_base, _ir_linked, recorded=_ir_held)
-            _ir_next = json.loads(json.dumps(_ir_blocked))
-            _ir_next["phases"][0]["tasks"][0]["attempts"] = 4
-            _ir_blk_new = _derived(i_base, _ir_next, recorded=_ir_held)
-            _ir_relink = json.loads(json.dumps(_ir_linked))
-            _ir_relink["phases"][0]["tasks"][0]["ado"]["id"] = 8
-            _ir_relink["phases"][0]["ado"]["id"] = 10
-            _ir_lnk_new = _derived(i_base, _ir_relink, recorded=_ir_held)
-            # A row written BEFORE the trail kept these keys: it holds the task
-            # and phase and no attempt. Nothing is guessed from its summary.
-            _journal_io.append(_ir_old_root, {
-                "action": "task.blocked", "target": "m.json",
-                "summary": "P1.1 blocked", "actor": {"author": "a"},
-                "details": {"taskId": "P1.1", "phaseId": "P1",
-                            "from": "in_progress"}})
-            _ir_old_held = M.recorded_keys(_ir_old_root)
-            _ir_old_again = _derived(i_base, _ir_blocked, recorded=_ir_old_held)
+            # Block at attempt 1; reopen (attempts back to 0), start (attempt 1
+            # again), block. The first blocking is in the trail.
+            _ir_first = _ir_doc(status="blocked", attempts=1)
+            _ir_held = _recorded_after(
+                _ir_root, (_ir_doc(attempts=1), _ir_first))
+            _ir_reblock = _derived(_ir_doc(attempts=1),
+                                   _ir_doc(status="blocked", attempts=1),
+                                   recorded=_ir_held)
+            # Link task and phase to items 7 and 9; unlink; link to the same ids.
+            _ir_linked = _ir_doc(task_ado=7, phase_ado=9)
+            _ir_held = _recorded_after(_ir_root, (_ir_doc(), _ir_linked))
+            _ir_relink = _derived(_ir_doc(), _ir_linked, recorded=_ir_held)
+            _ir_new_attempt = _derived(_ir_doc(attempts=2),
+                                       _ir_doc(status="blocked", attempts=2),
+                                       recorded=_ir_held)
+            _ir_new_link = _derived(_ir_doc(), _ir_doc(task_ado=8, phase_ado=10),
+                                    recorded=_ir_held)
+            # A completion carries what makes it one record - its completedAt and
+            # its commit - so the rule that stops a merge repeating it still holds.
+            _ir_done = _ir_doc(status="done", completed="X", commit="a" * 40)
+            _ir_held = _recorded_after(_ir_root, (_ir_doc(), _ir_done))
+            _ir_done_again = _derived(_ir_doc(), _ir_done, recorded=_ir_held)
         finally:
             _harness.remove_tree(_ir_root)
-            _harness.remove_tree(_ir_old_root)
-        check("ir1 a task.blocked row the trail already holds is NOT derived again: "
-              "the attempt it was keyed by survives the journal, so the key read "
-              "back matches: %r" % (_actions(_ir_blk_again),),
-              _actions(_ir_blk_again) == [])
-        check("ir2 ...and neither is an ado.link row, for the task or the phase - "
-              "the work-item id survives the journal too: %r"
-              % (_actions(_ir_lnk_again),),
-              _actions(_ir_lnk_again) == [])
-        # THE OTHER DIRECTION: a dedup that withheld every blocked or link row
-        # would pass ir1 and ir2 for ever.
-        check("ir3 ALLOW: a NEW blocked attempt of the same task is written - "
-              "another attempt is another record: %r" % (_actions(_ir_blk_new),),
-              _actions(_ir_blk_new) == [("task.blocked", "P1.1", "P1")])
-        check("ir4 ALLOW: a NEW link - a different work-item id - is written, for "
-              "the task and for the phase: %r" % (_actions(_ir_lnk_new),),
-              _actions(_ir_lnk_new) == [("ado.link", None, "P1"),
-                                        ("ado.link", "P1.1", "P1")])
-        check("ir5 a row recorded before the trail kept the attempt has no key, "
-              "matches nothing, and the blocked row is written once more - a "
-              "repeated row, never a lost one, and no key is read out of a "
-              "summary: keys %r, derived %r"
-              % (sorted(_ir_old_held or ()), _actions(_ir_old_again)),
-              not any(k[0] == "task.blocked" for k in (_ir_old_held or ()))
-              and _actions(_ir_old_again) == [("task.blocked", "P1.1", "P1")])
+        check("ir1 a task blocked at attempt 1, reopened, started and blocked at "
+              "attempt 1 again gets its SECOND task.blocked row - the trail holds "
+              "the first, and nothing in either row tells the two blockings apart, "
+              "so the second is not withheld: %r" % (_actions(_ir_reblock),),
+              _actions(_ir_reblock) == [("task.blocked", "P1.1", "P1")])
+        check("ir2 an unlink followed by a re-link to the SAME work item gets its "
+              "ado.link rows again, for the task and the phase - the id alone "
+              "cannot say it is the same link: %r" % (_actions(_ir_relink),),
+              _actions(_ir_relink) == [("ado.link", None, "P1"),
+                                       ("ado.link", "P1.1", "P1")])
+        check("ir3 ALLOW: a new blocked attempt of the same task is written: %r"
+              % (_actions(_ir_new_attempt),),
+              _actions(_ir_new_attempt) == [("task.blocked", "P1.1", "P1")])
+        check("ir4 ALLOW: a new link - a different work-item id - is written, for "
+              "the task and for the phase: %r" % (_actions(_ir_new_link),),
+              _actions(_ir_new_link) == [("ado.link", None, "P1"),
+                                         ("ado.link", "P1.1", "P1")])
+        # THE OTHER DIRECTION: a rule that stopped withholding anything would pass
+        # every case above. A completion the trail already holds is still withheld.
+        check("ir5 ...while a completion read back from the trail is still withheld "
+              "- its completedAt and commit do identify one record: %r"
+              % (_actions(_ir_done_again),), _actions(_ir_done_again) == [])
+        _ir_keys = [M._record_key("task.blocked",
+                                  {"taskId": "P1.1", "attempt": 1,
+                                   "startedAt": "T"}),
+                    M._record_key("ado.link", {"taskId": "P1.1", "phaseId": "P1",
+                                               "adoId": 7})]
+        check("ir6 neither task.blocked nor ado.link has a record key, whatever "
+              "its details hold - there is no value in either that names one "
+              "blocking or one link: %r" % (_ir_keys,),
+              _ir_keys == [None, None])
 
         write_manifest(manifest_doc())
         entries = M.post_entries(payload("Edit", man_rel, sid="pp-5"), cfg=cfg,
