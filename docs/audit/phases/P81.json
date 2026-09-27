@@ -812,7 +812,7 @@
     {
       "id": "P81.14-j7p",
       "title": "the third place learns wherever it runs: review --full runs full-gate, and a full run recorded elsewhere is learned from after import",
-      "status": "in_progress",
+      "status": "done",
       "description": "Only full-gate.py learns from a red full run, and two of the three third-place paths never reach it. /audit:review --full tells the orchestrator to run run-test-gate.py --full --record, which prints the remedy and files nothing; the CI example records the run into a shard that is imported later, and nothing learns from an imported row (learning inside CI would write into a checkout that is thrown away). Do: (1) review.md's --full runs full-gate.py (one command of the third place), with the manifest and --project-dir as the pre-push hook does. (2) full-gate.py --learn-from <runId>: runs nothing, reads that row from the ledger, and applies exactly the learning the red branch applies (named misses only, unique catches, cut sources, dedupe, a learning exception never masks the answer); refuses with a reason and a non-zero exit when the row is missing, unreadable, not full scope, or not red; learning twice from the same run files nothing new. (3) import-evidence.py prints, for each imported red full row, the full-gate --learn-from command that learns from it (printed, never run). (4) the CI example and the orchestrator/README third-place text say where learning happens for a CI run. Red-first for (2) and (3); allow: a green imported row prints no learn command; --learn-from on a green row refuses. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
@@ -853,18 +853,29 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aced313d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "full-gate.py: learn_from_row shared by the red branch and --learn-from; row_refusal (not full scope, not red via _evidence_io.row_is_red); _missing_row names unreadable files; exit 0/1/2 contract; own-miss rule in learning_plan (taught_by removed). import-evidence.py: learn_from_commands prints python3 <_loader.script_path('full-gate.py')> <abs manifest> --learn-from <id> --project-dir <abs project> for each red full row. _evidence_io.row_is_red. review.md, README, orchestrator.md, pipeline comments, guide (module map, sections), CHANGELOG Added.",
+        "descriptive": "Every place the third place runs now learns from a red run: /audit:review --full runs full-gate.py, and a red full run a CI build recorded is learned from in the clone after import, through a printed command that runs as printed and runs no gate; learning twice, or in any order, files nothing new and never credits a run's own miss as a catch."
       },
       "startedAt": "2026-09-27T20:47:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T21:35:31Z",
+      "verifiedBy": [
+        "fglf1-fglf13",
+        "fgc1-fgc3",
+        "i27-i31",
+        "rr2b"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T21:35:21Z.6c6036",
         "status": "passed",
         "at": "2026-09-27T21:35:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aced313d",
+        "at": "2026-09-27T21:35:31Z",
+        "basis": "the description's four items are delivered; review added one learning rule (a row's own selection miss is never its catch, whatever order imported rows are learned in), a runnable printed command, and one reading of a red run (_evidence_io.row_is_red)"
       }
     },
     {
