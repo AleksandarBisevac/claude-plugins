@@ -1,7 +1,7 @@
 {
   "id": "P74",
   "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "close-phase run from the main worktree prints the two commands that finish its cleanup and never tells the operator to remove the main tree; a phase with no recorded branch is refused with the reason and asked for --branch, and phases built on one combined branch can be signed off as a group",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
   "branch": "audit/p74-close-phase-and-the-worktree-t",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T04:17:42Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
