@@ -1,7 +1,7 @@
 {
   "id": "P87",
   "title": "a task that regenerates a published page can record a green gate before its commit, and a journal row keeps every detail its writer passed",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "The pre-commit sweep compares published pages against a fresh render, and the comparison against what the commit carries runs where a commit exists (CI and verify.sh --release), so a task regenerating a page is gated green on correct work without an override; close-phase's phase.merged row carries its parent, and a detail key outside the journal's allow-list at any append site fails the build instead of being dropped.",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "6dc42323acbdc06a1330344d35e881a54282089e",
   "branch": "audit/p87-a-task-that-regenerates-a-publ",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T18:07:00Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -974,5 +974,6 @@
     "runId": "2026-09-27T18:05:57Z.1c71cb",
     "status": "passed",
     "at": "2026-09-27T18:05:57Z"
-  }
+  },
+  "mergedHead": "fbd6a9b615cdb37ed2c0360144dafc11e7f430b6"
 }
