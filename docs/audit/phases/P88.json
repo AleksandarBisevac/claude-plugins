@@ -113,6 +113,44 @@
         "sweep 305/305",
         "probe rows still red on an export"
       ]
+    },
+    {
+      "id": "P88.3-dnb",
+      "title": "the substitution-scanner residual names only the shapes the guard's own path misses",
+      "status": "in_progress",
+      "description": "Fix-diff review of P88.2 (review-P88b.json). The new $(...) bullet in SECURITY.md is broader than the guard's own path: measured through git_calls/_output_runs (runnable() first), a comment's `)` loses the rest only inside a DOUBLE-QUOTED substitution (an unquoted one is still read), and a heredoc body's `)` loses the rest only when the body stays in place - a backslash-quoted delimiter or a second heredoc on the same line - because runnable_text moves the other heredoc bodies out first. Narrow the bullet to exactly those shapes, measured through the guard's path (not _substitution_end on raw text), at shape level. Also the BUG-12 interpreter bullet: 'followed by' becomes 'whose next word is', because the code reads only the first plain word after `-`. Documentation only.",
+      "files": [
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T20:32:46Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T20:01:18Z"

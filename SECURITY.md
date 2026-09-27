@@ -260,12 +260,14 @@ base refused:
   line into a variable and `eval`s it; a phrase assembled at run time (a `printf`
   format, a variable's value); and output that reaches a shell through a
   descriptor or a named pipe;
-- inside a `$(…)` body, a `)` in a comment or in a heredoc body is read as the
-  substitution's close, so the rest of the body is not read;
+- inside a double-quoted `$(…)`, a `)` in a comment is read as the substitution's
+  close, and so is one in a heredoc body the heredoc reading leaves in place (a
+  backslash-quoted delimiter, the second of two heredocs on one line); the rest of
+  the body is not read as commands;
 - open and tracked as BUG-12 — shapes the widened reading's own review measured as
   not read, each waiting on a fix rather than accepted:
-  - an interpreter handed the stdin marker `-` followed by a script-named word or
-    by a word spelled as its own inline flag, an option this reading does not know
+  - an interpreter handed the stdin marker `-` whose first operand after it is
+    script-named or spelled as its own inline flag, an option this reading does not know
     to take a value whose separate value is script-named, or an operand carrying an
     expansion that ends in a script extension, is read as running a script file, so
     a here-string fed to it is graded as that script's input although the
