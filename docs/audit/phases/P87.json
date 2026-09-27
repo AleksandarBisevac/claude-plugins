@@ -520,7 +520,7 @@
     {
       "id": "P87.11-bpl",
       "title": "a trailing comment does not hide a continuation operator, and the pin states that reachability is not decided",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 9 (review-P87i.json). (1) A trailing comment after &&, || or | hides the token: `false && # skip`, `true || # c`, `echo x | # c` above the wrapper or a call leave the real call read while it never runs. Strip a trailing shell comment before testing &&, || and | (not before a backslash - `\\ #` does not continue); ra29i rows for the three shapes, red first. (2) The section comment claims a line is refused whenever the lines around it mean it is not what runs, but a text check cannot decide reachability: `exit 0`, `false && {`, `if false; then ... fi` above the call are read, and the release arm itself depends on reading a call inside an if. Narrow the sentence to what is checked (the exact line, its own continuation chain, and its YAML context) and state the limit plainly in the comment and the CHANGELOG: whether the line is reached at all - control flow above it - is not decided by this check.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -549,14 +549,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3f104f7c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_without_trailing_comment before the &&/||/| test; ra29i/ra29g rows; comment and CHANGELOG narrowed with the reachability limit",
+        "descriptive": "A comment after a continuation operator no longer lets a dead call read as live, and the check says plainly it does not decide reachability"
       },
       "startedAt": "2026-09-27T17:11:20Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T17:18:23Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 37/37",
+        "py_compile -W error",
+        "probe 3/3 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
