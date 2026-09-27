@@ -607,7 +607,8 @@
       "P19.2",
       "P32.10",
       "P51.1",
-      "P59.2"
+      "P59.2",
+      "P87.10-bpl"
     ],
     ".gitignore": [
       "P4.4",
@@ -716,7 +717,8 @@
       "P87.6-bpl",
       "P87.7-bpl",
       "P87.8-bpl",
-      "P87.9-bpl"
+      "P87.9-bpl",
+      "P87.10-bpl"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -768,7 +770,8 @@
       "P85.5-axa",
       "P87.1",
       "P87.3-bpl",
-      "P87.9-bpl"
+      "P87.9-bpl",
+      "P87.10-bpl"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -3846,7 +3849,8 @@
       "P75.4-j5h"
     ],
     "pyproject.toml": [
-      "P9.1"
+      "P9.1",
+      "P87.10-bpl"
     ],
     "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
       "P22.11"
@@ -4257,7 +4261,8 @@
       "P87.6-bpl",
       "P87.7-bpl",
       "P87.8-bpl",
-      "P87.9-bpl"
+      "P87.9-bpl",
+      "P87.10-bpl"
     ],
     "plugins/audit/scripts/governance/propose-gates.py": [
       "P80.15-rtb"
