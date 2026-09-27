@@ -349,7 +349,7 @@ L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
-  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output
+  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _usage_core, _worktrees
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
@@ -4196,6 +4196,24 @@ rather than overwriting it, because the couple is a fact learned once and re-con
 re-dated on every call. `uncouple` drops the one entry naming `--test` and refuses, exit 2, when
 no entry names it - the same "an operation on something that is not there is an error, never a
 silent no-op" rule every other verb here holds.
+
+`bug-add "<title>" --severity low|med|high --description TEXT` (with optional `--files`,
+`--repro`, `--expected` and `--actual`) is the only writer `/audit:bug add` uses for `bugs[]`: it
+appends one bug in exactly the shape `commands/bug.md` spells - every key present, the unset
+links `null` - with the id `next-id bug` would print, creating the list when the plan has none,
+into the index alone, with a `bug.add` journal row. It exists because that shape used to be a
+paragraph the model re-typed by hand on every report, and nothing checked that every key reached
+the file.
+
+`mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId>` and
+`unmute --test <path>` are the only writers of `meta.muted`, the quarantine the gate runner
+reads, for `couple`'s reason: one verb pair means one set of refusals on the way in. `mute`
+refuses, exit 2, a missing `--bug` and an `--until` that is unreadable or already past, and
+extends an existing entry only to a later day. It does not look the bug up itself: a `--bug` the
+plan lacks is the validator's own finding on the revalidation, so the write is rolled back, exit
+1, with the finding printed - one answer to "does this bug exist", not two. `unmute` removes
+exactly the entry naming `--test`, and refuses, exit 2, when there is none. An expired mute is a
+warning rather than a finding, so both run on a plan that carries one.
 
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box

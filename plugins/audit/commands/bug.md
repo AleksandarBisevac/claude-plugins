@@ -1,6 +1,6 @@
 ---
 description: 'Track bugs in the audit manifest — report (add), list, materialize a TDD fix task (fix), or close. Execution of the fix stays in /audit; the repro test must fail red-first, proving the bug.'
-argument-hint: 'add "<title>" | list [all|<status>] | fix <bugId> [--phase <id>] | close <bugId> [wontfix|not_a_bug|fixed]'
+argument-hint: 'add "<title>" [--severity SEVERITY] [--description TEXT] [--files a,b] [--repro TEXT] [--expected TEXT] [--actual TEXT] | list [all|<status>] | fix <bugId> [--phase <id>] | close <bugId> [wontfix|not_a_bug|fixed]'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -23,26 +23,37 @@ investigation that found nothing left no row and the next reader ran it again.
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
-After EVERY mutation: revalidate with
+After EVERY hand mutation: revalidate with
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>`.
-The write subcommands (`add`/`fix`/`close`) hold the **concurrency lock** (see conventions →
-Concurrency lock) around their writes; `list` is read-only and never locks.
+`add` writes through `audit-task.py bug-add`, which takes the **concurrency lock**, revalidates
+and rolls back itself — do not hold the lock around that call. `fix`/`close` hold the lock
+(see conventions → Concurrency lock) around their writes; `list` is read-only and never locks.
 
 ## Subcommand: `add "<title>"`
 
-1. If the manifest has no top-level `bugs` array, create it (`"bugs": []`) via Edit.
-2. Gather (ask only for what's missing): `severity` (low/med/high), `description`,
-   `repro` (steps, string or array), `expected`, `actual`, suspected `files`
-   (verify with Glob/Grep; empty is allowed).
-3. Take the id from the allocator - never compute it by hand:
+**Every answer is a flag, and the dialogue only covers what the caller did not pass.** The
+bug is written by a verb, never by an Edit of `bugs[]`.
+
+1. Gather (ask only for what's missing): `--severity` (low/med/high) and `--description`
+   are required; `--repro`, `--expected`, `--actual` and the suspected `--files` (verify
+   with Glob/Grep; empty is allowed) may be absent.
+2. **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. A value holding backticks or a run of spaces goes on stdin as `-`, which no shell rewrites — but only ONE value per call — the title or a single prose flag — may take `-`, because they would share the one stdin stream and the verb refuses a call where two claim it. Pass every other value single-quoted, which a POSIX shell leaves exactly as typed, so backticks and `$` survive. The verb still reads an argv value for the marks a shell leaves when it eats a span — whitespace before punctuation, a run of spaces — and refuses one that carries them, and a value holding a single quote cannot be single-quoted; either of those is the value to send on stdin.
+3. Write it:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id bug <manifestPath>
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" bug-add "<title>" \
+     --severity <low|med|high> --description "<text>" [--files a,b] \
+     [--repro "<steps>"] [--expected "<text>"] [--actual "<text>"] [<manifestPath>]
    ```
-   It prints `BUG-<max+1>`, and off the development branch `BUG-<max+1>-<suffix>`: two
-   branches filing a bug each from one base would otherwise both mint the same id. Append:
+   The verb creates `bugs` when the plan has none, takes the id from the same allocator
+   `next-id bug` prints (`BUG-<max+1>`, and off the development branch
+   `BUG-<max+1>-<suffix>`, so two branches filing a bug each from one base never mint the
+   same id), and writes exactly
    `{id, title, status: "open", severity, reportedAt: <ISO now>, reportedBy: null,
-   description, repro, expected, actual, files, taskId: null, fixedIn: null, notes: null}`.
-4. Revalidate. Report the bug id and the handoff: `/audit:bug fix <id>` when ready.
+   description, repro, expected, actual, files, taskId: null, fixedIn: null, notes: null}` —
+   every key present, an absent answer as `null` (`files` as `[]`). It holds the lock,
+   revalidates and rolls back on a finding, and records a `bug.add` journal row. A missing
+   title, severity or description is refused, exit 2, with nothing written.
+4. Report the bug id the verb printed and the handoff: `/audit:bug fix <id>` when ready.
 
 ## Subcommand: `list [all|<status>]`
 

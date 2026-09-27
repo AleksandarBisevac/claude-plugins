@@ -3876,7 +3876,7 @@ def _cases(check):
               % (_pf_ids,),
               sorted(_pf_ids.values()) == [0, 0, 0]
               and "title" not in M.PROSE_POSITIONAL.get("scope", "")
-              and sorted(M.PROSE_POSITIONAL) == ["add", "add-phase"])
+              and sorted(M.PROSE_POSITIONAL) == ["add", "add-phase", "bug-add"])
         check("pf9 the class is a TABLE and not four call sites, and what is "
               "OUTSIDE it was measured rather than assumed: `--gate` carries a "
               "COMMAND (`make check ; true` trips the gap shapes and is exactly "
@@ -3886,14 +3886,20 @@ def _cases(check):
               "of a task's `outcome` are the operator's own sentence, one "
               "rendered by every report surface and one quoted back to the next "
               "executor. `--intent-basis` and a note's `--text` are the same "
-              "again, and so are a finding's `--issue` and `--resolution`; "
+              "again, and so are a finding's `--issue` and `--resolution` and "
+              "a bug's `--repro`, `--expected` and `--actual`; "
               "`move --to`, `--fix-task` and `--severity` are an id and a word, "
-              "which is why they are not: %r"
+              "and a mute's `--owner`, `--until` and `--bug` a name, a day and "
+              "an id, which is why they are not: %r"
               % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
-              == ["description", "descriptive", "intent_basis", "issue",
-                  "no_evidence_reason", "outcome", "reason", "rename",
-                  "resolution", "review_outcome", "summary", "technical", "text"]
+              == ["actual", "description", "descriptive", "expected",
+                  "intent_basis", "issue", "no_evidence_reason", "outcome",
+                  "reason", "rename", "repro", "resolution", "review_outcome",
+                  "summary", "technical", "text"]
+              and "owner" not in M.PROSE_FLAGS
+              and "until" not in M.PROSE_FLAGS
+              and "bug" not in M.PROSE_FLAGS
               and "to" not in M.PROSE_FLAGS
               and "fix_task" not in M.PROSE_FLAGS
               and "severity" not in M.PROSE_FLAGS
@@ -4037,7 +4043,14 @@ def _cases(check):
                                "--resolution", "r"],
                    "resolve-finding": ["resolve-finding", "P2-R1",
                                        "--fix-task", "P2.1"],
-                   "correct": ["correct", "P2", "--summary", "s"]}
+                   "correct": ["correct", "P2", "--summary", "s"],
+                   # `bug-add` with the answers its door requires; `mute` and
+                   # `unmute` take no id, so `--test` alone reaches the
+                   # misplaced-flag check, which fires before either body.
+                   "bug-add": ["bug-add", "T", "--severity", "low",
+                               "--description", "d"],
+                   "mute": ["mute", "--test", "tests/test_vf.py"],
+                   "unmute": ["unmute", "--test", "tests/test_vf.py"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4159,6 +4172,21 @@ def _cases(check):
             ["done", "P2.3", "--no-change", "--reason", "nothing to change",
              "--intent", "not-asked", "--intent-basis", "no diff to review",
              "--json", "--project-dir", _vf_nc_proj])[0]
+        # `bug-add`, `mute` and `unmute` in that order on one project: the
+        # bug the first files is the one the mute names, and the unmute lifts
+        # that mute. Every flag each row declares is passed.
+        _vf_mu_proj, _vf_mu_mp = mk("vf-mute", base_manifest())
+        _vf_ok["bug-add/--repro"] = run(
+            ["bug-add", "T", "--severity", "low", "--description", "d",
+             "--files", "src/a.ts", "--repro", "r", "--expected", "e",
+             "--actual", "a", "--json", "--project-dir", _vf_mu_proj])[0]
+        _vf_ok["mute/--bug"] = run(
+            ["mute", "--test", "tests/test_vf.py", "--reason", "r",
+             "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-1",
+             "--json", "--project-dir", _vf_mu_proj])[0]
+        _vf_ok["unmute/--test"] = run(
+            ["unmute", "--test", "tests/test_vf.py", "--json",
+             "--project-dir", _vf_mu_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -4301,7 +4329,8 @@ def _cases(check):
               and M.readers_of("nonesuch") == [])
         # THE DEFENSIVE BRANCH, driven through its only door. `main` cannot
         # reach it: the probe re-parses an argv the real parser has already
-        # accepted, so the one shape it rejects is one `parse_args` rejects
+        # accepted, so the one shape it rejects is one `main`'s own parse
+        # (`parse_intermixed_args`) rejects
         # first and `main` returns before calling this. Called directly it is
         # reachable, and what it must NOT do is return an empty set - which
         # reads as "no flags were passed" and lets every misplaced flag through.
@@ -5766,13 +5795,28 @@ def _cases(check):
             ("resolve-finding", ["resolve-finding", "P2-R1", "--fix-task", "P2.1",
                                  "--commit", _tw_rv_sha]),
             ("correct", ["correct", "P2", "--summary", "restated"]),
+            ("bug-add", ["bug-add", "Flaky", "--severity", "low",
+                         "--description", "d"]),
+            # ...and `unmute` lifts the mute `mute` wrote, on their own pair.
+            ("mute", ["mute", "--test", "tests/test_tw.py", "--reason", "r",
+                      "--owner", "o", "--until", "2998-01-01",
+                      "--bug", "BUG-3"]),
+            ("unmute", ["unmute", "--test", "tests/test_tw.py"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
         _tw_sign = base_manifest()
         _tw_sign["phases"][1]["tasks"][1]["status"] = "done"
         tw_sign_proj, _tw_sign_mp, tw_sign_tree = mk_pair("tw-sign", _tw_sign)
-        _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj),
+        # `mute` and `unmute` get a pair whose plan already holds the bug the
+        # mute names: on `tw_all` the bug `bug-add` files carries the linked
+        # worktree's branch suffix, which a literal here could not spell.
+        _tw_mu = base_manifest()
+        _tw_mu["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+        tw_mu_proj, _tw_mu_mp, tw_mu_tree = mk_pair("tw-mute", _tw_mu)
+        _tw_pairs = {"mute": (tw_mu_tree, tw_mu_proj),
+                     "unmute": (tw_mu_tree, tw_mu_proj),
+                     "seed": (tw_seed_tree, tw_seed_proj),
                      "signoff": (tw_sign_tree, tw_sign_proj),
                      "finding": (tw_rv_tree, tw_rv_proj),
                      "resolve-finding": (tw_rv_tree, tw_rv_proj),
@@ -5861,9 +5905,11 @@ def _cases(check):
             _pin(tw_proj, tw_proj)
             for _a in (["add", "T", "--project-dir", tw_proj],
                        ["add", "T", tw_mp], ["add", "T"]):
-                _tw_rows.append(M.resolve_basis(_tw_parser.parse_args(_a)))
+                _tw_rows.append(M.resolve_basis(
+                    _tw_parser.parse_intermixed_args(_a)))
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
-            _tw_rows.append(M.resolve_basis(_tw_parser.parse_args(["add", "T"])))
+            _tw_rows.append(M.resolve_basis(
+                _tw_parser.parse_intermixed_args(["add", "T"])))
         finally:
             _unpin()
         check("tw9 every route names the table row that chose it and quotes "
@@ -9023,6 +9069,414 @@ def _cases(check):
               % (txtcp9[:140],),
               codecp9 == 2 and "P404" in txtcp9
               and len(cp_coupling(cp_mpg)) == 1)
+
+        # ---- (ba) bug-add: the bug shape `commands/bug.md` spells, by a verb --
+        # The shape is spelled here as a literal, not read off the verb: a
+        # case that asked the verb which keys it writes would agree with any
+        # verb. The fixture already holds a closed bug with a HIGH number, so
+        # an id computed by hand from the list length and the allocator's
+        # max+1 answer are different strings.
+        BA_KEYS = ["id", "title", "status", "severity", "reportedAt",
+                   "reportedBy", "description", "repro", "expected", "actual",
+                   "files", "taskId", "fixedIn", "notes"]
+
+        def ba_bugs(mpath):
+            try:
+                return _mio.load_manifest(mpath).get("bugs")
+            except Exception:
+                return None
+
+        def ba_bytes(mpath):
+            with open(mpath, "rb") as fh:
+                return fh.read()
+
+        _ba_fx = base_manifest()
+        _ba_fx["bugs"] = [{"id": "BUG-7", "title": "older", "status": "wontfix"}]
+        ba_proj, ba_mp = mk("ba-add", _ba_fx)
+        _ba_pre = _mio.load_manifest(ba_mp)
+        _ba_want_id = M._id_shape.next_bug_id(_ba_pre,
+                                              M._mint_suffix(ba_mp, _ba_pre))
+        # A doubled space and a trailing one in the operator's words, on the
+        # stdin route the prose guard leaves open for exactly such text:
+        # stored as typed, not tidied.
+        _ba_desc = "Login  crashes on an empty email "
+        codeba, txtba = run_on_stdin(
+            ["bug-add", "Login crashes", "--severity", "high",
+             "--description", "-", "--files", "src/a.ts,src/b.ts",
+             "--repro", "submit the form empty", "--expected", "a message",
+             "--actual", "a stack trace", "--project-dir", ba_proj],
+            _ba_desc + "\n")
+        _ba_new = [b for b in (ba_bugs(ba_mp) or []) if b.get("id") != "BUG-7"]
+        _ba_bug = _ba_new[0] if len(_ba_new) == 1 else {}
+        check("ba1 RED-FIRST: `bug-add` writes exactly the step-3 shape of "
+              "`commands/bug.md` - every key present, `status` open, the "
+              "operator's words unchanged, and the unset links null. On "
+              "current code the verb is unknown and a bug is a hand edit: %r"
+              % ((codeba, txtba[:160], _ba_new),),
+              codeba == 0 and len(_ba_new) == 1
+              and list(_ba_bug) == BA_KEYS
+              and _ba_bug.get("title") == "Login crashes"
+              and _ba_bug.get("status") == "open"
+              and _ba_bug.get("severity") == "high"
+              and _ba_bug.get("description") == _ba_desc
+              and _ba_bug.get("repro") == "submit the form empty"
+              and _ba_bug.get("expected") == "a message"
+              and _ba_bug.get("actual") == "a stack trace"
+              and _ba_bug.get("files") == ["src/a.ts", "src/b.ts"]
+              and _ba_bug.get("reportedBy") is None
+              and _ba_bug.get("taskId") is None
+              and _ba_bug.get("fixedIn") is None
+              and _ba_bug.get("notes") is None
+              and bool(_ba_bug.get("reportedAt")))
+        check("ba1b the id is the allocator's answer (max+1 over the bugs the "
+              "plan holds, suffix included), not a count: %r"
+              % ((_ba_bug.get("id"), _ba_want_id),),
+              _ba_want_id == "BUG-8" and _ba_bug.get("id") == _ba_want_id)
+        _ba_rows = cp_journal(ba_proj, "bug.add")
+        check("ba1c exactly one `bug.add` journal row, naming the bug it "
+              "wrote: %r" % (_ba_rows,),
+              len(_ba_rows) == 1
+              and ((_ba_rows[0].get("details") or {}).get("field")
+                   == _ba_want_id))
+
+        # A plan with no `bugs` key at all: the verb creates the list rather
+        # than refusing, which is step 1 of `commands/bug.md`.
+        _ba_nokey = base_manifest()
+        del _ba_nokey["bugs"]
+        ba_proj2, ba_mp2 = mk("ba-nokey", _ba_nokey)
+        codeba2, txtba2 = run(
+            ["bug-add", "No list yet", "--severity", "low",
+             "--description", "d", "--project-dir", ba_proj2])
+        _ba_list2 = ba_bugs(ba_mp2)
+        check("ba2 on a plan with no `bugs` key, `bug-add` creates the list "
+              "and writes the one bug, with `files` an empty list when none "
+              "was named: %r" % ((codeba2, txtba2[:160], _ba_list2),),
+              codeba2 == 0 and isinstance(_ba_list2, list)
+              and len(_ba_list2) == 1
+              and _ba_list2[0].get("id") == "BUG-1"
+              and _ba_list2[0].get("files") == []
+              and _ba_list2[0].get("repro") is None)
+
+        # THE DOCUMENT AND THE CODE, ONE ORDER. The brace list step 3 of
+        # `commands/bug.md` spells is parsed out of the file and compared with
+        # the verb's own template, so neither can gain, lose or reorder a key
+        # without the other.
+        with open(os.path.join(_output.PLUGIN_ROOT, "commands", "bug.md"),
+                  "r", encoding="utf-8") as _fh:
+            _ba_doc = _fh.read()
+        _ba_braces = re.findall(r"\{id, title,[^{}]*\}", _ba_doc)
+        _ba_doc_keys = ([part.strip().split(":")[0].strip()
+                         for part in _ba_braces[0].strip("{}").split(",")]
+                        if len(_ba_braces) == 1 else [])
+        check("ba1d the `{id, title, ...}` shape `commands/bug.md` step 3 "
+              "spells is, key for key and in order, the verb's "
+              "`_BUG_TEMPLATE_KEYS` - and the spelling occurs once, so the "
+              "case reads the one the document means: %r"
+              % ((len(_ba_braces), _ba_doc_keys),),
+              len(_ba_braces) == 1
+              and _ba_doc_keys == list(M._BUG_TEMPLATE_KEYS) == BA_KEYS)
+
+        # Refusals: after the lock, before the read and before any byte
+        # moves. Each sub-case also asserts the VERB's own sentence, so an
+        # argparse exit 2 (an unknown verb, say) cannot stand in for it.
+        _ba_before = ba_bytes(ba_mp)
+        _ba_ref = {}
+        for _baargv, _bawhat, _bawant in (
+                (["bug-add", "T", "--description", "d"], "no --severity",
+                 "bug-add needs --severity"),
+                (["bug-add", "T", "--severity", "urgent", "--description", "d"],
+                 "bad --severity", "bug-add needs --severity"),
+                (["bug-add", "T", "--severity", "low"], "no --description",
+                 "bug-add needs --description"),
+                (["bug-add", "", "--severity", "low", "--description", "d"],
+                 "no title", "bug-add needs a title")):
+            _bacode, _batxt = run(_baargv + ["--project-dir", ba_proj])
+            _ba_ref[_bawhat] = (_bacode, _bawant in _batxt)
+        check("ba3 a bug-add missing its severity, description or title, or "
+              "carrying a severity outside low/med/high, is refused exit 2 "
+              "IN THE VERB'S OWN WORDS and writes nothing: %r" % (_ba_ref,),
+              sorted(_ba_ref.values()) == [(2, True)] * len(_ba_ref)
+              and ba_bytes(ba_mp) == _ba_before)
+
+        # Sharded: the bug lands in the index and no shard is rewritten.
+        ba_proj3, ba_mp3 = mk("ba-shard", base_manifest(), sharded=True)
+        _ba_shards = dict(
+            (os.path.join(dp, fn), ba_bytes(os.path.join(dp, fn)))
+            for dp, _dn, fns in os.walk(os.path.dirname(ba_mp3))
+            for fn in fns if os.path.join(dp, fn) != ba_mp3
+            and fn.endswith(".json"))
+        codeba3, txtba3 = run(
+            ["bug-add", "Sharded", "--severity", "med", "--description", "d",
+             "--project-dir", ba_proj3])
+        _ba_idx = _mio.read_json(ba_mp3)
+        check("ba4 on a sharded plan the bug is written into the INDEX and "
+              "every shard keeps its bytes: %r"
+              % ((codeba3, txtba3[:160], _ba_idx.get("bugs")),),
+              codeba3 == 0 and bool(_ba_shards)
+              and [b.get("id") for b in (_ba_idx.get("bugs") or [])]
+              == ["BUG-1"]
+              and all(ba_bytes(p) == b for p, b in _ba_shards.items()))
+
+        # ---- (mu) mute / unmute: the only writers of `meta.muted` ----------
+        def mu_muted(mpath):
+            return cp_meta(mpath).get("muted")
+
+        _mu_fx = base_manifest()
+        _mu_fx["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+        mu_proj, mu_mp = mk("mu-mute", _mu_fx)
+        codemu, txtmu = run_on_stdin(
+            ["mute", "--test", "tests/test_a.py", "--reason", "-",
+             "--owner", "alice", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", mu_proj], "flaky  on CI \n")
+        check("mu1 RED-FIRST: `mute` writes one `meta.muted` entry carrying "
+              "the five fields the validator grades, the reason unchanged. On "
+              "current code the verb is unknown and a quarantine is a hand "
+              "edit: %r" % ((codemu, txtmu[:160], mu_muted(mu_mp)),),
+              codemu == 0
+              and mu_muted(mu_mp) == [
+                  {"test": "tests/test_a.py", "reason": "flaky  on CI ",
+                   "owner": "alice", "until": "2998-01-01",
+                   "bugId": "BUG-3"}])
+        _mu_rows = cp_journal(mu_proj, "test.muted")
+        check("mu1b exactly one `test.muted` journal row, naming the test: %r"
+              % (_mu_rows,),
+              len(_mu_rows) == 1
+              and ((_mu_rows[0].get("details") or {}).get("field")
+                   == "tests/test_a.py"))
+
+        _mu_before = ba_bytes(mu_mp)
+        codemu2, txtmu2 = run(
+            ["mute", "--test", "tests/test_b.py", "--reason", "r",
+             "--owner", "alice", "--until", "2998-01-01",
+             "--project-dir", mu_proj])
+        check("mu2 a mute with no --bug is refused exit 2 before anything "
+              "is written - a quarantine nothing tracks is the shape it "
+              "exists to refuse: %r" % (txtmu2[:160],),
+              codemu2 == 2 and "--bug" in txtmu2
+              and ba_bytes(mu_mp) == _mu_before)
+
+        # The verb does NOT look the bug up itself: the validator's
+        # `rules.muted.bug-unknown` finding refuses it on the revalidation,
+        # and the write is rolled back. Skipping the revalidation turns this
+        # red, which is the mutation it is here for.
+        codemu3, txtmu3 = run(
+            ["mute", "--test", "tests/test_b.py", "--reason", "r",
+             "--owner", "alice", "--until", "2998-01-01", "--bug", "BUG-404",
+             "--project-dir", mu_proj])
+        check("mu3 a mute naming a bug the plan lacks is refused by the "
+              "validator's finding (exit 1, the FINDING line printed) and "
+              "rolled back byte for byte: %r" % (txtmu3[:240],),
+              codemu3 == 1 and "REFUSED" in txtmu3
+              and "FINDING: " in txtmu3 and "BUG-404" in txtmu3
+              and ba_bytes(mu_mp) == _mu_before
+              and not cp_journal(mu_proj, "test.muted")[1:])
+
+        codemu4, txtmu4 = run(
+            ["mute", "--test", "tests/test_a.py", "--reason", "still flaky",
+             "--owner", "bob", "--until", "2999-06-30", "--bug", "BUG-3",
+             "--project-dir", mu_proj])
+        check("mu4 a mute on an already-muted test with a LATER until "
+              "extends that one entry rather than appending a second: %r"
+              % ((codemu4, txtmu4[:160], mu_muted(mu_mp)),),
+              codemu4 == 0
+              and mu_muted(mu_mp) == [
+                  {"test": "tests/test_a.py", "reason": "still flaky",
+                   "owner": "bob", "until": "2999-06-30", "bugId": "BUG-3"}])
+        _mu_before4 = ba_bytes(mu_mp)
+        _mu_short = {}
+        for _muargv, _muwhat, _muwant in (
+                (["--until", "2999-06-30"], "same until", "a re-mute only EXTENDS"),
+                (["--until", "2998-01-01"], "earlier until",
+                 "a re-mute only EXTENDS"),
+                (["--until", "2000-01-01"], "past until", "is already past"),
+                (["--until", "next week"], "unreadable until",
+                 "mute needs --until")):
+            _mucode, _mutxt = run(
+                ["mute", "--test", "tests/test_a.py", "--reason", "r",
+                 "--owner", "bob", "--bug", "BUG-3"] + _muargv
+                + ["--project-dir", mu_proj])
+            _mu_short[_muwhat] = (_mucode, _muwant in _mutxt)
+        check("mu4b a re-mute whose until does not extend the entry, an until "
+              "already past, and one that is not a calendar day are refused "
+              "exit 2 IN THE VERB'S OWN WORDS and write nothing: %r"
+              % (_mu_short,),
+              sorted(_mu_short.values()) == [(2, True)] * len(_mu_short)
+              and ba_bytes(mu_mp) == _mu_before4)
+
+        # ALLOW CASE: unmute removes exactly the entry it names.
+        codemu5, _t = run(
+            ["mute", "--test", "tests/test_c.py", "--reason", "r",
+             "--owner", "carol", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", mu_proj])
+        _mu_keep = [e for e in (mu_muted(mu_mp) or [])
+                    if e.get("test") == "tests/test_c.py"]
+        codemu6, txtmu6 = run(
+            ["unmute", "--test", "tests/test_a.py", "--project-dir", mu_proj])
+        check("mu5 ALLOW CASE: `unmute --test` removes exactly the entry it "
+              "names and leaves every other mute as it was: %r"
+              % ((codemu5, codemu6, txtmu6[:160], mu_muted(mu_mp)),),
+              codemu5 == 0 and codemu6 == 0 and len(_mu_keep) == 1
+              and mu_muted(mu_mp) == _mu_keep)
+        _mu_un = cp_journal(mu_proj, "test.unmuted")
+        check("mu5b exactly one `test.unmuted` journal row, naming the "
+              "test: %r" % (_mu_un,),
+              len(_mu_un) == 1
+              and ((_mu_un[0].get("details") or {}).get("field")
+                   == "tests/test_a.py"))
+        codemu7, txtmu7 = run(
+            ["unmute", "--test", "tests/test_a.py", "--project-dir", mu_proj])
+        check("mu6 `unmute` of a test carrying no mute is refused exit 2 - a "
+              "no-op reporting success would hide that nothing was muted: %r"
+              % (txtmu7[:160],),
+              codemu7 == 2 and "tests/test_a.py" in txtmu7)
+
+        # An EXPIRED mute is a warning, so a plan carrying one is not refused
+        # by the pre-check: extending it and lifting it both run.
+        _mu_old = base_manifest()
+        _mu_old["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+        _mu_old["meta"]["muted"] = [
+            {"test": "tests/test_x.py", "reason": "r", "owner": "o",
+             "until": "2000-01-01", "bugId": "BUG-3"},
+            {"test": "tests/test_y.py", "reason": "r", "owner": "o",
+             "until": "2000-01-01", "bugId": "BUG-3"}]
+        mu_proj8, mu_mp8 = mk("mu-expired", _mu_old)
+        codemu8, txtmu8 = run(
+            ["mute", "--test", "tests/test_x.py", "--reason", "r",
+             "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", mu_proj8])
+        codemu9, txtmu9 = run(
+            ["unmute", "--test", "tests/test_y.py", "--project-dir", mu_proj8])
+        check("mu7 on a plan carrying an expired mute, an extending mute and "
+              "an unmute both run like every other verb: %r"
+              % ((codemu8, txtmu8[:160], codemu9, txtmu9[:160],
+                  mu_muted(mu_mp8)),),
+              codemu8 == 0 and codemu9 == 0
+              and [(e.get("test"), e.get("until"))
+                   for e in (mu_muted(mu_mp8) or [])]
+              == [("tests/test_x.py", "2998-01-01")])
+
+        # ---- (mo) the optional manifest positional AFTER the flags --------
+        # Documented for `bug-add`, `mute` and `couple` alike, and plain
+        # `parse_args` has refused a trailing positional after options on
+        # interpreters this project still supports (3.9 measured). The manifest each call
+        # names sits at a path the fixture's config does NOT name, so a
+        # trailing positional that was dropped - and the configured file
+        # written instead - reads differently from one that was used.
+        def mo_alt(name):
+            fx = base_manifest()
+            fx["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+            proj, conf = mk(name, fx)
+            alt = os.path.join(proj, "alt", "plan.json")
+            os.makedirs(os.path.dirname(alt), exist_ok=True)
+            _panel_write._atomic_write_json(alt, fx)
+            _cp_ev.append_row(proj, {
+                "v": 1, "runId": "RUN-IX", "ts": "2026-09-01T00:00:00Z",
+                "scope": "phase", "phaseId": "P2", "status": "failed",
+                "steps": []})
+            return proj, conf, alt
+
+        def mo_facts(alt):
+            man = _mio.load_manifest(alt)
+            meta = man.get("meta") or {}
+            return ([b.get("id") for b in man.get("bugs") or []],
+                    [e.get("test") for e in meta.get("muted") or []],
+                    [e.get("test") for e in meta.get("coupling") or []])
+
+        ix_proj, ix_conf, ix_alt = mo_alt("mo-order")
+        _ix_conf_before = ba_bytes(ix_conf)
+        _ix = {}
+        _ix["bug-add"] = run(
+            ["bug-add", "T", "--severity", "low", "--description", "d",
+             "--project-dir", ix_proj, ix_alt])[0]
+        _ix["mute"] = run(
+            ["mute", "--test", "tests/test_ix.py", "--reason", "r",
+             "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", ix_proj, ix_alt])[0]
+        _ix["couple"] = run(
+            ["couple", "--test", "tests/test_ix.py", "--sources", "src/a.ts",
+             "--basis-run", "RUN-IX", "--basis-head", "deadbeef",
+             "--project-dir", ix_proj, ix_alt])[0]
+        check("mo1 a manifest path passed AFTER the flags parses on every "
+              "supported interpreter, for `bug-add`, `mute` and `couple`, and "
+              "each call writes into THAT manifest while the configured one "
+              "keeps its bytes: %r" % ((_ix, mo_facts(ix_alt)),),
+              _ix == {"bug-add": 0, "mute": 0, "couple": 0}
+              and mo_facts(ix_alt) == (["BUG-3", "BUG-4"],
+                                       ["tests/test_ix.py"],
+                                       ["tests/test_ix.py"])
+              and ba_bytes(ix_conf) == _ix_conf_before)
+
+        # ...and with NO --project-dir, from a cwd that is another project:
+        # the named manifest alone decides the root, so the lock, the config,
+        # the evidence lookup and the journal row all belong to ITS project.
+        # The verbs that take no id move the lone positional into the
+        # manifest slot, and that has to happen before the root is resolved.
+        mo_proj, mo_conf, mo_alt_mp = mo_alt("mo-named")
+        mo_home, mo_home_mp = mk("mo-elsewhere", base_manifest())
+        _mo_conf_before = ba_bytes(mo_conf)
+        _mo_home_before = ba_bytes(mo_home_mp)
+        _mo_cwd, _mo_env = os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR")
+        _mo = {}
+        try:
+            os.chdir(mo_home)
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            _mo["bug-add"] = run(
+                ["bug-add", "T", "--severity", "low", "--description", "d",
+                 mo_alt_mp])[0]
+            _mo["mute"] = run(
+                ["mute", "--test", "tests/test_mo.py", "--reason", "r",
+                 "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-3",
+                 mo_alt_mp])[0]
+            _mo["unmute"] = run(["unmute", "--test", "tests/test_mo.py",
+                                 mo_alt_mp])[0]
+            _mo["couple"] = run(
+                ["couple", "--test", "tests/test_mo.py", "--sources",
+                 "src/a.ts", "--basis-run", "RUN-IX", "--basis-head",
+                 "deadbeef", mo_alt_mp])[0]
+            _mo["uncouple"] = run(["uncouple", "--test", "tests/test_mo.py",
+                                   mo_alt_mp])[0]
+        finally:
+            os.chdir(_mo_cwd)
+            if _mo_env is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _mo_env
+        _mo_actions = ("bug.add", "test.muted", "test.unmuted",
+                       "coupling.learned", "coupling.dropped")
+        _mo_rows = dict((a, len(cp_journal(mo_proj, a))) for a in _mo_actions)
+        _mo_stray = dict((a, len(cp_journal(mo_home, a))) for a in _mo_actions)
+        check("mo2 with no --project-dir and the cwd in ANOTHER project, a "
+              "trailing manifest decides the root for `bug-add`, `mute`, "
+              "`unmute`, `couple` and `uncouple`: each writes that manifest "
+              "and journals into its project, and the other project is "
+              "untouched: %r"
+              % ((_mo, mo_facts(mo_alt_mp), _mo_rows, _mo_stray),),
+              _mo == {"bug-add": 0, "mute": 0, "unmute": 0, "couple": 0,
+                      "uncouple": 0}
+              and mo_facts(mo_alt_mp) == (["BUG-3", "BUG-4"], [], [])
+              and _mo_rows == dict((a, 1) for a in _mo_actions)
+              and _mo_stray == dict((a, 0) for a in _mo_actions)
+              and ba_bytes(mo_conf) == _mo_conf_before
+              and ba_bytes(mo_home_mp) == _mo_home_before)
+        # ...and the ORDER, for every door that takes no id - `settle`
+        # included, whose write leaves no journal row to catch it by: the
+        # positional is moved by the one helper, before the root is resolved,
+        # and nowhere else in the file moves it.
+        import inspect as _mo_inspect
+        _mo_src = _mo_inspect.getsource(M)
+        _mo_order = {}
+        for _mo_door in (M.cmd_settle, M.cmd_couple, M.cmd_uncouple,
+                         M.cmd_mute, M.cmd_unmute):
+            _mo_body = _mo_inspect.getsource(_mo_door)
+            _mo_move = _mo_body.find("_manifest_from_positional(args)")
+            _mo_root = _mo_body.find("_resolve_project(args)")
+            _mo_order[_mo_door.__name__] = 0 <= _mo_move < _mo_root
+        check("mo3 every door that takes no id moves a lone positional into "
+              "the manifest slot BEFORE resolving the root, through one "
+              "helper, and the move is spelled nowhere else: %r"
+              % ((_mo_order, _mo_src.count("args.manifest = args.title")),),
+              all(_mo_order.values()) and len(_mo_order) == 5
+              and _mo_src.count("args.manifest = args.title") == 1)
 
     finally:
         _harness.remove_tree(tmp)

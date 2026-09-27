@@ -583,7 +583,7 @@
     {
       "id": "P81.12",
       "title": "the status gate can fail on a merged phase whose full-run answer is unknown",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F527. provisional_phases and stale_full_runs count PROVISIONAL rows only and no condition in _status_facts.CONDITIONS names UNKNOWN, so '--gate --fail-on provisional,stale-full-run' is green over a plan whose third place cannot be answered at all (no mergedHead, git could not answer, or an unreadable ledger), while this repository's release guard refuses over the same phase. Add a new OPT-IN condition 'unknown-full-run' (additive, outside DEFAULT_GATE like its siblings) that names each such phase with full_status's basis; do not change what 'provisional' covers. commands/status.md lists it with the others. COMPATIBILITY and CHANGELOG lines go to the docs task. Allow: WHOLE and NOT_DECLARED pass.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -617,18 +617,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1052846d603b5516b77cf2826c3e1abaac420f97",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts gains unknown_full_runs and FULL_RUN_CONDITIONS (fu6 derives the readers from evaluate_gate's AST); audit-status fetches fullRun only when one of those conditions is named.",
+        "descriptive": "--fail-on unknown-full-run names each merged phase whose full-run answer is unknown with full_status's basis; opt-in, outside the default gate, and provisional is unchanged"
       },
       "startedAt": "2026-09-27T14:42:17Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T16:44:00Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T16:43:14Z.63f0b9",
         "status": "passed",
         "at": "2026-09-27T16:43:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1052846d603b5516b77cf2826c3e1abaac420f97",
+        "at": "2026-09-27T16:44:00Z"
       }
     }
   ],

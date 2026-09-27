@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id] | uncouple --test <path> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id] | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -17,6 +17,8 @@ or subcommand `block` followed by a task id and `--reason "<why>"`;
 or subcommand `note` followed by a task id and `--text TEXT`;
 or subcommand `couple` followed by `--test <path> --sources a,b --basis-run <runId> --basis-head <sha>`;
 or subcommand `uncouple` followed by `--test <path>`;
+or subcommand `mute` followed by `--test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId>`;
+or subcommand `unmute` followed by `--test <path>`;
 or subcommand `cancel` followed by an id and `--reason "<why>"`;
 or subcommand `priority`, the legacy spelling covered at the end of this file.
 Unknown/empty subcommand → print usage and stop.
@@ -668,6 +670,46 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" uncouple \
 `--phases` id this plan does not hold.
 `--sources` and `--basis-run`/`--basis-head`/`--phases` belong to `couple` alone; `--test` is
 the one flag the two verbs share.
+
+## Subcommand: `mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId>` / `unmute --test <path>`
+
+Both write `meta.muted`, the quarantine the gate runner reads: a muted suite still runs and its
+failure is still recorded, but that failure does not fail the run. These two are its only
+writers. Neither takes a task or phase id — the positional slot is the manifest, `couple`'s
+own spelling.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" mute \
+  --test plugins/audit/tests/test_<name>.py --reason "<why it is muted, not fixed>" \
+  --owner <who lifts it> --until <YYYY-MM-DD> --bug <bugId> [--json]
+```
+
+`--reason` is the operator's own sentence and reaches the plan and the `test.muted` journal row exactly as passed — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*.
+
+**A mute names the bug tracking the failure it hides.** File one with `/audit:bug add` first.
+`--bug` absent is refused, exit 2, before anything is read. A `--bug` naming a bug the plan
+does not hold is NOT looked up by the verb: the write is revalidated, the validator's own
+finding (`meta.muted[n]: bugId ... names no bug in bugs[]`) refuses it, and every written file
+is rolled back — **exit 1**, the output a `REFUSED:` line followed by the `FINDING:` line, and
+under `--json` one `{ok: false, exit: 1, refused, findings}` object carrying that finding.
+
+`--until` is the last UTC calendar day the mute holds, inclusive — the one reading the
+validator and the runner share. An unreadable day, or one already past, is refused, exit 2:
+the runner would not honour it. `--test` must read as a suite path the project recognises,
+`couple`'s own check. A test already muted is **extended** by a mute whose `--until` is later:
+the one entry is rewritten with the new values and a `test.muted` row records the old day. A
+re-mute that does not move `until` later is refused, exit 2 — lift it with `unmute` to shorten
+it.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" unmute \
+  --test plugins/audit/tests/test_<name>.py [--json]
+```
+
+`unmute` removes exactly the entry its `--test` names, with a `test.unmuted` row. A test
+carrying no mute is refused, exit 2. **An expired mute is a warning, not a finding**, so a plan that
+carries one is not refused by the check every verb runs first: `unmute` and an extending `mute`
+run on it like every other verb.
 
 ## Subcommand: `cancel <id> --reason "<why>"`
 

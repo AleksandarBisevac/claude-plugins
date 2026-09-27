@@ -72,6 +72,15 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py uncouple --test <path> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py bug-add "<title>|-" [manifest] --severity low|med|high
+                --description TEXT|- [--files a,b] [--repro TEXT|-]
+                [--expected TEXT|-] [--actual TEXT|-]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py mute --test <path> --reason TEXT|- --owner NAME
+                --until <YYYY-MM-DD> --bug <bugId> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py unmute --test <path> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py finding <phaseId> (--severity low|med|high --file <path>
                 --issue TEXT|- --resolution TEXT|- | --findings-file PATH|-)
                 [manifest] [--project-dir DIR] [--takeover] [--json]
@@ -155,6 +164,14 @@ Usage:
   row examined; a coupling with no run to point at teaches nothing.
   `uncouple` drops one entry by `--test` alone, and refuses, exit 2, a test
   that carries none.
+  `bug-add` appends one bug to top-level `bugs[]` in exactly the shape
+  `commands/bug.md` spells, creating the list when the plan has none, with
+  the id the `next-id bug` allocator names. `mute` and `unmute` are the only
+  writers of `meta.muted`: a mute names the bug tracking the failure it
+  hides, and a mute naming a bug the plan lacks is refused by the
+  validator's own finding on the revalidation, every written file rolled
+  back (exit 1). A mute on a test already muted, with a later `--until`,
+  extends that entry.
   `finding`, `resolve-finding` and `correct` are the writes sign-off's review
   step makes: a finding appended to `review.findings` in the schema's shape,
   the task and commit that fixed one, and a TEXT correction of the review's
@@ -773,9 +790,16 @@ def _marked_excerpt(excerpt, rel_start, rel_end):
 # the table anyway, because a finding quotes code in backticks more than any other
 # field does, and a silently eaten identifier is the worse failure. So the stdin
 # route is the ordinary one for a finding's text, not the exception.
+#
+# `--repro`, `--expected` and `--actual` are a bug report's three sentences,
+# which `/audit:bug fix` embeds verbatim in the fix task's description. They
+# join for `--issue`'s reason: a report quotes code and output more than it
+# quotes anything else, and a clause a shell ate out of one is a repro that
+# reads whole and does not reproduce.
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
                "technical", "summary", "review_outcome", "no_evidence_reason",
-               "intent_basis", "text", "issue", "resolution")
+               "intent_basis", "text", "issue", "resolution", "repro",
+               "expected", "actual")
 
 # THE ONE PLACE `--help` SAYS ANYTHING ABOUT THE STDIN ESCAPE. Before this, none
 # of the flags in PROSE_FLAGS carried a `help=` at all -- `--help` printed the
@@ -806,7 +830,7 @@ _PROSE_HELP = ("free text, written into the manifest verbatim; pass - to read "
 # there is no way to pass a positional to the wrong verb, so there is
 # nothing to refuse -- so a message about this one cannot name a `--flag` that does
 # not exist -- `--title` in particular is REFUSED by argparse, and `rn4` pins that.
-PROSE_POSITIONAL = {"add": "title", "add-phase": "title"}
+PROSE_POSITIONAL = {"add": "title", "add-phase": "title", "bug-add": "title"}
 _POSITIONAL_LABEL = {"title": "the <title> argument"}
 
 
@@ -1436,6 +1460,21 @@ def resolve_basis(args):
                                           "$CLAUDE_PROJECT_DIR")
     return _panel_write.project_basis(os.path.abspath(os.getcwd()),
                                       "the working directory")
+
+
+def _manifest_from_positional(args):
+    """For a verb that takes no id: a lone positional IS the manifest.
+
+    CALLED BEFORE `_resolve_project`, never after. The named manifest is one
+    of the rows `resolve_basis` chooses a root by, so a door that moved the
+    positional into `args.manifest` only after resolving had already fallen
+    through to `$CLAUDE_PROJECT_DIR` or the cwd: the manifest was written
+    where it was named while the lock, the config, the evidence lookup and
+    the journal row went to another tree.
+    """
+    if args.title and not args.manifest:
+        args.manifest = args.title
+        args.title = ""
 
 
 def _resolve_project(args):
@@ -7718,12 +7757,10 @@ def _print_group_plan(args, plan, ids, mrel, landing, sharded, out):
 # path every mutating verb here takes - and it never runs on its own initiative: the
 # warning names it, and whoever owns the plan decides when.
 def cmd_settle(args, out):
-    project = _resolve_project(args)
     # `settle` takes no title, so a manifest named in the first free positional is
     # the manifest - the verb's usage line spells it `settle [manifest]`.
-    if args.title and not args.manifest:
-        args.manifest = args.title
-        args.title = ""
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_settle(
                            args, project, config, mpath, out))
@@ -7852,18 +7889,19 @@ def _locked_settle(args, project, config, mpath, out):
 # `args.test` / `args.sources` / `args.basis_run` / `args.basis_head` /
 # `args.phases` at all, the way `retarget`'s own `--gate-set`/`--gate-drop`
 # pair stayed inside `_retarget_gate_contradiction` and `_retarget_gate_now`.
-def _coupling_test_refusal(test):
+def _coupling_test_refusal(test, verbs="couple/uncouple", what="a coupling"):
     """Whether `--test <path>` names something a coupling can be about, or
     None. The same two readings `tests.add` and a suite path already share
     (`_rules.tests_add_path`, `_phases.is_suite_path`) -- a coupling is a
-    file a runner ran, never free prose."""
+    file a runner ran, never free prose. `mute`/`unmute` ask the same
+    question of the same flag, so `verbs` and `what` only change the words."""
     if not test:
-        return ("[audit-task] couple/uncouple needs --test <path>")
+        return ("[audit-task] %s needs --test <path>" % (verbs,))
     if _rules.tests_add_path(test) is None or not _phases.is_suite_path(test):
         return ("[audit-task] --test %r does not read as a suite path this "
                 "project already recognises a test by (`tests_add_path` and "
-                "`is_suite_path` both have to accept it) -- a coupling names "
-                "a file a runner ran, not a sentence about one" % (test,))
+                "`is_suite_path` both have to accept it) -- %s names "
+                "a file a runner ran, not a sentence about one" % (test, what))
     return None
 
 
@@ -7892,13 +7930,11 @@ def _coupling_phases_refusal(phases, phase_ids):
 
 
 def cmd_couple(args, out):
+    _manifest_from_positional(args)
     project = _resolve_project(args)
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)
         return E_USAGE
-    if args.title and not args.manifest:          # `settle`'s own rule:
-        args.manifest = args.title                # this verb takes no id, so
-        args.title = ""                            # a lone positional is the manifest
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_couple(
                            args, project, config, mpath, out))
@@ -8051,13 +8087,11 @@ def _locked_couple(args, project, config, mpath, out):
 
 
 def cmd_uncouple(args, out):
+    _manifest_from_positional(args)
     project = _resolve_project(args)
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)
         return E_USAGE
-    if args.title and not args.manifest:
-        args.manifest = args.title
-        args.title = ""
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_uncouple(
                            args, project, config, mpath, out))
@@ -8108,6 +8142,298 @@ def _locked_uncouple(args, project, config, mpath, out):
     out("[audit-task] %s uncoupled" % (test,))
     _report_tail(out, jres, "coupling.dropped", warnings, written_manifest,
                 written, index_note)
+    return 0
+
+
+# --- bug-add: the bug `commands/bug.md` spells, written by a verb ---------------
+# `/audit:bug add` used to hand-edit `bugs[]` after asking `next-id bug` for the
+# id, so the step-3 shape was a paragraph the model re-typed on every report and
+# nothing checked that every key reached the file. The shape is a tuple here,
+# written in this order, every key present -- the unset links as null, which is
+# how a reader tells "not materialized yet" from "this writer forgot the key".
+_BUG_TEMPLATE_KEYS = ("id", "title", "status", "severity", "reportedAt",
+                      "reportedBy", "description", "repro", "expected",
+                      "actual", "files", "taskId", "fixedIn", "notes")
+
+
+def cmd_bug_add(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_bug_add(
+                           args, project, config, mpath, out))
+
+
+def _locked_bug_add(args, project, config, mpath, out):
+    """Append one bug to `bugs[]`, under lock, in `_BUG_TEMPLATE_KEYS`' shape.
+
+    THE REQUIRED ANSWERS ARE REFUSED BEFORE THE READ: a title, a severity in
+    the words a finding takes (`_phases.FINDING_SEVERITY`, which the schema
+    says a bug's severity is consistent with) and a description. `--files`,
+    `--repro`, `--expected` and `--actual` may be absent -- `commands/bug.md`
+    allows an empty `files`, and a report can know what happened before it
+    knows how to make it happen again -- and an absent one is written as the
+    empty list or null, never left out.
+
+    THE WORDS ARE WRITTEN AS PASSED. `resolve_briefs` has already read `-`
+    off stdin and refused a shell-eaten gap; nothing here trims or rewraps
+    the operator's text, because a bug's repro is quoted verbatim into the
+    fix task `/audit:bug fix` materializes.
+
+    INDEX-ONLY: `bugs` lives in the index, so no shard is touched.
+    """
+    title = args.title or ""
+    if not title.strip():
+        out("[audit-task] bug-add needs a title: bug-add \"<title>\"")
+        return E_USAGE
+    severity = (args.severity or "").strip()
+    if severity not in _phases.FINDING_SEVERITY:
+        out("[audit-task] bug-add needs --severity %s, got %r"
+            % ("|".join(_phases.FINDING_SEVERITY), args.severity))
+        return E_USAGE
+    description = args.description or ""
+    if not description.strip():
+        out("[audit-task] bug-add needs --description TEXT -- a bug with no "
+            "description is a title nobody can triage")
+        return E_USAGE
+    files = _split_csv(args.files)
+    bad = _path_problems(files)
+    if bad:
+        out("[audit-task] --files names the suspected repository-relative "
+            "files, and %s" % ("; ".join(bad),))
+        return E_USAGE
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    bug_id = _id_shape.next_bug_id(assembled, _mint_suffix(mpath, assembled))
+    values = {"id": bug_id, "title": title, "status": "open",
+              "severity": severity, "reportedAt": _utc_now(),
+              "reportedBy": None, "description": description,
+              "repro": args.repro, "expected": args.expected,
+              "actual": args.actual, "files": files, "taskId": None,
+              "fixedIn": None, "notes": None}
+    bug = dict((key, values[key]) for key in _BUG_TEMPLATE_KEYS)
+    assembled["bugs"] = list(assembled.get("bugs") or []) + [bug]
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the bug", out, index_fields=("bugs",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    summary = "%s reported (%s): %s" % (bug_id, severity, title)
+    jres = _journal_row(project, config, mpath, "bug.add", summary,
+                        {"field": bug_id, "to": "open"})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "bugId": bug_id, "bug": bug,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    out("  next: /audit:bug fix %s when it is ready to be worked" % (bug_id,))
+    _report_tail(out, jres, "bug.add", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# --- mute / unmute: meta.muted, an index-only write -----------------------------
+# THE ENTRY `_manifest_rules._check_muted` ALREADY GRADES, `{test, reason,
+# owner, until, bugId}`, one per `test`. These two verbs are its only writers.
+#
+# THE BUG IS NOT LOOKED UP HERE. A mute naming a bug `bugs[]` lacks is the
+# validator's own finding, and `_write_plan` revalidates the written plan and
+# rolls every file back on a finding -- so the refusal arrives as the
+# validator's sentence, exit 1, with nothing kept. A second lookup in this
+# verb would be a second answer to that question, free to drift from the one
+# the plan is graded by. What IS refused here, exit 2, is a mute with no
+# `--bug` at all: that is a missing answer, not a wrong one, and refusing it
+# before the read costs no rollback.
+#
+# AN EXPIRED MUTE IS A WARNING, NEVER A FINDING, so `_read_plan`'s pre-check
+# passes a plan that carries one and both verbs run on it -- which is the whole
+# reason `_check_muted` keeps expiry out of the findings.
+#
+# THE READS STAY INSIDE THIS PAIR, `couple`'s reason: `_locked_mute` and
+# `_locked_unmute` are the only functions that read `args.test`/`args.owner`/
+# `args.until`/`args.bug` for these verbs, so the call-graph derivation of
+# `VERB_FLAGS` sees them on these doors alone.
+def _mute_until_refusal(raw, today, current=None):
+    """The refusal for an `--until` this mute cannot carry, or None.
+
+    Read through `_vocab.mute_until`/`mute_expired`, the one reading of the
+    field the validator and the runner share: an unreadable day, a day already
+    past (a mute the runner would not honour, so a write reporting success
+    for nothing), and -- on a test already muted -- a day that does not move
+    the current `until` later, since extending is the one change this verb
+    makes to an existing entry.
+    """
+    until = _vocab.mute_until(raw)
+    if until is None:
+        return ("[audit-task] mute needs --until <YYYY-MM-DD>, the last UTC "
+                "day the mute holds; got %r" % (raw,))
+    if _vocab.mute_expired(until, today):
+        return ("[audit-task] --until %s is already past (today is %s in "
+                "UTC), so the runner would not honour this mute and nothing "
+                "would be quarantined" % (raw, today.isoformat()))
+    held = _vocab.mute_until(current) if current is not None else None
+    if current is not None and held is not None and not until > held:
+        return ("[audit-task] this test is already muted until %s, and a "
+                "re-mute only EXTENDS: --until %s does not move that later. "
+                "Lift it with `unmute --test` first to shorten it"
+                % (current, raw))
+    return None
+
+
+def cmd_mute(args, out):
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_mute(
+                           args, project, config, mpath, out))
+
+
+def _locked_mute(args, project, config, mpath, out):
+    """Write (or extend) one `meta.muted` entry, under lock."""
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test, "mute/unmute", "a mute")
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    bug = (args.bug or "").strip()
+    if not bug:
+        out("[audit-task] mute needs --bug <bugId> -- a quarantine must name "
+            "the bug tracking the failure it hides; file one with "
+            "`/audit:bug add` first")
+        return E_USAGE
+    reason = args.reason or ""
+    if not reason.strip():
+        out("[audit-task] mute needs --reason TEXT -- why the suite is muted "
+            "rather than fixed")
+        return E_USAGE
+    owner = (args.owner or "").strip()
+    if not owner:
+        out("[audit-task] mute needs --owner NAME -- who answers for lifting "
+            "it")
+        return E_USAGE
+    raw_until = (args.until or "").strip()
+    today = _vocab.mute_today()
+    refusal = _mute_until_refusal(raw_until, today)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    muted = [dict(e) if isinstance(e, dict) else e
+             for e in (meta.get("muted") or [])]
+    idx = next((i for i, e in enumerate(muted)
+                if isinstance(e, dict) and e.get("test") == test), None)
+    entry = {"test": test, "reason": reason, "owner": owner,
+             "until": raw_until, "bugId": bug}
+    was = None
+    if idx is None:
+        muted.append(entry)
+        summary = "%s muted until %s (%s, owner %s)" % (test, raw_until, bug,
+                                                       owner)
+    else:
+        was = muted[idx].get("until")
+        refusal = _mute_until_refusal(raw_until, today, current=was)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+        muted[idx] = entry
+        summary = "%s mute extended: until %s -> %s (%s, owner %s)" % (
+            test, was, raw_until, bug, owner)
+    meta["muted"] = muted
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the mute", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "test.muted", summary,
+                        {"field": test, "from": was, "to": raw_until,
+                         "reason": reason})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "entry": entry,
+                  "extendedFrom": was, "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "test.muted", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+def cmd_unmute(args, out):
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_unmute(
+                           args, project, config, mpath, out))
+
+
+def _locked_unmute(args, project, config, mpath, out):
+    """Drop the one `meta.muted` entry for `--test`, under lock. Refused, exit
+    2, when the test carries none -- a lift of nothing reporting success would
+    hide that nothing was muted."""
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test, "mute/unmute", "a mute")
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    muted = list(meta.get("muted") or [])
+    idx = next((i for i, e in enumerate(muted)
+                if isinstance(e, dict) and e.get("test") == test), None)
+    if idx is None:
+        out("[audit-task] unmute: %r carries no meta.muted entry -- nothing "
+            "to lift" % (test,))
+        return E_USAGE
+    entry = muted.pop(idx)
+    meta["muted"] = muted
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the unmute", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "test.unmuted",
+                        "%s unmuted (was until %s, %s)" % (
+                            test, entry.get("until"), entry.get("bugId")),
+                        {"field": test, "from": entry.get("until")})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "dropped": entry,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s unmuted" % (test,))
+    _report_tail(out, jres, "test.unmuted", warnings, written_manifest,
+                 written, index_note)
     return 0
 
 
@@ -8489,6 +8815,15 @@ VERB_FLAGS = {
     # `correct` takes the two texts a sign-off wrote and nothing else; it has
     # no `verdict` on purpose, so passing one is refused as a misplaced flag.
     "correct": ("review_outcome", "summary"),
+    # `bug-add` writes one bug in the shape `commands/bug.md` spells; the
+    # title is the positional and the id is allocated, so neither is a flag.
+    # `--severity` is shared with `finding`, whose field takes the same words.
+    "bug-add": ("severity", "description", "files", "repro", "expected",
+                "actual"),
+    # `mute` writes one `meta.muted` entry, one flag per field; `unmute`
+    # drops one by the test alone, `uncouple`'s shape.
+    "mute": ("test", "reason", "owner", "until", "bug"),
+    "unmute": ("test",),
 }
 
 
@@ -8521,7 +8856,8 @@ def build_parser():
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
                             "note", "couple", "uncouple", "finding",
-                            "resolve-finding", "correct"])
+                            "resolve-finding", "correct", "bug-add", "mute",
+                            "unmute"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -8694,6 +9030,23 @@ def build_parser():
     # `resolve-finding` only. The task whose commit settles the finding.
     p.add_argument("--fix-task", dest="fix_task", default=None, metavar="TASK",
                    help="resolve-finding: the task whose commit settles it")
+    # `bug-add` only. The three sentences of a bug report beside its
+    # `--description`, one flag per field and spelled as the field. The title
+    # stays the POSITIONAL, for `--rename`'s reason above: a `--title` flag
+    # would shadow the slot every verb here already names `title`.
+    p.add_argument("--repro", default=None, metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--expected", default=None, metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--actual", default=None, metavar="TEXT", help=_PROSE_HELP)
+    # `mute` only. The `meta.muted` fields `--test` and `--reason` do not
+    # already carry: who answers for lifting it, the last UTC day it holds,
+    # and the bug tracking the failure it hides.
+    p.add_argument("--owner", default=None, metavar="NAME",
+                   help="mute: who answers for lifting the mute")
+    p.add_argument("--until", default=None, metavar="YYYY-MM-DD",
+                   help="mute: the last UTC calendar day the mute holds, "
+                        "inclusive")
+    p.add_argument("--bug", default=None, metavar="BUGID",
+                   help="mute: the bugs[] id tracking the failure it hides")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p
@@ -8735,7 +9088,8 @@ def supplied_flags(argv):
     reader owes no time to working out why there is no case for it there.
     Measured: the probe is the same parser over an argv the real parse has
     already accepted, so the only argv it rejects (`--gate --json`, where a
-    flag's value looks like a flag) is one the real `parse_args` rejects first,
+    flag's value looks like a flag) is one `main`'s own parse
+    (`parse_intermixed_args`) rejects first,
     and `main` has returned E_USAGE before this is called. It is still not
     dropped -- a `None` the caller silently read as "no flags" is the whole
     defect this returns None to avoid -- and `vf9` drives it by calling this
@@ -8757,7 +9111,7 @@ def supplied_flags(argv):
             marks[action.dest] = []
             action.default = marks[action.dest]
     try:
-        parsed = probe.parse_args(argv)
+        parsed = probe.parse_intermixed_args(argv)   # `main`'s parse, exactly
     except SystemExit:
         return None
     return set(dest for dest in option_dests(probe)
@@ -8834,8 +9188,16 @@ def json_refusal(code, lines):
 
 def main(argv, out=print):
     p = build_parser()
+    # INTERMIXED, BECAUSE THE DOCUMENTED ORDER PUTS THE MANIFEST LAST. On some
+    # interpreters this project still supports (3.9 measured), plain
+    # `parse_args` stops filling positionals at the first option, so
+    # `bug-add "<title>" --severity low --description d <manifest>` is
+    # "unrecognized arguments" there.
+    # The parser has no REMAINDER, no subparsers and no positional inside a
+    # mutually exclusive group, which is all this call rules out. `supplied_flags`
+    # makes the same call, so the flag census reads the same parse.
     try:
-        args = p.parse_args(argv)
+        args = p.parse_intermixed_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
     if not args.as_json:
@@ -8900,7 +9262,8 @@ def _dispatch(args, argv, out):
              "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
              "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
              "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
-             "correct": cmd_correct}
+             "correct": cmd_correct, "bug-add": cmd_bug_add,
+             "mute": cmd_mute, "unmute": cmd_unmute}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing
