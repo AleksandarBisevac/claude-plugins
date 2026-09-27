@@ -467,6 +467,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   so two saves on the server's threads wait for each other instead of one borrowing the other's
   claim, and `_evidence_io.lock_state` - which the gate recorder asks before writing a pointer
   or the evidence boundary - asks the same `held_by_us` rule instead of its own session test.
+- **Two panel saves at once both land.** Serialising the writes was not enough: every save built
+  its document from a read taken before it took the lock, so the second of two saves wrote a
+  copy predating the first and that change was lost while both answered ok. A composition save
+  now reads the manifest again with the lock held, and the policy, theme and `ui.theme` saves
+  hand `write_config` a change it applies to the config read under the lock. `POST
+  /api/proposal` holds the panel's per-call lock around the proposal run, which takes the lock
+  before it reads the manifest - `materialize-proposal.py`'s run included - and no longer
+  takes an ordinary claim whose token the whole server process would carry.
+- **The recovery line the panel prints for a crashed panel works.** `audit-lock.py release`
+  refused a claim whose holder had died, counting the dead pid as another run's, so the printed
+  `release index` command always exited 3; a claim whose holder ran on this host and is gone is
+  now released. The "this lock records taking over from you" note no longer prints when neither
+  side names a session.
 - **A review finding's `fixTask` follows its task through a move.** It is an id, so it is in
   `_id_refs.SCALAR_REFS` now and rewritten in both of a review's finding lists; the schema
   declares `fixTask` and `commit` on a finding, `validate-manifest` warns

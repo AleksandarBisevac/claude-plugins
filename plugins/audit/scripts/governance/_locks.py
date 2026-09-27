@@ -1061,6 +1061,13 @@ def _release_conflict(held, session, pid):
     """
     if not isinstance(held, dict) or not held:
         return {"mismatch": False, "who": "someone else"}
+    # A HOLDER THAT IS DEAD ON THIS HOST is displaced by nobody: its run is gone,
+    # so releasing its claim takes the lock from no one. Refusing it made the
+    # recovery line the panel prints for a crashed panel a command that always
+    # failed. A holder on another host, or one with no pid, is not known dead and
+    # keeps the identity rule below.
+    if _holder_dead_here(held):
+        return {"mismatch": False, "who": "a run that is gone"}
     sid, ident = _identity(session, pid)
     owner = held.get("sessionId")
     session_mismatch = bool(owner) and bool(sid) and str(owner) != str(sid)
@@ -1075,6 +1082,17 @@ def _release_conflict(held, session, pid):
     else:
         who = owner or holder_pid or held.get("hostname") or "someone else"
     return {"mismatch": session_mismatch or pid_mismatch, "who": who}
+
+
+def _holder_dead_here(info):
+    """True only when the claim's holder ran on THIS host and its pid is gone."""
+    if str(info.get("hostname") or "") != platform.node():
+        return False
+    try:
+        holder = int(info.get("pid"))
+    except (TypeError, ValueError):
+        return False
+    return pid_alive(holder) is False
 
 
 def release(project, name, session=None, pid=None, force=False, out=print):
@@ -1109,7 +1127,8 @@ def release(project, name, session=None, pid=None, force=False, out=print):
         out("             You were taken over. Anything you wrote since may have")
         out("             raced that session. Re-read the shard before trusting it.")
         sid, _pid = _identity(session, pid)
-        if held.get("takenOverFrom", {}).get("sessionId") == sid:
+        # A SESSION ON BOTH SIDES, or the sentence is None compared with None.
+        if sid and (held.get("takenOverFrom") or {}).get("sessionId") == sid:
             out("             (this lock records taking over from you)")
         return E_LIVE
     try:

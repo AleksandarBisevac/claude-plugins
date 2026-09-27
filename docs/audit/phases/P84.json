@@ -113,6 +113,27 @@
         "file": "plugins/audit/reference/manifest-conventions.md",
         "issue": "The hand-held exception is stated honestly, but only in phase-signoff.md step 1, CHANGELOG and the _locks docstring. The two documents that prescribe the hand-held flow do not say that verbs run under that hold must not run as parallel tool calls. Those are manifest-conventions.md ('Before your first index write: take it with the script', used by init, task, bug, propose and sync) and orchestrator",
         "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-T1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/panel/_panel_write.py",
+        "issue": "The per-call claim now serialises the WRITE of two concurrent panel saves, but every save builds its document from a read made BEFORE _acquire_write_lock. So the second save still writes a copy that predates the first, and the first save's change is lost while both responses say ok. I measured this through the real handler: I ran panel-server._make_handler on a ThreadingHTTPServer with _atomic_wri",
+        "resolution": "fix task P84.8-791"
+      },
+      {
+        "id": "P84-T2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_proposals.py",
+        "issue": "The P84.7 claim 'A panel write now takes a per-call claim' covers the three _acquire_write_lock callers only. The panel's proposal door calls _proposals.run in-process on a server thread, and that takes an ordinary claim. The claim records pid os.getpid() and _carry puts its token into the process-wide os.environ, so every other request thread passes held_by_us as 'ours'. Measured through the real",
+        "resolution": "fix task P84.8-791"
+      },
+      {
+        "id": "P84-T1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_write.py",
+        "issue": "A crashed panel's claim is reported honestly: `audit-lock.py status` prints 'abandoned - pid N is gone', and the next save answers lockStale. But the recovery line the panel prints, 'Release it with: audit-lock.py release index --project .', always refuses (exit 3, 'NOT yours to release -- held by pid N ... You were taken over'). _release_conflict counts the dead holder pid as a mismatch, and with",
+        "resolution": "fix task P84.8-791"
       }
     ]
   },
@@ -513,6 +534,57 @@
         "test__manifest_crossrefs mc45",
         "test__locks rk5"
       ]
+    },
+    {
+      "id": "P84.8-791",
+      "title": "a panel save reads what it patches under the lock it writes with, on every door, and a crashed panel's recovery line works",
+      "status": "in_progress",
+      "description": "Round-3 phase review of P84 (review-P84c.json). (1) Every panel save builds its document from a read taken before _acquire_write_lock, so a serialised second save writes a stale copy and the first save's change is lost while both answer ok (measured through the real handler: composition and policy/theme). Take the lock FIRST, then read and patch inside the held region - apply_composition reads the manifest under the lock; write_config takes a mutator applied to the config it reads under the lock (policy, theme, ado). A real two-thread case per door asserting BOTH changes land, proved red against the current read order. (2) POST /api/proposal runs _proposals.run in-process with an ordinary claim whose token _carry puts in the process-wide environment, so concurrent request threads borrow it and a drop is lost. The proposal door holds the panel's per-call lock around run, locked before run loads the manifest, and _carry never exports a token into a server process's environment for a per-call claim; a two-thread proposal case. (3, pre-existing) the recovery line the panel prints for a crashed panel's claim ('audit-lock.py release index') always refuses because the dead holder pid counts as a mismatch, and '(this lock records taking over from you)' prints when both sessions are None: release accepts a claim whose holder pid is dead on this host, or the panel prints the command that works; the takenOverFrom comparison requires a non-empty session; a case that follows the printed instruction and succeeds.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_write.py: repro that FAILS on current code - two concurrent composition saves both return ok and the first change is lost"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T08:31:05Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"

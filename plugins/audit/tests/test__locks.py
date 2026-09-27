@@ -1174,6 +1174,27 @@ def _token_cases(check):
               "acquire in it is answered as re-entry: %r" % ((own, own2),),
               own == 0 and own2 == M.E_OURS)
         M.release(proj, "index", session="s-OWN", pid=os.getpid(), out=quiet)
+
+        # THE TAKEOVER NOTE NEEDS A SESSION TO COMPARE. A claim recording a
+        # takeover from a holder that named no session, released by a caller that
+        # names none either, is not a takeover FROM this caller - None equals None.
+        path = os.path.join(M.lock_dir(proj), "index.lock")
+        M._write_lock(path, {"pid": os.getppid(), "hostname": platform.node(),
+                             "sessionId": "s-HOLDER", "note": "took it over",
+                             "takenOverFrom": {"pid": 12345}})
+        env_sid = os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        try:
+            lines = []
+            code = M.release(proj, "index", pid=os.getpid(), out=lines.append)
+        finally:
+            if env_sid is not None:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = env_sid
+        check("rk7 RED-FIRST: a refused release with no session on either side does "
+              "not claim the lock records taking over FROM this caller: %r"
+              % ((code, lines),),
+              code == M.E_LIVE
+              and not any("taking over from you" in x for x in lines))
+        os.unlink(path)
     finally:
         shutil.rmtree(proj, ignore_errors=True)
 

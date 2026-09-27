@@ -538,10 +538,7 @@ def write_policy(project, body):
     findings, warnings = _policy.validate_policy(policy)
     if findings:
         return {"ok": False, "findings": findings, "warnings": warnings}
-    config = read_config(project)
-    updated = dict(config)
-    updated["policy"] = policy
-    res = write_config(project, updated)
+    res = write_config(project, mutate=lambda cfg: dict(cfg, policy=policy))
     if res.get("ok"):
         res["warnings"] = list(res.get("warnings") or []) + warnings
     return res
@@ -605,14 +602,32 @@ def proposal_action(project, body):
                 "findings": ["unknown proposal action %r" % (action,)]}
     if not isinstance(pid, str) or not pid.strip():
         return {"ok": False, "findings": ["no proposal id given"]}
-    mpath = _manifest_path(project, read_config(project))
+    config = read_config(project)
+    mpath = _manifest_path(project, config)
     if not mpath or not os.path.isfile(mpath):
         return {"ok": False,
                 "findings": ["no manifest to act on - run /audit:init first"]}
-    ok, payload = _proposals.run(
-        mpath, action, [pid.strip()],
-        policy=(body or {}).get("policy"),
-        reason=(body or {}).get("reason"))
+    if action == "plan":
+        ok, payload = _proposals.run(mpath, action, [pid.strip()],
+                                     policy=(body or {}).get("policy"))
+    else:
+        # THE PANEL'S OWN PER-CALL CLAIM, taken before the run reads anything.
+        # `run` taking an ordinary claim here put its token into this server's
+        # environment, so a request on the thread beside it was let back in and
+        # one of two drops was lost. An empty `touched` set: a proposal writes the
+        # index (and a new phase's shard), never a running phase's own.
+        lock = _acquire_write_lock(project, config, set())
+        if lock.get("blocked"):
+            return lock["response"]
+        try:
+            ok, payload = _proposals.run(
+                mpath, action, [pid.strip()],
+                policy=(body or {}).get("policy"),
+                reason=(body or {}).get("reason"), locked=True)
+        finally:
+            said = _release_write_lock(lock)
+        if said:
+            payload.setdefault("warnings", []).append(said)
     if action == "plan":
         # A plan reports refusals IN THE PAYLOAD, so `ok` being false here is data
         # rather than an error: the tab renders "PROP-3 was dropped: …" in its
@@ -1433,35 +1448,53 @@ def _claim_panel_write(mod, project, config, written):
 
 
 # --- writes ---------------------------------------------------------------------
-def write_config(project, obj):
-    """Validate then atomically write .claude/audit.config.json. Returns dict."""
+def write_config(project, obj=None, mutate=None):
+    """Validate then atomically write .claude/audit.config.json. Returns dict.
+
+    `obj` is a whole config the caller built; `mutate` is a change - a function
+    handed the config as it stands and returning the config to write. Either way
+    the config compared and written is READ UNDER THE LOCK: a door that built its
+    document from a read taken before the lock wrote a copy predating the save it
+    waited for, and that save's change was lost while both answered ok. So every
+    door that edits one key passes `mutate`.
+    """
     _, vc, _, _ = _cores()
-    if not isinstance(obj, dict):
+    if mutate is None and not isinstance(obj, dict):
         return {"ok": False, "findings": ["config must be a JSON object"]}
-    findings, warnings = vc.validate_config(obj)
-    if findings:
-        return {"ok": False, "findings": findings, "warnings": warnings}
+    if mutate is None:
+        # A whole document is refused before any lock, in its own words.
+        findings, warnings = vc.validate_config(obj)
+        if findings:
+            return {"ok": False, "findings": findings, "warnings": warnings}
     path = _config_path(project)
     if not _within(project, path):
         return {"ok": False, "findings": ["refused: path escapes project"]}
-    current = read_config(project)
-    applied = _config_changes(current, obj)
-    if not applied:
-        # Nothing to write. Not an error and not a lie either: the response says
-        # `unchanged`, so the panel can say "no changes" rather than "saved" —
-        # and no file is touched, so a save with nothing in it cannot rewrite a
-        # config someone else edited in the meantime.
-        return {"ok": True, "findings": [], "warnings": warnings, "applied": [],
-                "unchanged": True, "journaled": False,
-                "journaledWhy": "unchanged",
-                "path": _output.posix_rel(path, project)}
     # The config decides where the manifest is and which guards run; writing it
     # under a running phase is the same class of surprise as writing the manifest.
-    lock = _acquire_write_lock(project, current, None)
+    # The read that locates the lock is not the one the write is built from.
+    lock = _acquire_write_lock(project, read_config(project), None)
     if lock.get("blocked"):
         return lock["response"]
+    said = None
     try:
-        _atomic_write_json(path, obj)
+        current = read_config(project)
+        target = mutate(dict(current)) if mutate is not None else obj
+        if not isinstance(target, dict):
+            return {"ok": False, "findings": ["config must be a JSON object"]}
+        findings, warnings = vc.validate_config(target)
+        if findings:
+            return {"ok": False, "findings": findings, "warnings": warnings}
+        applied = _config_changes(current, target)
+        if not applied:
+            # Nothing to write. Not an error and not a lie either: the response
+            # says `unchanged`, so the panel can say "no changes" rather than
+            # "saved" - and no file is touched, so a save with nothing in it
+            # cannot rewrite a config someone else edited in the meantime.
+            return {"ok": True, "findings": [], "warnings": warnings,
+                    "applied": [], "unchanged": True, "journaled": False,
+                    "journaledWhy": "unchanged",
+                    "path": _output.posix_rel(path, project)}
+        _atomic_write_json(path, target)
     finally:
         said = _release_write_lock(lock)
     # The config was still written; what the sentence adds is that something else
@@ -1623,17 +1656,19 @@ def write_theme(project, body):
     # a one-key config edit (ui.theme), written through the one config writer.
     if body.get("use") is not None:
         want = str(body.get("use") or "").strip()
-        cfg = dict(read_config(project))
-        ui = dict(cfg.get("ui") or {})
-        if want in ("", "slate-teal"):
-            ui.pop("theme", None)          # back to the search order
-        else:
-            ui["theme"] = want
-        if ui:
-            cfg["ui"] = ui
-        else:
-            cfg.pop("ui", None)
-        return write_config(project, cfg)
+
+        def wear(cfg):
+            ui = dict(cfg.get("ui") or {})
+            if want in ("", "slate-teal"):
+                ui.pop("theme", None)          # back to the search order
+            else:
+                ui["theme"] = want
+            if ui:
+                cfg["ui"] = ui
+            else:
+                cfg.pop("ui", None)
+            return cfg
+        return write_config(project, mutate=wear)
     theme = body.get("theme")
     if not isinstance(theme, dict):
         return {"ok": False, "findings": ["theme must be an object of tokens"]}
@@ -1680,11 +1715,8 @@ def write_theme(project, body):
         return {"ok": False, "findings": ["written but not readable back: %s" % err]}
     written = [_output.posix_rel(path, project)]
     if save_as:
-        cfg = dict(read_config(project))
-        ui = dict(cfg.get("ui") or {})
-        ui["theme"] = written[0]
-        cfg["ui"] = ui
-        res = write_config(project, cfg)
+        res = write_config(project, mutate=lambda cfg: dict(
+            cfg, ui=dict(cfg.get("ui") or {}, theme=written[0])))
         if not res.get("ok"):
             return res
     _journal(project, read_config(project), "theme.save", written[0], rows)
@@ -2102,6 +2134,14 @@ def apply_composition(project, patch):
     had just listed, phase edits landed in a stub the next load throws away, and
     even a meta-only save failed on a wall of validator findings about stubs
     missing fields they are not supposed to have.
+
+    THE WRITE IS BUILT FROM A READ TAKEN UNDER THE LOCK. The first pass below only
+    decides whether there is a write at all and which phases it touches - which
+    phase locks may contend - and refuses early, lock-free, what no later read can
+    rescue. The second pass reads the manifest again with the lock held and is
+    the one written: a save that wrote the first pass's copy wrote a manifest
+    predating the save it had waited for, and that save's change was lost while
+    both answered ok.
     """
     vm, _, _, _ = _cores()
     if not isinstance(patch, dict):
@@ -2112,18 +2152,64 @@ def apply_composition(project, patch):
         return {"ok": False, "findings": ["refused: manifest path escapes project"]}
     if not os.path.isfile(mpath):
         return {"ok": False, "findings": ["manifest not found: run /audit:init first"]}
+    done, first = _composition_pass(project, config, mpath, patch, vm)
+    if done is not None:
+        return done
+    lock = _acquire_write_lock(project, config,
+                               first["touched"] if first["sharded"] else None)
+    if lock.get("blocked"):
+        return lock["response"]
+    said = None
+    try:
+        done, plan = _composition_pass(project, config, mpath, patch, vm)
+        if done is not None:
+            return done
+        if plan["sharded"] and not plan["touched"] <= first["touched"]:
+            # The plan moved between the two reads so this save now reaches a
+            # phase whose lock was never asked about. Refused rather than
+            # written past a phase run that may own that shard.
+            return {"ok": False, "findings": [
+                "the plan changed while this save waited: it now touches %s, "
+                "which it did not when the lock was taken - save again"
+                % (", ".join(sorted(plan["touched"] - first["touched"])),)]}
+        try:
+            written = _write_back(project, mpath, plan["raw_index"],
+                                  plan["assembled"], patch, plan["touched"],
+                                  [r["target"] for r in plan["healed"]])
+        except ValueError as exc:
+            return {"ok": False, "findings": [str(exc)]}
+    finally:
+        said = _release_write_lock(lock)
+    warnings = plan["warnings"]
+    # As in `write_config`: the patch landed, and the sentence says another
+    # session took the index lock while it was landing.
+    if said:
+        warnings = list(warnings) + [said]
+    out = {"ok": True, "findings": [], "warnings": warnings,
+           "applied": plan["applied"], "healed": plan["healed"],
+           "path": _output.posix_rel(mpath, project),
+           "layout": "sharded" if plan["sharded"] else "single",
+           "written": written}
+    out.update(_journal(project, config, "composition.write",
+                        out["path"], plan["applied"] + plan["healed"]))
+    return out
+
+
+def _composition_pass(project, config, mpath, patch, vm):
+    """`(response, None)` when the save ends here, or `(None, plan)` - the read
+    manifest patched, validated and ready to write, with what it touches."""
     try:
         raw_index = _read_json(mpath)
     except Exception as exc:
-        return {"ok": False, "findings": ["cannot parse manifest: %s" % exc]}
+        return {"ok": False, "findings": ["cannot parse manifest: %s" % exc]}, None
     if not isinstance(raw_index, dict):
-        return {"ok": False, "findings": ["manifest root is not an object"]}
+        return {"ok": False, "findings": ["manifest root is not an object"]}, None
     try:
         assembled = _mio.load_manifest(mpath)
     except Exception as exc:
-        return {"ok": False, "findings": ["cannot assemble manifest: %s" % exc]}
+        return {"ok": False, "findings": ["cannot assemble manifest: %s" % exc]}, None
     if not isinstance(assembled, dict):
-        return {"ok": False, "findings": ["manifest root is not an object"]}
+        return {"ok": False, "findings": ["manifest root is not an object"]}, None
 
     # Computed against the manifest as it is NOW, before the patch touches it: the
     # `from` half of every row has to be the value on disk, not the value the patch
@@ -2131,10 +2217,10 @@ def apply_composition(project, patch):
     applied = _composition_changes(assembled, patch)
     err = _reject_stranded(project, config, patch)
     if err:
-        return {"ok": False, "findings": ["refused: " + err]}
+        return {"ok": False, "findings": ["refused: " + err]}, None
     err = apply_composition_patch(assembled, patch)
     if err:
-        return {"ok": False, "findings": ["refused: " + err]}
+        return {"ok": False, "findings": ["refused: " + err]}, None
     # The heal rides a real write only (`applied` non-empty): an unchanged
     # save writes no file for it to ride, and the validator warning still
     # names the state for the reader. Validated AFTER healing -- the document
@@ -2147,8 +2233,9 @@ def apply_composition(project, patch):
     # `staleNote` says why that reads as nineteen problems. `findings` is left
     # alone: it refuses the save, and a refusal is read item by item.
     warnings = _wg.collapse(warnings, assembled)
+    sharded = _mio.is_sharded(raw_index)
     if findings:
-        return {"ok": False, "findings": findings, "warnings": warnings}
+        return {"ok": False, "findings": findings, "warnings": warnings}, None
     if not applied:
         # A patch whose every field already holds the value it asks for. Writing it
         # would rewrite shards nobody edited — the exact renormalisation the
@@ -2157,39 +2244,14 @@ def apply_composition(project, patch):
                 "healed": [], "unchanged": True, "journaled": False,
                 "journaledWhy": "unchanged", "written": [],
                 "path": _output.posix_rel(mpath, project),
-                "layout": "sharded" if _mio.is_sharded(raw_index) else "single"}
-
+                "layout": "sharded" if sharded else "single"}, None
     touched = _touched_phase_ids(assembled, patch)
     # A healed phase joins the write: in the sharded layout its status lives
     # in its own shard, which is only written for touched ids.
     touched.update(r["target"] for r in healed)
-    sharded = _mio.is_sharded(raw_index)
-    # Hold the lock across read-patch-write. Checking it and then writing left a
-    # window an /audit run could start in; acquiring it closes that window with
-    # the same O_EXCL primitive the CLI uses.
-    lock = _acquire_write_lock(project, config,
-                               touched if sharded else None)
-    if lock.get("blocked"):
-        return lock["response"]
-    try:
-        written = _write_back(project, mpath, raw_index, assembled, patch,
-                              touched, [r["target"] for r in healed])
-    except ValueError as exc:
-        return {"ok": False, "findings": [str(exc)]}
-    finally:
-        said = _release_write_lock(lock)
-    # As in `write_config`: the patch landed, and the sentence says another
-    # session took the index lock while it was landing.
-    if said:
-        warnings = list(warnings) + [said]
-    out = {"ok": True, "findings": [], "warnings": warnings, "applied": applied,
-           "healed": healed,
-           "path": _output.posix_rel(mpath, project),
-           "layout": "sharded" if sharded else "single",
-           "written": written}
-    out.update(_journal(project, config, "composition.write",
-                        out["path"], applied + healed))
-    return out
+    return None, {"raw_index": raw_index, "assembled": assembled,
+                  "applied": applied, "healed": healed, "warnings": warnings,
+                  "touched": set(touched), "sharded": sharded}
 
 
 if __name__ == "__main__":
