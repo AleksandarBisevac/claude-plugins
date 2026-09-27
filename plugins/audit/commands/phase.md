@@ -490,7 +490,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" correct <phaseId>
 `<phaseId>-R<n>`, and journals `review.finding`. It refuses, before any write, a finding missing
 a field and a severity outside `low|med|high`. `resolve-finding` writes the fix task and its
 commit onto the finding — the task's recorded commit, or `--commit` for one it has not recorded —
-and journals `review.resolve`; a fix task with no commit has not landed, and is refused.
+and journals `review.resolve`; a fix task that is not `done`, or has no commit, has not landed,
+and is refused. `finding --findings-file PATH|-` records a whole review's findings in one write
+and is the form to use for more than one: the per-finding form takes the index lock per call, so
+run those calls one at a time. `finding` refuses a phase that has already landed (`mergedAt` set);
+on a phase signed off but not landed it records the finding and says it came after the verdict.
+`reopen` on a fix task takes its commit back off every finding that recorded it.
 `correct` rewrites the review's outcome or the phase's summary on a phase that already carries a
 verdict, and journals `review.correct`; it never touches the verdict or its `phase.verdict` row,
 and `correct --verdict` is refused as a flag the verb does not read.

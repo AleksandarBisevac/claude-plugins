@@ -60,6 +60,16 @@ that answer, and it is deliberately not `0`: the caller may proceed, and the
 release at the end of its work would hand back a lock the outer hold still needs.
 `held()` reads the first half of that, `took()` the second.
 
+WHO COUNTS AS "THIS RUN" DEPENDS ON HOW THE CLAIM WAS TAKEN. The answer used to be
+the session, because the flow it was built for is a lock taken by hand from a
+shell and several commands run under it - and that same answer let parallel tool
+calls of one session each re-enter a claim another of them had taken for its own
+write, so every one wrote over the others and reported success. A claim a process
+takes for its own write now carries a TOKEN, re-entered only by that process and
+by a child that inherits the token through `TOKEN_ENV`; every other process waits,
+session or not. A claim taken by hand is recorded `handedOff`, and its session
+still works under it, because that is the protocol the commands are written to.
+
 THE PID IN A CLAIM IS THE ONE WHOSE DEATH ENDS THE HOLD. A caller that takes the
 lock and gives it back before it returns is this process, so this process is what
 gets recorded; a command that exits with the lock still held says so with
@@ -128,6 +138,11 @@ E_LIVE, E_STALE, E_USAGE, E_ERR = 3, 4, 2, 1
 # caller that released on it would drop the lock out from under the hold that is
 # still using it.
 E_OURS = 5
+# The environment variable a holder's tokens travel to its children in: one token
+# per claim this process took, separated by spaces. A child inherits it through
+# the ordinary environment, which is what makes "a verb's own subprocess" a fact
+# the lock can check rather than a guess from a shared session id.
+TOKEN_ENV = "AUDIT_LOCK_TOKENS"
 
 
 # --- liveness -----------------------------------------------------------------
@@ -435,10 +450,37 @@ def held_by_us(info, session=None, pid=None):
     the orchestrator its own bookkeeping. The tie goes to "ours": matching too
     eagerly costs a missed denial against a stranger who happens to share an id,
     and failing to match breaks the run that is holding the lock correctly.
+
+    THAT RULE NOW COVERS ONLY A CLAIM TAKEN BY HAND, or one written before claims
+    carried a token. A claim a process took for its own write is re-entered by
+    its token alone - carried by the process and its children - and never across
+    a session a caller names as different.
     """
     if not isinstance(info, dict) or not info:
         return {"ours": False, "why": "no lock to compare against"}
     sid, ident = _identity(session, pid)
+    owner = info.get("sessionId")
+    other_session = bool(sid) and bool(owner) and str(owner) != str(sid)
+    token = info.get("token")
+    if token and not other_session and token in carried_tokens():
+        return {"ours": True, "why": "this process carries the holder's token"}
+    # A CLAIM A PROCESS TOOK FOR ITS OWN WRITE is that process's alone. Sharing
+    # the session is what parallel tool calls of one run look like, so letting
+    # the session back in here let each of them write over the others while
+    # every one reported success; its children carry the token instead.
+    if token and not info.get("handedOff"):
+        if str(info.get("pid")) == str(os.getpid()) and not other_session:
+            return {"ours": True, "why": "held by this process (pid %s)"
+                                         % (os.getpid(),)}
+        return {"ours": False,
+                "why": "held for its own write by pid %s%s - another process of "
+                       "one session is serialised, and only a child carrying the "
+                       "holder's token is let back in"
+                       % (info.get("pid"),
+                          " (sessionId %s)" % (owner,) if owner else "")}
+    # A claim taken BY HAND (`handedOff`), or one written before claims carried
+    # a token: the session is the holder, which is the take-then-run-the-verbs
+    # flow `reference/manifest-conventions.md` prescribes.
     if sid and info.get("sessionId") and str(info["sessionId"]) == str(sid):
         return {"ours": True,
                 "why": "held by this session (sessionId %s)" % (sid,)}
@@ -447,6 +489,28 @@ def held_by_us(info, session=None, pid=None):
     return {"ours": False,
             "why": "held by %s" % (info.get("sessionId") or info.get("pid")
                                    or info.get("hostname") or "someone else")}
+
+
+def carried_tokens():
+    """The tokens this process carries - its own takes and its parent's."""
+    return set((os.environ.get(TOKEN_ENV) or "").split())
+
+
+def _carry(token, keep):
+    """Add `token` to this process's environment, or take it out of it.
+
+    THE ENVIRONMENT IS THE CHANNEL ON PURPOSE: every subprocess a holder starts
+    inherits it without the caller doing anything, and a process that did not
+    descend from the holder cannot have it. The value names a claim, never a
+    person or a machine, and nothing prints it.
+    """
+    have = [t for t in (os.environ.get(TOKEN_ENV) or "").split() if t != token]
+    if keep:
+        have.append(token)
+    if have:
+        os.environ[TOKEN_ENV] = " ".join(have)
+    else:
+        os.environ.pop(TOKEN_ENV, None)
 
 
 def _identity(session, pid):
@@ -843,7 +907,11 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
 
     sid, _own = _identity(session, pid)
     holder = _holder_pid(pid, handed_off)
-    info = {"hostname": platform.node(), "note": note or name}
+    # `token` is what re-entry is decided by for a claim a process takes for its
+    # own write; `handedOff` marks the claim a command exits holding, which its
+    # session goes on working under (`held_by_us`).
+    info = {"hostname": platform.node(), "note": note or name,
+            "token": os.urandom(12).hex(), "handedOff": bool(handed_off)}
     if holder:
         info["pid"] = holder
     if sid:
@@ -859,6 +927,7 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         info["startedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         claim = _claim(path, info)
         if claim["taken"]:
+            _carry(info["token"], True)
             out("[audit-lock] acquired %s%s" % (name, "" if holder else
                                                 " (no pid recorded -- age rule applies)"))
             return 0
@@ -938,6 +1007,7 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         out("             Nothing here was replaced. `audit-lock.py status` "
             "says who holds it now.")
         return E_LIVE
+    _carry(info["token"], True)
     if not res["displaced"]:
         out("[audit-lock] acquired %s -- the claim this was to take over from "
             "was already gone, so nothing was displaced" % (name,))
@@ -1031,6 +1101,8 @@ def release(project, name, session=None, pid=None, force=False, out=print):
     except OSError as exc:
         out("[audit-lock] cannot remove %s: %s" % (path, exc))
         return E_ERR
+    if held.get("token"):
+        _carry(held["token"], False)
     out("[audit-lock] released %s" % name)
     return 0
 

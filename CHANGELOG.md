@@ -10,16 +10,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **A sign-off's review findings are recorded by a verb: `audit-task.py finding`,
   `resolve-finding` and `correct`.** The findings sign-off step 1 records were a hand edit of
   the phase shard: no lock, no journal row, and a severity outside the vocabulary written with
-  nothing to refuse it. `finding <phaseId> --severity low|med|high --file <path> --issue TEXT
-  --resolution TEXT` appends one in the schema's shape with the id allocated as
-  `<phaseId>-R<n>`, refuses a missing field or an unknown severity before any write, and
-  journals `review.finding`. `resolve-finding <findingId> --fix-task <taskId> [--commit <sha>]`
-  records the task and commit that fixed it - the task's own recorded commit, and a task with
-  none is refused - and journals `review.resolve`. `correct <phaseId> [--review-outcome TEXT]
-  [--summary TEXT]` rewrites a signed-off phase's text with a `review.correct` row and reads no
-  `--verdict`. Every writer of `review.outcome`, `signoff --review-outcome` included, ends it with
-  a `[findings: ...]` severity tally derived from `review.findings`, so a typed count cannot
-  disagree with the list. `reference/phase-signoff.md` step 1 names the verbs.
+  nothing to refuse it. `finding <phaseId> --findings-file PATH|-` records a review's whole
+  findings array in one write, and `--severity low|med|high --file <path> --issue TEXT
+  --resolution TEXT` records one; each finding takes the schema's shape with the id allocated
+  as `<phaseId>-R<n>`, a missing field or an unknown severity is refused before any write (a
+  batch whole), each finding journals `review.finding`, and a phase that has already landed is
+  refused. `resolve-finding <findingId> --fix-task <taskId> [--commit <sha>]` records the task
+  and commit that fixed it - the fix task must be done, and its own recorded commit is the one
+  written - and journals `review.resolve`; `reopen` of that task takes the commit back off the
+  finding. `correct <phaseId> [--review-outcome TEXT] [--summary TEXT]` rewrites a signed-off
+  phase's text with a `review.correct` row and reads no `--verdict`. Every writer of
+  `review.outcome`, `signoff --review-outcome` on both paths included, ends it with a
+  `[findings: ...]` severity tally derived from `review.findings`, whose last clause counts the
+  findings with a recorded fix commit and nothing else, so a typed count cannot disagree with
+  the list. A journal row shortens a long outcome from the middle, so the tally stays visible.
+  `reference/phase-signoff.md` step 1 names the verbs.
 - **Phases built on one branch sign off as a group: `audit-task.py signoff P1,P2 --branch <name>`.**
   Phases whose work sits on one combined branch record no `branch` or `baseRef`, so the single
   sign-off had no diff to review and `close-phase.py` no name to land. `--plan` prints the whole
@@ -447,6 +452,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **Parallel lock takers of one session are serialised.** The lock let any process of the
+  session holding it back in as "already yours", so parallel tool calls of one run each wrote
+  over the others' manifest write and every one reported success. A claim a process takes for
+  its own write now records a token that the process and its children carry
+  (`AUDIT_LOCK_TOKENS`), and only a carrier re-enters; any other process waits, session or not.
+  A lock taken by hand with `audit-lock.py acquire` is recorded `handedOff`, and its session
+  still works under it, as the documented take-then-run-the-verbs flow needs - so parallel calls
+  under a hand-held hold are still not serialised.
 - **The stable-code lint reaches every warning the phase-gate checks emit.** `_check_phase_gate`
   appended to the validator's `warnings` argument, a shape the walk behind `fc2` never followed,
   so that whole family could ship a warning with no code and stay green. It now returns its

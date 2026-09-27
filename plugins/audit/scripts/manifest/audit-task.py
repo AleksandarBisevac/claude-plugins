@@ -72,9 +72,9 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py uncouple --test <path> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py finding <phaseId> --severity low|med|high --file <path>
-                --issue TEXT|- --resolution TEXT|- [manifest]
-                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py finding <phaseId> (--severity low|med|high --file <path>
+                --issue TEXT|- --resolution TEXT|- | --findings-file PATH|-)
+                [manifest] [--project-dir DIR] [--takeover] [--json]
   audit-task.py resolve-finding <findingId> --fix-task <taskId>
                 [--commit <sha>] [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -335,7 +335,8 @@ import _commit_trail          # noqa: E402  (is a SHA still in this clone? A dow
 #                                            be a third answer to disagree with)
 import _branch                # noqa: E402  (parent_branch: which branch is the development one)
 import _journal_io            # noqa: E402  (read_all: the phase.add rows a side-branch
-                              # warning is read back from)
+                              # warning is read back from; MAX_VALUE_CHARS, the
+                              # per-value bound a long outcome is fitted into)
 import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
@@ -4119,6 +4120,47 @@ def _reopen_refusal(kind, node, phase, tid):
     return None
 
 
+def _unresolve_findings(assembled, tid):
+    """`(phase_ids, changes)` after taking `tid`'s commit off every review finding
+    that recorded it as its fix - mutating those phases' reviews in place.
+
+    A FINDING'S FIX COMMIT IS A COPY taken when `resolve-finding` ran, and the
+    tally counts the copies. A re-opened task has no close any more, so a finding
+    still naming its commit would go on reading as fixed by work the plan has just
+    undone. `fixTask` stays - the task is still the one meant to fix it - and the
+    resolution goes back to what the reviewer asked for.
+    """
+    phase_ids, changes = [], []
+    for ph in (assembled.get("phases") or []):
+        review = ph.get("review") if isinstance(ph, dict) else None
+        listed = review.get("findings") if isinstance(review, dict) else None
+        if not isinstance(listed, list):
+            continue
+        hits = [i for i, f in enumerate(listed) if isinstance(f, dict)
+                and f.get("fixTask") == tid and f.get("commit")]
+        if not hits:
+            continue
+        findings = list(listed)
+        for i in hits:
+            was = findings[i]
+            entry = dict(was)
+            entry.pop("commit", None)
+            asked = _FIXED_PREFIX.sub("", (was.get("resolution") or "").strip())
+            entry["resolution"] = asked or was.get("resolution")
+            findings[i] = entry
+            changes.append({"id": was.get("id"), "field": "commit",
+                            "from": was.get("commit"), "to": None})
+        was_outcome = review.get("outcome")
+        new_review = dict(review, findings=findings,
+                          outcome=outcome_with_tally(was_outcome, findings))
+        changes.append({"id": ph.get("id"), "field": "review.outcome",
+                        "from": _journal_outcome(was_outcome),
+                        "to": _journal_outcome(new_review["outcome"])})
+        ph["review"] = new_review
+        phase_ids.append(ph.get("id"))
+    return phase_ids, changes
+
+
 def _locked_reopen(args, project, config, mpath, tid, reason, out):
     try:
         raw_index = _mio.read_json(mpath)
@@ -4163,10 +4205,18 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
     for bug in bugs:
         put(bug, bug.get("id"), "status", "in_progress")
         put(bug, bug.get("id"), "fixedIn", None)
-    snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
+    unresolved, finding_changes = _unresolve_findings(assembled, tid)
+    changes.extend(finding_changes)
+    phase_ids = [phase_id] + [p for p in unresolved if p != phase_id]
+    snap = _snapshot([path for pid in phase_ids
+                      for path in _write_paths(project, mpath, raw_index, pid)])
     try:
-        written = _write_add(project, mpath, raw_index, assembled, phase_id, False,
-                             index_fields=("bugs",) if bugs else ())
+        written = []
+        for pid in phase_ids:
+            for rel in _write_add(project, mpath, raw_index, assembled, pid, False,
+                                  index_fields=("bugs",) if bugs else ()):
+                if rel not in written:
+                    written.append(rel)
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -4204,6 +4254,9 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
         % (tid, phase_id, reason))
     for bug in bugs:
         out("  bug %s back to in_progress, fixedIn cleared" % (bug.get("id"),))
+    for change in finding_changes:
+        if change["field"] == "commit":
+            out("  finding %s no longer records a fix commit" % (change["id"],))
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -6401,7 +6454,10 @@ def review_tally(findings):
     parts = ["%d %s" % (counts[sev], sev) for sev in reversed(vocab)]
     if outside:
         parts.append("%d outside %s" % (outside, "|".join(vocab)))
-    return "[findings: %d - %s; %d with a fix commit]" % (
+    # "RECORDED" IS THE WHOLE CLAUSE: it counts the findings `resolve-finding`
+    # wrote a fix task and commit onto, and says nothing about the rest - a fix
+    # a plan recorded in the resolution's prose is not one the fields hold.
+    return "[findings: %d - %s; %d with a recorded fix commit]" % (
         len(entries), ", ".join(parts), fixed)
 
 
@@ -6433,35 +6489,102 @@ def _next_finding_id(pid, review):
     return "%s-R%d" % (pid, max(taken) + 1)
 
 
-def _finding_refusal(args):
-    """`(finding, None)` - the four flagged fields - or `(None, refusal)`.
+def _finding_problems(entry):
+    """Every reason `entry` - `{severity, file, issue, resolution}` - is not a
+    finding, in field order; empty when it is one."""
+    missing = [field for field in _phases.FINDING_FIELDS
+               if field != "id" and not entry.get(field)]
+    if missing:
+        return ["missing %s -- the shape is {%s}, and a finding missing one is one "
+                "no later run, report or panel can act on"
+                % (", ".join(missing), ", ".join(_phases.FINDING_FIELDS))]
+    problems = []
+    if entry["severity"] not in _phases.FINDING_SEVERITY:
+        problems.append("severity %r is outside the vocabulary: %s, the words the "
+                        "reviewer is asked to return and the validator grades"
+                        % (entry["severity"], ", ".join(_phases.FINDING_SEVERITY)))
+    bad = _path_problems([entry["file"]])
+    if bad:
+        problems.append("file is the repository-relative path a fix task's "
+                        "`files` is built from, and %s" % ("; ".join(bad),))
+    return problems
 
-    EVERY MISSING FIELD IN ONE REFUSAL, `_files_refusal`'s rule. The severity is
+
+def _field_text(value):
+    """A finding field as the record holds it: stripped text, or `""`."""
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _read_findings_file(path, stream=None):
+    """`(entries, None)` off a JSON list of findings, or `(None, refusal)`.
+
+    A reviewer's own `id` is dropped rather than kept: the plan allocates its ids,
+    and a number the reviewer counted from one would collide across reviews.
+    """
+    try:
+        if path == "-":
+            text = (stream if stream is not None else sys.stdin).read()
+        else:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        data = json.loads(text)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        return None, ("--findings-file %s could not be read as JSON: %s" % (path, exc))
+    if not isinstance(data, list) or not data:
+        return None, ("--findings-file %s holds %s, not a non-empty JSON list of "
+                      "findings" % (path, "an empty list" if data == [] else
+                                    type(data).__name__))
+    entries, bad = [], []
+    for n, raw in enumerate(data, 1):
+        if not isinstance(raw, dict):
+            bad.append("entry %d is %s, not a finding object" % (n, type(raw).__name__))
+            continue
+        entry = dict((field, _field_text(raw.get(field)))
+                     for field in _phases.FINDING_FIELDS if field != "id")
+        bad.extend("entry %d: %s" % (n, why) for why in _finding_problems(entry))
+        entries.append(entry)
+    if bad:
+        return None, ("--findings-file %s is refused WHOLE, nothing written: %s"
+                      % (path, "; ".join(bad)))
+    return entries, None
+
+
+def _finding_refusal(args):
+    """`(findings, None)` - one from the four flags, or a batch off
+    `--findings-file` - or `(None, refusal)`.
+
+    EVERY PROBLEM IN ONE REFUSAL, `_files_refusal`'s rule. The severity is
     graded here and not by argparse `choices`: argparse answers on stderr before
     `main` buffers anything, so a `--json` caller would read no object at all.
     """
-    finding = {"severity": (args.severity or "").strip(),
-               "file": (args.file or "").strip(),
-               "issue": (args.issue or "").strip(),
-               "resolution": (args.resolution or "").strip()}
+    flagged = [flag for flag, value in (("--severity", args.severity),
+                                        ("--file", args.file),
+                                        ("--issue", args.issue),
+                                        ("--resolution", args.resolution))
+               if value is not None]
+    if args.findings_file is not None:
+        if flagged:
+            return None, ("[audit-task] --findings-file is the whole batch, so %s "
+                          "beside it would be a second finding nobody listed. "
+                          "Nothing written." % (", ".join(flagged),))
+        entries, refusal = _read_findings_file(args.findings_file)
+        return entries, ("[audit-task] " + refusal) if refusal else None
+    finding = {"severity": _field_text(args.severity),
+               "file": _field_text(args.file),
+               "issue": _field_text(args.issue),
+               "resolution": _field_text(args.resolution)}
     missing = ["--%s" % field for field in _phases.FINDING_FIELDS
                if field != "id" and not finding[field]]
     if missing:
-        return None, ("[audit-task] finding needs %s -- the shape is {%s}, and a "
-                      "finding missing one is one no later run, report or panel "
-                      "can act on. Nothing written."
-                      % (", ".join(missing), ", ".join(_phases.FINDING_FIELDS)))
-    if finding["severity"] not in _phases.FINDING_SEVERITY:
-        return None, ("[audit-task] --severity %r is outside the vocabulary: %s, "
-                      "the words the reviewer is asked to return and the validator "
-                      "grades. Nothing written."
-                      % (finding["severity"], ", ".join(_phases.FINDING_SEVERITY)))
-    bad = _path_problems([finding["file"]])
-    if bad:
-        return None, ("[audit-task] --file is the repository-relative path a fix "
-                      "task's `files` is built from, and %s. Nothing written."
-                      % ("; ".join(bad),))
-    return finding, None
+        return None, ("[audit-task] finding needs %s (or --findings-file for a "
+                      "batch) -- the shape is {%s}, and a finding missing one is "
+                      "one no later run, report or panel can act on. Nothing "
+                      "written." % (", ".join(missing),
+                                    ", ".join(_phases.FINDING_FIELDS)))
+    problems = _finding_problems(finding)
+    if problems:
+        return None, "[audit-task] --%s. Nothing written." % ("; --".join(problems),)
+    return [finding], None
 
 
 def _review_target(assembled, pid, verb):
@@ -6489,6 +6612,37 @@ def _review_target(assembled, pid, verb):
     return phase, review, None
 
 
+def _journal_outcome(text):
+    """`text` as a journal row holds it: shortened from the MIDDLE past the row's
+    per-value bound, keeping a trailing tally whole.
+
+    The row's own bound cuts from the end, and the tally sits at the end - so a
+    long outcome's before and after read identically in the trail while the one
+    part that changed was cut off.
+    """
+    limit = _journal_io.MAX_VALUE_CHARS
+    if not isinstance(text, str) or len(text) <= limit:
+        return text
+    gap = " ... "
+    match = _TALLY_TAIL.search(text)
+    keep = text[match.start():].strip() if match else text[-(limit // 2):]
+    room = limit - len(keep) - len(gap)
+    if room <= 0:
+        return keep[-limit:]
+    return text[:room].rstrip() + gap + keep
+
+
+def _landed_refusal(phase, pid):
+    """Why `phase` is a closed record no finding may be added to, or None."""
+    merged = phase.get("mergedAt")
+    if not merged:
+        return None
+    return ("phase %s landed at %s -- its review is the record the merge closed, "
+            "and a finding added now would sit under a verdict that never saw "
+            "it. Re-open the review with /audit:review %s, or report it as a bug "
+            "(/audit:bug add)" % (pid, merged, pid))
+
+
 def cmd_finding(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -6498,30 +6652,38 @@ def cmd_finding(args, out):
     if not pid:
         out("[audit-task] finding needs a phase id")
         return E_USAGE
-    finding, refusal = _finding_refusal(args)
+    findings, refusal = _finding_refusal(args)
     if refusal:
         out(refusal)
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_finding(
-                           args, project, config, mpath, pid, finding, out))
+                           args, project, config, mpath, pid, findings, out))
 
 
-def _locked_finding(args, project, config, mpath, pid, finding, out):
+def _locked_finding(args, project, config, mpath, pid, findings, out):
     plan = _read_plan(mpath, out)
     if isinstance(plan, int):
         return plan
     raw_index, assembled, vm = plan
     phase, review, refusal = _review_target(assembled, pid, "finding")
+    refusal = refusal or (_landed_refusal(phase, pid) if phase else None)
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
-    fid = _next_finding_id(pid, review)
-    record = dict([("id", fid)] + [(field, finding[field])
-                                   for field in _phases.FINDING_FIELDS
-                                   if field != "id"])
+    # A VERDICT ALREADY ON RECORD is said, not refused: a phase signed off and
+    # still awaiting its merge can still take a fix, and the finding that asks
+    # for one arrived after the verdict - which the row has to say.
+    verdict = review.get("status") if _mio.signoff_recorded(phase) else None
+    after = " (after its verdict %s)" % (verdict,) if verdict else ""
+    records = []
+    for finding in findings:
+        fid = _next_finding_id(pid, review)
+        records.append(dict([("id", fid)] + [(field, finding[field])
+                                             for field in _phases.FINDING_FIELDS
+                                             if field != "id"]))
+        review["findings"] = list(review.get("findings") or []) + [records[-1]]
     was_outcome = review.get("outcome")
-    review["findings"] = list(review.get("findings") or []) + [record]
     review["outcome"] = outcome_with_tally(was_outcome, review["findings"])
     phase["review"] = review
     wrote = _write_plan(project, mpath, raw_index, assembled, vm, [pid],
@@ -6529,24 +6691,35 @@ def _locked_finding(args, project, config, mpath, pid, finding, out):
     if isinstance(wrote, int):
         return wrote
     written, written_manifest, warnings = wrote
-    changes = [{"id": fid, "field": "review.findings", "from": None,
-                "to": "%s %s" % (record["severity"], record["file"])},
-               {"id": pid, "field": "review.outcome", "from": was_outcome,
-                "to": review["outcome"]}]
-    jres = _journal_row(project, config, mpath, "review.finding",
-                        "%s finding %s (%s) in %s: %s"
-                        % (pid, fid, record["severity"], record["file"],
-                           record["issue"]),
-                        {"phaseId": pid, "changes": changes})
+    outcome_change = {"id": pid, "field": "review.outcome",
+                      "from": _journal_outcome(was_outcome),
+                      "to": _journal_outcome(review["outcome"])}
+    # ONE ROW PER FINDING, each attesting its own; the outcome moved once, so
+    # the last row carries that change.
+    rows = []
+    for n, record in enumerate(records, 1):
+        changes = [{"id": record["id"], "field": "review.findings", "from": None,
+                    "to": "%s %s" % (record["severity"], record["file"])}]
+        if n == len(records):
+            changes.append(outcome_change)
+        rows.append(_journal_row(project, config, mpath, "review.finding",
+                                 "%s finding %s (%s) in %s%s: %s"
+                                 % (pid, record["id"], record["severity"],
+                                    record["file"], after, record["issue"]),
+                                 {"phaseId": pid, "changes": changes}))
+    jres = next((r for r in rows if not r.get("journaled")), rows[-1])
     index_note = _index_dirty_note(written, mpath, project, pid)
     if args.as_json:
-        out(_json_tail({"ok": True, "id": fid, "phase": pid,
-                                "finding": record, "outcome": review["outcome"],
-                                "changes": changes, "written": written},
+        out(_json_tail({"ok": True, "id": records[-1]["id"], "phase": pid,
+                        "finding": records[-1], "findings": records,
+                        "verdictOnRecord": verdict,
+                        "outcome": review["outcome"], "written": written},
                        args, jres, warnings, written_manifest, index_note))
         return 0
-    out("[audit-task] %s recorded on %s (%s, %s): %s"
-        % (fid, pid, record["severity"], record["file"], record["issue"]))
+    for record in records:
+        out("[audit-task] %s recorded on %s%s (%s, %s): %s"
+            % (record["id"], pid, after, record["severity"], record["file"],
+               record["issue"]))
     out("  review.outcome: %s" % (review["outcome"],))
     _report_tail(out, jres, "review.finding", warnings, written_manifest, written,
                  index_note)
@@ -6596,7 +6769,17 @@ def _finding_hits(assembled, fid):
 
 
 def _fix_commit(task, commit):
-    """`(sha, None)` - the fix's commit - or `(None, refusal)`."""
+    """`(sha, None)` - the fix's commit - or `(None, refusal)`.
+
+    THE TASK MUST BE DONE, whatever `--commit` says. A SHA typed for a task
+    nobody closed is a claim about work the plan does not record as finished;
+    `--commit` only supplies the SHA a done task did not record.
+    """
+    if task.get("status") != "done":
+        return None, ("%s is %s, not done -- the fix has not landed, and a commit "
+                      "passed for it would record a fix the plan does not hold. "
+                      "Close it with `audit-task.py done %s --commit <sha>` first"
+                      % (task.get("id"), task.get("status"), task.get("id")))
     recorded = (task.get("commit") or "").strip()
     if commit and recorded and not (recorded.lower().startswith(commit.lower())
                                     or commit.lower().startswith(recorded.lower())):
@@ -6668,8 +6851,9 @@ def _locked_resolve_finding(args, project, config, mpath, fid, fix, commit, out)
     written, written_manifest, warnings = wrote
     changes = [{"id": fid, "field": "resolution", "from": was.get("resolution"),
                 "to": entry["resolution"]},
-               {"id": pid, "field": "review.outcome", "from": was_outcome,
-                "to": review["outcome"]}]
+               {"id": pid, "field": "review.outcome",
+                "from": _journal_outcome(was_outcome),
+                "to": _journal_outcome(review["outcome"])}]
     jres = _journal_row(project, config, mpath, "review.resolve",
                         "%s resolved by %s in %s" % (fid, fix, sha[:12]),
                         {"phaseId": pid, "taskId": fix, "commit": sha,
@@ -6741,7 +6925,8 @@ def _locked_correct(args, project, config, mpath, pid, out):
         new = outcome_with_tally(args.review_outcome.strip(), review.get("findings"))
         if new != review.get("outcome"):
             changes.append({"id": pid, "field": "review.outcome",
-                            "from": review.get("outcome"), "to": new})
+                            "from": _journal_outcome(review.get("outcome")),
+                            "to": _journal_outcome(new)})
             review["outcome"] = new
     if args.summary is not None and args.summary.strip() != phase.get("summary"):
         changes.append({"id": pid, "field": "summary", "from": phase.get("summary"),
@@ -8297,7 +8482,7 @@ VERB_FLAGS = {
     "uncouple": ("test",),
     # `finding` takes a finding's four flagged fields, one flag per field and
     # spelled as the field; the id is allocated, never passed.
-    "finding": ("severity", "file", "issue", "resolution"),
+    "finding": ("severity", "file", "issue", "resolution", "findings_file"),
     # `resolve-finding` names the fix task and, when it has not recorded one,
     # the commit - `done`'s `--commit`, the same SHA in the same shape.
     "resolve-finding": ("fix_task", "commit"),
@@ -8500,6 +8685,12 @@ def build_parser():
                         "path:lines")
     p.add_argument("--issue", default=None, metavar="TEXT", help=_PROSE_HELP)
     p.add_argument("--resolution", default=None, metavar="TEXT", help=_PROSE_HELP)
+    # ...or the whole batch a review returned: a JSON list of those four fields,
+    # read off a file or `-` (stdin), written under ONE lock in ONE write.
+    p.add_argument("--findings-file", dest="findings_file", default=None,
+                   metavar="PATH",
+                   help="finding: a JSON list of {severity, file, issue, "
+                        "resolution}, or - for stdin; recorded in one write")
     # `resolve-finding` only. The task whose commit settles the finding.
     p.add_argument("--fix-task", dest="fix_task", default=None, metavar="TASK",
                    help="resolve-finding: the task whose commit settles it")
