@@ -1659,6 +1659,11 @@ def _baseline_unit_cases(check):
         "a pytest exit 5 counting an error and no case run": (
             {"code": 5, "problem": None, "text": "=== 1 error in 0.01s ===\n"},
             ["pytest", "tests/test_new.py"]),
+        "pytest's red run, then the stub's `no tests ran`, behind exit 5": (
+            {"code": 5, "problem": None,
+             "text": "FAILED tests/test_old.py::test_value_is_two - assert 1 == 2\n"
+                     "==== 1 failed in 0.01s ====\n==== no tests ran in 0.00s ====\n"},
+            ["sh", "-c", "pytest tests/test_old.py; pytest tests/test_new.py"]),
         "exit 5 with no tally at all, saying no tests ran": (
             {"code": 5, "problem": None, "text": "no tests ran\n"}, [py, "t.py"]),
     }
@@ -1678,6 +1683,17 @@ def _baseline_unit_cases(check):
                   for k in list(shapes) + ["not made"] + list(reds)))
     summed = M._unittest_tally("Ran 1 test in 0.0s\n\nFAILED (failures=1)\n"
                                "Ran 2 tests in 0.0s\n\nOK\n")
+    two_fix = ("FAILED tests/test_new.py::test_always - assert False\n"
+               "==== 1 failed in 0.01s ====\n==== 1 passed in 0.01s ====\n")
+    p2 = M.fix_problem({"code": 0, "problem": None, "text": two_fix},
+                       ["sh", "-c", "pytest tests/test_new.py; pytest tests/test_b.py"],
+                       {"runner": "pytest", "collected": 1, "failed": 1})
+    p2_tally = M.read_tally(two_fix, None)
+    check("sr171 pytest's tally sums every summary line, so a fix run whose first "
+          "invocation still fails is not passing because its last one passed: %r %r"
+          % (p2, p2_tally),
+          p2 is not None and "do not all pass" in p2
+          and p2_tally["failed"] == 1 and p2_tally["collected"] == 2)
     check("sr163 unittest's tally counts every `Ran N` line it counts the FAILED "
           "lines of, so two runs read as one tally and not as the last: %r"
           % (summed,), summed["collected"] == 3 and summed["failed"] == 1)
@@ -2015,6 +2031,112 @@ def _reach_repo(prefix, new_text=_NEW_TRIVIAL, old_text=_OLD_RED, declare_old=Fa
     return root, man
 
 
+def _tree_repo(prefix, head, wt, declared, moves=()):
+    """HEAD holds `head` (`{rel: text}`) beside the seeded src/mine.py; the
+    working tree fixes mine.py, `git mv`s each `(old, new)` of `moves` and then
+    writes `wt`; the task declares src/mine.py and `declared`."""
+    root = _seeded_repo(prefix)
+
+    def put(rel, text):
+        path = os.path.join(root, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        _write(path, text)
+    for rel, text in head.items():
+        put(rel, text)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "at HEAD")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    for old, new in moves:
+        _git(root, "mv", old, new)
+    for rel, text in wt.items():
+        put(rel, text)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py"] + list(declared)
+    task["tests"] = {"mode": "tdd", "add": ["%s: v is two" % (declared[0],)]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _moved_cases(check):
+    py = sys.executable
+    unit = [py, "-m", "unittest", "-v"]
+    head = {"tests/__init__.py": "", "tests/test_old.py": _OLD_RED}
+    move = [("tests/test_old.py", "tests/test_moved.py")]
+    red_shapes = [
+        ("sr164", "HEAD's red file `git mv`d, unchanged, the new path declared",
+         head, {}, ["tests/test_moved.py"], move, "tests/test_moved.py"),
+        ("sr165", "the same rename with both paths declared", head, {},
+         ["tests/test_moved.py", "tests/test_old.py"], move, "tests/test_moved.py"),
+        ("sr166", "a verbatim copy of HEAD's red class in a new declared file", head,
+         {"tests/test_new.py": _OLD_RED}, ["tests/test_new.py"], (),
+         "tests/test_new.py"),
+    ]
+    for cid, how, head_files, wt, declared, moves, target in red_shapes:
+        root, man = _tree_repo("stamp-red-%s-" % (cid,), head_files, wt, declared,
+                               moves)
+        code, got = _red(root, man, unit + [target])
+        basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+        check("%s %s does not get HEAD's red credited - an ast-identical def under "
+              "the same class and name anywhere in HEAD's test files is HEAD's "
+              "case: exit=%r %s" % (cid, how, code, basis[:400]),
+              code == M.E_CANNOT_PROVE and "HEAD's tests/test_old.py" in basis)
+    edited = _OLD_RED.replace("assertEqual(mine.v, 2)", "assertEqual(2, mine.v)")
+    root, man = _tree_repo("stamp-red-sr167-", head, {"tests/test_moved.py": edited},
+                           ["tests/test_moved.py"], move)
+    code, got = _red(root, man, unit + ["tests/test_moved.py"])
+    basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+    check("sr167 THE ALLOW CASE: a case EDITED in a renamed file is the task's and "
+          "proves: exit=%r %s" % (code, basis[:400]),
+          code == M.E_PROVED and "test_value_is_two" in basis)
+    legacy = "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
+                        "class Old(unittest.TestCase):",
+                        "    def test_value_is_two(self):",
+                        "        self.assertEqual(mine.v, 2)"]) + "\n"
+    reach = "\n".join(["import os, sys, unittest",
+                       "sys.path.insert(0, os.path.join(os.path.dirname("
+                       "os.path.abspath(__file__)), '..', 'legacy'))",
+                       "from test_old import Old", "class New(unittest.TestCase):",
+                       "    def test_new(self):", "        self.assertTrue(True)"]) + "\n"
+    decoy = "\n".join(["import unittest", "class Old(unittest.TestCase):",
+                       "    def test_value_is_two(self):",
+                       "        self.assertTrue(True)"]) + "\n"
+    root, man = _tree_repo("stamp-red-sr168-",
+                           {"tests/__init__.py": "", "legacy/test_old.py": legacy},
+                           {"tests/test_new.py": reach, "tests/test_old.py": decoy},
+                           ["tests/test_new.py", "tests/test_old.py"])
+    code, got = _red(root, man, unit + ["tests/test_new.py"])
+    basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+    check("sr168 a module name whose trailing components also name an undeclared "
+          "file HEAD has (legacy/test_old.py) is not mapped to the declared one that "
+          "shares them: exit=%r %s" % (code, basis[:400]),
+          code == M.E_CANNOT_PROVE and "no declared test file" in basis)
+    rebinds = [
+        ("sr169", "a class-body assignment after the def rebinds the case to HEAD's "
+         "function", "\n".join([
+             "import unittest", "from tests import test_old",
+             "class New(unittest.TestCase):", "    def test_value_is_two(self):",
+             "        self.assertTrue(True)",
+             "    test_value_is_two = test_old.Old.test_value_is_two"]) + "\n"),
+        ("sr170", "a module-level `New = type(...)` after class New rebinds the class",
+         "\n".join([
+             "import unittest", "from tests import test_old",
+             "class New(unittest.TestCase):", "    def test_value_is_two(self):",
+             "        self.assertTrue(True)",
+             "New = type('New', (test_old.Old,), {})"]) + "\n"),
+    ]
+    for cid, how, text in rebinds:
+        root, man = _tree_repo("stamp-red-%s-" % (cid,), head,
+                               {"tests/test_new.py": text}, ["tests/test_new.py"])
+        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+        check("%s %s - the def is not what runs, so it is not credited: exit=%r %s"
+              % (cid, how, code, basis[:400]),
+              code == M.E_CANNOT_PROVE and "does not define it" in basis)
+
+
 def _reach_cases(check):
     py = sys.executable
     unit = [py, "-m", "unittest", "-v"]
@@ -2170,6 +2292,42 @@ def _located_cases(check):
     }
     got = dict((k, (M.case_site(f, runner, declared, cmd, (root,)) or (None,))[0])
                for k, (f, runner, cmd, declared, _w) in rows.items())
+    shared = ["legacy/test_new.py", "tests/test_old.py"]
+    tails = {
+        "a tail an undeclared HEAD file shares": M.case_site(
+            {"module": "test_new", "qual": ["test_new", "New"]}, "unittest", tests,
+            unit, (root,), shared),
+        "the full module, whatever HEAD shares": M.case_site(
+            {"module": "tests.test_new", "qual": ["tests", "test_new", "New"]},
+            "unittest", tests, unit, (root,), shared),
+        "a tail no other HEAD file shares": M.case_site(
+            {"module": "test_new", "qual": ["test_new", "New"]}, "unittest", tests,
+            unit, (root,), ["tests/test_old.py"]),
+        "a nested class, the module the longest declared prefix": M.case_site(
+            {"module": "tests.test_new.Outer",
+             "qual": ["tests", "test_new", "Outer", "Inner"], "id": "test_x"},
+            "unittest", tests, unit, (root,), ()),
+    }
+    tails = dict((k, v and (v[0], v[1])) for k, v in tails.items())
+    walk_root = _harness.fixture_root("stamp-walk-")
+    for rel in (".git/objects/x", "legacy/test_new.py", "top.py"):
+        path = os.path.join(walk_root, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        _write(path, "")
+    walked = sorted(M._throwaway_files(walk_root))
+    check("sr174 the throwaway's own files are listed for that refusal - relative, "
+          "`/`-separated, `.git` left out: %r" % (walked,),
+          walked == ["legacy/test_new.py", "top.py"])
+    check("sr173 a trailing-component match is refused when an undeclared file in "
+          "HEAD's tree shares the same tail, an exact module is not, and a nested "
+          "class keeps its chain: %r" % (tails,),
+          tails == {"a tail an undeclared HEAD file shares": None,
+                    "the full module, whatever HEAD shares": (
+                        "tests/test_new.py", ["New"]),
+                    "a tail no other HEAD file shares": ("tests/test_new.py", ["New"]),
+                    "a nested class, the module the longest declared prefix": (
+                        "tests/test_new.py", ["Outer", "Inner"])})
     check("sr151 a failure is located in the ONE declared test file the runner's "
           "location names - a pytest node id's path or unittest -v's module, matched "
           "by trailing components, or the one declared script a house or `__main__` "
@@ -2186,11 +2344,12 @@ def _located_cases(check):
                           "        self.assertEqual(1, 2)"]) + "\n"
     both = ["tests/test_new.py", "tests/test_old.py"]
 
-    def credit(failure, runner, wt_old=old_head, head_old=old_head):
+    def credit(failure, runner, wt_old=old_head, head_old=old_head, wt_new=new_text):
+        defs = (None if head_old is None
+                else M.test_definitions({"tests/test_old.py": head_old}))
         scope = {"tests": both, "cmd": unit, "roots": (root,),
-                 "wt": {"tests/test_new.py": new_text, "tests/test_old.py": wt_old},
-                 "head": {"tests/test_old.py": head_old},
-                 "new": set(["tests/test_new.py"])}
+                 "wt": {"tests/test_new.py": wt_new, "tests/test_old.py": wt_old},
+                 "head_defs": defs, "others": ()}
         return M.credit_problem(failure, runner, scope)
 
     def ut(module, cls, name="test_value_is_two"):
@@ -2220,18 +2379,39 @@ def _located_cases(check):
             wt_old=old_head + "    def test_added(self):\n        self.fail()\n"),
         "a declared existing file whose HEAD copy could not be read": credit(
             ut("tests.test_old", "Old"), "unittest", head_old=None),
+        "HEAD's case copied verbatim into the new file": credit(
+            ut("tests.test_new", "Old"), "unittest", wt_new=old_head),
+        "a def rebound by an import alias after it": credit(
+            pt("tests/test_new.py::test_mine"), "pytest",
+            wt_new=new_text + "from os import sep as test_mine\n"),
+        "a def rebound by an annotated assignment after it": credit(
+            pt("tests/test_new.py::test_mine"), "pytest",
+            wt_new=new_text + "test_mine: object = None\n"),
+        "a def deleted after it": credit(
+            pt("tests/test_new.py::test_mine"), "pytest",
+            wt_new=new_text + "del test_mine\n"),
+        "a class rebound by an assignment after it": credit(
+            pt("tests/test_new.py::Other::test_value_is_two"), "pytest",
+            wt_new=new_text + "Other = test_old.Old\n"),
+        "a def rebound BEFORE it, the def the last binding": credit(
+            pt("tests/test_new.py::test_mine"), "pytest",
+            wt_new="test_mine = None\n" + new_text),
     }
     credited = ("the unrelated class's own case",
                 "a parametrized module-level case of the new file",
                 "HEAD's case edited in a declared existing file",
-                "a case added to a declared existing file")
+                "a case added to a declared existing file",
+                "a def rebound BEFORE it, the def the last binding")
     check("sr154 a located case is the task's only when the class the runner names "
-          "holds its def (read by ast - a def in a string or in another class is not "
-          "it) and, in a file HEAD has, that def is new or changed: %r" % (credits,),
+          "holds its def as its last binding (read by ast - a def in a string, in "
+          "another class, or rebound after it is not it) and no HEAD test file holds "
+          "an identical def under that class and name: %r" % (credits,),
           all(credits[k] is None for k in credited)
           and all(credits[k] for k in credits if k not in credited)
-          and "unchanged" in credits["HEAD's case, unchanged, in a declared existing "
-                                     "file"])
+          and "HEAD's" in credits["HEAD's case, unchanged, in a declared existing "
+                                   "file"]
+          and "HEAD's tests/test_old.py" in credits[
+              "HEAD's case copied verbatim into the new file"])
     gone = _harness.fixture_root("stamp-deadline-")
     late, copied = M._isolated_run(gone, os.path.join(gone, "no-tree"), [], [py, "-c", ""],
                                    time.time() + 0.5, 30, {}, gone, "late")
@@ -2360,6 +2540,7 @@ def _cases(check):
     _harness.stage(check, "sr-every-run-isolated", _every_run_cases)
     _harness.stage(check, "sr-reach", _reach_cases)
     _harness.stage(check, "sr-located", _located_cases)
+    _harness.stage(check, "sr-moved", _moved_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

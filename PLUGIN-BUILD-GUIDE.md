@@ -3679,7 +3679,9 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
    must be GREEN - exit 0 with no failure counted, or an exit 5 whose ONE runner's tally counts no
    case run and no failure (a command naming only new files gives it, and pytest gives it when `-k`
    deselects every case); the words "no tests ran" are never read alone, since a red run followed by
-   an empty one prints them too, and unittest's tally counts every `Ran N` line. Anything else -
+   an empty one prints them too, and the unittest and pytest tallies count every `Ran N` line and
+   every summary line - so the fix run of step 3 is judged by all its invocations as well, not by
+   its last. Anything else -
    already red, stopped, unreadable - is `could-not-prove` with the instruction to narrow the
    command to the task's cases;
 2. the task's run - its test files on HEAD's implementation - is red on an assertion;
@@ -3688,12 +3690,19 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
 4. then a failure of step 2 is the task's own - a new case or an edited one - only where the runner
    locates it in ONE declared test file (`case_site()`: a pytest node id's path or unittest `-v`'s
    module, matched by trailing components because both print them relative to their own top
-   directory, refused when two declared files match; or the one declared script a `__main__` or
-   house run executes, spelled `./`, absolute or `-m`), the class the runner names there holds its
-   `def` (`_definition()`, read by ast - a def in a string, in another class or merely inherited is
-   not it), and, in a file HEAD already has, that definition is new or changed against HEAD's,
-   compared as ast (`credit_problem()`). A HEAD case a new file imports, inherits or loads is
-   therefore not credited unless the task edited it, from a declared file or not; a runner that
+   directory, refused when two declared files match or when an undeclared file in HEAD's tree or
+   the throwaway shares the tail; the longest module prefix naming a declared file, so a nested
+   class keeps its chain; or the one declared script a `__main__` or house run executes, spelled
+   `./`, absolute or `-m`), the class the runner names there holds its `def` (`_definition()`,
+   read by ast as each name's LAST top-level binding in its body - so an assignment, import alias
+   or `del` after the def, in the class or of the class name at module level, means the def is not
+   what runs; a def in a string, in another class or merely inherited is not it), and no test file
+   anywhere in HEAD's tree (`head_tree()`: `git ls-tree -r` filtered by `_is_test_path()`, read
+   by one `git cat-file --batch` under the deadline) holds an ast-identical def under the same
+   class chain and name (`credit_problem()`). That is keyed by the definition, not by the path, so
+   a case HEAD has is refused wherever it lands - imported, inherited or loaded by a new file,
+   carried by a `git mv`, or copied verbatim. A HEAD case is therefore not credited unless the task
+   edited its definition; if HEAD's tree cannot be read no case is credited; a runner that
    locates no failure is `could-not-prove`, with each case's reason; and `--case` must name a
    credited one. That rests on two
    conditions, and holds only while both do: the runs differ only in the files laid over, which the
@@ -3713,7 +3722,11 @@ the inherited one from it; any edit to a HEAD case's definition, a docstring inc
 the task's case, so an edit that changes nothing the case asserts still lets a new file that reaches
 it be credited with HEAD's red; and the other direction - an unchanged HEAD case the task turns red
 through something else in its file (a helper, `setUp`, a constant) is not credited, and needs its
-definition touched or a case of its own.
+definition touched or a case of its own. A copy of a HEAD case under a renamed class or case name is
+a new definition and is credited; a HEAD case in a file `_is_test_path()` does not call a test file
+is not in the set a copy is compared against; a rebinding nested inside an `if`, `try` or loop is
+not read; and a trailing-component match also refuses a legitimate case when an unrelated file
+elsewhere in the tree shares its basename - name the file by its path to prove it.
 
 Seven review rounds each found another way to credit a case past a RED baseline by reading two runs'
 output - a relabelled case, a label carrying a per-run value, a quiet stop, a failfast set in the

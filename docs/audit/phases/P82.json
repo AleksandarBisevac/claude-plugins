@@ -750,6 +750,53 @@
       "verifiedBy": [
         "stamp-verification selftest 143/143 plus probe/mutations.py 60/60 red on an export; full sweep"
       ]
+    },
+    {
+      "id": "P82.13-fye",
+      "title": "red-first compares a located case against every HEAD test definition, sums pytest tallies, refuses an ambiguous module tail, and treats a later rebinding as not defined here",
+      "status": "in_progress",
+      "description": "Round-11 review (review-P82k.json; probe26, probe26b). (1) The HEAD comparison is keyed by path, so a renamed or copied case escapes it (R1 git mv unchanged, R1b both paths declared, R2 a verbatim copy into a new file). Compare the located definition against every HEAD test file (git ls-tree -r HEAD filtered by _is_test_path, read inside the deadline): an ast-identical def with the same class chain and name anywhere at HEAD is HEAD's case, could-not-prove with that reason. (2) _pytest_tally reads only the last summary line; sum every summary line as _unittest_tally does (P1 baseline '1 failed' then 'no tests ran' exit 5 is not green; P2 fix run '1 failed' then '1 passed' is not a pass). (3) The trailing-component match maps a module tail to a declared file even when an undeclared file in HEAD's tree or the throwaway has the same tail (A1); refuse it as ambiguous then. (4) _definition claims the last binding wins but only sees def/class: a later assignment, import alias or rebinding of the name in the same body (B1 class-body assignment, B2 module-level type() rebinding of the class) means not defined here. Correct the docstring. R1, R1b, R2, P1, P2, A1, B1, B2 red cases proved first; D, sr150, sr138, sr149 and an edited HEAD case stay allow cases; a new file's own case in a renamed-and-edited file still proves. The four documents state the rule.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a HEAD red test file renamed with git mv, unchanged, gets its case credited"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T13:29:51Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

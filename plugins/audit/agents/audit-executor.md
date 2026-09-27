@@ -116,10 +116,11 @@ Hard rules (non-negotiable):
   or an exit 5 whose one runner's tally counts nothing run and nothing failed); then a
   failure of your run counts only where the runner locates it in one of your declared
   test files (a pytest node id, unittest `-v`'s module and class, a run of exactly one
-  declared file), the class it names there defines the case, and — in a file HEAD already
-  has — that definition is new or changed against HEAD's. A HEAD case your new file
-  imports, inherits or loads, from any file, declared or not, is not yours unless you
-  edited it; and the fix run (your test files on the working tree's code) must turn each
+  declared file), the class it names there defines the case (its last binding there, not
+  an assignment or import after it), and no test file anywhere in HEAD's tree holds an
+  identical def under the same class and name. A HEAD case your new file imports,
+  inherits or loads, a file you moved, or a case you copied is not yours unless you
+  edited its definition; and the fix run (your test files on the working tree's code) must turn each
   one green. A runner that locates no failure is `could-not-prove`. Every run gets a fresh home and temp directory of its own. If HEAD's own tests are already red under your command, the answer
   is `could-not-prove`: narrow the command to the task's cases (one test file, one `-k`
   selection) and run it again. `--case` narrows to the ids or labels you name, and must
