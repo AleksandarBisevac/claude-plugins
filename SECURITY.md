@@ -256,19 +256,22 @@ base refused:
   LATER command; a `core.hooksPath` directory whose name does not say it holds
   hooks; a file written by another program (`dd`, `cp`, an editor), and that
   includes a pass-through filter other than `tee` (`cat`) writing what it was piped
-  through its own redirect after the pipe; a receiving loop that reads each line
-  into a variable and `eval`s it; a phrase assembled at run time (a `printf`
+  through its own redirect after the pipe; a receiving group or loop that reads a
+  line into a variable and `eval`s it; a phrase assembled at run time (a `printf`
   format, a variable's value); and output that reaches a shell through a
   descriptor or a named pipe;
+- inside a `$(…)` body, a `)` in a comment or in a heredoc body is read as the
+  substitution's close, so the rest of the body is not read;
 - open and tracked as BUG-12 — shapes the widened reading's own review measured as
   not read, each waiting on a fix rather than accepted:
-  - an interpreter handed the stdin marker `-`, an option this reading does not
-    know to take a value whose separate value is script-named, or an operand
-    carrying an expansion, is read as running a script file, so a here-string fed
-    to it is graded as that script's input although the interpreter still reads
-    its program from stdin (`guard-secrets-read`);
+  - an interpreter handed the stdin marker `-` followed by a script-named word or
+    by a word spelled as its own inline flag, an option this reading does not know
+    to take a value whose separate value is script-named, or an operand carrying an
+    expansion that ends in a script extension, is read as running a script file, so
+    a here-string fed to it is graded as that script's input although the
+    interpreter still reads its program from stdin (`guard-secrets-read`);
   - a `case` arm whose body holds the word `in` as an ordinary argument before a
-    parenthesised group piped into a shell: the group is lost, so its pipe is not
+    parenthesised group: the group is lost, so its pipe or redirect is not
     followed;
   - the shapes the narrowings of this reading dropped: a process substitution
     whose own command writes, through `tee` or a redirect, into a hook or an

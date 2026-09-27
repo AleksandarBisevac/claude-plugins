@@ -70,6 +70,45 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P88.2-dnb",
+      "title": "SECURITY.md's guard residuals claim exactly what the code reads and name every shape the review found",
+      "status": "in_progress",
+      "description": "Phase review round 1 (review-P88a.json). (1) The BUG-12 bullet in SECURITY.md overstates: runs_own_program (_config.py) exempts `-` only when followed by a script-named or inline-flag word, and an expansion operand only when it ends in a script extension; narrow items 1 and 3 to what the code reads (measured on the export). (2) The desiredOutcome promises every shape the P83 round-3 review found, and the list omits its preExisting[0]: the $(...) scanner closes early on a `)` inside a comment or a heredoc body; add one shape-level bullet. Also, from the low list: L1 the case-arm `in` bullet says 'its pipe or redirect'; L2 the eval residual says 'a receiving group or loop'; L4 the test comment lists the twin ids explicitly instead of the range gp61a-gp71a. L3 stays with BUG-12. Documentation and a test comment only; no guard code changes; shape-level wording, no recipe; prose-number lints clean.",
+      "files": [
+        "SECURITY.md",
+        "plugins/audit/tests/test_guard_history_rewrite.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T20:21:15Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T20:01:18Z"

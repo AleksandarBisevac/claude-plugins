@@ -742,7 +742,8 @@ def _cases(check):
                 # Compound commands, comments and receiving groups.
                 ("gp61", "if true; then echo '" + _G + "' > .git/hooks/pre-commit; fi",
                  "deny", "an emitter after a reserved word is still an emitter"),
-                # The allow twins (gp61a-gp71a) pin the compound reading against
+                # The allow twins gp61a, gp62a, gp64a, gp68a, gp69a, gp70a and
+                # gp71a pin the compound reading against
                 # OVER-firing. Each writes the phrase into notes.md or pipes it
                 # into cat, and each goes red under one mutation: every member
                 # of a receiving group read as a runner (gp64a), or a compound's
