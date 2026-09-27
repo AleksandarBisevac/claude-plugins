@@ -880,7 +880,8 @@
       "P83.2",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P80.16-rtb"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -894,7 +895,8 @@
       "P61.9",
       "P63.6",
       "P80.7",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.20-rtb"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -1054,7 +1056,8 @@
       "P79.10-5bh",
       "P74.1",
       "P74.2-qq5",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P80.21-rtb"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1150,7 +1153,8 @@
       "P61.14",
       "P63.11",
       "P79.7",
-      "P80.12"
+      "P80.12",
+      "P80.21-rtb"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -1605,7 +1609,8 @@
       "P76.1",
       "P72.3-ttl",
       "P78.11",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.21-rtb"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -1794,7 +1799,8 @@
       "P81.1",
       "P76.1",
       "P74.3-qq5",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.20-rtb"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1831,7 +1837,8 @@
       "P74.2-qq5",
       "P74.7-qq5",
       "P74.9-qq5",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P80.17-rtb"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1890,7 +1897,8 @@
       "P74.10-qq5",
       "P74.11-qq5",
       "P80.13",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.14-rtb"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2129,7 +2137,8 @@
       "P36.10",
       "P55.3",
       "P57.1",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P80.21-rtb"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -2388,7 +2397,9 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2",
@@ -2416,7 +2427,8 @@
       "P12.3",
       "P18.7",
       "P85.1",
-      "P80.8"
+      "P80.8",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -2525,7 +2537,8 @@
       "P15.4",
       "P51.9",
       "P80.7",
-      "P86.2"
+      "P86.2",
+      "P80.14-rtb"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5"
@@ -2582,7 +2595,8 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P78.13-msc"
+      "P78.13-msc",
+      "P80.14-rtb"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2649,7 +2663,8 @@
       "P80.6",
       "P75.2-j5h",
       "P75.3-j5h",
-      "P76.1"
+      "P76.1",
+      "P80.14-rtb"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -2687,7 +2702,8 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7"
@@ -2744,7 +2760,8 @@
       "P55.3",
       "P55.9",
       "P50.8",
-      "P63.8"
+      "P63.8",
+      "P80.21-rtb"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -2870,7 +2887,8 @@
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
-      "P78.13-msc"
+      "P78.13-msc",
+      "P80.14-rtb"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -2907,7 +2925,8 @@
       "P74.10-qq5",
       "P74.11-qq5",
       "P80.13",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.14-rtb"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -3109,7 +3128,9 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__panel_page.py": [
       "P18.7",
@@ -3131,7 +3152,8 @@
     "plugins/audit/tests/test__panel_state.py": [
       "P18.7",
       "P85.1",
-      "P80.8"
+      "P80.8",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -3315,7 +3337,8 @@
       "P80.6",
       "P75.2-j5h",
       "P75.3-j5h",
-      "P76.1"
+      "P76.1",
+      "P80.14-rtb"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -3417,7 +3440,8 @@
       "P74.2-qq5",
       "P74.7-qq5",
       "P74.9-qq5",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P80.17-rtb"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -3480,7 +3504,8 @@
       "P80.1",
       "P80.7",
       "P81.1",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.20-rtb"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -3612,7 +3637,8 @@
     "plugins/audit/tests/test_render_report.py": [
       "P25.1",
       "P51.9",
-      "P80.7"
+      "P80.7",
+      "P80.14-rtb"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
@@ -3688,7 +3714,8 @@
       "P74.9-qq5",
       "P78.14-msc",
       "P79.9-5bh",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P80.18-rtb"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -3763,7 +3790,8 @@
       "P53.8",
       "P53.9",
       "P58.2",
-      "P63.9"
+      "P63.9",
+      "P80.20-rtb"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -3811,7 +3839,8 @@
     "tools/check-report-interactive.mjs": [
       "P55.7",
       "P59.4",
-      "P59.9"
+      "P59.9",
+      "P80.20-rtb"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -3907,10 +3936,12 @@
       "P79.8-5bh"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
-      "P80.5"
+      "P80.5",
+      "P80.19-rtb"
     ],
     "plugins/audit/tests/test_import_evidence.py": [
-      "P80.5"
+      "P80.5",
+      "P80.19-rtb"
     ],
     "tools/ui-tests/full-run-verified.test.mjs": [
       "P80.8"
@@ -3925,11 +3956,13 @@
     ],
     ".claude/hooks/guard-release.py": [
       "P80.11",
-      "P86.2"
+      "P86.2",
+      "P80.16-rtb"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
-      "P86.2"
+      "P86.2",
+      "P80.16-rtb"
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1",
@@ -4090,6 +4123,12 @@
     "docs/screenshots/panel-usage.png": [
       "P80.8",
       "P84.7-791"
+    ],
+    "tools/ui-tests/evidence-read-error.test.mjs": [
+      "P80.15-rtb"
+    ],
+    "tools/check-rendered-artifacts.py": [
+      "P80.20-rtb"
     ]
   },
   "bugs": [
