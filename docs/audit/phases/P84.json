@@ -423,7 +423,7 @@
     {
       "id": "P84.7-791",
       "title": "every lock reader asks one rule, fixTask follows a move, the ledger check reads new shards, and the docs say what the lock does now",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-2 phase review of P84 (review-P84b.json), findings 1-5 plus its preExisting panel item. (1) _evidence_io.lock_state asks _locks.held_by_us - one rule for \"is this lock ours\" - instead of its own same-session test, and its docstring says why; a case that fails first. (2) fixTask is renamed on move: added to _id_refs.SCALAR_REFS and to the schema, with a move case. (3) CHANGELOG's P84.3 entry states what the tool reads after P84.5 (the working tree, tracked and untracked ledgers); ledger_rels' docstring stops saying tracked; the build guide names finding --findings-file, the landed-phase refusal and reopen clearing a finding's commit, and the lock's token rule and handed-off claims. (4) check-example-ledgers also reads untracked manifest shards (the shape it already matches) so a new shard's contradicting cached status and fake commit fail; a case. (5) manifest-conventions.md and orchestrator.md state the hand-held exception where they prescribe taking a lock by hand, and say exit 3 can now be a parallel call from the same session. The CHANGELOG notes that a killed verb's new-kind claim now answers stale (4) to its own session. (6, pre-existing) two simultaneous panel writes in the ThreadingHTTPServer re-enter each other: give each write its own claim (a token per request, not per process) so they serialise; a real two-thread case.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -498,14 +498,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f22fc606",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "lock_state via held_by_us; per-call claims for panel writes; fixTask in _id_refs and the schema with a crossref warning; untracked shards read; demo re-rendered.",
+        "descriptive": "Lock ownership is decided by one rule everywhere, panel saves no longer overwrite each other, and a finding's fix task is checked and follows moves."
       },
       "startedAt": "2026-09-27T07:44:42Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T08:18:03Z",
+      "verifiedBy": [
+        "test__evidence_io ed8b",
+        "test__id_refs ir13",
+        "check-example-ledgers el26",
+        "test__panel_write wl9",
+        "test__manifest_crossrefs mc45",
+        "test__locks rk5"
+      ]
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"
