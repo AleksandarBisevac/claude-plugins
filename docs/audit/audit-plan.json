@@ -1856,7 +1856,8 @@
       "P74.7-qq5",
       "P74.9-qq5",
       "P74.10-qq5",
-      "P80.17-rtb"
+      "P80.17-rtb",
+      "P80.22-rtb"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
