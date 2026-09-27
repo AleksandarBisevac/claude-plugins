@@ -215,10 +215,12 @@ def _comma_joined_gate(entries, build_keys, where, field):
             continue
         parts = [p.strip() for p in entry.split(",")]
         if all(p and p in build_keys for p in parts):
-            out.append("%s: %s entry %r is %d buildCommands keys joined by "
-                       "commas into ONE entry, which runs as one shell command "
-                       "no shell can find - split it: %s"
-                       % (where, field, entry, len(parts), json.dumps(parts)))
+            out.append(_output.finding(
+                "phases.comma_joined_gate.joined-keys",
+                "%s: %s entry %r is %d buildCommands keys joined by commas "
+                "into ONE entry, which runs as one shell command no shell can "
+                "find - split it: %s"
+                % (where, field, entry, len(parts), json.dumps(parts))))
     return out
 
 
@@ -365,31 +367,43 @@ def _check_phase_gate_derived(derived, build_keys):
     if derived is None:
         return []
     if not isinstance(derived, dict):
-        return ["meta.phaseGate.derived: must be an object or null, got %s"
-               % (type(derived).__name__,)]
+        return [_output.finding(
+            "phases.phase_gate_derived.object",
+            "meta.phaseGate.derived: must be an object or null, got %s"
+            % (type(derived).__name__,))]
     out = []
     runner = derived.get("runner")
     if runner is not None:
         if not (isinstance(runner, str) and runner.strip()):
-            out.append("meta.phaseGate.derived.runner: must be a non-blank "
-                       "buildCommands key, got %s" % (type(runner).__name__,))
+            out.append(_output.finding(
+                "phases.phase_gate_derived.runner-shape",
+                "meta.phaseGate.derived.runner: must be a non-blank "
+                "buildCommands key, got %s" % (type(runner).__name__,)))
         elif build_keys and runner not in build_keys:
-            out.append("meta.phaseGate.derived.runner: %r is not a "
-                       "buildCommands key - meta.buildCommands declares %s"
-                       % (runner, _output.some_of(sorted(build_keys))))
+            out.append(_output.finding(
+                "phases.phase_gate_derived.runner-unknown-key",
+                "meta.phaseGate.derived.runner: %r is not a buildCommands "
+                "key - meta.buildCommands declares %s"
+                % (runner, _output.some_of(sorted(build_keys)))))
     spelling = derived.get("spelling")
     if spelling is not None:
         if not (isinstance(spelling, str) and spelling.strip()):
-            out.append("meta.phaseGate.derived.spelling: must be a non-blank "
-                       "string, got %s" % (type(spelling).__name__,))
+            out.append(_output.finding(
+                "phases.phase_gate_derived.spelling-shape",
+                "meta.phaseGate.derived.spelling: must be a non-blank "
+                "string, got %s" % (type(spelling).__name__,)))
         elif "{paths}" not in spelling:
-            out.append("meta.phaseGate.derived.spelling: %r carries no "
-                       "{paths} placeholder - the derivation has nowhere to "
-                       "substitute a resolved path list into it" % (spelling,))
+            out.append(_output.finding(
+                "phases.phase_gate_derived.spelling-placeholder",
+                "meta.phaseGate.derived.spelling: %r carries no {paths} "
+                "placeholder - the derivation has nowhere to substitute a "
+                "resolved path list into it" % (spelling,)))
     listing = derived.get("listing")
     if listing is not None and not isinstance(listing, dict):
-        out.append("meta.phaseGate.derived.listing: must be an object or "
-                   "null, got %s" % (type(listing).__name__,))
+        out.append(_output.finding(
+            "phases.phase_gate_derived.listing-object",
+            "meta.phaseGate.derived.listing: must be an object or null, "
+            "got %s" % (type(listing).__name__,)))
         listing = None
     if isinstance(listing, dict):
         related = listing.get("related")
@@ -429,10 +443,11 @@ def _check_phase_gate_derived(derived, build_keys):
     verified_on = derived.get("verifiedOn")
     if listing is not None and not (isinstance(verified_on, dict)
                                     and verified_on.get("command")):
-        out.append("meta.phaseGate.derived: a `listing` command is declared "
-                   "with no `verifiedOn` - its version was never checked, so "
-                   "a later mismatch has no real answer to compare against, "
-                   "only a guess")
+        out.append(_output.finding(
+            "phases.phase_gate_derived.listing-unverified",
+            "meta.phaseGate.derived: a `listing` command is declared with no "
+            "`verifiedOn` - its version was never checked, so a later "
+            "mismatch has no real answer to compare against, only a guess"))
     return out
 
 
@@ -449,23 +464,28 @@ def _check_coupling(coupling, phase_ids):
     derivation) has no rule for which of two conflicting source lists wins.
 
     `basis.head` (an object-id shape) and `basis.phases` (every entry a
-    phase id `phase_ids` actually holds) are graded here too, CODED like
-    the siblings above them in this module - `couple` itself asks git and
-    the plan before it ever writes either field, so a bad value reaching
-    this walk means the manifest was edited by hand, which is exactly what
-    a stable code lets a caller keep filtering for even though this check
-    stays additive.
+    phase id `phase_ids` actually holds) are graded here too - `couple`
+    itself asks git and the plan before it ever writes either field, so a
+    bad value reaching this walk means the manifest was edited by hand.
+
+    Every line is CODED, as the rest of `_check_phase_gate`'s family is: a
+    stable code is what lets a caller keep filtering for one rule even
+    though the check stays additive.
     """
     if not isinstance(coupling, list):
-        return ["meta.coupling: must be an array, got %s"
-               % (type(coupling).__name__,)]
+        return [_output.finding(
+            "phases.coupling.array",
+            "meta.coupling: must be an array, got %s"
+            % (type(coupling).__name__,))]
     out = []
     seen, dup = set(), set()
     for i, entry in enumerate(coupling):
         where = "meta.coupling[%d]" % (i,)
         if not isinstance(entry, dict):
-            out.append("%s: must be an object, got %s"
-                       % (where, type(entry).__name__))
+            out.append(_output.finding(
+                "phases.coupling.entry-object",
+                "%s: must be an object, got %s"
+                % (where, type(entry).__name__)))
             continue
         missing = []
         test = entry.get("test")
@@ -479,7 +499,9 @@ def _check_coupling(coupling, phase_ids):
         if not (isinstance(run_id, str) and run_id.strip()):
             missing.append("basis.runId")
         if missing:
-            out.append("%s: missing %s" % (where, _output.some_of(missing)))
+            out.append(_output.finding(
+                "phases.coupling.missing",
+                "%s: missing %s" % (where, _output.some_of(missing))))
         if isinstance(basis, dict):
             head = basis.get("head")
             if head is not None and not (isinstance(head, str)
@@ -503,103 +525,126 @@ def _check_coupling(coupling, phase_ids):
                 dup.add(test)
             seen.add(test)
     if dup:
-        out.append(
+        out.append(_output.finding(
+            "phases.coupling.duplicate-test",
             "meta.coupling: duplicate `test` value(s) %s - each test should "
             "carry ONE entry with every source it is coupled to, not two "
             "entries a reader has no rule for choosing between"
-            % (_output.some_of(sorted(dup), render=repr),))
+            % (_output.some_of(sorted(dup), render=repr),)))
     return out
 
 
-def _check_phase_gate(manifest, warnings):
+def _check_phase_gate(manifest):
     """WARNINGS for `meta.phaseGate`, `meta.gateBudgetMs` and `meta.coupling` -
     additive, never a finding (`COMPATIBILITY.md` -> Validation stays
     additive): all three are new, so a shape a validator does not like is
     named rather than refused.
+
+    RETURNED, NOT WRITTEN INTO THE CALLER'S LIST, and every line built through
+    `_output.finding` so it carries a stable code. The list is named `findings`
+    because that is the name the stable-code walk in the suites follows, and
+    the helpers extended into it are walked as its feeders; a check that wrote
+    into a `warnings` parameter was outside that walk entirely, so its codes
+    were held by convention alone. The caller files the list as warnings.
 
     THE 'RUNS NO SUITE' SENTENCE IS NOT HERE. `phase_gate_suite_gap` is asked
     directly by `_manifest_rules._check_meta`, with no evidence, so the pure
     validator emits its certain arm only - this function is the SHAPE checks
     that do not need the ledger at all.
     """
+    findings = []
     meta = manifest.get("meta")
     meta = meta if isinstance(meta, dict) else {}
     if "phaseGate" in meta:
         gate = meta.get("phaseGate")
         if gate is not None and not isinstance(gate, dict):
-            warnings.append("meta.phaseGate: must be an object with `always` "
-                            "and/or `exclude`, got %s" % (type(gate).__name__,))
+            findings.append(_output.finding(
+                "phases.phase_gate.object",
+                "meta.phaseGate: must be an object with `always` and/or "
+                "`exclude`, got %s" % (type(gate).__name__,)))
         elif isinstance(gate, dict):
             for field in ("always", "exclude"):
                 raw = gate.get(field)
                 if raw is None:
                     continue
                 if not isinstance(raw, list):
-                    warnings.append("meta.phaseGate.%s: must be an array of "
-                                    "buildCommands keys, got %s"
-                                    % (field, type(raw).__name__))
+                    findings.append(_output.finding(
+                        "phases.phase_gate.list-array",
+                        "meta.phaseGate.%s: must be an array of "
+                        "buildCommands keys, got %s"
+                        % (field, type(raw).__name__)))
                     continue
                 bad = [e for e in raw if not (isinstance(e, str) and e.strip())]
                 if bad:
-                    warnings.append("meta.phaseGate.%s: every entry must be "
-                                    "a non-blank string (%d bad: %s)"
-                                    % (field, len(bad),
-                                       _output.some_of(bad, render=repr)))
+                    findings.append(_output.finding(
+                        "phases.phase_gate.list-blank-entry",
+                        "meta.phaseGate.%s: every entry must be a non-blank "
+                        "string (%d bad: %s)"
+                        % (field, len(bad), _output.some_of(bad, render=repr))))
             always, exclude, build_keys = _phase_gate_lists(meta)
             if build_keys:
                 for field, entries in (("always", always), ("exclude", exclude)):
-                    warnings.extend(_comma_joined_gate(
+                    findings.extend(_comma_joined_gate(
                         entries, build_keys, "meta.phaseGate", field))
                     unknown = [e for e in entries if e not in build_keys]
                     if unknown:
-                        warnings.append(
+                        findings.append(_output.finding(
+                            "phases.phase_gate.unknown-key",
                             "meta.phaseGate.%s names %s, which %s not a "
                             "buildCommands key - meta.buildCommands declares "
                             "%s" % (field, _output.some_of(unknown, render=repr),
                                     "is" if len(unknown) == 1 else "are",
-                                    _output.some_of(sorted(build_keys))))
+                                    _output.some_of(sorted(build_keys)))))
             both = sorted(set(always) & set(exclude))
             if both:
-                warnings.append(
+                findings.append(_output.finding(
+                    "phases.phase_gate.always-and-exclude",
                     "meta.phaseGate: %s in both `always` and `exclude` - "
                     "always is always, so %s stays in the default gate"
                     % (_output.some_of(both, render=repr),
-                       "it" if len(both) == 1 else "they"))
+                       "it" if len(both) == 1 else "they")))
             if "mode" in gate:
                 mode = gate.get("mode")
                 if mode not in PHASE_GATE_MODES:
-                    warnings.append(
+                    findings.append(_output.finding(
+                        "phases.phase_gate.mode",
                         "meta.phaseGate.mode: must be 'shadow' or 'enforce', "
-                        "got %r" % (mode,))
+                        "got %r" % (mode,)))
             if "derived" in gate:
-                warnings.extend(_check_phase_gate_derived(
+                findings.extend(_check_phase_gate_derived(
                     gate.get("derived"), build_keys))
             if "smoke" in gate:
                 smoke = gate.get("smoke")
                 if smoke is not None:
                     if not (isinstance(smoke, str) and smoke.strip()):
-                        warnings.append(
+                        findings.append(_output.finding(
+                            "phases.phase_gate.smoke-shape",
                             "meta.phaseGate.smoke: must be a non-blank "
                             "buildCommands key or null, got %s"
-                            % (type(smoke).__name__,))
+                            % (type(smoke).__name__,)))
                     elif build_keys and smoke not in build_keys:
-                        warnings.append(
+                        findings.append(_output.finding(
+                            "phases.phase_gate.smoke-unknown-key",
                             "meta.phaseGate.smoke: %r is not a buildCommands "
                             "key - meta.buildCommands declares %s"
-                            % (smoke, _output.some_of(sorted(build_keys))))
+                            % (smoke, _output.some_of(sorted(build_keys)))))
     if "gateBudgetMs" in meta:
         budget = meta.get("gateBudgetMs")
         if isinstance(budget, bool) or not isinstance(budget, int):
-            warnings.append("meta.gateBudgetMs: must be a positive integer, "
-                            "got %s" % (type(budget).__name__,))
+            findings.append(_output.finding(
+                "phases.phase_gate.budget-integer",
+                "meta.gateBudgetMs: must be a positive integer, got %s"
+                % (type(budget).__name__,)))
         elif budget <= 0:
-            warnings.append("meta.gateBudgetMs: must be greater than 0 (got "
-                            "%s) - omit the key entirely for 'no budget'"
-                            % (budget,))
+            findings.append(_output.finding(
+                "phases.phase_gate.budget-greater-than",
+                "meta.gateBudgetMs: must be greater than 0 (got %s) - omit the "
+                "key entirely for 'no budget'" % (budget,)))
     if "coupling" in meta:
         phase_ids = set(p.get("id") for p in (manifest.get("phases") or [])
                         if isinstance(p, dict))
-        warnings.extend(_check_coupling(meta.get("coupling"), phase_ids))
+        findings.extend(_check_coupling(meta.get("coupling"), phase_ids))
+    return findings
 
 
 def _check_phase_intent(phase, pwhere, build_keys):
