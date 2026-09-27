@@ -547,6 +547,12 @@
       "title": "No register id in a comment, held by the lint",
       "status": "pending",
       "shard": "phases/P86.json"
+    },
+    {
+      "id": "P84",
+      "title": "review findings are written by a verb, every validator warning family carries a code the lint can see, and a fresh worktree's evidence is counted",
+      "status": "pending",
+      "shard": "phases/P84.json"
     }
   ],
   "fileIndex": {
@@ -687,7 +693,10 @@
       "P74.8-qq5",
       "P74.9-qq5",
       "P74.10-qq5",
-      "P74.11-qq5"
+      "P74.11-qq5",
+      "P84.1",
+      "P84.2",
+      "P84.3"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1186,7 +1195,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P74.7-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P84.1"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -1599,7 +1609,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P78.15-msc",
-      "P79.11-5bh"
+      "P79.11-5bh",
+      "P84.1"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -2164,7 +2175,8 @@
       "P76.4-6qa",
       "P78.12-msc",
       "P79.10-5bh",
-      "P79.12-5bh"
+      "P79.12-5bh",
+      "P84.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -2281,7 +2293,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P79.10-5bh"
+      "P79.10-5bh",
+      "P84.1"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2985,7 +2998,8 @@
       "P76.4-6qa",
       "P78.12-msc",
       "P79.10-5bh",
-      "P79.12-5bh"
+      "P79.12-5bh",
+      "P84.2"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -3037,7 +3051,8 @@
       "P77.3-6u9",
       "P74.3-qq5",
       "P79.2",
-      "P79.3"
+      "P79.3",
+      "P84.2"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -3311,7 +3326,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P78.14-msc",
-      "P79.10-5bh"
+      "P79.10-5bh",
+      "P84.1"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3699,7 +3715,8 @@
       "P32.10",
       "P50.3",
       "P51.1",
-      "P59.2"
+      "P59.2",
+      "P84.3"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
