@@ -1,0 +1,66 @@
+{
+  "id": "P90",
+  "title": "the committed-identity check accounts for the one journal row it misreads",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "tools/check-committed-pii.py is green on main: the review.finding row whose prose says 'home/TMPDIR' - a phrase, not a home directory - is named in BASELINE with its reason, and nothing else in the committed domain matches.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P90.1",
+      "title": "BASELINE names the review.finding row whose prose 'home/TMPDIR' the posix-home detector matches",
+      "status": "pending",
+      "description": "docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.wt-cbe2f966.jsonl line 95 (a review.finding row committed in 464b0b1d) matches posix-home at column 899 on the words 'isolated home/TMPDIR' in a finding's text - no path of this machine is in it. The row is hash-chained and already merged into another branch, so it is superseded, never edited. Add a BASELINE row with a reason stating exactly that (>= the minimum reason length). q7 goes green on main; the table's own checks (a stale row reported, reasons checked) stay green.",
+      "files": [
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
