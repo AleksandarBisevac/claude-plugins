@@ -376,7 +376,7 @@
     {
       "id": "P87.8-bpl",
       "title": "which run asks the commit comparison is pinned by exact call lines, not by parsing shell or YAML",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 6 (review-P87f.json). Six rounds have each found the next shell/YAML shape the hand-written readers misread; the parser is the wrong structure. Replace invocations()/_shell_invocations/_yaml_invocations/_run_blocks-style reading with an exact-line pin: each runner file (verify.sh, ci.yml) is read as text; every non-comment line that names the tool must, after stripping indentation and (in ci.yml) an optional `- ` and `run:`, EQUAL one of the exact call lines this tool knows (python3 tools/check-rendered-artifacts.py, the same with --before-commit, the same with --against-commit), or it is refused by line. ra29 then asserts which exact line sits where: verify.sh's plain run carries the --before-commit line, its --release block carries the --against-commit line, and ci.yml carries the no-flag line - each exactly once. Delete the readers' code the pin makes dead (shell lexing, redirection handling, block-scalar tracking, command-position rule) and the cases that pinned it, keeping cases for the new rule in both directions. State the limit in the tool and the CHANGELOG: this is a text check, not an interpreter - an exact call line placed inside a heredoc, a quoted string or another key's block text is not told apart, which only matters if the real call is also removed. Red first: `echo Running: python3 <tool> --against-commit` (refused now; read as a call before) and a deleted --release line (ra29 red).",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -405,14 +405,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1942532b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "call_lines exact-line table, release_lines, run_arms; parser deleted; ra29, ra29b, ra29g, ra29h",
+        "descriptive": "Which run asks the commit comparison is checked by exact call lines, so no shell or YAML spelling can be misread"
       },
       "startedAt": "2026-09-27T16:24:48Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T16:33:36Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 36/36",
+        "probe 9/9 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
