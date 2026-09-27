@@ -237,7 +237,7 @@
     {
       "id": "P87.5-bpl",
       "title": "the git-call recorder counts any root inside this checkout, and the ci.yml reader reads a call only from a literal block",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 3 (review-P87c.json). (1) The recorder flags a root only when it equals REPO; a subdirectory root still asks this checkout's HEAD (git -C REPO/tools resolves the same toplevel). Flag a root equal to or under REPO (realpath, then == or startswith(target + os.sep)); add a ra30b row with a subdirectory root. (2) Two YAML shapes read silently as a no-flag call, which is exactly ci.yml's expected answer: `run: > # comment` and a plain multi-line scalar with the flag on a continuation line. Structural rule: a call to the tool is read only from a single-line `run:` or a literal `|` block; any other run: with deeper-indented continuation lines that mentions the tool is refused by line, and the folded pattern allows a trailing comment. Add both shapes to ra29c. (3) The comment saying the file runs no git outside _git is wrong (fixture repos at _head_fixture and ra17); say it runs git outside _git only against fixture repos. Re-wrap the CHANGELOG line. Red first for 1 and 2.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -266,14 +266,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "88c77d5b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_recording_git flags realpath under the checkout; _run_blocks reads YAML run: styles; ra29d, ra30c; comment and CHANGELOG corrected",
+        "descriptive": "The HEAD-call recorder covers every directory of the checkout, and ci.yml calls are read only from shapes whose arguments are known"
       },
       "startedAt": "2026-09-27T15:41:51Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T15:50:27Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 36/36",
+        "probe 6/6 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
