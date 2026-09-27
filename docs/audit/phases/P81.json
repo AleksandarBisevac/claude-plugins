@@ -31,7 +31,7 @@
     {
       "id": "P81.1",
       "title": "meta.muted and coupling.lastCaught: schema, vocabulary, validator",
-      "status": "in_progress",
+      "status": "done",
       "description": "Schema: meta.muted (array of {test path, reason, owner, until ISO date, bugId}; absent means nothing is quarantined and every failure blocks) and meta.coupling[].lastCaught (the ts of the newest third-place run that named the coupled test as failing; absent means never caught since it was learned). KNOWN_META += muted. Validator: a muted entry whose bugId is missing, or names no bug in bugs[], is a FINDING - a mute with no bug is the retry-until-green shape this exists to refuse, and it is wrong from the moment it is written. An EXPIRED until is a WARNING naming the entry and the unmute or extend command - NOT a finding, and this deviates from the lane on purpose: every mutating verb pre-validates and refuses a manifest already carrying a finding (_locked_retarget: 'the manifest is already invalid -- nothing written'), and DEFAULT_GATE holds invalid, so a date-triggered finding would freeze every verb and fail every default CI gate on the expiry day, including the verb that lifts the mute. The runner's refusal to honour an expired mute (L4.c) is the enforcement. Reverting to a finding is a one-word change plus exempting the mute verbs from their own pre-check, the repair-tests-add precedent. A duplicate test, a missing owner or reason, and an unparseable until are warnings. SCHEMA_EXEMPTIONS rows for the new fields, with the reason. Red-first: a muted entry without bugId is a finding; one naming a bug id bugs[] does not hold is a finding (mutation: accept any string -> red); an expired until is a warning and the manifest stays valid (mutation: make it a finding -> red). Allow case: a well-formed unexpired entry validates clean.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -68,17 +68,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d974169e4a496c8ba0a72b028d581bd62349c0f2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_vocab gains mute_until, mute_expired and mute_today (the UTC day, which the runner will import so both read one clock); _manifest_rules._check_muted emits the findings and warnings; the demo exempts meta.muted with a reason.",
+        "descriptive": "meta.muted and coupling.lastCaught are in the schema and the vocabulary; a mute without a bug, or naming a bug the plan lacks, is a validator finding; an expired until is a warning that names the unmute and extend commands"
       },
       "startedAt": "2026-09-27T14:08:52Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T14:41:54Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T14:41:54Z.f20358",
         "status": "passed",
+        "at": "2026-09-27T14:41:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d974169e4a496c8ba0a72b028d581bd62349c0f2",
         "at": "2026-09-27T14:41:54Z"
       }
     },
