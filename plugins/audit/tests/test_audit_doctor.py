@@ -218,6 +218,16 @@ def _cases(check):
                  if "gate economy" in names else names,),
               "gate economy" in names and "shadow recall" in names
               and names.index("shadow recall") == names.index("gate economy") + 1)
+        # The repro this pins: BEFORE check_full_run existed, this row was
+        # simply absent, so `names` carries no "full run" entry at all on
+        # current code.
+        check("the full-run row is wired into diagnose() and sits directly "
+              "after the shadow-recall row - the third place's own verdict, "
+              "read off the same evidence ledger: %r"
+              % (names[max(0, names.index("shadow recall")):][:2]
+                 if "shadow recall" in names else names,),
+              "shadow recall" in names and "full run" in names
+              and names.index("full run") == names.index("shadow recall") + 1)
         # An absent ledger DIRECTORY used to read "<path> exists but
         # holds no rows yet" - a diagnostic asserting the existence of a
         # directory nothing ever created. Missing and empty are two branches.

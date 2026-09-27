@@ -406,7 +406,7 @@
     {
       "id": "P80.7",
       "title": "Report: the VERIFIED line under each merged phase, and a demo fixture that shows both states",
-      "status": "pending",
+      "status": "in_progress",
       "description": "render-report.py computes full_status per phase (the call audit-status makes, with the same inputs) and passes it as data to _evidence_view.load_evidence, _report_html and _report_md; _evidence_view gains the full row family so a full run is listed with the phases it made whole. Under each merged phase, only when meta.fullGate is declared, one line built from _manifest_vocab.VERIFIED: 'sign-off: <derived|wide>, <listed> of <full> suites, <status> <ts>; whole at <sha>', or 'whole: pending - record a full run at <mergedHead> (pre-push, CI, or /audit:review <P> --full)', or 'unknown - <basis>'. Rendered server-side with existing badge classes; a new class is an edit under scripts/ui/report-css, made under the refactoring-the-assembled-ui skill with python3 tools/count-ui-pins.py read first. No fullGate -> no new line and a byte-identical report, so the committed examples/acme-store artefacts do not move. The demo fixture in gen-demo-manifest.py declares meta.fullGate, stamps mergedHead on its merged phases and generates one whole-making full row and one provisional phase through _evidence_io.row_for, so the rendered surfaces show both states; delete the SCHEMA_EXEMPTIONS rows L3.a added for these fields (the stale half of schema_coverage fails otherwise) and regenerate docs/demo-large.html, which tools/check-rendered-artifacts.py compares with a fresh render. Browser gates are the orchestrator's to run, never the executor's (node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html; node tools/capture-screenshots.mjs --check). Red-first: the whole and pending lines render with their SHA; the twin carries the same words; test_render_report.py - a plan without fullGate renders the same bytes as before (mutation: always render the line -> red); test_gen_demo_manifest.py - schema_coverage has no gaps and no stale rows.",
       "files": [
         "plugins/audit/scripts/report/render-report.py",
@@ -448,14 +448,14 @@
         "P80.1",
         "P80.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T08:39:12Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -749,7 +749,7 @@
     {
       "id": "P80.13",
       "title": "A committed evidence row keeps why a step could not run",
-      "status": "in_progress",
+      "status": "done",
       "description": "_evidence_io.STEP_KEYS omits outcomeBasis, and the derived-gap marker run-test-gate sets on a step is omitted too, so _step / row_for drop both and a committed could-not-run row carries the verdict and not its basis: a derived run that did not name every listed suite, a missing interpreter and a no-verdict signature read identically to audit-lookup, the report and the doctor. Keep outcomeBasis on the row, bounded the way failing is bounded, and the derived-gap marker; render them wherever a could-not-run step is shown (audit-lookup run, the report's evidence view). The row only gains keys, which COMPATIBILITY.md treats as free. Allow case: a passed step's row is byte-identical to today's. No plan ids in comments; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -785,18 +785,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bfd4842be5ae36b8550b6dd72e5894f8b25d71a6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.STEP_KEYS gains outcomeBasis (bounded and redacted through redacted_text) and derivedGap; a passed step's row is byte-identical. audit-lookup._RUN_STEP_KEYS and the run render show basis and the derived-gap line. Cases og1-og5, rl8-rl10. INTENT DIVERGES (task review): the description asks for the basis in the report's evidence view too, and the report's per-step HTML (_report_html._tev_step_rows) was never in this task's files, so the report still shows only the word. Carried into P80.7, which owns the report HTML. redFirst proved; inheritedTests not-asked.",
+        "descriptive": "A recorded step that could not run now keeps its reason on the committed evidence row, bounded and redacted like the other free text, with a marker for a derived run that did not name every listed suite; audit-lookup run shows both."
       },
       "startedAt": "2026-09-27T07:37:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T08:39:00Z",
+      "verifiedBy": [
+        "og1",
+        "og2",
+        "og3",
+        "og4",
+        "og5",
+        "rl8",
+        "rl9",
+        "rl10"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T08:27:50Z.66845d",
         "status": "passed",
         "at": "2026-09-27T08:27:50Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "bfd4842be5ae36b8550b6dd72e5894f8b25d71a6",
+        "at": "2026-09-27T08:39:00Z"
       }
     }
   ],

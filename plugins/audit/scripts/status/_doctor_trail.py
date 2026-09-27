@@ -42,6 +42,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_trail.py` - see
 `plugins/audit/tests/_harness.py`.
 """
+import calendar
 import json
 import os
 import pathlib
@@ -76,6 +77,7 @@ import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
 import _evidence_io  # noqa: E402  (the ledger tally, at layer 2)
 import _fmt  # noqa: E402  (human_duration, at layer 1)
 import _manifest_io  # noqa: E402  (signoff_recorded, declared_gate_entries, layer 1)
+import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -1285,6 +1287,136 @@ def check_shadow_recall(rep, project, manifest_rel, manifest, config=None):
                 _pct(hits, n_runs) if n_runs else "n/a", hits, n_runs),
              "set meta.phaseGate.mode to \"enforce\" when this recall is "
              "enough - nothing switches it for you")
+
+
+# --- checks: the third place -----------------------------------------------------
+FULL_RUN_CHECK = "full run"
+
+
+def _run_age(ts):
+    """A recorded run's own `ts` (`%Y-%m-%dT%H:%M:%SZ`), read the way `_age`
+    above already turns seconds into a reader's phrase - or None when the
+    timestamp is not that shape, which the caller says out loud rather than
+    printing an age for a run whose `ts` it could not parse."""
+    try:
+        epoch = calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+    return _age(time.time() - epoch)
+
+
+_SETTLE_FIX = ("/audit:review %s --full to record a fresh full run against "
+              "this phase's mergedHead, or run the pre-push/CI step that "
+              "records one")
+
+
+def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
+    """Is this plan's THIRD PLACE - a full, out-of-band run - saying every
+    merged phase is WHOLE, or does something here still need settling?
+
+    REUSES `_evidence_io.full_status` RATHER THAN RE-DERIVING IT, the same
+    rule every check in this module follows for the evidence ledger: a
+    second opinion about whether a phase's merge is backed by a whole full
+    run is a second implementation that can disagree with the one that
+    matters (`status`, `report` and the panel all read the same function).
+
+    NO `meta.fullGate` MEANS NOTHING IS ASKED, said as an OK row rather than
+    silence - the same rule `check_gate_economy` and `check_shadow_recall`
+    already follow for their own opt-in switch: a plan that never declared a
+    third place has not been told it is missing one, it has been told there
+    is nothing to ask.
+
+    THE UNREADABLE-LEDGER BRANCH COMES BEFORE ANY FIGURE, exactly where
+    `check_gate_patterns`, `check_gate_economy` and `check_shadow_recall`
+    put it - a torn ledger is not "nothing recorded", and folding it into
+    that silence would tell an operator their merges are unproven when the
+    true problem is that this check could not look.
+
+    EVERY MERGED PHASE - `_manifest_io.effective_phase_status(phase) ==
+    "done"` - IS ASKED, WHOLE OR NOT: a PROVISIONAL phase gets a WARNING
+    naming the command that would settle it, an UNKNOWN phase gets a
+    WARNING naming `full_status`'s own basis (no `mergedHead` recorded, or
+    that git itself could not answer ancestry). Neither is folded into the
+    other, because they are different questions with different remedies -
+    one names a run to go and record, the other names a fact this plan
+    cannot yet ask.
+
+    A ROW THAT FAILED A WHOLE-BEARING RULE IS NAMED WITH THE RULE IT
+    FAILED, and this check never re-derives that sentence: it is already
+    `full_status`'s own basis for a PROVISIONAL answer (the newest full run
+    was on a dirty tree, counted nothing, or ran a different set of
+    commands than `meta.fullGate` declares now) - printing it a second way
+    here would be the second implementation this whole check exists to
+    refuse.
+
+    THE ALLOW ROW NAMES THE RUN: when every merged phase reads WHOLE, one OK
+    row carries the newest whole-bearing full run's id, head and age - a
+    reader told only "everything is fine" has been told less than a reader
+    told which run makes that true and how long ago it ran.
+
+    ADVISORY, ALWAYS - like every check in this module, this changes nothing
+    about the exit code; the release guard is the one place a PROVISIONAL
+    phase actually blocks anything."""
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    full_commands = [c for _name, c in
+                     _evidence_io.resolved_commands(manifest, meta.get("fullGate"))]
+    if not full_commands:
+        rep.ok(FULL_RUN_CHECK, "no third place declared (meta.fullGate)")
+        return
+    _eproject, _econfig, rows, exc, unreadable = _read_gate_rows(
+        project, manifest_rel)
+    if exc is not None:
+        rep.warn(FULL_RUN_CHECK, "could not read the evidence ledger: %s"
+                 % (exc,))
+        return
+    if unreadable:
+        rep.warn(FULL_RUN_CHECK,
+                 "could not read the evidence ledger: %d row(s) or file(s) "
+                 "could not be parsed - the third place is not graded over "
+                 "a ledger this check could not fully read" % (unreadable,))
+        return
+    merged = [p for p in (manifest.get("phases") or [])
+             if isinstance(p, dict) and _manifest_io.effective_phase_status(p)
+             == "done"]
+    if not merged:
+        rep.ok(FULL_RUN_CHECK,
+               "meta.fullGate is declared but no phase has merged yet")
+        return
+    results = [(p, _evidence_io.full_status(rows, p, git_root, full_commands))
+              for p in merged]
+    provisional = [(p, r) for p, r in results
+                  if r["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL]
+    unknown = [(p, r) for p, r in results
+              if r["answer"] == _manifest_vocab.FULL_STATUS_UNKNOWN]
+    whole = [(p, r) for p, r in results
+            if r["answer"] == _manifest_vocab.FULL_STATUS_WHOLE]
+    for p, r in provisional:
+        rep.warn(FULL_RUN_CHECK,
+                 "phase %s is PROVISIONAL: %s" % (p.get("id"), r["basis"]),
+                 _SETTLE_FIX % (p.get("id"),))
+    for p, r in unknown:
+        rep.warn(FULL_RUN_CHECK,
+                 "phase %s is UNKNOWN: %s" % (p.get("id"), r["basis"]))
+    if provisional or unknown:
+        return
+    run_ids = set(r.get("runId") for _p, r in whole if r.get("runId"))
+    candidates = [row for row in (rows or [])
+                 if isinstance(row, dict)
+                 and row.get("scope") == _evidence_io.FULL_SCOPE
+                 and row.get("runId") in run_ids]
+    candidates.sort(key=lambda row: str(row.get("ts") or ""), reverse=True)
+    if candidates:
+        newest = candidates[0]
+        head = (newest.get("testedState") or {}).get("head")
+        age = _run_age(newest.get("ts"))
+        rep.ok(FULL_RUN_CHECK,
+               "%d merged phase(s) read whole against the newest "
+               "whole-bearing full run %s (head %s)%s"
+               % (len(whole), newest.get("runId"), head,
+                  ", %s old" % age if age else ""))
+        return
+    rep.ok(FULL_RUN_CHECK, "%d merged phase(s) read whole" % (len(whole),))
 
 
 # --- cli ------------------------------------------------------------------------

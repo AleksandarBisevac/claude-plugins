@@ -1481,6 +1481,175 @@ def _cases(check):
     finally:
         shutil.rmtree(denom, ignore_errors=True)
 
+    # --- check_full_run: its own fresh project --------------------------------
+    def _full_row(project, run_id, ts, head, commands, ran_total=3,
+                 dirty_outside=(), status="passed"):
+        """One well-formed scope-`full` row - `full_status`'s own tests build
+        one the same way (`_fs_row` in `test__evidence_io.py`): every command
+        carried verbatim, every step timed, a positive count with a basis and
+        a clean `dirtyOutside`."""
+        row = {"v": _evidence_io.ROW_VERSION, "runId": run_id, "ts": ts,
+              "scope": _evidence_io.FULL_SCOPE, "status": status,
+              "steps": [{"name": "gate", "command": c, "exit": 0,
+                        "durationMs": 1000} for c in commands],
+              "testedState": {"head": head},
+              "observations": {"ranTotal": ran_total, "countsBasis": "3 checks",
+                               "dirtyOutside": list(dirty_outside)}}
+        _evidence_io.append_row(project, row)
+        return row
+
+    full1 = _harness.fixture_root("doctor-trail-full-run-")
+    try:
+        os.makedirs(os.path.join(full1, "docs", "audit"))
+        mrel = "docs/audit/audit-plan.json"
+
+        # dfr1: no meta.fullGate at all is an OK row naming the plan's own
+        # words for it - a plan naming no third place has nothing to ask,
+        # and nothing else here is even read.
+        rep = base.Report()
+        M.check_full_run(rep, full1, mrel, {"meta": {}, "phases": []}, full1)
+        check("dfr1 no meta.fullGate is an OK row saying no third place is "
+              "declared: %r" % (_detail(rep, "full run"),),
+              _levels(rep, "full run") == ["OK"]
+              and "no third place declared (meta.fullGate)"
+                  in _detail(rep, "full run"))
+
+        declared = {"meta": {"fullGate": ["echo x"]}, "phases": []}
+
+        # dfr2 ALLOW: fullGate declared, no phase has merged yet.
+        rep = base.Report()
+        M.check_full_run(rep, full1, mrel, declared, full1)
+        check("dfr2 ALLOW: fullGate declared but no phase has merged yet is "
+              "a clean OK, not a warning about phases that do not exist: %r"
+              % (_detail(rep, "full run"),),
+              _levels(rep, "full run") == ["OK"]
+              and "no phase has merged yet" in _detail(rep, "full run"))
+
+        # dfr3 (RED-FIRST, and the repro this task's own tests.add names): one
+        # PROVISIONAL phase (a mergedHead recorded, no full-scope run ever
+        # recorded) beside one UNKNOWN phase (no mergedHead at all) draws
+        # BOTH warnings, each with its own phase id - and the provisional one
+        # carries the settle command.
+        two_phase = {"meta": {"fullGate": ["echo x"]},
+                    "phases": [{"id": "P1", "status": "done",
+                               "mergedHead": "a" * 40},
+                              {"id": "P2", "status": "done"}]}
+        rep = base.Report()
+        M.check_full_run(rep, full1, mrel, two_phase, full1)
+        check("dfr3 RED-FIRST: a provisional phase and an unknown phase each "
+              "draw their own WARNING: %r" % (rep.rows,),
+              _levels(rep, "full run") == ["WARNING", "WARNING"])
+        check("dfr3b the provisional row names P1 and carries the settle "
+              "command (/audit:review): %r" % (_detail(rep, "full run"),),
+              "P1" in _detail(rep, "full run")
+              and "PROVISIONAL" in _detail(rep, "full run")
+              and "/audit:review P1 --full" in _fix(rep, "full run"))
+        check("dfr3c the unknown row names P2 and full_status's own basis "
+              "(no mergedHead recorded): %r" % (_detail(rep, "full run"),),
+              "P2" in _detail(rep, "full run")
+              and "UNKNOWN" in _detail(rep, "full run")
+              and "no mergedHead" in _detail(rep, "full run"))
+
+        # dfr4: a full row disqualified for a rule OTHER than "never
+        # recorded" - a dirty tree - is named with the rule it failed
+        # (`full_status`'s own basis, never re-derived here).
+        _full_row(full1, "run-dirty", "2026-01-01T00:00:00Z", "b" * 40,
+                 ["echo x"], dirty_outside=["src/app.ts"])
+        dirty_phase = {"meta": {"fullGate": ["echo x"]},
+                      "phases": [{"id": "P3", "status": "done",
+                                 "mergedHead": "b" * 40}]}
+        rep = base.Report()
+        M.check_full_run(rep, full1, mrel, dirty_phase, full1)
+        check("dfr4 a disqualified full run is named with the rule it "
+              "failed (a dirty tree), never re-derived as a fresh sentence: "
+              "%r" % (_detail(rep, "full run"),),
+              _levels(rep, "full run") == ["WARNING"]
+              and "DIRTY TREE" in _detail(rep, "full run"))
+    finally:
+        shutil.rmtree(full1, ignore_errors=True)
+
+    # --- check_full_run: an unreadable ledger is SAID, never folded into ------
+    # --- "no phase has merged yet" or a phase's own PROVISIONAL/UNKNOWN ------
+    full_unread = _harness.fixture_root("doctor-trail-full-run-unreadable-")
+    try:
+        os.makedirs(os.path.join(full_unread, "docs", "audit"))
+        mrel = "docs/audit/audit-plan.json"
+        _full_row(full_unread, "u1", "2026-01-01T00:00:00Z", "c" * 40,
+                 ["echo x"])
+        files = _evidence_io.ledger_files(full_unread)
+        with open(files[0], "a", encoding="utf-8") as fh:
+            fh.write("{not json at all\n")
+        rep = base.Report()
+        M.check_full_run(rep, full_unread, mrel,
+                         {"meta": {"fullGate": ["echo x"]},
+                          "phases": [{"id": "P1", "status": "done",
+                                     "mergedHead": "c" * 40}]},
+                         full_unread)
+        check("dfr5 RED-FIRST: an unparseable ledger line is a WARNING that "
+              "the evidence ledger could not be read, never folded into a "
+              "phase verdict - no PROVISIONAL/UNKNOWN row is printed over a "
+              "ledger this check could not fully read: %r"
+              % (_detail(rep, "full run"),),
+              _levels(rep, "full run") == ["WARNING"]
+              and "could not read the evidence ledger" in _detail(rep, "full run")
+              and "P1" not in _detail(rep, "full run"))
+    finally:
+        shutil.rmtree(full_unread, ignore_errors=True)
+
+    # --- check_full_run: ALLOW - every merged phase reads WHOLE --------------
+    def _real_two_commits(root):
+        """A REAL git repository at `root`, two sequential commits on
+        `main` - `full_status`'s own ancestry needs REAL, DIFFERENT,
+        ancestor-related commits (see `test__evidence_io.py`'s twin of this
+        fixture), because a fake head/mergedHead pair could pass on a
+        `head == mergedHead` mutation as easily as on real containment."""
+        os.makedirs(root, exist_ok=True)
+        git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+              "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+        def sh(*args):
+            subprocess.run(git + list(args), cwd=root, check=True,
+                          capture_output=True, timeout=30)
+
+        def rev():
+            out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root,
+                                 check=True, capture_output=True, timeout=30)
+            return out.stdout.decode("utf-8").strip()
+
+        sh("init", "-q")
+        with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("1\n")
+        sh("add", "-A")
+        sh("commit", "-qm", "one")
+        first = rev()
+        with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("2\n")
+        sh("add", "-A")
+        sh("commit", "-qm", "two")
+        second = rev()
+        return {"root": root, "first": first, "second": second}
+
+    full_whole = _harness.fixture_root("doctor-trail-full-run-whole-")
+    try:
+        os.makedirs(os.path.join(full_whole, "docs", "audit"))
+        mrel = "docs/audit/audit-plan.json"
+        repo = _real_two_commits(os.path.join(full_whole, "repo"))
+        _full_row(full_whole, "run-whole", "2026-01-02T00:00:00Z",
+                 repo["second"], ["echo x"])
+        whole_phase = {"meta": {"fullGate": ["echo x"]},
+                      "phases": [{"id": "P1", "status": "done",
+                                 "mergedHead": repo["first"]}]}
+        rep = base.Report()
+        M.check_full_run(rep, full_whole, mrel, whole_phase, repo["root"])
+        check("dfr6 ALLOW: every merged phase reads WHOLE draws ONE OK row "
+              "naming the run (id and head), not one row per phase: %r"
+              % (_detail(rep, "full run"),),
+              _levels(rep, "full run") == ["OK"]
+              and "run-whole" in _detail(rep, "full run")
+              and repo["second"] in _detail(rep, "full run"))
+    finally:
+        shutil.rmtree(full_whole, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)
