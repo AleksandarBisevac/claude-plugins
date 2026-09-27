@@ -610,6 +610,47 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P87.13-bpl",
+      "title": "the runner files are split into lines the way the shell splits them",
+      "status": "in_progress",
+      "description": "Phase review round 11 (review-P87k.json). The reader splits lines where the shell does not: run_arms opens with universal newlines (a lone CR becomes a newline) and call_lines/release_lines use str.splitlines(), which also breaks at VT, FF, FS-RS, NEL, LS and PS. So `: <FF>  python3 <tool> --against-commit` in place of the real call reads as the real call while the shell passes it to `:`. Read and split as the shell does: open with newline=\"\" and split on \"\\n\" only (one splitter for call_lines and release_lines, so release line numbers agree). Such a line then names the tool without equalling a call line and is refused by line; a CRLF call line keeps its CR and is refused too (correct: bash reads backslash-CR as no continuation). ra29h/ra29i rows for FF, CR and U+2028 under a `run \"y\" \\` wrapper, each refused naming the line; a ra29b row where a FF inside the release block does not shift release_lines. Widen THE LIMITS sentence from heredoc/string/block text to any construct that makes the call line data rather than a command (array literal, arithmetic, a string opened on an earlier line), in the comment and CHANGELOG. Red first.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - a form feed between `:` and the call reads as the real call"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T17:36:01Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"

@@ -689,10 +689,12 @@ def arms_for(argv):
 # THE LIMITS, WHICH ARE WHAT A TEXT CHECK IS. It does not decide whether the line
 # is reached at all: control flow above it - an `exit 0`, a `false && {`, an `if
 # false; then ... fi` - is not read, and the release arm itself is a call inside an
-# `if`. And an exact call line inside a heredoc, a quoted string or another key's
-# block text is not told apart from a call. The second only matters if the real
-# call is also removed, because ra29 pins each exact line to exactly one place - a
-# second copy fails it too.
+# `if`. And it does not tell a call from an exact call line that some construct
+# makes DATA rather than a command - a heredoc, a string opened on an earlier line,
+# an array literal, arithmetic, or another key's block text. The second only
+# matters if the real call is also removed, because ra29 pins each exact line to
+# exactly one place - a second copy fails it too. Lines are split the way the shell
+# splits them, at a newline only (`shell_lines`).
 _THIS_TOOL = "tools/check-rendered-artifacts.py"
 _VERIFY_REL = "tools/verify.sh"
 _CI_REL = ".github/workflows/ci.yml"
@@ -793,6 +795,16 @@ def _context_problem(lines, index, yaml):
     return None
 
 
+def shell_lines(text):
+    """`text` split into lines the way the shell splits it: at a newline and at
+    nothing else. `str.splitlines()` also breaks at a carriage return, a form feed,
+    a vertical tab, the separators and NEL, none of which the shell treats as a line
+    break - so a call hidden after one of them would read as its own line. The file
+    is opened with `newline=""` for the same reason. One splitter serves both
+    `call_lines` and `release_lines`, so their line numbers agree."""
+    return text.split("\n")
+
+
 def call_lines(text, yaml=False):
     """[(line number, arms or refusal)] for every non-comment line naming the tool.
 
@@ -803,16 +815,16 @@ def call_lines(text, yaml=False):
     this check does not know as a call that asks nothing.
     """
     known = dict(_CALL_LINES)
-    lines = text.splitlines()
+    lines = shell_lines(text)
     out = []
     for index, line in enumerate(lines):
         number = index + 1
-        bare = line.strip()
+        bare = line.strip(" \t")
         if not bare or bare.startswith("#") or _THIS_TOOL not in bare:
             continue
         if yaml:
             one = _YAML_ONE_LINE.match(line)
-            bare = (one.group("call").strip() if one
+            bare = (one.group("call").strip(" \t") if one
                     else re.sub(r"^-\s+", "", bare, count=1))
         arms = known.get(bare)
         if arms is None:
@@ -835,7 +847,7 @@ def release_lines(text):
     at the start of a line after it. None when no block was found, so a runner that
     lost it is not read as one whose release asks nothing.
     """
-    lines = text.splitlines()
+    lines = shell_lines(text)
     opens = [i for i, line in enumerate(lines) if _RELEASE_OPEN.match(line)]
     if not opens:
         return None
@@ -856,7 +868,7 @@ def run_arms(repo_root=None):
     for rel in (_VERIFY_REL, _CI_REL):
         try:
             with io.open(os.path.join(root, rel.replace("/", os.sep)),
-                         encoding="utf-8") as fh:
+                         encoding="utf-8", newline="") as fh:
                 texts[rel] = fh.read()
         except (OSError, UnicodeDecodeError):
             texts[rel] = None
@@ -1348,11 +1360,46 @@ def _arm_cases(check):
                   "if [ \"$RELEASE\" -eq 1 ]; then\n"
                   "  python3 %s --against-commit\n"
                   "fi\n" % ((_THIS_TOOL,) * 2))
+    # A form feed inside the block is no line break to the shell, so it must not
+    # move the block's end either.
+    _fx_ff = ("run \"x\" \\\n  python3 %s --before-commit\n"
+              "if [ \"$RELEASE\" -eq 1 ]; then\n"
+              "  echo a\x0cb\n"
+              "  python3 %s --against-commit\n"
+              "fi\n" % ((_THIS_TOOL,) * 2))
+    # THE FILES ARE READ AS THE SHELL READS THEM: a carriage return written into
+    # verify.sh stays inside its line. Opened with universal newlines it would
+    # become a line break, and the call after it would read as the plain run's.
+    _cr_root = tempfile.mkdtemp(prefix="audit-cr-runs-")
+    try:
+        for rel, body in (
+                (_VERIFY_REL, 'run "x" \\\n: \r  python3 %s --before-commit\n'
+                              'if [ "$RELEASE" -eq 1 ]; then\n'
+                              '  python3 %s --against-commit\nfi\n'
+                              % ((_THIS_TOOL,) * 2)),
+                (_CI_REL, "        run: |\n          python3 %s\n" % (_THIS_TOOL,))):
+            path = os.path.join(_cr_root, rel.replace("/", os.sep))
+            os.makedirs(os.path.dirname(path))
+            with io.open(path, "w", encoding="utf-8", newline="") as fh:
+                fh.write(body)
+        _cr_runs = run_arms(_cr_root)
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(_cr_root)
+    check("ra29j a carriage return inside verify.sh's call line stays inside it when "
+          "the file is read, so the plain run is refused by line rather than read "
+          "as `--before-commit`: %r" % (_cr_runs,),
+          len(_cr_runs["plain"] or []) == 1
+          and isinstance(_cr_runs["plain"][0][1], str)
+          and "line 2 " in _cr_runs["plain"][0][1]
+          and [c for _n, c in _cr_runs["release"] or []] == [AGAINST_COMMIT_ARMS]
+          and [c for _n, c in _cr_runs["ci"] or []] == [ALL_ARMS])
     check("ra29b the release block is found by its opening and closing lines, and a "
           "runner with none reads as None rather than as a release asking nothing: "
           "%r" % ((release_lines(_fx_runner),),),
           release_lines(_fx_runner) == (3, 5)
-          and release_lines("python3 %s\n" % (_THIS_TOOL,)) is None)
+          and release_lines("python3 %s\n" % (_THIS_TOOL,)) is None
+          and release_lines(_fx_ff) == (3, 6))
     # THE EXACT-LINE PIN, both directions. Read: each call line in `_CALL_LINES`,
     # indentation stripped, and in YAML a leading `- ` and `run:`.
     _t = _THIS_TOOL
@@ -1493,6 +1540,16 @@ def _arm_cases(check):
         "a comment ending in a backslash in a run: | body": (2, _pinned(
             "      - run: |\n          false && # n \\\n\n          python3 %s\n"
             % (_t,), yaml=True)),
+        "a form feed splits the call line": (2, _pinned(
+            'run "y" \\\n: \x0c  python3 %s --against-commit\n' % (_t,))),
+        "a carriage return splits the call line": (2, _pinned(
+            'run "y" \\\n: \r  python3 %s --against-commit\n' % (_t,))),
+        "a line separator splits the call line": (2, _pinned(
+            'run "y" \\\n: \u2028  python3 %s --against-commit\n' % (_t,))),
+        "a CRLF one-line run: in YAML": (1, _pinned(
+            "      - run: python3 %s --against-commit\r\n" % (_t,), yaml=True)),
+        "a CRLF call line": (1, _pinned(
+            "python3 %s --against-commit\r\n" % (_t,))),
         "false && in a run: | body": (2, _pinned(
             "      - run: |\n          false &&\n          python3 %s\n" % (_t,),
             yaml=True)),

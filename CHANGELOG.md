@@ -589,12 +589,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   line above a call is refused loudly rather than read. So a flag moved, dropped or put on a
   continuation line fails a case, and any other line naming the tool is refused by line. It is a
   text check, not an interpreter. It does not decide whether the line is reached at all - control
-  flow above it, such as an `exit 0` or an `if false; then`, is not read. And an exact call line
-  inside a heredoc, a quoted string or another key's block text is not told apart, which matters
-  only if the real call is also removed. While it runs, it records every git call the tool makes
-  against the checkout, and fails naming the function that made one, including a call against a
-  directory inside the checkout. An unknown flag, or both flags together, is now a usage error
-  (exit 2) instead of running both comparisons.
+  flow above it, such as an `exit 0` or an `if false; then`, is not read. And it does not tell a
+  call from an exact call line that some construct makes data rather than a command - a heredoc, a
+  string opened on an earlier line, an array literal, arithmetic or another key's block text -
+  which matters only if the real call is also removed. Both files are split into lines the way the
+  shell splits them, at a newline only, so a carriage return, form feed or Unicode line separator
+  inside a line cannot make part of it read as a call of its own. While it runs, it records every
+  git call the tool makes against the checkout, and fails naming the function that made one,
+  including a call against a directory inside the checkout. An unknown flag, or both flags
+  together, is now a usage error (exit 2) instead of running both comparisons.
 - **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
   report and the panel each turned a failed read into a clean read of nothing, so a task or
   phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not
