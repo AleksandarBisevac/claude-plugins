@@ -674,8 +674,11 @@ def arms_for(argv):
 # nothing here interprets either file any more. Every non-comment line that names
 # this tool must, with its indentation stripped - and in ci.yml an optional leading
 # `- ` and `run:` - EQUAL one of the call lines in `_CALL_LINES`, or it is refused
-# by line. `run_arms()` then says which file, and which part of verify.sh, holds
-# each exact line.
+# by line. An exact line is also refused when the lines around it mean it is not
+# what runs (`_context_problem`): a YAML value that continues onto a deeper line or
+# sits outside a plain `run: |` block, or a line continued from one that is not the
+# runner's `run "<label>" \` wrapper. `run_arms()` then says which file, and which
+# part of verify.sh, holds each exact line.
 #
 # THE LIMIT, WHICH IS WHAT A TEXT CHECK IS: an exact call line inside a heredoc, a
 # quoted string or another key's block text is not told apart from a call. That
@@ -688,30 +691,99 @@ _RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then\s*$')
 _CALL_LINES = (("python3 %s" % (_THIS_TOOL,), ALL_ARMS),
                ("python3 %s --before-commit" % (_THIS_TOOL,), BEFORE_COMMIT_ARMS),
                ("python3 %s --against-commit" % (_THIS_TOOL,), AGAINST_COMMIT_ARMS))
-_YAML_LEAD = re.compile(r"^(?:-\s+)?(?:run:\s+)?")
+_YAML_ONE_LINE = re.compile(r"^(\s*(?:-\s+)?)run:\s+(?P<call>.*)$")
+_YAML_LITERAL = re.compile(r"^\s*(?:-\s+)?run:[ \t]*\|[-+]?[ \t]*$")
+_RUNNER_WRAPPER = re.compile(r'^run "[^"]*" \\$')
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def _next_value_line(lines, index):
+    """The first line after `index` that is neither blank nor a full-line comment,
+    or None."""
+    for line in lines[index + 1:]:
+        if line.strip() and not line.strip().startswith("#"):
+            return line
+    return None
+
+
+def _opener(lines, index):
+    """The nearest earlier non-blank line indented less than line `index`, or None."""
+    depth = _indent(lines[index])
+    for line in reversed(lines[:index]):
+        if line.strip() and _indent(line) < depth:
+            return line
+    return None
+
+
+def _context_problem(lines, index, yaml):
+    """Why the exact call line at `index` is not what runs there, or None.
+
+    The line may be the real call with its flag somewhere else. In YAML it is read
+    only (a) as a one-line `run: <call>` whose next value line is indented no deeper
+    than the key, or (b) as a line whose nearest less-indented line is a plain
+    `run: |` (`|-`, `|+`) opener. In either mode, a line continued from the line
+    above by a trailing backslash is read only when that line is exactly the
+    runner's wrapper, `run "<label>" \`.
+    """
+    number = index + 1
+    above = lines[index - 1] if index > 0 else ""
+    if above.rstrip().endswith("\\") and not _RUNNER_WRAPPER.match(above.strip()):
+        return ("lines %d and %d: the call on line %d is continued from line %d, "
+                "which is not the runner's `run \"<label>\" \\` wrapper, so the "
+                "tool does not run as that line reads" % (number - 1, number,
+                                                          number, number - 1))
+    if not yaml:
+        return None
+    one = _YAML_ONE_LINE.match(lines[index])
+    if one:
+        below = _next_value_line(lines, index)
+        if below is not None and _indent(below) > len(one.group(1)):
+            return ("line %d: the `run:` value continues onto a deeper line, so "
+                    "what runs is not this line alone" % (number,))
+        return None
+    opener = _opener(lines, index)
+    if opener is None or not _YAML_LITERAL.match(opener):
+        return ("line %d: the call is not inside a plain `run: |` block (nor a "
+                "one-line `run:`), so what runs is not this line as written"
+                % (number,))
+    return None
 
 
 def call_lines(text, yaml=False):
     """[(line number, arms or refusal)] for every non-comment line naming the tool.
 
-    A refusal is a STRING naming the line, so a caller cannot read a line this
-    check does not know as a call that asks nothing.
+    A line is read only if it EQUALS an exact call line (indentation stripped, and
+    in YAML an optional leading `- ` and `run:`) AND `_context_problem` finds
+    nothing - the second half catches the real call whose flag sits on another
+    line. A refusal is a STRING naming the line, so a caller cannot read a line
+    this check does not know as a call that asks nothing.
     """
     known = dict(_CALL_LINES)
+    lines = text.splitlines()
     out = []
-    for number, line in enumerate(text.splitlines(), 1):
+    for index, line in enumerate(lines):
+        number = index + 1
         bare = line.strip()
         if not bare or bare.startswith("#") or _THIS_TOOL not in bare:
             continue
         if yaml:
-            bare = _YAML_LEAD.sub("", bare, count=1)
+            one = _YAML_ONE_LINE.match(line)
+            bare = (one.group("call").strip() if one
+                    else re.sub(r"^-\s+", "", bare, count=1))
         arms = known.get(bare)
-        out.append((number, arms if arms is not None else
-                    "line %d names %s but is not one of the exact call lines this "
-                    "tool knows (%s) - write the call as one of them, and keep the "
-                    "name off any other line that is not a comment"
-                    % (number, _THIS_TOOL,
-                       "; ".join("`%s`" % (call,) for call, _a in _CALL_LINES))))
+        if arms is None:
+            out.append((number,
+                        "line %d names %s but is not one of the exact call lines "
+                        "this tool knows (%s) - write the call as one of them, and "
+                        "keep the name off any other line that is not a comment"
+                        % (number, _THIS_TOOL,
+                           "; ".join("`%s`" % (c,) for c, _a in _CALL_LINES))))
+            continue
+        problem = _context_problem(lines, index, yaml)
+        out.append((number, arms if problem is None else problem))
     return out
 
 
@@ -1254,8 +1326,21 @@ def _arm_cases(check):
                       [ALL_ARMS]),
         "yaml key": (_pinned("        run: python3 %s --before-commit\n" % (_t,),
                              yaml=True), [BEFORE_COMMIT_ARMS]),
-        "yaml block line": (_pinned("          python3 %s --against-commit\n"
+        "yaml block line": (_pinned("        run: |\n"
+                                    "          set -e\n"
+                                    "          python3 %s --against-commit\n"
                                     % (_t,), yaml=True), [AGAINST_COMMIT_ARMS]),
+        "yaml |- block": (_pinned("      - run: |-\n          python3 %s\n"
+                                  % (_t,), yaml=True), [ALL_ARMS]),
+        "yaml |+ block": (_pinned("      - run: |+\n\n          python3 %s "
+                                  "--before-commit\n" % (_t,), yaml=True),
+                          [BEFORE_COMMIT_ARMS]),
+        "yaml one-line, comment below": (
+            _pinned("      - run: python3 %s --before-commit\n"
+                    "          # a note, not part of the value\n" % (_t,),
+                    yaml=True), [BEFORE_COMMIT_ARMS]),
+        "runner wrapper": (_pinned('run "x" \\\n  python3 %s --before-commit\n'
+                                   % (_t,)), [BEFORE_COMMIT_ARMS]),
     }
     _wrong = dict((k, got) for k, (got, want) in _read_ok.items() if got != want)
     check("ra29g each exact call line the tool knows is read as its arms - no "
@@ -1284,6 +1369,32 @@ def _arm_cases(check):
           "interpreter flag, both flags, another spelling of the path, a `run:` "
           "prefix outside YAML, a quoted or foreign YAML value: not refused %r"
           % (_not_refused,), _not_refused == [])
+    # THE REAL CALL WITH ITS FLAG ELSEWHERE: the line reads as the no-flag call
+    # while what runs is another command. In YAML, a flag on a continuation line of
+    # the run's own value; in shell, a call continued from a line that is not the
+    # runner's wrapper, so the tool never runs at all.
+    _continued = {
+        "folded >": _pinned("      - run: >\n          python3 %s\n"
+                            "          --against-commit\n" % (_t,), yaml=True),
+        "folded >-": _pinned("      - run: >-\n          python3 %s\n"
+                             "          --against-commit\n" % (_t,), yaml=True),
+        "plain, continued": _pinned("      - run: python3 %s\n"
+                                    "          --against-commit\n" % (_t,),
+                                    yaml=True),
+        "echo \\": _pinned('echo "x" \\\n  python3 %s --against-commit\n' % (_t,)),
+        ": \\": _pinned(': \\\n  python3 %s --against-commit\n' % (_t,)),
+    }
+    _read_anyway = dict((k, got) for k, got in _continued.items()
+                        if not (len(got) == 1 and isinstance(got[0], str)))
+    _both_named = [k for k in ("echo \\", ": \\")
+                   if not ("line 1" in str(_continued[k]) and "line 2" in
+                           str(_continued[k]))]
+    check("ra29i the real call line is REFUSED when what runs is not it: a YAML "
+          "`run: >`/`>-` or a plain `run:` continued onto a deeper line (the flag "
+          "sits on the continuation), and a shell call continued from a line that "
+          "is not the runner's `run \"<label>\" \\` wrapper, naming both lines: "
+          "read anyway %r, both lines not named %r" % (_read_anyway, _both_named),
+          _read_anyway == {} and _both_named == [])
 
 
 # --- no case asks git about this checkout, measured while the cases run --------

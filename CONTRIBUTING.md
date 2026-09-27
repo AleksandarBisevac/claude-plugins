@@ -204,8 +204,11 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 # command below, run with no flag, asks both. CI runs it with no flag too, but there the
 # checkout IS the commit, so the second arm cannot fire. Its first arm is what catches
 # a stale committed page there. Before a PR your work is committed, so run it as written.
-# The tool's selftest reads these calls out of verify.sh and ci.yml, so moving a flag
-# fails a case.
+# The tool's selftest pins these calls in verify.sh and ci.yml by exact line, and pins
+# the line around each: a ci.yml call is read only as a one-line `run:` with no deeper
+# continuation or as a line in a plain `run: |` block, and a call continued from the line
+# above only from the runner's `run "<label>" \` wrapper. So a flag moved, dropped, or
+# put on a continuation line fails a case.
 python3 tools/check-rendered-artifacts.py
 
 # ...and the half that tool deliberately does NOT make. docs/index.html is a byte
