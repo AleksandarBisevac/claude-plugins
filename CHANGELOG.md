@@ -377,6 +377,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   unchanged.
 
 ### Changed
+- **`ruff` also selects W605, an invalid escape sequence in a string.** Python 3.12
+  and later warn about one on every run of the file, and the file then fails to
+  compile under `-W error`; the build now refuses it by name.
 - **`signoff --verdict passed` needs the gate run it rests on**, on the single-phase path and the
   group's alike, graded by the SAME rule a task commit is bound by - now one module,
   `_verdict_binding`, that `commit-task-work.py` and the sign-off both call. The phase's newest
@@ -551,6 +554,52 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A `phase.merged` trail row names the parent the phase reached.** `close-phase.py` handed
+  the parent over in the row's details, and the journal kept only the keys on its allow-list and
+  dropped the rest without a word, so the row read `{phaseId, branch}`. `parent` is now on the
+  allow-list, and `phase.mergedHead.recorded` carries it too. Rows written earlier name the parent
+  in their summary only. A new check reads every writer's details by AST and names, file and
+  line, any literal key the allow-list would drop. It found three more rows losing a field the
+  reference documents. `ado.link` lost its work-item id, `phase.gateDerived` lost its `mode`
+  and `basis`, and `task.blocked` handed over `attempts` where the trail keeps `attempt`.
+  All three are kept now. The hook had keyed `task.blocked` and `ado.link` rows by that
+  attempt and work-item id to withhold a row the trail already holds, but neither names one
+  record: `reopen` sets attempts back to 0, and an unlink followed by a re-link keeps the same
+  id. So neither row is withheld any more. A merge may repeat one, and none is lost.
+- **Re-rendering a published page no longer fails the pre-commit sweep.**
+  `tools/check-rendered-artifacts.py --selftest` compared every published page with what `HEAD`
+  carries, and the sweep runs before the commit exists — so a change that re-rendered a page with
+  the repository's own recipe was red until its own commit was made. The selftest and the new
+  `--before-commit` flag now compare with a fresh render only, and say in their output that the
+  commit was not asked. `--against-commit` compares with `HEAD` only; `tools/verify.sh` runs
+  `--before-commit`, and so does the check `--affected` selects; `--release` adds
+  `--against-commit`. A run with no flag compares both, as before. After a commit, that run and
+  `--release` are where a page committed without its re-render is found. CI also runs it with no
+  flag, but there the checkout is the commit, so only the fresh-render comparison can fail. The
+  tool's selftest pins the calls in `tools/verify.sh` and `ci.yml` by exact line: every
+  non-comment line that names the tool must, once its indentation (and in `ci.yml` a leading `- `
+  and `run:`) is stripped, equal one of its call lines - no flag, `--before-commit` or
+  `--against-commit` - and each run must carry its own line exactly once. The line around each
+  call is pinned too: a `ci.yml` call is read only as a one-line `run:` with no deeper
+  continuation or as a line in a plain `run: |` block, and a call continued from the line above
+  only from the runner's `run "<label>" \` wrapper. The nearest code line before the call's
+  command - above the wrapper, or above the call when there is none, skipping blank lines and
+  full-line comments - may not contain `&`, `|`, a backslash or `#` anywhere (a plain `run: |`
+  opener is exempt). The rule is deliberately strict: it reads no shell, so a correct but unusual
+  line above a call is refused loudly rather than read. So a flag moved, dropped or put on a
+  continuation line fails a case, and any other line naming the tool is refused by line. It is a
+  text check, not an interpreter. It does not decide whether the line is reached at all - control
+  flow above it, such as an `exit 0` or an `if false; then`, is not read. And it does not tell a
+  call from an exact call line that some construct makes data rather than a command - a heredoc, a
+  string opened on an earlier line, an array literal, arithmetic or another key's block text -
+  which matters only if the real call is also removed. Both files are read with their line endings
+  as written and split at a newline only, and only space and tab count as blanks anywhere in the
+  check: a line is not indentation, a comment or the runner's wrapper because of a leading NBSP,
+  form feed, Unicode separator or carriage return, since the shell treats none of those as a blank
+  or a line break. While it runs, it records every git call the tool makes against the checkout,
+  and fails naming the function that made one, including a call against a directory inside the
+  checkout. An unknown flag, or both flags together, is now a usage error (exit 2) instead of
+  running both comparisons.
 - **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
   report and the panel each turned a failed read into a clean read of nothing, so a task or
   phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not

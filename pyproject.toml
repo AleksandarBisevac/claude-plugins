@@ -2,4 +2,4 @@
 target-version = "py38"
 
 [tool.ruff.lint]
-select = ["E9", "F"]
+select = ["E9", "F", "W605"]

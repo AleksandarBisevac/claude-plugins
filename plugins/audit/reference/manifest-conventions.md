@@ -389,7 +389,8 @@ never add it to `.gitignore`; anchor (2) only pins committed history.
 The journal's **completion-record actions**:
 
 - `task.complete` — a task's status moved to done (details: taskId, phaseId, from, to, completedAt)
-- `task.blocked` — a task's status moved to blocked (details: taskId, phaseId, from, attempts)
+- `task.blocked` — a task's status moved to blocked (details: taskId, phaseId, from, attempt =
+  the task's `attempts` when it was blocked)
 - `task.commit` — a task's commit moved null → SHA (details: taskId, phaseId, commit)
 - `phase.signoff` — a phase reached done by its DERIVED status (details: phaseId, from, to,
   mergedAt): a stored `done`, or every task finished with a verdict recorded and, for a phase
@@ -451,14 +452,15 @@ The journal's **completion-record actions**:
   `testGate` only in `enforce` mode — and basis, `phase.testGateBasis`'s own word). Written **only
   after the write lands**, the same rule every completion row here follows
 - `phase.merged` — `close-phase.py` recorded that a phase reached its parent (details: phaseId,
-  branch; the parent is named in the summary, `<branch> reached <parent>`, and nowhere in the
-  details). Written **only after `phase.mergedAt` lands** - the stamp follows a verified
-  containment, and a stamp that failed leaves no row - and before the cleanup, so a removal that
-  fails afterwards cannot take the row with it. A re-run that finds `mergedAt` already recorded
-  writes none, which is what keeps one merge to one row
+  branch, parent; the summary says the same, `<branch> reached <parent>`). Rows written before the
+  parent was kept name it in the summary only. Written **only after `phase.mergedAt` lands** - the
+  stamp follows a verified containment, and a stamp that failed leaves no row - and before the
+  cleanup, so a removal that fails afterwards cannot take the row with it. A re-run that finds
+  `mergedAt` already recorded writes none, which is what keeps one merge to one row
 - `phase.mergedHead.recorded` — `close-phase.py` added `phase.mergedHead` to a merge that was
   recorded without one (details: phaseId, field = `mergedHead`, from = null, to = the head written,
-  mergedAt = the recorded moment it did not move, reason = the basis for the head). Which head
+  mergedAt = the recorded moment it did not move, parent = the branch whose chain the head was read
+  from, reason = the basis for the head). Which head
   depends on whether the branch still resolves. With the branch there, it is the oldest commit on
   the parent's first-parent chain that contains the tip: the commit on that chain that brought the
   tip in - the tip itself for a fast-forward, the merge commit for a direct merge, the parent's
@@ -485,8 +487,12 @@ records (`task.complete`, `task.blocked`, `task.commit`, `phase.signoff`) plus `
 pull moves the plan by another branch's history, and it brings that branch's journal files with
 it - so a completion recorded where the work ran is found in the trail, keyed by what makes it that
 completion: `task.complete` by task and `completedAt`, `task.commit` by task and SHA,
-`task.blocked` by task and attempt, `phase.signoff` by phase and `mergedAt`, `ado.link` by item and
-work-item id. The change itself is always recorded, and its row says how many derived rows it did
+`phase.signoff` by phase and `mergedAt`. **`task.blocked` and `ado.link` are never withheld**,
+because nothing in either names one record. `reopen` sets `attempts` back to 0, and a task can be
+blocked again without a start in between, so neither the attempt nor `startedAt` tells two
+blockings apart. A re-link to the same work item after an unlink carries the same id, and it
+**is** a new `ado.link` row. A merge may therefore repeat either row: a repeated row, never a
+lost one. The change itself is always recorded, and its row says how many derived rows it did
 not repeat. Git's dates and the reflog's wording are never read, so a completion this call made -
 whatever it then commits, rebases, cherry-picks or merges, however its commit is dated - is always
 derived, and an old, unrelated completion of the same task is a different record. **Not withheld,
