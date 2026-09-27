@@ -187,6 +187,47 @@
         "gate-parity",
         "bench-hooks"
       ]
+    },
+    {
+      "id": "P87.4-bpl",
+      "title": "the selftest proves at run time that it asks this checkout's HEAD nothing, and the call reader stops at a redirection",
+      "status": "in_progress",
+      "description": "Phase review round 2 (review-P87b.json). (1) ra30 is an AST rule that checks a root is passed, not where it points, and covers two names: uncommitted(REPO), repo_root=None, arm_verdict(..., root=REPO) and head_text(REPO, ...) pass it. Replace it with a run-time rule: _selftest records every git call (the tool's _git seam) whose root is this checkout (REPO) while the cases run, and a final case asserts none happened, naming the caller. Planted proof: a case in the red-first run calls uncommitted(REPO) and is flagged; an allow case calls git in a fixture repo and is not. Remove the AST rule if the run-time one subsumes it. (2) invocations() reads shell redirections as tool arguments (2>&1, >/dev/null give a false red) and a YAML folded `run: >` block hides the flag: stop reading at a redirection word, join folded lines (or require `run: |` and fail loudly otherwise), and add both shapes to ra29b. Red first for both.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - a selftest case calling uncommitted(REPO) is not flagged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T15:26:49Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"

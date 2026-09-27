@@ -76,7 +76,6 @@ either way, and a run that could look up NONE of them exits 1 saying so. Nothing
 written to the repo -- it renders into a temporary directory.
 """
 
-import ast
 import calendar
 import io
 import os
@@ -676,31 +675,76 @@ _VERIFY_REL = "tools/verify.sh"
 _CI_REL = ".github/workflows/ci.yml"
 _RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then\s*$')
 _SHELL_STOPS = (";", "&&", "||", "|")
+# A redirection word ends the argv: `2>&1`, `>/dev/null`, `&>log`, `<in`.
+_REDIRECT = re.compile(r"^(\d*|&)(>>?|<)")
+# A YAML folded block scalar, `run: >` (with any chomping or indent indicator).
+_FOLDED_RUN = re.compile(r"^(\s*)(?:-\s+)?run:\s*>[-+0-9]*\s*$")
+
+
+def _folded_blocks(lines):
+    """[(first, last)] line indexes of every folded `run: >` block's body.
+
+    The body is every following line indented deeper than the `run:` key, blank
+    lines included, which is where YAML ends the block too.
+    """
+    out = []
+    for i, line in enumerate(lines):
+        m = _FOLDED_RUN.match(line)
+        if not m:
+            continue
+        indent, end = len(m.group(1)), i
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip() and len(lines[j]) - len(lines[j].lstrip()) <= indent:
+                break
+            end = j
+        if end > i:
+            out.append((i + 1, end))
+    return out
 
 
 def invocations(text):
-    """[argv after the script] for every RUNNABLE line of `text` calling this tool.
+    """[argv after the script, or a problem] for every RUNNABLE call of this tool.
 
     A backslash continuation is joined first, because the runner writes its step
     as `run "label" \\` above the call. A comment is not a call: both files talk
-    about this tool in prose right beside the step.
+    about this tool in prose right beside the step. The argv ends at a shell
+    separator or a redirection word.
+
+    Two shapes come back as a problem STRING rather than an argv, so a caller
+    cannot read them as a call that asks nothing: a folded YAML `run: >` block
+    that calls this tool (YAML joins its lines with spaces before the shell sees
+    them, and this reader does not re-fold), and a line the shell lexer rejects.
     """
-    joined = re.sub(r"\\\n", " ", text)
-    out = []
+    lines = text.splitlines()
+    folded = _folded_blocks(lines)
+    out, skip = [], set()
+    for first, last in folded:
+        body = lines[first:last + 1]
+        skip.update(range(first, last + 1))
+        if any(_THIS_TOOL in line and not line.strip().startswith("#")
+               for line in body):
+            out.append("a folded `run: >` block at line %d calls %s - YAML joins "
+                       "its lines before the shell sees them, so this reader "
+                       "cannot say which argv it gets; write it as `run: |`"
+                       % (first, _THIS_TOOL))
+    kept = "\n".join(line for i, line in enumerate(lines) if i not in skip)
+    joined = re.sub(r"\\\n", " ", kept)
     for line in joined.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or _THIS_TOOL not in stripped:
             continue
         try:
             words = shlex.split(stripped, comments=True)
-        except ValueError:
+        except ValueError as exc:
+            out.append("a line calling %s does not lex as shell (%s): %s"
+                       % (_THIS_TOOL, exc, stripped))
             continue
         at = [i for i, w in enumerate(words) if w.endswith(_THIS_TOOL)]
         if not at:
             continue
         args = []
         for word in words[at[0] + 1:]:
-            if word in _SHELL_STOPS:
+            if word in _SHELL_STOPS or _REDIRECT.match(word):
                 break
             args.append(word)
         out.append(args)
@@ -726,6 +770,12 @@ def release_block(text):
     return inside, outside
 
 
+def _one_arms(argv):
+    """The arms one call asks, or the usage problem `arms_for` named."""
+    arms, problem = arms_for(argv)
+    return arms if arms is not None else problem
+
+
 def run_arms(repo_root=None):
     """{"plain", "release", "ci"}: the arms each run asks, as `arms_for` reads them.
 
@@ -746,8 +796,8 @@ def run_arms(repo_root=None):
     def _arms(text):
         if text is None:
             return None
-        return [arms if arms is not None else problem
-                for arms, problem in (arms_for(a) for a in invocations(text))]
+        return [call if isinstance(call, str) else _one_arms(call)
+                for call in invocations(text)]
 
     inside, outside = (release_block(texts[_VERIFY_REL])
                        if texts[_VERIFY_REL] is not None else (None, None))
@@ -926,7 +976,7 @@ def _cases(check):
     # IT ASKS `SELFTEST_ARMS`: this suite runs in the pre-commit sweep, and asking
     # it what the commit carries made every task that re-rendered a page red until
     # its own commit existed. ra25 asserts the constant leaves HEAD out; ra30 fails
-    # on a selftest call that asks this checkout's HEAD some other way.
+    # on any git call this suite makes against this checkout while it runs.
     _live_lines, _live_code = arm_verdict(SELFTEST_ARMS)
     check("ra5 every committed rendered artifact matches what its source renders "
           "today - %r" % (_live_lines,), _live_code == 0)
@@ -1240,42 +1290,111 @@ def _arm_cases(check):
           invocations(_fx_out or "") == [["--before-commit"]]
           and invocations(_fx_in or "") == [["--against-commit"]]
           and release_block("python3 %s\n" % (_THIS_TOOL,))[0] is None)
-    _stray = _selftest_head_calls()
-    check("ra30 no selftest call asks THIS checkout's HEAD: every `uncommitted` "
-          "call names a root, and every `arm_verdict` call without one asks "
-          "SELFTEST_ARMS - the constant ra25 checks: %r" % (_stray,), _stray == [])
+    # A redirection is the shell's, not an argument: `2>&1` read as one would make
+    # `arms_for` call a correct call a usage error.
+    _fx_redirect = ("python3 %s --before-commit 2>&1\n"
+                    "python3 %s >/dev/null\n" % ((_THIS_TOOL,) * 2))
+    # A folded YAML block joins its lines with spaces before the shell sees them,
+    # so reading it line by line would take one call for two. Refused by name.
+    _fx_folded = ("      - run: >\n"
+                  "          python3 %s\n"
+                  "          --against-commit\n"
+                  "      - run: python3 %s --before-commit\n"
+                  % ((_THIS_TOOL,) * 2))
+    _folded = invocations(_fx_folded)
+    check("ra29c ...stops at a redirection word, and REFUSES a folded `run: >` block "
+          "that calls this tool rather than reading its lines as separate calls, "
+          "while a plain `run:` beside it is still read: %r / %r"
+          % (invocations(_fx_redirect), _folded),
+          invocations(_fx_redirect) == [["--before-commit"], []]
+          and len(_folded) == 2
+          and isinstance(_folded[0], str) and "folded" in _folded[0]
+          and _folded[1] == ["--before-commit"])
 
 
-def _selftest_head_calls(source=None):
-    """["<function>:<line> <call>"] - a selftest call that would ask this checkout's
-    HEAD: `uncommitted()` with no root, or `arm_verdict()` with no root whose arms
-    are anything but `SELFTEST_ARMS`. Read from this file's own AST, over the
-    functions the selftest runs. `source` lets a case hand it a planted text."""
-    if source is None:
-        with io.open(os.path.abspath(__file__), encoding="utf-8") as fh:
-            source = fh.read()
-    tree = ast.parse(source)
-    out = []
-    for fn in tree.body:
-        if not isinstance(fn, ast.FunctionDef) or not fn.name.endswith("_cases"):
-            continue
-        for node in ast.walk(fn):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
-                continue
-            kws = [kw.arg for kw in node.keywords]
-            if node.func.id == "uncommitted" and not node.args \
-                    and "repo_root" not in kws:
-                out.append("%s:%d uncommitted()" % (fn.name, node.lineno))
-            if node.func.id == "arm_verdict" and "root" not in kws \
-                    and not (node.args and isinstance(node.args[0], ast.Name)
-                             and node.args[0].id == "SELFTEST_ARMS"):
-                out.append("%s:%d arm_verdict()" % (fn.name, node.lineno))
-    return out
+# --- no case asks git about this checkout, measured while the cases run --------
+# The pre-commit sweep runs this suite, and a question put to this checkout's HEAD
+# from inside it is the one this file stopped asking there. A rule over the SOURCE
+# could only look for spellings - a call with no root - and `uncommitted(REPO)` or
+# `head_text(REPO, ...)` got past it. So the seam every HEAD question goes through,
+# `_git`, is swapped for a recorder while the cases run, and a call it saw against
+# this checkout is a failing case naming the function and line that made it.
+# WHAT IT CANNOT SEE: git run by something other than `_git` (a subprocess spelled
+# by hand, or the renderer's own children), which this file does not do today.
+_GIT_SEAM = _git
+
+
+def _case_caller():
+    """"<function>:<line>" of the nearest selftest function on the stack."""
+    frame = sys._getframe(2)
+    while frame is not None:
+        name = frame.f_code.co_name
+        if name.endswith("_cases") or name.startswith("_planted"):
+            return "%s:%d" % (name, frame.f_lineno)
+        frame = frame.f_back
+    return "outside any case"
+
+
+def _recording_git(calls, root, real):
+    """A `_git` that notes every call made against `root`, then makes it."""
+    target = os.path.realpath(root)
+
+    def recording(git_root, args):
+        if os.path.realpath(git_root) == target:
+            calls.append("%s git %s" % (_case_caller(), args[0] if args else ""))
+        return real(git_root, args)
+    return recording
+
+
+def _planted_repo_call():
+    """What ra30b plants: a HEAD question put to this checkout by name."""
+    return uncommitted(REPO, subjects=[_HEAD_FX_REL])
+
+
+def _seam_cases(check):
+    """The recorder itself: it catches a planted call, and not a fixture's."""
+    inner = []
+    outer = globals()["_git"]
+    globals()["_git"] = _recording_git(inner, REPO, _GIT_SEAM)
+    root = None
+    try:
+        _planted_repo_call()
+        caught = list(inner)
+        root = _head_fixture("<html>fixture</html>\n")
+        uncommitted(root, subjects=[_HEAD_FX_REL])
+        after_fixture = list(inner)
+    finally:
+        globals()["_git"] = outer
+        if root is not None:
+            from _suite import remove_tree   # tools/_suite.py says why the import is here
+            remove_tree(root)
+    check("ra30b the recorder catches `uncommitted(REPO)` - a call that names a "
+          "root and still asks this checkout - naming the function it came from, "
+          "and records nothing for the same question put to a fixture repository: "
+          "%r" % (after_fixture,),
+          caught != []
+          and all(c.startswith("_planted_repo_call:") for c in caught)
+          and after_fixture == caught)
+
+
+def _recorded_cases(check):
+    """Every case, with the `_git` seam recording calls against this checkout."""
+    calls = []
+    seam = globals()["_git"]
+    globals()["_git"] = _recording_git(calls, REPO, seam)
+    try:
+        _cases(check)
+        _seam_cases(check)
+    finally:
+        globals()["_git"] = seam
+    check("ra30 no case asked git about THIS checkout while the suite ran - the "
+          "pre-commit sweep runs it, so a HEAD question here is the one this file "
+          "moved out of it: %r" % (calls,), calls == [])
 
 
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
-    return run(_cases)
+    return run(_recorded_cases)
 
 
 # --- cli ------------------------------------------------------------------------

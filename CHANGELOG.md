@@ -574,7 +574,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   and `--release` are where a page committed without its re-render is found. CI also runs it
   with no flag, but there the checkout is the commit, so only the fresh-render comparison can
   fail. The tool's selftest reads the calls in `tools/verify.sh` and `ci.yml`, so a moved flag
-  fails a case. An unknown flag, or both flags together, is now a usage error (exit 2) instead
+  fails a case. It stops reading a call at a redirection, and refuses a folded YAML `run: >`
+  block that calls the tool. While it runs, it records every git call the tool makes against
+  the checkout, and fails naming the function that made one. An unknown flag, or both flags together, is now a usage error (exit 2) instead
   of running both comparisons.
 - **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
   report and the panel each turned a failed read into a clean read of nothing, so a task or
