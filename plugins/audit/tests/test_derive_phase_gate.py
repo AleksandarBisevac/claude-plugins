@@ -462,18 +462,52 @@ def _cases(check):
                     "until": "2026-10-01"}]},
         {"name": "e2e", "exit": 1, "failingSuites": ["src/pay.test.ts"],
          "failingSuitesBasis": _named}]}
+    # The reading is `_evidence_io.named_failing_suites`, the one every
+    # learner shares; dp-shared below pins that this script reaches it.
+    _learn = M._evidence_io.named_failing_suites
     check("dp-muted a MUTED step's suite is not learned as last-failed - its "
           "failure is quarantined and a bug owns it - while the unmuted "
           "failed step beside it still is (mutation: drop the muted skip -> "
-          "red): %r" % (M._named_failing_suites(_red_row),),
-          M._named_failing_suites(_red_row) == ["src/pay.test.ts"])
+          "red): %r" % (_learn(_red_row["steps"]),),
+          _learn(_red_row["steps"]) == ["src/pay.test.ts"])
     check("dp-muted-allow ALLOW: with no marker the same step is read as "
           "before: %r"
-          % (M._named_failing_suites({"steps": [dict(_red_row["steps"][0],
-                                                     muted=None)]}),),
-          M._named_failing_suites({"steps": [dict(_red_row["steps"][0],
-                                                  muted=None)]})
+          % (_learn([dict(_red_row["steps"][0], muted=None)]),),
+          _learn([dict(_red_row["steps"][0], muted=None)])
           == ["src/cart.test.ts"])
+
+    # --- dp-shared: last-failed is learned through the SHARED reader --------
+    # A spy stands in for `_evidence_io.named_failing_suites` while
+    # `_gather_facts` reads a ledger holding one red phase row. A private
+    # copy of the reading in this script would never call the spy, so
+    # `lastFailedSuites` would come back as the copy's answer, not the spy's.
+    d_sh, m_sh, _base_sh = _project(root, mode="shadow")
+    manifest_sh = _raw(m_sh)
+    red = {"scope": "phase", "phaseId": "P1", "status": "failed",
+           "ts": "2026-09-27T00:00:00Z", "steps": [
+               {"name": "unit", "exit": 1, "failingSuites": ["a.test.ts"],
+                "failingSuitesBasis": _named}]}
+    seen = []
+    real_read, real_learn = M._evidence_io.read_rows, _learn
+
+    def _spy(steps):
+        seen.append(steps)
+        return ["spy.test.ts"]
+
+    M._evidence_io.read_rows = lambda _project_dir, config=None: {"rows": [red]}
+    M._evidence_io.named_failing_suites = _spy
+    try:
+        facts_sh, _lines_sh = M._gather_facts(
+            manifest_sh, manifest_sh["phases"][0], d_sh, lambda _l: None)
+    finally:
+        M._evidence_io.read_rows = real_read
+        M._evidence_io.named_failing_suites = real_learn
+    check("dp-shared lastFailedSuites is the SHARED reader's answer over the "
+          "newest red phase row's steps - no private copy of the reading "
+          "lives in this script: %r"
+          % ((facts_sh.get("lastFailedSuites"), seen),),
+          facts_sh.get("lastFailedSuites") == ["spy.test.ts"]
+          and seen == [red["steps"]])
 
     # --- dp-usage: unknown phase is an error, never a silent fallback ---------
     d7, m7, _base7 = _project(root, mode="shadow")

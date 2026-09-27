@@ -116,7 +116,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _evidence_io                  # noqa: E402  (read_rows, subject_key -- the
-#                                       newest red phase-scope row)
+#                                       newest red phase-scope row; and
+#                                       named_failing_suites, its suites)
 import _gate_derive                  # noqa: E402  (derive(): the one PURE
 #                                       computation, and the ONLY place the
 #                                       per-arm attribution renderers read is
@@ -194,39 +195,6 @@ def _lines_of(text):
 
 
 # --- gathering the observations `_gate_derive.derive` needs ----------------------
-def _named_failing_suites(row):
-    """Every suite file the newest red phase-scope ROW named as failing, in
-    the order its failed steps carry them, deduplicated.
-
-    THE SAME READING `audit-task._named_failing_suites` HOLDS, restated here:
-    two entry points, neither importing the other, asking the identical
-    question of the identical row shape. A step counts as failed the same way
-    `run-test-gate.failed_steps` reads one (a non-zero exit, no no-verdict
-    `outcome`, and no `muted` marker), and ONLY a `failingSuitesBasis` that
-    says the runner named them counts -- a capped tail of raw output is not a
-    list of failing suites, and learning suites off it would point a derived
-    gate at whatever lines happened to scroll past last.
-
-    A MUTED STEP IS SKIPPED because its failure is quarantined and known: it
-    is on the row as a record, not as something the gate caught, and
-    learning it would point every derived gate at a suite a bug already owns.
-    """
-    suites = []
-    for step in (row.get("steps") or []) if isinstance(row, dict) else []:
-        if not isinstance(step, dict):
-            continue
-        if step.get("exit") in (0, None) or step.get("outcome"):
-            continue
-        if step.get("muted"):
-            continue
-        if "named as failing" not in (step.get("failingSuitesBasis") or ""):
-            continue
-        for path in step.get("failingSuites") or []:
-            if path not in suites:
-                suites.append(path)
-    return suites
-
-
 def _touched_paths(phase):
     return _gate_derive._touched_files(phase)
 
@@ -304,7 +272,11 @@ def _gather_facts(manifest, phase, project, out):
     rows = _evidence_io.read_rows(project).get("rows") or []
     red_row = _gate_derive.newest_red_phase_row(rows, phase.get("id")
                                                 if isinstance(phase, dict) else None)
-    facts["lastFailedSuites"] = _named_failing_suites(red_row) if red_row else []
+    # The one reading every learner shares: a failed, unmuted step whose
+    # runner NAMED its suites - never a tail of output.
+    facts["lastFailedSuites"] = (
+        _evidence_io.named_failing_suites(red_row.get("steps"))
+        if red_row else [])
 
     hooks_config = _loader.load_hooks_config()
     hcfg = hooks_config.load(project)

@@ -2352,6 +2352,63 @@ def _cases(check):
     _merge_ledger_cases(check)
     _chain_order_cases(check)
     _narrowed_shadow_cases(check)
+    _selection_miss_row_cases(check)
+
+
+def _selection_miss_row_cases(check):
+    """(smr) `row_for`'s `selectionMiss`: `{test, phases, sources}` and no
+    other key, the paths redacted, and absent when the post-pass found none."""
+    tmp = _harness.fixture_root("audit-evidence-miss-")
+    try:
+        plain = _project(os.path.join(tmp, "plain"), {})
+        base = {"status": "failed", "durationMs": 900, "failed": ["e2e"],
+                "ranTotal": 4, "coverageBasis": None, "treeBasis": "b",
+                "treeMutated": [], "overlap": None, "steps": []}
+        ident = {"runId": "R-smr", "attempt": None, "via": "cli"}
+        miss = {"test": os.path.join(plain, "e2e", "cart.spec.ts"),
+                "phases": ["P2"], "sources": ["src/cart.ts"],
+                "extra": "widened"}
+        row = M.row_for(plain, dict(base, selectionMiss=[miss]), "full", {},
+                        ident, published=[])
+        check("smr1 `row_for` carries `selectionMiss` as exactly "
+              "{test, phases, sources} - an inventive caller's extra key "
+              "is dropped, and an absolute suite path is written "
+              "repo-relative: %r" % (row.get("selectionMiss"),),
+              row.get("selectionMiss") == [
+                  {"test": "e2e/cart.spec.ts", "phases": ["P2"],
+                   "sources": ["src/cart.ts"]}])
+        over = M.MAX_PATHS + 3
+        wide = {"test": "e2e/cart.spec.ts",
+                "phases": ["P%d" % i for i in range(over)],
+                "sources": ["src/f%d.ts" % i for i in range(over + 2)]}
+        row_wide = M.row_for(plain, dict(base, selectionMiss=[wide] * (over + 1)),
+                             "full", {}, ident, published=[])
+        kept = row_wide.get("selectionMiss") or [{}]
+        check("smr1b every list past MAX_PATHS is cut WITH its dropped count "
+              "beside it - misses, each miss's phases and its sources - so a "
+              "truncation announces itself: %r"
+              % ((len(kept), row_wide.get("selectionMissDropped"),
+                  kept[0].get("phasesDropped"), kept[0].get("sourcesDropped")),),
+              len(kept) == M.MAX_PATHS
+              and row_wide.get("selectionMissDropped") == 4
+              and len(kept[0]["phases"]) == M.MAX_PATHS
+              and kept[0].get("phasesDropped") == 3
+              and len(kept[0]["sources"]) == M.MAX_PATHS
+              and kept[0].get("sourcesDropped") == 5)
+        check("smr1c ALLOW: a miss inside every bound carries no dropped "
+              "count at all - absence means nothing was cut: %r"
+              % (row.get("selectionMiss"),),
+              "selectionMissDropped" not in row
+              and not any(k.endswith("Dropped")
+                          for k in (row.get("selectionMiss") or [{}])[0]))
+        none = M.row_for(plain, dict(base, selectionMiss=[]), "full", {},
+                         ident, published=[])
+        check("smr2 ALLOW: a post-pass that found no miss writes no key - "
+              "absence reads as none, and an empty list on every full row "
+              "could not be told from a build that never asked",
+              "selectionMiss" not in none)
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _narrowed_shadow_cases(check):

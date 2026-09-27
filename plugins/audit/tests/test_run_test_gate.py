@@ -25,6 +25,7 @@ is an actual repository and the "mutation" is an actual file appearing in it.
 import datetime
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -45,6 +46,7 @@ import io as _io
 import contextlib as _ctx
 
 M = _loader.load_script("run-test-gate.py", "rtg")
+_AT = _loader.load_script("audit-task.py", "rtg_audit_task")  # its parser, for the remedy pins
 
 # --- which half of a platform split a case may assert -------------------------
 # READ THE WAY THE PRODUCT READS IT, never off `sys.platform`. `_tear_down`
@@ -8297,12 +8299,455 @@ def _full_scope_cases(check):
         _harness.remove_tree(root_p)
 
 
+# --- the --full post-pass: a failing suite no derived gate selected ------------
+# The gate script lives OUTSIDE the fixture repository, so a green run before
+# the red one measures a clean tree and can bear whole. The mode file beside it
+# picks which output the one declared `fullGate` command prints this time: the
+# earlier row and the later one must run the SAME command, or the earlier one
+# would not be whole-bearing against the plan's own declaration.
+_SM_GATE = """\
+import sys
+mode = open(sys.argv[1]).read().strip()
+if mode == "green":
+    print("PASS e2e/cart.spec.ts")
+    print("Tests:       4 passed, 4 total")
+    sys.exit(0)
+if mode == "named":
+    print("FAIL e2e/cart.spec.ts")
+    print("  \\u25cf cart > adds an item")
+    print("")
+    print("Tests:       1 failed, 3 passed, 4 total")
+    sys.exit(1)
+print("boom")
+print("at e2e/cart.spec.ts:3")
+sys.exit(1)
+"""
+
+_SM_GIT = ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
+           "-c", "commit.gpgsign=false"]
+
+
+def _sm_git(root, *args):
+    return subprocess.run(["git", "-C", root] + _SM_GIT + list(args),
+                          check=True, capture_output=True,
+                          text=True).stdout.strip()
+
+
+def _sm_fixture():
+    """`{root, mpath, gate_dir, mode, first}` - a committed repository whose
+    plan declares one `fullGate` command, and the file choosing its output.
+
+    `first` is the sha of the fixture's first commit; `_sm_commit` makes the
+    later ones, so a merged phase's `mergedHead` is a REAL ancestor of the
+    run's head and the ancestry question is really asked of git.
+    """
+    root = _harness.fixture_root("run-test-gate-miss-")
+    gate_dir = _harness.fixture_root("run-test-gate-miss-gate-")
+    script = os.path.join(gate_dir, "gate.py")
+    mode = os.path.join(gate_dir, "mode")
+    with open(script, "w", encoding="utf-8") as fh:
+        fh.write(_SM_GATE)
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    fx = {"root": root, "mpath": mpath, "gate_dir": gate_dir, "mode": mode,
+          "command": _step(sys.executable, script, mode)}
+    _sm_plan(fx, [])
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _sm_git(root, "add", "--", "docs", ".claude")
+    _sm_git(root, "commit", "-qm", "fixture")
+    fx["first"] = _sm_git(root, "rev-parse", "HEAD")
+    return fx
+
+
+def _sm_plan(fx, phases):
+    with open(fx["mpath"], "w") as fh:
+        json.dump({"meta": {"version": 3, "fullGate": ["e2e"],
+                            "buildCommands": {"e2e": fx["command"]}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "status": "in_progress", "tasks": []}]
+                  + list(phases)}, fh)
+
+
+def _sm_commit(fx, name):
+    path = os.path.join(fx["root"], "src", name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write("%s\n" % (name,))
+    _sm_git(fx["root"], "add", "--", "src")
+    _sm_git(fx["root"], "commit", "-qm", name)
+    return _sm_git(fx["root"], "rev-parse", "HEAD")
+
+
+def _sm_phase(pid, merged_head, tests, files):
+    return {"id": pid, "title": pid, "status": "done",
+            "mergedAt": "2026-09-01T00:00:00Z", "mergedHead": merged_head,
+            "testGateDerived": {"tests": list(tests)},
+            "tasks": [{"id": "%s.1" % (pid,), "title": "t", "status": "done",
+                       "files": list(files)}]}
+
+
+def _sm_run(fx, mode):
+    with open(fx["mode"], "w") as fh:
+        fh.write(mode)
+    lines = []
+    code = M.main([fx["mpath"], "--full", "--project-dir", fx["root"],
+                   "--record"], out=lines.append)
+    full_rows = [r for r in _ev_io.read_rows(fx["root"])["rows"]
+                 if r.get("scope") == "full"]
+    return code, lines, full_rows[-1] if full_rows else {}
+
+
+def _sm_remove(fx):
+    _harness.remove_tree(fx["root"])
+    _harness.remove_tree(fx["gate_dir"])
+
+
+def _sm_commands(line):
+    """The `audit-task.py` commands a SELECTION MISS line's remedy carries,
+    each as the argv its parser would be handed - whatever explanation the
+    remedy holds sits before the colon and never among the commands."""
+    tail = line.split("remedy", 1)[1]
+    tail = tail.split("): ", 1)[1] if tail.startswith(" (") else tail[2:]
+    parts = tail.split("; audit-task.py ")
+    texts = [parts[0]] + ["audit-task.py " + p for p in parts[1:]]
+    return [shlex.split(t) for t in texts]
+
+
+def _sm_parses(argvs):
+    """`[(verb, args-or-None)]` - each argv through audit-task's own parser,
+    exactly as its `main` parses (`parse_intermixed_args`)."""
+    parser = _AT.build_parser()
+    parsed = []
+    for argv in argvs:
+        try:
+            with _ctx.redirect_stderr(_io.StringIO()):
+                parsed.append((argv[1], parser.parse_intermixed_args(argv[1:])))
+        except SystemExit:
+            parsed.append((argv[1] if len(argv) > 1 else None, None))
+    return parsed
+
+
+def _sm_since_row(run_id, head, commands):
+    """A whole-bearing scope-full row at `head`: passed, measured, counted
+    with a basis, every step timed, a clean tree, the declared commands."""
+    return {"v": _ev_io.ROW_VERSION, "runId": run_id,
+            "ts": "2026-09-01T00:00:00Z", "scope": _ev_io.FULL_SCOPE,
+            "status": "passed",
+            "steps": [{"name": "gate", "command": c, "exit": 0,
+                       "durationMs": 10} for c in commands],
+            "testedState": {"head": head},
+            "observations": {"ranTotal": 4, "countsBasis": "4 checks",
+                             "dirtyOutside": []}}
+
+
+_SM_NAMED = ("the 1 suite file(s) jest named as failing, read from jest's "
+             "FAIL <path> header(s)")
+_SM_STEP = {"name": "e2e", "exit": 1, "failingSuites": ["e2e/cart.spec.ts"],
+            "failingSuitesBasis": _SM_NAMED,
+            "failingBasis": "the 1 check(s) jest named as failing"}
+
+
+def _sm_pair():
+    """`(root, first, second)` - a real repository with two commits, `first`
+    a real ancestor of `second`, so both ancestry questions go to git."""
+    root = _harness.fixture_root("run-test-gate-miss-pair-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    shas = []
+    for name in ("a.txt", "b.txt"):
+        with open(os.path.join(root, name), "w") as fh:
+            fh.write(name)
+        _sm_git(root, "add", "--", name)
+        _sm_git(root, "commit", "-qm", name)
+        shas.append(_sm_git(root, "rev-parse", "HEAD"))
+    return root, shas[0], shas[1]
+
+
+def _selection_miss_cases(check):
+    # --- a named failure no merged phase's derived gate listed -------------
+    fx = _sm_fixture()
+    try:
+        code_green, _lines, green = _sm_run(fx, "green")
+        second = _sm_commit(fx, "cart.ts")
+        _sm_plan(fx, [_sm_phase("P2", second, ["e2e/other.spec.ts"],
+                                ["src/cart.ts", "src/pay.ts"])])
+        code, lines, row = _sm_run(fx, "named")
+        run_id = row.get("runId")
+        # The row records the head abbreviated; it must still be the commit
+        # the phase merged at, or ancestry was never asked.
+        head = (row.get("testedState") or {}).get("head") or ""
+        want = ("SELECTION MISS: e2e/cart.spec.ts failed at the third place "
+                "and no derived sign-off gate in P2 listed it. remedy: "
+                "audit-task.py couple --test e2e/cart.spec.ts --sources "
+                "src/cart.ts,src/pay.ts --basis-run %s --basis-head %s "
+                "--phases P2; audit-task.py bug-add " % (run_id, head))
+        misses = [ln for ln in lines if ln.startswith("SELECTION MISS:")]
+        check("sm1 RED-FIRST: a full run failing on a suite the runner NAMED, "
+              "with one phase merged since the earlier green run (%s) whose "
+              "derived gate does not list it, prints exactly one SELECTION "
+              "MISS whose remedy is the couple and bug-add spelling "
+              "audit-task accepts: %r" % (green.get("runId"), misses),
+              code_green == M.E_OK and code == M.E_FAIL and len(misses) == 1
+              and len(head) >= 7 and second.startswith(head)
+              and misses[0].startswith(want))
+        check("sm1b ...and the row records it as `selectionMiss`, naming the "
+              "suite, the phase whose derived gate missed it, and that "
+              "phase's tasks' files as the sources: %r"
+              % (row.get("selectionMiss"),),
+              row.get("selectionMiss") == [
+                  {"test": "e2e/cart.spec.ts", "phases": ["P2"],
+                   "sources": ["src/cart.ts", "src/pay.ts"]}])
+        check("sm1c ...and no not-learned or not-asked line beside it - the "
+              "runner named the suite and the work since is bounded: %r"
+              % (lines,),
+              not any(ln.startswith("not learned:")
+                      or ln.startswith("SELECTION MISS not asked")
+                      for ln in lines))
+        parsed = _sm_parses(_sm_commands(misses[0]) if misses else [])
+        check("sm1d ...and both remedy commands shlex-split and parse through "
+              "audit-task's own parser, carrying the values the miss names: "
+              "%r" % ([(v, a and vars(a)) for v, a in parsed],),
+              [v for v, _a in parsed] == ["couple", "bug-add"]
+              and all(a is not None for _v, a in parsed)
+              and parsed[0][1].test == "e2e/cart.spec.ts"
+              and ",".join(parsed[0][1].sources).split(",")
+              == ["src/cart.ts", "src/pay.ts"]
+              and parsed[0][1].basis_run == run_id
+              and parsed[0][1].phases == ["P2"]
+              and parsed[1][1].files == ["e2e/cart.spec.ts"])
+
+        # --- the same failure, but the runner named nothing --------------
+        code, lines, row = _sm_run(fx, "tail")
+        basis = [s.get("failingBasis") for s in row.get("steps") or []]
+        unlearned = [ln for ln in lines if ln.startswith("not learned:")]
+        check("sm2 RED-FIRST: the same failure read only off the output's "
+              "TAIL records no selectionMiss and prints the not-learned line "
+              "with the basis the step carries - a tail is not a list of "
+              "failing suites: %r" % ((row.get("selectionMiss"), unlearned),),
+              code == M.E_FAIL and "selectionMiss" not in row
+              and not any(ln.startswith("SELECTION MISS") for ln in lines)
+              and unlearned == [
+                  "not learned: the runner did not name the failing suites "
+                  "(basis: %s)" % (basis[0],)])
+
+        # --- --json carries the whole post-pass under one key ------------
+        with open(fx["mode"], "w") as fh:
+            fh.write("named")
+        jlines = []
+        # A dump that raises is this case's failure, never the suite's: a
+        # step carrying a set once made every `--json` path raise here.
+        try:
+            M.main([fx["mpath"], "--full", "--project-dir", fx["root"],
+                    "--json"], out=jlines.append)
+        except TypeError as exc:
+            jlines = ["{\"raised\": %s}" % (json.dumps(str(exc)),)]
+        blob = json.loads([ln for ln in jlines if ln.startswith("{")][0])
+        spass = blob.get("selectionPass") or {}
+        check("sm6 --json carries the WHOLE post-pass under `selectionPass` - "
+              "misses, unnamed, unasked, reasons and the bounding run - while "
+              "the row keeps only the allow-listed misses: %r" % (spass,),
+              [m["test"] for m in spass.get("misses") or []]
+              == ["e2e/cart.spec.ts"]
+              and spass.get("since", {}).get("runId") == green.get("runId")
+              and all(k in spass for k in ("unnamed", "unasked", "reasons"))
+              and "selectionPass" not in row)
+
+        # --- ALLOW: a suite a derived gate listed is not a miss ----------
+        _sm_plan(fx, [_sm_phase("P2", second,
+                                ["e2e/other.spec.ts", "e2e/cart.spec.ts"],
+                                ["src/cart.ts"])])
+        code, lines, row = _sm_run(fx, "named")
+        check("sm3 ALLOW: a failing suite a merged phase's derived gate "
+              "LISTED is not a miss - the selection was right and the suite "
+              "caught something: %r" % ((row.get("selectionMiss"), lines),),
+              code == M.E_FAIL and "selectionMiss" not in row
+              and not any(ln.startswith("SELECTION MISS") for ln in lines))
+    finally:
+        _sm_remove(fx)
+
+    # --- ALLOW: a phase merged before the newest earlier green full row ----
+    fx = _sm_fixture()
+    try:
+        code_green, _lines, green = _sm_run(fx, "green")
+        second = _sm_commit(fx, "pay.ts")
+        _sm_plan(fx, [_sm_phase("P2", fx["first"], ["e2e/other.spec.ts"],
+                                ["src/old.ts"]),
+                      _sm_phase("P3", second, ["e2e/other.spec.ts"],
+                                ["src/pay.ts"])])
+        code, lines, row = _sm_run(fx, "named")
+        check("sm4 ALLOW: a phase whose mergedHead the newest earlier "
+              "whole-bearing green full run (%s) already contained is not "
+              "counted - only P3, merged since, is named, and only its files "
+              "are the sources: %r"
+              % (green.get("runId"), (row.get("selectionMiss"), lines)),
+              code_green == M.E_OK and code == M.E_FAIL
+              and row.get("selectionMiss") == [
+                  {"test": "e2e/cart.spec.ts", "phases": ["P3"],
+                   "sources": ["src/pay.ts"]}])
+    finally:
+        _sm_remove(fx)
+
+    # --- no earlier whole-bearing run: nothing bounds the work, so no learn -
+    fx = _sm_fixture()
+    try:
+        second = _sm_commit(fx, "cart.ts")
+        _sm_plan(fx, [_sm_phase("P2", second, ["e2e/other.spec.ts"],
+                                ["src/cart.ts"])])
+        code, lines, row = _sm_run(fx, "named")
+        check("sm7 with NO earlier whole-bearing full run, nothing is learned "
+              "- 'the work since' would be the whole history - and the "
+              "post-pass says so rather than falling silent: %r"
+              % ((row.get("selectionMiss"), lines),),
+              code == M.E_FAIL and "selectionMiss" not in row
+              and not any(ln.startswith("SELECTION MISS:") for ln in lines)
+              and "SELECTION MISS not asked: no earlier whole-bearing full "
+                  "run bounds the work since" in lines)
+    finally:
+        _sm_remove(fx)
+
+    # --- the pure post-pass over a real two-commit repository --------------
+    # The bounding run sits at `first`; a phase merged at `second` is merged
+    # since it. Each case changes ONE thing about that phase or that run.
+    root, first, second = _sm_pair()
+    try:
+        since = [_sm_since_row("R-since", first, ["x"])]
+
+        def post(phases, steps=None, rows=None):
+            return M._ev.selection_miss(steps or [_SM_STEP], phases, second,
+                                        root, since if rows is None else rows,
+                                        ["x"])
+
+        derived = _sm_phase("P2", second, ["e2e/other.spec.ts"], ["src/a.ts"])
+        plain = post([derived])
+        muted = post([derived], steps=[dict(
+            _SM_STEP, muted=[{"test": "e2e/cart.spec.ts", "bugId": "B1",
+                              "until": "2099-01-01"}])])
+        check("sm5 ALLOW: a muted step's suite is never a miss and never a "
+              "not-learned line - the quarantine is known, and the same step "
+              "unmuted IS a miss, so the fixture can tell the two apart: %r"
+              % ((plain, muted),),
+              [m["test"] for m in plain["misses"]] == ["e2e/cart.spec.ts"]
+              and muted["misses"] == [] and muted["unnamed"] == [])
+
+        underived = dict(derived)
+        del underived["testGateDerived"]
+        res = post([underived])
+        check("sm8 ALLOW: a phase merged since that signed off on a gate that "
+              "was NOT derived made no selection, so it is no miss - and one "
+              "line names it rather than the post-pass going silent: %r"
+              % (res,),
+              res["misses"] == [] and res["underived"] == ["P2"]
+              and res["phases"] == []
+              and any("(P2) signed off on a gate that was not derived" in r
+                      for r in res["reasons"]))
+
+        with_cancelled = dict(derived, tasks=derived["tasks"] + [
+            {"id": "P2.2", "title": "t", "status": "cancelled",
+             "files": ["src/never.ts"]}])
+        res = post([with_cancelled])
+        check("sm9 ALLOW: a cancelled task's files are not sources - that "
+              "work never landed, so a coupling to it would be to nothing: %r"
+              % ([m["sources"] for m in res["misses"]],),
+              [m["sources"] for m in res["misses"]] == [["src/a.ts"]])
+
+        headless = dict(derived)
+        del headless["mergedHead"]
+        res = post([headless])
+        check("sm10 a merged phase with NO mergedHead is reported unasked with "
+              "its basis, never skipped in silence: %r" % (res["unasked"],),
+              res["misses"] == []
+              and len(res["unasked"]) == 1
+              and res["unasked"][0][0] == "phase P2"
+              and "records no mergedHead" in res["unasked"][0][1])
+
+        no_head_since = [dict(since[0], testedState={})]
+        res = post([derived], rows=no_head_since)
+        check("sm11 a bounding run that recorded NO head learns nothing and "
+              "is reported unasked, naming the run: %r"
+              % ((res["misses"], res["unasked"]),),
+              res["misses"] == [] and len(res["unasked"]) == 1
+              and res["unasked"][0][0] == "run R-since"
+              and "records no testedState.head" in res["unasked"][0][1])
+
+        backfilled = dict(derived, mergedHeadAt="2026-09-02T00:00:00Z")
+        res = post([backfilled])
+        before = post([dict(backfilled, mergedHead=first)])
+        check("sm12 a BACKFILLED mergedHead (mergedHeadAt set) the bounding "
+              "run does not contain cannot say whether the merge came before "
+              "it, so it is unasked and never counted; the same backfill the "
+              "bounding run DOES contain is settled, and stays quiet: %r"
+              % ((res["unasked"], before["unasked"]),),
+              res["misses"] == [] and len(res["unasked"]) == 1
+              and "recorded after the fact" in res["unasked"][0][1]
+              and before["unasked"] == [] and before["misses"] == [])
+    finally:
+        _harness.remove_tree(root)
+
+    # --- a phase --json run whose gate output names a path ------------------
+    # `files_named` answers with a set; a step that carried it raw made every
+    # `--json` dump raise before printing anything.
+    fx = _sm_fixture()
+    try:
+        with open(fx["mpath"]) as fh:
+            plan = json.load(fh)
+        plan["phases"][0]["testGate"] = ["e2e"]
+        with open(fx["mpath"], "w") as fh:
+            json.dump(plan, fh)
+        with open(fx["mode"], "w") as fh:
+            fh.write("green")
+        jlines = []
+        try:
+            code = M.main([fx["mpath"], "P1", "--project-dir", fx["root"],
+                           "--json"], out=jlines.append)
+            raised = None
+        except TypeError as exc:
+            code, raised = None, str(exc)
+        blobs = [ln for ln in jlines if ln.startswith("{")]
+        try:
+            payload = json.loads(blobs[0]) if len(blobs) == 1 else {}
+        except ValueError:
+            payload = {}
+        named = [st.get("named") for st in payload.get("steps") or []]
+        check("sm15 RED-FIRST: `<manifest> <phase> --json` over a gate whose "
+              "output names a path exits normally with valid JSON, the step's "
+              "`named` a sorted list rather than a set JSON cannot spell: %r"
+              % ((code, raised, named),),
+              raised is None and code == M.E_OK
+              and named == [["e2e/cart.spec.ts"]])
+    finally:
+        _sm_remove(fx)
+
+    # --- the printed remedy: bounded, and explanation before the command ---
+    many = ["src/f%d.ts" % i for i in range(M._ev.MAX_PATHS + 3)]
+    wide = M._miss_remedy({"test": "e2e/cart.spec.ts", "phases": ["P2"],
+                           "sources": many}, "R-1", "abc1234")
+    check("sm13 --sources past MAX_PATHS is never printed: the remedy points "
+          "at the row and the plan instead, and what it does print parses: "
+          "%r" % (wide,),
+          "--sources" not in wide and "sourcesDropped" in wide
+          and [v for v, a in _sm_parses(_sm_commands("x " + wide))
+               if a is not None] == ["bug-add"])
+    bare = M._miss_remedy({"test": "e2e/cart.spec.ts", "phases": ["P2"],
+                           "sources": []}, "R-1", "abc1234")
+    check("sm14 a remedy with no couple puts its explanation BEFORE the "
+          "colon, so everything after it is a command that parses: %r"
+          % (bare,),
+          bare.startswith("remedy (no couple: ")
+          and [v for v, a in _sm_parses(_sm_commands("x " + bare))
+               if a is not None] == ["bug-add"])
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _group_cases(check)
         _crowd_cases(check)
         _full_scope_cases(check)
+        _selection_miss_cases(check)
     return _harness.run(body)
 
 

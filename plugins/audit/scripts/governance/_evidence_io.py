@@ -623,6 +623,21 @@ def _step(project, step, published):
     return out
 
 
+def _miss_row(project, miss):
+    """One selection miss as a committed row keeps it - see `row_for`."""
+    phases = [str(p) for p in (miss.get("phases") or [])]
+    sources = [str(p) for p in (miss.get("sources") or [])]
+    out = {"test": repo_relative_or_token(project, str(miss.get("test"))),
+           "phases": phases[:MAX_PATHS],
+           "sources": [repo_relative_or_token(project, p)
+                       for p in sources[:MAX_PATHS]]}
+    if len(phases) > MAX_PATHS:
+        out["phasesDropped"] = len(phases) - MAX_PATHS
+    if len(sources) > MAX_PATHS:
+        out["sourcesDropped"] = len(sources) - MAX_PATHS
+    return out
+
+
 def row_for(project, result, scope, ids, identity, published=None):
     """One evidence row: what ran, what it answered, whose run it was, and which
     declaration the run was measured against.
@@ -823,6 +838,22 @@ def row_for(project, result, scope, ids, identity, published=None):
         if missed_dropped:
             shadow_row["missedDropped"] = missed_dropped
         row["shadow"] = shadow_row
+    # THE FULL RUN'S SELECTION MISSES (`selection_miss`), allow-listed to
+    # `{test, phases, sources}` (`_miss_row`): the suite and every source
+    # are bare paths (never porcelain lines, so not through `_paths`),
+    # redacted by `repo_relative_or_token`; the phase ids are plan ids. Every
+    # list is cut at `MAX_PATHS` with its dropped count beside it -
+    # `phasesDropped`, `sourcesDropped`, `selectionMissDropped` - each
+    # present only when something was cut. Written only when there is a
+    # miss - absence is "none".
+    misses = result.get("selectionMiss")
+    misses = ([m for m in misses if isinstance(m, dict)]
+              if isinstance(misses, list) else [])
+    if misses:
+        row["selectionMiss"] = [_miss_row(project, m)
+                                for m in misses[:MAX_PATHS]]
+        if len(misses) > MAX_PATHS:
+            row["selectionMissDropped"] = len(misses) - MAX_PATHS
     # The three-valued fields keep their shape at the TOP level too, so a reader
     # that never opens `observations` still cannot mistake unknown for clean.
     row["treeMutated"] = row["observations"]["treeMutated"]
@@ -2502,6 +2533,27 @@ def _newest_whole_bearing(full_rows, full_commands):
     return None
 
 
+def _full_rows_newest_first(rows):
+    """Every scope-`full` dict of `rows`, in `_newest_first` order."""
+    return _newest_first([r for r in (rows or [])
+                          if isinstance(r, dict) and r.get("scope") == FULL_SCOPE])
+
+
+def newest_whole_bearing(rows, full_commands):
+    """The newest dated, whole-bearing scope-`full` row of `rows`, or None -
+    also None when `full_commands` is empty, since no row can match a gate
+    nothing declares.
+
+    THE ROW `full_status` NAMES AS `wholeRunId`, found by the one walk it
+    uses: a caller asking "what merged since the last full run that counted"
+    reads this, and never a second reading of which run counts.
+    """
+    declared = list(full_commands or [])
+    if not declared:
+        return None
+    return _newest_whole_bearing(_full_rows_newest_first(rows), declared)
+
+
 def full_status(rows, phase, git_root, full_commands, run=None):
     """`{"answer", "basis", "runId", "wholeRunId", "wholeRunTs"}` -- is this
     phase's merge WHOLE, PROVISIONAL, UNKNOWN, or NOT_DECLARED, from the ledger
@@ -2558,10 +2610,8 @@ def full_status(rows, phase, git_root, full_commands, run=None):
     """
     phase = phase if isinstance(phase, dict) else {}
     declared = list(full_commands or [])
-    full_rows = _newest_first([r for r in (rows or [])
-                              if isinstance(r, dict)
-                              and r.get("scope") == FULL_SCOPE])
-    whole = _newest_whole_bearing(full_rows, declared) if declared else None
+    full_rows = _full_rows_newest_first(rows)
+    whole = newest_whole_bearing(rows, declared)
     whole_ts = whole.get("ts") if whole is not None else None
     return dict(_full_answer(full_rows, phase, git_root, declared, run),
                 wholeRunId=whole.get("runId") if whole is not None else None,
@@ -2643,6 +2693,218 @@ def _full_answer(full_rows, phase, git_root, declared, run):
             "basis": ("no full-scope run has ever been recorded, so nothing "
                      "can be asked whether it contains %s" % (merged_head,)),
             "runId": None}
+
+
+# --- a failing suite no derived gate selected: the selection miss -------------
+# A PHASE SIGNED OFF ON A DERIVED GATE RAN A SUBSET OF THE SUITES, and the
+# third place runs all of them. A suite that fails there and that no derived
+# gate of the work merged since the last counting full run listed is a
+# selection the derivation got wrong - which is only worth learning from when
+# the RUNNER named that suite. A tail of output is not a list of failing
+# suites, so a failure read only off one is said to be unlearned instead.
+NAMED_FAILING = "named as failing"
+
+
+def _counts_as_failed(step):
+    """A step that ran to a verdict and failed, and was not quarantined: a
+    non-zero exit, no no-verdict `outcome`, and no `muted` marker."""
+    return (isinstance(step, dict) and step.get("exit") not in (0, None)
+            and not step.get("outcome") and not step.get("muted"))
+
+
+def named_failing_suites(steps):
+    """Every suite file a failed step's runner NAMED as failing, in step
+    order, deduplicated.
+
+    A SUITE COUNTS ONLY WHEN `failingSuitesBasis` SAYS THE RUNNER NAMED IT
+    (`NAMED_FAILING` is the phrase `run-test-gate.failing_suites` composes
+    for exactly that answer, and for no other) - and never off a muted step,
+    whose failure is quarantined and known rather than caught.
+    """
+    suites = []
+    for step in steps or []:
+        if not _counts_as_failed(step):
+            continue
+        if NAMED_FAILING not in (step.get("failingSuitesBasis") or ""):
+            continue
+        for path in step.get("failingSuites") or []:
+            if path not in suites:
+                suites.append(path)
+    return suites
+
+
+def unnamed_failure_bases(steps):
+    """The basis of every failed, unmuted step whose runner named no suite -
+    `failingSuitesBasis` when the step carries one, its `failingBasis`
+    otherwise - so the caller can say which failure it refused to learn from
+    and why."""
+    return [step.get("failingSuitesBasis") or step.get("failingBasis")
+            or "the step carries no basis for its failure"
+            for step in steps or []
+            if _counts_as_failed(step)
+            and NAMED_FAILING not in (step.get("failingSuitesBasis") or "")]
+
+
+def listed_by(path, tests):
+    """Whether suite `path` is one of `tests`, read either way round as a
+    path suffix - a runner may print a path relative to its own directory
+    while a derived gate spells it from the repository root."""
+    return any(path == t or path.endswith("/" + t) or t.endswith("/" + path)
+               for t in tests or [])
+
+
+def _ancestry(git_root, merged_head, head, run):
+    """`(answer, unasked_sentence)` - `_worktrees.merged_into` of `merged_head`
+    into `head`, with the sentence to report when git could not answer."""
+    asked = _worktrees.merged_into(git_root, merged_head, head, run=run)
+    if asked["answer"] == _worktrees.UNKNOWN:
+        return asked["answer"], ("whether %s contains %s could not be "
+                                 "established - %s"
+                                 % (head, merged_head,
+                                    asked.get("detail") or asked["basis"]))
+    return asked["answer"], None
+
+
+def _phase_since(phase, head, since, git_root, run):
+    """`(verdict, sentence)` for one merged phase against the run's `head`
+    and the bounding run `since` (a row carrying `testedState.head`).
+
+    `verdict` is "counted", "underived", "unasked" or None (not merged into
+    this run, or merged before `since`). EVERY way ancestry cannot be put is
+    "unasked" with its sentence, never folded into either side:
+    - no `mergedHead` at all;
+    - git could not answer either question;
+    - a `mergedHeadAt` backfill that `since` does not already contain. A
+      backfilled `mergedHead` is the parent's head recorded AFTER the merge,
+      so it can postdate `since` while the merge itself did not; only a
+      `since` that contains it settles the order, and anything else fails
+      closed rather than learn from an imprecise moment.
+    A phase merged since whose `testGateDerived` is not a dict made no
+    selection, so it is "underived" and is never counted toward a miss.
+    """
+    merged_head = phase.get("mergedHead")
+    if not merged_head:
+        return "unasked", ("it is merged (mergedAt %s) but records no "
+                           "mergedHead, so whether this run contains it "
+                           "cannot be asked" % (phase.get("mergedAt"),))
+    inside, why = _ancestry(git_root, merged_head, head, run)
+    if why:
+        return "unasked", why
+    if inside != _worktrees.CONTAINED:
+        return None, None
+    since_head = (since.get("testedState") or {}).get("head")
+    before, why = _ancestry(git_root, merged_head, since_head, run)
+    if why:
+        return "unasked", why
+    if before == _worktrees.CONTAINED:
+        return None, None
+    if phase.get("mergedHeadAt"):
+        return "unasked", ("its mergedHead %s was recorded after the fact "
+                           "(mergedHeadAt %s), so whether it merged before "
+                           "run %s cannot be told"
+                           % (merged_head, phase.get("mergedHeadAt"),
+                              since.get("runId")))
+    if not isinstance(phase.get("testGateDerived"), dict):
+        return "underived", None
+    return "counted", None
+
+
+def _distinct_files(phases):
+    """Every file the phases' tasks declare, in plan order, once - a
+    `cancelled` task's files excluded, since that work never landed."""
+    files = []
+    for phase in phases:
+        for task in phase.get("tasks") or []:
+            if not isinstance(task, dict) or task.get("status") == "cancelled":
+                continue
+            for path in task.get("files") or []:
+                if isinstance(path, str) and path and path not in files:
+                    files.append(path)
+    return files
+
+
+def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
+                   run=None):
+    """`{"misses", "unnamed", "phases", "underived", "since", "unasked",
+    "reasons"}` - the post-pass a full run's steps are put through. Reads
+    and returns; writes nothing.
+
+    `misses` is `[{test, phases, sources}]`: each suite the runner NAMED as
+    failing (`named_failing_suites`) that no `testGateDerived.tests` of the
+    counted phases lists. A phase is counted when it is merged
+    (`merged_phase`), the run's `head` contains its `mergedHead`, the newest
+    earlier whole-bearing full run (`newest_whole_bearing` over
+    `earlier_rows`, `since`) does not, and it carries a derived gate -
+    `_phase_since` holds each exclusion. Both ancestry questions go to git
+    (`_worktrees.merged_into`). `sources` is the union of the counted
+    phases' live tasks' `files` - the work since the bounding run, read off
+    the plan rather than guessed from a diff. The lists are uncut here;
+    `row_for` bounds them and counts what it drops.
+
+    LEARNING NEEDS A BOUND. With no earlier whole-bearing run, one that
+    recorded no head, or a run with no head of its own, "the work since"
+    would be the whole history, so nothing is learned and `reasons` (or
+    `unasked`, for a bounding run with no head) says why. `unnamed` holds
+    the basis of every failed step whose runner named no suite; `unasked`
+    holds `[subject, sentence]` for every ancestry that could not be put.
+    """
+    named = named_failing_suites(steps)
+    result = {"misses": [], "unnamed": unnamed_failure_bases(steps),
+              "phases": [], "underived": [], "since": None, "unasked": [],
+              "reasons": []}
+    if not named:
+        return result
+    if not head:
+        result["reasons"].append("this run recorded no head, so what it "
+                                 "contains cannot be asked")
+        return result
+    since = newest_whole_bearing(earlier_rows, full_commands)
+    if since is None:
+        result["reasons"].append("no earlier whole-bearing full run bounds "
+                                 "the work since")
+        return result
+    since_head = (since.get("testedState") or {}).get("head")
+    result["since"] = {"runId": since.get("runId"), "head": since_head}
+    if not since_head:
+        result["unasked"].append(
+            ["run %s" % (since.get("runId"),),
+             "the newest earlier whole-bearing full run records no "
+             "testedState.head, so what merged since it cannot be asked"])
+        return result
+    counted = []
+    for phase in phases or []:
+        if not merged_phase(phase):
+            continue
+        verdict, sentence = _phase_since(phase, head, since, git_root, run)
+        if verdict == "unasked":
+            result["unasked"].append(["phase %s" % (phase["id"],), sentence])
+        elif verdict == "underived":
+            result["underived"].append(str(phase["id"]))
+        elif verdict == "counted":
+            counted.append(phase)
+    result["phases"] = [str(p["id"]) for p in counted]
+    if not counted:
+        if result["underived"]:
+            result["reasons"].append(
+                "the phases merged since run %s (%s) signed off on a gate "
+                "that was not derived, so no selection was made that this "
+                "run could show wrong"
+                % (since.get("runId"), ", ".join(result["underived"])))
+        elif not result["unasked"]:
+            result["reasons"].append(
+                "no phase merged into %s since run %s, so no derived gate "
+                "selected anything this run could show wrong"
+                % (head, since.get("runId")))
+        return result
+    listed = []
+    for phase in counted:
+        tests = phase["testGateDerived"].get("tests")
+        listed.extend(t for t in (tests or []) if isinstance(t, str))
+    sources = _distinct_files(counted)
+    result["misses"] = [{"test": path, "phases": list(result["phases"]),
+                         "sources": list(sources)}
+                        for path in named if not listed_by(path, listed)]
+    return result
 
 
 # --- the boundary: when could a run have been recorded at all ------------------

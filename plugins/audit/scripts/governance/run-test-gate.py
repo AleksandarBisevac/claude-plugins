@@ -2261,21 +2261,13 @@ def shadow_gate_claim(manifest, phase_id, steps):
     listed_tests = (derived or {}).get("tests") if isinstance(derived, dict) else None
     if not listed_tests:
         return None
-    failing = []
-    for st in (steps or []):
-        # A quarantined failure is not a catch the derived gate could miss,
-        # and a step that passed or never reached a verdict names none -
-        # the same reading `failed_steps` gives a step.
-        if (st.get("muted") or st.get("exit") == 0 or st.get("outcome")):
-            continue
-        if st.get("failingSuitesBasis") and st.get("failingSuites"):
-            failing.extend(st["failingSuites"])
-    failing = sorted(set(failing))
+    # A quarantined failure is not a catch the derived gate could miss, and a
+    # step that passed or never reached a verdict names none - the one
+    # reading `_evidence_io.named_failing_suites` holds for every learner.
+    failing = sorted(set(_ev.named_failing_suites(steps)))
     if not failing:
         return None
-    missed = [f for f in failing
-              if not any(f == t or f.endswith("/" + t) or t.endswith("/" + f)
-                        for t in listed_tests)]
+    missed = [f for f in failing if not _ev.listed_by(f, listed_tests)]
     return {"listed": len(failing) - len(missed), "full": len(failing),
             "missed": missed}
 
@@ -3466,7 +3458,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # one, but a caller that read it twice from two different lines
             # is exactly the kind of copy this file's own rule refuses.
             named_now = files_named(text)
-            step["named"] = named_now
+            # THE STEP CARRIES A SORTED LIST, NEVER THE SET. `files_named`
+            # answers with a set, which JSON cannot spell, and a step is
+            # dumped whole by every `--json` path; every reader of
+            # `step["named"]` only iterates it. `step_named` below keeps
+            # the set for `shared_counts`, which never leaves this process.
+            step["named"] = None if named_now is None else sorted(named_now)
             if derived_check and name == derived_check.get("entry"):
                 gap = derived_step_gap(step, derived_check.get("tests"))
                 if gap is not None:
@@ -4356,7 +4353,7 @@ def _write_own_log(manifest_path, project_dir, step_text):
 
 
 # --- the third place: --full, against the whole product -----------------------
-def _record_full_run(project, args, res, commands, out=print):
+def _record_full_run(project, args, res, commands, run_id, out=print):
     """Record a scope-`full` row: no ids, no pointer, no evidence boundary.
 
     THE TWO WRITES A PHASE OR TASK RUN MAKES ARE BOTH ABSENT ON PURPOSE.
@@ -4373,8 +4370,10 @@ def _record_full_run(project, args, res, commands, out=print):
     by an operator's own tool timeout after `run_gate` returns and before this
     process would otherwise finish printing, and a run that happened is worse
     lost than a run whose summary the operator never saw.
+
+    `run_id` is minted by the caller, which names it in a remedy it prints.
     """
-    identity = {"runId": _ev.new_run_id(), "via": "cli",
+    identity = {"runId": run_id, "via": "cli",
                 "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
                 "attempt": None, _ev.STARTED_KEY: res.get("startedAt")}
     published = [command for _name, command in (commands or [])]
@@ -4386,6 +4385,72 @@ def _record_full_run(project, args, res, commands, out=print):
         return {"recorded": False}
     out("  evidence: recorded %s" % (identity["runId"],))
     return {"recorded": True, "path": recorded["path"]}
+
+
+def _miss_remedy(miss, run_id, head):
+    """The two `audit-task.py` commands that file what a miss taught, in the
+    spelling its parser accepts - or the sentence saying why one cannot be
+    printed. Printed, never run: `full-gate.py` is what acts on a miss.
+
+    ANY EXPLANATION COMES BEFORE THE COMMANDS, inside `remedy (...):`, so
+    everything after the colon is commands alone, joined by `; ` and safe
+    to paste. `--sources` is bounded by `_evidence_io.MAX_PATHS`, the same
+    cut the row takes; past it no couple is printed, and the line points at
+    the row and the plan instead of printing an unbounded argument.
+    """
+    test = miss["test"]
+    phases = ", ".join(miss["phases"])
+    if run_id is None:
+        return ("remedy: none printed - this run was not recorded, so no "
+                "--basis-run could name it; re-run with --record")
+    bug = ("audit-task.py bug-add %s --severity med --description %s "
+           "--files %s"
+           % (shlex.quote("SELECTION MISS: %s" % (test,)),
+              shlex.quote("full run %s at %s failed %s, and no derived "
+                          "sign-off gate in %s listed it"
+                          % (run_id, head, test, phases)),
+              shlex.quote(test)))
+    sources = miss["sources"]
+    if not sources:
+        return ("remedy (no couple: the tasks of %s declare no files to "
+                "couple the suite to): %s" % (phases, bug))
+    if len(sources) > _ev.MAX_PATHS:
+        return ("remedy (no couple: the tasks of %s declare %d source "
+                "files, past the %d one printed sources argument carries; run %s's "
+                "selectionMiss keeps the first %d with sourcesDropped, and "
+                "the full list is those tasks' files in the plan): %s"
+                % (phases, len(sources), _ev.MAX_PATHS, run_id,
+                   _ev.MAX_PATHS, bug))
+    return ("remedy: audit-task.py couple --test %s --sources %s --basis-run "
+            "%s --basis-head %s --phases %s; %s"
+            % (shlex.quote(test), shlex.quote(",".join(sources)),
+               run_id, head, ",".join(miss["phases"]), bug))
+
+
+def selection_lines(selection, run_id, head):
+    """What a full run's post-pass (`_evidence_io.selection_miss`) prints.
+
+    One SELECTION MISS line per suite the runner named that no counted
+    phase's derived gate listed, with its remedy; one not-learned line per
+    failed step whose runner named no suite, with the basis the step carries;
+    and a line for every reason the question could not be put at all -
+    `reasons` and each `unasked` subject - so a silent post-pass means no
+    failure the runner named. `run_id` is None when the run was not
+    recorded.
+    """
+    lines = ["SELECTION MISS: %s failed at the third place and no derived "
+             "sign-off gate in %s listed it. %s"
+             % (miss["test"], ", ".join(miss["phases"]),
+                _miss_remedy(miss, run_id, head))
+             for miss in selection.get("misses") or []]
+    lines.extend("not learned: the runner did not name the failing suites "
+                 "(basis: %s)" % (basis,)
+                 for basis in selection.get("unnamed") or [])
+    lines.extend("SELECTION MISS not asked: %s" % (reason,)
+                 for reason in selection.get("reasons") or [])
+    lines.extend("SELECTION MISS not asked of %s: %s" % (subject, sentence)
+                 for subject, sentence in selection.get("unasked") or [])
+    return lines
 
 
 def _run_full(project, args, manifest, out=print):
@@ -4458,15 +4523,32 @@ def _run_full(project, args, manifest, out=print):
     # what a full run means: it is the whole product's own claim, not an
     # empty one.
     res["coverageBasis"] = None
+    # THE POST-PASS, BEFORE THE ROW IS BUILT so the row can carry what it
+    # found, and over the ledger as it stood BEFORE this run was appended -
+    # "the newest earlier whole-bearing run" must not be this one. The run id
+    # is minted here for the same reason: the remedy names it.
+    run_id = _ev.new_run_id()
+    selection = _ev.selection_miss(
+        res.get("steps"), manifest.get("phases") or [], head, project,
+        _ev.read_rows(project)["rows"],
+        [c for _name, c in commands])
+    # `selectionMiss` is what `row_for` allow-lists onto the row;
+    # `selectionPass` is the whole answer, for `--json` alone.
+    res["selectionMiss"] = selection["misses"]
+    res["selectionPass"] = selection
     if args.record:
         # STRICTLY BEFORE render()/render_quiet() PRINT ANYTHING - see
         # `_record_full_run`'s own docstring for why.
-        res["recorded"] = _record_full_run(project, args, res, commands, out=out)
+        res["recorded"] = _record_full_run(project, args, res, commands,
+                                           run_id, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         return E_OK if res["status"] == "passed" else E_FAIL
     out("[run-test-gate] full gate: %d command(s)" % (len(commands),))
     code = (render_quiet if args.quiet else render)(res, out=out)
+    recorded = (res.get("recorded") or {}).get("recorded")
+    for line in selection_lines(selection, run_id if recorded else None, head):
+        out(line)
     out("FULL GATE GREEN at %s" % (head,) if code == E_OK else "FULL GATE RED")
     return code
 

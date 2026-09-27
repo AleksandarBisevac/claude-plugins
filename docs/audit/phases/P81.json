@@ -215,7 +215,9 @@
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/scripts/governance/_evidence_io.py",
         "plugins/audit/tests/test_run_test_gate.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -250,7 +252,12 @@
       },
       "startedAt": "2026-09-27T17:09:06Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T17:58:56Z.05634c",
+        "status": "passed",
+        "at": "2026-09-27T17:58:56Z"
+      }
     },
     {
       "id": "P81.5",
@@ -261,7 +268,8 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/commands/task.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -298,9 +306,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T17:08:42Z.d01987",
+        "runId": "2026-09-27T18:00:26Z.00ed92",
         "status": "passed",
-        "at": "2026-09-27T17:08:42Z"
+        "at": "2026-09-27T18:00:26Z"
       }
     },
     {
