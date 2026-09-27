@@ -192,6 +192,26 @@ def _cases(check):
     tids = [t["id"] for p in m["phases"] for t in p["tasks"]]
     check("task ids unique", len(tids) == len(set(tids)))
 
+    # A REVIEW'S FINDINGS IN BOTH SHAPES: one resolved - its fixTask a task of
+    # the same phase and its commit that task's own - and one still open. A
+    # fixture carrying only one shape documents only one.
+    _rv = [(p, f) for p in m["phases"]
+           for f in ((p.get("review") or {}).get("findings") or [])]
+    _tasks = dict((t["id"], t) for p in m["phases"] for t in p["tasks"])
+    _resolved = [(p, f) for p, f in _rv if f.get("fixTask")]
+    _open = [(p, f) for p, f in _rv if not f.get("fixTask")]
+    check("the demo's review findings carry a RESOLVED one - fixTask a task of its "
+          "own phase, commit that task's recorded commit - and an unresolved one "
+          "with neither field: %d resolved, %d open" % (len(_resolved), len(_open)),
+          _resolved != [] and _open != []
+          and all(f["fixTask"] in [t["id"] for t in p["tasks"]]
+                  and f.get("commit") == _tasks[f["fixTask"]].get("commit")
+                  and f.get("commit")
+                  and f.get("resolution", "").startswith(
+                      "fixed in %s (%s)" % (f["fixTask"], f["commit"][:12]))
+                  for p, f in _resolved)
+          and all("commit" not in f for _p, f in _open))
+
     # every status represented — the whole point of the fixture
     pst = {p["status"] for p in m["phases"]}
     check("all four phase statuses present",

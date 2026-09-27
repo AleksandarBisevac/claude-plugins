@@ -67,7 +67,8 @@ calls of one session each re-enter a claim another of them had taken for its own
 write, so every one wrote over the others and reported success. A claim a process
 takes for its own write now carries a TOKEN, re-entered only by that process and
 by a child that inherits the token through `TOKEN_ENV`; every other process waits,
-session or not. A claim taken by hand is recorded `handedOff`, and its session
+session or not. A claim a server takes for one request is `perCall`: its token is
+not carried, and no other call re-enters it, the threads beside it included. A claim taken by hand is recorded `handedOff`, and its session
 still works under it, because that is the protocol the commands are written to.
 
 THE PID IN A CLAIM IS THE ONE WHOSE DEATH ENDS THE HOLD. A caller that takes the
@@ -462,6 +463,13 @@ def held_by_us(info, session=None, pid=None):
     owner = info.get("sessionId")
     other_session = bool(sid) and bool(owner) and str(owner) != str(sid)
     token = info.get("token")
+    # A CLAIM FOR ONE CALL is re-entered by nobody. Threads of one server share
+    # a process, its pid and its environment, so neither answer below can tell
+    # two of its requests apart - and the second request wrote beside the first.
+    if info.get("perCall"):
+        return {"ours": False,
+                "why": "held for one call by pid %s - another call waits for it, "
+                       "even from the same process" % (info.get("pid"),)}
     if token and not other_session and token in carried_tokens():
         return {"ours": True, "why": "this process carries the holder's token"}
     # A CLAIM A PROCESS TOOK FOR ITS OWN WRITE is that process's alone. Sharing
@@ -870,7 +878,7 @@ def release_refusal(code, name):
 
 
 def acquire(project, name, note=None, takeover=False, session=None, pid=None,
-            out=print, wait=None, handed_off=False):
+            out=print, wait=None, handed_off=False, per_call=False):
     """Take `name` for this project -> an exit code, which `held()` reads.
 
     `wait` is how long a LIVE holder is waited out before the refusal is printed,
@@ -883,6 +891,10 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
     `handed_off` says the lock outlives this process -- a command that exits with
     it still held. `_holder_pid` is where that changes what the claim records,
     and why the default is the other way round.
+
+    `per_call` says the claim belongs to one CALL rather than to this process -
+    a server serving requests on threads - so its token is not carried and no
+    other call re-enters it (`held_by_us`).
     """
     ld = lock_dir(project)
     if not ld:
@@ -912,6 +924,8 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
     # session goes on working under (`held_by_us`).
     info = {"hostname": platform.node(), "note": note or name,
             "token": os.urandom(12).hex(), "handedOff": bool(handed_off)}
+    if per_call:
+        info["perCall"] = True
     if holder:
         info["pid"] = holder
     if sid:
@@ -927,7 +941,8 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         info["startedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         claim = _claim(path, info)
         if claim["taken"]:
-            _carry(info["token"], True)
+            if not per_call:
+                _carry(info["token"], True)
             out("[audit-lock] acquired %s%s" % (name, "" if holder else
                                                 " (no pid recorded -- age rule applies)"))
             return 0
@@ -1007,7 +1022,8 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         out("             Nothing here was replaced. `audit-lock.py status` "
             "says who holds it now.")
         return E_LIVE
-    _carry(info["token"], True)
+    if not per_call:
+        _carry(info["token"], True)
     if not res["displaced"]:
         out("[audit-lock] acquired %s -- the claim this was to take over from "
             "was already gone, so nothing was displaced" % (name,))

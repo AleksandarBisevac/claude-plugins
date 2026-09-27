@@ -78,6 +78,41 @@
         "file": "plugins/audit/scripts/manifest/audit-task.py",
         "issue": "The journal row records review.outcome from and to in full, but _journal_row truncates long values ('… [truncated]'). The tally sits at the end of the outcome, so for any real outcome the two values print identically and the row does not show what changed. I saw this in the P85 review.finding row on the scratch copy.",
         "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-S1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "The fix to finding 3 changed the re-entry rule in _locks.held_by_us. It left a second copy of the old rule in place. _evidence_io.lock_state, which pointer_lock_state and the evidence-boundary writer call, still returns 'ours' for any claim whose sessionId matches, and it never calls acquire. The two now disagree about the same claim. I wrote a phase-P9 claim of the new kind (token set, handedOff ",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_id_refs.py",
+        "issue": "P84.1 added fixTask, a finding field that holds another record's id. It is not in _id_refs.SCALAR_REFS, the one list of fields the renames rewrite. It is not declared in the schema's finding definition either, which _id_refs says its list comes from, and no validator check resolves it. I reproduced the result on a scratch clone. `finding P84`, then `resolve-finding P84-R9 --fix-task P84.5-791`, th",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S3",
+        "severity": "low",
+        "file": "CHANGELOG.md",
+        "issue": "Three documents describe behaviour the phase no longer has. (a) CHANGELOG's P84.3 entry still says 'Pointers are now read from the manifests at HEAD and resolved against the ledgers HEAD holds'. P84.5 replaced that: working-tree manifests are resolved against every ledger in the working tree, tracked or not. P84.5's files list only the tool, so the sentence could not be corrected in that task. (b)",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S4",
+        "severity": "low",
+        "file": "tools/check-example-ledgers.py",
+        "issue": "The ledger set now includes untracked files, but the manifest set does not. A new phase shard that is not yet committed is written by `phase add`, and task gates write pointers into it before the first commit, yet it is never read. I tested this on a scratch clone. I added an untracked docs/audit/phases/P99.json whose first task caches 'failed' against a run that recorded 'passed' and names the co",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S5",
+        "severity": "low",
+        "file": "plugins/audit/reference/manifest-conventions.md",
+        "issue": "The hand-held exception is stated honestly, but only in phase-signoff.md step 1, CHANGELOG and the _locks docstring. The two documents that prescribe the hand-held flow do not say that verbs run under that hold must not run as parallel tool calls. Those are manifest-conventions.md ('Before your first index write: take it with the script', used by init, task, bug, propose and sync) and orchestrator",
+        "resolution": "fix task P84.7-791"
       }
     ]
   },
@@ -384,6 +419,93 @@
         "test__locks rk2",
         "test__locks rk4"
       ]
+    },
+    {
+      "id": "P84.7-791",
+      "title": "every lock reader asks one rule, fixTask follows a move, the ledger check reads new shards, and the docs say what the lock does now",
+      "status": "in_progress",
+      "description": "Round-2 phase review of P84 (review-P84b.json), findings 1-5 plus its preExisting panel item. (1) _evidence_io.lock_state asks _locks.held_by_us - one rule for \"is this lock ours\" - instead of its own same-session test, and its docstring says why; a case that fails first. (2) fixTask is renamed on move: added to _id_refs.SCALAR_REFS and to the schema, with a move case. (3) CHANGELOG's P84.3 entry states what the tool reads after P84.5 (the working tree, tracked and untracked ledgers); ledger_rels' docstring stops saying tracked; the build guide names finding --findings-file, the landed-phase refusal and reopen clearing a finding's commit, and the lock's token rule and handed-off claims. (4) check-example-ledgers also reads untracked manifest shards (the shape it already matches) so a new shard's contradicting cached status and fake commit fail; a case. (5) manifest-conventions.md and orchestrator.md state the hand-held exception where they prescribe taking a lock by hand, and say exit 3 can now be a parallel call from the same session. The CHANGELOG notes that a killed verb's new-kind claim now answers stale (4) to its own session. (6, pre-existing) two simultaneous panel writes in the ThreadingHTTPServer re-enter each other: give each write its own claim (a token per request, not per process) so they serialise; a real two-thread case.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/manifest/_id_refs.py",
+        "plugins/audit/tests/test__id_refs.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "tools/check-example-ledgers.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "docs/demo-large.html",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - lock_state answers ours for a claim another live process of the same session holds"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T07:44:42Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"

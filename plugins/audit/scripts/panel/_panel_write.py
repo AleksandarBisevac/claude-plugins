@@ -1024,9 +1024,12 @@ def _acquire_write_lock(project, config, touched_phases=None):
                              "try again once it finishes"]}}
         return dict(claim["held"], blocked=False)
     try:
+        # PER CALL: the server answers requests on threads of one process, and
+        # a claim re-entered by process or by an inherited token let a second
+        # request write beside the first. Each write takes its own claim.
         code = _locks.acquire(git_root, LOCK_NAME, note="panel write",
                               session=_panel_session(), pid=os.getpid(),
-                              out=lambda *_a, **_k: None)
+                              per_call=True, out=lambda *_a, **_k: None)
     except Exception as exc:
         # NOT `locked`, AND NOT THE FALLBACK. A call that could not be made
         # established nothing about a holder, so the client must not paint this

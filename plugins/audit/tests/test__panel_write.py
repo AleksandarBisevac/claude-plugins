@@ -2196,6 +2196,50 @@ def _cases(check):
               and any("could not be asked for at all" in line
                       for line in _wl_boom_cmd)
               and not os.path.exists(_wl_legacy))
+
+        # TWO WRITES AT ONCE IN ONE SERVER. The panel serves requests on
+        # threads of one process, so a claim re-entered by process or by an
+        # inherited token let the second request write beside the first while
+        # both reported success. Real threads, real claim.
+        import threading as _th
+        import time as _tm
+        _tw = {}
+        _tw_held = _th.Event()
+
+        def _tw_first():
+            _tw["a"] = M._acquire_write_lock(_wl_proj, {}, None)
+            _tw_held.set()
+            _tm.sleep(0.6)
+            _tw["a_release"] = M._release_write_lock(_tw["a"])
+
+        def _tw_second():
+            _tw_held.wait(5)
+            started = _tm.monotonic()
+            _tw["b"] = M._acquire_write_lock(_wl_proj, {}, None)
+            _tw["b_waited"] = _tm.monotonic() - started
+            _tw["b_release"] = M._release_write_lock(_tw["b"])
+
+        _tw_threads = [_th.Thread(target=_tw_first), _th.Thread(target=_tw_second)]
+        for _t in _tw_threads:
+            _t.start()
+        for _t in _tw_threads:
+            _t.join(15)
+        check("wl9 RED-FIRST: a second panel write made WHILE the first holds the "
+              "lock waits for it and then takes its own claim - never borrowed, "
+              "which is what writing beside it looked like: %r"
+              % (dict((k, v) for k, v in _tw.items() if k != "a"),),
+              (_tw.get("a") or {}).get("held") is True
+              and (_tw.get("b") or {}).get("held") is True
+              and not (_tw.get("b") or {}).get("borrowed")
+              and _tw.get("b_waited", 0) >= 0.4
+              and _tw.get("a_release") is None and _tw.get("b_release") is None
+              and not os.path.exists(_wl_lock))
+        _tw_one = M._acquire_write_lock(_wl_proj, {}, None)
+        check("wl9b ALLOW: a single write with nothing else running still takes the "
+              "lock at once and gives it back: %r" % (_tw_one,),
+              _tw_one.get("held") is True and not _tw_one.get("borrowed")
+              and M._release_write_lock(_tw_one) is None
+              and not os.path.exists(_wl_lock))
     finally:
         _shutil.rmtree(_wl_proj, ignore_errors=True)
 

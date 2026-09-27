@@ -459,18 +459,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (`AUDIT_LOCK_TOKENS`), and only a carrier re-enters; any other process waits, session or not.
   A lock taken by hand with `audit-lock.py acquire` is recorded `handedOff`, and its session
   still works under it, as the documented take-then-run-the-verbs flow needs - so parallel calls
-  under a hand-held hold are still not serialised.
+  under a hand-held hold are still not serialised, which `reference/manifest-conventions.md`
+  and `reference/orchestrator.md` now say where they prescribe that hold. Two consequences to
+  expect: exit 3 can now be a parallel call of your own session, and a claim of the new kind
+  left by a verb that was killed answers stale (exit 4, `--takeover`) to its own session, where
+  it used to answer "already yours". The panel's writes take a claim per request (`per_call`),
+  so two saves on the server's threads wait for each other instead of one borrowing the other's
+  claim, and `_evidence_io.lock_state` - which the gate recorder asks before writing a pointer
+  or the evidence boundary - asks the same `held_by_us` rule instead of its own session test.
+- **A review finding's `fixTask` follows its task through a move.** It is an id, so it is in
+  `_id_refs.SCALAR_REFS` now and rewritten in both of a review's finding lists; the schema
+  declares `fixTask` and `commit` on a finding, `validate-manifest` warns
+  (`crossrefs.fix_task.unresolved`) on a `fixTask` that names no task, and the demo fixture
+  carries a resolved finding beside an open one, so both shapes are documented.
 - **The stable-code lint reaches every warning the phase-gate checks emit.** `_check_phase_gate`
   appended to the validator's `warnings` argument, a shape the walk behind `fc2` never followed,
   so that whole family could ship a warning with no code and stay green. It now returns its
   warnings and the caller extends, which is the shape the walk follows; the validator's output is
   unchanged.
-- **`check-example-ledgers.py` judges pointers and ledgers over the same snapshot.** It read the
-  `testEvidence` pointers off the working-tree manifests while counting only the git-tracked
-  ledgers, so a phase's second task gate in a fresh worktree went red on the first gate's pointer
-  into an evidence file not yet committed. Pointers are now read from the manifests at HEAD and
-  resolved against the ledgers HEAD holds - the committed claim the tool exists to check; a
-  pointer at HEAD naming a run no ledger holds still fails.
+- **`check-example-ledgers.py` judges pointers and ledgers over the same set, the working
+  tree's.** It read the `testEvidence` pointers off the working-tree manifests while counting only
+  the git-tracked ledgers, so a phase's second task gate in a fresh worktree went red on the first
+  gate's pointer into an evidence file not yet committed. Every manifest and every ledger the
+  working tree holds, tracked or not, is now read as it stands on disk: a pointer into an
+  uncommitted ledger resolves, a pointer naming a run no ledger holds still fails, and an
+  uncommitted edit - or a shard nothing has committed yet - caching a status its run denies or
+  naming a commit git does not have is reported before the commit.
 - **run-test-gate's machine line no longer calls runs recorded one after another a crowd.**
   Overlap was inclusive at both ends over whole-second stamps, so a run that started in the second
   the previous row was written always "shared this window". Windows now compare half-open at the

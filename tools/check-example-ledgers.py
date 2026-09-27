@@ -177,7 +177,10 @@ def untracked_paths(repo=None):
 
 
 def ledger_rels(rels):
-    """Every tracked path that is an evidence ledger, in a stable order."""
+    """Every path in `rels` that is an evidence ledger, in a stable order.
+
+    The caller hands it the tracked paths and the untracked ones together.
+    """
     out = []
     for rel in rels:
         parts = rel.split("/")
@@ -188,7 +191,8 @@ def ledger_rels(rels):
 
 
 def manifest_rels(rels):
-    """Every tracked manifest index and phase shard, in a stable order.
+    """Every manifest index and phase shard in `rels`, in a stable order - the
+    caller hands it the tracked paths and the untracked ones together.
 
     Recognised by shape rather than by name: a JSON file carrying `phases` is an
     index, and one under a `phases/` directory is a shard. Both hold `testEvidence`
@@ -472,11 +476,11 @@ def findings(repo=None):
     if problem:
         return [], {}, problem
 
-    # ONE SET, THE WORKING TREE'S. The manifests are the tracked ones as they
-    # stand on disk, so a defect in an edit nobody has committed yet is caught
-    # before the commit; the ledgers their pointers resolve against are every
-    # ledger the working tree holds, tracked or not, for the reason
-    # `untracked_paths()` gives.
+    # ONE SET, THE WORKING TREE'S. The manifests are every one the working tree
+    # holds, tracked or not, as they stand on disk - so a defect in an edit, or
+    # in a shard `phase add` created, is caught before any commit; the ledgers
+    # their pointers resolve against are every ledger the working tree holds,
+    # tracked or not, for the reason `untracked_paths()` gives.
     loose, problem = untracked_paths(root)
     if problem:
         return [], {}, problem
@@ -522,7 +526,7 @@ def findings(repo=None):
     # silence as a clean set is green FOR the truncation. Asked once here, since
     # it is a property of the checkout and not of a row.
     can_ask, cannot_ask = _commit_trail.can_answer(root)
-    manifests = manifest_rels(rels)
+    manifests = manifest_rels(rels + loose)
     checked_manifests = 0
     pointers = 0
     resolved = 0
@@ -561,7 +565,7 @@ def findings(repo=None):
 
     if manifests and not commits:
         return [], {}, (
-            "%d committed manifest(s) were read and NOT ONE of them names a "
+            "%d manifest(s), tracked or not, were read and NOT ONE of them names a "
             "commit, so the does-git-have-it half of this run compared nothing - "
             "which is not the same answer as a tree naming only commits that "
             "resolve" % (checked_manifests,))
@@ -638,7 +642,7 @@ def ok_line(counts):
     """The clean verdict, carrying what it looked at rather than just 'OK'."""
     return ("OK: %d row(s) across %d ledger(s), tracked or not, record a verdict the "
             "schema publishes, none contradicts its own observations, %d of "
-            "%d cached pointer(s) across %d manifest(s) resolved and agree, "
+            "%d cached pointer(s) across %d manifest(s), tracked or not, resolved and agree, "
             "%d commit reference(s) all resolve in this checkout, and "
             "%d gate entry/entries across %d assembled manifest(s) all name a "
             "meta.buildCommands key (vocabulary: %d word(s))"
@@ -966,6 +970,17 @@ def _cases(check):
               _rp is None and len(_rr) == 2 and len(_why) == 2
               and any("records 'passed'" in w for w in _why)
               and any(("d" * 40) in w for w in _why))
+        # el26. The same defect in a manifest file that is itself untracked - a
+        # shard `phase add` created and a gate wrote into before any commit.
+        _sr, _sp = _fx["shard_rows"], _fx["shard_problem"]
+        _swhy = [why for rel, where, why in _sr
+                 if where == "P9.1" and rel == "x/phases/P9.json"]
+        check("el26 RED-FIRST: an UNTRACKED shard caching a status its run denies "
+              "and naming a commit git does not have is read and reported, not "
+              "passed because nothing has committed it yet: %r / %s" % (_sr, _sp),
+              _sp is None and len(_swhy) == 2
+              and any("records 'passed'" in w for w in _swhy)
+              and any(("e" * 40) in w for w in _swhy))
     finally:
         from _suite import remove_tree
         remove_tree(_snap)
@@ -1031,6 +1046,15 @@ def _snapshot_fixture(root):
     _write_fixture(root, "x/audit-plan.json",
                    plan([("r1", "failed", "d" * 40)]))
     out["edit_rows"], _counts, out["edit_problem"] = findings(root)
+
+    # A SHARD NOTHING HAS COMMITTED YET: `phase add` writes it and a task gate
+    # writes a pointer into it before the first commit tracks it.
+    _write_fixture(root, "x/audit-plan.json", plan([("r1", "passed", None)]))
+    _write_fixture(root, "x/phases/P9.json", json.dumps(
+        {"id": "P9", "tasks": [{"id": "P9.1", "commit": "e" * 40,
+                                "testEvidence": {"runId": "r1",
+                                                 "status": "failed"}}]}))
+    out["shard_rows"], out["shard_counts"], out["shard_problem"] = findings(root)
     return out
 
 

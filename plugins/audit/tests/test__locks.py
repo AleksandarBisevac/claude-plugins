@@ -1151,6 +1151,29 @@ def _token_cases(check):
               and M.read_lock(os.path.join(M.lock_dir(proj), "index.lock"))
               .get("handedOff") is True)
         M.release(proj, "index", session="s-HAND", pid=os.getppid(), out=quiet)
+
+        # A CLAIM FOR ONE CALL - a server's request - is re-entered by nobody,
+        # not even another call in the same process: its token is not put where
+        # a thread beside it would find it.
+        call = M.acquire(proj, "index", note="one request", session="s-CALL",
+                         pid=os.getpid(), per_call=True, out=quiet)
+        call_claim = M.read_lock(os.path.join(M.lock_dir(proj), "index.lock"))
+        again = M.acquire(proj, "index", session="s-CALL", pid=os.getpid(),
+                          per_call=True, wait=0, out=quiet)
+        check("rk5 RED-FIRST: a per-call claim is refused to a second call of the "
+              "SAME process and session, and its token never reaches the "
+              "environment: %r" % ((call, again, call_claim.get("perCall")),),
+              call == 0 and again == M.E_LIVE and call_claim.get("perCall") is True
+              and call_claim.get("token")
+              not in os.environ.get(_TOKEN_ENV, "").split())
+        M.release(proj, "index", session="s-CALL", pid=os.getpid(), out=quiet)
+        own = M.acquire(proj, "index", session="s-OWN", pid=os.getpid(), out=quiet)
+        own2 = M.acquire(proj, "index", session="s-OWN", pid=os.getpid(), wait=0,
+                         out=quiet)
+        check("rk6 ALLOW: an ordinary claim is still this process's own - a second "
+              "acquire in it is answered as re-entry: %r" % ((own, own2),),
+              own == 0 and own2 == M.E_OURS)
+        M.release(proj, "index", session="s-OWN", pid=os.getpid(), out=quiet)
     finally:
         shutil.rmtree(proj, ignore_errors=True)
 

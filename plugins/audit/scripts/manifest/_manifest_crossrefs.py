@@ -56,6 +56,7 @@ import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape
 import _manifest_io as _mio  # noqa: E402  (the id -> status map, and what 'satisfied' means)
 import _priority  # noqa: E402  (the ONE expression of execution order and its rules)
 import _ado_parent as _parent  # noqa: E402  (where each item hangs, and whether it can)
+import _id_refs  # noqa: E402  (FINDING_LISTS: the lists a review holds findings in)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -181,7 +182,7 @@ def _ref_findings(refs_val, where, field, universe, kind):
 
 def _check_refs_and_cycles(phases, index):
     """Every blockedBy/dependsOn resolves, and the waits-on graph is acyclic.
-    Returns (findings, warnings); warnings is always empty.
+    Returns (findings, warnings); the warnings are the review findings below.
 
     The two halves are one piece because they are one question asked twice: a
     reference that names nothing can never be satisfied, and a reference that
@@ -197,8 +198,13 @@ def _check_refs_and_cycles(phases, index):
     bug carries its own and does not, and a dependency on another session has no
     row in this file at all, so both stay findings and are named as such rather
     than resolving to nothing.
+
+    A REVIEW FINDING'S `fixTask` IS A REFERENCE TOO, answered as a WARNING: it
+    names the task whose commit settled the finding, and one naming no task is a
+    finding `reopen` can never reach - but it blocks nothing, and a plan whose
+    hand-recorded finding points at a since-removed task is still a plan.
     """
-    f = []
+    f, w = [], []
     known = (set(index["phase_ids"]) | set(index["task_ids"])
              | set(index.get("decision_ids") or []))
     task_ids = index["task_ids"]
@@ -217,9 +223,30 @@ def _check_refs_and_cycles(phases, index):
                                    known, "any task/phase/decision"))
             f.extend(_ref_findings(task.get("dependsOn"), twhere, "dependsOn",
                                    task_ids, "a task"))
+        w.extend(_fix_task_warnings(phase, pwhere, task_ids))
 
     _cycle_findings(phases, f)
-    return (f, [])
+    return (f, w)
+
+
+def _fix_task_warnings(phase, pwhere, task_ids):
+    """One coded warning per review finding whose `fixTask` names no task."""
+    review = phase.get("review")
+    if not isinstance(review, dict):
+        return []
+    out = []
+    for key in _id_refs.FINDING_LISTS:
+        for entry in _safe_list(review.get(key)):
+            fix = entry.get("fixTask") if isinstance(entry, dict) else None
+            if fix is None or fix in task_ids:
+                continue
+            out.append(_output.finding(
+                "crossrefs.fix_task.unresolved",
+                "%s: review.%s finding %s names fixTask %r, which is no task in "
+                "this plan - the fix it records cannot be looked up, and a "
+                "re-open of that task would not reach it"
+                % (pwhere, key, entry.get("id"), fix)))
+    return out
 
 
 def _cycle_findings(phases, findings):

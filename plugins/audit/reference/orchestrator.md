@@ -284,6 +284,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" acquire <name> 
         --project <gitRoot> --note "<verb> <scope>"
 ```
 
+**A lock taken with this script is held BY HAND** (recorded `handedOff`), and every process of
+your session is let back in under it (exit 5 inside each verb) — so under such a hold run the
+verbs **one at a time, never as parallel tool calls**; two side by side are not serialised, and
+the later write replaces the earlier. `_locks.held_by_us` is the rule, and nothing refuses the
+parallel calls. A lock a verb takes for its own write is different: every other process waits
+for it, your own session's included.
+
 Every lock this script can take has one of these names. `index` and `usage` are the fixed
 names; `phase-<phaseId>` also works — **take the narrowest one that covers your writes:**
 
@@ -306,7 +313,7 @@ names; `phase-<phaseId>` also works — **take the narrowest one that covers you
 |---|---|---|
 | **0** | acquired | proceed |
 | **5** | **already yours** | this run already holds it, so proceed — and **do not release it**: the claim belongs to the hold that took it, and releasing here drops the lock out from under the step still using it. A shell reads this as 0, because "you already have it" is not a failure to take it. |
-| **3** | held by a **live** run | **STOP.** Print the script's output verbatim and end the command. Do not take it over. The script has already waited for it — a window sized for a lock taken for one structural write, while a phase lock is held for a whole run, so waiting longer buys the same refusal later. `--wait 0` reads the refusal at once. |
+| **3** | held by a **live** run | It can be a **parallel call of your own session**: a claim a process takes for its own write is waited for by every other process, session or not. **STOP.** Print the script's output verbatim and end the command. Do not take it over. The script has already waited for it — a window sized for a lock taken for one structural write, while a phase lock is held for a whole run, so waiting longer buys the same refusal later. `--wait 0` reads the refusal at once. |
 | **4** | holder is **not alive** | Print the output, ask the human (AskUserQuestion) to confirm, then rerun with `--takeover`. |
 | **1** | not a git repo / cannot write | Stop and report. With no git repo there is no lock scheme at all, so there is nothing to fall back to and nothing to coordinate against: say so rather than writing as though a lock had been taken. |
 
