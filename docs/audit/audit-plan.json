@@ -856,7 +856,8 @@
       "P80.22-rtb",
       "P80.15-rtb",
       "P81.2",
-      "P81.5"
+      "P81.5",
+      "P81.7"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1751,7 +1752,8 @@
       "P77.3-6u9",
       "P74.3-qq5",
       "P86.4",
-      "P80.21-rtb"
+      "P80.21-rtb",
+      "P81.7"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1937,7 +1939,9 @@
       "P80.19-rtb",
       "P80.22-rtb",
       "P81.10",
-      "P81.11"
+      "P81.11",
+      "P81.13-j7p",
+      "P81.7"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2043,7 +2047,8 @@
       "P72.4-ttl",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P81.10"
     ],
     "plugins/audit/scripts/governance/audit-lock.py": [
       "P34.2",
@@ -2377,7 +2382,9 @@
       "P79.10-5bh",
       "P84.1",
       "P84.4-791",
-      "P84.6-791"
+      "P84.6-791",
+      "P81.7",
+      "P81.13-j7p"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2442,7 +2449,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P81.10"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2",
@@ -2667,7 +2675,8 @@
       "P76.1",
       "P80.14-rtb",
       "P80.17-rtb",
-      "P81.12"
+      "P81.12",
+      "P81.10"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -2720,7 +2729,8 @@
       "P80.14-rtb",
       "P80.15-rtb",
       "P81.9",
-      "P81.12"
+      "P81.12",
+      "P81.10"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -2989,7 +2999,9 @@
       "P80.14-rtb",
       "P80.19-rtb",
       "P81.10",
-      "P81.11"
+      "P81.11",
+      "P81.13-j7p",
+      "P81.7"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -3195,7 +3207,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P81.10"
     ],
     "plugins/audit/tests/test__panel_page.py": [
       "P18.7",
@@ -3319,7 +3332,8 @@
       "P74.3-qq5",
       "P80.14-rtb",
       "P80.17-rtb",
-      "P81.12"
+      "P81.12",
+      "P81.10"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -3374,7 +3388,8 @@
       "P72.4-ttl",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P81.10"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
@@ -3481,7 +3496,9 @@
       "P79.10-5bh",
       "P84.1",
       "P84.4-791",
-      "P84.6-791"
+      "P84.6-791",
+      "P81.7",
+      "P81.13-j7p"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4024,11 +4041,13 @@
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
-      "P80.19-rtb"
+      "P80.19-rtb",
+      "P81.10"
     ],
     "plugins/audit/tests/test_import_evidence.py": [
       "P80.5",
-      "P80.19-rtb"
+      "P80.19-rtb",
+      "P81.10"
     ],
     "tools/ui-tests/full-run-verified.test.mjs": [
       "P80.8"
@@ -4093,13 +4112,15 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P81.10"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P81.10"
     ],
     "plugins/audit/scripts/governance/record-outside-run.py": [
       "P74.9-qq5"
