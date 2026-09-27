@@ -134,7 +134,7 @@
     {
       "id": "P87.3-bpl",
       "title": "the journal dedup keys each record by what identifies one event, and which run asks the commit comparison is pinned to the real invocations",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 1 (review-P87a.json). (1) task.blocked's dedup key (taskId, attempt) reuses after reopen resets attempts, so a real second blocking is withheld and the manifest.edit note falsely says the trail holds it: key it on a value that changes with every blocking (e.g. the task's startedAt, added to DETAILS_KEYS and the row), or, if no such value exists, take task.blocked out of _RECORD_KEYS - a repeated row, never a lost one. (2) ado.link keyed on (taskId, phaseId, adoId) withholds a re-link to the same id after an unlink: same rule - a per-link value or no dedup; manifest-conventions.md states the answer. (3) Nothing pins which run asks the HEAD arm: a case in check-rendered-artifacts.py reads the real invocation from verify.sh's --release block and ci.yml and asserts --release carries HEAD_ARM and ci.yml's call parses to ALL_ARMS through arms_for(); red by deleting each line. (4) NOT ASKED line and docs: before a commit the HEAD arm is red only while a re-rendered page is uncommitted; on CI it cannot fire (the checkout is the commit); name --release and a no-flag run after the commit. (5) CLAUDE.md's Tests list line for check-rendered-artifacts and the --how text say what the plain and --release runs each ask. (6) ra5 asks a module-level SELFTEST_ARMS that ra25 asserts excludes HEAD_ARM, and the comment claims only what the case checks. (7) restore `shot = sel(` in affected.py; 'the same four shapes' -> 'the same shapes'. Red first for 1, 2, 3, 6; allow: a genuinely repeated derivation of the same blocking is still withheld if a per-event key is used.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -172,14 +172,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a86689ab",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "task.blocked and ado.link leave _RECORD_KEYS; ra29/ra29b read verify.sh and ci.yml calls; ra30 ast check; SELFTEST_ARMS; docs state where the HEAD arm fires",
+        "descriptive": "A re-blocked task or a re-linked work item is always journaled, and where the commit comparison runs is checked against the real calls"
       },
       "startedAt": "2026-09-27T15:05:21Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T15:21:30Z",
+      "verifiedBy": [
+        "test_journal_writes 144/144",
+        "check-rendered-artifacts 32/32",
+        "probe 13/13 red on an export",
+        "full sweep",
+        "gate-parity",
+        "bench-hooks"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
