@@ -8103,14 +8103,20 @@ def _caught_refusal(row, run_id, test):
     `--failing-from` gate and the gate runner take, so a tail excerpt and a
     quarantined step are refused here for the reason they are refused there. Its `ts` must read as a moment through
     `_usage_core.parse_ts`, the reading `lastCaught`'s own reader ages a
-    coupling by."""
+    coupling by.
+
+    WHETHER `test` IS ONE OF THE NAMED SUITES is `_evidence_io.listed_by`,
+    the reading `full-gate.py` and `selection_miss` take: a runner may print
+    a suite relative to its own directory while the coupling spells it from
+    the repository root. The catch is still written under `test`, the
+    plan's key, never under the runner's spelling."""
     if row.get("scope") != _evidence_io.FULL_SCOPE:
         return ("[audit-task] --caught %s is a run of scope %r, not %r -- "
                 "only a third-place run is a catch the coupling earned; a "
                 "phase or task run is the kind of run that taught it"
                 % (run_id, row.get("scope"), _evidence_io.FULL_SCOPE))
     named = _evidence_io.named_failing_suites(row.get("steps"))
-    if test not in named:
+    if not _evidence_io.listed_by(test, named):
         return ("[audit-task] --caught %s does not name %s as failing on a "
                 "step whose runner named its failing suites and no mute "
                 "excused (it named: %s) -- a tail excerpt or a quarantined "
@@ -8121,6 +8127,32 @@ def _caught_refusal(row, run_id, test):
                 "as a moment, so there is nothing to record as lastCaught"
                 % (run_id, row.get("ts")))
     return None
+
+
+def _caught_ambiguity(row, run_id, test, keys):
+    """Why the run cannot pin its failure on `test` among the plan's coupled
+    `keys`, or None. Asked after `_caught_refusal` has found a named suite
+    `listed_by` reads as `test`.
+
+    EVERY SPELLING THE RUNNER NAMED FOR `test` IS RESOLVED AGAINST EVERY
+    COUPLED KEY (`_evidence_io.resolve_named`), and one that pins to `test`
+    alone is the catch. A spelling that also fits another coupled key - a
+    bare `test_c.py` beside two `*/test_c.py` couplings - cannot say which
+    one failed, and crediting both would reset the age of the coupling that
+    caught nothing; so it credits neither, `full-gate.py`'s own reading."""
+    named = _evidence_io.named_failing_suites(row.get("steps"))
+    reasons = []
+    for spelling in named:
+        if not _evidence_io.listed_by(test, [spelling]):
+            continue
+        key, why = _evidence_io.resolve_named(spelling, keys)
+        if key == test:
+            return None
+        reasons.append(why)
+    return ("[audit-task] --caught %s: no suite the run named pins to %s "
+            "alone among the coupled tests (%s) -- a failure the name cannot "
+            "place on one coupling is credited to none"
+            % (run_id, test, "; ".join(reasons) or "nothing named it"))
 
 
 def _locked_couple_caught(args, test, project, config, mpath, out):
@@ -8180,6 +8212,12 @@ def _locked_couple_caught(args, test, project, config, mpath, out):
             "-- a catch is recorded against a coupling, never in place of "
             "one; learn it with --sources/--basis-run/--basis-head first"
             % (test,))
+        return E_USAGE
+    refusal = _caught_ambiguity(row, run_id, test,
+                                [e.get("test") for e in coupling
+                                 if e.get("test")])
+    if refusal:
+        out(refusal)
         return E_USAGE
     was = coupling[idx].get("lastCaught")
     was_at = _usage_core.parse_ts(was)

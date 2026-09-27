@@ -387,7 +387,9 @@
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/scripts/_deps.py",
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -425,9 +427,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T18:46:49Z.a3d355",
+        "runId": "2026-09-27T19:38:31Z.e4fc27",
         "status": "passed",
-        "at": "2026-09-27T18:46:49Z"
+        "at": "2026-09-27T19:38:31Z"
       }
     },
     {
@@ -540,7 +542,7 @@
     {
       "id": "P81.10",
       "title": "the evidence ledger's readers decode through one function, and a byte that does not decode is a finding everywhere",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F523. read_rows opens ledger files with errors='replace' and reports them fully read, while verify opens them strictly and grades them unreadable; every consumer of read_rows (status, doctor, panel, report, the release guard's full-run answer, import-evidence) can compare a value a replaced byte silently changed. Both readers (and any sibling that opens a ledger file) decode through ONE function; a non-UTF-8 byte is a finding on every surface - read_rows counts the file as lost (unreadableFiles), never returns its rows as clean. Red-first as above; allow: a clean UTF-8 file with non-ASCII text reads as before.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -582,18 +584,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fd8c74c5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io: ledger_decode/ledger_text (strict) serve read_rows, verify, append_row (refuses an undecodable target), import-evidence and the audit-journal evidence merge (refuses an undecodable side); stamp_moment (parse_ts plus ISO date) feeds oldest_first/newest_row, which row_by_run, latest_by_subject, reusable_run, gate_last_caught, earliest_recorded, boundary_of and a derived _newest_first all use; boundary_of hands at on in the Z spelling and names every unplaceable or missing stamp in unknown; _verdict_binding blocks on an unplaceable subject row, words a lost file apart, and finds a reused origin by row_by_run; the panel reads newest per runId through the same order. Recorded elsewhere: the other text-ordered readers and _epoch (F530), run-test-gate --record exiting 0 unrecorded (F532).",
+        "descriptive": "Every reader and writer of the evidence ledger decodes a file one strict way and orders rows by the moment a stamp names; a byte that is not UTF-8, or a stamp that places no moment, is named or refused on every surface instead of being silently repaired or dropped."
       },
       "startedAt": "2026-09-27T18:00:36Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T19:24:39Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T19:24:16Z.d50bfc",
         "status": "passed",
         "at": "2026-09-27T19:24:16Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "fd8c74c5",
+        "at": "2026-09-27T19:24:39Z",
+        "basis": "the description asked for one decode across the ledger's readers; review widened the task to the ledger's moment order, the evidence boundary, the merge verb and the panel, each because this task's change made a claim there false or left the same question answered two ways"
       }
     },
     {

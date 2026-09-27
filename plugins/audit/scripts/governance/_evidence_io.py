@@ -2834,6 +2834,38 @@ def listed_by(path, tests):
                for t in tests or [])
 
 
+def resolve_named(spelling, candidates):
+    """`(path, None)` for the ONE candidate a runner's `spelling` names, or
+    `(None, reason)` when it names none of them or several.
+
+    THE MATCH IS `listed_by`'s, candidate by candidate - equal, or either a
+    `/`-bounded path suffix of the other - so a suite a runner prints
+    relative to its own directory still finds the path the repository
+    spells from its root. `candidates` is whatever set of paths the caller
+    must pin the name onto: the suites a plan couples, or every file the
+    repository tracks. A candidate listed twice is one candidate.
+
+    SEVERAL MATCHES NAME NONE OF THEM. A bare `test_c.py` fits every
+    `*/test_c.py`, and which one failed is not something the name can say;
+    answering with any of them would act on a suite the run may never have
+    touched. An exact-equal candidate does not break the tie either: a
+    runner working from a subdirectory prints a repository-root-looking
+    path for a deeper file. The reason names every match, so the caller can
+    say what it refused to choose between.
+    """
+    matches = []
+    for path in candidates or []:
+        if path not in matches and listed_by(spelling, [path]):
+            matches.append(path)
+    if len(matches) == 1:
+        return matches[0], None
+    if not matches:
+        return None, ("no candidate path is %s or ends in /%s, and %s ends "
+                      "in none of them" % (spelling, spelling, spelling))
+    return None, ("%s names each of %s - one name, several suites, so it "
+                  "names none of them" % (spelling, ", ".join(matches)))
+
+
 def _ancestry(git_root, merged_head, head, run):
     """`(answer, unasked_sentence)` - `_worktrees.merged_into` of `merged_head`
     into `head`, with the sentence to report when git could not answer."""

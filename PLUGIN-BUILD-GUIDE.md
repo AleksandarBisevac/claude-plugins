@@ -155,7 +155,7 @@ claude-plugins/                           # this repo (personal, public)
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains
-          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, or the sentence and exit 0 when no meta.fullGate is declared
+          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
@@ -392,7 +392,7 @@ L7:
   derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  full-gate -> _loader, _manifest_io, _output
+  full-gate -> _evidence_io, _loader, _manifest_io, _output, _status_facts
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
   import-evidence -> _evidence_io, _journal_io, _manifest_io, _output
@@ -3701,8 +3701,20 @@ not block every push, forever, over a gate nobody asked for. So this file reads 
 itself, before invoking anything, and answers with the sentence and **exit 0** instead of letting
 that usage refusal reach an operator's shell as a blocked push.
 
-**Does not learn.** No selection-miss pass, no read of the evidence ledger, no bug opened on a
-red run — that pass belongs to the phase after this one. What this file owes is delegation.
+**A red run is learned from, and still blocks.** After a non-zero exit this file reads the row
+the run recorded (`_evidence_io.row_by_run`, with the id off the runner's own `evidence: recorded`
+line; with no such line, the newest full row stamped since it started the run — never an earlier
+run at the same head) and files what it taught through `audit-task.py`, as subprocesses: a
+`couple` and a `bug-add` per `selectionMiss` entry, and a `couple --caught` per suite the plan
+already coupled that the runner named failing — pinned by `_evidence_io.resolve_named`, so a name
+that fits several coupled suites credits none of them. Each verb's own output and exit code are printed;
+the exit stays the runner's. It never acts on a green run, on a run the runner said it did not
+record, or on a failure the runner did not **name** (every miss is re-asked of
+`_evidence_io.named_failing_suites`). A miss whose `sources` the row cut (`sourcesDropped`) is
+**not** coupled — coupling a suite to a prefix of what it depends on narrows it silently — and
+the bug it files says so and points at the tasks' files in the plan. A miss an open bug already
+tracks, or a coupling that already covers every source, is not filed again, so a push retried on
+the same red does not multiply bugs.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they

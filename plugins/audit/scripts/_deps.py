@@ -737,12 +737,17 @@ LAYERS = (
      # whole obligation, spelled once rather than left for every hook to
      # re-derive `run-test-gate.py <m> --full --record` and its own refusal
      # for a plan with no `meta.fullGate`. An entry point for this layer's
-     # usual reason - it never imports `run-test-gate` (an entry point may
-     # not import another entry point), it resolves it by basename through
-     # `_loader.script_path` (L1) and runs it as a subprocess, which is why
-     # no edge to `run-test-gate` appears here at all. It reaches
-     # `_manifest_io` (L1) for the one presence check - does this plan
-     # declare a third place - that decides whether to invoke anything.
+     # usual reason - it never imports `run-test-gate` or `audit-task` (an
+     # entry point may not import another entry point), it resolves both by
+     # basename through `_loader.script_path` (L1) and runs them as
+     # subprocesses, which is why no edge to either appears here at all. It
+     # reaches `_manifest_io` (L1) for the presence check that decides
+     # whether to invoke anything, `_evidence_io` (L2) for the row a red run
+     # recorded - found by `stamp_moment` and `newest_row` when no evidence
+     # line names it - with `named_failing_suites`, the one reading of which
+     # failures a runner named, and `resolve_named`, which pins each named
+     # suite to one coupled key or to none, and `_status_facts` (L2) for
+     # `CLOSED_BUG`, so a miss an open bug already tracks is not filed twice.
      "full-gate",
      # `propose-gates` folds the evidence ledger into a plan proposal instead
      # of leaving `/audit:init`'s recon read the tree alone: a candidate gate

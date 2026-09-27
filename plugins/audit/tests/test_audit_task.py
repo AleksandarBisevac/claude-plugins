@@ -9394,6 +9394,78 @@ def _cases(check):
               and (cc_entry() or {}).get("lastCaught")
               == "2026-09-03T00:00:00.5Z")
 
+        # ---- a runner naming the suite relative to its own directory -------
+        # `_evidence_io.listed_by` is the one reading of "this suite is one of
+        # those": equal, or either a `/`-bounded path suffix of the other.
+        cc_row("RUN-CC-REL", "2026-09-10T00:00:00Z", "full",
+               ["test_c.py"], _cc_named)
+        _cc_caught_before = len(cp_journal(cc_proj, "coupling.caught"))
+        codecc16, txtcc16 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-REL",
+             "--project-dir", cc_proj])
+        check("cc16 RED-FIRST: a full row whose runner named test_c.py - the "
+              "coupled tests/test_c.py, relative to the runner's own "
+              "directory - is a catch, recorded under the PLAN'S key and no "
+              "other: %r" % ((codecc16, txtcc16[:200], cp_coupling(cc_mp)),),
+              codecc16 == 0
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-10T00:00:00Z"
+              and [e.get("test") for e in cp_coupling(cc_mp)]
+              == ["tests/test_c.py"]
+              and len(cp_journal(cc_proj, "coupling.caught"))
+              == _cc_caught_before + 1)
+        # ALLOW CASE: the same basename under ANOTHER directory is neither
+        # equal to the key nor a `/`-bounded suffix of it, either way round,
+        # so `listed_by` says it is a different suite - the mutation
+        # 'compare basenames' is what this is here to turn red.
+        cc_row("RUN-CC-ELSEWHERE", "2026-09-11T00:00:00Z", "full",
+               ["other/test_c.py"], _cc_named)
+        codecc17, txtcc17 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-ELSEWHERE", "--project-dir", cc_proj])
+        check("cc17 ALLOW CASE: a full row naming other/test_c.py - the same "
+              "basename in another directory - is refused exit 2, the "
+              "refusal names what the runner named, and lastCaught stays "
+              "where cc16 put it: %r" % ((codecc17, txtcc17[:240]),),
+              codecc17 == 2 and "other/test_c.py" in txtcc17
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-10T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught"))
+              == _cc_caught_before + 1)
+
+        # ---- one bare name, two coupled suites carrying it -----------------
+        # `test_c.py` is listed by BOTH pkg_a/ and pkg_b/tests/test_c.py, so
+        # the run cannot say which one failed; crediting either would reset
+        # the age of a coupling that caught nothing.
+        am_manifest = base_manifest()
+        am_manifest["meta"]["coupling"] = [
+            {"test": test, "sources": [src],
+             "basis": {"runId": "RUN-AM-OLD", "head": "deadbeef",
+                       "phases": ["P2"]},
+             "learnedAt": "2026-01-01T00:00:00Z"}
+            for test, src in (("pkg_a/tests/test_c.py", "pkg_a/c.ts"),
+                              ("pkg_b/tests/test_c.py", "pkg_b/c.ts"))]
+        am_proj, am_mp = mk("cc-ambiguous", am_manifest)
+        _cp_ev.append_row(am_proj, {
+            "v": 1, "runId": "RUN-AM", "ts": "2026-09-12T00:00:00Z",
+            "scope": "full", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                       "failingSuites": ["test_c.py"],
+                       "failingSuitesBasis": _cc_named}]})
+        codecc18, txtcc18 = run(
+            ["couple", "--test", "pkg_a/tests/test_c.py", "--caught",
+             "RUN-AM", "--project-dir", am_proj])
+        check("cc18 RED-FIRST: --caught for pkg_a/tests/test_c.py off a run "
+              "that named only test_c.py, while pkg_b/tests/test_c.py is "
+              "coupled too, is refused exit 2 naming both keys, and neither "
+              "lastCaught moves: %r"
+              % ((codecc18, txtcc18[-320:], cp_coupling(am_mp)),),
+              codecc18 == 2
+              and "pkg_a/tests/test_c.py" in txtcc18
+              and "pkg_b/tests/test_c.py" in txtcc18
+              and not any(e.get("lastCaught") for e in cp_coupling(am_mp))
+              and cp_journal(am_proj, "coupling.caught") == [])
+
         # ---- (cp) --basis-head is asked of git, exactly as `done --commit` -
         cp_projg, cp_mpg, cp_head = cp_repo("cp-git", base_manifest())
         _cp_ev.append_row(cp_projg, {

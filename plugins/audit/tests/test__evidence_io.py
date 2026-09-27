@@ -2571,6 +2571,47 @@ def _cases(check):
     _chain_order_cases(check)
     _narrowed_shadow_cases(check)
     _selection_miss_row_cases(check)
+    _resolve_named_cases(check)
+
+
+def _resolve_named_cases(check):
+    """(rn) `resolve_named`: the ONE candidate a runner's spelling names by
+    `listed_by`'s suffix rule, or None and a sentence naming what matched.
+    Read through `getattr` so the red before the function exists is an
+    observed answer, not an AttributeError ending the suite."""
+    resolve = getattr(M, "resolve_named", None)
+
+    def ask(spelling, candidates):
+        if resolve is None:
+            return ("absent", None)
+        return resolve(spelling, candidates)
+
+    keys = ["pkg_a/tests/test_c.py", "pkg_b/tests/test_c.py",
+            "tests/test_d.py"]
+    one = ask("test_d.py", keys)
+    check("rn1 RED-FIRST: a spelling that is a `/`-bounded suffix of exactly "
+          "one candidate names that candidate, with no reason: %r" % (one,),
+          one == ("tests/test_d.py", None))
+    none = ask("test_z.py", keys)
+    check("rn2 a spelling no candidate is listed by names none of them, and "
+          "the reason says so and quotes the spelling: %r" % (none,),
+          none[0] is None and isinstance(none[1], str)
+          and "test_z.py" in none[1] and "no candidate" in none[1])
+    several = ask("test_c.py", keys)
+    check("rn3 RED-FIRST: a spelling that more than one candidate is listed "
+          "by names NONE of them - an ambiguous name is not one of its "
+          "matches - and the reason names every match: %r" % (several,),
+          several[0] is None and isinstance(several[1], str)
+          and "pkg_a/tests/test_c.py" in several[1]
+          and "pkg_b/tests/test_c.py" in several[1]
+          and "tests/test_d.py" not in several[1])
+    # ALLOW CASE for the other direction of the suffix rule: a runner printing
+    # a LONGER path than the candidate (its own absolute-ish spelling) still
+    # names it, and a candidate listed twice is still one candidate.
+    longer = ask("repo/pkg_b/tests/test_c.py", keys + ["pkg_b/tests/test_c.py"])
+    check("rn4 ALLOW CASE: the suffix rule read either way round, and a "
+          "repeated candidate counted once: %r" % (longer,),
+          longer == ("pkg_b/tests/test_c.py", None))
 
 
 def _selection_miss_row_cases(check):
