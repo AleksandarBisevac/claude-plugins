@@ -573,15 +573,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--against-commit`. A run with no flag compares both, as before. After a commit, that run and
   `--release` are where a page committed without its re-render is found. CI also runs it with no
   flag, but there the checkout is the commit, so only the fresh-render comparison can fail. The
-  tool's selftest reads the calls in `tools/verify.sh` and `ci.yml`, so a moved flag fails a case.
-  It stops reading a call at a redirection, and in `ci.yml` reads a call only from a one-line
-  unquoted `run:` outside any block scalar or a line in a plain `run: |` block. Any other line
-  that names the tool is refused by line, a line inside another key's block scalar included. A
-  word naming the tool counts as the call only as the command word or right after a python
-  interpreter, so `ls`, `git diff --` or `echo` beside it is no call. While it runs, it records
-  every git call the tool makes against the checkout, and fails naming the function that made one,
-  including a call against a directory inside the checkout. An unknown flag, or both flags
-  together, is now a usage error (exit 2) instead of running both comparisons.
+  tool's selftest pins the calls in `tools/verify.sh` and `ci.yml` by exact line: every
+  non-comment line that names the tool must, once its indentation (and in `ci.yml` a leading `- `
+  and `run:`) is stripped, equal one of its call lines - no flag, `--before-commit` or
+  `--against-commit` - and each run must carry its own line exactly once, so a moved or deleted
+  flag fails a case and any other line naming the tool is refused by line. It is a text check, not
+  an interpreter: an exact call line inside a heredoc, a quoted string or another key's block text
+  is not told apart, which matters only if the real call is also removed. While it runs, it
+  records every git call the tool makes against the checkout, and fails naming the function that
+  made one, including a call against a directory inside the checkout. An unknown flag, or both
+  flags together, is now a usage error (exit 2) instead of running both comparisons.
 - **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
   report and the panel each turned a failed read into a clean read of nothing, so a task or
   phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not

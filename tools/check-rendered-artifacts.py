@@ -80,7 +80,6 @@ import calendar
 import io
 import os
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -670,188 +669,74 @@ def arms_for(argv):
 
 
 # --- which arms the runner and the workflow really ask --------------------------
+# AN EXACT-LINE PIN, NOT A PARSER. Six rounds of reading shell and YAML by hand each
+# left a spelling that read silently wrong - the last one an `echo` of the call. So
+# nothing here interprets either file any more. Every non-comment line that names
+# this tool must, with its indentation stripped - and in ci.yml an optional leading
+# `- ` and `run:` - EQUAL one of the call lines in `_CALL_LINES`, or it is refused
+# by line. `run_arms()` then says which file, and which part of verify.sh, holds
+# each exact line.
+#
+# THE LIMIT, WHICH IS WHAT A TEXT CHECK IS: an exact call line inside a heredoc, a
+# quoted string or another key's block text is not told apart from a call. That
+# only matters if the real call is also removed, because ra29 pins each exact line
+# to exactly one place - a second copy fails it too.
 _THIS_TOOL = "tools/check-rendered-artifacts.py"
 _VERIFY_REL = "tools/verify.sh"
 _CI_REL = ".github/workflows/ci.yml"
 _RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then\s*$')
-_SHELL_STOPS = (";", "&&", "||", "|")
-# A redirection word ends the argv: `2>&1`, `>/dev/null`, `&>log`, `<in`.
-_REDIRECT = re.compile(r"^(\d*|&)(>>?|<)")
-# THE YAML SHAPES A CALL IS READ FROM - an allow-list over YAML CONTEXT, because
-# every refusal list written before it was one spelling short. A line naming this
-# tool is read only from (a) a one-line `run:` whose value is the unquoted call,
-# outside any block scalar, or (b) the body of a block opened by a plain `run: |`
-# (`|-` and `|+` too, a trailing comment allowed). Every block scalar is tracked by
-# its indentation - any key, or a bare list item, whose value opens with `|` or `>`
-# after optional anchors and tags - and the body of one that is not (b) is OPAQUE:
-# a line inside it naming the tool is refused by line and never read, whatever it
-# looks like. Any other non-comment line naming the tool is refused by line too.
-_ONE_LINE_RUN = re.compile(r"^(\s*(?:-\s+)?)run:[ \t]+(?P<value>[^\s'\"|>&!*%@`{\[#].*)$")
-_LITERAL_RUN = re.compile(r"^(\s*(?:-\s+)?)run:[ \t]+\|[-+]?[ \t]*(?:#.*)?$")
-_BLOCK_OPEN = re.compile(
-    r"^(\s*(?:-\s+)?)(?:(?:\"[^\"]*\"|'[^']*'|[^\s#'\"][^:#]*?)[ \t]*:[ \t]+)?"
-    r"(?:[&!]\S*[ \t]+)*[|>][-+0-9]*[ \t]*(?:#.*)?$")
-# The command word, or the word right after a python interpreter: the only two
-# places a word naming this tool runs it. `ls`, `git diff --` or `echo` beside it
-# mention the tool without calling it.
-_INTERPRETER = re.compile(r"^(?:/\S*/)?python(?:3(?:\.\d+)?)?$")
-_YAML_SHAPES = ("a one-line `run: <call>` with the call unquoted, or a line in the "
-                "body of a plain `run: |` block")
+_CALL_LINES = (("python3 %s" % (_THIS_TOOL,), ALL_ARMS),
+               ("python3 %s --before-commit" % (_THIS_TOOL,), BEFORE_COMMIT_ARMS),
+               ("python3 %s --against-commit" % (_THIS_TOOL,), AGAINST_COMMIT_ARMS))
+_YAML_LEAD = re.compile(r"^(?:-\s+)?(?:run:\s+)?")
 
 
-def _indent(line):
-    return len(line) - len(line.lstrip())
+def call_lines(text, yaml=False):
+    """[(line number, arms or refusal)] for every non-comment line naming the tool.
 
-
-def _is_comment(line):
-    return line.strip().startswith("#")
-
-
-def _names_tool(word):
-    return word == _THIS_TOOL or word.endswith("/" + _THIS_TOOL)
-
-
-def _is_call_word(words, i):
-    """Whether `words[i]` names this tool in command position: the command word
-    (after any `NAME=value` assignments) or the word right after a python
-    interpreter, with nothing between them."""
-    if not _names_tool(words[i]):
-        return False
-    lead = 0
-    while lead < len(words) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[lead]):
-        lead += 1
-    return i == lead or (i > 0 and _INTERPRETER.match(words[i - 1]) is not None)
-
-
-def _shell_invocations(text):
-    """[argv or problem] for every call of this tool in SHELL text.
-
-    A backslash continuation is joined first, because the runner writes its step
-    as `run "label" \\` above the call. A comment is not a call, and neither is a
-    word naming the tool outside command position (`_is_call_word`). The argv ends
-    at a shell separator or a redirection word. A line the lexer rejects comes back
-    as a problem string, never skipped.
+    A refusal is a STRING naming the line, so a caller cannot read a line this
+    check does not know as a call that asks nothing.
     """
+    known = dict(_CALL_LINES)
     out = []
-    for line in re.sub(r"\\\n", " ", text).splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or _THIS_TOOL not in stripped:
+    for number, line in enumerate(text.splitlines(), 1):
+        bare = line.strip()
+        if not bare or bare.startswith("#") or _THIS_TOOL not in bare:
             continue
-        try:
-            words = shlex.split(stripped, comments=True)
-        except ValueError as exc:
-            out.append("a line calling %s does not lex as shell (%s): %s"
-                       % (_THIS_TOOL, exc, stripped))
-            continue
-        at = [i for i, w in enumerate(words) if _is_call_word(words, i)]
-        if not at:
-            continue
-        args = []
-        for word in words[at[0] + 1:]:
-            if word in _SHELL_STOPS or _REDIRECT.match(word):
-                break
-            args.append(word)
-        out.append(args)
+        if yaml:
+            bare = _YAML_LEAD.sub("", bare, count=1)
+        arms = known.get(bare)
+        out.append((number, arms if arms is not None else
+                    "line %d names %s but is not one of the exact call lines this "
+                    "tool knows (%s) - write the call as one of them, and keep the "
+                    "name off any other line that is not a comment"
+                    % (number, _THIS_TOOL,
+                       "; ".join("`%s`" % (call,) for call, _a in _CALL_LINES))))
     return out
 
 
-def _block_end(lines, key, col):
-    """The index past the last body line of a block scalar opened at `key`.
-
-    The body runs while a line is blank or indented past the key's column."""
-    end = key + 1
-    while end < len(lines) and (not lines[end].strip() or _indent(lines[end]) > col):
-        end += 1
-    return end
-
-
-def _continues(lines, key, col):
-    """Whether a one-line `run:` value goes on below it. A full-line comment is
-    never a value line, so it neither continues the value nor ends the check."""
-    for line in lines[key + 1:]:
-        if not line.strip() or _is_comment(line):
-            continue
-        return _indent(line) > col
-    return False
-
-
-def _yaml_invocations(text):
-    """[argv or problem] for every call of this tool in a YAML workflow."""
-    lines = text.splitlines()
-    out, i = [], 0
-    while i < len(lines):
-        line = lines[i]
-        opened = _BLOCK_OPEN.match(line)
-        if opened:
-            end = _block_end(lines, i, len(opened.group(1)))
-            if _LITERAL_RUN.match(line):
-                out.extend(_shell_invocations("\n".join(lines[i + 1:end])))
-            else:
-                out.extend(_yaml_refusal(k) for k in range(i, end)
-                           if _THIS_TOOL in lines[k])
-            i = end
-            continue
-        if not line.strip() or _is_comment(line) or _THIS_TOOL not in line:
-            i += 1
-            continue
-        one = _ONE_LINE_RUN.match(line)
-        if one and not _continues(lines, i, len(one.group(1))):
-            out.extend(_shell_invocations(one.group("value")))
-        else:
-            out.append(_yaml_refusal(i))
-        i += 1
-    return out
-
-
-def _yaml_refusal(index):
-    """The refusal for a YAML line (0-based `index`) naming the tool outside the
-    two accepted shapes."""
-    return ("line %d names %s outside the shapes this reader accepts in YAML - %s; "
-            "anything else is refused rather than guessed at"
-            % (index + 1, _THIS_TOOL, _YAML_SHAPES))
-
-
-def invocations(text, yaml=False):
-    """[argv after the script, or a problem] for every call of this tool in
-    `text` - shell text by default, a YAML workflow with `yaml=True`.
-
-    A problem comes back as a STRING rather than an argv, so a caller cannot read
-    a call this reader could not read as a call that asks nothing.
-    """
-    return _yaml_invocations(text) if yaml else _shell_invocations(text)
-
-
-def release_block(text):
-    """(inside, outside): the runner's `--release` block and everything else.
+def release_lines(text):
+    """(first, last) line numbers of the runner's `--release` block, or None.
 
     The block opens on `if [ "$RELEASE" -eq 1 ]; then` and closes on the first `fi`
-    at the start of a line after it. None for `inside` when no block was found, so a
-    runner that lost it is not read as one whose release asks nothing.
+    at the start of a line after it. None when no block was found, so a runner that
+    lost it is not read as one whose release asks nothing.
     """
     lines = text.splitlines()
     opens = [i for i, line in enumerate(lines) if _RELEASE_OPEN.match(line)]
     if not opens:
-        return None, text
+        return None
     closes = [i for i in range(opens[0] + 1, len(lines)) if lines[i] == "fi"]
     if not closes:
-        return None, text
-    inside = "\n".join(lines[opens[0] + 1:closes[0]])
-    outside = "\n".join(lines[:opens[0]] + lines[closes[0] + 1:])
-    return inside, outside
-
-
-def _one_arms(argv):
-    """The arms one call asks, or the usage problem `arms_for` named."""
-    arms, problem = arms_for(argv)
-    return arms if arms is not None else problem
+        return None
+    return opens[0] + 1, closes[0] + 1
 
 
 def run_arms(repo_root=None):
-    """{"plain", "release", "ci"}: the arms each run asks, as `arms_for` reads them.
+    """{"plain", "release", "ci"}: [(line, arms or refusal)] each part holds.
 
-    Each value is a list with one entry per call found - an arms tuple, or the
-    usage problem `arms_for` returned - or None when the file or block could not be
-    read. "Found no call" and "could not look" must not print the same way.
+    None for a part that could not be read - the file, or verify.sh's release
+    block - so "found no call" and "could not look" never print the same way.
     """
     root = repo_root if repo_root is not None else REPO
     texts = {}
@@ -862,17 +747,17 @@ def run_arms(repo_root=None):
                 texts[rel] = fh.read()
         except (OSError, UnicodeDecodeError):
             texts[rel] = None
-
-    def _arms(text, yaml=False):
-        if text is None:
-            return None
-        return [call if isinstance(call, str) else _one_arms(call)
-                for call in invocations(text, yaml=yaml)]
-
-    inside, outside = (release_block(texts[_VERIFY_REL])
-                       if texts[_VERIFY_REL] is not None else (None, None))
-    return {"plain": _arms(outside), "release": _arms(inside),
-            "ci": _arms(texts[_CI_REL], yaml=True)}
+    ci = (call_lines(texts[_CI_REL], yaml=True)
+          if texts[_CI_REL] is not None else None)
+    if texts[_VERIFY_REL] is None:
+        return {"plain": None, "release": None, "ci": ci}
+    verify = call_lines(texts[_VERIFY_REL])
+    block = release_lines(texts[_VERIFY_REL])
+    if block is None:
+        return {"plain": verify, "release": None, "ci": ci}
+    inside = [c for c in verify if block[0] <= c[0] <= block[1]]
+    return {"plain": [c for c in verify if c not in inside], "release": inside,
+            "ci": ci}
 
 
 def _recipe_lines(rel):
@@ -1335,146 +1220,70 @@ def _arm_cases(check):
           and _both is None and _both_problem is not None
           and _typo is None and "--before-comit" in (_typo_problem or ""))
 
-    # THE CALLS THE RUNS REALLY MAKE, read out of the runner and the workflow.
-    # gate-parity names a gate by its script and ignores its flags, so without this
-    # a flag moved on either file left every check here green.
+    # THE CALLS THE RUNS REALLY MAKE, pinned by exact line. gate-parity names a gate
+    # by its script and ignores its flags, so without this a flag moved on either
+    # file left every check here green. Each exact line sits in exactly one place.
     _runs = run_arms()
-    check("ra29 the runs ask what they are documented to ask: a plain verify.sh "
-          "asks the fresh render only, its --release block asks HEAD, and ci.yml's "
-          "call parses to both arms: %r" % (_runs,),
-          _runs["plain"] == [BEFORE_COMMIT_ARMS]
-          and _runs["release"] is not None
-          and any(isinstance(a, tuple) and HEAD_ARM in a
-                  for a in _runs["release"])
-          and _runs["ci"] == [ALL_ARMS])
+    _found = dict((part, None if calls is None else [c for _n, c in calls])
+                  for part, calls in _runs.items())
+    check("ra29 each run carries its exact call line, exactly once and nothing else "
+          "naming this tool: verify.sh's plain run `--before-commit`, its --release "
+          "block `--against-commit`, ci.yml the line with no flag: %r" % (_runs,),
+          _found == {"plain": [BEFORE_COMMIT_ARMS],
+                     "release": [AGAINST_COMMIT_ARMS], "ci": [ALL_ARMS]})
     _fx_runner = ("run \"x\" \\\n  python3 %s --before-commit\n"
-                  "# python3 %s --against-commit\n"
                   "if [ \"$RELEASE\" -eq 1 ]; then\n"
-                  "  run \"y\" \\\n    python3 %s --against-commit\n"
-                  "fi\n" % ((_THIS_TOOL,) * 3))
-    _fx_in, _fx_out = release_block(_fx_runner)
-    check("ra29b ...and that reader joins a continued line, skips a commented-out "
-          "call, splits the release block from the rest, and reads a runner with "
-          "no release block as None rather than as one asking nothing: %r"
-          % ((invocations(_fx_out or ""), invocations(_fx_in or "")),),
-          invocations(_fx_out or "") == [["--before-commit"]]
-          and invocations(_fx_in or "") == [["--against-commit"]]
-          and release_block("python3 %s\n" % (_THIS_TOOL,))[0] is None)
-    # A redirection is the shell's, not an argument: `2>&1` read as one would make
-    # `arms_for` call a correct call a usage error.
-    _fx_redirect = ("python3 %s --before-commit 2>&1\n"
-                    "python3 %s >/dev/null\n" % ((_THIS_TOOL,) * 2))
-    # A folded YAML block joins its lines with spaces before the shell sees them,
-    # so reading it line by line would take one call for two. Refused by name.
-    _fx_folded = ("      - run: >\n"
-                  "          python3 %s\n"
-                  "          --against-commit\n"
-                  "      - run: python3 %s --before-commit\n"
-                  % ((_THIS_TOOL,) * 2))
-    _folded = _read_yaml(_fx_folded)
-    check("ra29c ...stops at a redirection word, and REFUSES a folded `run: >` block "
-          "that calls this tool rather than reading its lines as separate calls, "
-          "while a plain `run:` beside it is still read: %r / %r"
-          % (invocations(_fx_redirect), _folded),
-          invocations(_fx_redirect) == [["--before-commit"], []]
-          and len(_folded) == 2
-          and isinstance(_folded[0], str) and "line 2" in _folded[0]
-          and _folded[1] == ["--before-commit"])
-    # Two more shapes that read, line by line, as a call with NO flag - which is
-    # ci.yml's expected answer, so ra29 alone could never notice them: a folded
-    # block whose indicator carries a comment, and a plain scalar continued on a
-    # deeper line. A call is read only from a one-line `run:` or a literal block.
-    _fx_commented = ("      - run: > # the call\n"
-                     "          python3 %s\n"
-                     "          --against-commit\n" % (_THIS_TOOL,))
-    _fx_plain = ("      - run: python3 %s\n"
-                 "          --against-commit\n" % (_THIS_TOOL,))
-    _fx_literal = ("      - run: |\n"
-                   "          python3 %s --before-commit\n" % (_THIS_TOOL,))
-    _commented = _read_yaml(_fx_commented)
-    _plain = _read_yaml(_fx_plain)
-    check("ra29d ...and REFUSES a folded block whose `>` carries a comment and a "
-          "plain `run:` scalar continued on a deeper line, each by its line, while "
-          "a literal `|` block is still read: %r / %r / %r"
-          % (_commented, _plain, _read_yaml(_fx_literal)),
-          len(_commented) == 1 and isinstance(_commented[0], str)
-          and "line 2" in _commented[0]
-          and len(_plain) == 1 and isinstance(_plain[0], str)
-          and "line 1" in _plain[0]
-          and _read_yaml(_fx_literal) == [["--before-commit"]])
-    # EVERY SPELLING A REVIEW FOUND, each read correctly or refused - never read as
-    # a call with no flag, which is ci.yml's expected answer and so invisible to
-    # ra29. The call carries a flag here for exactly that reason: a silent misread
-    # comes back without it.
-    _call = "python3 %s --against-commit" % (_THIS_TOOL,)
-    _two = "python3 %s\n        --against-commit\n" % (_THIS_TOOL,)
-    _refused_shapes = [
-        ('"run": >', '      - "run": >\n        ' + _two),
-        ("'run': >", "      - 'run': >\n        " + _two),
-        ("run : >", "      - run : >\n        " + _two),
-        ("&k run: >", "      - &k run: >\n        " + _two),
-        ('run: "..."', '      - run: "%s"\n' % (_call,)),
-        ("run: &a |", "      - run: &a |\n          %s\n" % (_call,)),
-        ("run: !!str >", "      - run: !!str >\n        " + _two),
+                  "  python3 %s --against-commit\n"
+                  "fi\n" % ((_THIS_TOOL,) * 2))
+    check("ra29b the release block is found by its opening and closing lines, and a "
+          "runner with none reads as None rather than as a release asking nothing: "
+          "%r" % ((release_lines(_fx_runner),),),
+          release_lines(_fx_runner) == (3, 5)
+          and release_lines("python3 %s\n" % (_THIS_TOOL,)) is None)
+    # THE EXACT-LINE PIN, both directions. Read: each call line in `_CALL_LINES`,
+    # indentation stripped, and in YAML a leading `- ` and `run:`.
+    _t = _THIS_TOOL
+    _read_ok = {
+        "plain": (_pinned("  python3 %s --before-commit\n" % (_t,)),
+                  [BEFORE_COMMIT_ARMS]),
+        "no flag": (_pinned("python3 %s\n" % (_t,)), [ALL_ARMS]),
+        "tabs": (_pinned("\tpython3 %s --against-commit  \n" % (_t,)),
+                 [AGAINST_COMMIT_ARMS]),
+        "comment": (_pinned("# python3 %s --against-commit\n" % (_t,)), []),
+        "yaml item": (_pinned("      - run: python3 %s\n" % (_t,), yaml=True),
+                      [ALL_ARMS]),
+        "yaml key": (_pinned("        run: python3 %s --before-commit\n" % (_t,),
+                             yaml=True), [BEFORE_COMMIT_ARMS]),
+        "yaml block line": (_pinned("          python3 %s --against-commit\n"
+                                    % (_t,), yaml=True), [AGAINST_COMMIT_ARMS]),
+    }
+    _wrong = dict((k, got) for k, (got, want) in _read_ok.items() if got != want)
+    check("ra29g each exact call line the tool knows is read as its arms - no "
+          "flag, `--before-commit`, `--against-commit` - after its indentation, "
+          "and in YAML a leading `- ` and `run:`, are stripped; a comment line is "
+          "no call: wrongly read %r" % (_wrong,), _wrong == {})
+    # Refused: every other non-comment line naming the tool, each by its line -
+    # the echo is the one that reads as a call by accident.
+    _refuse = [
+        "echo Running: python3 %s --against-commit" % (_t,),
+        "ls %s" % (_t,),
+        "python3 %s --against-commit 2>&1" % (_t,),
+        "python3 -u %s" % (_t,),
+        "python3 %s --before-commit --against-commit" % (_t,),
+        "python3 ./%s" % (_t,),
+        "run: python3 %s" % (_t,),
     ]
-    _read_shapes = [
-        ("one-line run: with a deeper comment below",
-         "      - run: %s\n          # a note, not a value\n" % (_call,)),
-        ("run: |-", "      - run: |-\n          %s\n" % (_call,)),
-        ("run: |+ with a comment", "      - run: |+ # the call\n          %s\n"
-         % (_call,)),
-    ]
-    _got = dict((name, _read_yaml(text)) for name, text in
-                _refused_shapes + _read_shapes)
-    _misread = [name for name, _t in _refused_shapes
-                if not (len(_got[name]) == 1 and isinstance(_got[name][0], str)
-                        and "run: |" in _got[name][0])]
-    _unread = [name for name, _t in _read_shapes
-               if _got[name] != [["--against-commit"]]]
-    check("ra29e in YAML a call is read only from a one-line unquoted `run:` or "
-          "the body of a plain `run: |` block; every other spelling that names "
-          "the tool is refused by line, naming the two accepted shapes - wrongly "
-          "read %r, wrongly refused %r: %r" % (_misread, _unread, _got),
-          _misread == [] and _unread == [])
-    # A `run:` line is only a step's call where YAML would make it one: inside
-    # ANOTHER key's block scalar it is text, and a line there naming the tool is
-    # refused by line, never read. And a word naming the tool is the call only in
-    # command position - the command itself, or right after a python interpreter.
-    _in_name = ("      - name: >\n"
-                "          run: %s\n" % (_call,))
-    _in_script = ("      - uses: actions/github-script@v7\n"
-                  "        with:\n"
-                  "          script: |\n"
-                  "            run: %s\n" % (_call,))
-    _mentions = ("ls %s\n"
-                 "git diff -- %s\n"
-                 "echo see %s\n" % ((_THIS_TOOL,) * 3))
-    _yaml_mention = "      - run: ls %s\n" % (_THIS_TOOL,)
-    _calls = ("%s --before-commit\n"
-              "python3 %s --against-commit\n"
-              "/usr/bin/python3.12 %s\n"
-              "CLAUDE_PROJECT_DIR=x python %s --before-commit 2>&1\n"
-              % ((_THIS_TOOL,) * 4))
-    _got_f = {"name": _read_yaml(_in_name), "script": _read_yaml(_in_script),
-              "shell mentions": invocations(_mentions),
-              "yaml mention": _read_yaml(_yaml_mention),
-              "calls": invocations(_calls)}
-
-    def _refused_line(got, n):
-        return (len(got) == 1 and isinstance(got[0], str)
-                and ("line %d " % (n,)) in got[0] and "run: |" in got[0])
-
-    check("ra29f a `run:` line inside another key's block scalar is refused by "
-          "line, not read as a step; a word naming the tool anywhere but command "
-          "position (`ls`, `git diff --`, `echo`) is no call in either reader; "
-          "the command word itself or the word right after a python interpreter "
-          "is: %r" % (_got_f,),
-          _refused_line(_got_f["name"], 2)
-          and _refused_line(_got_f["script"], 4)
-          and _got_f["shell mentions"] == []
-          and _got_f["yaml mention"] == []
-          and _got_f["calls"] == [["--before-commit"], ["--against-commit"], [],
-                                  ["--before-commit"]])
+    _yaml_refuse = ['      - run: "python3 %s"' % (_t,),
+                    "      - name: python3 %s" % (_t,)]
+    _not_refused = [line for line in _refuse
+                    if not _refused_once(_pinned("x\n" + line + "\n"))]
+    _not_refused += [line for line in _yaml_refuse
+                     if not _refused_once(_pinned("x\n" + line + "\n", yaml=True))]
+    check("ra29h every other non-comment line that names the tool is REFUSED by "
+          "its line - an `echo` of the call, a mention, a redirection, an "
+          "interpreter flag, both flags, another spelling of the path, a `run:` "
+          "prefix outside YAML, a quoted or foreign YAML value: not refused %r"
+          % (_not_refused,), _not_refused == [])
 
 
 # --- no case asks git about this checkout, measured while the cases run --------
@@ -1582,10 +1391,14 @@ def _recorded_cases(check):
           "moved out of it: %r" % (calls,), calls == [])
 
 
-def _read_yaml(text):
-    """How ra29c, ra29d and ra29e read a YAML fixture: the way `run_arms` reads
-    ci.yml."""
-    return invocations(text, yaml=True)
+def _pinned(text, yaml=False):
+    """What the pin makes of `text`: one entry per line naming the tool."""
+    return [c for _n, c in call_lines(text, yaml=yaml)]
+
+
+def _refused_once(got):
+    """Whether a reader's answer is exactly one refusal, naming line 2."""
+    return (len(got) == 1 and isinstance(got[0], str) and "line 2" in got[0])
 
 
 def _selftest():
