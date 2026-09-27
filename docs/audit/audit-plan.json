@@ -722,7 +722,8 @@
       "P87.11-bpl",
       "P87.12-bpl",
       "P87.13-bpl",
-      "P87.14-bpl"
+      "P87.14-bpl",
+      "P81.14-j7p"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -874,7 +875,9 @@
       "P80.15-rtb",
       "P81.2",
       "P81.5",
-      "P81.7"
+      "P81.7",
+      "P81.8",
+      "P81.14-j7p"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -917,7 +920,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P80.16-rtb"
+      "P80.16-rtb",
+      "P81.11"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -941,7 +945,9 @@
     "docs/examples/azure-pipelines.yml": [
       "P3.2",
       "P13.4",
-      "P80.10"
+      "P80.10",
+      "P81.8",
+      "P81.14-j7p"
     ],
     "docs/handbook.html": [
       "P18.8",
@@ -1099,7 +1105,8 @@
       "P74.2-qq5",
       "P74.3-qq5",
       "P80.21-rtb",
-      "P81.5"
+      "P81.5",
+      "P81.14-j7p"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1276,7 +1283,8 @@
       "P47.4",
       "P65.1",
       "P80.10",
-      "P81.8"
+      "P81.8",
+      "P81.14-j7p"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
@@ -1660,7 +1668,8 @@
       "P72.3-ttl",
       "P78.11",
       "P84.7-791",
-      "P80.21-rtb"
+      "P80.21-rtb",
+      "P81.14-j7p"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -1961,7 +1970,6 @@
       "P80.22-rtb",
       "P81.10",
       "P81.11",
-      "P81.13-j7p",
       "P81.7"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
@@ -2279,7 +2287,8 @@
       "P78.12-msc",
       "P79.10-5bh",
       "P79.12-5bh",
-      "P84.2"
+      "P84.2",
+      "P81.15-j7p"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -2675,7 +2684,8 @@
       "P77.4-6u9",
       "P78.13-msc",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P81.11"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2980,7 +2990,8 @@
       "P77.5-6u9",
       "P78.13-msc",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P81.11"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -3022,7 +3033,6 @@
       "P80.19-rtb",
       "P81.10",
       "P81.11",
-      "P81.13-j7p",
       "P81.7"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
@@ -3162,7 +3172,8 @@
       "P78.12-msc",
       "P79.10-5bh",
       "P79.12-5bh",
-      "P84.2"
+      "P84.2",
+      "P81.15-j7p"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -3836,7 +3847,8 @@
       "P78.14-msc",
       "P79.9-5bh",
       "P74.10-qq5",
-      "P80.18-rtb"
+      "P80.18-rtb",
+      "P81.11"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -4047,11 +4059,13 @@
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
       "P79.8-5bh",
-      "P85.4"
+      "P85.4",
+      "P81.15-j7p"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
-      "P79.8-5bh"
+      "P79.8-5bh",
+      "P81.15-j7p"
     ],
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
       "P79.3",
@@ -4069,28 +4083,33 @@
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
       "P80.19-rtb",
-      "P81.10"
+      "P81.10",
+      "P81.14-j7p"
     ],
     "plugins/audit/tests/test_import_evidence.py": [
       "P80.5",
       "P80.19-rtb",
-      "P81.10"
+      "P81.10",
+      "P81.14-j7p"
     ],
     "tools/ui-tests/full-run-verified.test.mjs": [
       "P80.8"
     ],
     "plugins/audit/scripts/governance/full-gate.py": [
       "P80.10",
-      "P81.7"
+      "P81.7",
+      "P81.14-j7p"
     ],
     "plugins/audit/tests/test_full_gate.py": [
       "P80.10",
-      "P81.7"
+      "P81.7",
+      "P81.14-j7p"
     ],
     ".claude/hooks/guard-release.py": [
       "P80.11",
       "P86.2",
-      "P80.16-rtb"
+      "P80.16-rtb",
+      "P81.11"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
