@@ -161,6 +161,10 @@ meanings, rendered from the same tuple the gate evaluates:
   **happened after this phase merged and still does not contain it** — a plan
   actively falling behind its own third place, not merely one that has not
   reached it yet — see below
+- `unknown-full-run` — a **merged phase whose full-run answer is `unknown`**:
+  the question could not be asked at all — no `mergedHead` recorded, git could
+  not establish ancestry, or the evidence ledger could not be read or located —
+  and the gate line names each phase with the basis saying which — see below
 
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
@@ -220,7 +224,7 @@ That question belongs to
 carries the same word where a task has one, and a phase's own verdict is a `tests
 <word>` clause on its head line.
 
-### `provisional` / `stale-full-run` — the third place
+### `provisional` / `stale-full-run` / `unknown-full-run` — the third place
 
 `meta.fullGate` names a THIRD gate beyond a task's own and a phase's sign-off
 gate — the full suite, coverage, an end-to-end pass. `phase.mergedHead` is what
@@ -251,16 +255,20 @@ it: a full run was recorded **after** this phase merged - after
 `mergedHeadAt` when the phase carries one, because a run recorded between the
 merge and that moment can contain the merge and not the later head - and **still** does not contain it — the plan is not merely unmeasured, a chance to measure it has
 already come and gone. `unknown` never counts as either: it means ancestry
-could not be answered - no `mergedHead` is recorded, or one is and git could
-not say whether a run's head contains it - which is a narrower gap
-than either condition claims.
+could not be answered - no `mergedHead` is recorded, one is and git could
+not say whether a run's head contains it, or the evidence ledger itself could
+not be read or located - which is a different gap than either condition claims.
+`unknown-full-run` is the condition that claims it: each such phase is named
+with the basis `full_status` wrote, so the line says which of those causes it
+was.
 
-**Both are opt-in and out of the `--gate` default, for `no-test-evidence`'s own
+**Each of them is opt-in and out of the `--gate` default, for `no-test-evidence`'s own
 reason.** A plan that has never recorded a full run, or that names no
 `meta.fullGate` at all, carries no whole-bearing row anywhere — a default
-holding either condition would fail every such build the day the plugin
+holding any of them would fail every such build the day the plugin
 shipped it. A team that wants the third place enforced is a team that types
-`--fail-on provisional` (or `stale-full-run`) on purpose.
+`--fail-on provisional` (or `stale-full-run`, or `unknown-full-run`) on
+purpose. A plan naming no `meta.fullGate` trips none of them.
 
 ### `unfinished-run` — a run that stopped mid-phase
 

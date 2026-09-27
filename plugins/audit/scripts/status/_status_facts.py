@@ -72,7 +72,16 @@ import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at la
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress", "over-budget", "budget-80", "invariant-breach",
               "failing-tests", "no-test-evidence", "stranded-skills",
-              "unfinished-run", "provisional", "stale-full-run")
+              "unfinished-run", "provisional", "stale-full-run",
+              "unknown-full-run")
+# The conditions whose reader grades `summary["fullRun"]`, a block
+# `audit-status.py` pays a ledger read and git calls to inject, so it fetches it
+# under --gate only when one of these was named. Declared here, beside the
+# readers, so the command's fetch predicate is not a hand-kept copy of the list:
+# a reader added without joining this tuple would be handed no block and read
+# "never asked" on every run. A case derives the readers from `evaluate_gate`
+# and pins them against this tuple.
+FULL_RUN_CONDITIONS = ("provisional", "stale-full-run", "unknown-full-run")
 # Neither budget condition is in the default gate. Spend is a signal, not a defect:
 # a phase at 105% may be entirely justified, and failing someone's merge over it
 # without them asking would make the whole gate something to switch off. Opt in with
@@ -111,6 +120,14 @@ CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
 # STILL does not contain it, which is a plan actively falling behind its own
 # gate rather than merely not having reached it yet. Both stay something a team
 # types on purpose.
+#
+# `unknown-full-run` IS OUT FOR THE SAME REASON AND ONE MORE. It is the third
+# place's other unanswered state: not "not yet certified" but "could not be
+# asked" - no mergedHead recorded, git unable to answer ancestry, or a ledger
+# that could not be read. A plan with a pre-recorder phase carries no mergedHead
+# on it, so a default holding this would fail such a build on upgrade exactly as
+# `provisional` would; and an unreadable ledger is a fact about the checkout the
+# gate ran on as much as about the plan.
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 # Warn threshold for the interactive path and the `budget-80` condition. 80% is far
 # enough in to be real and early enough to act on.
@@ -1121,6 +1138,8 @@ def evaluate_gate(summary, conditions):
             failed.append(c)
         elif c == "stale-full-run" and stale_full_runs(summary) is not None:
             failed.append(c)
+        elif c == "unknown-full-run" and unknown_full_runs(summary) is not None:
+            failed.append(c)
     return failed
 
 
@@ -1138,7 +1157,7 @@ def provisional_phases(summary):
     phase, and `full_status` only ever answers WHOLE, PROVISIONAL or UNKNOWN
     once a third place exists to ask. UNKNOWN never counts here: it is "ancestry
     could not be asked at all", which is a specific gap this condition does not
-    claim.
+    claim - `unknown_full_runs` does.
     """
     block = (summary or {}).get("fullRun")
     if not isinstance(block, dict):
@@ -1218,6 +1237,40 @@ def stale_full_runs(summary):
         out.append("phase %s: %s, but full run %s (%s) ran after and "
                    "still does not contain it"
                    % (pid, what, row.get("wholeRunId"), row.get("wholeRunTs")))
+    return out or None
+
+
+def unknown_full_runs(summary):
+    """Merged phases whose full-run answer is UNKNOWN, each with `full_status`'s
+    basis, or None when `summary['fullRun']` was never computed. Never [].
+
+    THE STATE `provisional` REFUSES, given a condition of its own rather than
+    folded into that one: "not yet contained" and "could not be asked" are
+    different news with different repairs - re-run the full gate for the first,
+    record a mergedHead, fetch history or fix the ledger for the second. Every
+    cause arrives as the same UNKNOWN word with its cause in the basis:
+    `full_status` writes the missing mergedHead and the ancestry git could not
+    establish, and `full_run_block` writes a ledger it could not read or locate
+    as every merged phase answering UNKNOWN. The basis is carried verbatim, so
+    the gate line says WHICH of them it was and no rule here re-reads it.
+
+    WHOLE, PROVISIONAL and NOT_DECLARED never count, and a plan naming no
+    `meta.fullGate` hands over `{}` - nothing asked, nothing unknown. An ABSENT
+    block is `provisional_phases`' third state for its reason: a gate reading
+    it as clean would pass every repository where the injection failed.
+    """
+    block = (summary or {}).get("fullRun")
+    if not isinstance(block, dict):
+        return ["the full-gate ledger was never read, so whether a merged "
+                "phase's full-run answer could be established was never asked "
+                "- this is not a pass"]
+    out = []
+    for pid in sorted(block, key=str):
+        row = block[pid]
+        if isinstance(row, dict) and row.get(
+                "answer") == _manifest_vocab.FULL_STATUS_UNKNOWN:
+            out.append("phase %s: %s"
+                       % (pid, row.get("basis") or "no basis was recorded"))
     return out or None
 
 

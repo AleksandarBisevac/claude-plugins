@@ -1917,7 +1917,7 @@ def _cases(_record):
     _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
     check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
           "not exist" % len(M.CONDITIONS),
-          _missing_ap == [] and len(M.CONDITIONS) == 14,
+          _missing_ap == [] and len(M.CONDITIONS) == 15,
           "absent from --help: %r" % (_missing_ap,))
     _help_txt = getattr(M, "CONDITION_HELP", None)
     check("ap9 ...and every condition's MEANING is rendered there too, so the "
@@ -2661,7 +2661,7 @@ def _cases(_record):
 
     if not _sh_fr.which("git"):
         for _lbl in ("fr10", "fr11", "fr12", "fr13", "fr14", "fr14b",
-                     "fr14c", "fr15"):
+                     "fr14c", "fr15", "fr15b", "fr16", "fr16b"):
             _harness.skip(check, _lbl, "git is not on PATH, and full_status "
                           "needs a real repository to ask ancestry of", True)
     else:
@@ -2811,6 +2811,12 @@ def _cases(_record):
                       _c6 == 0 and "full " not in _o6 and "not_declared" not in _o6
                       and "not declared" not in _o6,
                       repr(_o6))
+                _c6u, _o6u, _e6u = _fr_cli([_fr_ng_path, "--gate", "--fail-on",
+                                            "unknown-full-run"])
+                check("fr15b ALLOW: a plan with no meta.fullGate never trips "
+                      "unknown-full-run - nothing was asked, so nothing is unknown",
+                      _c6u == 0 and "GATE PASSED: unknown-full-run" in _o6u,
+                      repr((_c6u, _o6u.strip()[-200:])))
                 os.unlink(_fr_ng_path)
 
                 # --- a phase with NO mergedHead: UNKNOWN - ancestry cannot be asked
@@ -2828,6 +2834,19 @@ def _cases(_record):
                       _c7 == 0 and "full unknown -" in _o7
                       and "full whole" not in _o7,
                       repr(_o7))
+                _c7u, _o7u, _e7u = _fr_cli([_fr_unk_path, "--gate", "--fail-on",
+                                            "unknown-full-run"])
+                _c7p, _o7p, _e7p = _fr_cli([_fr_unk_path, "--gate", "--fail-on",
+                                            "provisional"])
+                _c7d, _o7d, _e7d = _fr_cli([_fr_unk_path, "--gate"])
+                check("fr16b LIVE: that UNKNOWN phase fails --fail-on "
+                      "unknown-full-run naming the phase and full_status's basis, "
+                      "while `provisional` still passes over it and the default "
+                      "gate never asks - the condition is opt-in",
+                      _c7u == 1 and "GATE FAILED: unknown-full-run" in _o7u
+                      and "phase P1: phase P1 records no mergedHead" in _o7u
+                      and _c7p == 0 and _c7d == 0,
+                      repr((_c7u, _o7u.strip()[-200:], _c7p, _c7d)))
                 os.unlink(_fr_unk_path)
 
                 # --- meta.nodePreamble: the run's own command carries it, and the

@@ -290,7 +290,7 @@
     {
       "id": "P81.6",
       "title": "The doctor names untracked couplings and uncouple candidates, never removing either",
-      "status": "in_progress",
+      "status": "done",
       "description": "check_couplings(rep, project, manifest_rel, manifest, git_root, config=None) in _doctor_trail.py, wired after the full-run row. (dg5) A coupling whose test or any source git does not track (one batched git ls-files over the named paths) is a WARNING naming the path and 'audit-task.py uncouple --test <path>' - never removed silently. A coupling not caught (lastCaught, else learnedAt) in the last K green whole-bearing full runs is named as a CANDIDATE for uncouple, with K printed as the basis (a module constant with its reason); never removed, because removal narrows the gate. No meta.coupling: an OK row. Red-first: delete the coupled test file in a fixture repo -> the doctor names it with the command (mutation: skip untracked paths -> red). Allow cases: a coupling caught recently is not a candidate; one older than K green full runs is.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -323,18 +323,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c96f02eaab50ae2aaab4c098fc4c10ce86912457",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "check_couplings in _doctor_trail, one batched git ls-files through _worktrees._git with out-of-repository paths split out and warned per entry, ageing strictly after lastCaught else learnedAt over runs _full_disqualification accepts, unparseable run timestamps counted and reported; re-learn remedy is uncouple then couple.",
+        "descriptive": "the doctor warns on a coupling whose test or source git does not track and names candidates for uncouple after UNCOUPLE_AFTER_FULL_RUNS green whole-bearing runs without a catch; it never removes either"
       },
       "startedAt": "2026-09-27T14:42:17Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T16:44:00Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T16:41:33Z.499595",
         "status": "passed",
         "at": "2026-09-27T16:41:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c96f02eaab50ae2aaab4c098fc4c10ce86912457",
+        "at": "2026-09-27T16:44:00Z"
       }
     },
     {
