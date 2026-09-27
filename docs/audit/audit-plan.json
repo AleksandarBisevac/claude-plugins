@@ -527,7 +527,7 @@
     {
       "id": "P82",
       "title": "red-first names the task's own case by its label, and reads only the runner that ran",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P82.json"
     },
     {
