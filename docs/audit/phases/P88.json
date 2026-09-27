@@ -74,7 +74,7 @@
     {
       "id": "P88.2-dnb",
       "title": "SECURITY.md's guard residuals claim exactly what the code reads and name every shape the review found",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 1 (review-P88a.json). (1) The BUG-12 bullet in SECURITY.md overstates: runs_own_program (_config.py) exempts `-` only when followed by a script-named or inline-flag word, and an expansion operand only when it ends in a script extension; narrow items 1 and 3 to what the code reads (measured on the export). (2) The desiredOutcome promises every shape the P83 round-3 review found, and the list omits its preExisting[0]: the $(...) scanner closes early on a `)` inside a comment or a heredoc body; add one shape-level bullet. Also, from the low list: L1 the case-arm `in` bullet says 'its pipe or redirect'; L2 the eval residual says 'a receiving group or loop'; L4 the test comment lists the twin ids explicitly instead of the range gp61a-gp71a. L3 stays with BUG-12. Documentation and a test comment only; no guard code changes; shape-level wording, no recipe; prose-number lints clean.",
       "files": [
         "SECURITY.md",
@@ -101,14 +101,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e4c96d2b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "BUG-12 bullet narrowed to runs_own_program; substitution early-close bullet; case-arm and eval wording; twin ids listed",
+        "descriptive": "The guard residuals in SECURITY.md say only what the code does and name every shape the review found"
       },
       "startedAt": "2026-09-27T20:21:15Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T20:27:19Z",
+      "verifiedBy": [
+        "prose-number lints",
+        "sweep 305/305",
+        "probe rows still red on an export"
+      ]
     }
   ],
   "startedAt": "2026-09-27T20:01:18Z"
