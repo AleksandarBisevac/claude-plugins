@@ -29,8 +29,16 @@ somebody reads and a lint somebody mutes. An all-files scan for, say, an email
 address fires on several deliberate sites in this repo -- an author fixture, a
 schema example, the license -- and a check whose first run produces findings
 nobody intends to fix teaches its reader to skip the whole file. So it reads what
-the plugin GENERATES and commits: journal files (live and archived), rendered
-reports, and the theme documents the panel writes.
+the plugin GENERATES and commits: journal files (live and archived), the evidence
+ledger, the plan (its index and every phase shard), rendered reports, and the
+theme documents the panel writes.
+
+THE PLAN IS IN FOR THE JOURNAL'S REASON. The plugin writes the index and its
+shards, a user commits them, and a task's text is where an agent records what it
+did - so a scratch file named by its absolute path lands there as easily as in a
+journal row. The index is the file the project's config names and the shards are
+wherever the index points, both asked of the plugin rather than listed here; a
+document a human keeps beside the plan stays outside, as every such document does.
 
 THE REPORT DOMAIN IS DERIVED, NOT LISTED. A report's base name is the user's --
 `--basename`, then `meta.reportBasename`, then a default -- so a list of names
@@ -112,6 +120,7 @@ stdin instead of a repository and exits 1 on a detector hit or on an empty read.
 import io
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -310,6 +319,86 @@ def scan_text(rel, text, surface):
     return out
 
 
+_HOOKS_DIR = os.path.join(REPO, "plugins", "audit", "hooks")
+_CONFIG_REL = ".claude/audit.config.json"
+
+
+def _plugin_config(root):
+    """The plugin's own merged config for `root` -- `hooks/_config.load`.
+
+    ASKED, NOT RE-SPELLED. `_config` owns the default `manifestPath` and how a
+    project's `audit.config.json` overrides it; a second copy of either here would
+    agree with the plugin until the day it did not. Imported inside the call, as
+    `_journal_io._config_mod` does, so `--scan-text` never pays for it.
+    """
+    if _HOOKS_DIR not in sys.path:
+        sys.path.insert(0, _HOOKS_DIR)
+    import _config                                        # noqa: E402
+    return _config.load(root)
+
+
+def _repo_rel(root, path):
+    """`path` as a posix path relative to `root`, or None when it is outside."""
+    if not isinstance(path, str) or not path.strip():
+        return None
+    path = path.strip().replace("\\", "/")
+    if os.path.isabs(path):
+        path = os.path.relpath(path, root).replace(os.sep, "/")
+    rel = posixpath.normpath(path)
+    if rel == ".." or rel.startswith("../"):
+        return None
+    return rel
+
+
+def plan_files(root, rels):
+    """`(set of rels, [problem rows])` -- the PLAN: its index and its shards.
+
+    DERIVED THE WAY THE PLUGIN FINDS ITS OWN PLAN. The index is the file the
+    project's config names (`manifestPath`, through `_plugin_config`), and the
+    shards are wherever the index's own `shard` pointers say, resolved against the
+    index's directory exactly as `_manifest_io.load_manifest` resolves them. Every
+    TRACKED file under a directory those pointers name is in, not only the files
+    they name today: a shard the index stopped pointing at is still committed.
+
+    A SHARD DIRECTORY THAT IS THE INDEX'S OWN is not swept whole, because that
+    directory also holds whatever a human keeps beside the plan; only the pointed
+    files are taken from it. The domain grows by the plan and not by every JSON
+    file near it, which is the narrowing the rest of this file is built on.
+
+    An index that is tracked but does not parse is a FINDING, never a skip: its
+    pointers cannot be read, so "no shard carried a leak" would be a claim about
+    files nobody located.
+    """
+    cfg = _plugin_config(root)
+    problems = []
+    if cfg.get("_configError"):
+        problems.append((_CONFIG_REL, 0, "plan-config-unreadable", 1))
+    tracked = set(rels)
+    index = _repo_rel(root, cfg.get("manifestPath"))
+    if index is None or index not in tracked:
+        return set(), problems
+    try:
+        with io.open(os.path.join(root, index.replace("/", os.sep)), "r",
+                     encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return set([index]), problems + [(index, 0, "plan-index-unparseable", 1)]
+    base = posixpath.dirname(index)
+    stubs = data.get("phases") if isinstance(data, dict) else None
+    shards, dirs = set(), set()
+    for stub in (stubs if isinstance(stubs, list) else []):
+        pointer = stub.get("shard") if isinstance(stub, dict) else None
+        rel = _repo_rel(root, posixpath.join(base, pointer.replace("\\", "/"))
+                        if isinstance(pointer, str) else None)
+        if rel is None:
+            continue
+        shards.add(rel)
+        if posixpath.dirname(rel) != base:
+            dirs.add(posixpath.dirname(rel))
+    under = set(r for r in tracked for d in dirs if r.startswith(d + "/"))
+    return set([index]) | (shards & tracked) | under, problems
+
+
 def domain_files(repo=None):
     """([(rel, surface, text)], [problem rows]) -- the files this check judges.
 
@@ -322,9 +411,12 @@ def domain_files(repo=None):
     rels, problem = tracked_paths(root)
     if problem is not None:
         return [], [(".", 0, "domain-unavailable", 1)]
-    keep, bad = [], []
+    plan, bad = plan_files(root, rels)
+    keep, bad = [], list(bad)
     for rel in rels:
         surface = domain_of(rel, None)
+        if surface is None and rel in plan:
+            surface = "plan"
         if surface is None and not rel.endswith(_REPORT_EXT):
             continue
         try:
@@ -421,6 +513,60 @@ BASELINE = (
      "posix-home",
      "the task.add row beside it, whose title quotes the same phrase for the same "
      "reason. A phrase, not a directory; chained, so recorded rather than rewritten."),
+    # THE PLAN'S ROWS, recorded when the plan entered the domain. Every one is a
+    # shape QUOTED in a task's text - an example, a fixture name, a phrase - and
+    # names no machine. KEYED BY LINE like every row above, and that is the
+    # point rather than a cost: an edit to one of these shards moves its lines,
+    # the moved finding prints as FOUND and the stale row as DEAD BASELINE, so
+    # the exemption is re-decided out loud instead of drifting onto new text.
+    ("docs/audit/audit-plan.json", 4440, "windows-user-path",
+     "a bug row's text giving an example of what a dirname call returns on "
+     "Windows: a drive-letter scratch path under a temp folder, spelled with "
+     "escaped backslashes. It names no user directory and no machine."),
+    ("docs/audit/phases/P34.json", 113, "unexpanded-home",
+     "a task outcome naming where the lock file lives: the documented config "
+     "directory, written as the tilde default beside its environment override. "
+     "A location every install shares, not a path of any machine."),
+    ("docs/audit/phases/P72.json", 72, "unexpanded-home",
+     "a task's text quoting a refused shell command as the example of what the "
+     "guard must block - a redirect into a shell start-up file under the tilde. "
+     "It is the attack being described, not a path this project touched."),
+    ("docs/audit/phases/P72.json", 273, "unexpanded-home",
+     "the same refused-command example, repeated in a second task's text of the "
+     "same phase. An illustration of the guarded operation, not a directory of "
+     "any machine."),
+    ("docs/audit/phases/P75.json", 422, "posix-home",
+     "a task's text listing the checkout layouts that make two absolute paths "
+     "collide, one of them the hosted CI runner's standard work directory. That "
+     "is the runner image's fixed layout, identical everywhere, not an operator."),
+    ("docs/audit/phases/P82.json", 201, "windows-user-path",
+     "a task's text describing how a CRLF file is rewritten on Windows, with the "
+     "carriage-return and newline escapes spelled out as escaped backslash "
+     "sequences. The detector reads the escapes as path separators; no path."),
+    ("docs/audit/phases/P82.json", 228, "windows-user-path",
+     "a task's text quoting how git prints a non-ASCII test file name under its "
+     "default quoting: the octal bytes of a UTF-8 character, each behind an "
+     "escaped backslash. A repository-relative file name, not a user path."),
+    ("docs/audit/phases/P82.json", 372, "unexpanded-home",
+     "a task's text naming two marker files a selftest writes and removes in the "
+     "sandboxed home, both spelled with the tilde. Fixture names the suite "
+     "invents; one row covers both columns because the key is the line."),
+    ("docs/audit/phases/P82.json", 435, "posix-home",
+     "a task's text saying a run is green under the sweep's isolated home and "
+     "temp directories - the phrase the journal rows above are baselined for. "
+     "Prose about the scratch environment, not a directory of any machine."),
+    ("docs/audit/phases/P90.json", 6, "posix-home",
+     "the phase outcome of the change that baselined the journal phrase above; "
+     "it quotes that phrase while saying it is not a home directory. Quoting "
+     "the false positive trips it again; nothing here names a machine."),
+    ("docs/audit/phases/P90.json", 30, "posix-home",
+     "the title of that same phase's task, quoting the phrase the detector "
+     "matched in the journal row. A description of a false positive, not a "
+     "path of any machine."),
+    ("docs/audit/phases/P90.json", 32, "posix-home",
+     "the description of that task, quoting the matched words to locate the "
+     "journal finding it baselines. It states in its own text that no path of "
+     "this machine is present, and none is."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
@@ -481,8 +627,9 @@ def render(row):
 # file and a column a reader can open - which is why they get a sentence of their
 # own rather than being left to read as a leak at line 0 of the repository root.
 SYNTHETIC = {
-    "domain-empty": ("this tree tracks no journal, no rendered report and no "
-                     "theme document of ours, so the run cleared NOTHING - "
+    "domain-empty": ("this tree tracks no journal, no evidence ledger, no plan, "
+                     "no rendered report and no theme document of ours, so the "
+                     "run cleared NOTHING - "
                      "check the path before reading anything into it"),
     "domain-unavailable": ("git could not be asked what this tree tracks, so "
                            "the run cleared nothing"),
@@ -639,7 +786,9 @@ def _foreign_cases(check):
         ("docs/audit/evidence-notes/2026-08.a1b2c3d4e5f60718.jsonl",
          '{"note":"a human wrote this under /Users/someone"}\n'),
     ])
+    plan, plan_leaks = _plan_fixture()
     try:
+        _plan_cases(check, plan, plan_leaks)
         rows = findings(leaky)
         seen = sorted((r[1], r[2]) for r in rows)
         check("q13 `--repo` scans the tree it is GIVEN and reports that tree's "
@@ -733,8 +882,93 @@ def _foreign_cases(check):
         # directory and refuses a file that left anything in it, so this site was
         # live rather than theoretical.
         from _suite import remove_tree   # tools/_suite.py says why the import is here
-        for root in (leaky, empty, clean, evidence):
+        for root in (leaky, empty, clean, evidence, plan):
             remove_tree(root)
+
+
+def _plan_fixture():
+    """`(root, leaks)` -- a tree whose PLAN names machine paths in task text.
+
+    The plan lives where a project's own config says, not at the default, so a
+    domain that LISTED the default path would miss it and only one that asks the
+    config finds it. The paths are assembled from pieces at run time: this file's
+    own source is read by scanners that would otherwise see the shape it tests.
+    `leaks` is `{rel: (line, detector)}`, the answer the domain has to produce.
+    """
+    home = "/".join(["", "Us" + "ers", "some" + "one", "scratch", "probe.sh"])
+    scratch = "/".join(["", "priv" + "ate", "t" + "mp", "claude-" + "7",
+                        "s", "probe.json"])
+
+    def shard(pid, text):
+        return json.dumps({"id": pid, "tasks": [{"id": pid + ".1",
+                                                 "description": text}]},
+                          indent=2) + "\n"
+    index = json.dumps({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "shard": "shards/P1.json"},
+        {"id": "P2", "shard": "shards/P2.json"},
+        {"id": "P3", "shard": "shards/P3.json"},
+        {"id": "P4", "shard": "P4.json"}]}, indent=2) + "\n"
+    files = [
+        (".claude/audit.config.json",
+         json.dumps({"manifestPath": "plan/roadmap.json"}) + "\n"),
+        ("plan/roadmap.json", index),
+        ("plan/shards/P1.json", shard("P1", "wrote the probe to %s" % home)),
+        ("plan/shards/P2.json", shard("P2", "the result sits in %s" % scratch)),
+        # THE ALLOW CASE: repo-relative paths and bare base names are what an
+        # honest shard carries, and a plan surface that flagged them would be
+        # muted the first day.
+        ("plan/shards/P3.json", shard("P3", "edit tools/check-committed-pii.py "
+                                            "and docs/home/notes.md; see probe.sh")),
+        # A shard pointed at BESIDE the index is taken, and the directory it
+        # sits in is not swept: that directory is also where the human's note
+        # below lives. The domain grew by the plan, not by every JSON file near
+        # it, and this pair is what fails if a shard beside the index widens
+        # the sweep to its whole directory.
+        ("plan/P4.json", shard("P4", "nothing here but plan/roadmap.json")),
+        ("plan/notes.json", json.dumps({"n": home}) + "\n"),
+    ]
+    # The line is READ off the rendered shard rather than counted by hand, so the
+    # expected answer is the line a person opening the file would land on.
+    body = dict(files)
+
+    def line_of(rel):
+        return [n for n, text in enumerate(body[rel].split("\n"), 1)
+                if '"description"' in text][0]
+    leaks = {"plan/shards/P1.json": (line_of("plan/shards/P1.json"), "posix-home"),
+             "plan/shards/P2.json": (line_of("plan/shards/P2.json"),
+                                     "tempdir-session")}
+    return _fixture_tree(files), leaks
+
+
+def _plan_cases(check, plan, leaks):
+    """The plan -- its index and every shard -- is a surface this tool reads."""
+    prun = scan(plan)
+    # A LIST, not a dict: a second detector firing on one line is a different
+    # answer, and a mapping keyed by file would fold it away.
+    seen = sorted((r[0], r[1], r[2]) for r in prun["rows"])
+    check("q24 the PLAN is in the domain, found where the project's config puts "
+          "it, and a machine path in a shard's task text is reported with its "
+          "file and line - the plugin writes those shards and a user commits "
+          "them, so a leak there was committed unread: %r, %r"
+          % (seen, prun["files"]),
+          seen == sorted((rel, n, d) for rel, (n, d) in leaks.items())
+          and prun["surfaces"] == ["plan"]
+          and sorted(prun["files"]) == ["plan/P4.json", "plan/roadmap.json",
+                                        "plan/shards/P1.json",
+                                        "plan/shards/P2.json", "plan/shards/P3.json"])
+
+    code, text = _captured(["--repo", plan])
+    _echo = dict((frag, text.count(frag))
+                 for frag in ("some" + "one", "claude-" + "7", "probe.json",
+                              "scratch"))
+    check("q25 ...and the run names each such shard by file and line and echoes "
+          "NOTHING it matched, while the shard carrying only repo-relative paths "
+          "and base names is not a finding: exit %d, %r" % (code, _echo),
+          code == 1 and set(_echo.values()) == set([0])
+          and all(text.count("FOUND %s:%d:%s " % (rel, n, d)) == 1
+                  for rel, (n, d) in leaks.items())
+          and text.count("FOUND ") == len(leaks)
+          and "P3.json" not in text and "notes.json" not in text)
 
 
 def _cases(check):
@@ -847,10 +1081,10 @@ def _cases(check):
     # pass this repository keeps re-finding - so the SET is asserted, not only its
     # verdict, and both surfaces this tree actually has must be in it.
     check("q6 the domain over the live tree is not empty and reaches every "
-          "surface this repository commits - the journal, the evidence ledger "
-          "and the rendered reports - so the cases below are judging something: "
-          "%d file(s), %r" % (len(_kept), _surfaces),
-          _bad == [] and _surfaces == ["evidence", "journal", "report"])
+          "surface this repository commits - the journal, the evidence ledger, "
+          "the plan and the rendered reports - so the cases below are judging "
+          "something: %d file(s), %r" % (len(_kept), _surfaces),
+          _bad == [] and _surfaces == ["evidence", "journal", "plan", "report"])
 
     check("q7 every committed artifact is clean except what BASELINE accounts "
           "for: %r" % ([render(r) for r in unbaselined(_live)],),

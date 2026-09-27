@@ -1,7 +1,7 @@
 {
   "id": "P91",
   "title": "committed plan records carry no machine path, and the committed-artifact check reads the plan",
-  "status": "pending",
+  "status": "in_progress",
   "description": "A phase shard's task text named scratch files by their absolute path on the machine that wrote them, and nothing flagged it because the committed-artifact check does not read the plan. Extend its domain to the plan, red first, then scrub the two shards it finds; words that quote a matched shape are avoided in this phase's own text.",
   "desiredOutcome": "tools/check-committed-pii.py scans the plan index and every phase shard, and no committed plan record names a path inside a user's home directory or the machine's temporary directory",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "dedb80e1ab7fe45a595dce182ff58941d41acceb",
+  "branch": "audit/p91-committed-plan-records-carry-n",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P91.1",
       "title": "the committed-artifact check reads the plan, and the shards it finds are scrubbed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Extend check-committed-pii's derived domain to the plan: the index and every file under docs/audit/phases. Red first with a synthetic shard that names a path inside a home directory and one inside the temporary directory. Run the extended check over the real tree BEFORE deciding anything else, and report every hit. Scrub the hits in P85 and P86 by replacing each absolute scratch path with the file's base name (the text keeps what it pointed at). Any other hit is reported, not baselined, until the orchestrator decides. No verb rewrites a finished task's description, so the scrub is this task's own declared edit.",
       "files": [
         "tools/check-committed-pii.py",
@@ -55,16 +55,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T23:03:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T23:16:30Z.237225",
+        "status": "passed",
+        "at": "2026-09-27T23:16:30Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T23:03:18Z"
 }
