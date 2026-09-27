@@ -1522,7 +1522,7 @@
     {
       "id": "P80.22-rtb",
       "title": "the changelog and the compatibility contract say what the sign-off fixes shipped",
-      "status": "in_progress",
+      "status": "done",
       "description": "After every sign-off fix task lands: the CHANGELOG [Unreleased] section states what each one shipped, read from the code and not from the task titles (the full-run answer's wholeRunId/wholeRunTs replacing runTs, the merged-phase predicate, the ancestry memo's full-id rule, close-phase's mergedHead backfill and mergedHeadAt, import-evidence's duplicate-run and unreadable-ledger refusals, the panel's evidence read error, the release guard holding over an unknown phase, the demo's whole/provisional/unknown fixture). COMPATIBILITY.md gains the absence reading for any new manifest key the fixes added, in the shape its neighbours use, and widens no promise. The comment in _evidence_io.py that says what phase.mergedHead names is corrected to what close-phase now writes. No numbers in prose; no plan ids.",
       "files": [
         "CHANGELOG.md",
@@ -1558,17 +1558,22 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8587d5fbf0af4d615c99762224b08e9157987b33",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges on one clause of the description: it listed 'the release guard holding over an unknown phase' among the CHANGELOG entries; the executor removed the release-guard bullet instead, because .claude/hooks is this repository's configuration and no earlier change to it has a CHANGELOG entry (d41c6dae, 3da87790 touch none); the guard's behaviour is documented in SECURITY.md. The stamp_merged and merged_phase docstrings were corrected in the same change.",
+        "descriptive": "the CHANGELOG [Unreleased] and COMPATIBILITY.md match what the sign-off fixes shipped; the contract promises the readings of mergedHead and mergedHeadAt and states what the backfill check does not prove"
       },
       "startedAt": "2026-09-27T13:29:18Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T13:49:06Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T13:49:06Z.e7492b",
         "status": "passed",
+        "at": "2026-09-27T13:49:06Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "8587d5fbf0af4d615c99762224b08e9157987b33",
         "at": "2026-09-27T13:49:06Z"
       }
     },
