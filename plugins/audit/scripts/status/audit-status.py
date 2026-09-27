@@ -1870,9 +1870,11 @@ def main(argv):
     # than only deleting it. It called this read "a directory listing and a JSON
     # read", which is what made reading it on every invocation look free.
     # `_evidence_io.read_rows` walks the directory and `json.loads` every row of
-    # every recorded run; `earliest_recorded` then takes a single `min(ts)` out of
-    # all of it. That is a full parse per run recorded, and this repository has no
-    # evidence directory, which is the only reason nobody here ever felt it.
+    # every recorded run; `earliest_recorded` then parses every row's `ts` and
+    # keeps the earliest moment, falling back to the least `ts` as text only when
+    # no row's `ts` parses. That is a full parse per run recorded, and this
+    # repository has no evidence directory, which is the only reason nobody here
+    # ever felt it.
     # What licenses the deferral is not the cost, though -- it is that the human
     # render is BYTE-IDENTICAL with a boundary and without one (`eb1`). The
     # consumers are `--json`'s `evidenceBoundary` key, the panel that reads it, and

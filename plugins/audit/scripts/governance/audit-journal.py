@@ -576,6 +576,17 @@ def _merge_json(res, dry_run, written, error):
     return json.dumps(payload, indent=2, sort_keys=True)
 
 
+def _undecodable_side(label, source, name, exc):
+    """The refusal for a ledger merge side that is not UTF-8 text: which side,
+    where it came from, and the step that clears it."""
+    return ("the %s side of %s (%s) is not UTF-8 text (%s). A merge re-chains "
+            "what it reads, so a byte it replaced would be recorded as a valid "
+            "character and pass `verify` as clean. Restore that side from its "
+            "committed copy, or remove the byte on purpose once you have read "
+            "the row it sits in, and re-run the merge"
+            % (label, name, source, exc))
+
+
 def cmd_merge(args, out):
     """Resolve a divergence in one journal file by re-chaining the UNION of its
     two sides.
@@ -638,7 +649,7 @@ def cmd_merge(args, out):
             "merge two files you extracted yourself, or neither to take the "
             "two sides git already has (index stages 2 and 3 of --file).")
         return 2
-    sides = []
+    sides, undecodable = [], []
     from_index = not args.ours
     if args.ours:
         for label, side in (("ours", args.ours), ("theirs", args.theirs)):
@@ -646,7 +657,18 @@ def cmd_merge(args, out):
                 out("[audit-journal] the %s side is not a file: %s"
                     % (label, side))
                 return 2
-            sides.append(read_file(side))
+            if not evidence:
+                sides.append(read_file(side))
+                continue
+            # A LEDGER SIDE IS READ BY THE LEDGER'S ONE DECODE. `read_file`
+            # answers a byte that is not UTF-8 with no rows at all, and a
+            # lenient decode would hand a replaced character to the re-chain
+            # below as though it had been recorded.
+            try:
+                sides.append(rows_from_text(_evidence_io.ledger_text(side)))
+            except Exception as exc:
+                undecodable.append(_undecodable_side(label, side, name, exc))
+                sides.append(([], False))
     else:
         for label, stage in (("ours", 2), ("theirs", 3)):
             blob = _git_stage(path, stage)
@@ -658,14 +680,26 @@ def cmd_merge(args, out):
                     "yourself and pass --ours/--theirs."
                     % (label, stage, name))
                 return 2
-            sides.append(rows_from_text(blob.decode("utf-8", "replace")))
+            if not evidence:
+                sides.append(rows_from_text(blob.decode("utf-8", "replace")))
+                continue
+            try:
+                sides.append(rows_from_text(_evidence_io.ledger_decode(blob)))
+            except Exception as exc:
+                undecodable.append(_undecodable_side(
+                    label, "git show :%d:./%s" % (stage, name), name, exc))
+                sides.append(([], False))
     torn = []
     for label, pair in (("ours", sides[0]), ("theirs", sides[1])):
         if pair[1]:
             torn.append(label)
     actor = {"author": args.author, "sessionId": args.session,
              "via": MERGE_VIA}
-    if evidence:
+    if undecodable:
+        # REFUSED BEFORE ANYTHING IS MERGED, through the same refusal path as
+        # every other: `rows` is empty, so nothing below can write.
+        res = {"ok": False, "refusals": undecodable, "notes": [], "rows": []}
+    elif evidence:
         # THE PLAN'S MOVED IDS, because a run recorded under a task's old id and
         # one under its new id are ONE subject to every reader. Unreadable means
         # unknown, and then no same-second tie in the ledger is ordered.

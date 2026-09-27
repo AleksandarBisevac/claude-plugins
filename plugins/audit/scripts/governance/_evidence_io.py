@@ -1212,7 +1212,22 @@ def append_row(project, row, session_id=None, config=None, writer=None):
         worktree=_journal_io.worktree_key(project, config))
     lock = _journal_io._acquire(path, record="the evidence ledger")
     try:
-        rows, _torn = _journal_io.read_file(path)
+        # The tail is read through `ledger_text` like every other ledger read.
+        # A file that does not exist yet has no tail. One that exists and will
+        # not decode is REFUSED: every reader loses that file whole, so a run
+        # appended to it would be stored where nothing can find it - and
+        # `record()` must not report a run as stored when no reader can see it.
+        rows = []
+        if os.path.exists(path):
+            try:
+                rows, _torn = _journal_io.rows_from_text(ledger_text(path))
+            except UnicodeDecodeError as exc:
+                raise ValueError(
+                    "%s is not UTF-8 text (%s), and every reader loses such a "
+                    "file whole - a run appended to it would be invisible, so "
+                    "it was not appended. Restore the file from its committed "
+                    "copy and record the run again"
+                    % (os.path.basename(path), exc))
         tail = [r for r in rows if not r.get("_unparseable")]
         linked = chain_onto(row, tail, os.path.basename(path))
         with open(path, "a", encoding="utf-8") as fh:
@@ -1235,6 +1250,30 @@ def ledger_files(project, config=None):
                 for n in sorted(os.listdir(directory)) if n.endswith(".jsonl")]
     except Exception:
         return []
+
+
+def ledger_text(path):
+    """The text of one ledger file, decoded STRICTLY; raises when it cannot be.
+
+    THE ONE DECODE every reader of a ledger file goes through, so a byte that is
+    not UTF-8 is the same answer everywhere: the file could not be read. A
+    lenient decode would swap that byte for a replacement character and hand
+    the row back as clean, and a value it silently changed - a `runId`, a
+    command, a head - would then be compared as if it had been recorded that
+    way, while the chain check grades the same bytes unreadable.
+    """
+    with open(path, "rb") as fh:
+        return ledger_decode(fh.read())
+
+
+def ledger_decode(raw):
+    """Ledger BYTES as text, decoded strictly; raises `UnicodeDecodeError`.
+
+    `ledger_text`'s decode, split out for the bytes that never were a file on
+    this disk - a merge side git holds in its index, a shard handed to an
+    import - so they are read by the same rule as the file they become.
+    """
+    return raw.decode("utf-8")
 
 
 def read_rows(project, config=None):
@@ -1276,8 +1315,7 @@ def read_rows(project, config=None):
         files += 1
         lost_here = False
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
+            text = ledger_text(path)
         except Exception:
             unreadable += 1
             unreadable_files.append(path)
@@ -1382,8 +1420,8 @@ def gate_last_caught(rows, name):
     two apart; this answers only the WHEN half, for the gate that has caught
     something at least once."""
     hist = _matching_steps(rows, "name", name)
-    caught = sorted(h["ts"] for h in hist if h.get("ts") and _step_failed(h))
-    return caught[-1] if caught else None
+    last = newest_row([h for h in hist if h.get("ts") and _step_failed(h)])
+    return last["ts"] if last else None
 
 
 def _gate_cost_walk(rows, name):
@@ -1477,8 +1515,7 @@ def verify(project, config=None):
     for path in ledger_files(project, config):
         name = os.path.basename(path)
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                text = fh.read()
+            text = ledger_text(path)
         except Exception as exc:
             # A FINDING, NOT A SKIP. `_journal_io.read_file` answers an unreadable
             # file with no rows, which is the right fail-open for a reader walking
@@ -2171,15 +2208,16 @@ def latest_by_subject(rows, aliases=None):
 
     `aliases` is `subject_aliases(plan)`: a row recorded under a task's old id is
     keyed under the id the task holds now, so a moved task's runs still join it.
+
+    Newest by the MOMENT `ts` names: rows are walked in `oldest_first` order,
+    so the last one each key keeps is its newest.
     """
     best = {}
-    for row in rows or []:
+    for row in oldest_first(rows):
         key = subject_key(row, aliases)
         if key is None or not row.get("runId"):
             continue
-        current = best.get(key)
-        if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
-            best[key] = row
+        best[key] = row
     return best
 
 
@@ -2194,18 +2232,14 @@ def row_by_run(rows, run_id):
     here declares `runId` unique across every writer this project's worktrees
     keep, so a second row claiming the same id is read as a later one rather
     than as an error neither caller can act on.
+
+    NEWEST BY THE MOMENT `ts` NAMES (`newest_row`), never by its spelling, so a
+    run whose every stamp is unreadable is still found.
     """
     if not run_id:
         return None
-    best = None
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        if str(row.get("runId") or "") != str(run_id):
-            continue
-        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
-            best = row
-    return best
+    return newest_row([row for row in rows or [] if isinstance(row, dict)
+                       and str(row.get("runId") or "") == str(run_id)])
 
 
 def suite_keys(rows):
@@ -2314,7 +2348,7 @@ def reusable_run(rows, scope, ids, key, statuses):
     """
     if not key:
         return None
-    best = None
+    candidates = []
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -2332,9 +2366,8 @@ def reusable_run(rows, scope, ids, key, statuses):
             continue
         if not _same_subject(row, ids):
             continue
-        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
-            best = row
-    return best
+        candidates.append(row)
+    return newest_row(candidates)
 
 
 def reconcile(project, manifest_path, session_id=None, config=None):
@@ -2494,27 +2527,75 @@ def merged_phase(phase):
             and phase.get("id") is not None)
 
 
+_DATE_ONLY = "%Y-%m-%d"
+
+
+def stamp_moment(text):
+    """A stamp as epoch seconds, or None when it names no moment.
+
+    THE ONE MOMENT READ this module orders by: `_usage_core.parse_ts`, plus an
+    ISO date with no time (`2026-09-01`), read as the START of that day in
+    UTC. A hand-written `evidenceSince.at` is often a date, and the start of
+    the day is the earliest moment it can mean - so a boundary read from it
+    can only move earlier, never later in silence. Kept here rather than in
+    `parse_ts`, whose other callers read stamps a machine wrote.
+    """
+    moment = _usage_core.parse_ts(text)
+    if moment is not None or not isinstance(text, str):
+        return moment
+    day = text.strip()
+    if len(day) != len("0000-00-00"):
+        return None
+    try:
+        return float(calendar.timegm(time.strptime(day, _DATE_ONLY)))
+    except ValueError:
+        return None
+
+
 def _ts_moment(row):
-    """A row's `ts` as epoch seconds, or None when it will not parse."""
-    return _usage_core.parse_ts(row.get("ts"))
+    """A row's `ts` as epoch seconds (`stamp_moment`), or None."""
+    return stamp_moment(row.get("ts"))
+
+
+def oldest_first(rows):
+    """`rows` ordered by the MOMENT each `ts` names, oldest first, with every
+    row whose `ts` will not parse BEFORE all of them; ledger order is kept
+    among the undated rows and among rows naming the same moment.
+
+    THE ONE ORDER every "newest row" question here is answered from, so that
+    no reader compares `ts` as text: a stamp carrying an offset or a
+    fractional second sorts by its spelling rather than its moment. Undated
+    rows go first so an unreadable `ts` never beats a readable one, and the
+    sort is stable so a tie goes to the row read later.
+    """
+    keyed = [(_ts_moment(r), r) for r in rows or [] if isinstance(r, dict)]
+    dated = sorted([pair for pair in keyed if pair[0] is not None],
+                   key=lambda pair: pair[0])
+    return ([r for m, r in keyed if m is None]
+            + [r for _m, r in dated])
+
+
+def newest_row(rows):
+    """The last row of `oldest_first(rows)`, or None: newest by moment, a
+    later row winning a tie, an undated row only when none is dated."""
+    ordered = oldest_first(rows)
+    return ordered[-1] if ordered else None
 
 
 def _newest_first(full_rows):
     """`full_rows` ordered by the MOMENT each `ts` names, newest first, with
     every row whose `ts` will not parse after all of them, in ledger order.
 
-    PARSED, NEVER COMPARED AS TEXT. A stamp carrying an offset or a
-    fractional second sorts as text against a plain UTC one by its spelling
-    rather than its moment, so "newest" would be whichever string is
-    greatest. An unreadable `ts` has no place in that order at all; it goes
-    last so it is still walked for the answer - its head is as measured as
-    any other - but `_is_dated` keeps it from ever being called newest.
+    DERIVED FROM `oldest_first`, so one order answers "which is newest"
+    everywhere: its dated rows reversed, which puts a dated tie on the row
+    read LATER - `newest_row`'s rule - and then the undated rows as read.
+    An unreadable `ts` has no place in that order at all; it goes last so it
+    is still walked for the answer - its head is as measured as any other -
+    but `_is_dated` keeps it from ever being called newest.
     """
-    keyed = [(_ts_moment(r), r) for r in full_rows]
-    dated = [pair for pair in keyed if pair[0] is not None]
-    dated.sort(key=lambda pair: pair[0], reverse=True)
-    return ([r for _m, r in dated]
-            + [r for m, r in keyed if m is None])
+    ordered = oldest_first(full_rows)
+    return ([r for r in reversed(ordered) if _is_dated(r)]
+            + [r for r in ordered if not _is_dated(r)])
 
 
 def _is_dated(row):
@@ -2973,15 +3054,42 @@ def stated_at(block):
 def earliest_recorded(rows):
     """The earliest `ts` any recorded run carries, or None when none carries one.
 
-    COMPARED AS STRINGS, which is `latest_by_subject`'s rule at the other end of
-    the same list and correct for the same reason: every row is stamped by `_now`
-    in one fixed UTC spelling, so lexical order IS chronological order and parsing
-    would add a way to fail without adding an answer.
+    BY MOMENT, `oldest_first`'s order - `latest_by_subject`'s rule at the other
+    end of the same list. A row's `ts` is not always `_now`'s spelling (a caller
+    may hand one in, an imported shard carries another writer's), and as text an
+    offset or a fractional second sorts by how it is written. A `ts` that will
+    not parse is the answer only when no row's does, and then the least as text,
+    which is all such a stamp can be ordered by.
     """
+    dated = [r for r in oldest_first(rows) if _ts_moment(r) is not None]
+    if dated:
+        return dated[0].get("ts")
     stamps = [r.get("ts") for r in rows or []
               if isinstance(r, dict) and isinstance(r.get("ts"), str)
               and r.get("ts").strip()]
     return min(stamps) if stamps else None
+
+
+def unplaced_stamps(rows):
+    """What `earliest_recorded` passes over, in ledger order, each once: every
+    `ts` that `stamp_moment` cannot place, and - named by its run, since it has
+    no stamp to quote - every row whose `ts` is missing, blank or not text.
+
+    A row with no stamp is still a recorded run, and it may be the earliest
+    one; leaving it out would let a ledger of such rows read as an empty one.
+    """
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        ts = row.get("ts")
+        if isinstance(ts, str) and ts.strip():
+            label = ts if stamp_moment(ts) is None else None
+        else:
+            label = "run %s has no ts" % (row.get("runId") or "?",)
+        if label is not None and label not in out:
+            out.append(label)
+    return out
 
 
 def boundary_of(block, ledger_at, unknown=None):
@@ -2999,12 +3107,44 @@ def boundary_of(block, ledger_at, unknown=None):
     with a non-empty list is holding a boundary that may be later than the truth.
     """
     key_at = stated_at(block)
-    stamps = [s for s in (key_at, ledger_at) if s is not None]
-    at = min(stamps) if stamps else None
-    if key_at is not None and ledger_at is not None:
+    # The earlier MOMENT of the two: the plan's stamp is hand-written and need
+    # not share the ledger's spelling.
+    at = earliest_recorded([{"ts": s} for s in (key_at, ledger_at)
+                            if s is not None])
+    unknown = list(unknown or [])
+    asked_unknown = list(unknown)
+    # A STAMP THAT NAMES NO MOMENT IS NEVER DROPPED IN SILENCE. It cannot be
+    # compared, so the other source (when there is one) becomes the boundary -
+    # and that may be LATER than the start the stamp meant. `unknown` is this
+    # function's word for exactly that, so the stamp is named there, where the
+    # gate reads it, as well as in the basis.
+    key_lost = key_at is not None and stamp_moment(key_at) is None
+    ledger_lost = ledger_at is not None and stamp_moment(ledger_at) is None
+    if key_lost:
+        unknown.append("%s states %r, which names no moment (an ISO timestamp "
+                       "or an ISO date does), so the start it means cannot be "
+                       "placed and the boundary may be later than the truth"
+                       % (SINCE_KEY, key_at))
+    if ledger_lost:
+        unknown.append("the earliest recorded run's ts is %r, which names no "
+                       "moment, so where recording began cannot be placed from "
+                       "the ledger" % (ledger_at,))
+    if key_lost or ledger_lost:
+        basis = ("the stamp(s) %s name no moment this can place, so they are "
+                 "not compared; the boundary %s, and it may be later than the "
+                 "truth" % (
+                     ", ".join(repr(s) for s in (key_at, ledger_at)
+                               if s is not None and stamp_moment(s) is None),
+                     ("is %s" % (at,)) if stamp_moment(at) is not None
+                     else "cannot be placed at all"))
+    elif key_at is not None and ledger_at is not None:
         basis = ("the plan states recording began %s and the earliest recorded "
                  "run is %s; the earlier of the two is the boundary, because "
                  "work before it could not have been recorded" % (key_at, ledger_at))
+    elif key_at is not None and asked_unknown:
+        basis = ("the plan states recording began %s; no run in the ledger "
+                 "places a moment to confirm it, and what could not be read or "
+                 "placed is listed as unknown" % (key_at,))
     elif key_at is not None:
         basis = ("the plan states recording began %s; no run is readable in the "
                  "ledger to confirm it" % (key_at,))
@@ -3015,12 +3155,28 @@ def boundary_of(block, ledger_at, unknown=None):
     elif ledger_at is not None:
         basis = ("this plan carries no %s, so the boundary is the earliest "
                  "recorded run, %s" % (SINCE_KEY, ledger_at))
+    elif asked_unknown:
+        # Not "no run is readable": a source the caller could not read or
+        # place may hold a run, which is what `unknown` lists.
+        basis = ("nothing places when recording began: this plan states no "
+                 "moment in %s and no run in its ledger places one, and what "
+                 "could not be read or placed is listed as unknown - so this "
+                 "boundary cannot be trusted" % (SINCE_KEY,))
     else:
         basis = ("nothing says when recording began: this plan carries no %s and "
                  "no run is readable in its ledger, so no work in it could have "
                  "carried evidence" % (SINCE_KEY,))
+    # HANDED ON IN THE ONE Z SPELLING whenever the moment was placed. The
+    # consumer (`_status_facts._gap_of`) is this module's layer-mate and reads
+    # `at` with `_usage_core.parse_ts`, which does not read a date - so a
+    # placed boundary is spelled the way it reads. The basis and `sources`
+    # keep the plan's own text. A fractional second is dropped, which moves
+    # the boundary earlier: the direction that excuses less, never more.
+    placed = stamp_moment(at)
+    if placed is not None:
+        at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(placed)))
     return {"at": at, "sources": {"key": key_at, "ledger": ledger_at},
-            "basis": basis, "unknown": list(unknown or [])}
+            "basis": basis, "unknown": unknown}
 
 
 def evidence_boundary(project, manifest_path, config=None):
@@ -3045,7 +3201,23 @@ def evidence_boundary(project, manifest_path, config=None):
         unknown.append("%d ledger row(s) could not be parsed, and one of them may "
                        "carry an earlier run than any that could"
                        % (read["unreadable"],))
-    return boundary_of(block, earliest_recorded(read["rows"]), unknown=unknown)
+    ledger_at = earliest_recorded(read["rows"])
+    # A row whose ts names no moment - or that carries none - is passed over
+    # by `earliest_recorded`, and it may be the earliest run. Named here, so
+    # the boundary says it may be later than the truth; the one stamp
+    # `boundary_of` is handed as `ledger_at` it names itself.
+    unplaced = [u for u in unplaced_stamps(read["rows"]) if u != ledger_at]
+    if unplaced and stamp_moment(ledger_at) is not None:
+        unknown.append("ledger row(s) carry a ts that names no moment (%s), so "
+                       "where they fall is unknown and one of them may be an "
+                       "earlier run than %s" % (_output.some_of(unplaced),
+                                                ledger_at))
+    elif unplaced:
+        unknown.append("ledger row(s) carry no ts that names a moment (%s), so "
+                       "where recording began cannot be placed from the "
+                       "ledger although a run is recorded there"
+                       % (_output.some_of(unplaced),))
+    return boundary_of(block, ledger_at, unknown=unknown)
 
 
 def project_config_for(manifest_path, project_dir=None):

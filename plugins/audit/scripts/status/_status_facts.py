@@ -575,13 +575,14 @@ def _gap_of(row, boundary):
     caller builds from it are a partition by construction rather than by
     assertion.
 
-    THE STAMPS ARE PARSED, NOT COMPARED AS TEXT, and `_evidence_io` comparing its
-    ledger stamps as text is not a precedent for doing the same here: it says why
-    it may, which is that every row it reads was written by one formatter in one
-    UTC spelling. `completedAt` and `mergedAt` are PLAN fields a human writes, so
-    `2026-06-02T17:37:00+02:00` sorts after a `...15:38:00Z` boundary as text and
-    falls a minute before it as a time -- and getting that backwards excuses the
-    wrong subjects.
+    THE STAMPS ARE PARSED, NOT COMPARED AS TEXT. `completedAt` and `mergedAt` are
+    PLAN fields a human writes, so `2026-06-02T17:37:00+02:00` sorts after a
+    `...15:38:00Z` boundary as text and falls a minute before it as a time -- and
+    getting that backwards excuses the wrong subjects. `_usage_core.parse_ts` is
+    enough for `at` because `_evidence_io.boundary_of` hands a placed boundary on
+    in the one Z spelling, whatever the plan or the ledger wrote - a date-only
+    `evidenceSince` included, which `parse_ts` alone would not read. That module
+    is a layer-mate, so its own moment read cannot be called from here.
 
     A STAMP NOTHING CAN READ DATES NOTHING. Neither an unreadable `at` nor an
     unreadable subject stamp is ever resolved in favour of the excuse: an excuse

@@ -145,16 +145,26 @@ def duplicates_of(rows, held, basename):
 def unreadable_refusal(paths):
     """The refusal for a ledger that could not be read in full, carrying the
     step that clears each of the causes `read_rows` folds into one list - a
-    file that would not open, a torn tail, a bad line before the end. It
-    cannot tell which one a file has, so it names all of them and points at
-    the command that does; a refusal naming no next step would block every
-    later import with nothing to act on."""
+    file that would not open, a byte that is not UTF-8, a torn tail, a bad
+    line before the end. It cannot tell which one a file has, so it names all
+    of them and points at the command that does; a refusal naming no next step
+    would block every later import with nothing to act on.
+
+    THE UNDECODABLE-BYTE REMEDY SAYS ONLY WHAT `verify` PRINTS for it: the
+    codec's own message, which names the first such byte and its offset in
+    the file's bytes - there is no line number to send the reader to."""
     return (
         "the duplicate-run check could not be made: %s could not be read in "
         "full, and a run lost there could be one this shard carries again. "
         "`audit-journal.py verify` names the cause for each file. A file that "
         "could not be opened at all (a permission, a lock, a path that is not "
         "a file) is cleared by making it readable and re-running the import. "
+        "A file holding a byte that is not UTF-8 text is lost whole, every run "
+        "in it: `verify` names the first such byte and its position, counted "
+        "in bytes from the start of the file, not a line. It is cleared by "
+        "restoring the file from its committed copy, or by removing that byte "
+        "on purpose once you have read the row it sits in, and re-running the "
+        "import. "
         "If a file ends with a partial line, a writer was interrupted there - "
         "those bytes are not a row. Truncate the partial line on purpose and "
         "re-run the import. Any other line that is not valid JSON is a "
@@ -194,7 +204,7 @@ def import_shard(project, shard_path, config=None):
         answer["refused"] = "cannot read %r (%s)" % (shard_path, exc)
         return E_FAIL, answer
     try:
-        text = raw.decode("utf-8")
+        text = _ev.ledger_decode(raw)
     except Exception as exc:
         answer["refused"] = "%s is not UTF-8 text (%s)" % (basename, exc)
         return E_FAIL, answer

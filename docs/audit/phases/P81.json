@@ -383,7 +383,11 @@
       "description": "After the --full --record subprocess, full-gate.py reads the row it wrote (_evidence_io.row_by_run with the runId the runner printed on its 'evidence: recorded' line; failing that, the newest full row for HEAD) and, for each selectionMiss entry, runs audit-task.py couple --test <path> --sources <sources> --basis-run <runId> --basis-head <head> --phases <ids>, then audit-task.py bug-add \"Selection miss: <path>\" --severity med --files <path> --description <the miss sentence, the runId, the head and the phases>, both as subprocesses through _loader.script_path; and couple --test <t> --caught <runId> for each already-coupled test named failing. It prints what it wrote and each verb's own output, and exits with the runner's code: a miss is learned and the red still blocks the push. It never acts on a row whose failures were not named. Red-first in test_full_gate.py: a fake full run producing a miss ends with a coupling and a bug in the fixture plan and one journal row each; dg15 end to end - a tail-basis red writes nothing (mutation: act on the failing lines -> red). Allow case: a green run writes nothing.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
-        "plugins/audit/tests/test_full_gate.py"
+        "plugins/audit/tests/test_full_gate.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -419,7 +423,12 @@
       },
       "startedAt": "2026-09-27T18:00:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T18:46:49Z.a3d355",
+        "status": "passed",
+        "at": "2026-09-27T18:46:49Z"
+      }
     },
     {
       "id": "P81.8",
@@ -535,7 +544,18 @@
       "description": "Fault F523. read_rows opens ledger files with errors='replace' and reports them fully read, while verify opens them strictly and grades them unreadable; every consumer of read_rows (status, doctor, panel, report, the release guard's full-run answer, import-evidence) can compare a value a replaced byte silently changed. Both readers (and any sibling that opens a ledger file) decode through ONE function; a non-UTF-8 byte is a finding on every surface - read_rows counts the file as lost (unreadableFiles), never returns its rows as clean. Red-first as above; allow: a clean UTF-8 file with non-ASCII text reads as before.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -569,7 +589,12 @@
       },
       "startedAt": "2026-09-27T18:00:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T19:24:16Z.d50bfc",
+        "status": "passed",
+        "at": "2026-09-27T19:24:16Z"
+      }
     },
     {
       "id": "P81.11",
@@ -669,6 +694,51 @@
         "commit": "1052846d603b5516b77cf2826c3e1abaac420f97",
         "at": "2026-09-27T16:44:00Z"
       }
+    },
+    {
+      "id": "P81.13-j7p",
+      "title": "add --failing-from resolves a runner-named suite to one repository path",
+      "status": "pending",
+      "description": "A fix task created with add --failing-from puts the runner's spelling of each named failing suite straight into its gate, and run-test-gate runs that gate from the project root. A suite the runner named relative to its own directory (test_old.py for backend/tests/test_old.py) becomes a path that does not exist, so the fix task's gate cannot run (probed: python3 test_old.py exits 2, can't open file). Resolve each named suite before _union_paths: keep it when it exists from the project root; otherwise take the single tracked file (git ls-files) it matches by the listed_by suffix rule; when none or several match, fall through to the ordinary task gate and say why first, the way the tail-basis case does. Reuse the one resolver the catch rule uses (a runner spelling resolves to exactly one candidate, or names why not) rather than a second matcher. Red-first: an ff case where a runner-relative spelling must come out as the repository-root path, one where two tracked files share the suffix (falls through with the reason), and one where the spelling already exists from the root (kept as written).",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - add --failing-from over a row naming a runner-relative suite writes a gate path that does not exist from the project root"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:52Z"

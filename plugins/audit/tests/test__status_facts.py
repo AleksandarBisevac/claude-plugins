@@ -1281,6 +1281,65 @@ def _cases(check):
           and _eb_torn_ok["testEvidence"]["recorded"] == 2
           and M.evaluate_gate(_eb_torn_ok, ("no-test-evidence",)) == [],
           repr(M.unevidenced(_eb_torn_ok)))
+
+    # A LEDGER WHOSE ONLY RUN CARRIES NO ts, read from disk by the real door:
+    # a run IS recorded, so "nothing was recorded" is false, and where it falls
+    # is unknown - the excuse over the pre-boundary subjects cannot be trusted.
+    _eb_disk = _harness.fixture_root("status-facts-no-ts-")
+    try:
+        os.makedirs(os.path.join(_eb_disk, ".claude"))
+        os.makedirs(os.path.join(_eb_disk, "docs", "audit"))
+        with open(os.path.join(_eb_disk, ".claude", "audit.config.json"),
+                  "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        _eb_plan_path = os.path.join(_eb_disk, "docs", "audit",
+                                     "audit-plan.json")
+        with open(_eb_plan_path, "w", encoding="utf-8") as fh:
+            json.dump(_eb_pre, fh)
+        _eb_evdir = _ebio.evidence_dir(_eb_disk)
+        os.makedirs(_eb_evdir)
+        with open(os.path.join(_eb_evdir, "2026-06.w.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({"runId": "R-no-ts", "scope": "task",
+                                 "status": "passed"}) + "\n")
+        _eb_nots = _ebio.evidence_boundary(_eb_disk, _eb_plan_path)
+    finally:
+        _harness.remove_tree(_eb_disk)
+    _eb_nots_s = M.rollup(_eb_pre, [], [], boundary=_eb_nots)
+    check("eb18 RED-FIRST: a ledger whose run carries NO ts does not excuse "
+          "in silence - the run is named in `unknown`, so the gate FAILS the "
+          "excuse, and the basis does not claim no run is readable: %r"
+          % (_eb_nots,),
+          M.evaluate_gate(_eb_nots_s, ("no-test-evidence",))
+          == ["no-test-evidence"]
+          and any("R-no-ts" in u for u in _eb_nots["unknown"])
+          and "no run is readable" not in _eb_nots["basis"],
+          repr(M.unevidenced(_eb_nots_s)))
+    # A DATE-ONLY evidenceSince, as a person writes it: the start of that day
+    # in UTC. The consumer reads what the producer hands it, so a subject
+    # finished before the day is excused and one finished after it is not.
+    _eb_day = _ebio.boundary_of({"at": "2026-09-01"}, None)
+    _eb_day_pre = M.rollup(_eb_plan([("PE.1", "2026-08-15T00:00:00Z")],
+                                    merged="2026-08-15T00:00:00Z"),
+                           [], [], boundary=_eb_day)
+    check("eb19 RED-FIRST: a date-only evidenceSince EXCUSES a subject "
+          "finished before that day - the gate passes: %r / at=%r"
+          % (M.unevidenced(_eb_day_pre), _eb_day["at"]),
+          _eb_ids(_eb_day_pre, M.GAP_BEFORE) == ["PE", "PE.1"]
+          and M.evaluate_gate(_eb_day_pre, ("no-test-evidence",)) == [],
+          repr(_eb_day_pre["testEvidence"]))
+    _eb_day_led = _ebio.boundary_of({"at": "2026-09-01"},
+                                    "2026-10-01T00:00:00Z")
+    _eb_day_post = M.rollup(_eb_plan([("PE.1", "2026-09-15T00:00:00Z")],
+                                     merged="2026-09-15T00:00:00Z"),
+                            [], [], boundary=_eb_day_led)
+    check("eb20 SECOND DIRECTION: the same date-only start beside a later "
+          "ledger run does NOT excuse a subject finished after that day - the "
+          "gate fails: %r" % (M.unevidenced(_eb_day_post),),
+          _eb_ids(_eb_day_post, M.GAP_SINCE) == ["PE", "PE.1"]
+          and M.evaluate_gate(_eb_day_post, ("no-test-evidence",))
+          == ["no-test-evidence"],
+          repr(_eb_day_post["testEvidence"]))
     _eb_part_s = M.rollup(_eb_plan([("PE.1", "2026-05-01T00:00:00Z"),
                                     ("PE.2", "2026-07-01T00:00:00Z"),
                                     ("PE.3", None)],

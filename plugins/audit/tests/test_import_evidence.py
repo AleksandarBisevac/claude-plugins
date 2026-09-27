@@ -328,10 +328,12 @@ def _cases(check):
               % (os.path.isdir(ev7) and sorted(os.listdir(ev7)),),
               not os.path.isdir(ev7) or not os.listdir(ev7))
 
-        # --- the holder is named even when its bytes are not strict UTF-8 ---
-        # The ledger reader decodes with replacement, so a stray byte inside a
-        # field still yields the row; naming its file must come from that
-        # SAME read, or a stricter second read fails to find the holder.
+        # --- a ledger file whose bytes are not UTF-8 is unreadable ---------
+        # Every ledger reader decodes through one strict function, so a stray
+        # byte inside a field loses the whole file rather than yielding a row
+        # whose value the byte silently changed. The import cannot know what
+        # that file held, so it is refused through the unreadable-ledger path,
+        # naming the file - never answered as "no duplicate".
         d8, mp8 = project()
         ev8 = _ev.evidence_dir(d8)
         os.makedirs(ev8)
@@ -348,11 +350,52 @@ def _cases(check):
         again_src = write_shard(again_name, again_data)
         code, out = run([mp8, again_src, "--project-dir", d8, "--json"])
         answer8 = json.loads(out)
-        check("i25 a duplicate held in a ledger file carrying a non-UTF-8 byte "
-              "is refused naming THAT file, never a placeholder: %r (%s)"
-              % (code, answer8.get("duplicates")),
-              code == 1 and answer8.get("duplicates")
-              == [{"runId": "run-p1", "file": odd_name}])
+        refused8 = answer8.get("refused") or ""
+        check("i25 a ledger file carrying a non-UTF-8 byte is UNREADABLE, so "
+              "the import is refused through the unreadable-ledger path - "
+              "naming that file by its full path, pointing at the command that "
+              "names the cause, and giving THIS cause its own step - a byte "
+              "is not a permission, so the could-not-open clause is the wrong "
+              "fix - and no duplicate is claimed from bytes nothing could "
+              "decode: %r (%r)" % (code, answer8),
+              code == 1 and answer8.get("duplicates") == []
+              and answer8.get("imported") is False
+              and "could not be made" in refused8
+              and os.path.join(ev8, odd_name) in refused8
+              and "`audit-journal.py verify` names the cause for each file"
+              in refused8
+              and "A file holding a byte that is not UTF-8 text is lost whole"
+              in refused8
+              and "counted in bytes from the start of the file, not a line"
+              in refused8
+              and "cleared by restoring the file from its committed copy, or "
+              "by removing that byte on purpose" in refused8)
+
+        # THE SHARD IS DECODED BY THE LEDGER'S ONE DECODER, not a second one
+        # written here: the decoder is swapped for one that refuses, and the
+        # import must say so - a private decode would import the shard anyway.
+        d9, mp9 = project()
+        dec_name = "2026-01.ci-w14.jsonl"
+        dec_data, _ = _shard_bytes(
+            dec_name, [{"runId": "run-d1", "v": 1, "status": "passed"}])
+        dec_src = write_shard(dec_name, dec_data)
+        real_decode = _ev.ledger_decode
+
+        def refusing_decode(raw):
+            raise ValueError("the decoder under test refused these bytes")
+        _ev.ledger_decode = refusing_decode
+        try:
+            code9, out9 = run([mp9, dec_src, "--project-dir", d9, "--json"])
+        finally:
+            _ev.ledger_decode = real_decode
+        answer9 = json.loads(out9)
+        check("i25b RED-FIRST: the shard's bytes go through "
+              "`_evidence_io.ledger_decode` - swap it for a refusing one and "
+              "the import refuses, quoting it: %r (%r)"
+              % (code9, answer9.get("refused")),
+              code9 == 1 and answer9.get("imported") is False
+              and "the decoder under test refused these bytes"
+              in (answer9.get("refused") or ""))
 
         # --- a ledger-held run carried twice by the shard: named once -------
         twice_held_name = "2026-01.ci-w13.jsonl"

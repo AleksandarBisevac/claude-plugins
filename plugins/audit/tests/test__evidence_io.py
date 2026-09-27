@@ -726,6 +726,99 @@ def _cases(check):
               M.row_by_run(rb_rows, "R-does-not-exist") is None
               and M.row_by_run([], "R-new") is None
               and M.row_by_run(rb_rows, None) is None)
+        # Text order and moment order DISAGREE here: the offset stamp spells
+        # a later day but names an earlier moment, and the unparseable stamp
+        # is greatest of all as text.
+        rb_moment = [
+            _row_with([RESULT["steps"][0]], run_id="R-m",
+                      ts="2026-09-02T23:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-m",
+                      ts="2026-09-03T00:00:00+05:00"),
+            _row_with([RESULT["steps"][0]], run_id="R-m", ts="zzz-not-a-ts"),
+        ]
+        check("rr3 `row_by_run` settles a shared runId by the MOMENT each "
+              "`ts` names, never by its spelling, and a `ts` that will not "
+              "parse never wins over one that does: %r"
+              % (M.row_by_run(rb_moment, "R-m") or {}).get("ts"),
+              (M.row_by_run(rb_moment, "R-m") or {}).get("ts")
+              == "2026-09-02T23:00:00Z")
+        rb_undated = [
+            _row_with([RESULT["steps"][0]], run_id="R-u", ts="zzz-first"),
+            _row_with([RESULT["steps"][0]], run_id="R-u", ts="aaa-second"),
+        ]
+        check("rr4 ALLOW: when no row carrying the id has a readable `ts`, "
+              "the run is still found - the last one in ledger order - rather "
+              "than answered None as if it had never been recorded: %r"
+              % (M.row_by_run(rb_undated, "R-u") or {}).get("ts"),
+              (M.row_by_run(rb_undated, "R-u") or {}).get("ts")
+              == "aaa-second")
+        # The same disagreement, put to every other reader here that picks
+        # a newest row: the offset stamp spells a later day, names an earlier
+        # moment, and must lose.
+        _mo_early_text = "2026-09-02T23:00:00Z"
+        _mo_late_text = "2026-09-03T00:00:00+05:00"
+        _mo_subject = [
+            {"scope": "task", "taskId": "P1.1", "runId": "MO-A",
+             "ts": _mo_early_text},
+            {"scope": "task", "taskId": "P1.1", "runId": "MO-B",
+             "ts": _mo_late_text}]
+        _mo_best = M.latest_by_subject(_mo_subject).get(("task", "P1.1"))
+        check("mo1 `latest_by_subject` keeps the run whose ts names the later "
+              "MOMENT, not the later spelling: %r" % ((_mo_best or {}).get(
+                  "runId"),),
+              (_mo_best or {}).get("runId") == "MO-A")
+        _mo_reuse = [dict(_mr_rows[0], muted=None,
+                          **{"runId": "MO-A", "ts": _mo_early_text}),
+                     dict(_mr_rows[0], muted=None,
+                          **{"runId": "MO-B", "ts": _mo_late_text})]
+        _mo_reused = M.reusable_run(_mo_reuse, "task", {"taskId": "P1.2"},
+                                    "k-mute", ("passed", "failed"))
+        check("mo2 `reusable_run` repeats the run whose ts names the later "
+              "MOMENT: %r" % ((_mo_reused or {}).get("runId"),),
+              (_mo_reused or {}).get("runId") == "MO-A")
+        _mo_caught = [
+            {"ts": _mo_early_text, "runId": "MO-A",
+             "steps": [{"name": "lint", "exit": 1}]},
+            {"ts": _mo_late_text, "runId": "MO-B",
+             "steps": [{"name": "lint", "exit": 1}]}]
+        check("mo3 `gate_last_caught` answers the ts naming the later MOMENT: "
+              "%r" % (M.gate_last_caught(_mo_caught, "lint"),),
+              M.gate_last_caught(_mo_caught, "lint") == _mo_early_text)
+        # ...and at the OTHER end of the list: the earliest moment is the late
+        # spelling here, and an unparseable stamp is never the earliest.
+        check("mo4 `earliest_recorded` answers the ts naming the earliest "
+              "MOMENT, and a ts that will not parse never wins: %r"
+              % (M.earliest_recorded(_mo_caught + [{"ts": "0-not-a-ts"}]),),
+              M.earliest_recorded(_mo_caught + [{"ts": "0-not-a-ts"}])
+              == _mo_late_text)
+        _mo_bound = M.boundary_of({"at": _mo_early_text}, _mo_late_text)
+        check("mo5 `boundary_of` takes the earlier MOMENT of the plan's "
+              "stated start and the ledger's earliest run, and hands it on in "
+              "the one Z spelling every consumer reads: %r"
+              % (_mo_bound["at"],),
+              _mo_bound["at"] == "2026-09-02T19:00:00Z"
+              and _mo_bound["sources"]["ledger"] == _mo_late_text)
+        # A hand-written plan start that names a DAY: the start of that day in
+        # UTC, the earliest moment it can mean, so it is never read as later.
+        _mo_day = M.boundary_of({"at": "2026-09-01"}, "2026-09-05T00:00:00Z")
+        check("mo6 RED-FIRST: a date-only `evidenceSince.at` is a moment - "
+              "the start of that day in UTC - so it stays the earlier "
+              "boundary beside a later ledger row, with nothing unknown: %r"
+              % (_mo_day,),
+              _mo_day["at"] == "2026-09-01T00:00:00Z"
+              and _mo_day["unknown"] == []
+              and _mo_day["sources"]["key"] == "2026-09-01"
+              and M.stamp_moment("2026-09-01")
+              == M.stamp_moment("2026-09-01T00:00:00Z"))
+        _mo_junk = M.boundary_of({"at": "Sept 1 2026"}, "2026-09-05T00:00:00Z")
+        check("mo7 RED-FIRST: a plan start that is no moment at all is NEVER "
+              "dropped in silence: it is named in `unknown` - the answer that "
+              "says the boundary may be later than the truth - and in the "
+              "basis, which no longer claims it is the earlier of the two: %r"
+              % (_mo_junk,),
+              any("Sept 1 2026" in u for u in _mo_junk["unknown"])
+              and "Sept 1 2026" in _mo_junk["basis"]
+              and "the earlier of the two" not in _mo_junk["basis"])
 
         # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
         # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
@@ -951,6 +1044,101 @@ def _cases(check):
               "down whatever surface asked: %r" % (empty,),
               empty["rows"] == [] and empty["files"] == 0
               and empty["unreadable"] == 0)
+
+        # ONE DECODE FOR EVERY READER. A byte that is not UTF-8 is planted
+        # inside a runId; a lenient reader would hand back that row with a
+        # replacement character standing in for the byte, as if it were clean,
+        # while the strict verifier grades the same file unreadable.
+        bad_proj = _project(os.path.join(tmp, "not-utf8"), {})
+        bad_dir = M.evidence_dir(bad_proj)
+        os.makedirs(bad_dir, exist_ok=True)
+        bad_path = os.path.join(bad_dir, "2026-01.bad.jsonl")
+        with open(bad_path, "wb") as fh:
+            fh.write(b'{"runId": "B-clean"}\n{"runId": "B-\xffmoved"}\n')
+        bad_read = M.read_rows(bad_proj)
+        bad_verdict = M.verify(bad_proj)
+        replaced = [r for r in bad_read["rows"] if "�" in json.dumps(
+            r, ensure_ascii=False)]
+        check("ev21b RED-FIRST: a byte that does not decode loses the FILE in "
+              "`read_rows` - it joins `unreadableFiles` and the count, and no "
+              "row carrying a replacement character comes back as clean: %r"
+              % ((bad_read["unreadableFiles"], bad_read["unreadable"],
+                  [r.get("runId") for r in bad_read["rows"]]),),
+              bad_read["unreadableFiles"] == [bad_path]
+              and bad_read["unreadable"] >= 1
+              and replaced == [] and bad_read["rows"] == [])
+        bad_files = [f for f in bad_verdict["files"]
+                     if f["file"] == "2026-01.bad.jsonl"]
+        check("ev21c ...and `verify` grades the SAME file the same way - "
+              "unreadable, a finding, not one of its rows checked - so the two "
+              "readers disagree about nothing: %r" % (bad_files,),
+              len(bad_files) == 1 and bad_files[0]["rows"] == 0
+              and any("could not be read" in f
+                      for f in bad_files[0]["findings"])
+              and not bad_verdict["ok"])
+        with open(bad_path, "rb") as fh:
+            bad_offset = fh.read().index(b"\xff")
+        bad_said = " ".join(bad_files[0]["findings"]) if bad_files else ""
+        check("ev21e ...and its finding names the byte and its offset in the "
+              "FILE's bytes - the remedy import-evidence prints sends the "
+              "reader to that position, so it must be the file's own, not a "
+              "line's: %r (byte at %d)" % (bad_said, bad_offset),
+              "0xff" in bad_said
+              and ("in position %d:" % bad_offset) in bad_said)
+        uni_proj =_project(os.path.join(tmp, "utf8-non-ascii"), {})
+        uni_dir = M.evidence_dir(uni_proj)
+        os.makedirs(uni_dir, exist_ok=True)
+        with open(os.path.join(uni_dir, "2026-01.uni.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"runId": "U-ćevap — été"}\n')
+        uni_read = M.read_rows(uni_proj)
+        uni_verdict = M.verify(uni_proj)
+        check("ev21d ALLOW: a clean UTF-8 file with non-ASCII text reads as "
+              "before - its row returned intact, nothing lost, no finding: %r"
+              % ((uni_read, uni_verdict["findings"]),),
+              [r.get("runId") for r in uni_read["rows"]]
+              == ["U-ćevap — été"]
+              and uni_read["unreadable"] == 0
+              and uni_read["unreadableFiles"] == []
+              and not any("could not be read" in f
+                          for f in uni_verdict["findings"]))
+
+        # An append onto a file no reader can decode would store a run every
+        # reader then loses with the file - so the write is REFUSED, the file
+        # left byte-for-byte as it was, and `record()` raises the refusal a
+        # recorder prints as "evidence: NOT recorded - <reason>".
+        ap_proj = _project(os.path.join(tmp, "append-undecodable"), {})
+        ap_path = M.append_row(ap_proj, {"runId": "AP-1",
+                                         "ts": "2026-01-05T00:00:00Z"},
+                               writer="w-ap")
+        with open(ap_path, "ab") as fh:
+            fh.write(b'{"runId": "AP-\xff"}\n')
+        with open(ap_path, "rb") as fh:
+            ap_before = fh.read()
+        ap_errors = []
+        for ap_call in (
+                lambda: M.append_row(ap_proj, {"runId": "AP-2",
+                                               "ts": "2026-01-06T00:00:00Z"},
+                                     writer="w-ap"),
+                lambda: M.record(ap_proj, {"status": "passed", "steps": [],
+                                           "testedState": {}}, "full", {},
+                                 {"runId": "AP-3",
+                                  "ts": "2026-01-07T00:00:00Z"},
+                                 writer="w-ap")):
+            try:
+                ap_call()
+                ap_errors.append(None)
+            except Exception as exc:
+                ap_errors.append(str(exc))
+        with open(ap_path, "rb") as fh:
+            ap_after = fh.read()
+        check("ap1 RED-FIRST: appending onto a ledger file that is not UTF-8 "
+              "is REFUSED - `append_row` and `record()` both raise, naming the "
+              "file, and not one byte is written: %r" % (ap_errors,),
+              len(ap_errors) == 2 and all(ap_errors)
+              and all(os.path.basename(ap_path) in e for e in ap_errors if e)
+              and all("not UTF-8" in e for e in ap_errors if e)
+              and ap_after == ap_before)
 
         # --- the chain ------------------------------------------------------
         # THE DEFECT THIS BLOCK EXISTS FOR, driven before it was written: two runs
@@ -1749,6 +1937,36 @@ def _cases(check):
               % (_nothing["at"], _nothing["unknown"]),
               _nothing["at"] is None and len(_nothing["unknown"]) == 1
               and "could not be read" in _nothing["unknown"][0])
+
+        jproj, jpath = _manifest_project("junk-ts")
+        for rid, ts in (("RJ", "not-a-moment"), ("RD", "2026-08-26T11:00:00Z")):
+            M.append_row(jproj, {"v": 1, "runId": rid, "ts": ts, "scope": "task",
+                                 "taskId": "P1.1", "phaseId": "P1",
+                                 "status": "passed"})
+        _junk = M.evidence_boundary(jproj, jpath)
+        check("mo8 RED-FIRST: a ledger row whose ts is no moment is not dropped "
+              "in silence when another row's ts parses - it may be the earliest "
+              "run, so it is NAMED in `unknown`: at=%r unknown=%r"
+              % (_junk["at"], _junk["unknown"]),
+              _junk["at"] == "2026-08-26T11:00:00Z"
+              and any("not-a-moment" in u for u in _junk["unknown"]))
+
+        # A ROW WITH NO ts AT ALL, and no other row to place: `at` stays None,
+        # which alone would excuse everything - so the run is named in
+        # `unknown`, and the basis does not claim no run is readable.
+        nproj, npath = _manifest_project("no-ts")
+        M.append_row(nproj, {"v": 1, "runId": "RN", "scope": "task",
+                             "taskId": "P1.1", "phaseId": "P1",
+                             "status": "passed"})
+        _nots = M.evidence_boundary(nproj, npath)
+        check("mo9 RED-FIRST: a ledger row carrying NO ts is unplaced too - "
+              "named in `unknown` even when no row's ts places a moment, and "
+              "the basis says so rather than that nothing is readable: "
+              "at=%r unknown=%r basis=%r"
+              % (_nots["at"], _nots["unknown"], _nots["basis"]),
+              _nots["at"] is None
+              and any("RN" in u for u in _nots["unknown"])
+              and "no run is readable" not in _nots["basis"])
 
         # --- stamping it, once ----------------------------------------------
         sproj, spath = _manifest_project("since")
@@ -3131,6 +3349,20 @@ def _full_status_cases(check):
               res_two["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
               and res_two["runId"] == "run-whole")
 
+        # Two whole-bearing rows naming the SAME moment: the tie goes to the
+        # row read later, the rule every other "newest" reader here follows.
+        tie_first = _fs_row("run-tie-first", "2026-01-02T00:00:00Z",
+                            repo["second"], ["echo x"])
+        tie_later = _fs_row("run-tie-later", "2026-01-02T00:00:00+00:00",
+                            repo["second"], ["echo x"])
+        tie_whole = M.newest_whole_bearing([tie_first, tie_later], ["echo x"])
+        check("fs13b RED-FIRST: a dated tie between whole-bearing full rows "
+              "goes to the row read LATER, as `newest_row` breaks it - one "
+              "question, one order: %r" % ((tie_whole or {}).get("runId"),),
+              (tie_whole or {}).get("runId") == "run-tie-later"
+              and M.newest_row([tie_first, tie_later])["runId"]
+              == "run-tie-later")
+
         # --- ALLOW: no full row at all is PROVISIONAL, not UNKNOWN -------------
         res_none = M.full_status([], phase, repo["root"], ["echo x"])
         check("fs14 ALLOW: a plan with mergedHead and fullGate but no full run "
@@ -3166,6 +3398,21 @@ def _full_status_cases(check):
               "wholeRunId" in res_dq and res_dq["wholeRunId"] is None
               and "wholeRunTs" in res_dq and res_dq["wholeRunTs"] is None
               and res_dq["runId"] == "run-dirty-newest")
+
+        # An UNDATED disqualified row read FIRST: undated rows are walked
+        # after every dated one, so the run the basis is about is the dated
+        # disqualified run, not whichever the ledger listed first.
+        undated_dirty = _fs_row("run-dirty-undated", "not-a-moment",
+                                repo["second"], ["echo x"],
+                                dirty_outside=["src/app.ts"])
+        res_ud = M.full_status([undated_dirty, newest_dirty], phase,
+                               repo["root"], ["echo x"])
+        check("fs20b RED-FIRST: an undated disqualified row read before a "
+              "dated one is walked AFTER it - the basis names the dated run: "
+              "%r" % (res_ud,),
+              res_ud["runId"] == "run-dirty-newest"
+              and "run-dirty-newest" in res_ud["basis"]
+              and "run-dirty-undated" not in res_ud["basis"])
 
         res_wh = M.full_status([whole_row], phase, repo["root"], ["echo x"])
         check("fs21 ALLOW: a WHOLE answer names its run as the newest "

@@ -94,13 +94,41 @@ def newest(rows):
     BY `ts` AND NOT BY FILE ORDER, `_evidence_io.latest_by_subject`'s rule: rows
     land in one file per writer per month, so the concatenation of the ledger is
     in no meaningful order. A tie goes to the row read later, which within one
-    writer's file is the row appended later.
+    writer's file is the row appended later. By the MOMENT `ts` names, never its
+    spelling - `_evidence_io.newest_row` is that one comparison.
     """
-    best = None
-    for row in rows:
-        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
-            best = row
-    return best
+    return _evidence_io.newest_row(rows)
+
+
+# The suffix `unreadable_lines` gives a FILE it lost whole, which is a
+# different repair from a line that will not parse - `blocking_sentence` says
+# each in its own words.
+UNREADABLE_MARK = " (unreadable)"
+
+
+def blocking_sentence(who, blocking):
+    """The refusal for `unreadable_lines`' blocking entries: files lost whole
+    and lines that will not parse, each with the repair that fits it."""
+    lost = [b for b in blocking if b.endswith(UNREADABLE_MARK)]
+    lines = [b for b in blocking if not b.endswith(UNREADABLE_MARK)]
+    parts = []
+    if lost:
+        parts.append(
+            "the evidence ledger holds file(s) that could not be read at all - "
+            "%s - and a file lost whole could hold %s's newest verdict, so the "
+            "verdict it stands under is not established. `%s` names why for "
+            "each: the first byte that is not UTF-8 text and its offset in "
+            "bytes from the start of the file, or why it would not open. For a "
+            "byte, restore the file from its committed copy"
+            % (", ".join(b[:-len(UNREADABLE_MARK)] for b in lost), who,
+               VERIFY_COMMAND))
+    if lines:
+        parts.append(
+            "the evidence ledger holds line(s) that will not parse and could be "
+            "%s's newest verdict - %s - so the verdict it stands under is not "
+            "established. `%s` shows each; repair or remove it"
+            % (who, ", ".join(lines), VERIFY_COMMAND))
+    return "; ".join(parts)
 
 
 def unreadable_lines(project, ids, config=None):
@@ -118,11 +146,13 @@ def unreadable_lines(project, ids, config=None):
     blocking, excused = [], []
     for path in _evidence_io.ledger_files(project, config):
         where = _journal_io.repo_relative_or_token(project, path)
+        # The ledger's one decode: a file `read_rows` loses whole (it will not
+        # open, or a byte in it is not UTF-8) could hold the subject's newest
+        # verdict, so it blocks here rather than going silently missing there.
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
+            text = _evidence_io.ledger_text(path)
         except Exception:
-            blocking.append("%s (unreadable)" % (where,))
+            blocking.append("%s%s" % (where, UNREADABLE_MARK))
             continue
         raw = text.splitlines()
         parsed, torn = _journal_io.rows_from_text(text)
@@ -188,7 +218,7 @@ def red_after_green(rows):
     `rows` are one subject's rows; an `empty-gate` row is not measured under
     entries and retires nothing. With no green at all, every red counts.
     """
-    ordered = sorted(rows, key=lambda r: str(r.get("ts") or ""))
+    ordered = _evidence_io.oldest_first(rows)
     greens = [i for i, r in enumerate(ordered)
               if r.get("status") == VERDICT_PASSED]
     tail = ordered[greens[-1] + 1:] if greens else ordered
@@ -221,15 +251,26 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
                                 VERIFY_COMMAND))
     out = {"state": "refused", "row": None, "measured": None, "notes": notes}
     if blocking:
-        out["sentence"] = (
-            "the evidence ledger holds line(s) that will not parse and could be "
-            "%s's newest verdict - %s - so the verdict it stands under is not "
-            "established. `%s` shows each; repair or remove it" % (
-                who, ", ".join(blocking), VERIFY_COMMAND))
+        out["sentence"] = blocking_sentence(who, blocking)
         return out
     ledger = _evidence_io.read_rows(project, config)
     rows = [r for r in ledger["rows"]
             if isinstance(r, dict) and _evidence_io._same_subject(r, ids)]
+    # A SUBJECT ROW WHOSE ts NAMES NO MOMENT BLOCKS, as an unparseable line
+    # does: it cannot be placed before or after any other row, so it could be
+    # the newest verdict - and ordering it first would let a green retire it.
+    undated = [r for r in rows
+               if _evidence_io.stamp_moment(r.get("ts")) is None]
+    if undated:
+        out["sentence"] = (
+            "the evidence ledger holds %s row(s) whose ts names no moment - %s "
+            "- so none of them can be placed before or after the others and "
+            "any could be %s's newest verdict; the verdict it stands under is "
+            "not established. `%s` shows the ledger; repair the ts or remove "
+            "the row on purpose" % (
+                who, ", ".join("run %s at %r" % (r.get("runId"), r.get("ts"))
+                               for r in undated), who, VERIFY_COMMAND))
+        return out
     last = newest(rows)
     out["row"] = last
     run = ("run %s at %s" % (last.get("runId"), last.get("ts")) if last else "")
@@ -268,9 +309,10 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
     measured = last
     if last.get(_evidence_io.VERDICT_SOURCE) == _evidence_io.REUSED:
         origin = (last.get("reusedFrom") or {}).get("runId")
-        found = [r for r in ledger["rows"]
-                 if isinstance(r, dict) and origin and r.get("runId") == origin]
-        measured = found[-1] if found else None
+        # The newest row carrying that runId by moment, never the last in
+        # ledger order: two worktrees' files concatenate in no order at all.
+        measured = (_evidence_io.row_by_run(ledger["rows"], origin)
+                    if origin else None)
         if measured is None:
             out["sentence"] = ("%s's newest verdict (%s) repeats run %s, which is "
                                "not in the ledger, so the tree it was measured on "
