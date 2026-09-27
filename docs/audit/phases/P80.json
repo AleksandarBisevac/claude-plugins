@@ -478,7 +478,7 @@
     {
       "id": "P80.8",
       "title": "Panel: the same VERIFIED word and basis beside a merged phase's evidence",
-      "status": "in_progress",
+      "status": "done",
       "description": "_panel_composition carries, per merged phase and only when meta.fullGate is declared, fullRun {answer, basis, runId} from _evidence_io.full_status and the VERIFIED word the report uses; scripts/ui/panel/overview.js renders that word and the basis sentence beside the phase's evidence from the payload, never recomputing it. Read the refactoring-the-assembled-ui and writing-javascript skills first and print python3 tools/count-ui-pins.py before editing: overview.js is one ordered part of one inline script, and substring pins in plugins/audit/tests guard the assembled output. Red-first: test__panel_composition.py - a whole and a provisional phase carry their answers, and a plan without fullGate carries no fullRun key (mutation: always emit it -> red); tools/ui-tests/full-run-verified.test.mjs (vitest) - the renderer maps each answer to its word and prints the basis (mutation: map UNKNOWN to provisional -> red). The panel's browser gates, and a local look before any PR, are the orchestrator's: a panel selftest cannot see a page whose script died.",
       "files": [
         "plugins/audit/scripts/panel/_panel_composition.py",
@@ -536,18 +536,32 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b92bd68a77ac6102b098068c4e922d39f5ac6adb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_panel_composition._phase_full_run / full_gate_commands / _memoizing_runner (only contained or not-contained answers cached); _panel_state.build_state reads the ledger once and wires fullRun only when meta.fullGate is declared; panel-server holds one full_run_cache in its per-process closure; overview.js renders fullRunWord and the basis from the payload. Panel screenshots recaptured (only captured-at.json changed). Cases fr0-fr9, bs1-bs4, fh1-fh2, JS full-run-verified. Task review: intent matches, redFirst proved. Carried to sign-off: a ledger read failure is turned into a clean empty read for the evidence tab (HIGH); no browser check has rendered the full-run line, since no demo plan declares meta.fullGate (med). inheritedTests not-asked.",
+        "descriptive": "The panel now shows, beside a merged phase's evidence, whether the phase is whole, provisional or unknown with the basis, read from the same full-status answer the status uses; the git ancestry behind it is cached for the life of the panel server."
       },
       "startedAt": "2026-09-27T07:28:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T08:44:42Z",
+      "verifiedBy": [
+        "fr1",
+        "fr4",
+        "fr7",
+        "fr8",
+        "bs1",
+        "bs2",
+        "bs3",
+        "fh2"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T08:33:46Z.ce6307",
         "status": "passed",
         "at": "2026-09-27T08:33:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b92bd68a77ac6102b098068c4e922d39f5ac6adb",
+        "at": "2026-09-27T08:44:42Z"
       }
     },
     {

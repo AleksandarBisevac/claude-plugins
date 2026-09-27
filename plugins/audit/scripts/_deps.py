@@ -732,6 +732,17 @@ LAYERS = (
      # rewrote five files and a gate that skipped every hook were both exit 0 and
      # neither was distinguishable from a verdict.
      "run-test-gate",
+     # `full-gate` is the one command of the third place: a pre-push hook's
+     # whole obligation, spelled once rather than left for every hook to
+     # re-derive `run-test-gate.py <m> --full --record` and its own refusal
+     # for a plan with no `meta.fullGate`. An entry point for this layer's
+     # usual reason - it never imports `run-test-gate` (an entry point may
+     # not import another entry point), it resolves it by basename through
+     # `_loader.script_path` (L1) and runs it as a subprocess, which is why
+     # no edge to `run-test-gate` appears here at all. It reaches
+     # `_manifest_io` (L1) for the one presence check - does this plan
+     # declare a third place - that decides whether to invoke anything.
+     "full-gate",
      # `propose-gates` folds the evidence ledger into a plan proposal instead
      # of leaving `/audit:init`'s recon read the tree alone: a candidate gate
      # command that has run before is classified by what it actually caught,

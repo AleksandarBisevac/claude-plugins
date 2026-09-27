@@ -155,6 +155,7 @@ claude-plugins/                           # this repo (personal, public)
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains
+          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, or the sentence and exit 0 when no meta.fullGate is declared
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
@@ -321,7 +322,7 @@ L2:
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
-  _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
+  _status_facts -> _areas, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _manifest_io, _output, _usage_core
@@ -348,9 +349,9 @@ L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
-  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _output
+  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
+  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
@@ -391,6 +392,7 @@ L7:
   derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
+  full-gate -> _loader, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
   import-evidence -> _evidence_io, _journal_io, _manifest_io, _output
@@ -3638,6 +3640,27 @@ own genesis the moment somebody names a file that way, so a verified chain says 
 edited after the file was written and says nothing about who wrote it. The report says so on every
 successful import; the commit that carries the imported file into the repository is the
 authorship trail.
+
+### `plugins/audit/scripts/governance/full-gate.py`
+`full-gate.py <manifest> [--writer NAME] [--project-dir DIR]` — **the one command of the third
+place**, meant for a pre-push hook or a CI step that should not have to spell out
+`run-test-gate.py --full --record` and its own refusals itself.
+
+**Delegation, not re-implementation.** An entry point may not import another entry point, so
+this resolves `run-test-gate.py` by basename (`_loader.script_path`, never loaded — see
+`render-report._bench_fixture` for the same shape) and runs it as a **subprocess**, streaming its
+combined output line by line and exiting with its **unchanged** code. Nothing here re-derives
+what a green or a red full run means; that verdict is `run-test-gate.py`'s alone.
+
+**The one branch this file decides for itself.** `run-test-gate.py --full` refuses (exit 2) a
+plan with no `meta.fullGate` — a usage error for a phase-scope caller asking for a run with
+nothing to run. A pre-push hook is not that caller: a plan that never declared a third place must
+not block every push, forever, over a gate nobody asked for. So this file reads `meta.fullGate`
+itself, before invoking anything, and answers with the sentence and **exit 0** instead of letting
+that usage refusal reach an operator's shell as a blocked push.
+
+**Does not learn.** No selection-miss pass, no read of the evidence ledger, no bug opened on a
+red run — that pass belongs to the phase after this one. What this file owes is delegation.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they

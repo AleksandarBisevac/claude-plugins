@@ -32,6 +32,13 @@ variables:
   manifest: docs/audit/audit-plan.json
 
 steps:
+  # `fetchDepth: 0` — a FULL clone. Ancestry is what tells a `whole` full run apart
+  # from an `unknown` one (`/audit:status`'s stale-full-run condition below asks
+  # exactly that), and a shallow clone answers `unknown` for every phase regardless
+  # of what actually ran, because git has no history to walk.
+  - checkout: self
+    fetchDepth: 0
+
   - task: UsePythonVersion@0
     inputs:
       versionSpec: '3.12'
@@ -63,4 +70,38 @@ steps:
       pathToPublish: $(Build.ArtifactStagingDirectory)
       artifactName: audit-report
     displayName: Publish audit report
+    condition: succeededOrFailed()
+
+  # --- the third place: meta.fullGate, measured against the whole checkout -------
+  # `run-test-gate.py --full` needs its sibling modules (`_evidence_io`, `_manifest_io`,
+  # `_loader`, ...), so this clones the whole `plugins/audit/scripts/` tree rather than
+  # curling one file the way the pinned-tag steps above do - see the header note.
+  - script: |
+      set -e
+      git clone --depth 1 --branch v0.5.0 \
+        https://github.com/AleksandarBisevac/claude-plugins.git \
+        "$(Agent.TempDirectory)/plugin-src"
+    displayName: Fetch the audit plugin's scripts/ tree (pinned tag)
+
+  - script: |
+      python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/governance/run-test-gate.py" \
+        "$(manifest)" --full --record --writer "ci-$(Build.BuildId)"
+    displayName: 'Third place: meta.fullGate, --full --record --writer'
+    # a build's identity must not be split by session id - see README "The third place"
+
+  # The evidence directory is published so a maintainer can bring the row this
+  # runner recorded back into a clone with `import-evidence.py <manifest>
+  # <shard.jsonl>` - the shard's own chain verifies before anything is copied, so
+  # a hand-downloaded artifact is trusted the same way a `git`-carried file would be.
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: docs/audit/evidence
+      artifactName: audit-evidence
+    displayName: Publish the evidence directory
+    condition: succeededOrFailed()
+
+  - script: |
+      python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/status/audit-status.py" \
+        "$(manifest)" --gate --fail-on stale-full-run
+    displayName: 'Gate: no merged phase is provisional past a full run that already covers it'
     condition: succeededOrFailed()

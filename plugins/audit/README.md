@@ -457,7 +457,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:next` | `[--dry-run]` | Execute the next ready task (by phase order, then task id), then report what's ready next. `--dry-run` previews the choice without mutating. |
 | `/audit:run` | `<taskId> [--dry-run]` | Execute exactly one task by id, with status guards (offers reopen if `done`, attempt-reset if `blocked`, warns if `in_progress`) and unmet-blocker checks. Reopening a bugfix task reopens its linked bug. |
 | `/audit:phase` | `<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] \| add "<title>" --outcome "<what success is>" [--park] [--id <P7>] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] \| retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] \| priority <phaseId> <tier> [--force] \| priority <phaseId> --clear \| cancel <phaseId> --reason "<why>" \| signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] [--accept SHA --reason TEXT] \| settle` | Everything a phase has done to it. **A bare `<phaseId>` runs it** — execute every ready task (parallel where files are disjoint, sequential otherwise) until none remain, then phase sign-off (review skill + test gate + optional runtime boot + merge); `--dry-run` previews the plan and mutates nothing. **`priority`** says which phase to reach for first among the work that is **already ready** — it never makes an unready task ready and never skips a dependency, so a pinned phase that is still waiting is skipped and `/audit:status` says so. Tier 1 is unique (a second holder is refused **by name**, or written anyway with `--force`, in which case the first in manifest order wins); `--clear` unpins. **`cancel`** closes a phase as **terminal but not done**, cascading to the work still open inside it and recording the reason, the moment and a `phase.cancel` journal row; an id that resolves to a task is refused, pointing at `/audit:task cancel`. **`add`** puts one more phase into a plan that already exists — the verb nothing had: `/audit:init` writes a whole plan, `/audit:propose materialize` moves a parked one, and `/audit:task add` needs the phase to be there. Phases are minted on the development branch: on a phase branch it still writes, but the first time on that branch it warns and names **`--park`**, which writes the same phase as a parked proposal (`PROP-<n>-<suffix>`) to materialize after the branch merges. It continues the `P<n>` sequence over live **and** parked-proposal ids, initializes the whole new-phase template, appends the phase last, and in the sharded layout writes its new shard **and** the index stub pointing at it; `--outcome` is required (a phase whose success cannot be stated in a line is one sign-off cannot address) and the gate comes from `--gate`, from `--gate-clear` (the EMPTY gate, chosen deliberately) or from `meta.buildCommands`, with the report saying which. **`retarget`** corrects a phase that already exists — its gate, area, desired outcome, description or title. **The title is `--rename`, not `--title`**, because this verb's positional slot is already called `title` and carries the phase id; and a rename is refused once the phase is on a branch, because `_branch.slugify` turns the title into the branch's `{slug}` and the readers of that name part company afterwards — `close-phase.py` and `manage-worktrees.py` prefer the recorded `phase.branch` while `resolve-branch.py` composes from the title unconditionally, so a renamed phase in flight would have two names and no reader agreeing on which. `/audit:init` and `/audit:sync pull sprint` synthesize a phase and CHOOSE its `testGate`, and until this verb existed that choice was unreachable: an imported phase given `testGate: ["lint"]` on a repo where `lint` runs a Python pre-commit suite, over tasks touching only JSON and Markdown, could not pass its own sign-off, and every route out was outside the plugin. **`--gate-clear` is the load-bearing half** — `--gate` replaces, so without it there is no spelling for the EMPTY gate, which is a designed state rather than a hole (sign-off then rests on review alone). **`add` takes it too** — and did not until this was fixed: the flag sat on the shared parser, so `add-phase --gate-clear` was accepted, ignored, and the new phase inherited `meta.buildCommands` while the caller was told it had worked. It was the third verb of that exact shape. A done or cancelled phase is refused: its sign-off was given against the gate it had. **`signoff`** records the verdict a phase's `done` is derived from and stores the status it derives; a `passed` verdict needs a current recorded gate run or `--no-evidence-reason`; **`signoff P1,P2 --branch <name>`** signs off a group of phases built on one branch together — `--plan` prints the bind, the review scoped by the tasks' commits, one gate run owning every member's files, one invariants run and a `close-phase.py --branch` per phase, and the record writes every member in one write, all or nothing; **`settle`** stores every derived phase and bug value a plan carries stale — the command `validate-manifest`'s warning names. `add`, `retarget`, `priority`, `cancel`, `signoff` and `settle` are the reserved first tokens — any other first token is a phase id. **`--confirm-high-risk "<your words>"`** answers the run's high-risk gate **before** it starts, for an operator who will not be at the keyboard when a `risk: "high"` task reaches its commit: the words go into a `risk.confirmed` journal row unchanged, and the command prints the **task ids** the answer covers — this phase, `risk: "high"`, open work only, as the manifest stands at that moment. A high-risk task that is not on that printed list still stops and asks, including one that became high-risk afterwards, because an answer covering whatever appears next is the gate deleted rather than answered. A phase with no open high-risk task is refused rather than recorded as an empty row, and a journal that is off means there is no pre-given answer at all. |
-| `/audit:review` | `<phaseId>` | Re-run **just** the phase sign-off for a phase whose tasks are already `done` — the recovery path after applying manual fixes. |
+| `/audit:review` | `<phaseId> [--full]` | Re-run **just** the phase sign-off for a phase whose tasks are already `done` — the recovery path after applying manual fixes. `--full` adds the third place afterward: `run-test-gate.py --full --record`, read back as `whole`/`provisional`/`unknown`. |
 | `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
 | `/audit:report` | `[--out-dir <dir>] [--share]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). `--share` publishes it as a Claude Code Artifact — a link a reviewer can open without installing anything — and asks before anything leaves the machine. Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
@@ -1518,7 +1518,44 @@ looked at what the phase's own tasks touched, or at anything else `derive-phase-
 handed as a fact to read. `/audit:doctor`'s shadow-recall row is how an operator decides when a
 shadow phase's recall is good enough to flip that switch.
 
-## Azure DevOps (optional)
+## The third place
+
+A phase's own gate and a task's own gate both measure the SCOPE that phase or task declares — the
+files it touched. Neither ever measures the whole product, and a plan can carry `meta.fullGate`
+for exactly that third measurement: a list of `buildCommands` keys (or `meta.coupling` aliases)
+run with `--full` instead of a phase or a task, recorded with `scope: "full"` and no subject ids
+at all, because the claim is not about one phase's files.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" <manifestPath> --full --record
+```
+
+`scripts/governance/full-gate.py` is the one command a pre-push hook or a CI step reaches for
+instead of spelling that out itself:
+
+```bash
+# .husky/pre-push
+python3 "$AUDIT_PLUGIN/scripts/governance/full-gate.py" docs/audit/audit-plan.json || exit 1
+```
+
+It runs the command above as a subprocess and exits with its code — nothing here re-implements a
+full run. With no `meta.fullGate` declared it exits 0, saying so: a plan that names no third place
+must not have every push refused over a gate nobody asked for.
+
+**CI is the stronger owner.** A developer's `--no-verify` skips a pre-push hook outright, and a
+laptop that never pushes never runs it at all; a CI job runs on every push regardless, so the hook
+is a fast local signal and CI is what a release actually depends on — `docs/examples/azure-pipelines.yml`
+shows the `--full --record --writer` step, published as a build artifact.
+
+**Whole, provisional, unknown.** `/audit:status`, the report, the panel and `/audit:doctor` all
+read a merged phase's full-run coverage off the same three words. `whole` means a green,
+measured, clean, verbatim full run's `testedState.head` contains the phase's own `mergedHead` —
+ancestry, not equality, because a full run measured one commit still covers everything a later,
+purely-that-phase's-own commit added on top. `provisional` names the reason the strongest claim
+does not hold — the newest full run is stale, dirty, unmeasured or does not descend from
+`mergedHead` — and `unknown` is what git itself cannot answer, most often a shallow clone with no
+ancestry to ask: `fetchDepth: 0` in CI is what keeps that answer available at all. This
+repository's own release guard refuses a release over a `provisional` phase.
 
 > The detailed field guide — setup walkthrough, every key with an example, recipes
 > (Scrum, sprints, shared-sprint pull, identity mapping), the echo contract and
