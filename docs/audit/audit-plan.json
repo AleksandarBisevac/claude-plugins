@@ -673,7 +673,8 @@
       "P74.6-qq5",
       "P74.7-qq5",
       "P74.8-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P74.10-qq5"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1778,7 +1779,8 @@
       "P74.1",
       "P74.2-qq5",
       "P74.7-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P74.10-qq5"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1833,7 +1835,8 @@
       "P78.13-msc",
       "P74.3-qq5",
       "P74.8-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P74.10-qq5"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1876,7 +1879,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P74.10-qq5"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1931,7 +1935,8 @@
       "P53.6",
       "P72.4-ttl",
       "P73.2-9h1",
-      "P73.3-9h1"
+      "P73.3-9h1",
+      "P74.10-qq5"
     ],
     "plugins/audit/scripts/governance/audit-lock.py": [
       "P34.2",
@@ -2037,7 +2042,8 @@
       "P74.8-qq5",
       "P74.9-qq5",
       "P78.14-msc",
-      "P79.9-5bh"
+      "P79.9-5bh",
+      "P74.10-qq5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2806,7 +2812,8 @@
       "P73.7-9h1",
       "P78.13-msc",
       "P74.8-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -2871,7 +2878,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -3155,7 +3163,8 @@
       "P59.13",
       "P72.4-ttl",
       "P73.2-9h1",
-      "P73.3-9h1"
+      "P73.3-9h1",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
@@ -3286,7 +3295,8 @@
       "P74.1",
       "P74.2-qq5",
       "P74.7-qq5",
-      "P74.9-qq5"
+      "P74.9-qq5",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -3549,7 +3559,8 @@
       "P74.8-qq5",
       "P74.9-qq5",
       "P78.14-msc",
-      "P79.9-5bh"
+      "P79.9-5bh",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
