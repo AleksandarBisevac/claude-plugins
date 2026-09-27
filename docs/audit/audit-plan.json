@@ -710,7 +710,8 @@
       "P80.22-rtb",
       "P87.1",
       "P87.2",
-      "P87.3-bpl"
+      "P87.3-bpl",
+      "P87.4-bpl"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -4243,7 +4244,8 @@
     "tools/check-rendered-artifacts.py": [
       "P80.20-rtb",
       "P87.1",
-      "P87.3-bpl"
+      "P87.3-bpl",
+      "P87.4-bpl"
     ],
     "plugins/audit/scripts/governance/propose-gates.py": [
       "P80.15-rtb"
