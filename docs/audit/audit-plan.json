@@ -699,7 +699,8 @@
       "P84.3",
       "P84.4-791",
       "P84.6-791",
-      "P84.7-791"
+      "P84.7-791",
+      "P84.8-791"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1949,7 +1950,8 @@
       "P75.3-j5h",
       "P84.6-791",
       "P84.4-791",
-      "P84.7-791"
+      "P84.7-791",
+      "P84.8-791"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -2000,7 +2002,8 @@
       "P52.5",
       "P55.3",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P84.8-791"
     ],
     "plugins/audit/scripts/governance/commit-audit-state.py": [
       "P28.2",
@@ -2242,7 +2245,8 @@
       "P61.2",
       "P61.5",
       "P61.8",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P84.8-791"
     ],
     "plugins/audit/scripts/manifest/_warning_groups.py": [
       "P51.5",
@@ -2433,7 +2437,8 @@
       "P63.7",
       "P69.4-j6r",
       "P85.1",
-      "P84.7-791"
+      "P84.7-791",
+      "P84.8-791"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -2981,7 +2986,8 @@
       "P75.3-j5h",
       "P84.4-791",
       "P84.6-791",
-      "P84.7-791"
+      "P84.7-791",
+      "P84.8-791"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -3124,7 +3130,8 @@
       "P53.7",
       "P69.4-j6r",
       "P85.1",
-      "P84.7-791"
+      "P84.7-791",
+      "P84.8-791"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -3134,7 +3141,8 @@
       "P61.2",
       "P61.5",
       "P61.8",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P84.8-791"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -3268,7 +3276,8 @@
       "P55.1",
       "P59.13",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P84.8-791"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
@@ -3567,7 +3576,8 @@
     "plugins/audit/tests/test_panel_server.py": [
       "P18.7",
       "P85.1",
-      "P85.5-axa"
+      "P85.5-axa",
+      "P84.8-791"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
