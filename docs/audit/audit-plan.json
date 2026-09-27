@@ -2438,7 +2438,8 @@
       "P69.4-j6r",
       "P85.1",
       "P84.7-791",
-      "P84.8-791"
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -2987,7 +2988,8 @@
       "P84.4-791",
       "P84.6-791",
       "P84.7-791",
-      "P84.8-791"
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -3131,7 +3133,8 @@
       "P69.4-j6r",
       "P85.1",
       "P84.7-791",
-      "P84.8-791"
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -3142,7 +3145,8 @@
       "P61.5",
       "P61.8",
       "P76.4-6qa",
-      "P84.8-791"
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
