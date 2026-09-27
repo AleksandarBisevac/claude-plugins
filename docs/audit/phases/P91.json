@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P91-R1",
@@ -58,9 +58,9 @@
         "commit": "1363cb4f"
       }
     ],
-    "outcome": "[findings: 4 - 1 high, 1 med, 2 low; 4 with a recorded fix commit]"
+    "outcome": "Phase review found one high (line-keyed plan exemptions broke on the next plan write), one med (no case for either plan-domain error row) and two lows (synthetic rows' wording, a pointed directory's width); all four fixed in P91.2 and resolved; phase gate green, invariants found no breach, the live check exits 0. [findings: 4 - 1 high, 1 med, 2 low; 4 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The committed-artifact check reads the plan index and every phase shard, keyed for the plan by what a line says; P85 and P86 no longer name the machine's scratch directory, and every other plan hit is a quoted example shape baselined with its reason.",
   "tasks": [
     {
       "id": "P91.1",
@@ -182,8 +182,8 @@
   ],
   "startedAt": "2026-09-27T23:03:18Z",
   "testEvidence": {
-    "runId": "2026-09-27T23:18:24Z.839068",
+    "runId": "2026-09-27T23:44:40Z.c39985",
     "status": "passed",
-    "at": "2026-09-27T23:18:24Z"
+    "at": "2026-09-27T23:44:40Z"
   }
 }
