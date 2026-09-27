@@ -326,6 +326,47 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P87.7-bpl",
+      "title": "the call reader reads block-scalar context and counts only a word in command position as the call",
+      "status": "in_progress",
+      "description": "Phase review round 5 (review-P87e.json). Two silent misreads remain. (1) The YAML reader checks line shapes, not context: a `run: <call>` line inside another key's block scalar (a `- name: >` body, `with: script: |`) is read as a step call. Track every block scalar (any key whose value opens with | or > after optional anchor/tag/indicators) and its body by indentation; a body that is not an accepted plain `run: |` is opaque - a tool-naming line inside it is refused by line, never read. State the allow-list as over YAML context, and fix the CHANGELOG/comment. (2) Any word ending in the tool path counts as the call, so `ls <tool>`, `git diff -- <tool>`, `echo see <tool>` read as a no-flag call (ci.yml's expected answer). Count a word as the call only in command position: the command word itself, or the word right after a python interpreter word (python, python3, python3.N, an absolute path to one) with no other argument between; a mention anywhere else is not a call. Add fixtures for both, red first, in both readers (shell and YAML) where they apply.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - a run:-shaped line inside a name: > block is read as a step call"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T16:11:32Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"

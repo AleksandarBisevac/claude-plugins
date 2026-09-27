@@ -677,13 +677,24 @@ _RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then\s*$')
 _SHELL_STOPS = (";", "&&", "||", "|")
 # A redirection word ends the argv: `2>&1`, `>/dev/null`, `&>log`, `<in`.
 _REDIRECT = re.compile(r"^(\d*|&)(>>?|<)")
-# THE YAML SHAPES A CALL IS READ FROM - an allow-list, because every refusal list
-# written before it was one spelling short. A line that names this tool is read
-# only from (a) a one-line `run:` whose value is the unquoted call, or (b) the body
-# of a block opened by a plain `run: |` (`|-` and `|+` too, a trailing comment
-# allowed). Any other non-comment line naming it is refused by line.
+# THE YAML SHAPES A CALL IS READ FROM - an allow-list over YAML CONTEXT, because
+# every refusal list written before it was one spelling short. A line naming this
+# tool is read only from (a) a one-line `run:` whose value is the unquoted call,
+# outside any block scalar, or (b) the body of a block opened by a plain `run: |`
+# (`|-` and `|+` too, a trailing comment allowed). Every block scalar is tracked by
+# its indentation - any key, or a bare list item, whose value opens with `|` or `>`
+# after optional anchors and tags - and the body of one that is not (b) is OPAQUE:
+# a line inside it naming the tool is refused by line and never read, whatever it
+# looks like. Any other non-comment line naming the tool is refused by line too.
 _ONE_LINE_RUN = re.compile(r"^(\s*(?:-\s+)?)run:[ \t]+(?P<value>[^\s'\"|>&!*%@`{\[#].*)$")
 _LITERAL_RUN = re.compile(r"^(\s*(?:-\s+)?)run:[ \t]+\|[-+]?[ \t]*(?:#.*)?$")
+_BLOCK_OPEN = re.compile(
+    r"^(\s*(?:-\s+)?)(?:(?:\"[^\"]*\"|'[^']*'|[^\s#'\"][^:#]*?)[ \t]*:[ \t]+)?"
+    r"(?:[&!]\S*[ \t]+)*[|>][-+0-9]*[ \t]*(?:#.*)?$")
+# The command word, or the word right after a python interpreter: the only two
+# places a word naming this tool runs it. `ls`, `git diff --` or `echo` beside it
+# mention the tool without calling it.
+_INTERPRETER = re.compile(r"^(?:/\S*/)?python(?:3(?:\.\d+)?)?$")
 _YAML_SHAPES = ("a one-line `run: <call>` with the call unquoted, or a line in the "
                 "body of a plain `run: |` block")
 
@@ -696,12 +707,29 @@ def _is_comment(line):
     return line.strip().startswith("#")
 
 
+def _names_tool(word):
+    return word == _THIS_TOOL or word.endswith("/" + _THIS_TOOL)
+
+
+def _is_call_word(words, i):
+    """Whether `words[i]` names this tool in command position: the command word
+    (after any `NAME=value` assignments) or the word right after a python
+    interpreter, with nothing between them."""
+    if not _names_tool(words[i]):
+        return False
+    lead = 0
+    while lead < len(words) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[lead]):
+        lead += 1
+    return i == lead or (i > 0 and _INTERPRETER.match(words[i - 1]) is not None)
+
+
 def _shell_invocations(text):
     """[argv or problem] for every call of this tool in SHELL text.
 
     A backslash continuation is joined first, because the runner writes its step
-    as `run "label" \\` above the call. A comment is not a call. The argv ends at
-    a shell separator or a redirection word. A line the lexer rejects comes back
+    as `run "label" \\` above the call. A comment is not a call, and neither is a
+    word naming the tool outside command position (`_is_call_word`). The argv ends
+    at a shell separator or a redirection word. A line the lexer rejects comes back
     as a problem string, never skipped.
     """
     out = []
@@ -715,7 +743,7 @@ def _shell_invocations(text):
             out.append("a line calling %s does not lex as shell (%s): %s"
                        % (_THIS_TOOL, exc, stripped))
             continue
-        at = [i for i, w in enumerate(words) if w.endswith(_THIS_TOOL)]
+        at = [i for i, w in enumerate(words) if _is_call_word(words, i)]
         if not at:
             continue
         args = []
@@ -727,8 +755,8 @@ def _shell_invocations(text):
     return out
 
 
-def _literal_body(lines, key, col):
-    """The index past the last body line of a `run: |` block opened at `key`.
+def _block_end(lines, key, col):
+    """The index past the last body line of a block scalar opened at `key`.
 
     The body runs while a line is blank or indented past the key's column."""
     end = key + 1
@@ -753,10 +781,14 @@ def _yaml_invocations(text):
     out, i = [], 0
     while i < len(lines):
         line = lines[i]
-        literal = _LITERAL_RUN.match(line)
-        if literal:
-            end = _literal_body(lines, i, len(literal.group(1)))
-            out.extend(_shell_invocations("\n".join(lines[i + 1:end])))
+        opened = _BLOCK_OPEN.match(line)
+        if opened:
+            end = _block_end(lines, i, len(opened.group(1)))
+            if _LITERAL_RUN.match(line):
+                out.extend(_shell_invocations("\n".join(lines[i + 1:end])))
+            else:
+                out.extend(_yaml_refusal(k) for k in range(i, end)
+                           if _THIS_TOOL in lines[k])
             i = end
             continue
         if not line.strip() or _is_comment(line) or _THIS_TOOL not in line:
@@ -766,11 +798,17 @@ def _yaml_invocations(text):
         if one and not _continues(lines, i, len(one.group(1))):
             out.extend(_shell_invocations(one.group("value")))
         else:
-            out.append("line %d names %s outside the shapes this reader accepts in "
-                       "YAML - %s; anything else is refused rather than guessed at"
-                       % (i + 1, _THIS_TOOL, _YAML_SHAPES))
+            out.append(_yaml_refusal(i))
         i += 1
     return out
+
+
+def _yaml_refusal(index):
+    """The refusal for a YAML line (0-based `index`) naming the tool outside the
+    two accepted shapes."""
+    return ("line %d names %s outside the shapes this reader accepts in YAML - %s; "
+            "anything else is refused rather than guessed at"
+            % (index + 1, _THIS_TOOL, _YAML_SHAPES))
 
 
 def invocations(text, yaml=False):
@@ -1398,6 +1436,45 @@ def _arm_cases(check):
           "the tool is refused by line, naming the two accepted shapes - wrongly "
           "read %r, wrongly refused %r: %r" % (_misread, _unread, _got),
           _misread == [] and _unread == [])
+    # A `run:` line is only a step's call where YAML would make it one: inside
+    # ANOTHER key's block scalar it is text, and a line there naming the tool is
+    # refused by line, never read. And a word naming the tool is the call only in
+    # command position - the command itself, or right after a python interpreter.
+    _in_name = ("      - name: >\n"
+                "          run: %s\n" % (_call,))
+    _in_script = ("      - uses: actions/github-script@v7\n"
+                  "        with:\n"
+                  "          script: |\n"
+                  "            run: %s\n" % (_call,))
+    _mentions = ("ls %s\n"
+                 "git diff -- %s\n"
+                 "echo see %s\n" % ((_THIS_TOOL,) * 3))
+    _yaml_mention = "      - run: ls %s\n" % (_THIS_TOOL,)
+    _calls = ("%s --before-commit\n"
+              "python3 %s --against-commit\n"
+              "/usr/bin/python3.12 %s\n"
+              "CLAUDE_PROJECT_DIR=x python %s --before-commit 2>&1\n"
+              % ((_THIS_TOOL,) * 4))
+    _got_f = {"name": _read_yaml(_in_name), "script": _read_yaml(_in_script),
+              "shell mentions": invocations(_mentions),
+              "yaml mention": _read_yaml(_yaml_mention),
+              "calls": invocations(_calls)}
+
+    def _refused_line(got, n):
+        return (len(got) == 1 and isinstance(got[0], str)
+                and ("line %d " % (n,)) in got[0] and "run: |" in got[0])
+
+    check("ra29f a `run:` line inside another key's block scalar is refused by "
+          "line, not read as a step; a word naming the tool anywhere but command "
+          "position (`ls`, `git diff --`, `echo`) is no call in either reader; "
+          "the command word itself or the word right after a python interpreter "
+          "is: %r" % (_got_f,),
+          _refused_line(_got_f["name"], 2)
+          and _refused_line(_got_f["script"], 4)
+          and _got_f["shell mentions"] == []
+          and _got_f["yaml mention"] == []
+          and _got_f["calls"] == [["--before-commit"], ["--against-commit"], [],
+                                  ["--before-commit"]])
 
 
 # --- no case asks git about this checkout, measured while the cases run --------
