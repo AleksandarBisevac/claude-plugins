@@ -3872,7 +3872,9 @@ refused before anything is built, because it would run the shared files and grad
 `run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
 ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
-reads the throwaway and both runs, each getting what the earlier ones left. What follows the
+reads the throwaway and every run - the task's, the second (`--introduces`), HEAD's own and the fix
+run - each getting what the earlier ones left; at most one run
+can time out, because each later run is made only when the one before it finished. What follows the
 deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's two git
 calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
 host's limit less that margin, so the helper's own deadline and cleanup finish before the host
@@ -3894,12 +3896,111 @@ own cwd writes shared refs.
 
 **`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
 reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's
-`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion:
+`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion,
+reading only the lines of the runner whose tally the verdict came from (a passing house case may
+print `ERROR: <path>` as the message it asserts on, or echo a whole unittest transcript). When the
+output carries the tallies of more than one runner, the command decides if it names one (`pytest`,
+`-m unittest`, a house `--selftest`); otherwise the verdict is `mixed-tally`, which prints
+`could-not-prove` and names every tally it saw:
 a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
 `assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
-assertions. `proved` needs one of those failures to be the TASK'S OWN - a case id present in the
-working tree's copy of a declared test file and absent from HEAD's. `--case` narrows to the ids it
-names and is held to the same test, because the flag is chosen by the party being checked; the
+assertions. `proved` needs one of those failures to be the TASK'S OWN, and that is decided by a
+GREEN BASELINE, not by reading output (`baseline_problem()`, `fix_problem()`, `own_failures()`):
+
+Every run - HEAD's baseline, the task's run, the `--introduces` second run and the fix run - is made
+in the throwaway reset to HEAD (a forced checkout and a clean of untracked and ignored files), with
+an isolated environment of its own (`_isolated_env()`): a new empty home under every name a home
+lookup reads (`HOME_VARS`, the table `tools/sweep-selftests.py` isolates its children with), a new
+TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files laid over the tree.
+
+1. HEAD's baseline runs FIRST, before any file of the task's is laid over or run: HEAD's own test
+   files, the same command, HEAD's implementation, with every declared test file new at HEAD laid
+   over as an EMPTY file. It is always made, and the stubs are why no reader of the command's
+   arguments is needed: whatever the command reaches - a dotted module name, a shell wrapper, a
+   discovery, a file the working tree deleted - the baseline reaches too, minus the new files'
+   content. That is more than the task's cases: whatever a new file imports, inherits or loads is
+   not reached either, which is why step 4 binds a credit to the task's edit and not to a file. It
+   must be GREEN - exit 0 with no failure counted, or an exit 5 whose ONE runner's tally counts no
+   case run and no failure (a command naming only new files gives it, and pytest gives it when `-k`
+   deselects every case); the words "no tests ran" are never read alone, since a red run followed by
+   an empty one prints them too, and the unittest and pytest tallies count every `Ran N` line and
+   every summary line - so the fix run of step 3 is judged by all its invocations as well, not by
+   its last. Anything else -
+   already red, stopped, unreadable - is `could-not-prove` with the instruction to narrow the
+   command to the task's cases;
+2. the task's run - its test files on HEAD's implementation - is red on an assertion;
+3. the fix run - the task's test files on the working tree's implementation - must be green, with no
+   fewer cases than the task's run, so every failure turns green;
+4. then a failure of step 2 is the task's own - a new case or an edited one - only where the runner
+   locates it in ONE declared test file (`case_site()`: a pytest node id's path or unittest `-v`'s
+   module, matched by trailing components because both print them relative to their own top
+   directory, refused when two declared files match or when an undeclared file in HEAD's tree or
+   the throwaway equals or ends with the same path - for a unittest module even on an EXACT match,
+   since unittest resolves a module through `sys.path` and `test_old` names whichever `test_old.py`
+   came first, while a pytest node id is a real path; the longest module prefix naming a declared
+   file, so a nested class keeps its chain; or the one declared script a `__main__` or house run
+   executes, spelled `./`, absolute or `-m`), the class the runner names there holds its `def`
+   (`_definition()`, read by ast as each name's LAST top-level binding in its body, `_binds()`
+   reading only what really binds a name: a Name target through tuples, lists and starred - never
+   under an attribute or a subscript, so `New.maxDiff = None` rebinds nothing - an annotated
+   assignment with a value, an augmented one, `del`, a `for` target, `with ... as`, a match
+   capture, an import (a `*` import counts as binding anything), a def, a class, and a walrus
+   anywhere in the statement outside a lambda; any of those after the def means the def is not
+   what runs, and so does a later statement at any level of the chain that `_replaces()` the case
+   on its class - an assignment of any kind to the exact attribute path `<chain>.<case>`
+   (`New.test_x = f` at module level, `Inner.test_x = f` in `Outer`'s body) or a
+   `setattr(<chain>, '<case>', ...)` naming it literally - while any other attribute of the class
+   is untouched; a def in a string, in another class or merely inherited is not it), and no test file
+   anywhere in HEAD's tree (`head_tree()`: `git ls-tree -r` filtered by `_is_test_path()`, read
+   by one `git cat-file --batch` under the deadline) holds an ast-identical def under the same
+   class chain and name (`credit_problem()`). That is keyed by the definition, not by the path, so
+   a case HEAD has is refused wherever it lands - imported, inherited or loaded by a new file,
+   carried by a `git mv`, or copied verbatim. A house run carries no definitions, so its one
+   script is compared whole instead (`module_key()`): a script whose module ast is identical to
+   one of HEAD's test files is HEAD's suite, moved or copied, and is refused. A HEAD case is
+   therefore not credited unless the task edited its definition - or, under a house run, the
+   script; if HEAD's tree cannot be read no case is credited; a runner that
+   locates no failure is `could-not-prove`, with each case's reason; and `--case` must name a
+   credited one. That rests on two
+   conditions, and holds only while both do: the runs differ only in the files laid over, which the
+   reset and the isolated environment provide; and HEAD's cases give the same answer on the same
+   files, which the rule cannot check.
+
+`--introduces` requires the same baseline. **What this cannot see**, each a named limit: state
+outside the throwaway that a run reaches by an absolute path or through the git directory the
+throwaway shares with the repository (config, refs) - HEAD's baseline runs first, so nothing of the
+task's can reach it, but the task's run and the fix run could still read what an earlier run wrote
+there; network or service state that changes between runs; a flaky or time-dependent HEAD case,
+which can fail in the task's run and pass in the baseline and the fix run; and a house suite - its
+`FAIL` lines carry no location, so a run of exactly one declared file is credited with every case
+that file's run prints, including one it imported from HEAD's tests and ran itself; under pytest
+or unittest, a new file that defines a case of the same name as the HEAD case it inherits and calls
+the inherited one from it; any edit to a HEAD case's definition, a docstring included, which makes it
+the task's case, so an edit that changes nothing the case asserts still lets a new file that reaches
+it be credited with HEAD's red; and the other direction - an unchanged HEAD case the task turns red
+through something else in its file (a helper, `setUp`, a constant) is not credited, and needs its
+definition touched or a case of its own. A copy of a HEAD case under a renamed class or case name is
+a new definition and is credited; a HEAD case in a file `_is_test_path()` does not call a test file
+is not in the set a copy is compared against; a rebinding inside the block of an `if`, `try`,
+loop, `with` or `match` is not read (only what the statement's header binds is); a decorator that
+returns a different function than the one it decorates is not read, so a decorated def is taken to
+be what runs; a `setattr` whose name is computed rather than a literal, or whose object is reached
+some other way than the chain's own dotted names, is not read either; a house suite moved or copied with any edit is compared as a new file and is credited
+with every case it prints, HEAD's among them; and a unittest module name, exact or trailing, also
+refuses a legitimate case when an unrelated file elsewhere in the tree ends with the same path -
+run the file by its path, or under pytest, to prove it.
+
+Seven review rounds each found another way to credit a case past a RED baseline by reading two runs'
+output - a relabelled case, a label carrying a per-run value, a quiet stop, a failfast set in the
+file, a file the task's run rewrote - so the rule stopped crediting against a red baseline at all
+rather than adding an eighth reader. What that costs is stated plainly: a command already red at HEAD
+must be narrowed to the task's cases before it can prove anything, and a case whose red the fix does
+not turn green is not proved. HEAD's file list is read NUL-separated (`ls-tree -z`), so a declared
+test file whose path git would quote is found like any other, and every run is made with
+`PYTHONDONTWRITEBYTECODE=1`, so a swapped file of the same size written in the same second cannot be
+shadowed by a stale cached bytecode file. The baseline is paid on every run it is owed, the fix run
+only when the task's run is red, and the payload records each one's exit and seconds. `--case` narrows to the ids or labels it names and must
+name a case that failed an assertion, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task

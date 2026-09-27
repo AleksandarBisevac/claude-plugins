@@ -554,6 +554,65 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`stamp-verification.py red` refused a task's own case when its label was a sentence, and
+  invented cases out of lines a passing suite printed.** A house `FAIL` line was keyed by its first
+  word, so a new case labelled `the ...` shared its "id" with every sentence-labelled case HEAD's
+  test file already held, was refused as not the task's own, and the red read `could-not-prove`
+  while the run held exactly that one failing case. A house case is now named by its full label,
+  with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
+  hands out) as its id only when present. A red is now credited only against a GREEN baseline:
+  HEAD's own test files run FIRST with the same command on HEAD's implementation, before any file of
+  the task's is laid over or run, and must be green - exit 0 with no failure counted, or an exit 5
+  whose one runner's tally counts no case run and no failure (the unittest and pytest tallies count
+  every `Ran N` and every summary line, so a red run followed by an empty one is not green, and a
+  fix run whose first invocation fails is not passing). It is always made: every declared test file new at HEAD is laid over as an
+  EMPTY file, so the same command reaches what the task's run reaches however it is spelled - a
+  dotted module name, a shell wrapper, a file the working tree deleted - rather than a reader of the
+  command's arguments deciding whether it was owed. Then the task's run (its test files on HEAD's
+  implementation) must be red on an assertion, and a fix run (the task's test files on the working
+  tree's implementation) green with no fewer cases. A failure is the task's own - a new case or an
+  edited one - only where the runner locates it in one declared test file (a pytest node id's path or
+  unittest `-v`'s module, matched by trailing components so `discover -s tests` is read, or the one
+  declared script a run executes; a unittest module, exact or trailing, that an undeclared file in
+  HEAD's tree also ends with is refused, since unittest resolves it through `sys.path`), the class
+  the runner names there defines it (read by ast as the name's last real binding - an assignment
+  to the name, a walrus, `with ... as`, a `for` target, a match capture or an import after the def
+  means it is not what runs, as does a later assignment to `<chain>.<case>` or a
+  `setattr(<chain>, '<case>', ...)` with that literal name, while `New.maxDiff = None` binds nothing;
+  a `setattr` whose name is computed is not read), and no test file anywhere in
+  HEAD's tree holds an ast-identical def under the same class chain and name; a house run's one
+  script is compared whole, and one identical to a HEAD test file is refused. The stubs remove the
+  new files' content and so everything it reaches; a HEAD case a new file imports, inherits or
+  loads, a moved file carries or a copy repeats is therefore not credited unless the task edited
+  it, and a runner that locates none is
+  `could-not-prove` with each case's reason; `--case` must name a credited one. No run, and neither git call of the reset before one, starts with
+  less than a second of the deadline left. Every run, including `--introduces`'s
+  second run, is made in the throwaway reset to HEAD (a forced checkout and a clean of untracked and
+  ignored files) with an isolated environment of its own: a new home under every name a home lookup
+  reads (the table `tools/sweep-selftests.py` isolates its children with), a new TMPDIR, and
+  `PYTHONNOUSERSITE=1`, so the runs differ only in the files laid over. `--introduces` requires the
+  same baseline. A command red or unreadable at HEAD is `could-not-prove` with the instruction to
+  narrow it to the task's cases. The guide names what this cannot see: state reached by an absolute
+  path or through the shared git directory, network or service state between runs, and a flaky or
+  time-dependent HEAD case.
+  Seven review rounds each found another way to credit a case past a red baseline by reading two
+  runs' output - a relabelled case, a quiet stop, a failfast set in the file, a file the task's run
+  rewrote - and the rule removes the reading rather than adding another reader: the label matching,
+  the pairing and the stop-first readers are gone. HEAD's file list is read NUL-separated, so a
+  declared test file whose path git would quote (not plain ASCII) is found at HEAD; every git call
+  before the throwaway's removal runs under the one deadline; and every run is made with
+  `PYTHONDONTWRITEBYTECODE=1` so a swapped file cannot be shadowed by stale cached bytecode.
+  `--json` records the baseline and the fix run under `run.head` and `run.fix`. The FAIL line's
+  detail is set aside at every ` (`, so a detail spanning lines no longer hides the label.
+  `--case` takes the id or the full label (the usage line, the flag's help and the executor brief
+  say so).
+  Cases are now read only from the runner whose tally the verdict was read from; when tallies of
+  more than one runner appear, the test command decides if it names one (`pytest`, `-m unittest`,
+  a house `--selftest`), and otherwise the red is `could-not-prove` naming every tally. So an
+  `ERROR: <path> is not a directory` a passing house case printed on purpose - or a whole unittest
+  transcript it echoed - is no longer a unittest case, and a line opening with `FAIL ` inside a
+  unittest or pytest run is no longer a house one. A real unittest `ERROR:` is still named and
+  still not credited as an assertion.
 - **A `phase.merged` trail row names the parent the phase reached.** `close-phase.py` handed
   the parent over in the row's details, and the journal kept only the keys on its allow-list and
   dropped the rest without a word, so the row read `{phaseId, branch}`. `parent` is now on the
