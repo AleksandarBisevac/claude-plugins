@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT] | settle'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] [--accept SHA --reason TEXT] | settle'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -57,6 +57,17 @@ the landing to a human, which the preview must say rather than let the reader as
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phaseId> \
     --project <projectDir> --dry-run
 ```
+
+**The landing is stamped in the tree the merge lands in** - the parent branch's checkout - whatever
+manifest path is passed, whether the merge is made now or the branch already landed (a re-run, or a
+merge made by hand): `mergedAt`, the derived status and the index stub go to that tree's copy,
+never to the one inside the phase's own worktree, which is removed moments later. A follow-up the
+preview prints (run from the main tree when this one stands inside the worktree) names that
+surviving manifest. When the parent branch is checked out in no worktree and the manifest given is
+the phase worktree's own copy, the landing has no surviving copy to stamp: close-phase refuses
+before merging (exit 2), naming the branch - check it out in a worktree, or run close-phase from
+its checkout - so the ref never moves without the record of the landing. With `meta.merge.auto`
+false nothing is written, so that run is not refused: it exits 0 and hands over the merge command.
 
 **If `--confirm-high-risk "<your words>"` is present:** the human is answering the high-risk gate
 **before** the run instead of during it. Run this FIRST, before the preflight, and print its output
@@ -449,6 +460,50 @@ operator's and the reviewer's words: pass them verbatim, or `-` to read them off
 
 `--verdict` is the reviewer's call and has no default. `skipped` is honest where no review ran -
 say so in `--summary` - and is never a way to sign off work nobody looked at as if it had passed.
+
+**`passed` needs the gate run it rests on.** The verb refuses `--verdict passed` unless the
+phase's newest recorded gate run binds its work — the rule a task commit is bound by, which grades
+a repeated verdict against the run it repeats and leaves the recorder's own writes out — and
+prints the gate call that supplies one. A phase whose gate declares no entry is bound to no run.
+Where no gate run can back the verdict, pass `--no-evidence-reason "<why>"`: it is the operator's
+words, recorded verbatim on `review.noEvidenceReason` and shown where the evidence badge's basis
+goes. It is not a run, so `--fail-on no-test-evidence` still names such a phase. `skipped` needs
+neither.
+
+### A group of phases built on one branch — `signoff <P1,P2,...> --branch NAME`
+
+Phases whose work was built on **one combined branch** record no branch and no `baseRef` of their
+own, so the single-phase sign-off has no diff to review and `close-phase.py` has no name to land.
+The same verb signs them off together; it is a flag here rather than a verb of its own because it
+writes the single sign-off's record — plus each member's `branch` and `baseRef`, and the carrier's
+evidence pointer on the other members — under the single sign-off's refusals plus the group's.
+Preview first — it writes nothing:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
+        --branch <combined-branch> --plan
+```
+
+It prints the whole sign-off with the command each step runs, and
+`reference/phase-signoff.md` → *Signing off a group* is the procedure: **`--bind`** records each
+member's branch and fork point first, so the invariants run grades them; the **review is scoped by
+the tasks' `commit`s**, which must be every commit the branch carries past its fork (or a member's
+journaled audit-state or index commit); **one gate run** over the union of the members'
+`testGate`, carried by the member whose gate holds all of it and owning every member's files
+(the gate's `--also`); **one invariants run**; the record, which needs that run to be
+current for `passed`; the commit — sharded, one `commit-audit-state.py` per member and then the
+index; single-file, one; and **one
+`close-phase.py --branch` per phase** — every one but the last keeps the branch and its worktree,
+because the first landing merges the whole branch. It refuses — naming every reason — a member with
+open work or already signed off, a member recording another branch, members that resolve to
+different parents, a `--branch` that is that parent, a finished task with no `commit`, a commit
+the branch does not carry (naming `repair-commits.py` for a rebase), a commit it carries that no
+member records - a merge counts only when its tree is the automatic merge of its parents,
+recomputed with `git merge-tree` (git 2.38+; a merge it cannot recompute is refused as not
+asked, never as an edit) - and `--accept <sha> --reason "<why>"`, which takes a hex SHA naming
+exactly one commit on the branch, takes one into the review, recorded on every member and shown
+beside the sign-off — and a union no member's gate holds (`/audit:phase
+retarget` gives one member the missing entries).
 
 ## Subcommand: `settle`
 

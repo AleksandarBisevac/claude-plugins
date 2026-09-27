@@ -434,6 +434,11 @@ LAYERS = (
     # nothing at L3 and nothing at L3 reaches it; its only consumer is
     # `render-report` at L7, which reads the disk and hands the answer down.
     ("usage_ledger", "_panel_settings", "_manifest_rules", "_evidence_view",
+     # `_verdict_binding` is the one rule for whether a recorded gate verdict
+     # binds the declared work now. It reads `_evidence_io` (the ledger) and
+     # `_tree_stamp` (the digest), peers at L2, so L3 is the first layer that
+     # holds both; `commit-task-work` and `audit-task` at L7 call it.
+     "_verdict_binding",
      # `_gate_derive` is the gate helpers' one home (`is_shared_key`,
      # `path_scoped_sibling`, `repointed` -- moved out of `audit-task.py`) plus
      # the phase-level `derive()`. It reaches `_manifest_phases` and

@@ -1106,6 +1106,18 @@ def _signoff_cases(check):
           % ({k: due.get(k) for k in ("status", "signoffDue", "signoffVerdict")},),
           due["status"] == "in_progress" and due["signoffDue"] is True
           and due["signoffVerdict"] is None)
+    reasoned = row(review={"status": "passed", "noEvidenceReason": "by hand"})
+    check("pc-sd0 a phase signed off with a recorded reason and no gate run carries "
+          "the reason, so the badge can say it: %r" % (reasoned.get("noEvidenceReason"),),
+          reasoned.get("noEvidenceReason") == "by hand"
+          and row().get("noEvidenceReason") is None)
+    accepted = row(review={"status": "passed", "acceptedCommits": [
+        {"commit": "abcdef0123456789", "reason": "plan"}]})
+    check("pc-sd0b a group member's accepted commits ride its row, so the sign-off "
+          "note can show them: %r" % (accepted.get("acceptedCommits"),),
+          accepted.get("acceptedCommits") == [{"commit": "abcdef0123456789",
+                                               "reason": "plan"}]
+          and row().get("acceptedCommits") == [])
     signed = row(review={"status": "passed"})
     check("pc-sd2 signed off with no branch, the row reads DONE, so the view files it "
           "with the closed phases and freezes its controls: %r" % (signed["status"],),

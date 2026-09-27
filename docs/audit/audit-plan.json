@@ -479,7 +479,7 @@
     {
       "id": "P74",
       "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P74.json"
     },
     {
@@ -677,7 +677,17 @@
       "P79.11-5bh",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P74.2-qq5",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
+      "P74.7-qq5",
+      "P74.8-qq5",
+      "P74.9-qq5",
+      "P74.10-qq5",
+      "P74.11-qq5"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -708,6 +718,10 @@
       "P81.8",
       "P72.4-ttl",
       "P72.5-ttl",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P79.11-5bh"
     ],
     "CONTRIBUTING.md": [
@@ -780,6 +794,8 @@
       "P79.3",
       "P80.5",
       "P80.10",
+      "P74.2-qq5",
+      "P74.3-qq5",
       "P75.1",
       "P75.2-j5h",
       "P75.3-j5h",
@@ -895,7 +911,11 @@
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
-      "P63.12"
+      "P63.12",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1011,7 +1031,10 @@
       "P76.2",
       "P73.2-9h1",
       "P73.3-9h1",
-      "P79.10-5bh"
+      "P79.10-5bh",
+      "P74.1",
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1155,8 +1178,15 @@
       "P63.12",
       "P69.3",
       "P70.3-fos",
+      "P78.4",
       "P74.1",
-      "P78.4"
+      "P74.2-qq5",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
+      "P74.7-qq5",
+      "P74.9-qq5"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -1557,12 +1587,17 @@
       "P63.11",
       "P69.3",
       "P70.3-fos",
-      "P74.1",
       "P78.11",
       "P79.7",
       "P80.12",
+      "P74.1",
+      "P74.2-qq5",
+      "P74.3-qq5",
       "P75.1",
       "P75.2-j5h",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P78.15-msc",
       "P79.11-5bh"
     ],
@@ -1600,6 +1635,10 @@
       "P79.1",
       "P80.1",
       "P81.1",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P79.12-5bh"
     ],
     "plugins/audit/scripts/_deps.py": [
@@ -1645,6 +1684,7 @@
       "P72.5-ttl",
       "P77.2",
       "P77.3-6u9",
+      "P74.3-qq5",
       "P86.4"
     ],
     "plugins/audit/scripts/_fmt.py": [
@@ -1723,7 +1763,8 @@
       "P80.1",
       "P80.7",
       "P81.1",
-      "P76.1"
+      "P76.1",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1737,7 +1778,8 @@
       "P23.3",
       "P63.7",
       "P64.1",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -1754,8 +1796,12 @@
       "P65.2-iy2",
       "P69.3",
       "P69.4-j6r",
+      "P80.2",
       "P74.1",
-      "P80.2"
+      "P74.2-qq5",
+      "P74.7-qq5",
+      "P74.9-qq5",
+      "P74.10-qq5"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -1765,7 +1811,8 @@
       "P63.7",
       "P64.1",
       "P69.1",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P74.2-qq5"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -1807,6 +1854,11 @@
       "P73.6-9h1",
       "P73.7-9h1",
       "P78.13-msc",
+      "P74.3-qq5",
+      "P74.8-qq5",
+      "P74.9-qq5",
+      "P74.10-qq5",
+      "P74.11-qq5",
       "P80.13"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
@@ -1851,6 +1903,7 @@
       "P73.5-9h1",
       "P73.6-9h1",
       "P73.7-9h1",
+      "P74.10-qq5",
       "P86.1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
@@ -1890,7 +1943,8 @@
       "P55.5",
       "P56.5",
       "P71.2-zso",
-      "P71.4-zso"
+      "P71.4-zso",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -1905,7 +1959,8 @@
       "P53.6",
       "P72.4-ttl",
       "P73.2-9h1",
-      "P73.3-9h1"
+      "P73.3-9h1",
+      "P74.10-qq5"
     ],
     "plugins/audit/scripts/governance/audit-lock.py": [
       "P34.2",
@@ -1960,7 +2015,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P74.3-qq5"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6"
@@ -2001,9 +2057,17 @@
       "P80.4",
       "P81.3",
       "P81.4",
+      "P74.2-qq5",
+      "P74.3-qq5",
       "P77.3-6u9",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
+      "P74.8-qq5",
+      "P74.9-qq5",
       "P78.14-msc",
       "P79.9-5bh",
+      "P74.10-qq5",
       "P86.1"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
@@ -2155,20 +2219,22 @@
       "P29.3",
       "P31.1",
       "P31.4",
-      "P31.7",
       "P31.6",
+      "P31.7",
       "P32.1",
+      "P32.2",
       "P32.3",
       "P32.4",
-      "P32.2",
       "P39.1",
-      "P43.2",
       "P42.6",
+      "P43.2",
       "P45.1",
-      "P46.2",
       "P46.1",
+      "P46.2",
       "P48.2",
+      "P49.4",
       "P50.1",
+      "P50.5",
       "P51.5",
       "P51.6",
       "P51.7",
@@ -2178,8 +2244,6 @@
       "P54.4",
       "P54.5",
       "P54.6",
-      "P49.4",
-      "P50.5",
       "P55.19",
       "P55.20",
       "P55.21",
@@ -2198,8 +2262,14 @@
       "P68.1",
       "P69.3",
       "P69.4-j6r",
+      "P72.3-ttl",
       "P74.1",
+      "P74.2-qq5",
+      "P74.3-qq5",
+      "P76.1",
       "P76.2",
+      "P76.3-6qa",
+      "P76.4-6qa",
       "P78.1",
       "P78.3",
       "P78.4",
@@ -2208,10 +2278,9 @@
       "P79.4",
       "P81.2",
       "P81.5",
-      "P76.1",
-      "P72.3-ttl",
-      "P76.3-6qa",
-      "P76.4-6qa",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P79.10-5bh"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
@@ -2271,7 +2340,11 @@
       "P63.9",
       "P69.3",
       "P71.2-zso",
-      "P80.8"
+      "P80.8",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2",
@@ -2344,7 +2417,11 @@
       "P32.7",
       "P71.4-zso",
       "P80.7",
+      "P74.3-qq5",
       "P76.4-6qa",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P80.13"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
@@ -2358,6 +2435,10 @@
       "P63.6",
       "P71.2-zso",
       "P80.7",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P86.1"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
@@ -2432,6 +2513,7 @@
       "P63.8",
       "P63.10",
       "P77.2",
+      "P74.3-qq5",
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
@@ -2468,6 +2550,8 @@
       "P63.8",
       "P70.3-fos",
       "P80.6",
+      "P74.2-qq5",
+      "P74.3-qq5",
       "P76.1"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
@@ -2543,12 +2627,18 @@
     ],
     "plugins/audit/scripts/ui/panel/composition.js": [
       "P63.9",
-      "P63.12"
+      "P63.12",
+      "P74.3-qq5",
+      "P74.4-qq5"
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
       "P32.7",
-      "P80.8"
+      "P80.8",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7"
@@ -2709,6 +2799,7 @@
       "P63.8",
       "P63.10",
       "P77.2",
+      "P74.3-qq5",
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
@@ -2752,6 +2843,7 @@
       "P80.4",
       "P81.3",
       "P81.4",
+      "P74.3-qq5",
       "P76.3-6qa",
       "P76.4-6qa",
       "P73.2-9h1",
@@ -2761,12 +2853,20 @@
       "P73.6-9h1",
       "P73.7-9h1",
       "P78.13-msc",
+      "P74.8-qq5",
+      "P74.9-qq5",
+      "P74.10-qq5",
+      "P74.11-qq5",
       "P80.13"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
       "P71.4-zso",
       "P80.7",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P80.13"
     ],
     "plugins/audit/tests/test__gate_feed.py": [
@@ -2823,7 +2923,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -2934,6 +3035,7 @@
       "P75.5-j5h",
       "P77.2",
       "P77.3-6u9",
+      "P74.3-qq5",
       "P79.2",
       "P79.3"
     ],
@@ -2942,7 +3044,11 @@
       "P32.7",
       "P63.9",
       "P71.2-zso",
-      "P80.8"
+      "P80.8",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5"
     ],
     "plugins/audit/tests/test__panel_page.py": [
       "P18.7",
@@ -3050,7 +3156,9 @@
       "P63.5",
       "P63.8",
       "P70.3-fos",
-      "P80.6"
+      "P80.6",
+      "P74.2-qq5",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -3059,7 +3167,8 @@
       "P43.4",
       "P46.3",
       "P71.2-zso",
-      "P71.4-zso"
+      "P71.4-zso",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test__ui_theme.py": [
       "P20.5",
@@ -3080,7 +3189,8 @@
       "P21.1",
       "P23.3",
       "P63.7",
-      "P74.1"
+      "P74.1",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
@@ -3102,7 +3212,8 @@
       "P59.13",
       "P72.4-ttl",
       "P73.2-9h1",
-      "P73.3-9h1"
+      "P73.3-9h1",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
@@ -3145,23 +3256,23 @@
       "P31.4",
       "P31.7",
       "P32.1",
+      "P32.2",
       "P32.3",
       "P32.4",
       "P33.1",
-      "P32.2",
       "P39.1",
-      "P43.2",
       "P42.6",
+      "P43.2",
       "P45.1",
-      "P46.2",
       "P46.1",
+      "P46.2",
       "P48.2",
+      "P49.4",
       "P50.1",
       "P51.5",
       "P51.6",
       "P51.7",
       "P54.6",
-      "P49.4",
       "P55.19",
       "P55.20",
       "P55.21",
@@ -3180,8 +3291,14 @@
       "P68.1",
       "P69.3",
       "P69.4-j6r",
+      "P72.3-ttl",
       "P74.1",
+      "P74.2-qq5",
+      "P74.3-qq5",
+      "P76.1",
       "P76.2",
+      "P76.3-6qa",
+      "P76.4-6qa",
       "P78.1",
       "P78.3",
       "P78.4",
@@ -3190,10 +3307,9 @@
       "P79.4",
       "P81.2",
       "P81.5",
-      "P76.1",
-      "P72.3-ttl",
-      "P76.3-6qa",
-      "P76.4-6qa",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
       "P78.14-msc",
       "P79.10-5bh"
     ],
@@ -3225,8 +3341,12 @@
       "P65.2-iy2",
       "P69.3",
       "P69.4-j6r",
+      "P80.2",
       "P74.1",
-      "P80.2"
+      "P74.2-qq5",
+      "P74.7-qq5",
+      "P74.9-qq5",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -3261,7 +3381,8 @@
       "P71.3-zso",
       "P71.4-zso",
       "P73.1",
-      "P73.3-9h1"
+      "P73.3-9h1",
+      "P74.3-qq5"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1"
@@ -3374,7 +3495,8 @@
       "P21.1",
       "P64.1",
       "P69.1",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P74.2-qq5"
     ],
     "plugins/audit/tests/test_merge_manifest.py": [
       "P60.2",
@@ -3482,9 +3604,17 @@
       "P80.4",
       "P81.3",
       "P81.4",
+      "P74.2-qq5",
+      "P74.3-qq5",
       "P77.3-6u9",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5",
+      "P74.8-qq5",
+      "P74.9-qq5",
       "P78.14-msc",
-      "P79.9-5bh"
+      "P79.9-5bh",
+      "P74.10-qq5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -3662,14 +3792,19 @@
       "P56.2"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
-      "P32.7"
+      "P32.7",
+      "P74.3-qq5"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
     ],
     "tools/ui-tests/phase-signoff-note.test.mjs": [
       "P63.9",
-      "P63.12"
+      "P63.12",
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5"
     ],
     "tools/verify.sh": [
       "P19.2",
@@ -3756,6 +3891,24 @@
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9"
+    ],
+    "plugins/audit/scripts/governance/_verdict_binding.py": [
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5"
+    ],
+    "plugins/audit/tests/test__verdict_binding.py": [
+      "P74.3-qq5",
+      "P74.4-qq5",
+      "P74.5-qq5",
+      "P74.6-qq5"
+    ],
+    "plugins/audit/scripts/governance/record-outside-run.py": [
+      "P74.9-qq5"
+    ],
+    "plugins/audit/tests/test_record_outside_run.py": [
+      "P74.9-qq5"
     ],
     "plugins/audit/tests/test__panel_discovery.py": [
       "P85.1"

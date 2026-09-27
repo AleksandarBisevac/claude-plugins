@@ -1,7 +1,7 @@
 {
   "id": "P74",
   "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "close-phase run from the main worktree prints the two commands that finish its cleanup and never tells the operator to remove the main tree; a phase with no recorded branch is refused with the reason and asked for --branch, and phases built on one combined branch can be signed off as a group",
   "testGate": [
@@ -15,21 +15,380 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "46570889879c4c5f991cb9d0179916b7b5e9ffb2",
+  "branch": "audit/p74-close-phase-and-the-worktree-t",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P74-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group's one gate run only covers the carrier member's files, not the whole group. The printed command is `run-test-gate.py <manifest> <carrier> --record`, and run-test-gate works out what the run owns with `owned_files(manifest, carrier)` (run-test-gate.py:1936, used at :3573). That is the carrier's task files only, and three things are scoped by it. (a) The gate-mutated refusal: `attributed_m",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R2",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "Nothing refuses a `--branch` that is the members' resolved parent, e.g. `signoff P1,P2 --branch main` for phases whose work was committed straight onto main. Every task commit is CONTAINED in main, `merge-base main main` gives a fork, and no refusal fires. The record then writes `phase.branch = main`, and the last printed landing is `close-phase.py ... --branch main` without `--keep-branch`. In cl",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The review is scoped to the members' `task.commit` list, and each listed commit is checked to be ON the branch. Nothing checks the other direction: which commits the branch carries beyond those. Another phase's work, a hand fix-up or a stray commit between `fork` and the branch tip is neither in the printed review scope nor refused. It still lands, because the first `close-phase --branch` merges t",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "Nothing persistent records that the non-carrier members were graded by the carrier's run. The only statement is one stdout line: 'the others carry no testEvidence of their own'. Once they land, `/audit:status --gate --fail-on no-test-evidence` will name them as 'done subject(s) with no run recorded' (_status_facts / audit-status.py:1402), and its repair is to run their gate, which defeats the one-",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The procedure runs invariants (step 3) before the record (step 4), and step 4 is what first writes `branch` and `baseRef` on the members. So at the sign-off's only invariants run the members have no branch and no baseRef. `base_ref` and `branch_history` (_invariants.py:793,1170) then do not apply, and the group gets fewer checks than a single-phase sign-off, which has both from `start`. The doc sa",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "phase.md:448 says the plan 'prints the whole sign-off with the one command each step runs'. Step 5's commit prints no command at all. In the sharded layout that commit spans several shards plus the index. The single-phase path prints `_index_dirty_note` for exactly this, and the group path drops it. An audit-state commit carrying two members' shards also reads as a breach of `audit-state-scope` (_",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py",
+        "issue": "The composed-name refusal changes the exit code for this case from 1 to 4. Before, `merged_into` came back UNKNOWN, `_merge_plan` refused, and `close()` returned E_FAIL. Exit 4's contract is 'git could not be ASKED', and the table row says 'it is not a refusal, and retrying the same command will not help'. This case is neither: git answered (`rev-parse --verify` exit 1), and the repair is a change",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R8",
+        "severity": "low",
+        "file": "CHANGELOG.md",
+        "issue": "The diff adds no CHANGELOG entry, although it has user-visible changes: the new `signoff P1,P2 --branch --plan` form, close-phase's follow-up commands from the main tree, and the composed-name refusal with its exit-code change. Sibling phases (P69, P70) each added one.",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/_worktrees.py",
+        "issue": "The follow-up has two gaps. (a) `git switch --detach <parent>` leaves the main worktree on a detached HEAD, and neither the output nor phase-signoff.md:352-354 says so. (b) `render` prints 'cleanup is not finished, and this never moves a HEAD. From X, run:' for a `--dry-run` preview too (followUp is set at :431), where nothing has run.",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/manage-worktrees.py",
+        "issue": "The same defect class survives in the worktree tool that the phase title names, and the fix's class sweep did not reach it. `manage-worktrees.py remove <phaseId>` resolves `holder_of(trees, branch)` without excluding `isMain`, unlike the `--path` arm at :287. When the main tree stands on the phase branch, the first refusal is usually 'standing inside /main ... Run it from somewhere else', which te",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-R11",
+        "severity": "low",
+        "file": "commit",
+        "issue": "The claims block asserts 'red on the previous code; the probe reddens every row' and 'full selftest sweep, ruff, vermin, validate; the group run end to end on a real repo' with no command, no exit code and no stamp. Under this brief that makes them unverified. Line 3 also answers a different question from #3 (class vs instance). Line 7 says 'no number written into prose' while phase-signoff.md:352",
+        "resolution": "fix task P74.2-qq5"
+      },
+      {
+        "id": "P74-S1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "When the gate verdict is reused, `signoff --verdict passed` is refused on both paths, and the refusal sentence is false. Reuse is the gate's default. A reused run is recorded as a NEW row with a new runId, and the phase pointer moves to that row. `reused_result` carries no `testedState`, so the row's `testedState` is `{}`. `evidence_refusal` reads `row[-1].testedState.scopeDigest` as None and comp",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`evidence_refusal` is a second implementation of 'does this recorded verdict bind the declared work now'. P71, a sibling phase of the same wave, already built that rule for task commits, and this copy has fewer arms. (a) It does not exclude recorder-written paths. P71 changes `scope_digest`/`tested_state` to take `excluded=recorded_paths(...)`, and the recorder will then store an excluded digest w",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_evidence_view.py",
+        "issue": "The report and the panel render a non-carrier member's copied pointer as that phase's OWN sign-off run. `_evidence_view._view_for` looks up the runId and renders it as `phases[pid].own`, which its own docstring keeps apart 'because merging them would claim a measurement nobody made'. The panel's `evState` does the same. `gradedBy` has no renderer anywhere; grep finds readers only in `_status_facts",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The accounting has no route for a legitimate commit that no member records, so a group that carries one cannot be signed off at all. The only repair is rewriting the branch, which this repo forbids ('Never rebase', 'fix forward'). Three cases reach it. (1) Merge commits: a combined branch built by merging the phase branches, or one that merged its parent back in, has merge commits in `fork..branch",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`_journal_io.read_all` failing is swallowed (`except Exception: journal_rows = []`). Every audit-state and index commit then reads as stray, and the refusal blames the commits ('no member records') instead of saying the journal could not be read. That is a missing basis presented as a finding about the branch.",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`--bind` writes `branch` and `baseRef` on each member and journals nothing. Every other writer in this verb journals, and `start` records the branch it cuts in `task.start` details. The group record also copies the carrier's pointer onto the other members with no `phase.testEvidence` row, although `write_pointer` journals every pointer move. The trail cannot say when a member was bound, or when it",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S7",
+        "severity": "low",
+        "file": "plugins/audit/reference/phase-signoff.md",
+        "issue": "Several single-phase texts were not updated for the new refusal. (a) Step 5a, the command the orchestrator runs verbatim, neither states the refusal nor shows `--no-evidence-reason`; only commands/phase.md does. (b) Step 2 still says 'a refused pointer is not a failure ... --reconcile catches the plan up'. A refused pointer now blocks a `passed` sign-off, and the refusal's remedy is to re-run the ",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "No surface reads `review.noEvidenceReason`; grep finds only the writers. The so14 label claims the report 'and the next reader meet it'. A phase or group signed off with a reason also carries no `testEvidence`, so `--fail-on no-test-evidence` still names it, with the repair 'run the gate'. That is the repair the reason says cannot apply, and no document says so.",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "A group run's ledger row does not say it was a group run. It is recorded as the carrier's phase-scope row, and nothing on it records the `--also` members. Its coverage basis lists other members' files as 'declared but not named by the run', which a reader of the carrier's row takes as the carrier's declaration. The only link from a member's copied pointer to that row is the runId, so nobody can ch",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "In the single-file layout, `commit_commands` prints ONE `commit-audit-state.py` (for ids[0]), carrying every member's record. phase.md says 'the commit, one `commit-audit-state.py` per member', and phase-signoff.md step 6 says the same without qualifying it to the sharded layout. The stated reason ('one commit carrying two members' shards reads as a scope breach') does not arise when there is one ",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S11",
+        "severity": "low",
+        "file": "COMPATIBILITY.md",
+        "issue": "The change is not in COMPATIBILITY's promise space: the promise covers manifest acceptance and config keys, and exit codes other than the validators' are expressly unpromised. CHANGELOG correctly files it under Changed. But COMPATIBILITY's own precedent records a shipped command's exit moving (0 to 2) 'rather than passed over', and this change does that twice. `signoff --verdict passed` moves from",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-S12",
+        "severity": "low",
+        "file": "commit",
+        "issue": "The claims name exit codes but carry no stamp. 'The group run end to end on a real repo, every step exit 0' names no command. Line 2's red-first evidence cannot cover the reuse arm, because every evidence case forces `--no-reuse`. Line 7 again says 'no number written into prose' while CHANGELOG.md adds 'prints the two commands that free the branch'. That figure is true by construction, but the cla",
+        "resolution": "fix task P74.3-qq5"
+      },
+      {
+        "id": "P74-T1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group gate can loop on reuse, the same class as R1. `groupWith` is not part of the reuse identity, which is content + gate + declared_scope(owns). When a member's files are a subset of the carrier's, the union equals the carrier's own files. A solo carrier run (`run-test-gate P1 --record`) is then reused by the group run the refusal prints (`run-test-gate P1 --also P2 --record`, with no --no-r",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "A merge commit is accounted whenever its parents are accounted, and nothing checks the merge's OWN content. The docstring says such a merge 'carries no work of its own', but that is never checked. An evil merge, or a conflict resolution, lands unreviewed. It is not listed in the step-2 review scope (only task commits and accepted ones are), yet the first landing merges it. I RAN this: side1 (P1.1)",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group-only flags are accepted and ignored on the single-phase path. The dispatch sends only `len(ids)>1 or --branch or --plan` to `_group_door`, so its own refusals ('--plan and --bind are a group sign-off's, which needs --branch'; '--accept needs --reason') are unreachable for `--bind`, `--accept` and `--reason` on one phase. I RAN these: `signoff P1 --bind` exits 2 with 'needs --verdict', wh",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "One --accept value takes in every commit whose SHA starts with it, with no length floor and no uniqueness check. I RAN this: 12 stray commits, `--accept 1 --reason r`, and 3 of them (every SHA starting with '1') were taken into the group, leaving 9 refused. Each accepted SHA is listed in full in the plan, so nothing is hidden, but one flag the operator meant for one commit can accept several, each",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "When the carrier's gate declares no entry (state `no-gate`), the carrier's newest row is still copied onto every member as `gradedBy`, and that row may be any older run. I RAN this: P1 was measured solo under [test], then P1's testGate was cleared, then `signoff P1,P2 --branch combined --verdict passed` exited 0. It printed 'gate: the group's one run is P1's; P2 records it as its own, gradedBy P1'",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "`review.acceptedCommits` is written on every member and read by nothing: grep finds only the writer, the schema, the demo exemption and ga3. R8 raised the same class for noEvidenceReason. A commit taken into a group's review outside every task is exactly what a later reader of the report needs to see, and it is visible only in the --plan output of the session that ran it.",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T7",
+        "severity": "low",
+        "file": "commit",
+        "issue": "R12 asked for stamp-verification stamps. The message carries `audit-stamp: head dcb72589, scopeDigest sha256:211cfee...`, which is not the tool's JSON. `stamp-verification.py compare --stamp-file <message>` refuses it with 'the text after audit-stamp: is not JSON', so the claim cannot be graded. The JSON stamp in the executor's scratch (p74c/stamp.txt) has a different scopeDigest (ba8e239e...) and",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-T8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "R9's second half is still open. The group row now records `groupWith`, but its coverage basis still lists other members' files as 'declared but not named by the run', with no word that they are the group's members' files and not the carrier's declaration.",
+        "resolution": "fix task P74.4-qq5"
+      },
+      {
+        "id": "P74-U1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "When git cannot answer, the refusal gives a false reason. `_clean_merge` returns False for every non-zero exit from `git merge-tree --write-tree`. That covers git older than 2.38, which has no --write-tree: git 2.37 parses it as a base rev and dies with 'unknown rev --write-tree', exit 128. It also covers a missing object in a shallow clone. False is then reported as 'its tree is not the automatic",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The detection works, but the review command it prints does not show what it detected. I RAN r4c.py: during a clean merge of side2 I ran `git rm -f src/p2.py`, which silently dropped side2's change. `--plan` correctly refused merge a1afcbc0700e. But both `git show --cc <sha>`, which the refusal names, and `git show --format= <sha>`, which the plan lists for an accepted commit, print NOTHING. A dens",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "Every octopus merge is refused with the edit/conflict sentence, including a clean one. I RAN `git merge --no-ff side1 side2` (octopus, no hand edits): `--plan` exited 2 with 'its tree is not the automatic merge of its parents, so it is a conflict resolution or an edit'. That was never established. The docstring itself says only that it was not asked.",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "A clean merge above a refused merge is reported as a commit 'that no member records'. Its parent is not in `ok`, so it falls through to the plain-stray branch. I saw this in the old-git run: m2 was listed as a generic stray beside m1's refusal. The operator is told to account for a commit that becomes accounted by itself once the merge below it is accepted.",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "--accept takes any revision expression, not only a SHA. I RAN `--accept combined --reason r`: the branch tip was taken in and dropped from the stray list. `--accept HEAD` resolved to the checked-out branch. Both the docs and the refusal say 'name the commit by its full SHA, or a prefix only it has'. A ref is re-resolved on each invocation, so the commit a `--plan` listed and the commit a later rec",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-U6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/panel/composition.js",
+        "issue": "The only vitest case for accepted commits uses an in-flight phase. The branch that shows them on a landed (done) phase is the one a later reader meets, and no case covers it. Deleting line 903 would leave every test green.",
+        "resolution": "fix task P74.5-qq5"
+      },
+      {
+        "id": "P74-V1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "U2's defect is still there on the could-not-ask branch. That is exactly where the operator's own review is the only check. When a merge has no recomputed tree (a git before 2.38, or an octopus merge), the refusal says 'Review it (`git show <sha>`)', and an accepted merge of that kind is listed as `git show <sha>` too. For a merge, `git show` prints the dense combined diff, which hides a dropped si",
+        "resolution": "fix task P74.6-qq5"
+      },
+      {
+        "id": "P74-V2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The waiting sentence promises something the code never checked. The code says '<m2> is a merge over <m1>, refused above - it is accounted once that one is', and the docs call m2 'a clean merge'. But `judge` is never called on a waiting merge, so nothing established that it is clean. I RAN two cases. First, r5b.py: m1 and m2 each add a file inside the merge commit. `--plan` said m2 'is accounted on",
+        "resolution": "fix task P74.6-qq5"
+      },
+      {
+        "id": "P74-V3",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py",
+        "issue": "The fix for U3 is not guarded. I ran a mutation in a git-archive export: `_clean_merge`'s octopus branch was changed to return MERGE_OWN, so a clean octopus is refused as 'carries content of its own'. The suite stayed ALL PASS (574 of 574). ga12 asserts only `\"octopus\" in txt and \"an edit\" not in txt`, and the octopus `why` string contains 'octopus' in both states.",
+        "resolution": "fix task P74.6-qq5"
+      },
+      {
+        "id": "P74-V4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The startswith guard has no test. I mutated it to `if code == 0 and full:` and test_audit_task stayed ALL PASS (574 of 574). That arm is what stops a branch or tag whose NAME is hex from being accepted by name. git prefers the ref, so the ref would re-resolve on every call, which is the U5 hole. I RAN r5a.py: a branch named `e1e6d3`, pointing at a different commit, is refused today. But its senten",
+        "resolution": "fix task P74.6-qq5"
+      },
+      {
+        "id": "P74-W1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py",
+        "issue": "F514 is still open in the ALREADY-CONTAINED mode. That mode covers the idempotent re-run, and the re-run after a human merged by hand, which includes every meta.merge.auto:false / PR landing. surviving_copy redirects only when the mode is in-parent-worktree, so an already-landed branch still gets its stamp in whatever copy was passed. I RAN this (scratchpad/p74r6/topo2.py, fixture F): `git merge -",
+        "resolution": "fix task P74.9-qq5"
+      },
+      {
+        "id": "P74-W2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "The undecided arm reaches the machine line only. Every other reader folds OVERLAP_UNDECIDED into 'no' and then asserts solitude. The CHANGELOG says such a window 'is said to be not knowable rather than asserted either way'. I RAN this (scratchpad/p74r6/ov2.py) with a sub-second gate run G [12,12] and an outside run O [5,12]. overlap_state = 'undecided'. attribution_of(G) = {'attributed': True, 'ba",
+        "resolution": "fix task P74.9-qq5"
+      },
+      {
+        "id": "P74-W3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "The docstring's own reasoning applies to a case the rule decides anyway. A run stamped ending in second t and another stamped starting in t are declared sequential (OVERLAP_NO). But A's end and B's start both fall inside second t, 'in an order no field records'. That is the reason given for calling the sub-second case undecided. The stated basis ('the next run started after the last row was writte",
+        "resolution": "fix task P74.9-qq5"
+      },
+      {
+        "id": "P74-W4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py",
+        "issue": "The refusal fires on a run that would write nothing. With meta.merge.auto false, the parent checked out nowhere and the worktree manifest passed, close() would take the human-in-the-loop exit: exit 0, 'NOT MERGED ... Nothing was written', and the merge command handed over. The new refusal comes first and returns exit 2 instead (scratchpad/p74r6/topo6.py, PENDC). Its rationale is 'a moved ref with ",
+        "resolution": "fix task P74.9-qq5"
+      },
+      {
+        "id": "P74-W5",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_close_phase.py",
+        "issue": "Two arms of the P74.7 fix have no test. I mutated a git-archive export of HEAD 7f97af51, ran test_close_phase.py --selftest, purged __pycache__ between runs, and checked that each anchor matched exactly once (scratchpad/p74r6/mut.py). (a) I dropped no_survivor_refusal's `within_tree(phase_tree, manifest_path)` clause. That makes it refuse EVERY no-checkout landing that has a linked phase worktree,",
+        "resolution": "fix task P74.9-qq5"
+      },
+      {
+        "id": "P74-W6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py",
+        "issue": "This is a landing condition, not a defect in the diff. main has moved 56 commits since the merge base 10a3e3da. `git merge-tree --write-tree HEAD main` now reports CONTENT conflicts in code and docs, not only in docs/audit. In run-test-gate.py, P74.4's `reuse_identity(..., group=also)` collides with main's `--own` branch, which re-indents the same block. A resolution that takes main's side silentl",
+        "resolution": "fix task P74.9-qq5"
+      },
+      {
+        "id": "P74-X1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "chain_ordered does not check which direction the chain orders the rows in. It returns True when either row reaches the other through prev, and never checks that order against the two windows. The docstring's premise is that one executor runs its gates one at a time, so the later row's run began after the earlier row was written. A chain can contradict that premise and still be read as proof of it.",
+        "resolution": "fix task P74.10-qq5"
+      },
+      {
+        "id": "P74-X2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "This is a boundary finding that becomes live at the merge of main this phase still owes. Both sides share one store: the evidence ledger file's prev/hash chain. Main adds a ledger merge that re-chains the union of two branches' divergent copies of one file, in ts order. P74's chain_ordered reads any prev path as 'ONE writer's chain records the two runs one after the other'. After a merge, that pat",
+        "resolution": "fix task P74.10-qq5"
+      },
+      {
+        "id": "P74-X3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "The cost is quadratic and was not bounded. chain_ordered runs before overlap_state for every other gate row, not just for pairs that meet in a second. Each call rebuilds two dicts over the whole ledger and may walk a whole file's chain. read_rows reads every month's file, so n is the ledger's lifetime. The machine line pays this twice (shared_the_machine plus undecided_neighbours) on every recorde",
+        "resolution": "fix task P74.10-qq5"
+      },
+      {
+        "id": "P74-X4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py",
+        "issue": "The already-contained arm of the new writes predicate has no test. I mutated a git-archive export of HEAD to `writes = the_plan[\"auto\"]` (anchor matched once, __pycache__ purged). test_close_phase still printed 88/88 and exited 0, so the mutation SURVIVED. Its live effect is F514 on the pull-request landing path, which is the reason meta.merge.auto:false exists. Setup: auto:false, the PR merged so",
+        "resolution": "fix task P74.10-qq5"
+      }
+    ],
+    "outcome": "matches; nine review passes, every finding fixed in P74.3-P74.11"
   },
-  "summary": null,
+  "summary": "Landing a phase says what happened and what is left. A group of phases signs off and lands together. A verdict is bound to evidence by one rule.\n\nLanding and sign-off:\n- close-phase follows up on a main-tree holder without removing the main tree.\n- A composed branch name is refused when it would resolve to an ancestry.\n- The landing stamp is written to the copy that survives, whatever manifest path is given. When no such copy exists, close-phase refuses before any merge.\n- signoff takes a group of phases on one branch. The group is accounted for commit by commit: a merge counts only when its tree equals git merge-tree of its parents. A merge carrying its own content is listed with a review command that shows it. --accept takes only a real SHA.\n- One _verdict_binding rule grades task commits and both sign-off paths. A group run is never a reused solo run.\n- A pointer to evidence copied from another phase renders as graded by the carrier. A reason recorded instead of evidence is shown where the badge's basis goes.\n\nEvidence overlap:\n- Whole-second evidence windows are compared half-open, and a boundary second two writers cannot order is reported as not knowable.\n- Chain order counts only when the runs really were sequential. It is never trusted across a recorded ledger-merge seam, and each seam is walked on its own.\n\nReview and gate:\n- Reviewed nine times; every finding was fixed in P74.3 through P74.11.\n- The fixes include F514 (the landing stamp written into the doomed worktree copy) and F515 (back-to-back runs reported as a crowd).\n- Main was merged in twice before the gate; P79's --own path and this phase's group runs are both kept.\n- The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P74.1",
       "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
-      "status": "pending",
+      "status": "done",
       "description": "Reproduced at HEAD: from the main worktree standing on the phase branch the merge lands, then the branch deletion says 'the worktree must go first' (impossible for the main tree) and the ownership refusal fires before the isMain check, telling the operator to git worktree remove the main tree. Check isMain before ownership; when the holder is the main tree print git switch <parent> and git branch -d <branch>; never move HEAD. A phase with phase.branch null is refused with 'whether audit/p1-p1 is contained could not be established' - say the name was composed because no branch is recorded and ask for --branch. Phases built on one combined branch: --branch already lands them; add a group sign-off (review from the task.commit lists, one gate, one invariants run over the union) in the signoff verb/command, reusing close-phase --branch per phase.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -39,7 +398,8 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/commands/phase.md",
-        "plugins/audit/reference/phase-signoff.md"
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -64,16 +424,648 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fa6727f7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "cleanup_plan checks isMain first and main_tree_release prints the follow-ups; composed-name exit 4; signoff P1,P2 --branch --plan/--verdict via group_plan.",
+        "descriptive": "close-phase tells the operator exactly what to run to finish from the main worktree, and phases built on one branch can be signed off together."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-25T18:00:38Z",
+      "completedAt": "2026-09-25T21:37:25Z",
+      "verifiedBy": [
+        "test__worktrees mt1",
+        "test_close_phase mt1",
+        "test_close_phase cn1",
+        "test_audit_task gs1",
+        "test_audit_task gs12"
+      ]
+    },
+    {
+      "id": "P74.2-qq5",
+      "title": "Review findings: the group gate owns the union, a group branch is never its own parent, and every commit on the branch is accounted for",
+      "status": "done",
+      "description": "Phase review findings, all to be fixed, pre-existing 1 and 2 included (pre-existing 2: a --verdict passed on either path requires a current testEvidence for the phase, or an explicit recorded reason). Orchestrator decisions: the group's one gate run owns the UNION of the members' files (run-test-gate takes the group), the branch may never equal a member's parent (group_plan and close-phase resolve both refuse), every commit fork..branch is a member's recorded commit or is refused by name, non-carrier members carry a persistent record of what graded them that no-test-evidence and the report read, the invariants run sees branch/baseRef (record them first or re-run after), and the composed-name refusal is exit 1 (git answered; the command must change).\nR1 (high) plugins/audit/scripts/manifest/audit-task.py:5221-5234,5474-5477; plugins/audit/reference/phase-signoff.md:378-381: The group's one gate run only covers the carrier member's files, not the whole group. The printed command is `run-test-gate.py <manifest> <carrier> --record`, and run-test-gate works out what the run owns with `owned_files(manifest, carrier)` (run-test-gate.py:1936, used at :3573). That is the carrier's task files only, and three things are scoped by it. (a) The gate-mutated refusal: `attributed_mutations` (run-test-gate.py:372-391) refuses only on OWNED changes, so if the gate rewrites a file a non-carrier member owns, that change is only reported beside a `passed` verdict. (b) The coverage answer. (c) The `testedState` stamp (`tested_state(project, owns, ...)`, :2700). So phase-signoff.md:380 'The members share one tree, so one run measures all of them' is true of which commands run and false of what the run grades. Judged from reading the code; I did not run it. -> Give run-test-gate a group scope: accept a comma list of phases, or `--also <pid,...>`, so `owned_files` returns the union of every member's task files. Have `_print_group_plan` print that spelling. Add a case where the gate rewrites a file only a non-carrier member owns, and prove it reads `gate-mutated` (red on the current code). Until then, have the doc say which answers the one run is scoped to.\nR2 (high) plugins/audit/scripts/manifest/audit-task.py:5236-5314 (group_plan), :5322-5331 (landing_commands): Nothing refuses a `--branch` that is the members' resolved parent, e.g. `signoff P1,P2 --branch main` for phases whose work was committed straight onto main. Every task commit is CONTAINED in main, `merge-base main main` gives a fork, and no refusal fires. The record then writes `phase.branch = main`, and the last printed landing is `close-phase.py ... --branch main` without `--keep-branch`. In close-phase that case is already-contained and settled. If main is checked out nowhere, `cleanup_plan` then plans `update-ref -d refs/heads/main <sha>` (_worktrees.py:1061-1066), which deletes the development branch and its reflog. If the main tree holds main, the new follow-up prints `git switch main` and then `git branch -d main`, which git refuses. Judged from reading; not run. -> In group_plan, refuse when `branch` equals any member's resolved parent: 'a group branch is not its own parent'. Add a gs case (red first) where `--branch` is the parent. The same guard belongs in close-phase `resolve()`; see preExisting 1.\nR3 (med) plugins/audit/scripts/manifest/audit-task.py:5262-5270,5298-5303: The review is scoped to the members' `task.commit` list, and each listed commit is checked to be ON the branch. Nothing checks the other direction: which commits the branch carries beyond those. Another phase's work, a hand fix-up or a stray commit between `fork` and the branch tip is neither in the printed review scope nor refused. It still lands, because the first `close-phase --branch` merges the whole branch. So a group can record a `passed` verdict and land work nobody reviewed, including work from a phase that is not in the group and not signed off. -> Compute `git rev-list <fork>..<branch>`. Refuse, naming each one, any commit that is neither a member's `task.commit` nor an audit-state/index commit the journal records for a member. Or print those commits under 'not in any member - not reviewed' and make the record refuse while any remain. Add a case with an unrecorded commit on the branch.\nR4 (med) plugins/audit/scripts/manifest/audit-task.py:5378-5391,5450-5451; plugins/audit/reference/phase-signoff.md:380-381: Nothing persistent records that the non-carrier members were graded by the carrier's run. The only statement is one stdout line: 'the others carry no testEvidence of their own'. Once they land, `/audit:status --gate --fail-on no-test-evidence` will name them as 'done subject(s) with no run recorded' (_status_facts / audit-status.py:1402), and its repair is to run their gate, which defeats the one-run design. The report and panel show a passed phase with no evidence. The record also never checks that the carrier has a gate row on this tree, which matches the single-phase path but means the group verdict can be written before any gate ran. -> At record time, require the carrier's `testEvidence` (status passed or empty-gate). Write to each non-carrier member either the same pointer or a field such as `review.gradedBy: <carrierId>` that `no-test-evidence` and the report read as evidence. Check the pointer against doctor's pointer-vs-ledger check (_doctor_completions.py:125) so it does not read as a mismatch. Add cases for both.\nR5 (med) plugins/audit/scripts/manifest/audit-task.py:5481-5487; plugins/audit/reference/phase-signoff.md:382-389: The procedure runs invariants (step 3) before the record (step 4), and step 4 is what first writes `branch` and `baseRef` on the members. So at the sign-off's only invariants run the members have no branch and no baseRef. `base_ref` and `branch_history` (_invariants.py:793,1170) then do not apply, and the group gets fewer checks than a single-phase sign-off, which has both from `start`. The doc says the fork point is for 'later invariants runs'. Nothing says the sign-off's own run skipped those checks. -> Either record branch/baseRef before step 3, as a separate write or a `--plan` side-effect that is refused later if the group changes, or add a step-4b invariants re-run after the record. Otherwise have the plan output say that base-ref and branch-history are not graded at this sign-off.\nR6 (low) plugins/audit/scripts/manifest/audit-task.py:5440-5456,5488; plugins/audit/commands/phase.md:441,448: phase.md:448 says the plan 'prints the whole sign-off with the one command each step runs'. Step 5's commit prints no command at all. In the sharded layout that commit spans several shards plus the index. The single-phase path prints `_index_dirty_note` for exactly this, and the group path drops it. An audit-state commit carrying two members' shards also reads as a breach of `audit-state-scope` (_invariants.py:437-518) for each phase. phase.md:441 'writes the same record, under the same refusals' is also not quite true: the group writes `branch`/`baseRef` and adds refusals. -> Print the per-member `commit-audit-state.py` and `commit-manifest-index.py` commands in step 5, and emit the index-dirty note from the group record. Reword phase.md:441 to say the group writes the single sign-off's record plus `branch`/`baseRef`, under its refusals plus the group's.\nR7 (low) plugins/audit/scripts/git/close-phase.py:65-70,985-994; plugins/audit/reference/phase-signoff.md:315: The composed-name refusal changes the exit code for this case from 1 to 4. Before, `merged_into` came back UNKNOWN, `_merge_plan` refused, and `close()` returned E_FAIL. Exit 4's contract is 'git could not be ASKED', and the table row says 'it is not a refusal, and retrying the same command will not help'. This case is neither: git answered (`rev-parse --verify` exit 1), and the repair is a changed command (`--branch`). That is exactly the exit-1 row ('the output names the path or ref that has to change'). The amended row now contradicts itself. A grep of every caller finds only phase-signoff.md's table and the tests reading close-phase's exit codes, so no code caller breaks. -> Return E_FAIL (1) for the composed-name case and move the sentence to the exit-1 row. If 4 is kept on purpose, rewrite exit 4's docstring and row so they cover 'no name to ask about' without saying 'not a refusal / retry will not help'.\nR8 (low) CHANGELOG.md:7 ([Unreleased]): The diff adds no CHANGELOG entry, although it has user-visible changes: the new `signoff P1,P2 --branch --plan` form, close-phase's follow-up commands from the main tree, and the composed-name refusal with its exit-code change. Sibling phases (P69, P70) each added one. -> Add [Unreleased] entries (Added: group sign-off; Fixed: the main-tree cleanup follow-up and the composed-name refusal), including the exit 1 to 4 change if it stays.\nR9 (low) plugins/audit/scripts/git/_worktrees.py:1081-1096; plugins/audit/scripts/git/close-phase.py:431,881-886: The follow-up has two gaps. (a) `git switch --detach <parent>` leaves the main worktree on a detached HEAD, and neither the output nor phase-signoff.md:352-354 says so. (b) `render` prints 'cleanup is not finished, and this never moves a HEAD. From X, run:' for a `--dry-run` preview too (followUp is set at :431), where nothing has run. -> Append 'leaves <main> on a detached HEAD at <parent>' to the detach variant. In dry-run, word the follow-up as 'after the merge, cleanup will need, from X:'.\nR10 (low) plugins/audit/scripts/git/manage-worktrees.py:295-316: The same defect class survives in the worktree tool that the phase title names, and the fix's class sweep did not reach it. `manage-worktrees.py remove <phaseId>` resolves `holder_of(trees, branch)` without excluding `isMain`, unlike the `--path` arm at :287. When the main tree stands on the phase branch, the first refusal is usually 'standing inside /main ... Run it from somewhere else', which tells the operator how to try removing the main tree. -> Refuse `tree.get(\"isMain\")` right after the lookup with the same main-tree reason. Optionally point at `git switch <parent>` the way `main_tree_release` does. Add a test.\nR11 (low) commit fa6727f7 message, claims lines 2-3,7: The claims block asserts 'red on the previous code; the probe reddens every row' and 'full selftest sweep, ruff, vermin, validate; the group run end to end on a real repo' with no command, no exit code and no stamp. Under this brief that makes them unverified. Line 3 also answers a different question from #3 (class vs instance). Line 7 says 'no number written into prose' while phase-signoff.md:352 adds 'the two commands'. That number is true by construction, but the claim is not. -> Re-state the red-first evidence as named commands with exit codes and a stamp (or a `probe/mutations.py` the orchestrator ran), answer question 3 with the grep and its hits (this would have found finding 10), and correct line 7.\nR1 (med) plugins/audit/scripts/git/close-phase.py:126-156 (resolve): close-phase has no guard for `--branch` (or a recorded `phase.branch`) naming the resolved parent. The cleanup then plans deleting the parent branch whenever the parent is checked out nowhere. Before this phase that needed an operator to type it. Finding 2's group record now writes it and prints the command. -> Refuse branch == parent in `resolve()` or `plan()` with exit 1, and add a case.\nR2 (low) plugins/audit/scripts/manifest/audit-task.py:5112-5191 (_locked_signoff): The single-phase sign-off also records a `passed` verdict without checking that any gate row exists for the phase. The group path inherits this; finding 4 asks for it on the group path. -> Consider requiring a current `testEvidence` for `--verdict passed` on both paths.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - signoff P1,P2 --branch main for phases whose parent is main is accepted and plans deleting main"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "646473bc",
+      "outcome": {
+        "technical": "run-test-gate --also; own-parent refusal in group_plan and close-phase; rev-list accounting; --bind; evidence_refusal on both signoff paths with gradedBy.",
+        "descriptive": "A group sign-off grades every member's files, can no longer delete the development branch or land unreviewed commits, and a passed verdict always has evidence behind it."
+      },
+      "startedAt": "2026-09-25T21:50:46Z",
+      "completedAt": "2026-09-25T22:53:06Z",
+      "verifiedBy": [
+        "test_run_test_gate gg1",
+        "test_audit_task gs14",
+        "test_audit_task gs15",
+        "test_audit_task gse1",
+        "test_close_phase cn3",
+        "test_manage_worktrees r6"
+      ]
+    },
+    {
+      "id": "P74.3-qq5",
+      "title": "Second-review findings: one verdict-binding rule serves commit and sign-off, reused runs bind through their source, and gradedBy is shown",
+      "status": "done",
+      "description": "Second phase review findings, all to be fixed. RUN ONLY AFTER P71 HAS LANDED and main is merged into this branch: (R1, R2) there is ONE verdict-binding rule - P71's commit-task-work verdict_binding (reused rows graded through reusedFrom, recorder paths excluded, gate-mismatch, unanswerable, newest row for the subject) - moved into a library module both commit-task-work and signoff call; evidence_refusal is deleted, not patched. (R3) report and panel render gradedBy; the schema documents gradedBy and review.noEvidenceReason and its testEvidence description is made true. (R4) a recorded --accept <sha> --reason escape for a legitimate unrecorded commit, merge commits whose parents are accounted for are accounted, and a missing task commit names repair-commits.py. R5-R12 as the review says.\nR1 (high) plugins/audit/scripts/manifest/audit-task.py:5117-5160 (evidence_refusal); plugins/audit/scripts/governance/run-test-gate.py:2248-2280 (reused_result), :3656-3661, :3694: When the gate verdict is reused, `signoff --verdict passed` is refused on both paths, and the refusal sentence is false. Reuse is the gate's default. A reused run is recorded as a NEW row with a new runId, and the phase pointer moves to that row. `reused_result` carries no `testedState`, so the row's `testedState` is `{}`. `evidence_refusal` reads `row[-1].testedState.scopeDigest` as None and compares it with the live digest. For any phase that declares files, that comparison fails and prints 'is not current: ... they have changed since', even though nothing changed. The printed remedy (`run-test-gate.py ... --record`) reuses again, so the operator loops. The only way out is `--no-reuse`, which the refusal never names. A second phase-scope run on an unchanged tree reuses: `/audit:review` re-running a sign-off, a sign-off retried after another refusal, or a pointer that was refused and then re-run. So this breaks exactly the flows in question 1. Every new case (gs_gate, gse1/gse2, so12/so13) runs the gate with `--no-reuse`, so no case reaches this path. Judged from reading; not run. -> Grade a repeated row against the run that measured it. Follow `reusedFrom.runId` to that row, and refuse only when the source is missing from the ledger. P71's `commit-task-work.verdict_binding` already implements that rule (see finding 2). Add a red-first case: gate once with `--no-reuse`, gate again WITHOUT it, then `signoff --verdict passed` must exit 0. Also add the other direction: a reused row whose source was removed from the ledger is refused.\nR2 (med) plugins/audit/scripts/manifest/audit-task.py:5117-5160 (evidence_refusal) vs audit/p71-a-task-commit-carries-what-the:plugins/audit/scripts/governance/commit-task-work.py:477-640 (verdict_binding/_digest_binding): `evidence_refusal` is a second implementation of 'does this recorded verdict bind the declared work now'. P71, a sibling phase of the same wave, already built that rule for task commits, and this copy has fewer arms. (a) It does not exclude recorder-written paths. P71 changes `scope_digest`/`tested_state` to take `excluded=recorded_paths(...)`, and the recorder will then store an excluded digest while this caller computes an unexcluded one. Once both land, any phase that declares the manifest, journal or evidence path is refused for ever. On this tree that is already true, because `write_pointer` rewrites the shard after the digest is taken. (b) It has no gate-mismatch arm. An `empty-gate` pointer, which is never checked for currency, or a `passed` pointer taken under an older `testGate` is accepted after `/audit:phase retarget --gate` widens the gate. So `retarget --gate-clear`, run, `retarget --gate lint`, then `signoff --verdict passed` records a pass that no run backs. (c) It has no reused-row arm (finding 1) and no unanswerable arm. (d) It reads the pointer rather than the newest row for the subject. -> Move one binding function into a shared module (`_evidence_io` or `_tree_stamp`). It should take (rows, subject ids, gate entries, files, excluded) and return bound/refused with a sentence. Call it from both `commit-task-work` and `signoff`, and reconcile with P71 before either lands. Add cases for a declared manifest path, a gate changed after an empty-gate run, and a reused row.\nR3 (med) plugins/audit/scripts/report/_evidence_view.py:120-149; plugins/audit/scripts/ui/panel/overview.js:400-420; plugins/audit/scripts/panel/_panel_composition.py:683-697; plugins/audit/schema/audit-plan.schema.json ($defs/testEvidence); plugins/audit/reference/phase-signoff.md:398-401: The report and the panel render a non-carrier member's copied pointer as that phase's OWN sign-off run. `_evidence_view._view_for` looks up the runId and renders it as `phases[pid].own`, which its own docstring keeps apart 'because merging them would claim a measurement nobody made'. The panel's `evState` does the same. `gradedBy` has no renderer anywhere; grep finds readers only in `_status_facts.graded_by`, whose own comment warns that 'a surface rendering it as the member's run would claim a gate nobody ran'. That is exactly what both surfaces do. So phase-signoff.md:400 'the report read[s] it as graded, by that run' is true of 'graded' and false of 'by that run'. The schema also leaves `gradedBy` and `review.noEvidenceReason` undocumented. Its testEvidence description says 'deleting it is always safe ... the next run writes it back', which is false for a copy: `reconcile` walks ledger subjects only and never restores a member's copied pointer. -> Render `gradedBy` in `tev_view`/`_view_for` and in the panel's evidence badge, for example 'graded by P1's run <id>'. Add `gradedBy` (and `review.noEvidenceReason`) to the schema with their meaning. Amend the testEvidence description to name the one pointer the ledger cannot re-derive. Add a report pin and a browser-gate assertion for a gradedBy phase.\nR4 (med) plugins/audit/scripts/manifest/audit-task.py:5395-5413 (group_plan stray check): The accounting has no route for a legitimate commit that no member records, so a group that carries one cannot be signed off at all. The only repair is rewriting the branch, which this repo forbids ('Never rebase', 'fix forward'). Three cases reach it. (1) Merge commits: a combined branch built by merging the phase branches, or one that merged its parent back in, has merge commits in `fork..branch` that no task or audit-state commit is. (2) Hand-made journal-only or planning commits: this repo makes them, e.g. main's 46570889 'chore(audit-state): journal rows the session's hook wrote' and the multi-phase planning commit 386e6637. Neither has an `audit.state.committed` row naming a member. (3) A rebased branch: task commits are refused as not on the branch (correct), and the refusal does not name `repair-commits.py`. rev-list's cost is not the problem; it is linear in the commits and the match loop is small. -> Add an explicit, recorded escape, e.g. `--accept <sha>` with a reason written to each member's review and printed in the review scope, so the commit is reviewed rather than hidden. Consider treating a merge commit whose parents are all accounted-for or parent-side as accounted. When a recorded task commit is missing from the branch, name `repair-commits.py`. Add cases: a merge-built combined branch, and a journal-only commit.\nR5 (low) plugins/audit/scripts/manifest/audit-task.py:5548-5553: `_journal_io.read_all` failing is swallowed (`except Exception: journal_rows = []`). Every audit-state and index commit then reads as stray, and the refusal blames the commits ('no member records') instead of saying the journal could not be read. That is a missing basis presented as a finding about the branch. -> Carry the read failure into group_plan and emit it as its own refusal line ('the journal could not be read, so audit-state commits could not be accounted: <exc>'). Add a case.\nR6 (low) plugins/audit/scripts/manifest/audit-task.py:5678-5708 (_bind_group), :5603-5607: `--bind` writes `branch` and `baseRef` on each member and journals nothing. Every other writer in this verb journals, and `start` records the branch it cuts in `task.start` details. The group record also copies the carrier's pointer onto the other members with no `phase.testEvidence` row, although `write_pointer` journals every pointer move. The trail cannot say when a member was bound, or when its evidence pointer appeared. -> Journal a `phase.bind` row per member (branch, baseRef, from), and a `phase.testEvidence` row for each copied pointer with `gradedBy` in its details.\nR7 (low) plugins/audit/reference/phase-signoff.md:90-93, :256-262 (step 5a); plugins/audit/scripts/status/_doctor_setup.py:534,542; plugins/audit/scripts/ui/panel/composition.js:894: Several single-phase texts were not updated for the new refusal. (a) Step 5a, the command the orchestrator runs verbatim, neither states the refusal nor shows `--no-evidence-reason`; only commands/phase.md does. (b) Step 2 still says 'a refused pointer is not a failure ... --reconcile catches the plan up'. A refused pointer now blocks a `passed` sign-off, and the refusal's remedy is to re-run the gate (which reuses, see finding 1) rather than `--reconcile`. (c) Doctor's recovery for a merged-but-unsigned phase and the panel's sign-off-due note both name `/audit:phase signoff <id>` as the step that 'records the verdict that reads it done', with no gate run. For a `passed` verdict that step now refuses. -> In step 5a, state the evidence requirement and the flag. In step 2, say that a refused pointer must be reconciled before sign-off, and make the refusal print `--reconcile` when the ledger's newest phase row is newer than the pointer. Reword the doctor and panel hints to 'run the gate with --record (or pass --no-evidence-reason), then /audit:phase signoff'.\nR8 (low) plugins/audit/scripts/manifest/audit-task.py:5195-5196, :5598-5599; plugins/audit/tests/test_audit_task.py (so14 label): No surface reads `review.noEvidenceReason`; grep finds only the writers. The so14 label claims the report 'and the next reader meet it'. A phase or group signed off with a reason also carries no `testEvidence`, so `--fail-on no-test-evidence` still names it, with the repair 'run the gate'. That is the repair the reason says cannot apply, and no document says so. -> Render the reason in the report and panel beside the sign-off verdict, and have the no-test-evidence condition either read it (as an excused class with the reason as its basis) or say in phase.md that the condition still names such phases. Correct the so14 label.\nR9 (low) plugins/audit/scripts/governance/run-test-gate.py:3572-3610; plugins/audit/scripts/governance/_evidence_io.py:488-510 (row_for): A group run's ledger row does not say it was a group run. It is recorded as the carrier's phase-scope row, and nothing on it records the `--also` members. Its coverage basis lists other members' files as 'declared but not named by the run', which a reader of the carrier's row takes as the carrier's declaration. The only link from a member's copied pointer to that row is the runId, so nobody can check from the row that it owned that member's files. Reuse identity is not affected: the key includes `declared_scope(owns)` and the subject, so a group verdict is reused for a single run, or the reverse, only when the owned file sets are identical, which is the same measurement. -> Record the owned members on the row (e.g. `groupWith: [\"P2\"]`, or the owned list's digest) and name them in the coverage basis. Have `evidence_refusal` check that a gradedBy member is among them.\nR10 (low) plugins/audit/scripts/manifest/audit-task.py:5452-5461 (commit_commands); plugins/audit/commands/phase.md:461; plugins/audit/reference/phase-signoff.md:398-400: In the single-file layout, `commit_commands` prints ONE `commit-audit-state.py` (for ids[0]), carrying every member's record. phase.md says 'the commit, one `commit-audit-state.py` per member', and phase-signoff.md step 6 says the same without qualifying it to the sharded layout. The stated reason ('one commit carrying two members' shards reads as a scope breach') does not arise when there is one file, and the doc says nothing about that case. -> Qualify both sentences: 'sharded: one per member, then the index; single-file: one'.\nR11 (low) COMPATIBILITY.md:277-345 (Outside this document entirely); CHANGELOG.md [Unreleased] Changed: The change is not in COMPATIBILITY's promise space: the promise covers manifest acceptance and config keys, and exit codes other than the validators' are expressly unpromised. CHANGELOG correctly files it under Changed. But COMPATIBILITY's own precedent records a shipped command's exit moving (0 to 2) 'rather than passed over', and this change does that twice. `signoff --verdict passed` moves from 0 to 2, and unlike that precedent, something that used to take effect now does not. close-phase's composed-name exit also moves from 4 to 1. The new manifest keys `testEvidence.gradedBy` and `review.noEvidenceReason` are additive and are named nowhere in the contract's interface description. -> Add one bullet under 'Outside this document entirely' for the sign-off evidence refusal and the close-phase exit change, in the shape of the flags bullet. Note the two additive keys where the testEvidence block is called 'the interface'.\nR12 (low) commit 646473bc message, claims lines 2-3, 7: The claims name exit codes but carry no stamp. 'The group run end to end on a real repo, every step exit 0' names no command. Line 2's red-first evidence cannot cover the reuse arm, because every evidence case forces `--no-reuse`. Line 7 again says 'no number written into prose' while CHANGELOG.md adds 'prints the two commands that free the branch'. That figure is true by construction, but the claim is not. -> Attach `stamp-verification.py` stamps. Name the end-to-end commands. Add the reuse case from finding 1 to the probe, and correct line 7.\nR1 (low) plugins/audit/scripts/governance/_tree_stamp.py:176-201 (scope_digest, this tree): The recorder computes `scopeDigest` before `write_pointer` rewrites the phase shard. So on this tree, a task that declares the shard it is recorded in never matches its own row. P71 fixes this with `excluded=` on its branch. It surfaces here only through finding 2. -> Resolved by P71 once finding 2 routes signoff through the same exclusion.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/scripts/ui/panel/composition.js",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "tools/ui-tests/evidence-badge.test.mjs",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "docs/screenshots/captured-at.json"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - a phase gate recorded once with --no-reuse and again with reuse is refused at signoff --verdict passed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "afd72d91",
+      "outcome": {
+        "technical": "New _verdict_binding module shared by commit-task-work and both signoff paths; gradedBy and noEvidenceReason rendered in report and panel; --accept for unrecorded branch commits.",
+        "descriptive": "Every way of signing off a phase now judges the test evidence by the same rule a task commit uses, and a phase graded by another phase's run says so."
+      },
+      "startedAt": "2026-09-26T04:54:43Z",
+      "completedAt": "2026-09-26T08:03:13Z",
+      "verifiedBy": [
+        "test__verdict_binding vb5",
+        "test_audit_task ve1",
+        "test_audit_task ga1",
+        "test__evidence_view gv4",
+        "test__panel_composition pc-sd0"
+      ]
+    },
+    {
+      "id": "P74.4-qq5",
+      "title": "Round-3 review findings: a group run is never a reused solo run, a merge carrying its own content is reviewed, and group-only flags are refused on one phase",
+      "status": "done",
+      "description": "Round-3 phase review findings, all to be fixed. Orchestrator decisions: (R1) the members a run covers (groupWith) are part of the reuse identity, so a group run never reuses a solo run; the refusal names the exact command that satisfies it; ve7 runs that command and reaches sign-off. (R2) a merge commit is accounted only when its tree equals the automatic merge of its parents (git merge-tree --write-tree); a merge carrying its own content is listed for review and refused unless --accept names it; the docs stop asserting it carries no work and say what is checked. (R3) the group-only flags (--bind, --accept, --reason with --accept) on a single-phase sign-off are refused with a usage error that names the group form, before anything is written. (R4) --accept resolves through git rev-parse to one full commit on the branch and refuses an ambiguous or unknown prefix. (R5) an empty carrier gate refuses the group binding instead of copying an old run. (R6) review.acceptedCommits is shown in the report's sign-off note and the panel's. (R7) the commit message is history and stays; the prose counts it points at (COMPATIBILITY 'gained two', the schema's 'ONE exception') are reworded to carry no count. (R8) the coverage basis of a group run names the members whose files it covers.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:6369-6388 (_group_binding); plugins/audit/scripts/governance/run-test-gate.py:2200-2238 (reuse_identity), :3547-3551: The group gate can loop on reuse, the same class as R1. `groupWith` is not part of the reuse identity, which is content + gate + declared_scope(owns). When a member's files are a subset of the carrier's, the union equals the carrier's own files. A solo carrier run (`run-test-gate P1 --record`) is then reused by the group run the refusal prints (`run-test-gate P1 --also P2 --record`, with no --no-reuse). `_group_binding` grades the reused row through `reusedFrom` to the solo origin, which has no `groupWith`, so it refuses again with 'owned P1 alone, not P2 - run `...--also P2 --record`'. Re-running that command reuses again, and the refusal never names --no-reuse. I RAN this with the real scripts: P2.files=[src/p1.py], solo gate --no-reuse exit 0, group gate exit 0 printing 'GATE VERDICT REUSED ... from run 020b9c', then `signoff P1,P2 --branch combined --verdict passed` exited 2 with 'the run that measured it (...020b9c) owned P1 alone, not P2'. Case ve7 stops at the first refusal and never runs the printed remedy. -> Put the owned member set (`also`, sorted) into the reuse identity key, so a group run never repeats a solo run or the reverse. Alternatively, grade `groupWith` on the repeating row when its origin's owned file set is identical, and name --no-reuse in the refusal. Add a case continuing ve7: run the printed command WITHOUT --no-reuse, then signoff must exit 0 (red today).\nR2 (med) plugins/audit/scripts/manifest/audit-task.py:6224-6246 (_account), :6100-6104 (group_plan docstring); plugins/audit/reference/phase-signoff.md ('a branch built by merging the members' own branches is made of them'): A merge commit is accounted whenever its parents are accounted, and nothing checks the merge's OWN content. The docstring says such a merge 'carries no work of its own', but that is never checked. An evil merge, or a conflict resolution, lands unreviewed. It is not listed in the step-2 review scope (only task commits and accepted ones are), yet the first landing merges it. I RAN this: side1 (P1.1) and side2 (P2.1) were merged --no-ff into combined, and the second merge added backdoor.py (`git show --cc --stat` shows 'backdoor.py | 1 +'). `signoff P1,P2 --branch combined --plan` exited 0 and listed only the two task commits for review. -> Account a merge only when `git diff-tree --cc -p <merge>` (or `git show --cc --format= <merge>`) is empty, meaning a clean merge carries nothing of its own. Otherwise treat it as stray, or list every merge in the review scope as `git show --cc <sha>`. Add a case: a merge with its own hunk is refused (or listed), and ga4's clean merges stay accounted.\nR3 (med) plugins/audit/scripts/manifest/audit-task.py:5858-5860 (cmd_signoff dispatch), :6282-6314 (_group_door): The group-only flags are accepted and ignored on the single-phase path. The dispatch sends only `len(ids)>1 or --branch or --plan` to `_group_door`, so its own refusals ('--plan and --bind are a group sign-off's, which needs --branch'; '--accept needs --reason') are unreachable for `--bind`, `--accept` and `--reason` on one phase. I RAN these: `signoff P1 --bind` exits 2 with 'needs --verdict', which steers the operator toward a verdict. `signoff P1 --bind --verdict skipped --summary s` exits 0 and writes an irreversible sign-off. `signoff P1 --verdict passed ... --accept deadbeef --reason r` exits 0 and records nothing of the accept. This is the 'flag accepted and ignored' class this file's own flag table warns about. -> Add `args.bind or args.accept or (args.reason or '').strip()` to the dispatch condition, so `_group_door` refuses them without --branch. Or refuse them explicitly on the single path. Add cases for `signoff P1 --bind` and `signoff P1 --accept x --reason r --verdict skipped`, both exit 2 with nothing written.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:6224-6246 (_account, `named = [a for a in accepted if _is_accounted(sha, [a])]`), :6218-6219 (_is_accounted): One --accept value takes in every commit whose SHA starts with it, with no length floor and no uniqueness check. I RAN this: 12 stray commits, `--accept 1 --reason r`, and 3 of them (every SHA starting with '1') were taken into the group, leaving 9 refused. Each accepted SHA is listed in full in the plan, so nothing is hidden, but one flag the operator meant for one commit can accept several, each recorded with that one reason. -> Resolve each --accept with `git rev-parse --verify <sha>^{commit}`, or require it to match exactly one commit in fork..branch. Refuse an ambiguous or short value by name.\nR5 (low) plugins/audit/scripts/manifest/audit-task.py:6383-6388 (_group_binding no-gate return), :6420-6421, :6462: When the carrier's gate declares no entry (state `no-gate`), the carrier's newest row is still copied onto every member as `gradedBy`, and that row may be any older run. I RAN this: P1 was measured solo under [test], then P1's testGate was cleared, then `signoff P1,P2 --branch combined --verdict passed` exited 0. It printed 'gate: the group's one run is P1's; P2 records it as its own, gradedBy P1', and P2.testEvidence became P1's old solo run. That run never owned P2 (no groupWith) and was taken under a gate that no longer exists. -> In the `no-gate` state, copy no pointer and print the existing 'declares no entry, so the sign-off rests on review alone' line. Alternatively, copy only an `empty-gate` row that carries `groupWith` for every member.\nR6 (low) plugins/audit/scripts/manifest/audit-task.py:6452-6454 (review.acceptedCommits); report/_evidence_view.py; ui/panel/overview.js: `review.acceptedCommits` is written on every member and read by nothing: grep finds only the writer, the schema, the demo exemption and ga3. R8 raised the same class for noEvidenceReason. A commit taken into a group's review outside every task is exactly what a later reader of the report needs to see, and it is visible only in the --plan output of the session that ran it. -> Render acceptedCommits (sha and reason) beside the sign-off verdict in the report and the panel. Or state in phase-signoff.md that it is a record without a reader.\nR7 (low) commit afd72d91 message (audit-stamp line, claim 7): R12 asked for stamp-verification stamps. The message carries `audit-stamp: head dcb72589, scopeDigest sha256:211cfee...`, which is not the tool's JSON. `stamp-verification.py compare --stamp-file <message>` refuses it with 'the text after audit-stamp: is not JSON', so the claim cannot be graded. The JSON stamp in the executor's scratch (p74c/stamp.txt) has a different scopeDigest (ba8e239e...) and grades `stale` against this worktree now. Claim 7, 'no count written into prose by this change', sits beside COMPATIBILITY.md's 'gained one additive key ... gained two' and the schema's 'with ONE exception'. Those are enumerated and arguably historical, but the claim as written is not true. -> Paste the JSON line `stamp-verification.py take` prints, taken on the committed tree. Reword claim 7 to 'no count without its enumeration or command beside it'.\nR8 (low) plugins/audit/scripts/governance/run-test-gate.py:1925-1930 (coverage basis): R9's second half is still open. The group row now records `groupWith`, but its coverage basis still lists other members' files as 'declared but not named by the run', with no word that they are the group's members' files and not the carrier's declaration. -> When `also` is set, label those files by their owning member in the coverage basis, e.g. 'declared by P2 (group member)'.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/ui/panel/composition.js"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - a merge commit adding its own file passes signoff --plan with nothing listed for review"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ff82e74b",
+      "outcome": {
+        "technical": "reuse_identity includes group members; merges accounted only when their tree equals git merge-tree of the parents; --accept resolved via rev-parse; group flags dispatched to the group door.",
+        "descriptive": "Signing off a group of phases no longer loops on a reused run, reviews a merge that brings its own changes, and refuses group-only options on a single phase."
+      },
+      "startedAt": "2026-09-26T08:13:04Z",
+      "completedAt": "2026-09-26T09:46:09Z",
+      "verifiedBy": [
+        "test_audit_task ve8",
+        "test_audit_task ga8",
+        "test_audit_task gs19",
+        "test_run_test_gate gg6",
+        "test__evidence_view gv5"
+      ]
+    },
+    {
+      "id": "P74.5-qq5",
+      "title": "Round-4 review findings: a merge the tool cannot recompute is said so, the printed review command shows what was refused, and --accept takes a SHA only",
+      "status": "done",
+      "description": "Round-4 phase review findings, all to be fixed. Orchestrator decisions: (U1) _clean_merge answers three states - clean (merge-tree exit 0 and equal tree), own content (merge-tree exit 1, or a differing tree), and could-not-ask (any other exit, carrying git's own error line and naming the git 2.38 requirement); could-not-ask is a refusal with that honest reason, never 'an edit', and --accept still takes the commit in; a case under a PATH shim that behaves like old git. (U2) the review command printed for a refused merge is the comparison the check made: git diff <tree of git merge-tree --write-tree p1 p2> <sha>, which shows a dropped change that git show --cc hides; ga8b is renamed to what it asserts and a case proves the printed command shows the dropped change. (U3) an octopus merge is could-not-ask with the reason that merge-tree recomputes two parents only. (U4) an accepted commit counts as accounted when the merges above it are judged, and a merge whose only unaccounted parent is a refused merge is listed as waiting on that SHA, not as 'no member records'. (U5) --accept takes a hex SHA or unique hex prefix only (a ref name or revision expression is refused by name), resolved to the full SHA recorded. (U6) a vitest case for the done-phase accepted-commits note.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:6252-6268 (_clean_merge), :6212-6218 (the 'carries content of its own' refusal): When git cannot answer, the refusal gives a false reason. `_clean_merge` returns False for every non-zero exit from `git merge-tree --write-tree`. That covers git older than 2.38, which has no --write-tree: git 2.37 parses it as a base rev and dies with 'unknown rev --write-tree', exit 128. It also covers a missing object in a shallow clone. False is then reported as 'its tree is not the automatic merge of its parents, so it is a conflict resolution or an edit no task records'. I RAN this through a PATH shim that reproduces the old-git failure (scratchpad/p74r3/oldgit/git, r4b.py). A branch built from two clean --no-ff merges, which gets `--plan` exit 0 on git 2.50.1, got exit 2 under the shim. The refusal called merge m1 an edit, and listed the clean merge m2 above it as a commit 'no member records'. The repo already knows about this floor: `_merge_install.py:225-241` says '`merge-tree --write-tree` needs git 2.38+', and `test__worktrees.py:192` names Ubuntu 22.04, whose git (2.34) is older than that. CLAUDE.md's rule applies: when the basis is missing, say that. -> Make `_clean_merge` answer one of three states: clean; own (exit 1 means conflicted, or the tree differs); could-not-ask (any other exit, carrying stderr's first line). A could-not-ask merge gets its own refusal, e.g. 'whether merge X carries content of its own could not be asked (`git merge-tree --write-tree`: <stderr>; needs git 2.38+)'. Take the version wording from `_merge_install`. Add a case that injects a run fn returning exit 128 for merge-tree, and check the sentence is the could-not-ask one.\nR2 (med) plugins/audit/scripts/manifest/audit-task.py:6212-6218 (refusal names `git show --cc <sha>`), :6667 (plan lists `accepted  git show <sha>`); plugins/audit/reference/phase-signoff.md:402-405; plugins/audit/tests/test_audit_task.py ga8b: The detection works, but the review command it prints does not show what it detected. I RAN r4c.py: during a clean merge of side2 I ran `git rm -f src/p2.py`, which silently dropped side2's change. `--plan` correctly refused merge a1afcbc0700e. But both `git show --cc <sha>`, which the refusal names, and `git show --format= <sha>`, which the plan lists for an accepted commit, print NOTHING. A dense combined diff hides any path whose result equals one parent. `git show --remerge-diff <sha>` shows the deletion. So a reviewer who follows the printed step sees an empty diff and passes --accept. Separately, ga8b's name says 'listed with `git show --cc`', but it asserts that plain `git show <sha>` is in the output. -> For a merge, name `git show --remerge-diff <sha>` (git 2.36+), or `git diff <merge-tree tree> <sha>` from the tree `_clean_merge` already computed. Do this in the refusal, in the plan's accepted line when the accepted commit is a merge, and in phase-signoff.md. Extend ga8 with a drop-a-side merge, and assert on the command that is printed.\nR3 (low) plugins/audit/scripts/manifest/audit-task.py:6259-6260 (`if len(parents) != 2: return False`), :6212-6218: Every octopus merge is refused with the edit/conflict sentence, including a clean one. I RAN `git merge --no-ff side1 side2` (octopus, no hand edits): `--plan` exited 2 with 'its tree is not the automatic merge of its parents, so it is a conflict resolution or an edit'. That was never established. The docstring itself says only that it was not asked. -> For more than two parents, give a separate refusal: 'an octopus merge cannot be replayed with merge-tree, so whether it carries its own content was not established - review it and --accept it'. Or replay it pairwise, one parent after another.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:6297-6302 (_account: an `own` merge is never added to `ok`), :6227-6235: A clean merge above a refused merge is reported as a commit 'that no member records'. Its parent is not in `ok`, so it falls through to the plain-stray branch. I saw this in the old-git run: m2 was listed as a generic stray beside m1's refusal. The operator is told to account for a commit that becomes accounted by itself once the merge below it is accepted. -> Keep a set of the `own` merges, and report a merge whose only unaccounted parents are in it as 'a merge over X, accounted once X is'. Or leave it out of the stray list until X is resolved.\nR5 (low) plugins/audit/scripts/manifest/audit-task.py:6194-6204 (--accept via `rev-parse --verify <name>^{commit}`): --accept takes any revision expression, not only a SHA. I RAN `--accept combined --reason r`: the branch tip was taken in and dropped from the stray list. `--accept HEAD` resolved to the checked-out branch. Both the docs and the refusal say 'name the commit by its full SHA, or a prefix only it has'. A ref is re-resolved on each invocation, so the commit a `--plan` listed and the commit a later record accepts can differ if the branch moves in between. A hex prefix that is also a ref name resolves to the ref. -> Require `name` to match ^[0-9a-f]{4,40}$ and `full.startswith(name.lower())`. Otherwise refuse by name. Add a case for `--accept <branch>`.\nR6 (low) plugins/audit/scripts/ui/panel/composition.js:903 (`if(accepted&&ph.signoffVerdict)` for a done phase); tools/ui-tests/phase-signoff-note.test.mjs: The only vitest case for accepted commits uses an in-flight phase. The branch that shows them on a landed (done) phase is the one a later reader meets, and no case covers it. Deleting line 903 would leave every test green. -> Add a case: status 'done', signoffVerdict 'passed', acceptedCommits [...]. The note must contain the short SHA and the reason, and the existing done-without-accepted case must stay null.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - under a pre-2.38 git a clean merge is refused as carrying an edit"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "4e08524d",
+      "outcome": {
+        "technical": "_clean_merge returns clean/own/could-not-ask; review command is git diff <merge-tree tree> <sha>; accepted commits count for merges above; --accept hex only.",
+        "descriptive": "Group sign-off now says honestly when git cannot recompute a merge, shows the exact diff it refused, and accepts only real commit SHAs."
+      },
+      "startedAt": "2026-09-26T09:55:43Z",
+      "completedAt": "2026-09-26T11:38:25Z",
+      "verifiedBy": [
+        "test_audit_task ga8b",
+        "test_audit_task ga11",
+        "test_audit_task ga12",
+        "test_audit_task ga13",
+        "test_audit_task ga14",
+        "test_audit_task ga10"
+      ]
+    },
+    {
+      "id": "P74.6-qq5",
+      "title": "Round-5 review findings: a merge git cannot recompute prints a review command that shows it, and a waiting merge is judged now",
+      "status": "done",
+      "description": "Round-5 phase review findings, all to be fixed. Orchestrator decisions: (V1) on the could-not-ask branch the printed review command is `git show -m <sha>` (a diff against each parent), and ga11 runs it on a drop-a-side merge under the old-git shim and asserts the deletion shows. (V2) a merge waiting on a refused one is judged NOW as if that parent were accounted: clean is reported as waiting on <sha>, own content or could-not-ask is refused with its own reason in the same refusal; the wording in audit-task, phase-signoff.md and CHANGELOG says exactly that. (V3) ga12 asserts 'could not be asked' present and 'carries content of its own' absent. (V4) a hex-spelled name that resolves through a ref is refused with a sentence saying it names a ref, not a commit SHA, and a case pins it.\nR1 (med) plugins/audit/scripts/manifest/audit-task.py:6310-6317 (_review_command falls back to `git show <sha>`), :6322-6326 (_merge_refusal, could-not-ask branch), :6742-6744 (plan's accepted line): U2's defect is still there on the could-not-ask branch. That is exactly where the operator's own review is the only check. When a merge has no recomputed tree (a git before 2.38, or an octopus merge), the refusal says 'Review it (`git show <sha>`)', and an accepted merge of that kind is listed as `git show <sha>` too. For a merge, `git show` prints the dense combined diff, which hides a dropped side. I RAN this (scratchpad/p74r3/r5d.py, which is r4c's drop-side2 merge under the oldgit/git shim): the refusal named `git show 678cca0cb863...`, and that command printed 0 bytes. `git show -m --format= <sha> --stat` printed the deletion of src/p2.py. On old git, every merge takes this branch. -> When `_review_command` has a merge but no tree, name a per-parent diff that works on any git and on an octopus merge. That is `git show -m <sha>`, or `git diff <sha>^1 <sha>` plus one diff per further parent. `_review_command` needs the parent count. Extend ga11 with a drop-a-side fixture under `_old_git`: run the printed command and assert its output names the dropped file.\nR2 (low) plugins/audit/scripts/manifest/audit-task.py:6226-6230 (waiting sentence), :6368-6373 (_account's waiting branch never calls judge); plugins/audit/reference/phase-signoff.md:409-410; CHANGELOG.md:185: The waiting sentence promises something the code never checked. The code says '<m2> is a merge over <m1>, refused above - it is accounted once that one is', and the docs call m2 'a clean merge'. But `judge` is never called on a waiting merge, so nothing established that it is clean. I RAN two cases. First, r5b.py: m1 and m2 each add a file inside the merge commit. `--plan` said m2 'is accounted once' m1 is. With `--accept <m1>`, m2 was then refused as 'carries content of its own'. Second, r5c.py: on the old-git shim, `--accept <m1>` on the clean two-merge branch was followed by m2 refused as could-not-ask, so it is never 'accounted once that one is' there. The gate still holds, so this is not a safety hole. It is a claim without its basis, the same class as U1 and U4. -> Judge a waiting merge too. merge-tree can replay its two parents whether or not they are accounted. Then either say 'recomputes clean; accounted once <m1> is', or refuse it now with its own sentence. The weaker fix is to reword it to 'judged once <m1> is accounted', in the code, phase-signoff.md and the CHANGELOG. Add an evil-then-evil case to ga14 that asserts m2 is not promised accounting.\nR3 (low) plugins/audit/tests/test_audit_task.py:6474-6477 (ga12): The fix for U3 is not guarded. I ran a mutation in a git-archive export: `_clean_merge`'s octopus branch was changed to return MERGE_OWN, so a clean octopus is refused as 'carries content of its own'. The suite stayed ALL PASS (574 of 574). ga12 asserts only `\"octopus\" in txt and \"an edit\" not in txt`, and the octopus `why` string contains 'octopus' in both states. -> Make ga12 assert 'could not be asked' in txt and 'carries content of its own' not in txt, as ga11 does for old git.\nR4 (low) plugins/audit/scripts/manifest/audit-task.py:6206-6212 (`full.startswith(name.lower())` and its refusal); plugins/audit/tests/test_audit_task.py (no case): The startswith guard has no test. I mutated it to `if code == 0 and full:` and test_audit_task stayed ALL PASS (574 of 574). That arm is what stops a branch or tag whose NAME is hex from being accepted by name. git prefers the ref, so the ref would re-resolve on every call, which is the U5 hole. I RAN r5a.py: a branch named `e1e6d3`, pointing at a different commit, is refused today. But its sentence says 'does not resolve to exactly one commit', which misstates the cause: it resolved to a ref. -> Add a case: create a branch named with a hex prefix that points elsewhere, and assert refusal. Give that arm its own sentence, e.g. '--accept X resolves through a ref of that name to <sha>, not to a commit it prefixes'.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "tools/ui-tests/phase-signoff-note.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - under a pre-2.38 git the printed review command shows nothing for a merge that dropped a side"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "98bf532a",
+      "outcome": {
+        "technical": "git show -m for a merge with no recomputed tree; waiting merges judged now; octopus wording separable; hex-named refs refused by name.",
+        "descriptive": "Group sign-off now prints a review command that shows every merge it refuses, and judges a merge waiting on another one immediately."
+      },
+      "startedAt": "2026-09-26T11:46:38Z",
+      "completedAt": "2026-09-26T15:32:08Z",
+      "verifiedBy": [
+        "test_audit_task ga11b",
+        "test_audit_task ga11c",
+        "test_audit_task ga12",
+        "test_audit_task ga14c",
+        "test_audit_task ga10b"
+      ]
+    },
+    {
+      "id": "P74.7-qq5",
+      "title": "close-phase writes the landing stamp into the copy that survives, whatever manifest path it is given",
+      "status": "done",
+      "description": "Reported while landing P78: `close-phase.py <wt>/docs/audit/audit-plan.json P78 --project <wt> --dry-run` printed \"cleanup is not finished. From <main>, run: close-phase.py <wt>/docs/audit/audit-plan.json P78 --project .\". Run as printed from main, it merged with --ff-only, then wrote mergedAt and the derived status into the WORKTREE's shard and re-mirrored the WORKTREE's index stub - the copy removed moments later - so the worktree removal refused on those writes, while its phase.merged journal row went into MAIN's journal. The rule: the landing stamp is written to the manifest of the tree the merge lands in (the parent branch's checkout), never to a copy inside the phase's own worktree, whatever path is passed; and the dry-run's follow-up command names that surviving manifest. Red-first: close-phase given the worktree's manifest from the main checkout writes nothing under the worktree, stamps main's copies, and the worktree removal succeeds; plus the printed follow-up names main's manifest.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/commands/phase.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: repro that FAILS on current code - close-phase run from the main checkout with the worktree's manifest path writes mergedAt into the worktree copy"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "bee68fdd",
+      "outcome": {
+        "technical": "surviving_copy picks the tree holding the resolved path; follow-up names the surviving manifest; no_survivor_refusal exits 2 before any merge.",
+        "descriptive": "Landing a phase from the main checkout now writes the landing record into the copy that stays, and refuses when no such copy exists."
+      },
+      "startedAt": "2026-09-26T15:32:09Z",
+      "completedAt": "2026-09-26T17:24:24Z",
+      "verifiedBy": [
+        "test_close_phase sv1",
+        "test_close_phase sv2",
+        "test_close_phase sv3",
+        "test_close_phase ns1"
+      ]
+    },
+    {
+      "id": "P74.8-qq5",
+      "title": "run-test-gate's crowd line counts only runs that truly shared a window, not one that started the second the last one ended",
+      "status": "done",
+      "description": "Reported while recording P79's wave-3 task gates (runs 15:49:37Z.28e86c, 15:50:39Z.3d1d04, 15:51:38Z.ea5bd0): the crowd line \"N other gate run(s) shared this window\" fires on runs recorded strictly one after the other. `_evidence_io._overlaps` is inclusive at both endpoints while `ts` and `startedAt` are whole seconds, so a run that starts in the same second the previous row was written always counts as overlapping. Decide overlap so that a run which began when the other had already ended does not count: compare half-open at the end (a run ending at second t and one starting at t are sequential), and where the rows carry sub-second or ordering evidence use it; if whole-second data cannot tell, say that in the line rather than asserting a shared window. Red-first both directions: back-to-back runs are not a crowd; two runs whose windows genuinely overlap by a second or more still are.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - a run starting in the second the previous run's row was written is reported as overlapping it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P74.7-qq5"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "77a85da3",
+      "outcome": {
+        "technical": "overlap_state compares whole-second windows half-open at the end; undecided sub-second boundary runs are named as not knowable.",
+        "descriptive": "The test gate no longer reports runs made one after another as sharing the machine, and says so when the timestamps cannot tell."
+      },
+      "startedAt": "2026-09-26T17:24:25Z",
+      "completedAt": "2026-09-26T20:32:04Z",
+      "verifiedBy": [
+        "test__evidence_io wr10",
+        "test__evidence_io wr10b",
+        "test__evidence_io wr10c",
+        "test_run_test_gate gc1",
+        "test_run_test_gate gc2",
+        "test_run_test_gate gc3"
+      ]
+    },
+    {
+      "id": "P74.9-qq5",
+      "title": "Round-6 review findings: an already-landed close stamps the surviving copy, and an undecided window reaches every reader",
+      "status": "done",
+      "description": "Round-6 phase review findings (1-5; 6 is the orchestrator's merge step), all to be fixed. Orchestrator decisions: (W1) the already-landed mode redirects the stamp to the surviving copy exactly as the in-parent-worktree mode does, and refuses with exit 2 when no surviving copy exists; the dry-run's follow-up names that copy; real-git cases for a hand-merged branch run from main with the worktree manifest and from inside the worktree. (W2) with auto:false the 'writes nothing' path is decided first and returns exit 0 with the merge command; the no-survivor refusal applies only where a write would follow. (W3) cases that kill both surviving mutations (the inside-the-worktree condition; deepest worktree over shallowest). (W4) an undecided window reaches every reader: attribution_of, contested_by and record-outside-run say whether another run shared the window is not knowable, never that nobody ran. (W5) two runs meeting in one second are sequential only when one writer's chain orders them; across writers the boundary second is undecided.\nR1 (med) plugins/audit/scripts/git/close-phase.py:774-776 (surviving_copy returns the passed path for any mode but in-parent-worktree); plugins/audit/commands/phase.md:61-68; CHANGELOG.md:352-359: F514 is still open in the ALREADY-CONTAINED mode. That mode covers the idempotent re-run, and the re-run after a human merged by hand, which includes every meta.merge.auto:false / PR landing. surviving_copy redirects only when the mode is in-parent-worktree, so an already-landed branch still gets its stamp in whatever copy was passed. I RAN this (scratchpad/p74r6/topo2.py, fixture F): `git merge --ff-only audit/p1-demo` in main, then close-phase <wt>/docs/audit/audit-plan.json P1 --project . from main. It exited 1. mergedAt was written to the WORKTREE's copy, the journal row went to main (`?? docs/audit/journal/`), and `git worktree remove` failed with 'contains modified or untracked files'. That is the exact F514 symptom. Fixture F3, run from inside the worktree, stamped the worktree copy and printed a follow-up naming main's manifest (mergedAt null). I ran that follow-up (topo3.py): it wrote a SECOND, different mergedAt into main (20:35:43 vs 20:35:26 in the wt), plus a second journal row, and still could not remove the worktree, because the first stamp had dirtied it. phase.md and the CHANGELOG say the stamp goes to the parent's copy 'whatever manifest path is passed'. -> In surviving_copy, redirect whenever the parent is checked out in a tree (parentTree has a path) and the mode is in-parent-worktree OR already-contained. The no-checkout case is already covered by no_survivor_refusal, and I confirmed F2 is refused, exit 2. Add a real-git case beside sv1: fast-forward main by hand, then run with the worktree manifest from main. Assert exit 0, main's mergedAt set, the worktree mergedAt null and the worktree removed. Add the same case run from inside the worktree, asserting the stamp is in main's copy.\nR2 (med) plugins/audit/scripts/governance/_evidence_io.py:1550-1580 (attribution_of via contested_by -> _overlaps), plugins/audit/scripts/governance/record-outside-run.py:224,247-248; CHANGELOG.md:346-351: The undecided arm reaches the machine line only. Every other reader folds OVERLAP_UNDECIDED into 'no' and then asserts solitude. The CHANGELOG says such a window 'is said to be not knowable rather than asserted either way'. I RAN this (scratchpad/p74r6/ov2.py) with a sub-second gate run G [12,12] and an outside run O [5,12]. overlap_state = 'undecided'. attribution_of(G) = {'attributed': True, 'basis': '...; no run from outside this gate shares that window'}, so a red prints 'claimed: this run's own verdict'. record-outside-run's view, overlapping_runs(rows, O, gate), is [], so it prints 'contests: no recorded gate run shares this window, so nothing this plugin measured is put in doubt'. Before P74.8 (inclusive) both said contested. A sub-second gate is ordinary: a single lint or validate entry. The attribution line exists for a red, the claim this file says 'was wrong' before. -> Give contested_by/overlapping_runs a third outcome. One option is to return the undecided runs beside the overlapping ones, as undecided_neighbours does. Then attribution_of answers attributed=None, with a basis naming the undecided run, and record-outside-run prints 'not knowable from whole-second stamps' for it. Add cases for a sub-second gate red stamped in an outside run's end second: assert the claimed line is neither 'this run's own verdict' nor CONTESTED. Assert the same for record-outside-run's contests line.\nR3 (low) plugins/audit/scripts/governance/_evidence_io.py:1428-1453 (overlap_state: half-open rule for two windows that each span a second or more): The docstring's own reasoning applies to a case the rule decides anyway. A run stamped ending in second t and another stamped starting in t are declared sequential (OVERLAP_NO). But A's end and B's start both fall inside second t, 'in an order no field records'. That is the reason given for calling the sub-second case undecided. The stated basis ('the next run started after the last row was written, which is how a single executor's runs are recorded') holds for ONE writer. It is applied to every pair, including contested_by's gate-vs-outside pairs, which are by definition two writers. I RAN this (ov.py / ov2.py): gate [12,20] with outside [5,12] gives state 'no' and attributed True. Inclusive, it was contested. A possible overlap of under a second is now asserted as none. That breaks CLAUDE.md's rule that a missing basis is the thing to say, although the practical impact is small. -> Limit the half-open NO to pairs that share a writer (the same runner and sessionId, or whatever field identifies one executor), where the sequential basis holds. Report a cross-writer shared boundary second as OVERLAP_UNDECIDED. Otherwise narrow the docstring and CHANGELOG to say the boundary is resolved as sequential by assumption, and name the assumption on the basis the surfaces print.\nR4 (low) plugins/audit/scripts/git/close-phase.py:1061-1064 (no_survivor_refusal runs before close()'s auto:false exit at :412): The refusal fires on a run that would write nothing. With meta.merge.auto false, the parent checked out nowhere and the worktree manifest passed, close() would take the human-in-the-loop exit: exit 0, 'NOT MERGED ... Nothing was written', and the merge command handed over. The new refusal comes first and returns exit 2 instead (scratchpad/p74r6/topo6.py, PENDC). Its rationale is 'a moved ref with no record of the landing', and that does not apply when no ref moves. The documented success of that path becomes a usage error. The operator is also never shown the command they were supposed to run. -> Ask no_survivor_refusal only when the run will write a stamp: the_plan['auto'] is true, or the mode is already-contained. Add a case with auto:false, the parent checked out nowhere and the worktree manifest, asserting exit 0 and pending.\nR5 (low) plugins/audit/tests/test_close_phase.py:1093-1120 (_no_survivor_cases: ns1 only), :1035-1090 (_surviving_copy_cases: sv1-sv4): Two arms of the P74.7 fix have no test. I mutated a git-archive export of HEAD 7f97af51, ran test_close_phase.py --selftest, purged __pycache__ between runs, and checked that each anchor matched exactly once (scratchpad/p74r6/mut.py). (a) I dropped no_survivor_refusal's `within_tree(phase_tree, manifest_path)` clause. That makes it refuse EVERY no-checkout landing that has a linked phase worktree, the ordinary route for this topology. Result: exit 0, SURVIVED. (b) I made _tree_holding return the SHALLOWEST holder, holding[0]. For a worktree nested in the main tree (.claude/worktrees/<p>, the layout Claude Code makes) that brings F514 back. Result: exit 0, SURVIVED. The live behaviour is correct today. topo5.py: the nested worktree is stamped in main and removed, and the nested no-survivor case is refused with exit 2. The other mutations I ran (source=git_root, dropping realpath, no refusal, follow-up naming the passed path) went red on sv1/sv3/ns1. -> Add a real-git case where the parent is checked out nowhere and main's own manifest is passed (the main tree on another branch). Assert that it lands with exit 0 and is not refused. Add a case with the phase worktree created under <root>/.claude/worktrees/p1 and the worktree manifest passed from main. Assert that main's copy is stamped and the worktree removed.\nR6 (low) plugins/audit/scripts/governance/run-test-gate.py:3785-3855 (merge with main), CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/commands/phase.md: This is a landing condition, not a defect in the diff. main has moved 56 commits since the merge base 10a3e3da. `git merge-tree --write-tree HEAD main` now reports CONTENT conflicts in code and docs, not only in docs/audit. In run-test-gate.py, P74.4's `reuse_identity(..., group=also)` collides with main's `--own` branch, which re-indents the same block. A resolution that takes main's side silently drops `group=also`. That brings back the 'a group run reused as a solo run' defect P74.4 fixed. -> Merge main into P74 before the phase gate. In run-test-gate.py, carry `group=also` into main's `else:` branch. Then re-run the phase gate, including test_run_test_gate and the ga*/group cases in test_audit_task, on the merged tree.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/commands/phase.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/record-outside-run.py",
+        "plugins/audit/tests/test_record_outside_run.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: repro that FAILS on current code - re-running close-phase after a hand merge, from main with the worktree manifest, stamps the worktree copy"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c678f6e8",
+      "outcome": {
+        "technical": "surviving_copy in the already-landed mode; no-survivor refusal only when a write follows; one overlap classification with undecided for every reader; chain-ordered boundary seconds.",
+        "descriptive": "Re-running a landing after a hand merge now stamps the copy that stays, and every report says so when timestamps cannot tell whether two runs overlapped."
+      },
+      "startedAt": "2026-09-26T20:47:51Z",
+      "completedAt": "2026-09-26T21:58:26Z",
+      "verifiedBy": [
+        "test_close_phase sv5",
+        "test_close_phase sv6",
+        "test_close_phase ns2",
+        "test__evidence_io wr11b",
+        "test_run_test_gate gc4",
+        "test_record_outside_run o14"
+      ]
+    },
+    {
+      "id": "P74.10-qq5",
+      "title": "Round-7 review findings: chain order must mean sequential, a merged ledger does not order across its seam, and the overlap readers stay linear",
+      "status": "done",
+      "description": "Round-7 phase review findings, all to be fixed on the merged tree. Orchestrator decisions: (X1) chain_ordered answers True only when the chain puts the later-written row's run starting at or after the earlier row's run ended, so a long run written after a sub-second one is not called sequential; a case beside wr10d. (X2) main's evidence-ledger merge (merge_rows, from P73) records where the re-linked rows begin, and chain_ordered refuses to order two rows across that point, so a merged ledger's re-chained tail cannot make two branches' runs look sequential; a case that merges two branches' ledgers with the real merge and asks both. (X3) chain_ordered is asked only when overlap_state answers undecided, and its lookups are built once per reader call; the cost measured twice with a gap on a ledger of a few thousand rows. (X4) an ns4 case: auto false, the branch already merged by a pull request, the parent checked out nowhere - refused with exit 2 and no stamp in either copy.\nR1 (low) plugins/audit/scripts/governance/_evidence_io.py:1457-1484 (chain_ordered), :1537-1538 (_classified passes it as ordered=): chain_ordered does not check which direction the chain orders the rows in. It returns True when either row reaches the other through prev, and never checks that order against the two windows. The docstring's premise is that one executor runs its gates one at a time, so the later row's run began after the earlier row was written. A chain can contradict that premise and still be read as proof of it. I RAN this (scratchpad/p74r7/ch.py): one writer's file chained [B (12,12), A (5,12)], so B's row was written before A's. chain_ordered(A, B) = True, so overlap_state = 'no', and A's machine line gives shared [] and undecided [], which prints 'this run had the machine to itself'. But A, the later row in the chain, started in second 5, before B's row was written in second 12. Under the docstring's own premise that is only possible if the two ran at the same time. The premise is also not enforced. The writer key is CLAUDE_CODE_SESSION_ID plus the worktree key (append_row :844-852), or the per-checkout writer_token when there is no session. Nothing in run-test-gate serialises gate runs under one key: two background shells or two subagents of one session in one worktree append to one chain in the order they finish. This is limited to the boundary second. -> In chain_ordered, work out which row the chain puts later. Return True only when the later row's window start (window_of) is >= the earlier row's end. Otherwise return False, which makes it undecided. Add a case beside wr10d: chain_file([B(12,12), A(5,12)]), then assert undecided_neighbours(chain, A, RUNNER_GATE) names B and shared_the_machine names nobody. Narrow the docstring to say that one writer file running its gates one at a time is an assumption this reads the chain under.\nR2 (low) plugins/audit/scripts/governance/_evidence_io.py:1457-1484 (P74 chain_ordered) <-> main's plugins/audit/scripts/governance/_evidence_io.py merge_rows and _journal_io.py:1869 merge_rows (not yet on this branch): This is a boundary finding that becomes live at the merge of main this phase still owes. Both sides share one store: the evidence ledger file's prev/hash chain. Main adds a ledger merge that re-chains the union of two branches' divergent copies of one file, in ts order. P74's chain_ordered reads any prev path as 'ONE writer's chain records the two runs one after the other'. After a merge, that path joins runs appended on two branches, possibly at the same moment, and reads them as sequential. That is exactly the cross-writer case P74.9 made undecided. I RAN this against main's merge_rows (from a git-archive of main) and P74's reader. X (5,12) was appended on one branch and Y (12,20) on the other, both over a shared first row. Unmerged, chain_ordered is False and Y's machine line is undecided. After main's merge_rows (ok True, rows R0,X,Y), chain_ordered is True, and Y's machine line shows shared [] and undecided [], which prints solitude. Comparing sessionId would not separate them, because a file merged this way has one basename and so one writer key. -> Resolve this when main is merged in, and change both files. Make chain_ordered unable to read order across a re-link. One way: have main's ledger merge record where the re-linked stretch starts (its ACTION_MERGED journal row already names the file; add the shared-prefix length or the first re-linked hash). chain_ordered then returns False for a pair where either row is past that point. Add a case that builds two divergent copies, merges them with _evidence_io.merge_rows, and asserts that the boundary pair is undecided.\nR3 (low) plugins/audit/scripts/governance/_evidence_io.py:1537-1538 (_classified calls chain_ordered for EVERY other row), :1467-1472 (chain_ordered rebuilds by_id and by_hash over all rows on each call): The cost is quadratic and was not bounded. chain_ordered runs before overlap_state for every other gate row, not just for pairs that meet in a second. Each call rebuilds two dicts over the whole ledger and may walk a whole file's chain. read_rows reads every month's file, so n is the ledger's lifetime. The machine line pays this twice (shared_the_machine plus undecided_neighbours) on every recorded gate run. Measured once each, in two layouts (scratchpad/p74r7/ch.py). One chain: 500 rows 0.11s, 1000 rows 0.40s, 2000 rows 1.57s, 4000 rows 6.29s. Files of 50: 1000 rows 0.33s, 2000 rows 1.26s, 4000 rows 4.90s. The window-only pass that P74.8 made at 4000 rows took 0.038s. Today's ledgers are small, so the cost does not show yet. -> In _classified, call overlap_state without ordered first. Ask chain_ordered only when the answer is OVERLAP_UNDECIDED. Build by_hash and by_id once per _classified call and pass them in. Add a case over a large chained ledger where no pair meets, asserting that chain_ordered is never consulted (for example, count its calls through a wrapper in the test).\nR4 (low) plugins/audit/scripts/git/close-phase.py:1068 (writes = ... or mode == 'already-contained'); plugins/audit/tests/test_close_phase.py _landed_survivor_cases: The already-contained arm of the new writes predicate has no test. I mutated a git-archive export of HEAD to `writes = the_plan[\"auto\"]` (anchor matched once, __pycache__ purged). test_close_phase still printed 88/88 and exited 0, so the mutation SURVIVED. Its live effect is F514 on the pull-request landing path, which is the reason meta.merge.auto:false exists. Setup: auto:false, the PR merged so that main contains the branch, main checked out nowhere, and the worktree manifest passed (scratchpad/p74r7, fixture PRC). HEAD refuses correctly with exit 2 and writes nothing. The mutated copy exits 1, writes mergedAt into the WORKTREE's copy, and then fails `git worktree remove` with 'contains modified or untracked files'. -> Add an ns4 case beside ns2. Set meta.merge.auto false, fast-forward main to the branch while main is checked out nowhere (git branch -f main audit/p1-demo from 'other'), then run with the worktree manifest. Assert exit E_USAGE, 'no surviving copy' in the output, and mergedAt null in both copies.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - a long run written after a sub-second one in one chain is called sequential"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "2b2ac252",
+      "outcome": {
+        "technical": "chain_ordered requires the later run to start after the earlier ended and refuses across recorded merge seams; consulted only on undecided pairs.",
+        "descriptive": "Two runs only count as one-after-the-other when they really were, merged ledgers no longer fake that order, and the check is fast again."
+      },
+      "startedAt": "2026-09-26T22:22:43Z",
+      "completedAt": "2026-09-27T01:31:42Z",
+      "verifiedBy": [
+        "test__evidence_io co1",
+        "test__evidence_io co5",
+        "test__evidence_io co8",
+        "test__journal_io mu4b",
+        "test_audit_journal me2c",
+        "test_close_phase ns4"
+      ]
+    },
+    {
+      "id": "P74.11-qq5",
+      "title": "each merge seam is walked on its own, and a journal that cannot record merges never reads as never-merged",
+      "status": "done",
+      "description": "Round-8 review (review-P74h.json; p74r8/seam2.py, e2e.py, disabled.py, mut3.py). (1) chain_index walks each seam's stretch with its own visited set, so an earlier or forged merge row cannot cut a later real one short; co11: two successive real merges, the answer asserted in both seam orders. (2) merge_seams returns (None, \"journal disabled\") when journal.enabled is false, since no merge could have been recorded; a case for it. (3) a case that makes the journal read raise and asserts merge_seams returns (None, why), beside the readable case returning a list.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - after two successive real merges, a run in the later stretch is called alone on the machine"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "3372f236",
+      "outcome": {
+        "technical": "chain_index walks each seam with its own visited set; merge_seams returns None with a reason when the journal is disabled.",
+        "descriptive": "A later ledger merge can no longer be hidden by an earlier one, and a switched-off journal is never read as proof that no merge happened."
+      },
+      "startedAt": "2026-09-27T01:54:45Z",
+      "completedAt": "2026-09-27T03:53:25Z",
+      "verifiedBy": [
+        "test__evidence_io co11",
+        "test__evidence_io co12",
+        "test__evidence_io co13",
+        "test__evidence_io co14",
+        "test__evidence_io co15"
+      ]
     }
-  ]
+  ],
+  "startedAt": "2026-09-25T18:00:38Z",
+  "testEvidence": {
+    "runId": "2026-09-27T04:16:44Z.7549af",
+    "status": "passed",
+    "at": "2026-09-27T04:16:44Z"
+  }
 }

@@ -136,6 +136,16 @@ def _cases(check):
     check("r4 the policy travels with the names, so one read of meta decides both "
           "where this goes and what happens after",
           r["policy"]["auto"] is True, repr(r["policy"]["auto"]))
+    _self = M.resolve({"meta": meta}, {"id": "P2", "branch": "dev"})
+    _self_arg = M.resolve({"meta": meta}, {"id": "P2", "branch": "feature/p2"},
+                          branch_arg="dev")
+    check("r5 a branch that IS the resolved parent is refused, recorded or passed - "
+          "landing it would plan deleting the parent: %r / %r"
+          % (_self.get("refusal"), _self_arg.get("refusal")),
+          bool(_self.get("refusal")) and "its own parent" in _self["refusal"]
+          and bool(_self_arg.get("refusal")))
+    check("r6 SECOND DIRECTION: a branch other than the parent carries no refusal",
+          r.get("refusal") is None, repr(r.get("refusal")))
 
     # --- auto: false, the human-in-the-loop exit ------------------------------
     run, calls = _fake({})
@@ -856,11 +866,385 @@ def _landed_cases(check):
         _harness.remove_tree(root)
 
 
+def _fixture_git(root):
+    """`git -C root ...` with a fixed identity, returning the CompletedProcess."""
+    import subprocess
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(*a):
+        return subprocess.run(["git", "-C", root] + list(a), env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return git
+
+
+def _signed_phase(pid, branch):
+    return {"id": pid, "title": "One", "status": "in_progress",
+            "branch": branch, "baseRef": None, "mergedAt": None,
+            "parentBranch": "main" if branch else None,
+            "review": {"status": "passed"},
+            "tasks": [{"id": pid + ".1", "title": "t", "status": "done"}]}
+
+
+def _write_plan(root, meta, phases):
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    if not os.path.isdir(os.path.dirname(mpath)):
+        os.makedirs(os.path.dirname(mpath))
+    with open(mpath, "w") as fh:
+        json.dump({"meta": meta, "phases": phases}, fh)
+    return mpath
+
+
+def _main_tree_cases(check):
+    """Signed off from the MAIN worktree while it stands on the phase branch.
+
+    Against a real repository, because the defect was in the order two real
+    refusals were asked in: the merge lands, and the cleanup then has to hand the
+    operator the switch it will not make itself."""
+    root = _harness.fixture_root("closephase-maintree")
+    try:
+        git = _fixture_git(root)
+        git("init", "-q", "-b", "main")
+        meta = {"developmentBranch": "main"}
+        mpath = _write_plan(root, meta, [_signed_phase("P1", "audit/p1-demo")])
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        git("checkout", "-q", "-b", "audit/p1-demo")
+        with open(os.path.join(root, "work.txt"), "w") as fh:
+            fh.write("work\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "work")
+        lines = []
+        M.main([mpath, "P1", "--project", root, "--delete-branch", "--dry-run"],
+               out=lines.append)
+        preview = "\n".join(lines)
+        check("mt0 --dry-run words the follow-up as what the cleanup WILL need after "
+              "the merge, not as a cleanup that has run and stopped: %r"
+              % (preview[-300:],),
+              "after the merge, cleanup will need, from" in preview
+              and "cleanup is not finished" not in preview
+              and "git switch main" in preview)
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--delete-branch"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        head = git("branch", "--show-current").stdout.decode().strip()
+        landed = git("merge-base", "--is-ancestor", "audit/p1-demo",
+                     "main").returncode == 0
+        check("mt1 close-phase from the main worktree ON the phase branch lands it, "
+              "moves no HEAD, and prints the two commands that finish the cleanup "
+              "- `git switch main`, then `git branch -d audit/p1-demo` - each on a "
+              "line of its own: exit %r, head %r, %r" % (code, head, text[-400:]),
+              landed and head == "audit/p1-demo"
+              and "\n    git switch main\n    git branch -d audit/p1-demo" in text)
+        check("mt2 ...and never tells the operator to remove the main tree, nor "
+              "that a worktree must go first: %r" % (text[-400:],),
+              "git worktree remove" not in text and "must go first" not in text)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _composed_cases(check):
+    """A phase with no recorded branch: the name close-phase asks git about was
+    composed, and a composed name that is not a branch is a question for the
+    operator, not an unanswerable ancestry."""
+    import _branch
+    root = _harness.fixture_root("closephase-composed")
+    try:
+        git = _fixture_git(root)
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "Zed Quill")
+        meta = {"developmentBranch": "main"}
+        phase = _signed_phase("P1", None)
+        mpath = _write_plan(root, meta, [phase])
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        composed = _branch.phase_answer(meta, phase, "Zed Quill")["branch"]
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("cn1 a phase recording NO branch, whose composed name %r is not a "
+              "branch here, is refused with the reason - the name was composed "
+              "because none is recorded - and asked for --branch, instead of an "
+              "ancestry that 'could not be established': exit %r, %r"
+              % (composed, code, text[:300]),
+              code == M.E_FAIL and "no branch is recorded" in text
+              and composed in text and "--branch" in text
+              and "could not be established" not in text)
+        git("checkout", "-q", "-b", composed)
+        with open(os.path.join(root, "work.txt"), "w") as fh:
+            fh.write("work\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "work")
+        git("checkout", "-q", "main")
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--keep-branch",
+                       "--keep-worktree"], out=lines.append)
+        text = "\n".join(lines)
+        check("cn2 SECOND DIRECTION: when the composed name IS a branch, the phase "
+              "lands on it as before - the refusal is for a name nothing holds, not "
+              "for every composed one: exit %r, %r" % (code, text[:300]),
+              code == M.E_OK and "no branch is recorded" not in text
+              and git("merge-base", "--is-ancestor", composed,
+                      "main").returncode == 0)
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--branch", "main"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        check("cn3 --branch naming the parent itself is refused with exit 1 and "
+              "leaves the parent branch where it was: exit %r, %r"
+              % (code, text[:300]),
+              code == M.E_FAIL and "its own parent" in text
+              and git("rev-parse", "--verify", "--quiet",
+                      "refs/heads/main").returncode == 0)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _worktree_fixture(root, meta_extra=None, nested=False):
+    """(main manifest, worktree dir, worktree manifest, git) - main on `main`, the
+    phase on `audit/p1-demo` in a linked worktree the plugin created (its marker
+    written), signed off, one commit ahead. `nested` puts the worktree under
+    `<root>/.claude/worktrees/p1`, the layout Claude Code makes."""
+    git = _fixture_git(root)
+    git("init", "-q", "-b", "main")
+    meta = dict({"developmentBranch": "main"}, **(meta_extra or {}))
+    mpath = _write_plan(root, meta, [_signed_phase("P1", "audit/p1-demo")])
+    if nested:
+        with open(os.path.join(root, ".gitignore"), "w") as fh:
+            fh.write(".claude/worktrees/\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    wt = (os.path.join(root, ".claude", "worktrees", "p1") if nested
+          else root + "-wt")
+    git("worktree", "add", "-q", "-b", "audit/p1-demo", wt)
+    wgit = _fixture_git(wt)
+    with open(os.path.join(wt, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    wgit("add", "-A")
+    wgit("commit", "-q", "-m", "work")
+    admin = wgit("rev-parse", "--git-dir").stdout.decode().strip()
+    admin = admin if os.path.isabs(admin) else os.path.join(wt, admin)
+    with open(os.path.join(admin, W.PROVENANCE_FILE), "w") as fh:
+        json.dump({"createdBy": W.PROVENANCE_MARK, "phaseId": "P1",
+                   "branch": "audit/p1-demo"}, fh)
+    return mpath, wt, os.path.join(wt, "docs", "audit", "audit-plan.json"), git
+
+
+def _merged_at(path):
+    with open(path) as fh:
+        return [p.get("mergedAt") for p in json.load(fh)["phases"]
+                if p.get("id") == "P1"][0]
+
+
+def _surviving_copy_cases(check):
+    """The landing stamp goes to the manifest of the tree the merge lands in, never
+    to the copy inside the phase's own worktree - whichever path was passed."""
+    for label, use_wt in (("worktree", True), ("main", False)):
+        root = _harness.fixture_root("closephase-survivor-%s" % (label,))
+        wt = None
+        try:
+            mpath, wt, wt_mpath, git = _worktree_fixture(root)
+            lines = []
+            code = M.main([wt_mpath if use_wt else mpath, "P1", "--project", root],
+                          out=lines.append)
+            text = "\n".join(lines)
+            removed = not os.path.isdir(wt)
+            if label == "worktree":
+                check("sv1 given the WORKTREE's manifest from the main checkout, the "
+                      "stamp lands in main's copy and nothing is written under the "
+                      "worktree, so its removal succeeds: exit %r, main mergedAt %r, "
+                      "worktree removed %r, %s"
+                      % (code, _merged_at(mpath), removed, text[-400:]),
+                      code == M.E_OK and bool(_merged_at(mpath)) and removed)
+            else:
+                check("sv2 SECOND DIRECTION: given main's own manifest the landing is "
+                      "unchanged - main's copy stamped, the worktree removed: exit %r, "
+                      "main mergedAt %r, worktree removed %r"
+                      % (code, _merged_at(mpath), removed),
+                      code == M.E_OK and bool(_merged_at(mpath)) and removed)
+        finally:
+            _harness.remove_tree(root)
+            if wt and os.path.isdir(wt):
+                _harness.remove_tree(wt)
+    root = _harness.fixture_root("closephase-survivor-followup")
+    wt = None
+    here = os.getcwd()
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        lines = []
+        os.chdir(wt)
+        try:
+            M.main([wt_mpath, "P1", "--project", wt, "--dry-run"], out=lines.append)
+        finally:
+            os.chdir(here)
+        text = "\n".join(lines)
+        follow = [ln.strip() for ln in lines if "close-phase.py" in ln]
+        check("sv3 a dry-run standing inside the worktree prints a follow-up naming the "
+              "SURVIVING manifest - main's - never the worktree's copy: %r" % (follow,),
+              len(follow) == 1 and "docs/audit/audit-plan.json" in follow[0]
+              and os.path.realpath(wt) not in follow[0] and wt not in follow[0]
+              and ("From %s," % (os.path.realpath(root),) in text
+                   or "From %s," % (root,) in text))
+        check("sv4 ...and the preview wrote nothing anywhere: %r"
+              % (_merged_at(mpath),), _merged_at(mpath) is None
+              and _merged_at(wt_mpath) is None)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+
+def _no_survivor_cases(check):
+    """The parent checked out in NO worktree, and the manifest inside the phase's own
+    worktree: the landing has no surviving copy to stamp, so close-phase stops
+    before the ref-only fast-forward - the ref and the stamp cannot disagree."""
+    root = _harness.fixture_root("closephase-no-survivor")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        git("checkout", "-q", "-b", "other")
+        before = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        after = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        check("ns1 with `main` checked out nowhere and the manifest inside the phase's "
+              "worktree, close-phase refuses BEFORE merging - exit 2, `main` unmoved, "
+              "no stamp in the worktree copy, the worktree kept - naming the branch "
+              "and the step that fixes it: exit %r, main moved %r, %s"
+              % (code, before != after, text[:400]),
+              code == M.E_USAGE and before == after
+              and _merged_at(wt_mpath) is None and os.path.isdir(wt)
+              and "no surviving copy" in text
+              and "check out main in a worktree" in text)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+
+def _landed_survivor_cases(check):
+    """The ALREADY-LANDED mode stamps the surviving copy too - a branch a human
+    merged by hand, or a re-run - and the remaining arms of the no-survivor rule."""
+    here = os.getcwd()
+
+    def fresh(name, **kw):
+        root = _harness.fixture_root("closephase-%s" % (name,))
+        mpath, wt, wt_mpath, git = _worktree_fixture(root, **kw)
+        return root, mpath, wt, wt_mpath, git
+
+    def done(root, wt):
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+    root, mpath, wt, wt_mpath, git = fresh("landed-main")
+    try:
+        git("merge", "-q", "--ff-only", "audit/p1-demo")
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        check("sv5 a branch merged BY HAND, closed from main with the worktree's "
+              "manifest: main's copy is stamped, the worktree copy is not, and the "
+              "worktree is removed: exit %r, main %r, removed %r, %s"
+              % (code, _merged_at(mpath), not os.path.isdir(wt),
+                 "\n".join(lines)[-300:]),
+              code == M.E_OK and bool(_merged_at(mpath))
+              and not os.path.isdir(wt))
+    finally:
+        done(root, wt)
+    root, mpath, wt, wt_mpath, git = fresh("landed-inside")
+    try:
+        git("merge", "-q", "--ff-only", "audit/p1-demo")
+        lines = []
+        os.chdir(wt)
+        try:
+            M.main([wt_mpath, "P1", "--project", wt], out=lines.append)
+        finally:
+            os.chdir(here)
+        follow = [ln.strip() for ln in lines if "close-phase.py" in ln]
+        check("sv6 ...and closed from INSIDE the worktree, the stamp is in main's copy "
+              "and not the worktree's, and the follow-up names main's manifest: main "
+              "%r, worktree %r, follow-up %r"
+              % (_merged_at(mpath), _merged_at(wt_mpath), follow),
+              bool(_merged_at(mpath)) and _merged_at(wt_mpath) is None
+              and len(follow) == 1 and wt not in follow[0]
+              and os.path.realpath(wt) not in follow[0])
+    finally:
+        done(root, wt)
+    root, mpath, wt, wt_mpath, git = fresh("pending",
+                                           meta_extra={"merge": {"auto": False}})
+    try:
+        git("checkout", "-q", "-b", "other")
+        before = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        after = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        check("ns2 with merge.auto false the run writes nothing, so it is not refused "
+              "for having no survivor: exit 0, NOT MERGED and the command to run, the "
+              "ref unmoved: exit %r, %s" % (code, text[:300]),
+              code == M.E_OK and "NOT MERGED" in text and before == after
+              and "no surviving copy" not in text)
+    finally:
+        done(root, wt)
+    root, mpath, wt, wt_mpath, git = fresh("pr-landed",
+                                           meta_extra={"merge": {"auto": False}})
+    try:
+        # A pull request landed the branch: main holds it and is checked out
+        # nowhere, and the only manifest in reach is the worktree's.
+        git("checkout", "-q", "-b", "other")
+        git("branch", "-f", "main", "audit/p1-demo")
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("ns4 with merge.auto false and the branch ALREADY in main by a pull "
+              "request, main checked out nowhere, the worktree's manifest is the "
+              "copy removal would delete - refused, and neither copy stamped: "
+              "exit %r, main %r, worktree %r, %s"
+              % (code, _merged_at(mpath), _merged_at(wt_mpath), text[:300]),
+              code == M.E_USAGE and "no surviving copy" in text
+              and _merged_at(mpath) is None and _merged_at(wt_mpath) is None)
+    finally:
+        done(root, wt)
+    root, mpath, wt, wt_mpath, git = fresh("nocheckout-main")
+    try:
+        git("checkout", "-q", "-b", "other")
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--keep-branch",
+                       "--keep-worktree"], out=lines.append)
+        text = "\n".join(lines)
+        landed = git("merge-base", "--is-ancestor", "audit/p1-demo",
+                     "main").returncode == 0
+        check("ns3 SECOND DIRECTION: the ordinary no-checkout landing, given main's "
+              "own manifest, lands and is not refused: exit %r, landed %r, %s"
+              % (code, landed, text[:300]),
+              code == M.E_OK and landed and "no surviving copy" not in text)
+    finally:
+        done(root, wt)
+    root, mpath, wt, wt_mpath, git = fresh("nested", nested=True)
+    try:
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        check("sv7 a worktree NESTED in the main tree (.claude/worktrees/p1), closed "
+              "from main with its manifest: the deepest holder is the worktree, so "
+              "main's copy is stamped and the worktree removed: exit %r, main %r, "
+              "removed %r, %s" % (code, _merged_at(mpath), not os.path.isdir(wt),
+                                  "\n".join(lines)[-300:]),
+              code == M.E_OK and bool(_merged_at(mpath)) and not os.path.isdir(wt))
+    finally:
+        done(root, wt)
+
+
 def _selftest():
     def body(check):
+        _no_survivor_cases(check)
+        _landed_survivor_cases(check)
         _cases(check)
         _parked_cases(check)
         _landed_cases(check)
+        _main_tree_cases(check)
+        _composed_cases(check)
+        _surviving_copy_cases(check)
     return _harness.run(body)
 
 

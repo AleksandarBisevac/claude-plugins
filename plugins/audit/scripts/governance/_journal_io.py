@@ -264,7 +264,8 @@ DETAILS_VERSION = 2
 DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
                 "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
-                "program", "cwd", "runId", "attempt", "branch", "commitNonce")
+                "program", "cwd", "runId", "attempt", "branch", "commitNonce",
+                "relinkedAfter", "relinkedThrough")
 CHANGE_KEYS = ("id", "field", "from", "to")
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
@@ -1883,12 +1884,21 @@ def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
     names the sides whose last line was partial. Returns
 
         {"ok", "refusals", "notes", "rows", "shared", "oursOnly", "theirsOnly",
-         "relinked", "divergent", "identical", "ordered", "summary", "name"}
+         "relinked", "divergent", "identical", "ordered", "summary", "name",
+         "relinkedAfter", "relinkedThrough"}
 
     `ordered` lists the same-second ties that were given an order - over
     disjoint targets, or identical (`identical` set) - and which side went
     first at each (`_tie_faults`); `summary` is the sentence the merge is
     recorded under, "" when nothing was re-chained.
+
+    `relinkedAfter`/`relinkedThrough` bound the RE-CHAINED STRETCH: the hash of
+    the last row both copies held, and the hash of the last row this merge
+    re-chained (a marker row chained on after it is not part of it). Both are
+    None when nothing was re-chained. Inside that stretch `prev` records the
+    timestamp order the merge chose between two branches, not the order one
+    writer appended in, and a reader that takes a chain for a writer's order
+    (`_evidence_io.chain_ordered`) needs to know where it is.
 
     and `rows` is EMPTY whenever `ok` is false -- a refusal never also hands back
     a half-built answer for a caller to use by accident.
@@ -1916,7 +1926,7 @@ def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
     out = {"ok": False, "refusals": refusals, "notes": [], "rows": [],
            "shared": 0, "oursOnly": 0, "theirsOnly": 0, "relinked": 0,
            "divergent": False, "identical": 0, "ordered": [], "summary": "",
-           "name": name}
+           "name": name, "relinkedAfter": None, "relinkedThrough": None}
     if refusals:
         return out
     shared = _common_prefix(ours, theirs)
@@ -1961,6 +1971,8 @@ def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
     first = set(o["ts"] for o in ordered if o["first"] == "theirs")
     union = list(ours[:shared]) + _merge_tails(ours_tail, theirs_tail, first)
     chained, relinked = _rechain(union, name)
+    out["relinkedAfter"] = chained[shared - 1]["hash"]
+    out["relinkedThrough"] = chained[-1]["hash"]
     counts = {"shared": shared, "oursOnly": out["oursOnly"],
               "theirsOnly": out["theirsOnly"],
               "oursDigest": rows_digest(ours), "theirsDigest": rows_digest(theirs)}

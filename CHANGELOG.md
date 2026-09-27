@@ -7,6 +7,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **Phases built on one branch sign off as a group: `audit-task.py signoff P1,P2 --branch <name>`.**
+  Phases whose work sits on one combined branch record no `branch` or `baseRef`, so the single
+  sign-off had no diff to review and `close-phase.py` no name to land. `--plan` prints the whole
+  sign-off with the command each step runs; `--bind` records each member's branch and the point it
+  left the parent as `baseRef` first, so the sign-off's invariants run grades them; the review is
+  scoped by the tasks' commits, and every commit the branch carries past its fork must be one of
+  them or a member's journaled audit-state or index commit; one gate run owns every member's files;
+  the record writes every member in one write, all or nothing, and gives the non-carrier members the
+  carrier's evidence pointer with `gradedBy`, which `--fail-on no-test-evidence` and the evidence
+  rows read; and one `close-phase.py --branch` per phase lands it, every one but the last keeping
+  the branch. A `--branch` that is the members' parent is refused.
+- **`run-test-gate.py --also <phase,...>`** makes one phase-scope run own the union of the named
+  phases' files, so a rewrite of a file only another member declares reads `gate-mutated` instead of
+  passing beside it. Additive: without it nothing changes.
 - **A phase's gate has a declared default and a declared way to narrow it: `meta.phaseGate`.**
   `/audit:phase add` (and a task's own derivation) used to default to every `meta.buildCommands`
   key with no way to keep one out short of retargeting every phase by hand afterward.
@@ -246,6 +260,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   spelling-sourced shape left with nothing to substitute, in the bullet above.
 
 ### Changed
+- **`signoff --verdict passed` needs the gate run it rests on**, on the single-phase path and the
+  group's alike, graded by the SAME rule a task commit is bound by - now one module,
+  `_verdict_binding`, that `commit-task-work.py` and the sign-off both call. The phase's newest
+  ledger row must be `passed`, under the gate it declares now, over its declared files as they
+  stand with the recorder's own writes left out; a verdict the gate repeated is graded against the
+  run it repeats, so a re-run on an unchanged tree signs off. Otherwise the verb refuses naming
+  the run and the gate call, or takes `--no-evidence-reason "<why>"`, recorded on
+  `review.noEvidenceReason` and shown on the evidence badge. `--verdict skipped` needs neither.
+- **A group sign-off accounts for merges and takes an accepted commit.** A merge commit is
+  accounted when its parents are all accounted for, or on the parent side, and its tree is exactly
+  the automatic merge of those parents; a merge carrying content of its own is refused, naming
+  `git diff <recomputed tree> <sha>`, which shows a dropped change `git show --cc` hides. A merge
+  that cannot be recomputed (an octopus merge, or a git before 2.38) is refused as not asked, never
+  as an edit, and its review command is `git show -m <sha>`. A merge above a refused one is judged
+  as if that one were accounted: a clean one is named as waiting on it, any other is refused with
+  its own reason. `--accept` refuses a hex-spelled name that resolves through a ref.
+  Any other unrecorded commit can be taken into the review with `--accept <sha> --reason "<why>"`,
+  which takes a hex SHA or unique hex prefix (never a ref) resolving to exactly one commit, is recorded on every member and is shown beside the
+  sign-off in the report and the panel. The group-only flags are refused on a single phase's
+  sign-off, a group gate run never repeats a solo run over the same files, a carrier whose gate
+  declares no entry copies no run onto the members, and a group run's coverage basis names the
+  files it owned for each other member.
+  A journal that cannot be read is said as that; a task commit missing from the branch names
+  `repair-commits.py`. `--bind` and the copied pointer each leave a journal row, the group run's
+  ledger row names the members it owned (`groupWith`), and the report and panel render a copied
+  pointer as the carrier's run.
+- **`close-phase.py`'s refusal for a phase with no recorded branch whose composed name is not a
+  branch exits 1**, not the 4 an unanswerable ancestry gave before: git answered, and the command
+  is what has to change (`--branch`).
+
 - **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the
   evidence the orchestrator records one step earlier, so a task whose last gate went red, or whose
   declared files were edited after a green one, committed as if it had passed. It now refuses
@@ -390,6 +434,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **run-test-gate's machine line no longer calls runs recorded one after another a crowd.**
+  Overlap was inclusive at both ends over whole-second stamps, so a run that started in the second
+  the previous row was written always "shared this window". Windows now compare half-open at the
+  end: a run ending in second t and one starting in t are sequential, windows sharing a second or
+  more still overlap. Two windows meeting in one second are sequential only when one gate writer's
+  chain records them one after the other and the later-written run started at or after the earlier
+  one ended - so a long run written after a sub-second one is not called sequential; across
+  writers - a gate run and an outside suite, or two sessions - that second is not knowable, and
+  the machine line, the attribution of a red and `record-outside-run.py`'s contests line each say
+  so rather than claiming nobody else ran. A ledger re-chained by `audit-journal.py merge` orders
+  nothing inside the stretch it re-chained: the `evidence.merge` journal row now records where
+  that stretch begins and ends (`details.relinkedAfter`, `details.relinkedThrough`), the chain
+  there being the timestamp order the merge chose between two branches; rows appended after the
+  merge are ordered again, and each merge's stretch is walked on its own, so an earlier merge's
+  row cannot cut a later one short. When the journal cannot be read, or is disabled
+  (`journal.enabled` false, so no merge could have been recorded), no chain is trusted and the
+  line says why. The chain is read only for a pair the windows leave undecided, with its lookups built
+  once per reader pass, so the machine line stays linear in the ledger's size.
+- **`close-phase.py` stamps the landing in the tree the merge lands in, whatever manifest path it
+  was given.** Run from the main checkout with the WORKTREE's manifest - the command its own
+  dry-run printed - it merged, then wrote `mergedAt`, the derived status and the index stub into
+  the worktree's copy, so the worktree removal refused on those writes while the journal row went
+  to main. The stamp now goes to the parent branch's checkout the merge landed in, and the
+  printed follow-up names that manifest. With the parent checked out in no worktree and the
+  manifest inside the phase's own worktree there is no surviving copy, so it refuses before the
+  ref-only fast-forward (exit 2), naming the branch to check out. A branch that already landed - a
+  re-run, or a merge made by hand - is stamped in the same surviving copy, and a run with
+  `meta.merge.auto` false, which writes nothing, is not refused - unless the branch is already in
+  the parent (a pull request landed it): that run stamps, so with no surviving copy it is refused
+  too, and neither copy is written.
+- **`close-phase.py` run from the main worktree standing on the phase branch** lands it, and now
+  prints the two commands that free the branch there - `git switch <parent>` (or `--detach` when
+  another worktree holds the parent, saying it leaves a detached HEAD), then `git branch -d
+  <branch>` - instead of telling the operator to `git worktree remove` the main tree. `--dry-run`
+  words them as what the cleanup will need after the merge. `manage-worktrees.py remove` refuses
+  the main tree the same way, where it used to attempt the removal, and `add` for a branch the main
+  tree holds names that switch instead of telling the operator to remove the main tree.
+- **A branch that is its own parent is refused by `close-phase.py`** (exit 1), recorded or passed:
+  landing it lands nothing, and the cleanup planned deleting the parent branch.
 - **The history guard reads the shapes SECURITY.md listed as open the way the shell does.**
   The line-continuation join decided whether `#` opens a comment from the raw character before it,
   so a `#` that a removed continuation or an escaped blank had made mid-word was read as a comment

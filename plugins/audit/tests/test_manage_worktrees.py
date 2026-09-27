@@ -348,6 +348,16 @@ def _run_cases(check, root):
           "remove` never deletes one and `prune` does not either, which is how "
           "every abandoned run leaves an orphan branch behind",
           "BRANCH is untouched" in ans["note"], ans["note"][:50])
+    run, calls = _f({"status --porcelain": (0, "", "")},
+                    listing="worktree /repo\nHEAD aaa\nbranch refs/heads/audit/p2-two\n",
+                    ours=())
+    code, ans = M.do_remove("/repo", PLAN, "P2", run=run)
+    check("r6 `remove P2` with the phase branch checked out in the MAIN worktree is "
+          "refused as the main worktree, attempts no removal, and names the switch "
+          "that frees the branch instead: exit %r, %r" % (code, ans),
+          code == M.E_FAIL and "MAIN worktree" in ans.get("error", "")
+          and "`git switch dev`" in ans.get("remedy", "")
+          and not any(c[:2] == ["worktree", "remove"] for c in calls))
     code, ans = M.do_remove("/repo", PLAN, "P9",
                             run=_fake({})[0])
     check("r5 a phase the plan does not have is a USAGE error, not a failure - "
@@ -355,6 +365,15 @@ def _run_cases(check, root):
           code == M.E_USAGE, "exit=%d" % (code,))
 
     # --- add: preflight before git's three different exit codes ---------------
+    run, calls = _f({}, listing="worktree /repo\nHEAD aaa\nbranch refs/heads/audit/p2-two\n",
+                    ours=())
+    code, ans = M.do_add("/repo", PLAN, "P2", run=run)
+    check("a0 `add P2` with the phase branch in the MAIN worktree is refused without "
+          "telling the operator to remove the main tree, and names the switch that "
+          "frees it: exit %r, %r" % (code, ans),
+          code == M.E_FAIL and "remove that worktree" not in ans.get("remedy", "")
+          and "`git switch dev`" in ans.get("remedy", "")
+          and not any(c[:2] == ["worktree", "add"] for c in calls))
     run, calls = _f({})
     code, ans = M.do_add("/repo", PLAN, "P2", run=run)
     check("a1 adding a worktree for a branch already checked out elsewhere is "

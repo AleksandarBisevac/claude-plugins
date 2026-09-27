@@ -56,8 +56,12 @@ Exit codes:
      every cleanup asked for was done and read back. Also the answer when
      `meta.merge.auto` is false and the run deliberately stopped before the merge
   1  it could not: git refused a write, a precondition failed, or a cleanup was
-     blocked. The refusal names the path or ref that has to change
-  2  usage error -- the manifest will not load, or there is no such phase
+     blocked. The refusal names the path or ref that has to change - a branch that
+     is its own parent, or a phase that records no branch whose composed name is
+     not one, included: git answered, and it is the command that has to change
+  2  usage error -- the manifest will not load, or there is no such phase, or the
+     parent is checked out in no worktree while the manifest given is the phase
+     worktree's own copy: the landing would have no surviving copy to stamp
   3  NOT A FAST-FORWARD -- the parent moved while the phase ran. Nothing was written.
      Its own sentinel because it is the normal case on a team repo and the
      orchestrator has a human question for it; folded into 1 it would be
@@ -150,8 +154,18 @@ def resolve(manifest, phase, parent_arg=None, branch_arg=None, initials=None):
     else:
         resolved = _branch.parent_branch(meta, phase)
         parent, pbasis = resolved["branch"], resolved["basis"]
+    # A BRANCH THAT IS ITS OWN PARENT HAS NOTHING TO LAND, and the cleanup would
+    # then plan deleting the parent itself: already contained, settled, and held by
+    # no worktree reads as a branch to reap. Refused here, where both names meet.
+    refusal = None
+    if branch and branch == parent:
+        refusal = ("%r is its own parent (%s; parent from %s) - there is nothing to "
+                   "land, and the cleanup would delete %r. Name the branch the "
+                   "phase's work is on with --branch" % (branch, bbasis, pbasis,
+                                                          parent))
     return {"branch": branch, "parent": parent, "branchBasis": bbasis,
-            "parentBasis": pbasis, "policy": _branch.merge_policy(meta)}
+            "parentBasis": pbasis, "policy": _branch.merge_policy(meta),
+            "refusal": refusal}
 
 
 # --- observing the repository ----------------------------------------------------
@@ -426,6 +440,7 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         answer["plannedSteps"] = ([merge["argv"]] if merge["argv"] else []) \
             + [s["argv"] for s in preview["steps"]]
         answer["blocked"] = list(preview["blocked"])
+        answer["followUp"] = preview.get("followUp")
         answer["previewAssumes"] = (
             "the merge lands - the cleanup below is what follows it, not what "
             "this repository would allow right now")
@@ -499,6 +514,9 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         cleanup = cleanup_for(the_plan["cleanupInputs"], branch, parent,
                               verified["answer"], settled=settled_now)
         answer["blocked"] = list(cleanup["blocked"])
+    # The operator's half of a cleanup this command will not do: freeing a branch
+    # the main worktree stands on takes a switch, and no HEAD is moved here.
+    answer["followUp"] = cleanup.get("followUp")
 
     for step in cleanup["steps"]:
         code, out, err = fn(git_root, step["argv"])
@@ -745,14 +763,28 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
     copy was written and carry on, because a merge that happened must not be reported
     as not having happened.
     """
-    tree = (observation or {}).get("parentTree")
-    if (the_plan or {}).get("merge", {}).get("mode") != "in-parent-worktree" \
+    observation = observation or {}
+    # THE TREE THE PASSED PATH SITS IN, read off the worktree list rather than
+    # assumed to be the git root: run from the main checkout with the WORKTREE's
+    # manifest, the git root is main while the path is the worktree's copy - and a
+    # stamp written there dirtied the tree the cleanup was about to remove.
+    source = _tree_holding(observation.get("trees") or [], manifest_path)
+    base = (source or {}).get("path") or git_root
+    tree = observation.get("parentTree")
+    # BOTH MODES THAT LAND IN A CHECKOUT: the merge made now, and the branch that
+    # already landed - a re-run, or a merge a human made by hand - whose stamp
+    # belongs in the same surviving copy.
+    if (the_plan or {}).get("merge", {}).get("mode") not in (
+            "in-parent-worktree", "already-contained") \
             or not tree or not tree.get("path"):
         return manifest_path, project, ""
-    if _wt.same_tree(tree.get("path"), git_root):
+    if _wt.same_tree(tree.get("path"), base):
         return manifest_path, project, ""
     try:
-        rel = os.path.relpath(os.path.abspath(manifest_path), git_root)
+        # Both sides RESOLVED: git prints a worktree's real path, and a caller's
+        # path through a symlinked prefix (`/var` for `/private/var`) would
+        # otherwise read as outside the tree it is in.
+        rel = os.path.relpath(os.path.realpath(manifest_path), os.path.realpath(base))
     except Exception as exc:
         return manifest_path, project, "%s" % (exc,)
     if rel.startswith(".."):
@@ -776,6 +808,34 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
             "%s does not carry phase %s, so the stamp stays in the copy this run "
             "was pointed at" % (moved, phase_id))
     return moved, tree.get("path"), ""
+
+
+def no_survivor_refusal(observation, manifest_path, parent):
+    """The refusal owed when the landing has no surviving copy to stamp, or None.
+
+    With `parent` checked out in NO worktree the merge is a ref-only fast-forward,
+    and a manifest inside the phase's own worktree is the copy the cleanup removes.
+    No other checkout is the landing's either - another branch's plan is not this
+    one's. So the run stops before the merge: a moved ref with no record of the
+    landing is the disagreement this refuses to create."""
+    if (observation or {}).get("parentTree") is not None:
+        return None
+    phase_tree = (observation or {}).get("phaseTree")
+    if not phase_tree or phase_tree.get("isMain") \
+            or not _wt.within_tree(phase_tree.get("path"), manifest_path):
+        return None
+    return ("the landing has no surviving copy to stamp - %r is checked out in no "
+            "worktree, and %s is the phase worktree's own copy, which the cleanup "
+            "removes: check out %s in a worktree, or run close-phase from its "
+            "checkout" % (parent, manifest_path, parent))
+
+
+def _tree_holding(trees, path):
+    """The worktree record `path` sits in - the deepest when records nest - or None."""
+    holding = [t for t in trees if t.get("path") and not t.get("prunable")
+               and _wt.within_tree(t.get("path"), path)]
+    holding.sort(key=lambda t: len(os.path.realpath(t.get("path"))))
+    return holding[-1] if holding else None
 
 
 def _phase_present(manifest_path, phase_id):
@@ -872,6 +932,17 @@ def render(answer, out=print):
     if answer.get("finishFrom"):
         out("  cleanup is not finished. From %s, run:" % (answer["finishFrom"],))
         out("    %s" % (answer["finishCommand"],))
+    follow = answer.get("followUp")
+    if follow:
+        # A PREVIEW HAS RUN NOTHING, so it says what the cleanup will need rather
+        # than that a cleanup stopped.
+        out(("  after the merge, cleanup will need, from %s:" if answer.get("dryRun")
+             else "  cleanup is not finished, and this never moves a HEAD. From %s, "
+                  "run:") % (follow["from"],))
+        for command in follow["commands"]:
+            out("    %s" % (command,))
+        if follow.get("note"):
+            out("  (that %s)" % (follow["note"],))
     parked = answer.get("parkedOnBranch") or []
     if parked:
         out("  parked on %s, materializable now that it has landed - on %s, run:"
@@ -942,6 +1013,9 @@ def main(argv, out=print):
 
     names = resolve(manifest, phase, args.parent, args.branch,
                     initials=_wt.git_user_name(git_root))
+    if names["refusal"]:
+        out("[close-phase] REFUSED: %s. Nothing was written." % (names["refusal"],))
+        return E_FAIL
     # ALREADY LANDED AND CLEANED UP: the plan records the merge and the branch is
     # gone. Containment cannot be asked of a branch that no longer exists, and the
     # planner then said "merge it into the parent first" about a phase that had
@@ -964,6 +1038,17 @@ def main(argv, out=print):
         out("[close-phase] phase %s landed at %s and %s is gone - nothing left "
             "to do" % (args.phase, phase[MERGED_FIELD], names["branch"]))
         return E_OK
+    # ...AND A COMPOSED NAME NOTHING HOLDS IS NOT AN ANCESTRY QUESTION. Asked of git,
+    # it came back as "could not be established", which names the wrong gap: the
+    # plan recorded no branch, and the one predicted from the template is not in
+    # this repository. Phases built on one combined branch are exactly this shape.
+    if names["branchBasis"].startswith("composed") and _wt.ref_exists(
+            git_root, names["branch"])["exists"] is False:
+        out("[close-phase] no branch is recorded for phase %s, so the name asked "
+            "about, %s, was %s - and it is not a branch in this repository. Nothing was "
+            "written. Pass --branch <name>: the branch that carries this phase's "
+            "work" % (args.phase, names["branch"], names["branchBasis"]))
+        return E_FAIL
     observation = observe(git_root, names["branch"], names["parent"])
     if observation["why"]:
         out("[close-phase] %s" % (observation["why"],))
@@ -977,6 +1062,15 @@ def main(argv, out=print):
     the_plan = plan(observation, names["branch"], names["parent"],
                     names["policy"], want_worktree=args.remove_worktree,
                     want_branch=args.delete_branch, no_ff=args.no_ff)
+    # ASKED ONLY WHERE A WRITE WOULD FOLLOW. With `meta.merge.auto` false the run
+    # hands over the merge command and writes nothing, so there is no stamp to
+    # lack a survivor - unless the branch already landed and the stamp is due.
+    writes = the_plan["auto"] or the_plan["merge"]["mode"] == "already-contained"
+    refusal = (no_survivor_refusal(observation, args.manifest, names["parent"])
+               if writes else None)
+    if refusal:
+        out("[close-phase] REFUSED: %s. Nothing was merged or written." % (refusal,))
+        return E_USAGE
     def _stamp():
         """Persist `phase.mergedAt`, and report what happened in answer fields.
 
@@ -1032,9 +1126,16 @@ def main(argv, out=print):
         # reads `__file__` outside the pinned preamble (`depth_sensitive_paths()`
         # fails the file that does), and a hard path would be wrong for the reader
         # anyway - they are running an installed plugin, not this checkout.
+        # ...NAMING THE SURVIVING MANIFEST, not the path this run was handed: that
+        # path is the worktree's copy, and a stamp through it lands in the tree the
+        # follow-up exists to remove.
+        survivor = surviving_copy(args.manifest, project, git_root, observation,
+                                  the_plan, phase_id=args.phase)[0]
+        shown = (os.path.relpath(os.path.realpath(survivor), os.path.realpath(tree))
+                 if _wt.within_tree(tree, survivor) else survivor)
         answer["finishCommand"] = (
             'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" %s %s '
-            '--project .' % (args.manifest, args.phase))
+            '--project .' % (shown.replace(os.sep, "/"), args.phase))
 
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))

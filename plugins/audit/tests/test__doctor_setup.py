@@ -361,6 +361,10 @@ def _cases(check):
               "no sign-off" in _ds14b_detail
               and "/audit:phase signoff P1" in _ds14b_detail
               and "flipped" not in _ds14b_detail)
+        check("ds14f ...and it names the gate run a `passed` verdict now needs, or "
+              "the reason flag, ahead of the verb: %r" % (_ds14b_detail,),
+              "--record" in _ds14b_detail
+              and "--no-evidence-reason" in _ds14b_detail)
         check("ds14d SECOND-DIRECTION CASE: an ordinary warn (ds14, no stale "
               "phase at all) carries no such note - the case that fails if "
               "it becomes unconditional and every warn starts naming a "

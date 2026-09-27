@@ -316,7 +316,10 @@ depending on an implementation:
 - the rendered report's HTML, its DOM and its Markdown twin,
 - the audit trail's row shape, the usage ledger's NDJSON fields, and the evidence
   record's — all three are files this plugin writes and re-derives; the manifest's
-  `testEvidence` block is the interface, and an evidence row is not,
+  `testEvidence` block is the interface, and an evidence row is not. The block's
+  `gradedBy` (a group member's copy of its carrier's pointer) and a phase review's
+  `noEvidenceReason` and `acceptedCommits` are additive keys; a manifest without them
+  validates and reads exactly as before,
 - **the audit trail's file names.** A journal or evidence file is named by its month
   and its writer, and the writer has already been refined once: a linked worktree
   (git's answer, asked where `gitRoot` points) writes `<month>.<session>.wt-<key>.jsonl`
@@ -353,6 +356,15 @@ depending on an implementation:
   whose exit code changed was already not getting what it asked for. It is recorded here
   rather than passed over because an exit code moved from 0 to 2 on a shipped command, and a
   pipeline that read a discarded flag as success is a pipeline that now stops,
+- **a `passed` sign-off with no gate run behind it — and it changed.** `audit-task.py
+  signoff --verdict passed` (`/audit:phase signoff`) used to write the verdict whatever the
+  ledger held; it now **exits 2** unless the phase's newest recorded gate run binds its work,
+  or `--no-evidence-reason "<why>"` is passed and recorded. Unlike the flags entry above,
+  something that used to take effect now does not: a pipeline that signed off without
+  recording a gate run is a pipeline that now stops, and the repair is the gate run or the
+  reason. `close-phase.py`'s refusal for a phase that records no branch and whose composed
+  name is not one moved from **exit 4 to exit 1**: git answered, and the command is what has
+  to change (`--branch`),
 - **the id `/audit:phase add` allocates when you do not pass `--id`.** It was the lowest free
   `P<n>` and is the **highest in use plus one**. The taken set is unchanged — live phases and
   every id a parked proposal reserves — and `--id` still overrides it. The old rule re-minted

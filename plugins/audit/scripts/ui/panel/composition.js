@@ -890,11 +890,18 @@ function freezeControls(root,why){
  * @returns {string|null} the note, or null when there is nothing to explain
  */
 function phaseSignoffNote(ph){
- if(ph.signoffDue)return 'every task finished — sign-off due (/audit:review, then '
-   +'/audit:phase signoff '+ph.id+')';
+ if(ph.signoffDue)return 'every task finished — sign-off due (/audit:review, record '
+   +'the gate with --record or pass --no-evidence-reason, then /audit:phase signoff '
+   +ph.id+')';
+ // The commits a group sign-off took into its review outside every task, named
+ // beside the verdict: the record has no other reader.
+ const acc=(ph.acceptedCommits||[]).map(a=>String(a.commit||'').slice(0,12)
+   +(a.reason?' ('+a.reason+')':'')).filter(Boolean);
+ const accepted=acc.length?'; accepted into its review: '+acc.join(', '):'';
  if(ph.signoffVerdict&&ph.status!=='done'&&ph.status!=='cancelled')
   return 'signed off ('+ph.signoffVerdict+') — done once '
-   +(ph.branch||'its branch')+' merges';
+   +(ph.branch||'its branch')+' merges'+accepted;
+ if(accepted&&ph.signoffVerdict)return 'signed off ('+ph.signoffVerdict+')'+accepted;
  return null;}
 
 /**

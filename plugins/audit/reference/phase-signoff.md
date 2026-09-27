@@ -137,7 +137,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `--record` writes the row, anchors it in the trail and points `phase.testEvidence` at it — the
    phase's own gate run, kept apart from its tasks' so a reader can follow either. As at task
    level, a **refused pointer is not a failure**: the row stands and `--reconcile` catches the plan
-   up. Everything it writes happens after the verdict is complete, so the recording can never
+   up. It does not block sign-off either — step 5a grades the phase's NEWEST ledger row, not the
+   pointer — but reconcile before signing off, so the plan's cache names the run that backs the
+   verdict. Everything it writes happens after the verdict is complete, so the recording can never
    appear in the tree comparison it is being judged by.
 
    **A phase gate expected to outlast the Bash tool's foreground bound runs under
@@ -339,8 +341,18 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       ```
       python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId> \
           --verdict passed|skipped --summary "<what was done + impact>" \
-          [--review-outcome "<the review's one-line result>"]
+          [--review-outcome "<the review's one-line result>"] \
+          [--no-evidence-reason "<why no gate run backs a passed verdict>"]
       ```
+      **`--verdict passed` is refused unless step 2's run binds the phase's work** — the same
+      rule a task commit is bound by (`_verdict_binding`): the phase's newest ledger row is
+      `passed`, measured under the gate the phase declares now, over its declared files as they
+      stand (the recorder's own writes left out), and a verdict the gate REPEATED is graded
+      against the run it repeats; a phase whose gate declares no entry is bound to no run. The
+      refusal names the run and the command that supplies one. Where no gate run can back the
+      verdict, `--no-evidence-reason` is the operator's words, recorded verbatim on
+      `review.noEvidenceReason` and shown where the evidence badge's basis goes — it is not a
+      run, so `--fail-on no-test-evidence` still names the phase. `skipped` needs neither.
       The summary is a short paragraph: what was done and its impact, and when
       `phase.desiredOutcome` is set, how the phase met — or didn't meet — it. The verb writes
       `phase.review.status` (the verdict), `phase.review.outcome` and `phase.summary`, **clears
@@ -395,7 +407,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       | 0 + `NOT MERGED` in the output | `meta.merge.auto` is **false** | the human merges; the phase is signed off and deliberately unlanded. Say so in the report and **do not** stamp `mergedAt` yourself |
       | 3 | **not a fast-forward** — the parent moved during the phase | ask the human (AskUserQuestion): `--no-ff` (recommended — preserves the branch history and keeps every `task.commit` SHA, and the `bug.fixedIn` derived from it, valid), or stop and leave it unmerged. **Never rebase**: that rewrites the SHAs the manifest records |
       | 4 | git could not be **asked** | report it; it is not a refusal, and retrying the same command will not help |
-      | 1 | a precondition failed or git refused | the output names the path or ref that has to change |
+      | 1 | a precondition failed or git refused | the output names the path or ref that has to change. Two of these are the command itself: a branch that is its own parent (`--branch` or `phase.branch` naming the parent — nothing lands, and the cleanup would delete the parent), and a phase that records no branch whose composed name is not one — pass `--branch <name>`, and sign phases built on one combined branch off as a group (below) |
 
       **When the resolved parent is not the development branch, the sign-off report must say so** —
       name the branch the work merged into and state that it has NOT reached the development branch
@@ -430,5 +442,92 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       - A run **standing inside** the worktree it was asked to remove cannot finish its own
         cleanup (git would delete the caller's own directory, silently, exit 0); the output hands
         you the command to finish from the main tree.
+      - A phase branch **checked out in the main worktree** lands, and the main tree is never
+        removed or switched. The output prints the two commands that free the branch, to run
+        there yourself: `git switch <parent>` (or `git switch --detach <parent>` when another
+        worktree holds the parent, which leaves the main tree on a detached HEAD at the parent,
+        and the output says so), then `git branch -d <branch>`. Under `--dry-run` the same
+        commands are worded as what the cleanup will need once the merge lands.
       - A **dirty** worktree is never removed, because removal also destroys ignored files — a
         `.env`, a `node_modules` — that `git status` never mentioned.
+
+### Signing off a group of phases built on one branch
+
+Phases built on **one combined branch** record no `branch` and no `baseRef` of their own: step 1
+has no `git diff <baseRef>` to review, and step 5c has no name to land (`close-phase.py` refuses
+and asks for `--branch`). Sign them off together, through the same verb with the ids as a comma
+list. Start with the plan — it writes nothing and prints the command each step below runs:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
+    --branch <combined-branch> --plan
+```
+
+It refuses, naming every reason, what the group cannot be signed off with: a member with open
+work or already signed off, a member recording another branch, members resolving to different
+parents, a `--branch` that is that parent, a finished task with no `commit`, a task commit the
+branch does not carry (asked of git, not read off the plan; `repair-commits.py` re-points a task
+whose commit a rebase moved), a commit the branch carries past its fork that nothing accounts
+for, and a union no member's gate holds. The plan and the record ask the same planner, so what
+the plan accepts the record re-checks under the lock.
+
+**What the branch may carry.** Every commit in `git rev-list <fork>..<branch>` is a member task's
+`commit`, an audit-state or index commit the journal records for a member, or a MERGE whose every
+parent is one of those or lies on the parent side of the fork AND whose tree is exactly the
+automatic merge of its parents (`git merge-tree --write-tree`). That last check is what makes a
+merge accounted, and it has three answers. A merge whose tree differs — a conflict resolution,
+an edit made inside the merge commit, or a change of one side it dropped — carries content no
+parent does: it is refused by SHA, naming `git diff <recomputed tree> <sha>`, the comparison the
+check made (`git show --cc` hides a path whose result equals one parent, which is exactly how a
+dropped change looks). A merge the check could not recompute — an octopus merge, which
+merge-tree takes two parents at a time for, or a git before 2.38, which has no `--write-tree` —
+is refused as a question not asked, with git's own line, and never called an edit; its review
+command is `git show -m <sha>`, a diff against each parent, which shows a dropped side on any git.
+A merge above a refused one is judged now, as if the one below were accounted: if it recomputes
+clean it is named as waiting on that one and is accounted once it is; if it carries content of
+its own, or could not be asked, it is refused with its own reason in the same refusal. Any other
+commit — a hand-made planning commit, a journal-only commit nobody recorded — is refused by SHA
+too, and `--accept <sha> --reason "<why>"` takes any of these into the review instead; an
+accepted commit counts as accounted for the merges above it. `--accept` takes a hex SHA or a
+unique hex prefix of at least 4 digits, resolved (`git rev-parse --verify <sha>^{commit}`) to
+exactly one commit on the branch and recorded in full; a ref or a revision expression, which
+would re-resolve on every call, and an ambiguous or unknown prefix are refused by name. The
+plan lists an accepted commit beside the task commits, the record writes it and the reason on
+every member's `review.acceptedCommits`, and the report and the panel show it beside the
+sign-off. A journal that cannot be read is said as that, never as a commit nobody records.
+`--plan`, `--bind`, `--accept` and `--reason` belong to the group form alone: on one phase's
+sign-off they are refused, naming it, with nothing written. Then, in this order:
+
+1. **Bind** with `--bind` in place of `--plan`: each member gets the branch as `branch` and the
+   point it left the parent (`git merge-base <parent> <branch>`) as `baseRef`, nothing of a
+   verdict, and a `phase.bind` journal row. The record refuses a member that is not bound,
+   because step 4 grades the base-ref and branch-history checks off those two fields and would
+   otherwise not apply them.
+2. **Review** from the commit list the plan prints — the tasks' commits and any accepted ones,
+   with the files union — in place of `git diff <baseRef> -- <files>`. Findings become tasks
+   exactly as in step 1, in the member whose files they touch.
+3. **One gate run**: the plan names the member whose `testGate` holds the union of every member's
+   gate, and prints its `run-test-gate.py … --also <the others> --record` call. `--also` makes the
+   one run own the union of every member's files, so a rewrite of a file only another member
+   declares reads `gate-mutated` rather than passing, the tree stamp covers all of them, and the
+   run's ledger row names the members it owned (`groupWith`).
+4. **One invariants run**: `verify-invariants.py <manifestPath> --all`, the one spelling that
+   covers more than one phase — read the rows for the group's members. A breach is the human
+   decision it is in step 3.
+5. **Record** with the same command, `--verdict` and `--summary` in place of `--plan`. A `passed`
+   verdict is step 5a's rule over the carrier's newest run and every member's files, and that
+   run must have owned every other member (`groupWith`) — or `--no-evidence-reason "<why>"`,
+   recorded on every member's review. Every member is written in one write, all or nothing, and
+   each non-carrier member takes the carrier's run as its `testEvidence` with
+   `gradedBy: <carrier>`, journaled as a `phase.testEvidence` row. The report and the panel render
+   that pointer as the carrier's run ("graded by P1's run …"), never as the member's own, and
+   `--fail-on no-test-evidence` reads it as the member's evidence. A copied pointer is the one
+   pointer no run records for its subject, so `--reconcile` does not restore it.
+6. **Commit** the sign-off with the lines the record prints — in the sharded layout one
+   `commit-audit-state.py` per member and then `commit-manifest-index.py`, because one commit
+   carrying two members' shards reads as a scope breach for each; in the single-file layout one
+   `commit-audit-state.py`, because there is one file.
+7. **Land each phase** with the `close-phase.py --branch` lines, in order. The first merges the
+   whole branch and keeps it (`--keep-worktree --keep-branch`); each later one finds it already
+   contained and stamps its own `mergedAt`; only the last may take the branch and its worktree
+   away.

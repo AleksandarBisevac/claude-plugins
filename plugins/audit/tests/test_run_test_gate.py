@@ -6324,8 +6324,229 @@ def _interrupt_cases(check):
                                     {"test": "npx playwright test"}}}) == _claim)
 
 
+def _group_cases(check):
+    """`--also`: one gate run over a GROUP of phases built on one branch owns the
+    union of their files, so a rewrite of a file only a non-carrier member declares
+    is the gate grading bytes it produced. A real repository and a real command,
+    because the ownership answer is read off `git status`."""
+    root = _harness.fixture_root("run-test-gate-group-")
+    try:
+        os.makedirs(os.path.join(root, "src"))
+        os.makedirs(os.path.join(root, ".claude"))
+        os.makedirs(os.path.join(root, "docs", "audit"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        for name in ("p1.txt", "p2.txt"):
+            with open(os.path.join(root, "src", name), "w") as fh:
+                fh.write("0\n")
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w") as fh:
+            json.dump({"meta": {"version": 3,
+                                "buildCommands": {"rw": "printf 1 > src/p2.txt"}},
+                       "phases": [
+                           {"id": "P1", "title": "one", "status": "in_progress",
+                            "testGate": ["rw"],
+                            "tasks": [{"id": "P1.1", "title": "a",
+                                       "status": "done", "files": ["src/p1.txt"]}]},
+                           {"id": "P2", "title": "two", "status": "in_progress",
+                            "testGate": ["rw"],
+                            "tasks": [{"id": "P2.1", "title": "b",
+                                       "status": "done",
+                                       "files": ["src/p2.txt"]}]}]}, fh)
+
+        def reset():
+            for arg in (["add", "-A"],
+                        ["-c", "user.email=f@e", "-c", "user.name=F",
+                         "-c", "commit.gpgsign=false", "commit", "-qm", "fixture",
+                         "--allow-empty"]):
+                subprocess.run(["git", "-C", root] + arg, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "init", "-q", root], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        reset()
+
+        def run_json(argv):
+            lines = []
+            code = M.main(argv, out=lines.append)
+            try:
+                return code, json.loads("\n".join(lines))
+            except ValueError:
+                return code, {"raw": "\n".join(lines)}
+        code, alone = run_json([mpath, "P1", "--project-dir", root, "--json",
+                                "--no-reuse"])
+        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
+                       check=True)
+        code_g, grp = run_json([mpath, "P1", "--also", "P2", "--project-dir", root,
+                                "--json", "--no-reuse"])
+        check("gg1 a gate run for P1 with --also P2 owns P2's files too, so the "
+              "command rewriting src/p2.txt is `gate-mutated`, not a pass: exit %r "
+              "status %r" % (code_g, grp.get("status") or grp.get("raw", "")[:200]),
+              code_g == M.E_FAIL and grp.get("status") == "gate-mutated")
+        check("gg2 SECOND DIRECTION: without --also the same run owns only P1's "
+              "files and passes - the union is what widened the refusal: exit %r "
+              "status %r" % (code, alone.get("status")),
+              code == M.E_OK and alone.get("status") == "passed")
+        code_t, _t = run_json([mpath, "P1", "--also", "P2", "--task", "P1.1",
+                               "--project-dir", root, "--json"])
+        check("gg3 --also is a PHASE-scope group and is refused beside --task, which "
+              "narrows to one task: exit %r" % (code_t,), code_t == M.E_ASK)
+        code_u, _u = run_json([mpath, "P1", "--also", "P9", "--project-dir", root,
+                               "--json"])
+        check("gg4 an --also member the plan does not carry is refused, not "
+              "skipped: exit %r" % (code_u,), code_u == M.E_ASK)
+        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
+                       check=True)
+        with open(mpath) as fh:
+            _gg = json.load(fh)
+        _gg["meta"]["buildCommands"]["rw"] = "true"
+        with open(mpath, "w") as fh:
+            json.dump(_gg, fh)
+        reset()
+        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record",
+                "--no-reuse"], out=lambda *_a: None)
+        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
+               out=lambda *_a: None)
+        _gg_rows = sorted(_recorded_rows(os.path.join(root, "docs", "audit",
+                                                      "evidence")),
+                          key=lambda r: str(r.get("ts") or ""))
+        _gg_with = [r.get("groupWith") for r in _gg_rows]
+        check("gg5 a group run's ledger row names the members it owned, and a run "
+              "for the carrier alone names none - the row is where a member's "
+              "copied pointer is checked against: %r" % (_gg_with,),
+              len(_gg_rows) == 2 and _gg_rows[0].get("groupWith") == ["P2"]
+              and "groupWith" not in _gg_rows[1])
+        _gg_basis = str((_gg_rows[0].get("observations") or {}).get("coverageBasis"))
+        check("gg6 the group run's coverage basis names the files it owned for the "
+              "OTHER members by member, so a reader of the carrier's row does not take "
+              "them for the carrier's declaration: %r" % (_gg_basis,),
+              "src/p2.txt declared by P2 (group member)" in _gg_basis
+              and "group member" not in str((_gg_rows[1].get("observations") or {})
+                                            .get("coverageBasis")))
+        # A group whose other member declares only the carrier's own files has the
+        # same owned set as the carrier alone, and still never repeats its solo run.
+        with open(mpath) as fh:
+            _gg = json.load(fh)
+        _gg["phases"][1]["tasks"][0]["files"] = ["src/p1.txt"]
+        with open(mpath, "w") as fh:
+            json.dump(_gg, fh)
+        reset()
+        _ev_dir = os.path.join(root, "docs", "audit", "evidence")
+        for _name in os.listdir(_ev_dir):
+            os.remove(os.path.join(_ev_dir, _name))
+        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
+               out=lambda *_a: None)
+        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record"],
+               out=lambda *_a: None)
+        _gg7 = sorted(_recorded_rows(_ev_dir), key=lambda r: str(r.get("ts") or ""))
+        check("gg7 a group run over the same files as a solo run is MEASURED, not a "
+              "repeat of it - the members a run owns are part of what it would have "
+              "to match: %r" % ([(r.get("groupWith"), r.get(_ev_io.VERDICT_SOURCE))
+                                 for r in _gg7],),
+              len(_gg7) == 2 and _gg7[-1].get("groupWith") == ["P2"]
+              and _gg7[-1].get(_ev_io.VERDICT_SOURCE) != _ev_io.REUSED)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _crowd_cases(check):
+    """The machine line reads the ledger's windows: runs recorded one after another
+    are not a crowd, a run that genuinely overlapped is, and one whole-second
+    stamps cannot place is said to be unknowable rather than shared."""
+    root = _harness.fixture_root("run-test-gate-crowd-")
+    try:
+        os.makedirs(os.path.join(root, ".claude"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        evidence = _ev_io.evidence_dir(root)
+        os.makedirs(evidence)
+        prev = {"runId": "A", _ev_io.STARTED_KEY: "2026-09-26T15:48:37Z",
+                "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
+
+        def line_for(row, others, one_writer=True):
+            """The machine line for `row`, with `others` written before it by the
+            same writer (one chain) or by another writer (another file)."""
+            for name in os.listdir(evidence):
+                os.remove(os.path.join(evidence, name))
+            files = ([("2026-09.t.jsonl", others + [row])] if one_writer
+                     else [("2026-09.other.jsonl", others),
+                           ("2026-09.t.jsonl", [row])])
+            for name, part in files:
+                with open(os.path.join(evidence, name), "w") as fh:
+                    for r in _ev_io.chain_file(part, name):
+                        fh.write(json.dumps(r) + "\n")
+            lines = []
+            M._say_who_else_was_running(root, {"status": "passed"}, row,
+                                        out=lines.append)
+            return [ln for ln in lines if "machine:" in ln]
+        mine = {"runId": "B", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
+                "ts": "2026-09-26T15:50:39Z", "scope": "task", "status": "passed"}
+        got = line_for(mine, [prev])
+        check("gc1 a run that started in the second the previous run's row was "
+              "written had the machine to itself - not a crowd: %r" % (got,),
+              len(got) == 1 and "had the machine to itself" in got[0])
+        got = line_for(dict(mine, **{_ev_io.STARTED_KEY: "2026-09-26T15:49:30Z"}),
+                       [prev])
+        check("gc2 SECOND DIRECTION: a run that began seven seconds before the "
+              "previous one ended shared the window, and the line names it: %r"
+              % (got,),
+              len(got) == 1 and "1 other gate run(s) shared this window (A)" in got[0])
+        blip = {"runId": "Z", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
+                "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
+        got = line_for(prev, [blip], one_writer=False)
+        check("gc3 a sub-second run stamped in the second this one ended is said to "
+              "be unknowable from whole-second stamps, never asserted as sharing "
+              "the window: %r" % (got,),
+              len(got) == 1 and "whole-second" in got[0] and "Z" in got[0]
+              and "shared this window" not in got[0])
+        got = line_for(mine, [prev], one_writer=False)
+        check("gc4 the same back-to-back pair from TWO writers is said to be "
+              "unknowable, never that this run had the machine to itself: %r" % (got,),
+              len(got) == 1 and "whole-second" in got[0] and "A" in got[0]
+              and "to itself" not in got[0])
+        # The gc1 pair again, but the journal records that a ledger merge
+        # re-chained the file from the row after R0 through this run.
+        first = {"runId": "R0", _ev_io.STARTED_KEY: "2026-09-26T15:40:00Z",
+                 "ts": "2026-09-26T15:40:01Z", "scope": "task", "status": "passed"}
+        name = "2026-09.t.jsonl"
+        for stale in os.listdir(evidence):
+            os.remove(os.path.join(evidence, stale))
+        chained = _ev_io.chain_file([first, prev, mine], name)
+        with open(os.path.join(evidence, name), "w") as fh:
+            for r in chained:
+                fh.write(json.dumps(r) + "\n")
+        _ev_io.record_merge(root, os.path.join(evidence, name),
+                            {"relinkedAfter": chained[0]["hash"],
+                             "relinkedThrough": chained[-1]["hash"]})
+        lines = []
+        M._say_who_else_was_running(root, {"status": "passed"}, mine,
+                                    out=lines.append)
+        got = [ln for ln in lines if "machine:" in ln]
+        check("gc5 the gc1 pair inside a stretch a ledger merge re-chained is "
+              "said to be unknowable - the re-chain joined two branches in "
+              "timestamp order, which is no writer's order: %r" % (got,),
+              len(got) == 1 and "whether A ran alongside" in got[0]
+              and "to itself" not in got[0])
+        real = M._ev.merge_seams
+        M._ev.merge_seams = lambda project, config=None: (None, "SEAMS-UNREAD")
+        try:
+            got = line_for(mine, [prev])
+        finally:
+            M._ev.merge_seams = real
+        check("gc6 ...and when nothing could say whether the ledger was ever "
+              "merged, the gc1 pair is unknowable too and the line says why: %r"
+              % (got,),
+              len(got) == 1 and "SEAMS-UNREAD" in got[0]
+              and "to itself" not in got[0])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _group_cases(check)
+        _crowd_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

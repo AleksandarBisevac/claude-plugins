@@ -619,6 +619,11 @@ def row_for(project, result, scope, ids, identity, published=None):
     # `phase` beside a `taskId`, which is a shape two opposite readings both fit.
     if result.get("gateSource") is not None:
         row["gateSource"] = str(result["gateSource"])
+    # THE OTHER PHASES A GROUP'S ONE RUN OWNED (`run-test-gate.py --also`). Written
+    # only for a group run, so a row that carries none is a run for its subject
+    # alone - which is what a member's copied pointer is checked against.
+    if isinstance(result.get("groupWith"), list) and result["groupWith"]:
+        row["groupWith"] = [str(p) for p in result["groupWith"]]
     # WHAT THE GATE WAS, resolved: a digest of every entry beside the command it
     # resolves to (`gate_digest`), so a reader can tell a gate whose entries kept
     # their names while `meta.buildCommands` changed what they run. Written only
@@ -964,12 +969,54 @@ def record_merge(project, path, result, actor=None, config=None):
     Fail-soft like every append; the caller says when it could not be written.
     """
     config = _journal_io.load_config(project) if config is None else config
-    return _journal_io.append_from_cli(project, {
+    entry = {
         "action": ACTION_MERGED,
         "actor": actor if isinstance(actor, dict) else {"via": "merge"},
         "target": repo_relative_or_token(project, path),
         "summary": result.get("summary") or "",
-    }, config=config)
+    }
+    # WHERE THE RE-CHAIN LIES, because this row is the only place it can be
+    # kept: a ledger row's content may not change and no row may be added to
+    # the ledger, and past this merge `prev` in that stretch no longer records
+    # one writer's order (`chain_ordered`).
+    stretch = dict((key, result.get(key)) for key in
+                   ("relinkedAfter", "relinkedThrough") if result.get(key))
+    if stretch:
+        entry["details"] = stretch
+    return _journal_io.append_from_cli(project, entry, config=config)
+
+
+def merge_seams(project, config=None):
+    """`(seams, why)` - every re-chained stretch a ledger merge recorded, as
+    `(relinkedAfter, relinkedThrough)` pairs read off the journal's
+    `ACTION_MERGED` rows, or `(None, why)` when the journal could not be read.
+
+    `[]` is an answer - no merge re-chained this ledger - and None is not one,
+    which is why they are kept apart: `chain_ordered` reads no chain as a
+    writer's order under None. A merge whose journal row was never written
+    (`record_merge` is fail-soft, and says so) leaves no stretch here.
+
+    A DISABLED JOURNAL IS None AND NOT []: with `journal.enabled` false no
+    merge could have been recorded, so the absence of one proves nothing."""
+    if not _journal_io.enabled(
+            _journal_io.load_config(project) if config is None else config):
+        return None, ("the journal is disabled (journal.enabled false), so no "
+                      "ledger merge could have been recorded")
+    try:
+        journal = _journal_io.read_all(project, config)
+    except Exception as exc:
+        return None, ("the journal that records ledger merges could not be read "
+                      "(%s)" % (exc,))
+    seams = []
+    for row in journal:
+        if row.get("action") != ACTION_MERGED:
+            continue
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        after = details.get("relinkedAfter")
+        if isinstance(after, str) and after:
+            through = details.get("relinkedThrough")
+            seams.append((after, through if isinstance(through, str) else None))
+    return seams, ""
 
 
 # --- writing and reading ------------------------------------------------------
@@ -1608,13 +1655,132 @@ def window_of(row):
             % (STARTED_KEY,))
 
 
+OVERLAP_YES, OVERLAP_NO, OVERLAP_UNDECIDED = "yes", "no", "undecided"
+
+
+def overlap_state(one, other, ordered=False):
+    """Whether two `(start, end)` windows, in WHOLE seconds, share a moment:
+    `OVERLAP_YES`, `OVERLAP_NO`, or `OVERLAP_UNDECIDED` when the stamps cannot say.
+
+    A stamp names the second an instant fell in, never the instant. Windows
+    sharing a whole second or more overlap; windows with a second between them do
+    not. What is left is two windows MEETING in one second - one ending in second
+    t, the other starting in t, or a run shorter than a second stamped in the
+    other's start or end second. Both instants fell inside that second in an
+    order the stamps do not record, so the answer is UNDECIDED - unless `ordered`:
+    the caller has established the two runs happened one after the other
+    (`chain_ordered`), and then the shared second is sequential."""
+    s1, e1 = one
+    s2, e2 = other
+    meeting = OVERLAP_NO if ordered else OVERLAP_UNDECIDED
+    if s1 == e1 or s2 == e2:
+        point, (s, e) = (s1, (s2, e2)) if s1 == e1 else (s2, (s1, e1))
+        if s == e:
+            return meeting if point == s else OVERLAP_NO
+        if s < point < e:
+            return OVERLAP_YES
+        return meeting if point in (s, e) else OVERLAP_NO
+    if s1 < e2 and s2 < e1:
+        return OVERLAP_YES
+    return meeting if (e1 == s2 or e2 == s1) else OVERLAP_NO
+
+
+def chain_index(rows, seams):
+    """The lookups `chain_ordered` walks, built once for a reader's whole pass:
+    `{"byId", "byHash", "relinked"}`.
+
+    `relinked` is the set of hashes inside a RE-CHAINED STRETCH - the rows a
+    ledger merge linked in timestamp order across two branches (`merge_seams`),
+    from the row after `relinkedAfter` through `relinkedThrough`. A stretch
+    whose end is no longer in the rows (a later merge re-chained it again) runs
+    to the end of its chain, so an unlocatable end widens the refusal rather
+    than narrowing it. EACH STRETCH IS WALKED ON ITS OWN, with its own record
+    of where it has been: a later merge's stretch routinely starts inside an
+    earlier one whose hashes survived it, and stopping at a row another
+    stretch already holds would let an earlier merge row - real or forged -
+    cut a later one short. `seams` None means nobody could say whether the ledger
+    was ever merged, and then `relinked` is None too."""
+    rows = [r for r in (rows or []) if isinstance(r, dict)]
+    by_id = dict((str(r.get("runId")), r) for r in rows if r.get("runId"))
+    by_hash = dict((r.get("hash"), r) for r in rows if r.get("hash"))
+    relinked = None
+    if seams is not None:
+        after_of = dict((r.get("prev"), r) for r in rows if r.get("prev"))
+        relinked = set()
+        for after, through in seams:
+            seen, cur = set(), after_of.get(after)
+            while isinstance(cur, dict) and cur.get("hash") not in seen:
+                seen.add(cur.get("hash"))
+                relinked.add(cur.get("hash"))
+                if cur.get("hash") == through:
+                    break
+                cur = after_of.get(cur.get("hash"))
+    return {"byId": by_id, "byHash": by_hash, "relinked": relinked}
+
+
+def chain_ordered(rows, one, other, seams=None, index=None):
+    """Did `one` and `other` run one after the other, as ONE gate writer's chain
+    records them?
+
+    A row's `prev` names the `hash` of the row appended before it in the same
+    writer's file, so following `prev` from one row and reaching the other says
+    which was WRITTEN later. That is taken for the order the runs happened in
+    under an ASSUMPTION nothing enforces - that one writer file runs its gates
+    one at a time - and only where the windows agree with it: the later-written
+    run must start at or after the earlier run ended. A long run written after
+    a sub-second one began before that one's row existed, which one-at-a-time
+    cannot produce, so the pair is not ordered.
+
+    NOT ORDERED EITHER, each for its own reason:
+      * an OUTSIDE run - its row is written by this plugin, but the suite ran
+        where no chain watched it;
+      * a row inside a re-chained stretch of a merged ledger (`chain_index`) -
+        there `prev` is the timestamp order a merge chose between two
+        branches, not one writer's appends;
+      * any pair when `seams` is None - nobody could say whether the ledger
+        was ever merged, so no chain is read as a writer's order.
+
+    A row passed without its chain keys (the run just recorded) is matched to
+    its copy on disk by `runId`. `index` is `chain_index(rows, seams)`, passed
+    by a reader asking about many pairs so the lookups are built once."""
+    if runner_of(one) != RUNNER_GATE or runner_of(other) != RUNNER_GATE:
+        return False
+    index = chain_index(rows, seams) if index is None else index
+    if index["relinked"] is None:
+        return False
+    by_id, by_hash = index["byId"], index["byHash"]
+    one = by_id.get(str(one.get("runId")), one)
+    other = by_id.get(str(other.get("runId")), other)
+    if not (one.get("hash") and other.get("hash")):
+        return False
+    if one["hash"] in index["relinked"] or other["hash"] in index["relinked"]:
+        return False
+
+    def reaches(start, target):
+        seen, cur = set(), start
+        while isinstance(cur, dict) and cur.get("prev") and cur["prev"] not in seen:
+            seen.add(cur["prev"])
+            cur = by_hash.get(cur["prev"])
+            if cur is target:
+                return True
+        return False
+    if reaches(one, other):
+        later, earlier = one, other
+    elif reaches(other, one):
+        later, earlier = other, one
+    else:
+        return False
+    began, _e, _w = window_of(later)
+    _s, ended, _w = window_of(earlier)
+    return began is not None and ended is not None and began >= ended
+
+
 def _overlaps(one, other):
-    """Whether two `(start, end)` pairs share any moment. Inclusive at the
-    endpoints, because two runs that met for one second met."""
-    return one[0] <= other[1] and other[0] <= one[1]
+    """Whether two windows DEFINITELY share a moment (`overlap_state`)."""
+    return overlap_state(one, other) == OVERLAP_YES
 
 
-def overlapping_runs(rows, row, runner):
+def overlapping_runs(rows, row, runner, seams=None):
     """`(overlapping, basis)` — the OTHER runs made by `runner` whose window
     overlaps `row`'s.
 
@@ -1635,12 +1801,29 @@ def overlapping_runs(rows, row, runner):
     re-run once it is finished; another GATE run in the window means two
     executors were invited onto one machine, and the answer belongs to whoever
     invited them.
+
+    `seams` is `merge_seams(project)[0]`: where the ledger was re-chained by a
+    merge, or None when that is not known - `chain_ordered` says what each
+    answer lets a chain decide.
     """
+    found, _undecided, basis = _classified(rows, row, runner, seams)
+    return (found, basis)
+
+
+def _classified(rows, row, runner, seams=None):
+    """`(overlapping, undecided, basis)` for `row` against every OTHER run by
+    `runner` - one pass, so a reader of either list reads one answer. Both are
+    None when `row` has no window.
+
+    THE WINDOWS DECIDE FIRST and the chain is asked only about a pair they leave
+    undecided, with its lookups built once for the pass: a reader runs on every
+    recorded gate run over the ledger's whole life, and a chain walk per pair
+    made that quadratic in rows nobody's windows ever met."""
     start, end, basis = window_of(row)
     if start is None:
-        return (None, basis)
+        return (None, None, basis)
     mine = str((row or {}).get("runId") or "")
-    found = []
+    found, unsure, index = [], [], None
     for other in (rows or []):
         if not isinstance(other, dict):
             continue
@@ -1651,9 +1834,25 @@ def overlapping_runs(rows, row, runner):
         o_start, o_end, _why = window_of(other)
         if o_start is None:
             continue
-        if _overlaps((start, end), (o_start, o_end)):
+        state = overlap_state((start, end), (o_start, o_end))
+        if state == OVERLAP_UNDECIDED:
+            index = chain_index(rows, seams) if index is None else index
+            if chain_ordered(rows, row, other, seams, index):
+                state = overlap_state((start, end), (o_start, o_end),
+                                      ordered=True)
+        if state == OVERLAP_YES:
             found.append(other)
-    return (found, basis)
+        elif state == OVERLAP_UNDECIDED:
+            unsure.append(other)
+    return (found, unsure, basis)
+
+
+def undecided_neighbours(rows, row, runner, seams=None):
+    """The OTHER runs by `runner` whose window whole-second stamps cannot place
+    either side of `row`'s (`OVERLAP_UNDECIDED`) - reported apart from the runs
+    that did overlap, so a surface says it cannot tell rather than that the
+    window was shared, or that nobody else ran. `[]` when `row` has no window."""
+    return _classified(rows, row, runner, seams)[1] or []
 
 
 def contested_by(rows, row):
@@ -1663,7 +1862,7 @@ def contested_by(rows, row):
     return overlapping_runs(rows, row, RUNNER_OUTSIDE)
 
 
-def shared_the_machine(rows, row):
+def shared_the_machine(rows, row, seams=None):
     """`(others, basis)` — the other GATE runs whose window overlaps `row`'s.
 
     THE RULE THE PARALLEL-SAFETY RULE DID NOT HAVE. That rule is about the file
@@ -1678,7 +1877,7 @@ def shared_the_machine(rows, row):
     solo run would be refusing the ordinary case, which is how a rule gets routed
     around instead of read.
     """
-    return overlapping_runs(rows, row, RUNNER_GATE)
+    return overlapping_runs(rows, row, RUNNER_GATE, seams)
 
 
 def attribution_of(row, rows):
@@ -1702,6 +1901,15 @@ def attribution_of(row, rows):
     contesting, basis = contested_by(rows, row)
     if contesting is None:
         return {"attributed": None, "contested": [], "basis": basis}
+    unsure = undecided_neighbours(rows, row, RUNNER_OUTSIDE)
+    if not contesting and unsure:
+        # NEITHER CLAIM IS MADE: whether that suite ran alongside this one is not
+        # in the whole-second stamps, so the verdict is not asserted as this run's.
+        return {"attributed": None, "contested": [],
+                "basis": "%s; whether %s ran outside this gate in the same window is "
+                         "not knowable from whole-second stamps"
+                         % (basis, ", ".join(str(o.get("runId") or "?")
+                                             for o in unsure))}
     if not contesting:
         return {"attributed": True, "contested": [],
                 "basis": "%s; no run from outside this gate shares that window"

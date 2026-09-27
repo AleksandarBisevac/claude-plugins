@@ -2027,6 +2027,28 @@ def owned_files(manifest, phase_id, task_id=None):
     return None, "no phase %r in this manifest" % (phase_id,)
 
 
+def group_owned_files(manifest, phase_id, also):
+    """`(files, error)` -- what a GROUP's one gate run owns: the union of `phase_id`'s
+    files and every `also` member's, in that order.
+
+    One run measures one tree, and phases built on one branch share it, so the run
+    that grades them all has to own all of their files: owned by the carrier alone,
+    a rewrite of a file only another member declares was reported beside a pass
+    instead of refusing it. Every member must be a phase the plan carries - a
+    member skipped here would be one the verdict claims and the run never owned.
+    """
+    union, seen = [], set()
+    for pid in [phase_id] + list(also or []):
+        files, err = owned_files(manifest, pid)
+        if err:
+            return None, "--also: %s" % (err,)
+        for f in files:
+            if f not in seen:
+                seen.add(f)
+                union.append(f)
+    return union, None
+
+
 def _phase_by_id(manifest, phase_id):
     """The phase dict named `phase_id`, or None - the same lookup `gate_of`
     and `owned_files` each inline, pulled out because the derived-gate
@@ -2414,7 +2436,7 @@ def grades_left_out(gate, excluded):
     return named
 
 
-def reuse_identity(project, manifest_path, manifest, commands, owns):
+def reuse_identity(project, manifest_path, manifest, commands, owns, group=None):
     """`{key, basis, limit, grading, unexcluded}` - what this run would have to
     match to be a repeat, and the entries that stop it being one.
 
@@ -2432,6 +2454,11 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     reason `grading` does: the caller printing this dict is the one place an
     operator meets the run, and a narrowing that silently failed to apply is not
     this function's to swallow.
+
+    `group` is a group run's other members (`--also`), and it is part of the key
+    when there are any: a group run and a solo run over the same files are two
+    claims - the group's row says it owned each member - so neither may repeat
+    the other. A solo run's key is exactly what it was before.
     """
     excluded, unexcluded = _ev.recorded_paths(project, manifest_path)
     content, cbasis = _tree_stamp.content_digest(project, excluded=excluded)
@@ -2445,7 +2472,10 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
                 "grading": grading, "unexcluded": unexcluded}
-    return {"key": _tree_stamp.identity_of([content, gate, scope]),
+    parts = [content, gate, scope]
+    if group:
+        parts.append(["group", sorted(str(g) for g in group)])
+    return {"key": _tree_stamp.identity_of(parts),
             "basis": "%s; over that, the %d gate command(s) this manifest "
                      "declares and the %d file(s) the work under test declares"
                      % (cbasis, len(gate), len(scope)),
@@ -3623,7 +3653,10 @@ def _say_who_else_was_running(project, res, row, out=print):
     except Exception as exc:
         out("  machine:  who else was running could not be read (%s)" % (exc,))
         return
-    others, basis = _ev.shared_the_machine(rows, row)
+    # Where a merge re-chained the ledger, its chain records no writer's order;
+    # not knowing whether one did is said beside the undecided runs below.
+    seams, seam_why = _ev.merge_seams(project)
+    others, basis = _ev.shared_the_machine(rows, row, seams)
     if others is None:
         out("  machine:  not knowable - %s" % (basis,))
     elif others:
@@ -3633,7 +3666,19 @@ def _say_who_else_was_running(project, res, row, out=print):
             % (len(others), ", ".join(str(o.get("runId") or "?")
                                       for o in others)))
     else:
-        out("  machine:  this run had the machine to itself")
+        # A run whose whole-second stamps cannot be placed either side of this
+        # one is said as that, never counted as the crowd nor as solitude.
+        unsure = _ev.undecided_neighbours(rows, row, _ev.RUNNER_GATE, seams)
+        if unsure:
+            out("  machine:  whether %s ran alongside this run is not knowable from "
+                "whole-second stamps - they meet in one second, in an order no "
+                "writer's chain records%s"
+                % (", ".join(str(o.get("runId") or "?") for o in unsure),
+                   "" if seams is not None else
+                   " (%s, so no chain was read as one writer's order)"
+                   % (seam_why,)))
+        else:
+            out("  machine:  this run had the machine to itself")
     # An EMPTY gate measured nothing, so there is no verdict to attribute.
     if res.get("status") in ("passed", EMPTY_GATE):
         return
@@ -3800,6 +3845,9 @@ def main(argv, out=print):
     # of the PHASE, which is where this script is invoked from - a task-level
     # gate needs this flag, since one with no caller states nothing.
     p.add_argument("--task", dest="task", default=None)
+    # A GROUP's one run: the other phases built on the same branch, whose files
+    # this run owns beside `phase`'s. Additive - absent, nothing here changes.
+    p.add_argument("--also", dest="also", default=None, metavar="PHASE,...")
     # The bound a step is held to, recorded on the row that reports a timeout so
     # "timed out" carries the number that makes it actionable rather than leaving
     # a reader to guess which limit was hit.
@@ -3887,6 +3935,16 @@ def main(argv, out=print):
     if err:
         out("[run-test-gate] %s" % err)
         return E_ASK
+    also = [p.strip() for p in (args.also or "").split(",") if p.strip()]
+    if also and args.task is not None:
+        out("[run-test-gate] --also groups PHASES for one phase-scope run, and "
+            "--task narrows it to one task - the two answer different questions")
+        return E_ASK
+    if also:
+        _group, gerr = group_owned_files(manifest, args.phase, also)
+        if gerr:
+            out("[run-test-gate] %s" % (gerr,))
+            return E_ASK
     subject = args.task if source == "task" else args.phase
     if not commands:
         # The EMPTY gate is a designed state (`audit-task.py:_phase_gate`), so it
@@ -3910,7 +3968,8 @@ def main(argv, out=print):
             return E_OK
         out("[run-test-gate] %s" % (said,))
         return E_OK
-    owns, terr = owned_files(manifest, args.phase, args.task)
+    owns, terr = (group_owned_files(manifest, args.phase, also) if also
+                  else owned_files(manifest, args.phase, args.task))
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
@@ -3942,8 +4001,10 @@ def main(argv, out=print):
                              "ever repeated"}
         prior = None
     else:
+        # `group=also`: a group run and a solo run over the same files are two
+        # claims, so the members a run owns are part of what a repeat must match.
         identity = reuse_identity(project, args.manifest, manifest, commands,
-                                  owns)
+                                  owns, group=also)
         if identity.get("unexcluded"):
             # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
             # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
@@ -4030,6 +4091,25 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    if also:
+        # WHICH MEMBERS THIS ONE RUN OWNED, on its row: a group member's copied
+        # pointer is checked against it, and the carrier's row alone could not
+        # say whose files its coverage and its tree bracket covered.
+        res["groupWith"] = list(also)
+        # ...and in the coverage basis, by member, so the files another member
+        # declares are not read as the carrier's own declaration.
+        mine = set(owned_files(manifest, args.phase)[0] or [])
+        theirs = []
+        for member in also:
+            files = [f for f in (owned_files(manifest, member)[0] or [])
+                     if f not in mine]
+            if files:
+                theirs.append("%s declared by %s (group member)"
+                              % (", ".join(files), member))
+        if theirs:
+            res["coverageBasis"] = "%s; one run for the group: %s" % (
+                res.get("coverageBasis") or "no coverage basis was recorded",
+                "; ".join(theirs))
     # THE REMEDY LINE'S OWN GATE. `_render_verdict` composes a `retarget
     # --gate-drop` call for a duplicated phase-scope suite, and it needs the
     # manifest PATH to do it - but `gateSource` alone cannot say whether this
@@ -4074,8 +4154,10 @@ def main(argv, out=print):
     # reader who assumed otherwise would credit the wrong declaration. So a
     # task-scope run names both ids here, and says it again under the banner.
     if args.task is None:
-        out("[run-test-gate] %s: %d command(s), phase gate"
-            % (args.phase, len(commands)))
+        out("[run-test-gate] %s: %d command(s), phase gate%s"
+            % (args.phase, len(commands),
+               " - one run for the group with %s, owning all of their files"
+               % (", ".join(also),) if also else ""))
     else:
         out("[run-test-gate] task %s in phase %s: %d command(s), %s"
             % (args.task, args.phase, len(commands),

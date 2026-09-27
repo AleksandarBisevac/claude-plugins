@@ -23,6 +23,9 @@ describe('the sign-off note on a phase row', () => {
     expect(note).toContain('sign-off due');
     expect(note).toContain('/audit:review');
     expect(note).toContain('/audit:phase signoff P4');
+    // A `passed` sign-off needs the gate run it rests on, so the note names it.
+    expect(note).toContain('--record');
+    expect(note).toContain('--no-evidence-reason');
   });
 
   it('a phase signed off on an unmerged branch says what it waits for instead', () => {
@@ -31,6 +34,21 @@ describe('the sign-off note on a phase row', () => {
     expect(note).toContain('signed off (passed)');
     expect(note).toContain('audit/p4-x');
     expect(note).not.toContain('sign-off due');
+  });
+
+  it('a commit a group accepted into its review is named beside the verdict', () => {
+    const note = P.phaseSignoffNote(phase({ signoffVerdict: 'passed',
+      branch: 'combined', acceptedCommits: [
+        { commit: 'abcdef0123456789abcdef', reason: 'the multi-phase plan' }] }));
+    expect(note).toContain('abcdef012345');
+    expect(note).toContain('the multi-phase plan');
+  });
+
+  it('a LANDED phase still names the commits its group accepted into review', () => {
+    const note = P.phaseSignoffNote(phase({ status: 'done', signoffVerdict: 'passed',
+      acceptedCommits: [{ commit: 'fedcba9876543210fedcba', reason: 'the plan' }] }));
+    expect(note).toContain('fedcba987654');
+    expect(note).toContain('the plan');
   });
 
   it('a phase that is done, cancelled or still running carries no note', () => {

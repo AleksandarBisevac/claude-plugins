@@ -2331,6 +2331,18 @@ def _evidence_merge_cases(check):
               % (row_file, txt),
               row_file in txt and "`git add` both" in txt)
 
+        _details = (recorded[0].get("details") or {}) if recorded else {}
+        _seams, _why = (_evidence_io.merge_seams(proj)
+                        if hasattr(_evidence_io, "merge_seams") else (None, ""))
+        check("me2c ...and that row records the RE-CHAINED STRETCH - after the "
+              "last run both copies held, through the last row re-chained - which "
+              "is what keeps a reader from taking the re-chain for one writer's "
+              "order, and the ledger's reader reads it back: %r / %r"
+              % (_details, _seams),
+              _details.get("relinkedAfter") == rows[1]["hash"]
+              and _details.get("relinkedThrough") == rows[-1]["hash"]
+              and _seams == [(rows[1]["hash"], rows[-1]["hash"])], txt)
+
         again_code, again = _ev_merge(proj, target, ours, theirs)
         recorded = [r for r in _journal_io.read_all(proj)
                     if r.get("action") == _evidence_io.ACTION_MERGED]
