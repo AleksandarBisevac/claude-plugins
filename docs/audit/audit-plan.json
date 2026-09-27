@@ -804,7 +804,8 @@
       "P78.5",
       "P78.10",
       "P78.7",
-      "P79.8-5bh"
+      "P79.8-5bh",
+      "P86.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1377,7 +1378,8 @@
       "P83.2",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P86.3"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -1642,7 +1644,8 @@
       "P72.2-ttl",
       "P72.5-ttl",
       "P77.2",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P86.4"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1803,7 +1806,8 @@
       "P73.5-9h1",
       "P73.6-9h1",
       "P73.7-9h1",
-      "P78.13-msc"
+      "P78.13-msc",
+      "P80.13"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1846,7 +1850,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P86.1"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -1998,7 +2003,8 @@
       "P81.4",
       "P77.3-6u9",
       "P78.14-msc",
-      "P79.9-5bh"
+      "P79.9-5bh",
+      "P86.1"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2338,7 +2344,8 @@
       "P32.7",
       "P71.4-zso",
       "P80.7",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P80.13"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
@@ -2350,12 +2357,14 @@
       "P59.5",
       "P63.6",
       "P71.2-zso",
-      "P80.7"
+      "P80.7",
+      "P86.1"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
       "P63.6",
-      "P80.7"
+      "P80.7",
+      "P86.2"
     ],
     "plugins/audit/scripts/report/_report_page.py": [
       "P63.6",
@@ -2385,7 +2394,8 @@
       "P13.3",
       "P15.4",
       "P51.9",
-      "P80.7"
+      "P80.7",
+      "P86.2"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5"
@@ -2424,7 +2434,8 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P86.1"
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
@@ -2479,7 +2490,8 @@
       "P69.3",
       "P78.10",
       "P76.4-6qa",
-      "P78.14-msc"
+      "P78.14-msc",
+      "P80.13"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -2629,7 +2641,8 @@
       "P83.1",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P86.3"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -2653,7 +2666,8 @@
       "P80.10",
       "P72.1",
       "P72.2-ttl",
-      "P72.5-ttl"
+      "P72.5-ttl",
+      "P86.4"
     ],
     "plugins/audit/tests/test__deps.py: a field added to one copy of the explorer return contract and not the other is a finding": [
       "P32.5"
@@ -2697,7 +2711,8 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P77.5-6u9"
+      "P77.5-6u9",
+      "P86.1"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -2745,12 +2760,14 @@
       "P73.5-9h1",
       "P73.6-9h1",
       "P73.7-9h1",
-      "P78.13-msc"
+      "P78.13-msc",
+      "P80.13"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
       "P71.4-zso",
-      "P80.7"
+      "P80.7",
+      "P80.13"
     ],
     "plugins/audit/tests/test__gate_feed.py": [
       "P48.3",
@@ -3099,7 +3116,8 @@
       "P56.3",
       "P69.3",
       "P78.10",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P80.13"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -3322,7 +3340,8 @@
       "P83.2",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P86.3"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -3632,7 +3651,8 @@
       "P72.2-ttl",
       "P72.5-ttl",
       "P77.1",
-      "P85.4"
+      "P85.4",
+      "P86.4"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -3692,10 +3712,12 @@
       "P81.7"
     ],
     ".claude/hooks/guard-release.py": [
-      "P80.11"
+      "P80.11",
+      "P86.2"
     ],
     ".claude/hooks/arm-release-bypass.py": [
-      "P80.11"
+      "P80.11",
+      "P86.2"
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1",
