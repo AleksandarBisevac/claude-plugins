@@ -715,7 +715,8 @@
       "P87.5-bpl",
       "P87.6-bpl",
       "P87.7-bpl",
-      "P87.8-bpl"
+      "P87.8-bpl",
+      "P87.9-bpl"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -766,7 +767,8 @@
       "P85.4",
       "P85.5-axa",
       "P87.1",
-      "P87.3-bpl"
+      "P87.3-bpl",
+      "P87.9-bpl"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -4254,7 +4256,8 @@
       "P87.5-bpl",
       "P87.6-bpl",
       "P87.7-bpl",
-      "P87.8-bpl"
+      "P87.8-bpl",
+      "P87.9-bpl"
     ],
     "plugins/audit/scripts/governance/propose-gates.py": [
       "P80.15-rtb"
