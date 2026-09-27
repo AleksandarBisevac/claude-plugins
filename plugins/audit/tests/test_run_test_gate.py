@@ -6503,6 +6503,40 @@ def _crowd_cases(check):
               "unknowable, never that this run had the machine to itself: %r" % (got,),
               len(got) == 1 and "whole-second" in got[0] and "A" in got[0]
               and "to itself" not in got[0])
+        # The gc1 pair again, but the journal records that a ledger merge
+        # re-chained the file from the row after R0 through this run.
+        first = {"runId": "R0", _ev_io.STARTED_KEY: "2026-09-26T15:40:00Z",
+                 "ts": "2026-09-26T15:40:01Z", "scope": "task", "status": "passed"}
+        name = "2026-09.t.jsonl"
+        for stale in os.listdir(evidence):
+            os.remove(os.path.join(evidence, stale))
+        chained = _ev_io.chain_file([first, prev, mine], name)
+        with open(os.path.join(evidence, name), "w") as fh:
+            for r in chained:
+                fh.write(json.dumps(r) + "\n")
+        _ev_io.record_merge(root, os.path.join(evidence, name),
+                            {"relinkedAfter": chained[0]["hash"],
+                             "relinkedThrough": chained[-1]["hash"]})
+        lines = []
+        M._say_who_else_was_running(root, {"status": "passed"}, mine,
+                                    out=lines.append)
+        got = [ln for ln in lines if "machine:" in ln]
+        check("gc5 the gc1 pair inside a stretch a ledger merge re-chained is "
+              "said to be unknowable - the re-chain joined two branches in "
+              "timestamp order, which is no writer's order: %r" % (got,),
+              len(got) == 1 and "whether A ran alongside" in got[0]
+              and "to itself" not in got[0])
+        real = M._ev.merge_seams
+        M._ev.merge_seams = lambda project, config=None: (None, "SEAMS-UNREAD")
+        try:
+            got = line_for(mine, [prev])
+        finally:
+            M._ev.merge_seams = real
+        check("gc6 ...and when nothing could say whether the ledger was ever "
+              "merged, the gc1 pair is unknowable too and the line says why: %r"
+              % (got,),
+              len(got) == 1 and "SEAMS-UNREAD" in got[0]
+              and "to itself" not in got[0])
     finally:
         _harness.remove_tree(root)
 

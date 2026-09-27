@@ -1853,8 +1853,10 @@ def _cases(check):
                 {"runId": "C", M.STARTED_KEY: "2026-09-26T15:50:39Z",
                  "ts": "2026-09-26T15:51:38Z"}]
         _chain = M.chain_file(_seq, "2026-09.writer.jsonl")
-        _crowd = [M.shared_the_machine(_chain, r)[0] for r in _chain]
-        _unsure = [M.undecided_neighbours(_chain, r, M.RUNNER_GATE) for r in _chain]
+        _crowd = [_seamed(M.shared_the_machine, _chain, r, seams=[])[0]
+                  for r in _chain]
+        _unsure = [_seamed(M.undecided_neighbours, _chain, r, M.RUNNER_GATE,
+                           seams=[]) for r in _chain]
         check("wr10d runs ONE writer's chain records strictly one after another are "
               "not a crowd and not undecided either - each finds nobody else in its "
               "window: %r / %r"
@@ -1865,11 +1867,11 @@ def _cases(check):
                   + M.chain_file([_seq[1]], "2026-09.two.jsonl"))
         check("wr10h ...while the same two windows from TWO writers meet in a second "
               "no chain orders - undecided, not sequential: %r"
-              % ([o.get("runId") for o in
-                  M.undecided_neighbours(_apart, _apart[1], M.RUNNER_GATE)],),
-              M.shared_the_machine(_apart, _apart[1])[0] == []
-              and [o.get("runId") for o in
-                   M.undecided_neighbours(_apart, _apart[1], M.RUNNER_GATE)] == ["A"])
+              % (_ids(_seamed(M.undecided_neighbours, _apart, _apart[1],
+                              M.RUNNER_GATE, seams=[])),),
+              _seamed(M.shared_the_machine, _apart, _apart[1], seams=[])[0] == []
+              and _ids(_seamed(M.undecided_neighbours, _apart, _apart[1],
+                               M.RUNNER_GATE, seams=[])) == ["A"])
         _over = [dict(_seq[0]), dict(_seq[1], **{M.STARTED_KEY:
                                                  "2026-09-26T15:49:30Z"})]
         check("wr10e SECOND DIRECTION: a run that began seven seconds before the other "
@@ -1895,10 +1897,10 @@ def _cases(check):
         check("wr10i an OUTSIDE suite whose row one writer's chain holds right after a "
               "gate run is not ordered by that chain - the suite ran where no chain "
               "watched it - so the shared second stays undecided: %r"
-              % ([o.get("runId") for o in
-                  M.undecided_neighbours(_mixed, _mixed[1], M.RUNNER_GATE)],),
-              [o.get("runId") for o in
-               M.undecided_neighbours(_mixed, _mixed[1], M.RUNNER_GATE)] == ["A"])
+              % (_ids(_seamed(M.undecided_neighbours, _mixed, _mixed[1],
+                              M.RUNNER_GATE, seams=[])),),
+              _ids(_seamed(M.undecided_neighbours, _mixed, _mixed[1],
+                           M.RUNNER_GATE, seams=[])) == ["A"])
         _g = {"runId": "G", M.STARTED_KEY: "2026-09-26T10:00:12Z",
               "ts": "2026-09-26T10:00:12Z"}
         _o = {"runId": "O", M.STARTED_KEY: "2026-09-26T10:00:05Z",
@@ -2032,6 +2034,7 @@ def _cases(check):
 
     _worktree_ledger_cases(check)
     _merge_ledger_cases(check)
+    _chain_order_cases(check)
     _narrowed_shadow_cases(check)
 
 
@@ -2194,6 +2197,166 @@ def _em_pair(name, mine, yours):
     base = [_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1")]
     return (M.chain_file(base + [mine], name),
             M.chain_file(base + [yours], name))
+
+
+def _seamed(fn, *args, **kwargs):
+    """`fn` told which merged stretches the ledger holds. A build whose readers
+    take no `seams` is called without them, so a case aimed at the seam fails
+    on its ASSERTION there rather than raising and taking the rest down."""
+    try:
+        return fn(*args, **kwargs)
+    except TypeError:
+        kwargs.pop("seams", None)
+        return fn(*args, **kwargs)
+
+
+def _ids(rows):
+    return [o.get("runId") for o in rows or []]
+
+
+def _gate(run_id, start, end):
+    return {"runId": run_id, M.STARTED_KEY: "2026-09-26T10:00:%02dZ" % start,
+            "ts": "2026-09-26T10:00:%02dZ" % end}
+
+
+def _chain_order_cases(check):
+    # A chain records the order rows were WRITTEN in. That is an order of runs
+    # only when the later-written run began at or after the earlier one ended.
+    _b, _a = _gate("B", 12, 12), _gate("A", 5, 12)
+    _late = M.chain_file([_b, _a], "2026-09.writer.jsonl")
+    check("co1 a run written AFTER a sub-second one but begun seven seconds "
+          "before it ended is not called sequential by the chain - the pair "
+          "is undecided, and nobody is named as sharing the window: "
+          "undecided %r, shared %r"
+          % (_ids(_seamed(M.undecided_neighbours, _late, _late[1],
+                          M.RUNNER_GATE, seams=[])),
+             _ids(_seamed(M.shared_the_machine, _late, _late[1],
+                          seams=[])[0])),
+          _ids(_seamed(M.undecided_neighbours, _late, _late[1], M.RUNNER_GATE,
+                       seams=[])) == ["B"]
+          and _seamed(M.shared_the_machine, _late, _late[1], seams=[])[0] == []
+          and _seamed(M.chain_ordered, _late, _late[1], _late[0],
+                      seams=[]) is False)
+    _seq = M.chain_file([_gate("A", 5, 12), _gate("B", 12, 20)],
+                        "2026-09.writer.jsonl")
+    check("co2 SECOND DIRECTION: the same two seconds written in run order - "
+          "the later run began in the second the earlier row was written - "
+          "stay sequential: ordered %r, undecided %r"
+          % (_seamed(M.chain_ordered, _seq, _seq[1], _seq[0], seams=[]),
+             _ids(_seamed(M.undecided_neighbours, _seq, _seq[1],
+                          M.RUNNER_GATE, seams=[]))),
+          _seamed(M.chain_ordered, _seq, _seq[1], _seq[0], seams=[]) is True
+          and _seamed(M.chain_ordered, _seq, _seq[0], _seq[1], seams=[]) is True
+          and _seamed(M.undecided_neighbours, _seq, _seq[1], M.RUNNER_GATE,
+                      seams=[]) == [])
+    check("co3 ...and a reader not told whether the ledger was ever merged "
+          "does not read order off its chain at all - the boundary second "
+          "stays undecided: %r"
+          % (_ids(_seamed(M.undecided_neighbours, _seq, _seq[1],
+                          M.RUNNER_GATE, seams=None)),),
+          _ids(_seamed(M.undecided_neighbours, _seq, _seq[1], M.RUNNER_GATE,
+                       seams=None)) == ["A"]
+          and M.chain_ordered(_seq, _seq[1], _seq[0]) is False)
+
+    # Two branches appended to one file over a shared first row; the real
+    # merge re-chains the union in timestamp order.
+    name = "2026-09.s-co.jsonl"
+    base = [_gate("R", 0, 1)]
+    ours = M.chain_file(base + [_gate("X", 5, 12)], name)
+    theirs = M.chain_file(base + [_gate("Y", 12, 20)], name)
+    res = M.merge_rows(ours, theirs, name, aliases={})
+    merged = res["rows"]
+    seams = [(res.get("relinkedAfter"), res.get("relinkedThrough"))]
+    check("co4 a ledger merge that re-chains a divergence says where the "
+          "re-linked stretch begins and ends - after the last row both copies "
+          "held, through the last row it re-chained: %r"
+          % ([res.get("relinkedAfter"), res.get("relinkedThrough")],),
+          res["ok"] and _ids(merged) == ["R", "X", "Y"]
+          and res.get("relinkedAfter") == ours[0]["hash"]
+          and res.get("relinkedThrough") == merged[-1]["hash"])
+    check("co5 ...and two runs from two branches joined by that re-chain are "
+          "not ordered by it - their shared boundary second is undecided, as "
+          "it was before the merge: merged %r, unmerged %r"
+          % (_ids(_seamed(M.undecided_neighbours, merged, merged[2],
+                          M.RUNNER_GATE, seams=seams)),
+             _ids(_seamed(M.undecided_neighbours, ours + theirs[1:], theirs[1],
+                          M.RUNNER_GATE, seams=[]))),
+          _ids(_seamed(M.undecided_neighbours, merged, merged[2], M.RUNNER_GATE,
+                       seams=seams)) == ["X"]
+          and _seamed(M.chain_ordered, merged, merged[2], merged[1],
+                      seams=seams) is False
+          and _ids(_seamed(M.undecided_neighbours, ours + theirs[1:],
+                           theirs[1], M.RUNNER_GATE, seams=[])) == ["X"])
+    tail = list(merged)
+    for row in (_gate("P", 30, 40), _gate("Q", 40, 50)):
+        tail.append(M.chain_onto(row, tail, name))
+    check("co6 SECOND DIRECTION: runs the writer appended AFTER the merge are "
+          "ordered by the chain again - the refusal covers the re-linked "
+          "stretch, not the file: %r"
+          % (_seamed(M.chain_ordered, tail, tail[4], tail[3], seams=seams),),
+          _seamed(M.chain_ordered, tail, tail[4], tail[3], seams=seams) is True
+          and _seamed(M.undecided_neighbours, tail, tail[4], M.RUNNER_GATE,
+                      seams=seams) == []
+          and _seamed(M.chain_ordered, tail, tail[3], tail[2],
+                      seams=seams) is False)
+    grown = M.chain_file(base + [_gate("X", 5, 12), _gate("Y", 12, 20)], name)
+    flat = M.merge_rows(grown[:2], grown, name, aliases={})
+    check("co7 SECOND DIRECTION: a merge with nothing to re-chain - one copy a "
+          "prefix of the other - records no stretch, and the chain orders "
+          "the file's runs as before: %r / %r"
+          % ([flat.get("relinkedAfter"), flat.get("relinkedThrough")],
+             _seamed(M.chain_ordered, flat["rows"], flat["rows"][2],
+                     flat["rows"][1], seams=[]),),
+          flat["ok"] and flat.get("relinkedAfter") is None
+          and flat.get("relinkedThrough") is None
+          and _seamed(M.chain_ordered, flat["rows"], flat["rows"][2],
+                      flat["rows"][1], seams=[]) is True)
+
+    # The chain is read only for a pair the windows leave undecided.
+    big = M.chain_file(
+        [{"runId": "r%d" % i,
+          M.STARTED_KEY: "2026-09-26T%02d:%02d:%02dZ"
+          % (i // 3600 % 24, i // 60 % 60, i % 60),
+          "ts": "2026-09-26T%02d:%02d:%02dZ"
+          % (i // 3600 % 24, i // 60 % 60, i % 60)}
+         for i in range(0, 6000, 2)], "2026-09.big.jsonl")
+    real, calls = M.chain_ordered, []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+    M.chain_ordered = counted
+    try:
+        _seamed(M.undecided_neighbours, big, big[-1], M.RUNNER_GATE, seams=[])
+        _seamed(M.shared_the_machine, big, big[-1], seams=[])
+        quiet = len(calls)
+        _seamed(M.undecided_neighbours, _seq, _seq[1], M.RUNNER_GATE, seams=[])
+        meeting = len(calls) - quiet
+    finally:
+        M.chain_ordered = real
+    check("co8 over a ledger of %d chained runs in which no two windows meet, "
+          "the chain is never consulted - the windows decide every pair: %d "
+          "call(s)" % (len(big), quiet), quiet == 0)
+    check("co9 SECOND DIRECTION: a pair meeting in one second IS put to the "
+          "chain - the count above is a count, not a wrapper nothing calls: "
+          "%d call(s)" % (meeting,), meeting == 1)
+    crowd = M.chain_file([_gate("S%d" % i, 12, 12) for i in range(5)]
+                         + [_gate("L", 5, 12)], "2026-09.writer.jsonl")
+    real, built = M.chain_index, []
+
+    def counted_index(*args, **kwargs):
+        built.append(1)
+        return real(*args, **kwargs)
+    M.chain_index = counted_index
+    try:
+        _asked = _ids(_seamed(M.undecided_neighbours, crowd, crowd[-1],
+                              M.RUNNER_GATE, seams=[]))
+    finally:
+        M.chain_index = real
+    check("co10 ...and a run meeting several others in one second builds the "
+          "chain's lookups ONCE for the pass, not once per pair: %d build(s) "
+          "for %r" % (len(built), _asked),
+          len(built) == 1 and len(_asked) == 5)
 
 
 def _merge_ledger_cases(check):

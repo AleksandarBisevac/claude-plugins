@@ -3653,7 +3653,10 @@ def _say_who_else_was_running(project, res, row, out=print):
     except Exception as exc:
         out("  machine:  who else was running could not be read (%s)" % (exc,))
         return
-    others, basis = _ev.shared_the_machine(rows, row)
+    # Where a merge re-chained the ledger, its chain records no writer's order;
+    # not knowing whether one did is said beside the undecided runs below.
+    seams, seam_why = _ev.merge_seams(project)
+    others, basis = _ev.shared_the_machine(rows, row, seams)
     if others is None:
         out("  machine:  not knowable - %s" % (basis,))
     elif others:
@@ -3665,12 +3668,15 @@ def _say_who_else_was_running(project, res, row, out=print):
     else:
         # A run whose whole-second stamps cannot be placed either side of this
         # one is said as that, never counted as the crowd nor as solitude.
-        unsure = _ev.undecided_neighbours(rows, row, _ev.RUNNER_GATE)
+        unsure = _ev.undecided_neighbours(rows, row, _ev.RUNNER_GATE, seams)
         if unsure:
             out("  machine:  whether %s ran alongside this run is not knowable from "
                 "whole-second stamps - they meet in one second, in an order no "
-                "writer's chain records"
-                % (", ".join(str(o.get("runId") or "?") for o in unsure),))
+                "writer's chain records%s"
+                % (", ".join(str(o.get("runId") or "?") for o in unsure),
+                   "" if seams is not None else
+                   " (%s, so no chain was read as one writer's order)"
+                   % (seam_why,)))
         else:
             out("  machine:  this run had the machine to itself")
     # An EMPTY gate measured nothing, so there is no verdict to attribute.

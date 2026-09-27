@@ -439,9 +439,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the previous row was written always "shared this window". Windows now compare half-open at the
   end: a run ending in second t and one starting in t are sequential, windows sharing a second or
   more still overlap. Two windows meeting in one second are sequential only when one gate writer's
-  chain records them one after the other; across writers - a gate run and an outside suite, or two
-  sessions - that second is not knowable, and the machine line, the attribution of a red and
-  `record-outside-run.py`'s contests line each say so rather than claiming nobody else ran.
+  chain records them one after the other and the later-written run started at or after the earlier
+  one ended - so a long run written after a sub-second one is not called sequential; across
+  writers - a gate run and an outside suite, or two sessions - that second is not knowable, and
+  the machine line, the attribution of a red and `record-outside-run.py`'s contests line each say
+  so rather than claiming nobody else ran. A ledger re-chained by `audit-journal.py merge` orders
+  nothing inside the stretch it re-chained: the `evidence.merge` journal row now records where
+  that stretch begins and ends (`details.relinkedAfter`, `details.relinkedThrough`), the chain
+  there being the timestamp order the merge chose between two branches; rows appended after the
+  merge are ordered again, and when the journal cannot be read no chain is trusted and the line
+  says why. The chain is read only for a pair the windows leave undecided, with its lookups built
+  once per reader pass, so the machine line stays linear in the ledger's size.
 - **`close-phase.py` stamps the landing in the tree the merge lands in, whatever manifest path it
   was given.** Run from the main checkout with the WORKTREE's manifest - the command its own
   dry-run printed - it merged, then wrote `mergedAt`, the derived status and the index stub into
@@ -451,7 +459,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   manifest inside the phase's own worktree there is no surviving copy, so it refuses before the
   ref-only fast-forward (exit 2), naming the branch to check out. A branch that already landed - a
   re-run, or a merge made by hand - is stamped in the same surviving copy, and a run with
-  `meta.merge.auto` false, which writes nothing, is not refused.
+  `meta.merge.auto` false, which writes nothing, is not refused - unless the branch is already in
+  the parent (a pull request landed it): that run stamps, so with no surviving copy it is refused
+  too, and neither copy is written.
 - **`close-phase.py` run from the main worktree standing on the phase branch** lands it, and now
   prints the two commands that free the branch there - `git switch <parent>` (or `--detach` when
   another worktree holds the parent, saying it leaves a detached HEAD), then `git branch -d

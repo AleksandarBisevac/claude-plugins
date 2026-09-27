@@ -1673,6 +1673,14 @@ def _cases(check):
                   "actually moved, so it is smaller than the tail: %d re-linked "
                   "of %d rows" % (res["relinked"], len(res["rows"])),
                   res["relinked"] == 2, repr(res["relinked"]))
+            _stretch = [res.get("relinkedAfter"), res.get("relinkedThrough")]
+            check("mu4b ...and the result says WHERE the re-chained stretch "
+                  "lies - after the last row both copies held, through the last "
+                  "re-chained row, the marker added after it not counted: %r"
+                  % (_stretch,),
+                  _stretch == [ours[1]["hash"], res["rows"][-2]["hash"]]
+                  and all(key in M.DETAILS_KEYS
+                          for key in ("relinkedAfter", "relinkedThrough")))
             # `.get` and a guarded index THROUGHOUT this group, because a case
             # that raises is a case that took every case after it down with it
             # and named none of them: proving these red means deleting the
@@ -1805,6 +1813,13 @@ def _cases(check):
                   and _res_ff["rows"][-1]["action"] != M.MERGE_ACTION
                   and any("no divergence" in n for n in _res_ff["notes"]),
                   repr((_res_ff["notes"], _res_ff["relinked"])))
+            check("mu13b ...and a merge that re-chained nothing names no "
+                  "re-chained stretch: %r"
+                  % ([_res_ff.get("relinkedAfter"),
+                      _res_ff.get("relinkedThrough")],),
+                  "relinkedAfter" in _res_ff
+                  and _res_ff.get("relinkedAfter") is None
+                  and _res_ff.get("relinkedThrough") is None)
             # A row both sides recorded IDENTICALLY right after the split folds
             # into the common prefix instead (same content, same `prev`, so the
             # same hash) - which is why the tie has to be built one row DEEPER,

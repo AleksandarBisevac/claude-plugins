@@ -1187,6 +1187,25 @@ def _landed_survivor_cases(check):
               and "no surviving copy" not in text)
     finally:
         done(root, wt)
+    root, mpath, wt, wt_mpath, git = fresh("pr-landed",
+                                           meta_extra={"merge": {"auto": False}})
+    try:
+        # A pull request landed the branch: main holds it and is checked out
+        # nowhere, and the only manifest in reach is the worktree's.
+        git("checkout", "-q", "-b", "other")
+        git("branch", "-f", "main", "audit/p1-demo")
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("ns4 with merge.auto false and the branch ALREADY in main by a pull "
+              "request, main checked out nowhere, the worktree's manifest is the "
+              "copy removal would delete - refused, and neither copy stamped: "
+              "exit %r, main %r, worktree %r, %s"
+              % (code, _merged_at(mpath), _merged_at(wt_mpath), text[:300]),
+              code == M.E_USAGE and "no surviving copy" in text
+              and _merged_at(mpath) is None and _merged_at(wt_mpath) is None)
+    finally:
+        done(root, wt)
     root, mpath, wt, wt_mpath, git = fresh("nocheckout-main")
     try:
         git("checkout", "-q", "-b", "other")
