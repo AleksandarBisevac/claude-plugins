@@ -852,7 +852,7 @@
     {
       "id": "P82.15-fye",
       "title": "red-first reads an attribute assignment or setattr that replaces the case on its class as a rebinding",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-13 review (review-P82m.json; probe29). A regression from P82.14: a module-level `New.test_value_is_two = test_old.Old.test_value_is_two` after the class replaces the passing def with HEAD's unchanged red function; P82.14 reads an Attribute target as binding nothing, so _definition returns the passing def and HEAD's red is credited (T1, exit 0 proved; P82.13 refused it). `setattr(New, 'test_value_is_two', ...)` (T2) is credited too. After the chain resolves, a later statement rebinds the case when (a) one of its Assign/AugAssign/AnnAssign targets is an Attribute whose dotted path is the chain plus the case name, or (b) it is setattr(<chain>, '<name>', ...) with a literal name; either means not defined here. `New.maxDiff = None` (sr175, O1) stays allowed - only the case's own name on its own chain counts. Red first: T1 and T2 refused; O1 still proves. A setattr with a computed name is a named limit in the guide and CHANGELOG.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -887,14 +887,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "62a5b65b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_replaces/_dotted/_attribute_targets checked at each level of the chain in _definition; sr184-sr186",
+        "descriptive": "Red-first never credits a HEAD case put back onto the task's class by an attribute assignment or a literal setattr"
       },
       "startedAt": "2026-09-27T19:38:41Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T21:53:16Z",
+      "verifiedBy": [
+        "stamp-verification selftest 165/165 plus the probe's new and changed rows 13/13 red on an export; full sweep"
+      ]
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"
