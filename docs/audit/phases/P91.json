@@ -26,31 +26,39 @@
         "severity": "high",
         "file": "tools/check-committed-pii.py (BASELINE row for the plan index)",
         "issue": "The plan-surface BASELINE rows are keyed by line number, and the index's baselined line sits after the phases list and fileIndex, which routine plugin writes rewrite; one added phase stub or fileIndex entry moves it, and the check (and the selftest sweep that reads the live tree) goes red on the next plan write.",
-        "resolution": "Key plan-surface BASELINE rows by what the line says (path, detector, a digest of the matched line's text), printing but not keying the line number; cases: a line inserted above a baselined match stays accounted for, an edit to the matched line itself goes red; correct the comment."
+        "resolution": "fixed in P91.2-htp (1363cb4f): Key plan-surface BASELINE rows by what the line says (path, detector, a digest of the matched line's text), printing but not keying the line number; cases: a line inserted above a baselined match stays accounted for, an edit to the matched line itself goes red; correct the comment.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
       },
       {
         "id": "P91-R2",
         "severity": "med",
         "file": "tools/check-committed-pii.py (plan_files problem rows)",
         "issue": "No selftest case produces plan-config-unreadable or plan-index-unparseable; dropping both appends keeps the selftest green.",
-        "resolution": "A case per row on a fixture (truncated index JSON; a config that is not JSON), each red when its append is removed."
+        "resolution": "fixed in P91.2-htp (1363cb4f): A case per row on a fixture (truncated index JSON; a config that is not JSON), each red when its append is removed.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
       },
       {
         "id": "P91-R3",
         "severity": "low",
         "file": "tools/check-committed-pii.py (SYNTHETIC)",
         "issue": "The two new synthetic rows are missing from SYNTHETIC, so they print as a leak at line zero under the generic closing sentence.",
-        "resolution": "Add both with their own sentence; update the comment."
+        "resolution": "fixed in P91.2-htp (1363cb4f): Add both with their own sentence; update the comment.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
       },
       {
         "id": "P91-R4",
         "severity": "low",
         "file": "tools/check-committed-pii.py (plan_files, the directory sweep)",
         "issue": "A shard pointer into a directory other than the index's own pulls every tracked file under that directory into the plan surface, whatever its type.",
-        "resolution": "Limit it to the shard-shaped files the pointers can name, or pin the width with a case and say it in the docstring."
+        "resolution": "fixed in P91.2-htp (1363cb4f): Limit it to the shard-shaped files the pointers can name, or pin the width with a case and say it in the docstring.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
       }
     ],
-    "outcome": "[findings: 4 - 1 high, 1 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 1 high, 1 med, 2 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -115,7 +123,7 @@
     {
       "id": "P91.2-htp",
       "title": "a baselined plan hit is keyed by what its line says, and every plan-domain row the check can print has a case",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review fix task. Key plan-surface BASELINE rows by what the line says (path, detector, a digest of the matched line's text) and print the line number without keying on it, so a routine plan write that moves the line keeps the hit accounted for while an edit to the matched line itself goes red; cases for plan-config-unreadable and plan-index-unparseable; both synthetic rows in SYNTHETIC with their own sentence; bound the directory sweep a shard pointer opens to shard-shaped files, or pin its width with a case.",
       "files": [
         "tools/check-committed-pii.py"
@@ -143,18 +151,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1363cb4f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/check-committed-pii.py: plan-surface BASELINE rows keyed by path, detector and a digest of the matched line's text (line_anchor, anchors from scan); plan rows rewritten; SYNTHETIC and _SYNTHETIC_HEADLINE for plan-config-unreadable and plan-index-unparseable; a pointed shard directory adds only JSON directly in it; cases q26-q31.",
+        "descriptive": "A routine write to the plan no longer turns the committed-artifact check red, while an edit to an exempted line still does; both plan-domain error rows have a case and their own sentence, and a shard pointer's directory adds only shard-shaped files."
       },
       "startedAt": "2026-09-27T23:25:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T23:43:01Z",
+      "verifiedBy": [
+        "q26",
+        "q27",
+        "q27b",
+        "q28",
+        "q29",
+        "q30",
+        "q31"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T23:43:01Z.0aff04",
         "status": "passed",
         "at": "2026-09-27T23:43:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1363cb4f",
+        "at": "2026-09-27T23:43:01Z",
+        "basis": "fixes the four phase-review findings"
       }
     }
   ],
