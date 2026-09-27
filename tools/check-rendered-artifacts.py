@@ -246,6 +246,14 @@ def _build_demo_fixture(work):
     The fixture is seeded, so two runs produce identical bytes; that is what lets
     the artifact rendered from it be compared at all. Returns None when a step
     exits non-zero, which the caller reports rather than treating as "no drift".
+
+    IT IS A GIT REPOSITORY, and the generator is what makes it one: the page shows
+    a merged phase WHOLE only when git answers that a full run's head contains
+    that merge, and a directory with no repository can only answer "could not be
+    asked". The history is written as loose objects dated from the plan, so its
+    commits - and the shas the page prints - are the same on every run. Nothing
+    here runs git to build it, which is why the recipe below needs no step of its
+    own for it; ra24 is what fails if the fixture stops being one.
     """
     project = os.path.join(work, "demo")
     os.makedirs(project)
@@ -742,6 +750,21 @@ def _cases(check):
           % (_dirs,),
           len(set(_dirs)) == 4
           and all(d.startswith("/probe/work") for d in _dirs))
+
+    # THE FIXTURE IS A REPOSITORY GIT ITSELF RESOLVES, asked through this tool's
+    # own git reader rather than by looking for a `.git` directory: a directory
+    # git will not open is the state the page's UNKNOWN-for-everything came from.
+    _repo_root = tempfile.mkdtemp(prefix="audit-fresh-repo-")
+    try:
+        _repo = _build_demo_fixture(_repo_root)
+        _why = ("the fixture generator exited non-zero" if _repo is None
+                else head_unavailable(_repo))
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(_repo_root)
+    check("ra24 the scale demo's fixture is a git repository whose HEAD git "
+          "resolves, so the render can ask whether a full run contains a "
+          "merge at all: %r" % (_why,), _why is None)
 
     _head_cases(check)
 

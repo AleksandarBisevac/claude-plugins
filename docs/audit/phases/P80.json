@@ -1065,7 +1065,32 @@
         "plugins/audit/scripts/panel/_panel_composition.py",
         "plugins/audit/tests/test__panel_composition.py",
         "plugins/audit/scripts/ui/panel/overview.js",
-        "tools/ui-tests/evidence-read-error.test.mjs"
+        "tools/ui-tests/evidence-read-error.test.mjs",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/scripts/report/_report_md.py",
+        "plugins/audit/tests/test__report_md.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -1160,7 +1185,8 @@
         "plugins/audit/tests/test__status_facts.py",
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/commands/status.md"
+        "plugins/audit/commands/status.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1345,7 +1371,12 @@
       },
       "startedAt": "2026-09-27T11:21:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T12:12:38Z.2f35c8",
+        "status": "failed",
+        "at": "2026-09-27T12:12:38Z"
+      }
     },
     {
       "id": "P80.21-rtb",

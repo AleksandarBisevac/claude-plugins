@@ -65,6 +65,7 @@ import json
 import os
 import random
 import sys
+import zlib
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -503,19 +504,12 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
     # THE ONE MERGED PHASE THAT NEVER RECORDS `mergedHead` - the earliest `done`
     # phase, on purpose: it is the same phase a mid-flight adopter's earliest
     # work already sits behind (see `_pre_recorder_phase`), so a phase this old
-    # having no ancestry pointer either is one fact, not two. Every OTHER
-    # merged phase gets one, which is what lets `full_status` answer UNKNOWN
-    # for this one and PROVISIONAL for the rest - the two states this fixture
-    # can show HONESTLY. A THIRD, WHOLE, needs git to say a real run's head
-    # contains a real merge; this generator runs with no `.git` behind it at
-    # all (`docs/demo-large.html`'s own recipe renders it against a bare
-    # temp directory), so a "whole-making" row here would not demonstrate
-    # WHOLE - every merged phase asks the SAME global ledger, so the moment one
-    # well-formed full-scope row exists, git is asked about EVERY phase's own
-    # `mergedHead` and answers UNKNOWN for all of them alike (no repository to
-    # ask), collapsing the two honest states this fixture can reach into one.
-    # So no full-scope row is generated at all; `meta.fullGate` and
-    # `phase.mergedHead` are exercised by the two states that need no git.
+    # having no ancestry pointer either is one fact, not two. `full_status`
+    # answers UNKNOWN for it. Every OTHER merged phase gets a REAL commit of the
+    # fixture's own git history (`demo_history`), and one full-scope run whose
+    # head contains exactly the first of those merges - so that phase reads
+    # WHOLE and every later one PROVISIONAL, all three answered by git rather
+    # than asserted here.
     first_done_pi = next(
         (i + 1 for i, s in enumerate(statuses) if s == "done"), None)
     # Built ONCE and read twice - by `_task_gate`, which narrows a task's gate
@@ -686,13 +680,14 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             phase["baseRef"] = _sha(rng)
             phase["branch"] = "audit/%s-%s" % (pid.lower(), area)
             phase["mergedAt"] = _iso(p_start + datetime.timedelta(days=2))
-            # THE PARENT BRANCH'S COMMIT RIGHT AFTER THIS PHASE MERGED - stamped
-            # on every merged phase but `first_done_pi` (the comment above
-            # `first_done_pi` says why that one carries none). A stable hash of
-            # the phase id, exactly as deterministic as `baseRef` above and
-            # drawing nothing from `rng` either.
+            # THE PARENT BRANCH'S COMMIT RIGHT AFTER THIS PHASE MERGED - on
+            # every merged phase but `first_done_pi` (the comment above
+            # `first_done_pi` says why that one carries none). Reserved here so
+            # the key keeps its place in the shard, and filled after the loop
+            # from `demo_history`, which needs every merge to exist first. It
+            # draws nothing from `rng`.
             if pi != first_done_pi:
-                phase["mergedHead"] = _hex("mergedHead-%s" % pid, 40)
+                phase["mergedHead"] = None
             phase["summary"] = (
                 "Met the desired outcome: every touched file under src/%s is "
                 "validated and the phase gate is green." % area)
@@ -747,6 +742,10 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         "lastSyncedAt": "2026-08-06T12:05:00Z",
         "origin": "created"}
 
+    # The merges' real commits, now that every merge exists. Nothing here draws
+    # on `rng`, so no byte generated above moves because this runs.
+    _stamp_history(phases)
+
     # After the loop and outside it: the lease draws nothing from `rng`, so the
     # default run's bytes cannot move whichever way this flag is set.
     if with_claim:
@@ -793,7 +792,11 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             # `full_status` has a question to answer for every merged phase
             # above (`meta.fullGate`'s own SCHEMA_EXEMPTIONS row, once here,
             # named the surface that would retire it - this is that surface).
-            "fullGate": ["build", "lint"],
+            # The counted entry is IN it on purpose: a full run whose every step
+            # printed nothing countable "counted nothing", which
+            # `_evidence_io._full_disqualification` refuses to call whole, and
+            # the fixture's whole-making run has to be one the rules accept.
+            "fullGate": ["build", "lint", COUNTED_KEY],
             # The build/runtime half of the configuration, which the orchestrator
             # prose reads and the committed acme example already declares. The
             # demo declared none of it, so the scale page showed a project with
@@ -943,11 +946,20 @@ SCHEMA_EXEMPTIONS = {
         "what `derive-phase-gate.py` computed for a phase's sign-off gate, "
         "beside the wide `testGate` array - unreachable and unread for "
         "`testGateBasis`'s own reason above, the pair this follows exactly.",
+    "phase.mergedHeadAt":
+        "when close-phase.py recorded a `mergedHead` AFTER the fact, with the "
+        "branch already gone - the one case where the head is the parent's head "
+        "at that moment rather than the merge's own commit. Every head this "
+        "fixture stamps IS its merge's own commit (`demo_history` builds each "
+        "one at its phase's `mergedAt`), so carrying the key would publish a "
+        "second reading of a head that has only the first.",
     # `meta.fullGate` and `phase.mergedHead` WERE EXEMPT HERE, both on the same
     # reason: no rendered surface read either field yet. The report now does
     # (`_report_html._verified_line`), so both rows are gone and `generate()`
     # carries the fields for real - see the comment above `first_done_pi` for
-    # why the fixture stops short of a `whole`-bearing full-scope row.
+    # which merge reads WHOLE, which PROVISIONAL and which UNKNOWN, and
+    # `demo_history` for the git repository that lets the first of those be
+    # answered at all.
     #
     # `meta.branch` WAS EXEMPT HERE and is carried now. Its row read "REVISIT
     # when the panel grows a meta.branch card: the demo is where its screenshot
@@ -1627,6 +1639,219 @@ def _bugs(phases):
     return bugs
 
 
+# --- the fixture's git history ---------------------------------------------------
+# WHY THE FIXTURE CARRIES A REPOSITORY. `full_status` answers WHOLE only when git
+# says a green full run's head CONTAINS a phase's `mergedHead`, and a fixture
+# rendered in a directory with no repository can never get that answer: every
+# ancestry question comes back "could not be asked". So the fixture is a real git
+# repository - `meta.gitRoot` is "." - whose commits are the merges `generate()`
+# stamps, plus the one commit a full run measured.
+#
+# WRITTEN AS LOOSE OBJECTS, NEVER BY RUNNING GIT. The objects are plain bytes
+# (`<kind> <size>\0<body>`, named by their sha1, stored zlib-deflated), so this
+# file builds them itself and no git process ever runs a write. That is the
+# isolation, and it is total rather than configured: no hook, no signing key, no
+# template, no `init.defaultBranch`, no identity and no `GIT_*` variable of the
+# caller's can reach a commit, because nothing that would read one is invoked.
+# It is also why this file still imports no process or environment module (the
+# suite pins that). Every identity and every date comes from the plan: a merge is
+# dated at its phase's `mergedAt`, the run's commit an hour after the merge it
+# measured, and the one author is `HISTORY_IDENTITY`. So a commit's sha is a
+# function of the plan alone, the same on every machine and every run - the
+# rendered page carries those shas, and it is compared byte for byte.
+#
+# The compressed FILE bytes may differ between zlib builds; the object NAMES
+# cannot, because a name is the sha1 of the uncompressed bytes. Only names reach
+# a rendered page.
+#
+# ONLY THE MERGES AND THE RUN'S COMMIT ARE REAL OBJECTS. Every task's `commit` and
+# every phase's `baseRef` is still a stable fake drawn from `rng`, named by no
+# object here - so a reader that asks git about THOSE (the doctor's commit trail,
+# for one) will call them dangling in this fixture, and that is a property of the
+# fixture rather than a finding about the product.
+#
+# AND IT NEVER WRITES OVER A REPOSITORY IT DID NOT MAKE. `history_refusal()` is
+# asked before the manifest, the ledger or a single object is written: a `.git`
+# already in the directory is accepted only when its HEAD, config and branch ref
+# are byte for byte what this history would write - which is the generator's own
+# earlier output and nothing else. Pointed at a real project, it refuses rather
+# than replace that project's config and move its branch with no reflog entry.
+HISTORY_IDENTITY = "Demo Dev <dev@demo.example>"
+HISTORY_BRANCH = "main"
+HISTORY_FILE = "HISTORY.md"
+# How long after the merge it measured the full run's commit sits, and how long
+# after that commit the run was recorded. Both inside the gap before the next
+# phase merges, which `generate()` spaces days apart.
+RUN_COMMIT_HOURS = 1
+RUN_RECORDED_HOURS = 1
+
+
+def _git_object(kind, body):
+    """`(sha, raw)` for one git object - the name git would give it, and the
+    bytes it names."""
+    raw = ("%s %d" % (kind, len(body))).encode("ascii") + b"\0" + body
+    return hashlib.sha1(raw).hexdigest(), raw
+
+
+def _epoch(iso):
+    """A manifest stamp as whole epoch seconds, read as UTC - with no clock."""
+    moment = datetime.datetime.strptime(str(iso), "%Y-%m-%dT%H:%M:%SZ")
+    return int((moment - datetime.datetime(1970, 1, 1)).total_seconds())
+
+
+def _history_commit(text, parent, iso, message):
+    """`[(sha, raw)]` for a one-file tree holding `text` and the commit over it;
+    the commit is LAST."""
+    blob = _git_object("blob", text.encode("utf-8"))
+    tree = _git_object("tree", b"100644 " + HISTORY_FILE.encode("ascii")
+                       + b"\0" + bytes.fromhex(blob[0]))
+    stamp = "%s %d +0000" % (HISTORY_IDENTITY, _epoch(iso))
+    lines = ["tree %s" % (tree[0],)]
+    if parent:
+        lines.append("parent %s" % (parent,))
+    lines += ["author %s" % (stamp,), "committer %s" % (stamp,), "",
+              message, ""]
+    return [blob, tree, _git_object("commit",
+                                    "\n".join(lines).encode("utf-8"))]
+
+
+def demo_history(phases):
+    """The fixture's git history as a value: `{"objects": [(sha, raw)], "tip",
+    "heads": {phaseId: sha}, "run": {"head", "at", "phaseId"} or None}`.
+
+    PURE. It reads only which phases carry a `mergedHead` KEY, their ids and
+    their `mergedAt`, and never the value in the key - `generate()` calls it
+    to FILL those keys, and `write_history()` calls it again on the finished
+    plan to write the same objects, so a value it read would make the second
+    call depend on the first.
+
+    ONE LINE OF HISTORY: a root commit at the plan's start, then each merge in
+    the order the phases merged. The full run's commit sits right after the
+    FIRST merge that records a head, so that run's head contains that merge and
+    none of the later ones - WHOLE for exactly one phase, PROVISIONAL for the
+    rest, by ancestry. `run` is None when no merged phase records a head, which
+    is the honest shape of a plan too small to have one: nothing is fabricated
+    to fill it.
+    """
+    merged = sorted((p for p in (phases or [])
+                     if isinstance(p, dict) and p.get("mergedAt")
+                     and "mergedHead" in p),
+                    key=lambda p: _epoch(p["mergedAt"]))
+    text = "# Demo history\n\nThe merges this plan's phases landed.\n"
+    objects = _history_commit(text, None, _iso(BASE),
+                              "Start the demo project")
+    tip = objects[-1][0]
+    heads, run = {}, None
+    for phase in merged:
+        text += "\n- %s merged from %s\n" % (phase.get("id"),
+                                             phase.get("branch") or "its branch")
+        commit = _history_commit(text, tip, phase["mergedAt"],
+                                 "Merge %s" % (phase.get("id"),))
+        objects += commit
+        tip = heads[phase.get("id")] = commit[-1][0]
+        if run is None:
+            at = _at(phase["mergedAt"], RUN_COMMIT_HOURS)
+            text += "\n- the full suite ran here\n"
+            commit = _history_commit(text, tip, at, "Record the full run")
+            objects += commit
+            tip = commit[-1][0]
+            run = {"head": tip, "at": at, "phaseId": phase.get("id")}
+    return {"objects": objects, "tip": tip, "heads": heads, "run": run}
+
+
+def _stamp_history(phases):
+    """Fill every reserved `mergedHead` with its merge's commit; returns the
+    history it stamped from."""
+    history = demo_history(phases)
+    for phase in phases:
+        if phase.get("id") in history["heads"]:
+            phase["mergedHead"] = history["heads"][phase["id"]]
+    return history
+
+
+def _history_files(history):
+    """`[(path under .git, text)]` - every non-object file the history writes,
+    and exactly the bytes `history_refusal` compares an existing one against."""
+    return [("HEAD", "ref: refs/heads/%s\n" % (HISTORY_BRANCH,)),
+            ("config", "[core]\n\trepositoryformatversion = 0\n"
+                       "\tbare = false\n"),
+            (os.path.join("refs", "heads", HISTORY_BRANCH),
+             "%s\n" % (history["tip"],))]
+
+
+def history_refusal(manifest, out_dir):
+    """Why the history cannot be written into `out_dir`, or None when it can.
+
+    ASKED BEFORE ANYTHING IS WRITTEN, by `write_manifest`, so a refusal leaves
+    the directory exactly as it was found - a refusal that arrived after the
+    manifest and the ledger had landed would leave a half-built fixture behind.
+
+    TWO REFUSALS:
+      * a `mergedHead` naming anything but the commit `demo_history` builds -
+        publishing it would point at a commit the repository does not hold;
+      * a `.git` that is already there and is not this history's own: a FILE
+        (a linked worktree's pointer), a link, or a directory whose HEAD, config
+        or branch ref differs by a single byte from what would be written. That
+        last is somebody's repository, and writing here would replace its
+        config and move its branch.
+    """
+    history = demo_history(manifest.get("phases") or [])
+    stale = sorted(p.get("id") for p in (manifest.get("phases") or [])
+                   if p.get("id") in history["heads"]
+                   and p.get("mergedHead") != history["heads"][p["id"]])
+    if stale:
+        return ("mergedHead does not name the fixture's own merge commit on %s; "
+                "stamp it with generate()" % (", ".join(stale),))
+    git_dir = os.path.join(out_dir, ".git")
+    if not os.path.lexists(git_dir):
+        return None
+    if os.path.islink(git_dir) or not os.path.isdir(git_dir):
+        return ("%s already exists and is not a directory (a linked worktree's "
+                "pointer, or a link), so this is somebody's repository and the "
+                "demo history will not be written into it" % (git_dir,))
+    for rel, text in _history_files(history):
+        path = os.path.join(git_dir, rel)
+        try:
+            with open(path, "rb") as fh:
+                held = fh.read()
+        except OSError:
+            held = None
+        if held != text.encode("ascii"):
+            return ("%s already holds a git repository this generator did not "
+                    "write (%s is not the demo history's), and writing here would "
+                    "replace its config and move its branch - point the generator "
+                    "at an empty directory" % (git_dir, rel.replace(os.sep, "/")))
+    return None
+
+
+def write_history(manifest, out_dir):
+    """Write the plan's history into `out_dir/.git`; returns the `.git` path.
+
+    Raises ValueError with `history_refusal`'s reason rather than write over
+    anything - the caller that writes more than this asks first.
+    """
+    refusal = history_refusal(manifest, out_dir)
+    if refusal is not None:
+        raise ValueError(refusal)
+    history = demo_history(manifest.get("phases") or [])
+    git_dir = os.path.join(out_dir, ".git")
+    for sub in (os.path.join("objects", "info"), os.path.join("objects", "pack"),
+                os.path.join("refs", "heads"), os.path.join("refs", "tags")):
+        os.makedirs(os.path.join(git_dir, sub), exist_ok=True)
+    for sha, raw in history["objects"]:
+        path = os.path.join(git_dir, "objects", sha[:2], sha[2:])
+        if os.path.exists(path):
+            continue
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write(zlib.compress(raw))
+    for rel, text in _history_files(history):
+        with open(os.path.join(git_dir, rel), "w", encoding="ascii",
+                  newline="\n") as fh:
+            fh.write(text)
+    return git_dir
+
+
 # --- recorded runs ------------------------------------------------------------
 # THE LEDGER IS THE SOURCE OF TRUTH AND `testEvidence` IS A CACHE, and this fixture
 # has to publish both or it publishes a lie: a pointer whose `runId` no row answers
@@ -1659,6 +1884,9 @@ EVIDENCE_POINTER_ROOT = "."
 # and two runs differ, and fixed so a regenerated demo is byte-identical.
 _MS_BASE = 4000
 _MS_SPREAD = 57000
+# `run-test-gate.SAMPLE_BUDGET`, which bounds the step names a count's basis
+# quotes. Restated for `_counts_basis`'s reason, and compared by the same case.
+COUNTS_SAMPLE_BUDGET = 160
 
 
 def _hex(seed, width):
@@ -1897,7 +2125,66 @@ def _evidence_specs(manifest):
                                     owns, phase.get("baseRef"),
                                     "%s-signoff" % (phase.get("id"),),
                                     overlap=owns)))
+    # THE THIRD PLACE'S ONE RUN: `meta.fullGate`, measured at the history's run
+    # commit. Resolved the way the runner resolves it, so its steps publish the
+    # exact commands `full_status` compares them with.
+    run = demo_history(manifest.get("phases") or [])["run"]
+    full = [(e, build.get(e, e)) for e in
+            ((manifest.get("meta") or {}).get("fullGate") or [])]
+    if run is not None and full:
+        out.append((_evidence_io.FULL_SCOPE, {},
+                    _at(run["at"], RUN_RECORDED_HOURS), None,
+                    _full_run_result(full, run["head"])))
     return out
+
+
+def _counts_basis(steps):
+    """The sentence `run-test-gate.counts_basis` writes for these steps when no
+    two of them shared a suite.
+
+    STATED HERE AND CHECKED THERE, for `_status_of`'s reason: loading the
+    runner would be an edge `_deps` refuses, so the fixture spells the arms it
+    reaches and `tests/test_gen_demo_manifest.py` compares the sentence with the
+    real function's. The shared-suite clause is not spelled because no step
+    here shares a suite with another.
+    """
+    if not steps:
+        return "no step reported, so there is no count to explain"
+    counted = [st for st in steps if st.get("ran") is not None]
+    silent = [str(st.get("name")) for st in steps if st.get("ran") is None]
+    if not counted:
+        return ("no step printed a summary this reader can count (%s), so the "
+                "size of this gate is not knowable from its output"
+                % (_output.some_of(silent, budget=COUNTS_SAMPLE_BUDGET),))
+    if silent:
+        return ("%d of %d step(s) printed a summary this reader counted; %s "
+                "did not, so this total is a floor and not a size"
+                % (len(counted), len(steps),
+                   _output.some_of(silent, budget=COUNTS_SAMPLE_BUDGET)))
+    return ("counted from each runner's own summary line, over %d step(s)"
+            % (len(steps),))
+
+
+def _full_run_result(resolved, head):
+    """`run_gate`'s answer for the fixture's one full run, shaped the way
+    `run-test-gate.py --full` shapes it - and whole-making by the rules
+    `_evidence_io._full_disqualification` applies, each one met by a
+    measurement rather than waived: the verdict read off the steps, a counted
+    total with the sentence that explains it, a duration on every step, and a
+    dirty-tree observation that was TAKEN and found nothing.
+
+    The coverage question is suppressed, not answered, as the runner does for
+    a whole-product run: it declares no files, and "declares nothing" would be
+    false about what a full run covers.
+    """
+    result = _run_result(resolved, [], head, "full-%s" % (head,))
+    state = dict(result["testedState"])
+    state["dirtyBasis"] = "git described the tree before the run; 0 dirty path(s)"
+    result["testedState"] = state
+    result["countsBasis"] = _counts_basis(result["steps"])
+    result["dirtyOutside"] = []
+    result["coverageBasis"] = None
+    return result
 
 
 def evidence_rows(manifest, project):
@@ -2031,6 +2318,15 @@ def write_config(out_dir):
 
 
 def write_manifest(manifest, out_dir, single_file=False):
+    """Write the plan, its config, its ledger and its git history into `out_dir`.
+
+    Raises ValueError, having written NOTHING, when `history_refusal` refuses the
+    directory - asked first, because every write below is one a refusal must not
+    leave behind.
+    """
+    refusal = history_refusal(manifest, out_dir)
+    if refusal is not None:
+        raise ValueError(refusal)
     mio = _load_manifest_io()
     os.makedirs(out_dir, exist_ok=True)
     index_path = os.path.join(out_dir, "audit-plan.json")
@@ -2048,6 +2344,10 @@ def write_manifest(manifest, out_dir, single_file=False):
     # every surface renders as `Pointer without evidence` - the one state a demo
     # must never show by accident.
     written.extend(write_evidence(manifest, out_dir))
+    # ...AND THE HISTORY THE HEADS NAME, beside them in the same directory,
+    # because `meta.gitRoot` is ".". Not listed in `written`: it is a directory
+    # of objects, and `main()` names it on a line of its own.
+    write_history(manifest, out_dir)
     return written
 
 
@@ -2071,7 +2371,12 @@ def main(argv):
 
     manifest = generate(n_phases=args.phases, n_tasks=args.tasks,
                         seed=args.seed, repo=args.repo)
-    written = write_manifest(manifest, args.out_dir, single_file=args.single_file)
+    try:
+        written = write_manifest(manifest, args.out_dir,
+                                 single_file=args.single_file)
+    except ValueError as exc:
+        sys.stderr.write("ERROR: %s\n" % (exc,))
+        return 2
     n_tasks = sum(len(p["tasks"]) for p in manifest["phases"])
     print("wrote %d phase(s), %d task(s), %d bug(s) to %s"
           % (len(manifest["phases"]), n_tasks, len(manifest["bugs"]), args.out_dir))
@@ -2085,6 +2390,9 @@ def main(argv):
         print("  %s" % (path,))
     if not args.single_file:
         print("  + %d shard(s)" % (len(manifest["phases"]),))
+    print("  %s (git history, %s at %s)"
+          % (os.path.join(args.out_dir, ".git"), HISTORY_BRANCH,
+             demo_history(manifest["phases"])["tip"][:12]))
     return 0
 
 

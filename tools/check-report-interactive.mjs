@@ -174,6 +174,13 @@ const FEATURE_ABSENT = [
              'the area dropdown keeps only', 'the dropdown selection is a link (a=',
              'All areas restores every phase', '...and hides all',
              'the "'] },
+  // A plan naming no third place, or one that merged nothing, paints no chip;
+  // the page-level requirement above it still runs on every document.
+  { note: 'no full-run line in this report',
+    covers: ['every full-run line carries an answer the renderer knows',
+             'every full-run line reads the sentence its own answer renders',
+             'no full-run line is hidden by the stylesheet',
+             'a merged phase carries one full-run line and never two'] },
   { note: 'nothing is ready in this plan',
     covers: ['every ready task is a term', 'the list carries as many terms',
              'every term names its task id', 'every definition says why',
@@ -2299,6 +2306,84 @@ expect('...nor the panel inside it', onPaper.panel, true);
   }
   await page.setViewportSize({ width: 1512, height: 945 });
   await page.waitForTimeout(200);
+}
+
+// --- the full-run line: the third place's verdict, as a reader gets it -------
+// `_report_html._verified_line` is pinned string by string in Python, and no
+// browser had ever looked at what it paints: a stylesheet rule hiding the chip,
+// or a renderer emitting an answer with the wrong sentence, would pass every
+// one of those pins. So this reads the painted chips themselves - one per merged
+// phase of a plan that declares `meta.fullGate` - and holds each to the sentence
+// its answer renders.
+//
+// WHICH ANSWERS A PAGE MUST SHOW is a property of the fixture it was rendered
+// from, never of the page: a plan whose runs cover every merge is right to show
+// no provisional line. So the requirement is keyed by the committed document,
+// for the one fixture BUILT to show every answer - `gen-demo-manifest.py` makes
+// the scale demo a git repository with one full run whose head contains exactly
+// one merge. Red against the page it replaced, which showed no whole line.
+const FULLRUN_REQUIRED = {
+  'docs/demo-large.html': ['whole', 'provisional', 'unknown'],
+};
+// The sentence each answer renders, from `_verified_line`'s own docstring. A
+// sha is the prefix `_verified_line` cuts, and the whole line's counts may be
+// `?` - the renderer's honest "not recorded" - so they are not pinned.
+const FULLRUN_SHAPES = {
+  whole: /^sign-off: (derived|wide), \S+ of \S+ suites, \S+ \S+; whole at [0-9a-f]{9}$/,
+  provisional: /^whole: pending - record a full run at [0-9a-f]{9} \(pre-push, CI, or \/audit:review \S+ --full\)$/,
+  unknown: /^unknown - \S/,
+};
+{
+  // EVERY PHASE ON SCREEN FIRST. The View select and the filters hide phase
+  // rows by design, and a chip inside a row a VIEW took away is not a chip the
+  // stylesheet hid - so both are cleared before anything is measured, and a
+  // row still filtered out afterwards is named as that rather than as a hide.
+  await clearAll();
+  if (await page.$('#audit-view option[value="all"]')) {
+    await page.selectOption('#audit-view', 'all');
+    await page.waitForTimeout(250);
+  }
+  // RENDERED, NOT MERELY STYLED. The chip's own computed `display` says nothing
+  // about an ancestor a rule took out of the layout; `getClientRects()` is empty
+  // exactly when the chip or any ancestor generates no box. `visibility`
+  // inherits, so the chip's own computed value already carries an ancestor's.
+  // What neither sees is a chip painted at zero opacity or off screen - this
+  // measures "laid out and not visibility-hidden", and the label says no more.
+  const fullLines = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.phase [data-fullrun]')].map((n) => {
+      const row = n.closest('tr.phase');
+      return { answer: n.getAttribute('data-fullrun'), text: n.textContent.trim(),
+               phase: row.getAttribute('data-phase'),
+               filtered: row.style.display === 'none',
+               shown: n.getClientRects().length > 0
+                 && getComputedStyle(n).visibility !== 'hidden' };
+    }));
+  const fullKey = documentKey(path);
+  const fullWant = FULLRUN_REQUIRED[fullKey] || [];
+  const fullMissing = fullWant.filter((a) => !fullLines.some((l) => l.answer === a));
+  expect('this page carries every full-run answer its fixture is built to show',
+    fullMissing.join(', '), '');
+  if (!fullLines.length) {
+    notes.push(`ok   no full-run line in this report - its plan names no meta.fullGate `
+      + `or has merged no phase${fullWant.length ? '' : ` (and ${fullKey || file} `
+      + 'is not a document whose fixture requires one)'}`);
+  } else {
+    expect('every full-run line carries an answer the renderer knows',
+      fullLines.filter((l) => !FULLRUN_SHAPES[l.answer]).map((l) => l.answer).join(', '), '');
+    expect('every full-run line reads the sentence its own answer renders',
+      fullLines.filter((l) => FULLRUN_SHAPES[l.answer] && !FULLRUN_SHAPES[l.answer].test(l.text))
+        .map((l) => `${l.phase} ${l.answer}: ${l.text}`).slice(0, 3).join(' | '), '');
+    expect('no full-run line is hidden by the stylesheet',
+      fullLines.filter((l) => !l.shown)
+        .map((l) => (l.filtered ? `${l.phase} (its row is still filtered out)` : l.phase))
+        .join(', '), '');
+    const fullSeen = new Map();
+    for (const l of fullLines) fullSeen.set(l.phase, (fullSeen.get(l.phase) || 0) + 1);
+    expect('a merged phase carries one full-run line and never two',
+      [...fullSeen].filter(([, n]) => n > 1).map(([p]) => p).join(', '), '');
+    notes.push(`ok   full-run lines: ${['whole', 'provisional', 'unknown']
+      .map((a) => `${a} ${fullLines.filter((l) => l.answer === a).length}`).join(', ')}`);
+  }
 }
 
 // The last liveness reading, and the one that covers the whole run: the ladder
