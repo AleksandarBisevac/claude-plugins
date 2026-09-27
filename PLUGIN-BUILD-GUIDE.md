@@ -3710,7 +3710,9 @@ already coupled that the runner named failing — pinned by `_evidence_io.resolv
 that fits several coupled suites credits none of them. Each verb's own output and exit code are printed;
 the exit stays the runner's. It never acts on a green run, on a run the runner said it did not
 record, or on a failure the runner did not **name** (every miss is re-asked of
-`_evidence_io.named_failing_suites`). A miss whose `sources` the row cut (`sourcesDropped`) is
+`_evidence_io.named_failing_suites`, which also skips a muted step). The couplings a catch is
+credited to are read before any verb here writes, so a suite this run coupled is not also
+credited with a catch by it. A miss whose `sources` the row cut (`sourcesDropped`) is
 **not** coupled — coupling a suite to a prefix of what it depends on narrows it silently — and
 the bug it files says so and points at the tasks' files in the plan. A miss an open bug already
 tracks, or a coupling that already covers every source, is not filed again, so a push retried on
@@ -4207,7 +4209,14 @@ past what an importer listing alone would find. `couple` appends a new entry, or
 rather than overwriting it, because the couple is a fact learned once and re-confirmed, not
 re-dated on every call. `uncouple` drops the one entry naming `--test` and refuses, exit 2, when
 no entry names it - the same "an operation on something that is not there is an error, never a
-silent no-op" rule every other verb here holds.
+silent no-op" rule every other verb here holds. `couple --test <path> --caught <runId>` is the
+narrowest door onto the same key: it refreshes an EXISTING entry's `lastCaught`
+to the `ts` of a full run whose runner named the test failing on a step no mute excused, and a
+name the run gave that fits several coupled tests (`_evidence_io.resolve_named`) credits none of
+them. It never creates an entry (a test with none is refused, exit 2), never changes `sources` or
+`basis` (`--sources`/`--basis-run`/`--basis-head`/`--phases` beside it are refused), and never
+moves `lastCaught` back: a catch at or before the recorded one, compared as moments through
+`_usage_core.parse_ts`, writes nothing and exits 0 saying so. Journaled as `coupling.caught`.
 
 `bug-add "<title>" --severity low|med|high --description TEXT` (with optional `--files`,
 `--repro`, `--expected` and `--actual`) is the only writer `/audit:bug add` uses for `bugs[]`: it

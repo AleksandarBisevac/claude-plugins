@@ -64,3 +64,13 @@ the **full-status** line it prints — the same word (`whole`, `provisional` or 
 reason) `/audit:status`, the report, the panel and the doctor all read off the same row. A plan
 with no `meta.fullGate` declared answers that the plan names no third place at all; that is not a
 failure of this command, it is the plan's own state.
+
+**`--full` as written here files nothing from a red run.** It calls `run-test-gate.py` directly,
+and that script prints each `SELECTION MISS:` line with the `audit-task.py couple` and `bug-add`
+commands that would file it — printed, never run. The learning belongs to
+`scripts/governance/full-gate.py`, which runs the same measurement and, after a red exit, files a
+coupling and a bug for each miss the runner named and refreshes `lastCaught` on each coupled suite
+it named failing (orchestrator → **What a red full run teaches**). So after a red `--full` here,
+either run the printed remedy for each miss, or run `full-gate.py <manifest>` — a second full run,
+recorded as its own row. Whichever you choose, the phase's full-run answer is still the one the
+ledger holds; a filed miss does not make the red run anything but red.

@@ -33,9 +33,10 @@ variables:
 
 steps:
   # `fetchDepth: 0` — a FULL clone. Ancestry is what tells a `whole` full run apart
-  # from an `unknown` one (`/audit:status`'s stale-full-run condition below asks
-  # exactly that), and a shallow clone answers `unknown` for every phase regardless
-  # of what actually ran, because git has no history to walk.
+  # from an `unknown` one, and a shallow clone answers `unknown` for every phase
+  # regardless of what actually ran, because git has no history to walk. The
+  # `unknown-full-run` condition in the last step is the one that fails on that
+  # answer; `stale-full-run` never counts an `unknown` phase.
   - checkout: self
     fetchDepth: 0
 
@@ -102,6 +103,9 @@ steps:
 
   - script: |
       python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/status/audit-status.py" \
-        "$(manifest)" --gate --fail-on stale-full-run
-    displayName: 'Gate: no merged phase is provisional past a full run that already covers it'
+        "$(manifest)" --gate --fail-on stale-full-run,unknown-full-run
+    displayName: 'Gate: no merged phase is stale behind a full run, and none is unknown'
+    # stale-full-run: a full run recorded after the phase merged still does not
+    # contain it. unknown-full-run: the question could not be asked - no mergedHead,
+    # a shallow clone git cannot walk, or an unreadable ledger.
     condition: succeededOrFailed()

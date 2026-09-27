@@ -68,6 +68,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   steps NAMED as failing, unioned with whatever the task also declares in `--tests-add`, in the
   phase's path-scoped spelling. `tests.gateBasis` records `failing-from-run:<runId>`; a run that
   named no suite falls through to the ordinary derivation, with the reason printed first.
+- **`--failing-from` pins each named suite to one path from the project root before it gates
+  on it.** A runner may name a suite relative to its own directory, and that spelling, written
+  into a gate run from the root, opens no file. Each spelling is normalized first: an absolute
+  path inside the project is made relative to it, and one outside the project is refused, so a
+  machine's own path is never written into a plan. It is then resolved against the tracked files
+  (`git ls-files`) by `_evidence_io.resolve_named`, which answers only for a single match — so a
+  spelling that exists from the root but has deeper tracked twins is ambiguous. When git cannot
+  list the files, a spelling that exists from the root is kept as written. A suite that matches
+  no file or several, lies outside the project, resolves to a path holding a control character,
+  or is off disk while git cannot list the files, narrows nothing: the gate becomes the entry of
+  each step the run failed on, so the failure the task fixes is always inside its gate, and with
+  no step name recorded it is the phase's wide `testGate`. The reason is printed on the add's
+  `gate:` line.
 - **`run-test-gate.py <m> <P> --task <T> --own [--quiet]`** runs a task's own tests through the
   same bracket and coverage answer as the recorded run, writes no row and no pointer, ever, and
   keeps its whole output on disk at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`)
@@ -269,6 +282,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   it the way a sibling entry does, so an empty substitution is never narrowed to nothing silently.
   The printed `DERIVED` line and `testGateDerived` both name which of the two sources — the
   sibling task or the spelling — supplied the shape.
+- **A gate re-pointed through a sibling's entry runs a path holding a space or a quote.** A
+  derived phase gate, and a new task's gate built in the phase's path-scoped spelling, re-point
+  a sibling task's own entry at other test paths; each substituted path is now quoted for the
+  shell the gate runs in (`shlex.quote`), so it stays one word instead of splitting into words
+  the runner cannot open. The sibling's entry is read as that shell reads it
+  (`_manifest_phases.shell_words`), so a path it already quotes is recognised as a path and
+  replaced, and every other word keeps its exact spelling. A path needing no quotes comes back
+  byte for byte, so every unquoted gate reads and re-points exactly as before.
 - **An ALL-listing naming no suite turns the derived gate wide, with `phase.testGateBasis:
   derived-empty`.** When the ALL listing ran, exited clean and named no suite, the derivation
   widens to the phase's ordinary wide gate before anything else runs — coupling, the related
@@ -326,6 +347,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   merge never re-derives which run counts. The panel's ancestry memo keeps an answer only when
   both commits are full SHA-1 or SHA-256 ids, because a branch, a tag or an abbreviated SHA can
   move, and never keeps a could-not-ask.
+- **A full run whose row names no tested head cannot bear whole.** A full-scope row whose
+  `testedState.head` is missing or blank is passed over when `full_status` asks whether a merged
+  phase is contained, rather than answered as a could-not-ask, since no fetch or unshallow can
+  supply a head the row never recorded. Beside a newer head-less run, an older run with a head
+  that does not contain the merge makes the phase provisional, not unknown; an older run that
+  contains it still makes the phase whole. When no full run can bear whole and the newest one is
+  head-less, the phase reads provisional with a basis naming that run and giving the reason "the row names no tested head, so there
+  is no commit to ask whether it contains the merge, and it cannot bear whole", and this
+  repository's release guard refuses it as provisional with the full-run remedy,
+  `/audit:review <phase> --full`. `wholeRunId` and `wholeRunTs` never name a head-less run. A
+  green head-less run still counts as a measured full run: as the newest earlier one it is the
+  bound for "merged since", so a later run's selection-miss question is reported as not asked
+  rather than widened past work it already measured, and it ages a coupling in `/audit:doctor`.
 - **`scripts/governance/import-evidence.py` brings a CI-recorded ledger shard into the evidence
   directory whole, after its hash chain verifies.** A same-named file with different bytes is
   refused; an identical re-import is a no-op; a shard is committed evidence, never
@@ -340,8 +374,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **`scripts/governance/full-gate.py` is the one command a pre-push hook or a CI step reaches
   for.** It runs `run-test-gate.py --full --record` as a subprocess and exits with its code,
   exiting clean with a sentence when no `meta.fullGate` is declared so an undeclared third
-  place never blocks a push; `/audit:review <phaseId> --full` and
-  `docs/examples/azure-pipelines.yml` both reach for it.
+  place never blocks a push. `/audit:review <phaseId> --full` and
+  `docs/examples/azure-pipelines.yml` call `run-test-gate.py --full --record` directly rather
+  than this command, so neither files what a red run taught (see below).
 - **`/audit:status --fail-on provisional` and `--fail-on stale-full-run`, opt-in conditions
   beside the existing test-evidence ones.** `provisional` trips on a merged phase the ledger
   has not yet certified whole; `stale-full-run` is the sharper claim that a run that could bear
@@ -375,8 +410,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   run**, so a derived run that skipped a listed suite reads apart from a missing interpreter or
   a no-verdict signature; `audit-lookup.py run` shows both, and a passed step's row is
   unchanged.
+- **`meta.muted`, a quarantine for a suite whose failure a bug already tracks, and the verbs
+  that write it.** `audit-task.py mute --test <path> --reason TEXT --owner NAME --until
+  <YYYY-MM-DD> --bug <bugId>` writes or extends one entry and `unmute --test <path>` lifts it;
+  they are the only writers of the key, journaled as `test.muted`/`test.unmuted`. A mute naming
+  no bug in `bugs[]` is a validator finding; one whose `until` (the last UTC day it holds) has
+  passed is a warning naming the command to lift or extend it. `audit-task.py bug-add` writes a
+  bug in the shape `/audit:bug add` documents, with the id `next-id bug` allocates and a
+  `bug.add` journal row.
+- **A muted suite is run and recorded, and its failure does not fail the run — only where the
+  output proves the mute covers the whole failure.** The step keeps its exit and the names that
+  failed, carries a `muted` marker on the evidence row, and prints a `muted:` line. The mute is
+  honoured only for a direct call of a runner on `run-test-gate.py`'s `MUTE_RUNNERS` whose exit is
+  its failed-tests code, whose tally equals the failures it named, and which reported nothing
+  else failing; a package script, a task runner, a script file or a compound command keeps the
+  gate red, and the `muted:` line says why. An expired mute, and a Playwright flaky count beside a
+  muted failure, block as well. A Playwright `flaky` test is recorded on its step as an
+  observation, whether the step passed or failed.
+- **`meta.coupling[].lastCaught` and `audit-task.py couple --test <path> --caught <runId>`.** It
+  records that an existing coupling caught a failure: the run must be a full run whose runner
+  named the test failing on a step no mute excused, and the name must pin to this coupling alone
+  among the coupled suites. It never creates an entry or changes its `sources`, and a catch no
+  newer than the recorded one writes nothing, so `lastCaught` never moves back. Journaled as
+  `coupling.caught`.
+- **`/audit:doctor`'s coupling row.** A coupling naming a path git does not track, or one outside
+  the repository, is a warning with the `uncouple` command; a coupling that has gone
+  `UNCOUPLE_AFTER_FULL_RUNS` green measured full runs since it was last caught (or learned)
+  is named a candidate for `uncouple`, with the constant printed as the basis. Nothing is ever
+  removed for you.
+- **`/audit:status --gate --fail-on unknown-full-run`** fails on a merged phase whose full-run
+  answer is `unknown` — no `mergedHead` recorded, git unable to establish ancestry, or an evidence
+  ledger that could not be read — and names each phase with the basis saying which. Previously
+  `--fail-on provisional,stale-full-run` stayed green over such a plan. Opt-in; a plan with no
+  `meta.fullGate` never trips it.
+- **A full run records its selection misses on the row.** A suite the runner named failing at the
+  third place that no derived sign-off gate listed, among the phases merged since the newest
+  earlier measured full run, is kept as `selectionMiss` with its phases and sources, and the
+  terminal prints a `SELECTION MISS:` line ending in the `couple` and `bug-add` commands that
+  would file it, or in the reason none can be printed. A failure read only off the tail of the
+  output is said to be unlearned instead, and a run with no earlier measured run to bound it, or
+  one whose row names no head, says why nothing was asked.
+- **A red full run through `full-gate.py` files what it taught, and still blocks the push.** For
+  each selection miss the runner named it runs `couple` and `bug-add`, and for each coupled suite
+  the runner named failing it runs `couple --caught`; a name that fits several coupled suites
+  credits none of them. It learns nothing from a tail-read failure, from a run the runner did not
+  record, or from a green run, does not re-file a miss an open bug already tracks, and does not
+  couple a miss whose sources the row cut. The exit stays the runner's.
 
 ### Changed
+- **Every reader of the evidence ledger decodes it one strict way and orders its rows by one
+  moment.** A byte that is not UTF-8 makes that file unreadable everywhere — named, or refused by
+  a merge or an import — instead of being replaced and read as clean, and "newest" is decided by
+  the moment a `ts` names rather than by its spelling. A subject row whose `ts` names no moment
+  blocks the verdict it could be, rather than sorting first.
 - **`ruff` also selects W605, an invalid escape sequence in a string.** Python 3.12
   and later warn about one on every run of the file, and the file then fails to
   compile under `-W error`; the build now refuses it by name.

@@ -209,10 +209,28 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   unreleased build from before `mergedHeadAt` existed may carry an unmarked `mergedHead` that is
   the parent's head at close time rather than the recovered commit, and `close-phase.py` never
   replaces a head already recorded.
+- **`meta.muted` and `meta.coupling[].lastCaught` are under the same promise, and each absence
+  is its own documented reading.** **`meta.muted` absent means nothing is quarantined** — every
+  failing step fails the run exactly as it did before the key existed. **`lastCaught` absent
+  means the coupling has not been caught since it was learned**, so `/audit:doctor` ages it from
+  its `learnedAt`; `lastCaught` is written only by `audit-task.py couple --caught`, never moved
+  back to an earlier moment. Ceasing to read either, or reversing what its absence means, is a
+  major.
+- **An expired mute is a warning, never a finding.** Every mutating verb refuses a plan that
+  already carries a finding, and the default status gate fails on one, so a finding triggered by
+  a date would freeze every verb — including `unmute`, the verb that lifts it — and fail every
+  default CI gate on the morning the mute expires. The enforcement is the runner, which stops
+  honouring an expired mute so that failure blocks again on its own. A mute naming no bug in
+  `bugs[]` is a finding from the moment it is written. Turning expiry into a finding is a major.
 - **The `provisional` and `stale-full-run` status conditions are opt-in, and `DEFAULT_GATE` is
   unchanged by their addition.** `--fail-on` is what turns either on; a plan that has never
   declared `meta.fullGate` or recorded a full run fails no build over a condition it never
   asked for.
+- **`unknown-full-run` is an additive `--fail-on` condition, outside the `--gate` default.** It
+  trips on a merged phase whose full-run answer is `unknown` — no `mergedHead` recorded, git
+  unable to answer ancestry, or a ledger that could not be read — and no existing gate changes
+  verdict by its addition: `DEFAULT_GATE` does not hold it, `provisional` still never counts an
+  `unknown` phase, and a plan with no `meta.fullGate` never trips it.
 - **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
   before either existed carries neither key, which is the true reading for it, and a passed
   step's row is unchanged.

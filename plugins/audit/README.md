@@ -870,6 +870,7 @@ commands. All fields are optional except `version`; the orchestrator resolves th
 | `reportBasename` | Custom report filename, e.g. `q3-audit` → `q3-audit.html/.md`. | `audit-report` |
 | `phaseGate` | `{always, exclude}` — what a **new** phase's gate defaults to, and the one declared way to narrow it. `always` puts the named `buildCommands` keys first, in the order given; `exclude` leaves the named keys OUT (`always` outranks `exclude`: a key in both stays IN). Absent means today's behaviour exactly — every `buildCommands` key, in `buildCommands` order. | `{}` |
 | `gateBudgetMs` | Advisory per-run cost budget (ms) for a phase's gate, read by `/audit:doctor`'s gate-economy row against a gate that has never failed. Absent means nothing is graded on cost. | `null` |
+| `muted` | Quarantine: `[{test, reason, owner, until, bugId}]`, written only by `audit-task.py mute`/`unmute`. A muted suite still runs and is recorded, and a failure the mute may cover does not fail the run until `until` passes — see [Quarantine](#quarantine--metamuted). Absent means nothing is quarantined. | — |
 
 **No state a plan reaches may make the sign-off gate run FEWER suites than it does today, unless
 the plan declares that narrowing and the gate itself prints it.** `meta.phaseGate.exclude` is the
@@ -1568,6 +1569,78 @@ keeps that second answer available at all.
 `not_declared` means the plan names no `meta.fullGate`, so there is no third place to ask and
 nothing about the phase is provisional. This repository's own release guard refuses a release
 over a `provisional` phase.
+
+### What a red full run teaches
+
+A phase signed off on a derived gate ran a subset of the suites; the third place runs all of them.
+A suite the runner **named** failing at the third place that no derived gate listed, among the
+phases merged since the newest earlier **measured** full run (green, clean and verbatim against
+the declared gate, whether or not its row names a tested head), is a **selection miss**, and
+`run-test-gate.py --full` prints one line for each, ending in the commands that would file it or
+the reason none can be printed (`selection_lines`). With no earlier measured run to bound
+"merged since", or one whose row names no head, nothing is asked and a
+`SELECTION MISS not asked:` line gives the reason. As printed for a recorded run, by a
+fixture with one miss in a phase named `checkout`:
+
+```text
+SELECTION MISS: tests/test_cart.py failed at the third place and no derived sign-off gate in checkout listed it. remedy: audit-task.py couple --test tests/test_cart.py --sources src/cart.py,src/price.py --basis-run RUN-1 --basis-head abc1234 --phases checkout; audit-task.py bug-add 'SELECTION MISS: tests/test_cart.py' --severity med --description 'full run RUN-1 at abc1234 failed tests/test_cart.py, and no derived sign-off gate in checkout listed it' --files tests/test_cart.py
+```
+
+**What it asks of you:** everything after `remedy:` is commands only, joined by `; ` and quoted
+for a shell, so it can be pasted as it stands — `couple` records that this suite depends on the
+files of those phases' tasks, so a later derived gate touching them runs it, and `bug-add` files
+the miss as a bug. When those tasks declare no files, or more files than one printed `--sources`
+argument carries (`_evidence_io.MAX_PATHS`), the parenthesis after `remedy` says why and only the
+`bug-add` follows. A run made without `--record` prints `remedy: none printed` and asks for a
+re-run with `--record`, because a coupling must name the run that taught it.
+
+`full-gate.py` does that filing itself after a red run, and the run stays red: it runs the
+`couple` and `bug-add` for each miss the runner named, and a `couple --caught` for each suite the
+plan already coupled that the runner named failing, which refreshes that coupling's
+`lastCaught`. It learns nothing from a failure read off the tail of the output, from a run it was
+told was not recorded, or from a green run, and says why on its own `[full-gate]` lines. A name
+that fits several coupled suites credits none of them (`_evidence_io.resolve_named`). Nothing
+removes a coupling on its own: `/audit:doctor`'s coupling row names one that has gone
+`UNCOUPLE_AFTER_FULL_RUNS` green measured full runs without a catch, and
+`audit-task.py uncouple --test <path>` is yours to run.
+`/audit:review <phaseId> --full` calls `run-test-gate.py` directly, so it prints these lines and
+files nothing.
+
+### Quarantine — `meta.muted`
+
+A suite whose failure a bug already tracks can be muted while it is fixed, through `mute` and
+`unmute`, the only writers of `meta.muted`:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" mute --test tests/test_cart.py \
+    --reason "fails on CI, tracked" --owner <name> --until <YYYY-MM-DD> --bug <bugId>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" unmute --test tests/test_cart.py
+```
+
+A muted suite still **runs and is recorded** — its step keeps its exit and the names that
+failed, and carries a `muted` marker — but its failure does not fail the run. It **teaches
+nothing**: `full-gate.py` files no coupling, bug or catch from a muted step. `until` is the last
+UTC day the mute holds; after it the runner stops honouring the entry, the failure **blocks
+again**, and `validate-manifest.py` warns with the command to lift or extend it. A mute naming no
+bug in `bugs[]` is a validator finding.
+
+**The mute fails closed.** It holds only for a **direct** call of a runner on
+`run-test-gate.py`'s `MUTE_RUNNERS` (optionally through `npx`, `yarn exec` or `pnpm exec`), when
+the runner named every failure it tallied and every file it blamed is muted. A package script
+(`npm test`, `yarn test`), a task runner (`make`, `tox`, …), a script file, a compound command or
+a runner off that list keeps the gate red, and the step's `muted:` line says why. A failure a
+direct call cannot show: a jest reporter error exits with jest's failed-tests code and prints
+nothing, so a mute beside it still holds.
+
+**A flaky step.** Playwright's `N flaky` block — tests that failed, then passed on its own retry —
+is recorded on the step as `flaky`, with the names and the basis, on a step that passed as well
+as on one that failed; a passing step with a flaky test still passes. Beside a muted failure it
+**refuses the mute**: Playwright fails a run on flaky tests when `failOnFlakyTests` is set, which
+the command cannot show, so the failure blocks. The plugin re-runs a step only when the
+operating system killed it — by its exit status, or by jest's own report naming every failure as
+a killed worker — and never re-runs a test failure to see it go green.
+
+## Azure DevOps (optional)
 
 > The detailed field guide — setup walkthrough, every key with an example, recipes
 > (Scrum, sprints, shared-sprint pull, identity mapping), the echo contract and

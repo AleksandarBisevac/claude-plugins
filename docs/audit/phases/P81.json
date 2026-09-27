@@ -500,7 +500,12 @@
       },
       "startedAt": "2026-09-27T19:40:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T20:44:30Z.ceb041",
+        "status": "passed",
+        "at": "2026-09-27T20:44:30Z"
+      }
     },
     {
       "id": "P81.9",
@@ -621,7 +626,7 @@
     {
       "id": "P81.11",
       "title": "a full-scope row that names no tested head cannot bear whole",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F526. _full_disqualification checks status, verdict source, scope, counts, durations, the dirty tree and the commands, but never that the row names testedState.head; a head-less row then reaches merged_into with no head and full_status answers UNKNOWN while an older head-carrying whole run might have answered WHOLE. Add 'the row names no tested head' as a disqualification reason so the walk skips it and a basis names it. Allow: rows with a head are unaffected.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -657,18 +662,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7351c2e4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io: _names_tested_head; _measurement_disqualification (every rule but the head) and _full_disqualification (head + measurement); one walk _newest_passing behind newest_whole_bearing and newest_measured_full_run; selection_miss bounds by the measured run and asks the head itself. _doctor_trail: _measured_run_moments. guard-release: gr36d rewritten, the unreachable no-head remedy deleted and pinned absent (gr36c), comments and read_held_phases docstring corrected. SECURITY.md paragraph; test_run_test_gate sm7 wording.",
+        "descriptive": "(a) an older headed full run that does not contain mergedHead beside a newer head-less one now reads PROVISIONAL about the older run instead of UNKNOWN; (b) a ledger whose only candidate is head-less reads PROVISIONAL with the basis 'the row names no tested head' and the release guard gives the full-run remedy, not fetch/unshallow; (c) wholeRunId/wholeRunTs no longer name a head-less run; (d) the doctor's coupling ageing still counts a green head-less full run. Unchanged: an older run containing the merge still makes the phase WHOLE."
       },
       "startedAt": "2026-09-27T19:40:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T20:36:54Z",
+      "verifiedBy": [
+        "fs27",
+        "fs27b",
+        "fs28-fs32",
+        "dcp13",
+        "gr36c",
+        "gr36d",
+        "sm7",
+        "sm11"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T20:33:01Z.de7cd9",
         "status": "passed",
         "at": "2026-09-27T20:33:01Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "7351c2e4",
+        "at": "2026-09-27T20:36:54Z",
+        "basis": "the description's premise (a head-less row hides an older whole run) was already handled at HEAD; what the fix changed is the shape that really read unknown (an older run not containing the merge beside a head-less one, and a head-less-only ledger now read provisional), and review widened it to split the whole-bearing rule from a measurement rule that selection_miss's bound and the doctor's coupling ageing read, and to correct the release guard and SECURITY.md"
       }
     },
     {
@@ -730,7 +750,7 @@
     {
       "id": "P81.13-j7p",
       "title": "add --failing-from resolves a runner-named suite to one repository path",
-      "status": "in_progress",
+      "status": "done",
       "description": "A fix task created with add --failing-from puts the runner's spelling of each named failing suite straight into its gate, and run-test-gate runs that gate from the project root. A suite the runner named relative to its own directory (test_old.py for backend/tests/test_old.py) becomes a path that does not exist, so the fix task's gate cannot run (probed: python3 test_old.py exits 2, can't open file). Resolve each named suite before _union_paths: keep it when it exists from the project root; otherwise take the single tracked file (git ls-files) it matches by the listed_by suffix rule; when none or several match, fall through to the ordinary task gate and say why first, the way the tail-basis case does. Reuse the one resolver the catch rule uses (a runner spelling resolves to exactly one candidate, or names why not) rather than a second matcher. Red-first: an ff case where a runner-relative spelling must come out as the repository-root path, one where two tracked files share the suffix (falls through with the reason), and one where the spelling already exists from the root (kept as written).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -761,18 +781,26 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0136a1fe",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _root_spelled_suites (normpath, _project_relative, _shell_unsafe, git ls-files once through _worktrees._runner, _evidence_io.resolve_named over tracked plus on-disk candidates), _failed_step_entries through _evidence_io.named_failing_suites, the phase testGate when no step name was recorded; px2-clean via _output.posix_rel. ff fixture writes the suites ff1/ff2/ff9 name.",
+        "descriptive": "A fix task opened with --failing-from gets a gate that runs the failure it fixes: each runner-named suite is pinned to one tracked path from the project root, and when any cannot be (no match, several, outside the project, a control character, git cannot list), the gate is the entry of the step the run failed on, with the reason printed."
       },
       "startedAt": "2026-09-27T19:40:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T20:36:54Z",
+      "verifiedBy": [
+        "ff10-ff20"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T20:34:38Z.d320a7",
         "status": "passed",
         "at": "2026-09-27T20:34:38Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "0136a1fe",
+        "at": "2026-09-27T20:36:54Z",
+        "basis": "the description's fall-through to the ordinary task gate was replaced after review: that gate could narrow to the task's own paths and run none of the named failures, so an unpinnable suite now gates on the failed step's recorded entry; the exists-from-root short-circuit was made strict to follow resolve_named's one ambiguity rule; spellings are normalized and machine paths refused"
       }
     },
     {
@@ -829,7 +857,7 @@
     {
       "id": "P81.15-j7p",
       "title": "a gate re-pointed at paths quotes each path for the shell it runs in",
-      "status": "in_progress",
+      "status": "done",
       "description": "_gate_derive.repointed rebuilds a path-scoped gate entry by joining tokens with a space and never quotes the paths it substitutes, and run-test-gate runs gate commands through a shell. A suite path with a space (or any shell metacharacter) therefore produces a gate that cannot run: probed, the runner named 'test old.py', the resolver pinned 'backend/tests/test old.py', and the written gate 'python3 backend/tests/test old.py' exits 2 (can't open .../backend/tests/test). Quote each substituted path with shlex.quote (POSIX shell, which is what run-test-gate spawns), and read the sibling's own tokens with the matching split so an already-quoted path in a declared gate survives a re-point. Paths with no special characters must come out byte-identical to today (every existing gate spelling stays). Red-first: a space path; a path with a quote character; allow: an ordinary path is unchanged, and a sibling entry that already quotes its path is re-pointed without double quoting. Drive one end to end: the written gate run from a real project root opens the file.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -860,18 +888,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "999100e9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_phases.shell_words / shell_word_path (quote-free words read as the old whitespace split; quoted words through shlex); gate_entry_paths and path_scoped_sibling use them; _gate_derive.repointed quotes substituted paths with shlex.quote; zero diffs over every committed plan (compare probe).",
+        "descriptive": "A gate re-pointed at a path with a space or a quote runs as one shell word from the project root, a sibling whose only path is quoted is recognised, and every committed unquoted gate entry reads and re-points byte-identically."
       },
       "startedAt": "2026-09-27T20:06:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T20:36:54Z",
+      "verifiedBy": [
+        "q1-q6",
+        "sp5",
+        "sp6"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T20:36:26Z.2df7eb",
         "status": "passed",
         "at": "2026-09-27T20:36:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "999100e9",
+        "at": "2026-09-27T20:36:54Z",
+        "basis": "delivered as described, and widened on the executor's finding so gate_entry_paths and path_scoped_sibling read an entry's words through the same reader as repointed"
       }
     }
   ],
