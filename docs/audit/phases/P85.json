@@ -1,7 +1,7 @@
 {
   "id": "P85",
   "title": "Comments state their rule, not the register",
-  "status": "in_progress",
+  "status": "done",
   "description": "First half of the register-citation sweep, over files no in-flight phase declares; the measured occurrence list is in the orchestrator's scratchpad (idcite/occurrences.tsv). The held files and the lint that keeps the rule are P86.",
   "desiredOutcome": "Every comment and docstring in the files this phase declares states the constraint of its block instead of citing a plan, phase, task, bug, fault or design-table id; behaviour is unchanged and the whole suite stays green.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "ff983b801a647ea7238f7a214b582c04a74651d8",
   "branch": "audit/p85-comments-state-their-rule-not",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T02:16:43Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
