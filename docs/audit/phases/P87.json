@@ -469,7 +469,7 @@
     {
       "id": "P87.10-bpl",
       "title": "the tool compiles clean under -W error, invalid escapes fail the lint, and a call's whole continuation chain is checked",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 8 (review-P87h.json). (F1) P87.9 put an invalid escape (a backslash before a backtick) in _context_problem's docstring: every run on 3.12+ prints a SyntaxWarning and the file does not compile under -W error; default ruff (E9, F) cannot see it. Fix the docstring, and close the class: add W605 to [tool.ruff.lint] select in pyproject.toml so an invalid escape fails the lint gate; run ruff over plugins/audit and tools to confirm nothing else is red. (F2) The continuation check looks one line up only: `echo \"x\" \\` or `: \\` above the `run \"<label>\" \\` wrapper, `true ||` above the wrapper or a call, and `false &&` above a call in a run: | body leave the real call read while it never runs. Walk the continuation chain: the wrapper's previous line, and the call's previous line when there is no wrapper, must not end in a backslash, `&&`, `||` or `|` (after stripping a trailing comment is not needed - a line ending in those is a continuation); otherwise refuse, naming the lines. The real tree's preceding lines do not, so ra29 stays green. Add ra29i rows for each shape. Red first for both (F1: compile under -W error::SyntaxWarning fails on the current file).",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -501,14 +501,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "74b28d2e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docstring escape removed; ruff W605 selected; _context_problem walks the continuation chain; ra29i/ra29g; CONTRIBUTING and ci.yml step name point at pyproject.toml",
+        "descriptive": "The published-page tool compiles cleanly under strict warnings, invalid escapes now fail the lint, and a call hanging off another command is refused"
       },
       "startedAt": "2026-09-27T16:52:02Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T17:07:18Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 37/37",
+        "py_compile -W error",
+        "ruff W605",
+        "probe 5/5 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
