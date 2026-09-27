@@ -189,6 +189,13 @@ def _cases(check):
           bash("perl -e \"open(F, '<.env'); print <F>\""))
     _expect("b5p3 ...and three-argument open with '<'", "block",
           bash("perl -e \"open(my \\$f, '<', '.env'); print <\\$f>\""))
+    _expect("b5p5 ...and the form without parentheses", "block",
+          bash("perl -e \"open F, '<', '.env'; print <F>\""))
+    _expect("b5p6 ...and a layered read mode", "block",
+          bash("perl -e \"open(my \\$f, '<:raw', '.env'); print <\\$f>\""))
+    check("b5p7 a write mode is not a read target",
+          M._eval_read_targets("open(F, '>.env')") == [],
+          repr(M._eval_read_targets("open(F, '>.env')")))
     _expect("b5p4 ...while perl opening an ordinary file is nothing", "allow",
           bash("perl -e \"open(F, 'README.md'); print <F>\""))
     _expect("b5h9 ruby running a script reads a here-string as input", "allow",

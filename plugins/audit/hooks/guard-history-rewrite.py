@@ -511,7 +511,7 @@ def _new_stage():
 def _stages(tokens):
     """(stages, groups) for a command's tokens.
 
-    Each stage is one simple command: its `words`, the files its output is
+    Each stage represents a simple command: its `words`, the files its output is
     redirected into (`targets`), the here-strings fed to it (`here`), and `to`,
     the index of the stage its output is piped into. `groups` are the
     [start, end] stage ranges of each compound command - `( )`, `{ }`,
@@ -535,7 +535,8 @@ def _stages(tokens):
                     and text == _COMPOUND.get(top) and text != "{":
                 closed = (opened.pop()[0], len(out) - 1)
                 continue
-            elif top == "case" and text == "in":
+            elif top == "case" and text == "in" \
+                    and len(cur["words"]) == len(("case", "subject")):
                 pattern = True
             cur["words"].append(text)
             closed = None
@@ -603,8 +604,12 @@ def _redirect_target(tokens, at):
             elif tokens[end] == (")", True):
                 depth -= 1
             end += 1
-        inner, _groups = _stages(tokens[at + 1:end - 1])
-        return (">(" if any(_runs_input(s) for s in inner) else None, end)
+        inner, groups = _stages(tokens[at + 1:end - 1])
+        runs = any(_runs_input(stage) or _output_runs(inner, groups, index)
+                   or any(_target_runs(target, inner, index)
+                          for target in _tee_targets(stage))
+                   for index, stage in enumerate(inner))
+        return (">(" if runs else None, end)
     if tokens[at][1]:
         return (None, at)
     return (tokens[at][0], at + 1)
@@ -682,6 +687,45 @@ def _tee_targets(stage):
     return []
 
 
+def _passes_input(stage):
+    """Whether `stage` carries its stdin to its own redirect target."""
+    rest, candidates = _config.program_candidates(_program_words(stage))
+    return any(program_name(word) in _STDIN_PRINTERS for word in candidates
+               if word in rest)
+
+
+def _read_variables(stages):
+    """Names set by `read` in the receiving compound command."""
+    names = []
+    for stage in stages:
+        words = _program_words(stage)
+        if "read" not in words:
+            continue
+        index = words.index("read") + 1
+        while index < len(words) and words[index].startswith("-"):
+            index += 1
+        if index < len(words):
+            names.append(words[index])
+    return names
+
+
+def _runs_read_variable(stages):
+    """Whether a receiving group evaluates a variable it read from its stdin."""
+    names = _read_variables(stages)
+    if not names:
+        return False
+    for stage in stages:
+        rest, candidates = _config.program_candidates(_program_words(stage))
+        for word in candidates:
+            if program_name(word) not in _STDIN_RUNNERS or word not in rest:
+                continue
+            args = rest[rest.index(word) + 1:]
+            if any(arg in ("$" + name, "${" + name + "}") for name in names
+                   for arg in args):
+                return True
+    return False
+
+
 def _runs_file(stage, target):
     """Whether `stage` runs the file `target` names."""
     words = _program_words(stage)
@@ -700,7 +744,14 @@ def _runs_file(stage, target):
         w in (target, plain, "./" + plain) for w in rest[1:])
 
 
-def _is_hook_path(target):
+def _stage_changes_to_hooks(stage):
+    """Whether `stage` changes into a git hooks directory."""
+    words = _program_words(stage)
+    return (len(words) > 1 and program_name(words[0]) == "cd"
+            and "hook" in words[1].replace("\\", "/").lower())
+
+
+def _is_hook_path(target, stages, after):
     """Whether git runs `target` as a hook: anything under `.git/hooks/` or a
     `.husky/` directory, or a file named as a hook in a directory whose own
     name says it holds hooks (`core.hooksPath` may name any). Case is folded:
@@ -709,14 +760,17 @@ def _is_hook_path(target):
     if "/.git/hooks/" in norm or "/.husky/" in norm:
         return True
     parent, name = os.path.split(norm)
-    return name in _GIT_HOOK_NAMES and "hook" in os.path.basename(parent)
+    if name not in _GIT_HOOK_NAMES:
+        return False
+    return ("hook" in os.path.basename(parent)
+            or any(_stage_changes_to_hooks(stage) for stage in stages[:after]))
 
 
 def _target_runs(target, stages, after):
     """Whether writing into `target` is running what was written."""
     if target == ">(" or "$" in target or "`" in target or _GLOB.search(target):
         return True
-    if _is_hook_path(target):
+    if _is_hook_path(target, stages, after):
         return True
     return any(_runs_file(later, target) for later in stages[after + 1:])
 
@@ -741,12 +795,13 @@ def _output_runs(stages, groups, at):
     to = stage["to"]
     while to is not None and to < len(stages):
         receivers = _receivers(stages, groups, to)
-        if any(_runs_input(r) for r in receivers):
+        if any(_runs_input(r) for r in receivers) or _runs_read_variable(receivers):
             return True
         tees = [t for r in receivers for t in _tee_targets(r)]
-        if not tees:
+        passed = [t for r in receivers if _passes_input(r) for t in r["targets"]]
+        if not tees and not passed:
             break
-        targets += tees + [t for r in receivers for t in r["targets"]]
+        targets += tees + passed + [t for r in receivers for t in r["targets"]]
         to = receivers[-1]["to"]
     return any(_target_runs(t, stages, at) for t in targets)
 
@@ -787,10 +842,15 @@ def _substitution_end(text, start):
             if word:
                 done = "".join(word)
                 if word_cmd and done == "case":
-                    open_at.append(depth)
+                    open_at.append([depth, 0, False])
                 elif word_cmd and done == "esac" and open_at \
-                        and open_at[-1] == depth:
+                        and open_at[-1][0] == depth:
                     open_at.pop()
+                elif open_at and open_at[-1][0] == depth:
+                    if done == "in" and open_at[-1][1] == 1:
+                        open_at[-1][2] = True
+                    elif not open_at[-1][2]:
+                        open_at[-1][1] += 1
                 cmd_pos = done in _OPENS_COMMAND
                 word = []
             if ch in "\n;&|(":
@@ -798,14 +858,15 @@ def _substitution_end(text, start):
             if ch == "(":
                 depth += 1
             elif ch == ")":
-                if open_at and open_at[-1] == depth:
+                if open_at and open_at[-1][0] == depth and open_at[-1][2]:
+                    open_at[-1][2] = False
                     cmd_pos = True
                 else:
                     depth -= 1
                     cmd_pos = False
                     if depth == 0:
                         return j
-                    if open_at and open_at[-1] == depth:
+                    if open_at and open_at[-1][0] == depth:
                         cmd_pos = True
         else:
             if not word:
