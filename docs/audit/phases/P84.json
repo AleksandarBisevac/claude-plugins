@@ -123,7 +123,7 @@
     {
       "id": "P84.3",
       "title": "check-example-ledgers judges pointers and ledgers over the same set",
-      "status": "in_progress",
+      "status": "done",
       "description": "F519 (quality-gates-internal PLAN.md). The tool reads pointers from the working-tree manifests but counts only git-tracked ledgers, so a phase's second task gate in a fresh worktree goes red on the first gate's pointer into the still-untracked evidence file. Judge both halves over the same set - read pointers from manifests at HEAD (the committed claim this tool exists to check). Red-first: a fixture repo whose tracked manifest at HEAD has no pointer to the untracked ledger while the working-tree manifest does passes; allow: a manifest at HEAD pointing at a run no ledger holds still fails.",
       "files": [
         "tools/check-example-ledgers.py",
@@ -154,14 +154,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6781d48b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "check-example-ledgers reads pointers and ledger rows at HEAD through one git cat-file batch.",
+        "descriptive": "A task gate in a fresh worktree no longer fails because an earlier gate's evidence file is not committed yet."
       },
       "startedAt": "2026-09-27T04:18:45Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T06:32:39Z",
+      "verifiedBy": [
+        "check-example-ledgers el23",
+        "check-example-ledgers el24"
+      ]
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"
