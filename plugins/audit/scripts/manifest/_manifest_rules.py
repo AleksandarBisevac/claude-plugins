@@ -232,7 +232,7 @@ def _check_meta(manifest):
         af, aw = check_ado_meta(meta.get("ado"))
         f.extend(af)
         w.extend(aw)
-    _check_phase_gate(manifest, w)
+    w.extend(_check_phase_gate(manifest))
     # `phase_gate_suite_gap` is asked directly here, with NO evidence
     # (`suite_keys=None`): `_check_meta` is the pure validator, and only the
     # certain arm - a default left empty after `meta.phaseGate.exclude` - can

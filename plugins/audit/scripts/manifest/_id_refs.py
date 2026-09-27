@@ -47,8 +47,13 @@ _output.install_path()
 
 
 # The fields that hold ONE other record's id, and the ones that hold a LIST of them.
-SCALAR_REFS = ("bugId", "taskId", "materializedAs")
+# `fixTask` sits on a review finding: the task whose commit settled it.
+SCALAR_REFS = ("bugId", "taskId", "materializedAs", "fixTask")
 LIST_REFS = ("blockedBy", "dependsOn")
+# The lists a phase's review holds findings in. The validator's
+# `_manifest_phases.REVIEW_FINDING_LISTS` is the same tuple one layer up, which
+# this module may not import; `test__id_refs.py` pins the two equal.
+FINDING_LISTS = ("findings", "preExistingNotCharged")
 
 
 def phase_mapping(phase, new_pid):
@@ -119,6 +124,11 @@ def rename(manifest, mapping):
     for phase in _phases_and_payloads(doc):
         phase["id"] = swap(phase.get("id"))
         refs(phase)
+        review = phase.get("review")
+        for key in (FINDING_LISTS if isinstance(review, dict) else ()):
+            for finding in review.get(key) or []:
+                if isinstance(finding, dict):
+                    refs(finding)
         for task in phase.get("tasks") or []:
             if isinstance(task, dict):
                 task["id"] = swap(task.get("id"))

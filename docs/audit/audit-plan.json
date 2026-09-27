@@ -551,7 +551,7 @@
     {
       "id": "P84",
       "title": "review findings are written by a verb, every validator warning family carries a code the lint can see, and a fresh worktree's evidence is counted",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P84.json"
     }
   ],
@@ -696,7 +696,11 @@
       "P74.11-qq5",
       "P84.1",
       "P84.2",
-      "P84.3"
+      "P84.3",
+      "P84.4-791",
+      "P84.6-791",
+      "P84.7-791",
+      "P84.8-791"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -830,7 +834,9 @@
       "P78.10",
       "P78.7",
       "P79.8-5bh",
-      "P86.1"
+      "P86.1",
+      "P84.1",
+      "P84.7-791"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -885,7 +891,8 @@
       "P27.1",
       "P61.9",
       "P63.6",
-      "P80.7"
+      "P80.7",
+      "P84.7-791"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -924,7 +931,8 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
-      "P74.6-qq5"
+      "P74.6-qq5",
+      "P84.7-791"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1196,7 +1204,8 @@
       "P74.6-qq5",
       "P74.7-qq5",
       "P74.9-qq5",
-      "P84.1"
+      "P84.1",
+      "P84.6-791"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -1534,7 +1543,9 @@
       "P79.7",
       "P81.8",
       "P76.1",
-      "P73.1"
+      "P73.1",
+      "P84.1",
+      "P84.7-791"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1590,7 +1601,8 @@
       "P81.8",
       "P76.1",
       "P72.3-ttl",
-      "P78.11"
+      "P78.11",
+      "P84.7-791"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -1610,7 +1622,9 @@
       "P74.6-qq5",
       "P78.15-msc",
       "P79.11-5bh",
-      "P84.1"
+      "P84.1",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1650,7 +1664,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P79.12-5bh"
+      "P79.12-5bh",
+      "P84.7-791"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -1775,7 +1790,8 @@
       "P80.7",
       "P81.1",
       "P76.1",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P84.7-791"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -1870,7 +1886,8 @@
       "P74.9-qq5",
       "P74.10-qq5",
       "P74.11-qq5",
-      "P80.13"
+      "P80.13",
+      "P84.7-791"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -1930,7 +1947,11 @@
       "P55.2",
       "P75.1",
       "P75.2-j5h",
-      "P75.3-j5h"
+      "P75.3-j5h",
+      "P84.6-791",
+      "P84.4-791",
+      "P84.7-791",
+      "P84.8-791"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -1981,7 +2002,8 @@
       "P52.5",
       "P55.3",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P84.8-791"
     ],
     "plugins/audit/scripts/governance/commit-audit-state.py": [
       "P28.2",
@@ -2117,7 +2139,8 @@
       "P76.1"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
-      "P61.7"
+      "P61.7",
+      "P84.7-791"
     ],
     "plugins/audit/scripts/manifest/_id_shape.py": [
       "P61.1",
@@ -2133,7 +2156,8 @@
       "P69.3",
       "P69.4-j6r",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P84.7-791"
     ],
     "plugins/audit/scripts/manifest/_manifest_io.py": [
       "P10.4",
@@ -2189,7 +2213,8 @@
       "P81.1",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P84.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -2220,7 +2245,8 @@
       "P61.2",
       "P61.5",
       "P61.8",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P84.8-791"
     ],
     "plugins/audit/scripts/manifest/_warning_groups.py": [
       "P51.5",
@@ -2294,7 +2320,9 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P79.10-5bh",
-      "P84.1"
+      "P84.1",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2408,7 +2436,10 @@
       "P53.7",
       "P63.7",
       "P69.4-j6r",
-      "P85.1"
+      "P85.1",
+      "P84.7-791",
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -2870,7 +2901,8 @@
       "P74.9-qq5",
       "P74.10-qq5",
       "P74.11-qq5",
-      "P80.13"
+      "P80.13",
+      "P84.7-791"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -2893,7 +2925,8 @@
       "P26.2"
     ],
     "plugins/audit/tests/test__id_refs.py": [
-      "P61.7"
+      "P61.7",
+      "P84.7-791"
     ],
     "plugins/audit/tests/test__id_shape.py": [
       "P61.1",
@@ -2951,7 +2984,12 @@
       "P55.2",
       "P75.1",
       "P75.2-j5h",
-      "P75.3-j5h"
+      "P75.3-j5h",
+      "P84.4-791",
+      "P84.6-791",
+      "P84.7-791",
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -2961,7 +2999,8 @@
       "P69.3",
       "P69.4-j6r",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P84.7-791"
     ],
     "plugins/audit/tests/test__manifest_io.py": [
       "P22.8",
@@ -3092,7 +3131,10 @@
       "P22.11",
       "P53.7",
       "P69.4-j6r",
-      "P85.1"
+      "P85.1",
+      "P84.7-791",
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -3102,7 +3144,9 @@
       "P61.2",
       "P61.5",
       "P61.8",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P84.8-791",
+      "P84.9-791"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -3236,7 +3280,8 @@
       "P55.1",
       "P59.13",
       "P75.1",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P84.8-791"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
@@ -3327,7 +3372,9 @@
       "P74.6-qq5",
       "P78.14-msc",
       "P79.10-5bh",
-      "P84.1"
+      "P84.1",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3424,7 +3471,8 @@
       "P79.1",
       "P80.1",
       "P80.7",
-      "P81.1"
+      "P81.1",
+      "P84.7-791"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -3532,7 +3580,8 @@
     "plugins/audit/tests/test_panel_server.py": [
       "P18.7",
       "P85.1",
-      "P85.5-axa"
+      "P85.5-axa",
+      "P84.8-791"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -3716,7 +3765,9 @@
       "P50.3",
       "P51.1",
       "P59.2",
-      "P84.3"
+      "P84.3",
+      "P84.5-791",
+      "P84.7-791"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -3935,6 +3986,84 @@
     ],
     "plugins/audit/tests/test__report_usage.py": [
       "P85.2"
+    ],
+    "docs/screenshots/areas.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/authors.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/dark.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/demo-gate.gif": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/expanded.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/filtered.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/filters.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/mobile.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/overview.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-appearance.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-blocks.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-composition-expanded.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-composition.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-confirm.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-dark.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-gate.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-guards.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-help.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-mobile.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-monthly.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-overview.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-person.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-policy-expanded.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-policy.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-proposals.png": [
+      "P84.7-791"
+    ],
+    "docs/screenshots/panel-usage.png": [
+      "P84.7-791"
     ]
   },
   "bugs": [

@@ -1962,6 +1962,14 @@
             "resolution": {
               "type": "string",
               "description": "The concrete change that settles it — what a fix executor is handed."
+            },
+            "fixTask": {
+              "type": "string",
+              "description": "The task whose commit settled this finding, written by `audit-task.py resolve-finding`. An id, so a task move rewrites it (`_id_refs.SCALAR_REFS`)."
+            },
+            "commit": {
+              "type": "string",
+              "description": "The SHA `fixTask` landed in, written with it; `audit-task.py reopen` of that task removes it, so a finding never reads as fixed by work the plan has undone."
             }
           }
         }

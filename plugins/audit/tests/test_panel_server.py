@@ -711,6 +711,129 @@ def _cases(check):
 
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
+    _harness.stage(check, "hr-block", _handler_race_cases)
+
+
+# --- two requests at once, through the real handler ------------------------------
+# The server answers each request on its own thread. Two saves at once used to
+# serialise their WRITES and still lose one change, because each built its write
+# from a read taken before the lock; the proposal door borrowed a process-wide
+# token. Driven over HTTP against `_make_handler` on a ThreadingHTTPServer, with
+# the first write slowed so the second request lands while it is under way.
+def _handler_race_cases(check):
+    import shutil
+    import subprocess
+    import threading
+    import time
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    import _panel_write
+    tmp = tempfile.mkdtemp(prefix="panel-server-race-")
+    proj = os.path.join(tmp, "proj")
+    os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+    real_write, real_save = _panel_write._atomic_write_json, _panel_write._proposals._save
+    httpd = None
+    try:
+        subprocess.run(["git", "init", "-q", proj], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mpath = _panel_write._manifest_path(proj, _panel_write.read_config(proj))
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+
+        def parked(prop_id, pid):
+            return {"id": prop_id, "name": pid, "status": "proposed",
+                    "branch": None, "materializedAs": None, "materializedAt": None,
+                    "payload": {"phase": {"id": pid, "title": pid,
+                                          "status": "pending", "tasks": []}}}
+        real_write(mpath, {"meta": {"version": 2},
+                           "phases": [{"id": "P1", "title": "P", "status": "pending",
+                                       "tasks": [{"id": "P1.1", "title": "a",
+                                                  "status": "pending"},
+                                                 {"id": "P1.2", "title": "b",
+                                                  "status": "pending"}]}],
+                           "fileIndex": {}, "bugs": [],
+                           "proposals": [parked("PROP-1", "P7"),
+                                         parked("PROP-2", "P8")]})
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), M._make_handler(proj, "tk"))
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+        def send(method, route, body):
+            req = urllib.request.Request(
+                "http://127.0.0.1:%d%s" % (port, route),
+                data=json.dumps(body).encode("utf-8"), method=method,
+                headers={"X-Audit-Token": "tk", "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        def race(first, second):
+            started = threading.Event()
+            got = {}
+
+            def one():
+                got["first"] = first()
+
+            def two():
+                started.wait(5)
+                got["second"] = second()
+            return started, got, [threading.Thread(target=one),
+                                  threading.Thread(target=two)]
+
+        def slowed(fn, started):
+            def slow(*a, **k):
+                started.set()
+                time.sleep(0.5)
+                return fn(*a, **k)
+            return slow
+
+        started, got, threads = race(
+            lambda: send("PUT", "/api/composition", {"tasks": {"P1.1": {"model": "opus"}}}),
+            lambda: send("PUT", "/api/composition", {"tasks": {"P1.2": {"model": "haiku"}}}))
+        _panel_write._atomic_write_json = slowed(real_write, started)
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        finally:
+            _panel_write._atomic_write_json = real_write
+        with open(mpath, "r", encoding="utf-8") as fh:
+            tasks = dict((t["id"], t.get("model"))
+                         for t in json.load(fh)["phases"][0]["tasks"])
+        check("hr1 RED-FIRST: two PUT /api/composition through the real handler at "
+              "once BOTH land: %r" % ((tasks, sorted((k, v.get("ok"))
+                                                     for k, v in got.items())),),
+              tasks == {"P1.1": "opus", "P1.2": "haiku"}
+              and len(got) == 2 and all(v.get("ok") for v in got.values()))
+
+        started, got, threads = race(
+            lambda: send("POST", "/api/proposal",
+                         {"action": "drop", "id": "PROP-1", "reason": "r1"}),
+            lambda: send("POST", "/api/proposal",
+                         {"action": "drop", "id": "PROP-2", "reason": "r2"}))
+        _panel_write._proposals._save = slowed(real_save, started)
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        finally:
+            _panel_write._proposals._save = real_save
+        with open(mpath, "r", encoding="utf-8") as fh:
+            props = dict((p["id"], p.get("status"))
+                         for p in json.load(fh).get("proposals") or [])
+        check("hr2 RED-FIRST: two POST /api/proposal drops through the real handler "
+              "at once BOTH land: %r" % ((props, sorted((k, v.get("ok"))
+                                                        for k, v in got.items())),),
+              props == {"PROP-1": "dropped", "PROP-2": "dropped"}
+              and len(got) == 2 and all(v.get("ok") for v in got.values()))
+    finally:
+        _panel_write._atomic_write_json = real_write
+        _panel_write._proposals._save = real_save
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()
+        shutil.rmtree(tmp, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

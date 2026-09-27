@@ -55,6 +55,13 @@ cheap read gets the wrong verdict. A pointer whose `runId` resolves NOWHERE is n
 finding -- the ledger may have been archived, and the schema says an absent or
 unresolvable pointer means "no evidence recorded", never "failed".
 
+BOTH HALVES READ ONE SET, THE WORKING TREE'S: the tracked manifests as they stand
+on disk, against every ledger the working tree holds, tracked or not. A task gate
+writes a pointer into an evidence file before the commit that tracks the file
+lands, so a ledger set narrower than the manifests' reading convicts a pointer
+nobody got wrong; and a reading at HEAD would pass a defect in an uncommitted
+edit until after it was committed, which is the moment a gate exists to precede.
+
 THE SECOND SUBJECT IS THE COMMIT A COMMITTED MANIFEST NAMES, and it is here
 because it is the same rule about the same bytes: a published claim this
 repository cannot back. The shipped example named task commits, phase base refs
@@ -149,8 +156,31 @@ def tracked_paths(repo=None):
     return [p for p in out.decode("utf-8", "replace").split("\0") if p], None
 
 
+def untracked_paths(repo=None):
+    """(rels, problem) -- every path the working tree holds that git does not
+    track and does not ignore, or why the question failed.
+
+    The ledgers a pointer resolves against come from the tracked set AND this
+    one, because a task gate writes a pointer into an evidence file before the
+    commit that tracks it lands. Read off the tracked set alone, the working-tree
+    manifest names a run no ledger the tool read can hold, and one half of the
+    comparison saw a tree the other half could not.
+    """
+    root = repo or REPO
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", root, "ls-files", "-z", "--others", "--exclude-standard"],
+            stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return [], "git could not list the untracked files: %s" % (exc,)
+    return [p for p in out.decode("utf-8", "replace").split("\0") if p], None
+
+
 def ledger_rels(rels):
-    """Every tracked path that is an evidence ledger, in a stable order."""
+    """Every path in `rels` that is an evidence ledger, in a stable order.
+
+    The caller hands it the tracked paths and the untracked ones together.
+    """
     out = []
     for rel in rels:
         parts = rel.split("/")
@@ -161,7 +191,8 @@ def ledger_rels(rels):
 
 
 def manifest_rels(rels):
-    """Every tracked manifest index and phase shard, in a stable order.
+    """Every manifest index and phase shard in `rels`, in a stable order - the
+    caller hands it the tracked paths and the untracked ones together.
 
     Recognised by shape rather than by name: a JSON file carrying `phases` is an
     index, and one under a `phases/` directory is a shard. Both hold `testEvidence`
@@ -445,10 +476,18 @@ def findings(repo=None):
     if problem:
         return [], {}, problem
 
-    ledgers = ledger_rels(rels)
+    # ONE SET, THE WORKING TREE'S. The manifests are every one the working tree
+    # holds, tracked or not, as they stand on disk - so a defect in an edit, or
+    # in a shard `phase add` created, is caught before any commit; the ledgers
+    # their pointers resolve against are every ledger the working tree holds,
+    # tracked or not, for the reason `untracked_paths()` gives.
+    loose, problem = untracked_paths(root)
+    if problem:
+        return [], {}, problem
+    ledgers = ledger_rels(rels + loose)
     if not ledgers:
         return [], {}, (
-            "no committed evidence ledger was found under any %s/ directory, so "
+            "no evidence ledger, tracked or not, was found under any %s/ directory, so "
             "this run compared nothing - which is not the same answer as a tree "
             "with nothing wrong in it" % (LEDGER_DIR,))
 
@@ -471,7 +510,7 @@ def findings(repo=None):
 
     if not seen_rows and not out:
         return [], {}, (
-            "%d committed ledger(s) were found and every one of them is empty, so "
+            "%d ledger(s) were found and every one of them is empty, so "
             "no verdict was actually read" % (len(ledgers),))
 
     # THE POINTER HALF OWES THE SAME PROMISE AS THE LEDGER HALF, and it did not
@@ -487,7 +526,7 @@ def findings(repo=None):
     # silence as a clean set is green FOR the truncation. Asked once here, since
     # it is a property of the checkout and not of a row.
     can_ask, cannot_ask = _commit_trail.can_answer(root)
-    manifests = manifest_rels(rels)
+    manifests = manifest_rels(rels + loose)
     checked_manifests = 0
     pointers = 0
     resolved = 0
@@ -526,7 +565,7 @@ def findings(repo=None):
 
     if manifests and not commits:
         return [], {}, (
-            "%d committed manifest(s) were read and NOT ONE of them names a "
+            "%d manifest(s), tracked or not, were read and NOT ONE of them names a "
             "commit, so the does-git-have-it half of this run compared nothing - "
             "which is not the same answer as a tree naming only commits that "
             "resolve" % (checked_manifests,))
@@ -534,7 +573,7 @@ def findings(repo=None):
     if pointers and not resolved:
         return [], {}, (
             "%d cached testEvidence pointer(s) were found across %d manifest(s) "
-            "and NOT ONE of them names a run any committed ledger holds, so the "
+            "and NOT ONE of them names a run any ledger in the working tree holds, so the "
             "cache-agrees-with-the-ledger half of this run compared nothing - "
             "which is what a changed `runId` spelling looks like, and is not the "
             "same answer as a tree with nothing wrong in it"
@@ -601,9 +640,9 @@ def findings(repo=None):
 
 def ok_line(counts):
     """The clean verdict, carrying what it looked at rather than just 'OK'."""
-    return ("OK: %d row(s) across %d committed ledger(s) record a verdict the "
+    return ("OK: %d row(s) across %d ledger(s), tracked or not, record a verdict the "
             "schema publishes, none contradicts its own observations, %d of "
-            "%d cached pointer(s) across %d manifest(s) resolved and agree, "
+            "%d cached pointer(s) across %d manifest(s), tracked or not, resolved and agree, "
             "%d commit reference(s) all resolve in this checkout, and "
             "%d gate entry/entries across %d assembled manifest(s) all name a "
             "meta.buildCommands key (vocabulary: %d word(s))"
@@ -752,8 +791,8 @@ def _cases(check):
               "different answers: %r / %r" % (_rows2, _trouble),
               _rows2 == [] and _trouble is not None and "line 2" in _trouble)
     finally:
-        import shutil
-        shutil.rmtree(_tmp, ignore_errors=True)
+        from _suite import remove_tree
+        remove_tree(_tmp)
 
     # el12. The schema path is pinned, not searched for.
     check("el12 the vocabulary's location is a fixed path rather than 'the first "
@@ -894,6 +933,129 @@ def _cases(check):
           % ({k: _counts.get(k) for k in ("gateManifests", "gateEntries")},),
           _counts.get("gateManifests", 0) >= 1
           and _counts.get("gateEntries", 0) >= 10)
+
+    # el23-el25. Pointers and ledgers are judged over ONE set, the working tree's,
+    # in a real repository. A task gate writes a pointer into an evidence file
+    # before the commit that tracks it lands, so the ledgers a pointer resolves
+    # against are every ledger the working tree holds, tracked or not.
+    import tempfile
+    _snap = tempfile.mkdtemp(prefix="cel-snap-")
+    try:
+        _fx = _snapshot_fixture(_snap)
+        _hc, _hp = _fx["counts"], _fx["problem"]
+        check("el23 a pointer the working-tree manifest gained into a ledger nobody "
+              "has committed yet resolves, and so does the pointer into the "
+              "committed ledger beside it - both halves read the same tree: "
+              "%r / %s" % (_hc, _hp),
+              _hp is None and _hc.get("pointers") == 2
+              and _hc.get("resolved") == 2 and _fx["rows"] == [])
+        # ...and the allow case: a pointer naming a run NO ledger holds, tracked
+        # or not, still misses. Stops el23 being satisfied by a reading in which
+        # every pointer resolves.
+        _ac, _ap = _fx["ghost_counts"], _fx["ghost_problem"]
+        check("el24 ...while a pointer naming a run no ledger holds, tracked or "
+              "not, is still counted unresolved - the gate this feeds stays red on "
+              "it: %r / %s" % (_ac, _ap),
+              _ap is None and _ac.get("pointers") == 3
+              and _ac.get("resolved") == 2)
+        # el25. The defect a gate exists to catch BEFORE the commit: an edit to a
+        # manifest nobody has committed yet, caching a verdict its own run denies
+        # and naming a commit that does not exist, is two findings now.
+        _rr, _rp = _fx["edit_rows"], _fx["edit_problem"]
+        _why = [why for _rel, where, why in _rr if where == "P1.1"]
+        check("el25 an UNCOMMITTED manifest edit caching a status its run denies "
+              "and naming a commit git does not have is reported before it is "
+              "committed - one finding each, both on the task: %r / %s"
+              % (_rr, _rp),
+              _rp is None and len(_rr) == 2 and len(_why) == 2
+              and any("records 'passed'" in w for w in _why)
+              and any(("d" * 40) in w for w in _why))
+        # el26. The same defect in a manifest file that is itself untracked - a
+        # shard `phase add` created and a gate wrote into before any commit.
+        _sr, _sp = _fx["shard_rows"], _fx["shard_problem"]
+        _swhy = [why for rel, where, why in _sr
+                 if where == "P9.1" and rel == "x/phases/P9.json"]
+        check("el26 RED-FIRST: an UNTRACKED shard caching a status its run denies "
+              "and naming a commit git does not have is read and reported, not "
+              "passed because nothing has committed it yet: %r / %s" % (_sr, _sp),
+              _sp is None and len(_swhy) == 2
+              and any("records 'passed'" in w for w in _swhy)
+              and any(("e" * 40) in w for w in _swhy))
+    finally:
+        from _suite import remove_tree
+        remove_tree(_snap)
+
+
+def _git_fixture(root, *args):
+    """Run one git command in the fixture repository, failing loud."""
+    subprocess.check_output(
+        ["git", "-C", root, "-c", "user.name=fixture", "-c",
+         "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"]
+        + list(args), stderr=subprocess.STDOUT)
+
+
+def _write_fixture(root, rel, text):
+    path = os.path.join(root, rel.replace("/", os.sep))
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with io.open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _snapshot_fixture(root):
+    """Build, in the empty directory `root`, a repository whose committed and
+    working-tree manifests disagree, and return the findings of three readings.
+
+    HEAD holds one ledger and a manifest pointing into it. `counts` is read after
+    the working tree gained a pointer into an untracked ledger; `ghost_counts`
+    after it also points at a run no ledger holds; `edit_rows` after the working
+    tree instead rewrote the committed task to cache a status its run denies and
+    name a commit that does not exist.
+    """
+    out = {}
+    _git_fixture(root, "init", "-q")
+    with io.open(os.path.join(REPO, SCHEMA_REL.replace("/", os.sep)),
+                 encoding="utf-8") as fh:
+        _write_fixture(root, SCHEMA_REL, fh.read())
+    _write_fixture(root, "x/evidence/a.jsonl",
+                   json.dumps({"runId": "r1", "status": "passed"}) + "\n")
+    _git_fixture(root, "add", "-A")
+    _git_fixture(root, "commit", "-q", "-m", "ledger")
+    base = subprocess.check_output(["git", "-C", root, "rev-parse", "HEAD"]).decode().strip()
+
+    def plan(pointers):
+        tasks = [{"id": "P1.%d" % (n + 1), "commit": commit or base,
+                  "testEvidence": {"runId": run, "status": status}}
+                 for n, (run, status, commit) in enumerate(pointers)]
+        return json.dumps({"phases": [{"id": "P1", "tasks": tasks}]}, indent=1)
+
+    _write_fixture(root, "x/audit-plan.json", plan([("r1", "passed", None)]))
+    _git_fixture(root, "add", "-A")
+    _git_fixture(root, "commit", "-q", "-m", "plan")
+    _write_fixture(root, "x/evidence/b.jsonl",
+                   json.dumps({"runId": "r2", "status": "passed"}) + "\n")
+    _write_fixture(root, "x/audit-plan.json",
+                   plan([("r1", "passed", None), ("r2", "passed", None)]))
+    out["rows"], out["counts"], out["problem"] = findings(root)
+
+    _write_fixture(root, "x/audit-plan.json",
+                   plan([("r1", "passed", None), ("r-ghost", "passed", None),
+                         ("r2", "passed", None)]))
+    _rows, out["ghost_counts"], out["ghost_problem"] = findings(root)
+
+    _write_fixture(root, "x/audit-plan.json",
+                   plan([("r1", "failed", "d" * 40)]))
+    out["edit_rows"], _counts, out["edit_problem"] = findings(root)
+
+    # A SHARD NOTHING HAS COMMITTED YET: `phase add` writes it and a task gate
+    # writes a pointer into it before the first commit tracks it.
+    _write_fixture(root, "x/audit-plan.json", plan([("r1", "passed", None)]))
+    _write_fixture(root, "x/phases/P9.json", json.dumps(
+        {"id": "P9", "tasks": [{"id": "P9.1", "commit": "e" * 40,
+                                "testEvidence": {"runId": "r1",
+                                                 "status": "failed"}}]}))
+    out["shard_rows"], out["shard_counts"], out["shard_problem"] = findings(root)
+    return out
 
 
 def _selftest():

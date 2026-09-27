@@ -7,6 +7,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **A sign-off's review findings are recorded by a verb: `audit-task.py finding`,
+  `resolve-finding` and `correct`.** The findings sign-off step 1 records were a hand edit of
+  the phase shard: no lock, no journal row, and a severity outside the vocabulary written with
+  nothing to refuse it. `finding <phaseId> --findings-file PATH|-` records a review's whole
+  findings array in one write, and `--severity low|med|high --file <path> --issue TEXT
+  --resolution TEXT` records one; each finding takes the schema's shape with the id allocated
+  as `<phaseId>-R<n>`, a missing field or an unknown severity is refused before any write (a
+  batch whole), each finding journals `review.finding`, and a phase that has already landed is
+  refused. `resolve-finding <findingId> --fix-task <taskId> [--commit <sha>]` records the task
+  and commit that fixed it - the fix task must be done, and its own recorded commit is the one
+  written - and journals `review.resolve`; `reopen` of that task takes the commit back off the
+  finding. `correct <phaseId> [--review-outcome TEXT] [--summary TEXT]` rewrites a signed-off
+  phase's text with a `review.correct` row and reads no `--verdict`. Every writer of
+  `review.outcome`, `signoff --review-outcome` on both paths included, ends it with a
+  `[findings: ...]` severity tally derived from `review.findings`, whose last clause counts the
+  findings with a recorded fix commit and nothing else, so a typed count cannot disagree with
+  the list. A journal row shortens a long outcome from the middle, so the tally stays visible.
+  `reference/phase-signoff.md` step 1 names the verbs.
 - **Phases built on one branch sign off as a group: `audit-task.py signoff P1,P2 --branch <name>`.**
   Phases whose work sits on one combined branch record no `branch` or `baseRef`, so the single
   sign-off had no diff to review and `close-phase.py` no name to land. `--plan` prints the whole
@@ -434,6 +452,52 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **Parallel lock takers of one session are serialised.** The lock let any process of the
+  session holding it back in as "already yours", so parallel tool calls of one run each wrote
+  over the others' manifest write and every one reported success. A claim a process takes for
+  its own write now records a token that the process and its children carry
+  (`AUDIT_LOCK_TOKENS`), and only a carrier re-enters; any other process waits, session or not.
+  A lock taken by hand with `audit-lock.py acquire` is recorded `handedOff`, and its session
+  still works under it, as the documented take-then-run-the-verbs flow needs - so parallel calls
+  under a hand-held hold are still not serialised, which `reference/manifest-conventions.md`
+  and `reference/orchestrator.md` now say where they prescribe that hold. Two consequences to
+  expect: exit 3 can now be a parallel call of your own session, and a claim of the new kind
+  left by a verb that was killed answers stale (exit 4, `--takeover`) to its own session, where
+  it used to answer "already yours". The panel's writes take a claim per request (`per_call`),
+  so two saves on the server's threads wait for each other instead of one borrowing the other's
+  claim, and `_evidence_io.lock_state` - which the gate recorder asks before writing a pointer
+  or the evidence boundary - asks the same `held_by_us` rule instead of its own session test.
+- **Two panel saves at once both land.** Serialising the writes was not enough: every save built
+  its document from a read taken before it took the lock, so the second of two saves wrote a
+  copy predating the first and that change was lost while both answered ok. A composition save
+  now reads the manifest again with the lock held, and the policy, theme and `ui.theme` saves
+  hand `write_config` a change it applies to the config read under the lock. `POST
+  /api/proposal` holds the panel's per-call lock around the proposal run, which takes the lock
+  before it reads the manifest - `materialize-proposal.py`'s run included - and no longer
+  takes an ordinary claim whose token the whole server process would carry.
+- **The recovery line the panel prints for a crashed panel works.** `audit-lock.py release`
+  refused a claim whose holder had died, counting the dead pid as another run's, so the printed
+  `release index` command always exited 3; a claim whose holder ran on this host and is gone is
+  now released. The "this lock records taking over from you" note no longer prints when neither
+  side names a session.
+- **A review finding's `fixTask` follows its task through a move.** It is an id, so it is in
+  `_id_refs.SCALAR_REFS` now and rewritten in both of a review's finding lists; the schema
+  declares `fixTask` and `commit` on a finding, `validate-manifest` warns
+  (`crossrefs.fix_task.unresolved`) on a `fixTask` that names no task, and the demo fixture
+  carries a resolved finding beside an open one, so both shapes are documented.
+- **The stable-code lint reaches every warning the phase-gate checks emit.** `_check_phase_gate`
+  appended to the validator's `warnings` argument, a shape the walk behind `fc2` never followed,
+  so that whole family could ship a warning with no code and stay green. It now returns its
+  warnings and the caller extends, which is the shape the walk follows; the validator's output is
+  unchanged.
+- **`check-example-ledgers.py` judges pointers and ledgers over the same set, the working
+  tree's.** It read the `testEvidence` pointers off the working-tree manifests while counting only
+  the git-tracked ledgers, so a phase's second task gate in a fresh worktree went red on the first
+  gate's pointer into an evidence file not yet committed. Every manifest and every ledger the
+  working tree holds, tracked or not, is now read as it stands on disk: a pointer into an
+  uncommitted ledger resolves, a pointer naming a run no ledger holds still fails, and an
+  uncommitted edit - or a shard nothing has committed yet - caching a status its run denies or
+  naming a commit git does not have is reported before the commit.
 - **run-test-gate's machine line no longer calls runs recorded one after another a crowd.**
   Overlap was inclusive at both ends over whole-second stamps, so a run that started in the second
   the previous row was written always "shared this window". Windows now compare half-open at the

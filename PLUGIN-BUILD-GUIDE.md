@@ -314,7 +314,7 @@ L2:
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
-  _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
+  _manifest_crossrefs -> _ado_parent, _id_refs, _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
@@ -2840,6 +2840,16 @@ should be small. `audit-task.py`'s dependency was the one nothing could see: it 
 index lock by building an argv and calling `main()` through `_panel_write._lockmod()`, so
 `_deps` attributed the edge to the panel. It is an ordinary import now.
 
+**Whose claim it is has one rule, `held_by_us`**, which `acquire` and `_evidence_io.lock_state`
+both ask. A claim a process takes for its own write records a random `token`, re-entered only
+by that process and by a child that inherited the token through `TOKEN_ENV`
+(`AUDIT_LOCK_TOKENS`); another process of the same session waits like any holder. A claim
+`audit-lock.py acquire` takes by hand is recorded `handedOff`, and its session still works under
+it - the take-then-run-the-verbs flow the commands prescribe - so parallel calls under a
+hand-held hold are not serialised. A claim taken with `per_call` (the panel's writes, one per
+request on the server's threads) is re-entered by nobody. A claim written before tokens existed
+keeps the session rule.
+
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
 `_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` with an ASCII
@@ -4043,6 +4053,21 @@ doctor and `reconcile` join runs recorded under an old id to the live task. `blo
 (cleared by the next `start`, whose row keeps it as the value it moved from); `note` appends one
 `{at, text}` entry to `notes[]`, the one addition a started task takes. Each journals its own row -
 `task.move`, `task.block`, `task.note`.
+
+`finding <phaseId>`, `resolve-finding <findingId>` and `correct <phaseId>` write a sign-off's
+review record, which used to be hand-edited into the shard. `finding` appends entries in the
+finding shape to `review.findings` - one from `--severity`/`--file`/`--issue`/`--resolution`,
+or a review's whole array from `--findings-file PATH|-` in one write - refusing a missing field
+or a severity outside `_phases.FINDING_SEVERITY` before the lock (a batch whole), and refusing a
+phase that has already landed (`mergedAt` set); on a signed-off phase not yet landed it records
+the finding and says which verdict it arrived after. `resolve-finding` sets a finding's
+`fixTask`, `commit` and `resolution` from a DONE fix task's recorded commit; `reopen` of that
+task removes the commit again (`_unresolve_findings`), and a `move` renames `fixTask` with the
+task (`_id_refs.SCALAR_REFS`). `correct` rewrites `review.outcome` or `summary` text on a phase
+that already has a verdict and never re-decides it. Every write of `review.outcome`, the two
+`signoff` paths included, goes through `outcome_with_tally`, which derives the severity tally
+from the list, so no one types it. Each journals its own row - `review.finding` (one per
+finding), `review.resolve`, `review.correct`.
 
 `settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
 `status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its

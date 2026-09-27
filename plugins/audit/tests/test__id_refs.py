@@ -80,6 +80,38 @@ def _cases(check):
           "is written - a rename must never merge two records",
           clash == ["P1"], clash)
 
+    # A REVIEW FINDING'S FIX TASK is an id too: `resolve-finding` writes it and
+    # `reopen` finds the finding through it, so a move that left it behind would
+    # point the finding at a task nobody can find.
+    reviewed = {"phases": [
+        {"id": "P2-abc", "tasks": [{"id": "P2-abc.1", "title": "u"}],
+         "review": {"findings": [{"id": "P2-abc-R1", "fixTask": "P2-abc.1",
+                                  "commit": "a" * 40}],
+                    "preExistingNotCharged": [{"id": "X1", "fixTask": "P2-abc.1"}]}}]}
+    moved, n = M.rename(reviewed, {"P2-abc.1": "P7.1"})
+    review = moved["phases"][0]["review"]
+    check("ir13 RED-FIRST: a finding's fixTask is renamed with the task it names, in "
+          "BOTH lists a review holds findings in: %r" % (review,),
+          review["findings"][0]["fixTask"] == "P7.1"
+          and review["preExistingNotCharged"][0]["fixTask"] == "P7.1"
+          and review["findings"][0]["id"] == "P2-abc-R1" and n == 3)
+    import _manifest_phases as _phases
+    check("ir14 the finding lists walked are the validator's own - one list in two "
+          "layers, pinned rather than trusted: %r / %r"
+          % (M.FINDING_LISTS, _phases.REVIEW_FINDING_LISTS),
+          tuple(M.FINDING_LISTS) == tuple(_phases.REVIEW_FINDING_LISTS))
+    import os
+    import _output
+    with open(os.path.join(_output.PLUGIN_ROOT, "schema", "audit-plan.schema.json"),
+              "r", encoding="utf-8") as fh:
+        schema = json.load(fh)
+    shapes = [b.get("properties") or {} for b in schema["$defs"]["finding"]["oneOf"]
+              if isinstance(b, dict) and b.get("type") == "object"]
+    check("ir15 ...and the schema declares the fields a resolved finding carries, "
+          "which is where this module's list of reference fields comes from: %r"
+          % (sorted(shapes[0]) if shapes else None,),
+          len(shapes) == 1 and "fixTask" in shapes[0] and "commit" in shapes[0])
+
 
 def _selftest():
     return _harness.run(_cases)

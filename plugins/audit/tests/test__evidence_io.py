@@ -27,6 +27,7 @@ import os
 import subprocess
 import shutil
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -1170,6 +1171,30 @@ def _cases(check):
               blocked["written"] is False
               and "reconcile" in (blocked.get("reason") or ""))
         _locks.release(gitproj, "phase-P1", session="me", out=lambda *_a: None)
+
+        # ONE RULE FOR "IS THIS LOCK OURS", the lock's own. A claim another live
+        # process of this session took for its own write is that process's; a
+        # pointer written under it with no lock of its own is the lost write the
+        # lock serialises every other caller against.
+        import platform as _pf
+        _pl_path = os.path.join(_locks.lock_dir(gitproj), "phase-P1.lock")
+        _pl_claim = {"sessionId": "me", "pid": os.getppid(), "hostname": _pf.node(),
+                     "note": "another process's write", "token": "tok-elsewhere",
+                     "handedOff": False,
+                     "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        _locks._write_lock(_pl_path, _pl_claim)
+        _pl_other, _pl_why = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        _locks._write_lock(_pl_path, dict(_pl_claim, handedOff=True))
+        _pl_hand, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        os.unlink(_pl_path)
+        check("ed8b RED-FIRST: a claim ANOTHER live process of this session took "
+              "for its own write reads `held`, as `_locks.acquire` answers it - "
+              "one rule for whose lock it is, not a second copy that still "
+              "trusts the session: %r" % ((_pl_other, _pl_why),),
+              _pl_other == "held" and "reconcile" in (_pl_why or ""))
+        check("ed8c ALLOW: the same claim taken BY HAND (`handedOff`) is still "
+              "this session's to work under, so it reads `ours`: %r" % (_pl_hand,),
+              _pl_hand == "ours")
 
         # --- C4: two events, and the second only if the move happened ------
         jproj, jpath = _manifest_project("c4")

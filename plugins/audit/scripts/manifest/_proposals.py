@@ -708,7 +708,7 @@ def iso_now():
         "%Y-%m-%dT%H:%M:%SZ")
 
 
-def run(mpath, verb, pids, policy=None, reason=None, now=None):
+def run(mpath, verb, pids, policy=None, reason=None, now=None, locked=False):
     """Do it, under the lock, and refuse rather than write something invalid.
 
     Returns `(ok, payload)`; `payload` carries `plan`/`message`/`warnings` on
@@ -716,36 +716,21 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
 
     Revalidation happens BEFORE the write, so a manifest that would be invalid
     never reaches disk and a refusal leaves no half-applied state behind.
+
+    THE LOCK COMES BEFORE THE READ. A write built from a manifest read before the
+    lock was taken is a copy that predates whatever the holder it waited for
+    wrote, so that write was lost while both answered ok.
+
+    `locked` says the CALLER already holds the index lock for this call - the
+    panel, whose per-call claim no other call re-enters, this one included - so
+    no claim is taken here and none is given back.
     """
     now = now or iso_now()
-    try:
-        manifest = _mio.load_manifest(mpath)
-    except Exception as exc:
-        return False, {"findings": ["cannot read %s: %s" % (mpath, exc)]}
-    if not isinstance(manifest, dict):
-        return False, {"findings": ["%s is not an object" % (mpath,)]}
-
     if verb == "plan":
+        manifest, refusal = _load(mpath)
+        if refusal:
+            return False, refusal
         return True, {"plan": plan_for(manifest, pids)}
-
-    plan = None
-    if verb == "materialize":
-        if policy == "with-deps":
-            ordered = []
-            for pid in pids:
-                for step in closure(manifest, pid):
-                    if step not in ordered:
-                        ordered.append(step)
-            pids = ordered
-        plan = plan_for(manifest, pids, policy)
-        if plan["refused"] and not plan["steps"]:
-            return False, {"findings": ["%s: %s" % (b["id"], b["reason"])
-                                        for b in plan["refused"]]}
-        if plan["needsDecision"]:
-            return False, {"findings": [
-                "%s waits on %s, which is still parked. Materialize both "
-                "(--with-deps) or cut the edge (--drop-edges) - this does not "
-                "guess which you meant." % (pids[0], ", ".join(plan["pulledIn"]))]}
 
     project = os.path.dirname(os.path.abspath(mpath)) or "."
     # THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE USED
@@ -763,7 +748,7 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
     # working-tree lockfile and proceeding. Asked before acquiring, where the
     # answer is unambiguous.
     code = None
-    if _locks.available(project):
+    if not locked and _locks.available(project):
         code = _locks.acquire(project, LOCK_NAME,
                               note="proposal:" + verb,
                               out=lambda *_a, **_k: None)
@@ -782,7 +767,7 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
     # early return past the release with nothing to attach the sentence to.
     said = None
     try:
-        ok, payload = _apply_verb(mpath, manifest, plan, verb, pids, reason, now)
+        ok, payload = _run_held(mpath, verb, pids, policy, reason, now)
     finally:
         if _locks.took(code):
             rcode = _locks.release(project, LOCK_NAME,
@@ -792,6 +777,43 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None):
     if said:
         payload.setdefault("findings" if not ok else "warnings", []).append(said)
     return ok, payload
+
+
+def _load(mpath):
+    """`(manifest, None)`, or `(None, refusal payload)`."""
+    try:
+        manifest = _mio.load_manifest(mpath)
+    except Exception as exc:
+        return None, {"findings": ["cannot read %s: %s" % (mpath, exc)]}
+    if not isinstance(manifest, dict):
+        return None, {"findings": ["%s is not an object" % (mpath,)]}
+    return manifest, None
+
+
+def _run_held(mpath, verb, pids, policy, reason, now):
+    """Read, plan and write - everything `run` does once the lock is held."""
+    manifest, refusal = _load(mpath)
+    if refusal:
+        return False, refusal
+    plan = None
+    if verb == "materialize":
+        if policy == "with-deps":
+            ordered = []
+            for pid in pids:
+                for step in closure(manifest, pid):
+                    if step not in ordered:
+                        ordered.append(step)
+            pids = ordered
+        plan = plan_for(manifest, pids, policy)
+        if plan["refused"] and not plan["steps"]:
+            return False, {"findings": ["%s: %s" % (b["id"], b["reason"])
+                                        for b in plan["refused"]]}
+        if plan["needsDecision"]:
+            return False, {"findings": [
+                "%s waits on %s, which is still parked. Materialize both "
+                "(--with-deps) or cut the edge (--drop-edges) - this does not "
+                "guess which you meant." % (pids[0], ", ".join(plan["pulledIn"]))]}
+    return _apply_verb(mpath, manifest, plan, verb, pids, reason, now)
 
 
 def _apply_verb(mpath, manifest, plan, verb, pids, reason, now):
