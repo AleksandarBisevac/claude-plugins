@@ -922,7 +922,8 @@
       "P83.4-wkm",
       "P83.5-wkm",
       "P80.16-rtb",
-      "P88.1"
+      "P88.1",
+      "P88.2-dnb"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -3638,7 +3639,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P88.1"
+      "P88.1",
+      "P88.2-dnb"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
