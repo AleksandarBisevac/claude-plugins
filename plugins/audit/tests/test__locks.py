@@ -1195,6 +1195,23 @@ def _token_cases(check):
               code == M.E_LIVE
               and not any("taking over from you" in x for x in lines))
         os.unlink(path)
+
+        # A DEAD PID MEANS NOTHING ON ANOTHER HOST. The pid is probed here, where
+        # the remote holder never ran, so the host check is the whole boundary
+        # between releasing a crashed local holder and deleting a live remote one.
+        reaped = subprocess.Popen([sys.executable, "-c", "pass"])
+        reaped.wait()
+        M._write_lock(path, {"pid": reaped.pid, "hostname": "another-host",
+                             "sessionId": "s-REMOTE", "note": "remote write",
+                             "token": "t-remote", "handedOff": False})
+        lines = []
+        code = M.release(proj, "index", session="s-ME", pid=os.getpid(),
+                         out=lines.append)
+        check("rk8 ALLOW: a claim recorded on ANOTHER host is refused on release "
+              "even when its pid is not running here - liveness asked on the wrong "
+              "machine is no answer, and the claim stays: %r" % ((code, lines[:1]),),
+              code == M.E_LIVE and os.path.exists(path))
+        os.unlink(path)
     finally:
         shutil.rmtree(proj, ignore_errors=True)
 

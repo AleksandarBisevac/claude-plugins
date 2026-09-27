@@ -577,11 +577,13 @@ def write_areas(project, body):
 def proposal_action(project, body):
     """`POST /api/proposal` - materialize, drop or revive a parked proposal.
 
-    Calls `materialize-proposal.py`'s own `main`, exactly as `render_report` calls
-    the renderer's: same code path the CLI and `/audit:propose` take, no
-    interpreter discovery, and identical behaviour on Windows. The panel therefore
-    adds NO rule of its own - the closure, the lock, the collision guard and the
-    revalidation all happen in the one place that has cases for them.
+    Calls `_proposals.run` in process - the rule `materialize-proposal.py` and
+    `/audit:propose` run too - so the closure, the collision guard and the
+    revalidation all happen in the one place that has cases for them. The LOCK is
+    the one thing this door adds: the panel's per-call claim, taken here before
+    `run` reads the manifest and handed to it as `locked=True`, because a process
+    claim's token is carried by every request thread of this server and would let
+    a second request write beside the first.
 
     `plan` is the read-only half, and the tab calls it first so its confirm dialog
     can show what a materialization would pull in BEFORE anything is written.

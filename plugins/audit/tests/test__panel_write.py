@@ -2523,6 +2523,54 @@ def _lost_update_cases(check):
               "refused, and the claim stays: %r" % (live.returncode,),
               live.returncode == M._locks.E_LIVE and os.path.exists(lock))
         os.unlink(lock)
+
+        # THE PLAN MOVED BETWEEN THE TWO PASSES. The first pass decided which
+        # phase locks the save could meet; if the manifest changes before the
+        # second, the save may now reach a phase whose lock was never asked about.
+        proj2 = os.path.join(tmp, "sharded")
+        os.makedirs(os.path.join(proj2, ".claude"), exist_ok=True)
+        subprocess.run(["git", "init", "-q", proj2], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mp2 = M._manifest_path(proj2, M.read_config(proj2))
+        os.makedirs(os.path.dirname(mp2), exist_ok=True)
+        M._mio.save_sharded(mp2, {"meta": {"version": 2},
+                                  "phases": [
+                                      {"id": "P1", "title": "one", "status": "pending",
+                                       "tasks": [{"id": "P1.1", "title": "a",
+                                                  "status": "pending"}]},
+                                      {"id": "P2", "title": "two", "status": "pending",
+                                       "tasks": [{"id": "P2.1", "title": "b",
+                                                  "status": "pending"}]}],
+                                  "fileIndex": {}, "bugs": []})
+        real_acquire = M._acquire_write_lock
+        moved = []
+
+        def moving(*args, **kwargs):
+            if not moved:
+                plan = M._mio.load_manifest(mp2)
+                plan["phases"][1]["tasks"][0]["status"] = "in_progress"
+                M._mio.save_sharded(mp2, plan)
+                moved.append(True)
+            return real_acquire(*args, **kwargs)
+        M._acquire_write_lock = moving
+        try:
+            waited = M.apply_composition(proj2, {"tasks": {"P1.1": {"model": "opus"}}})
+        finally:
+            M._acquire_write_lock = real_acquire
+        again = M.apply_composition(proj2, {"tasks": {"P1.1": {"model": "opus"}}})
+        after = M._mio.load_manifest(mp2)
+        check("lu8 a save whose plan moved between its two passes, so that it now "
+              "reaches a phase whose lock it never asked about, is refused naming "
+              "that phase and leaves no lock; saving again lands: %r"
+              % ((waited, again.get("ok")),),
+              moved == [True] and waited.get("ok") is False
+              and any("P2" in f and "save again" in f
+                      for f in waited.get("findings") or [])
+              and not os.path.exists(os.path.join(M._locks.lock_dir(proj2),
+                                                  "index.lock"))
+              and again.get("ok") is True
+              and after["phases"][0]["tasks"][0].get("model") == "opus"
+              and after["phases"][1].get("status") == "in_progress")
     finally:
         M._atomic_write_json, M._proposals._save = real_write, real_save
         shutil.rmtree(tmp, ignore_errors=True)

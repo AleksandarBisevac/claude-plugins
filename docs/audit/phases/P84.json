@@ -593,6 +593,51 @@
         "test_panel_server hr2",
         "test__locks rk7"
       ]
+    },
+    {
+      "id": "P84.9-791",
+      "title": "the lock-first reads, the host check and the save-again refusal each have a case that fails when they break",
+      "status": "in_progress",
+      "description": "Round-4 phase review of P84 (review-P84d.json). Three paths survived a mutation with every suite green, and one docstring is false. (1) a two-process drop race on the command-line materialize path, asserting both drops land - red when the read moves back above the acquire. (2) a release case with a claim recorded from another host and a dead pid, which must be refused - red when _holder_dead_here's host check is removed. (3) a case that changes the manifest between apply_composition's two passes so the save reaches an unasked phase lock, asserting the save-again refusal - red when the refusal is disabled. (4) proposal_action's docstring says the panel's per-call lock is what it adds. Each new case proven red by the mutation named.",
+      "files": [
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/panel/_panel_write.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__locks.py: a claim from another host with a dead pid is refused on release"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T09:01:00Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"
