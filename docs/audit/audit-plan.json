@@ -575,7 +575,7 @@
     {
       "id": "P90",
       "title": "the committed-identity check accounts for the one journal row it misreads",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P90.json"
     }
   ],
