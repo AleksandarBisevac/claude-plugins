@@ -1,7 +1,7 @@
 {
   "id": "P90",
   "title": "the committed-identity check accounts for the one journal row it misreads",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "tools/check-committed-pii.py is green on main: the review.finding row whose prose says 'home/TMPDIR' - a phrase, not a home directory - is named in BASELINE with its reason, and nothing else in the committed domain matches.",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "ab8c0240b58911c059b0fea706096f86d020d33a",
   "branch": "audit/p90-the-committed-identity-check-a",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T23:02:15Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -72,5 +72,6 @@
     "runId": "2026-09-27T23:01:53Z.517f42",
     "status": "passed",
     "at": "2026-09-27T23:01:53Z"
-  }
+  },
+  "mergedHead": "3306e57f8e9c526bd329af319f157b82637af326"
 }
