@@ -19,10 +19,67 @@
   "branch": "audit/p84-review-findings-are-written-by",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P84-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "resolve-finding marks a finding as fixed by a task that has not landed. _fix_commit checks only that a commit exists and that it agrees with task.commit. A task in `pending` status, with no commit recorded, is accepted whenever --commit is passed. I reproduced this on a scratch copy of docs/audit: `finding P86 ...` then `resolve-finding P86-R1 --fix-task P86.1 --commit <scratch HEAD>` exited 0 alt",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R2",
+        "severity": "med",
+        "file": "tools/check-example-ledgers.py",
+        "issue": "A defect in an uncommitted manifest is no longer caught until it is committed, and the OK line does not say so. I tested this on a clone of HEAD. I edited docs/audit/phases/P78.json in the working tree: P78.1's cached status changed from passed to failed against its ledger run, and its commit changed to deadbeef…. The base tool exited 1 with two FINDINGs, a cache disagreement and an unresolvable c",
+        "resolution": "fix task P84.5"
+      },
+      {
+        "id": "P84-R3",
+        "severity": "med",
+        "file": "plugins/audit/reference/phase-signoff.md",
+        "issue": "Findings written by concurrent `finding` calls from one session are lost, and each call still reports success. When the session already holds the lock, _acquire_lock says 'already yours -- nothing was taken', so calls from one session are not serialized. I ran six `finding P81` calls in parallel with the same CLAUDE_CODE_SESSION_ID on a scratch plan. All six exited 0 and each printed 'P81-R1 recor",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The tally's 'N with a fix commit' clause counts only entries carrying fixTask and commit, which only resolve-finding writes. The existing plan records 242 object findings, and none of them carries either field, because their fixes were recorded in the resolution text. So the first verb write to any older phase produces a derived clause that contradicts the phase's own prose. I ran `correct P74 --r",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "_review_target refuses only a cancelled phase. `finding` therefore appends to a phase that is already signed off and merged, and rewrites that phase's review.outcome with no note. I confirmed this on P85, which is passed and done. A tally the verdict was never given against is written into a closed record, and the output does not say the phase already has a verdict.",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group sign-off path (`signoff P1,P2 --branch`) now derives the tally, and the task claims 'both signoff paths'. No case asserts it: the rv cases (rv7) drive only the single-phase signoff. Reverting line 7348 to `args.review_outcome.strip()` would leave test_audit_task green.",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "A finding's fixTask and commit are copies taken when resolve-finding runs, and the tally derives from those copies. `reopen` clears task.commit (audit-task.py:4153 puts None) but does not touch review.findings. After the fix task is reopened, the finding still says 'fixed in X (sha)' and the tally still counts it. I found this by reading the code; I did not run it.",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The journal row records review.outcome from and to in full, but _journal_row truncates long values ('… [truncated]'). The tally sits at the end of the outcome, so for any real outcome the two values print identically and the row does not show what changed. I saw this in the P85 review.finding row on the scratch copy.",
+        "resolution": "fix task P84.6-791"
+      }
+    ]
   },
   "summary": null,
   "tasks": [
@@ -178,6 +235,143 @@
         "check-example-ledgers el23",
         "check-example-ledgers el24"
       ]
+    },
+    {
+      "id": "P84.4-791",
+      "title": "the review verbs refuse an unlanded fix, write safely in parallel, say what their tally counts, and stay true after a reopen",
+      "status": "cancelled",
+      "description": "Phase review of P84 (review-P84.json), findings 1, 3-8. (1) resolve-finding refuses a fix task that is not done, --commit or not; a case. (3) parallel calls from one session lost findings because the lock lets its own session back in (_locks.py:889): find why re-entry is keyed on the session; make it re-entrant only for a child process that carries the holder's token (so a verb's own subprocess still gets in) and serialise every other caller, including another process of the same session; add `finding --findings-file` that records several findings in one write; phase-signoff.md step 1 names the batch form and says the per-finding form is one at a time; a real parallel case (several processes, one session id) where every finding lands. (4) the tally's clause says exactly what it counts (\"k with a recorded fix commit\"), never implying the rest are unfixed. (5) `finding` refuses a phase that has landed (mergedAt set) with the reason; on a signed-off, unlanded phase it records the finding and says so in the row. (6) a case for the group sign-off tally path. (7) reopen clears the fix task's commit from every finding that recorded it, so the tally stops counting it; a case. (8) the journal row's from/to of a long outcome is shortened from the middle so the tally at its end stays visible.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - resolve-finding with --commit resolves a finding to a pending fix task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: declared scripts/_locks.py, a path that does not exist (the module is scripts/governance/_locks.py); scope cannot drop a path from an attempted task, so the same work continues as a new task with the corrected files"
+      },
+      "startedAt": "2026-09-27T06:46:17Z",
+      "completedAt": "2026-09-27T06:53:39Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "P84.5-791",
+      "title": "check-example-ledgers judges the working tree's pointers against every ledger the working tree holds",
+      "status": "in_progress",
+      "description": "Phase review of P84 (review-P84.json), finding 2. P84.3 moved the whole pointer half and the commit-reference check to HEAD, so a defect in an uncommitted manifest (a wrong cached status, a fake commit) now passes before the commit and goes red only after it - the gate stops seeing what it exists to catch. Judge the working tree instead, over one consistent set: the working tree's manifests' pointers against every ledger file the working tree holds, tracked or untracked, and the working tree's commit references - which is what fixes the original fault (a pointer into a still-untracked ledger) without hiding pre-commit defects. Red-first: the reviewer's shape (a wrong cached status and a fake commit in a working-tree manifest) fails; the original P84.3 case (a working-tree pointer into an untracked ledger) still passes; the tool passes on this repository. The CHANGELOG line for this lands with P84.4's commit (the orchestrator adds it).",
+      "files": [
+        "tools/check-example-ledgers.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-example-ledgers.py: repro that FAILS on current code - an uncommitted manifest edit giving a task a wrong cached status and a fake commit passes"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T06:46:18Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P84.6-791",
+      "title": "the review verbs refuse an unlanded fix, write safely in parallel, say what their tally counts, and stay true after a reopen",
+      "status": "in_progress",
+      "description": "Phase review of P84 (review-P84.json), findings 1, 3-8. (1) resolve-finding refuses a fix task that is not done, --commit or not; a case. (3) parallel calls from one session lost findings because the lock lets its own session back in (_locks.py:889): find why re-entry is keyed on the session; make it re-entrant only for a child process that carries the holder's token (so a verb's own subprocess still gets in) and serialise every other caller, including another process of the same session; add `finding --findings-file` that records several findings in one write; phase-signoff.md step 1 names the batch form and says the per-finding form is one at a time; a real parallel case (several processes, one session id) where every finding lands. (4) the tally's clause says exactly what it counts (\"k with a recorded fix commit\"), never implying the rest are unfixed. (5) `finding` refuses a phase that has landed (mergedAt set) with the reason; on a signed-off, unlanded phase it records the finding and says so in the row. (6) a case for the group sign-off tally path. (7) reopen clears the fix task's commit from every finding that recorded it, so the tally stops counting it; a case. (8) the journal row's from/to of a long outcome is shortened from the middle so the tally at its end stays visible.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "CHANGELOG.md",
+        "plugins/audit/commands/phase.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - resolve-finding with --commit resolves a finding to a pending fix task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T06:53:39Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"
