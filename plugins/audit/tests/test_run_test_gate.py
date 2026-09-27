@@ -8604,7 +8604,7 @@ def _selection_miss_cases(check):
               % ((row.get("selectionMiss"), lines),),
               code == M.E_FAIL and "selectionMiss" not in row
               and not any(ln.startswith("SELECTION MISS:") for ln in lines)
-              and "SELECTION MISS not asked: no earlier whole-bearing full "
+              and "SELECTION MISS not asked: no earlier measured full "
                   "run bounds the work since" in lines)
     finally:
         _sm_remove(fx)

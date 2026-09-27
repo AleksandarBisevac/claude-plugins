@@ -447,7 +447,7 @@
     {
       "id": "P81.8",
       "title": "Docs: the learning loop, quarantine and flaky",
-      "status": "pending",
+      "status": "in_progress",
       "description": "reference/orchestrator.md: the learning loop - a miss at the third place becomes a coupling and a bug through full-gate.py, only from a suite the runner named; removal is uncouple by a person, never automatic. Quarantine: a muted suite is run and recorded, never blocks, never teaches, and blocks again when its until passes; no retry-until-green. reference/manifest-conventions.md: the bug.add, test.muted, test.unmuted and coupling.caught journal actions and their details. commands/doctor.md: the coupling row. commands/review.md: what --full now learns. README: meta.muted and a flaky step, and what a SELECTION MISS asks of the operator. COMPATIBILITY.md: muted absent = nothing quarantined; lastCaught absent = never caught since learned; an expired mute is a warning and why it is not a finding. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -456,7 +456,9 @@
         "plugins/audit/commands/review.md",
         "plugins/audit/README.md",
         "COMPATIBILITY.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "docs/examples/azure-pipelines.yml"
       ],
       "tests": {
         "mode": "gate-only",
@@ -489,14 +491,14 @@
         "P81.11",
         "P81.12"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T19:40:56Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -619,11 +621,16 @@
     {
       "id": "P81.11",
       "title": "a full-scope row that names no tested head cannot bear whole",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F526. _full_disqualification checks status, verdict source, scope, counts, durations, the dirty tree and the commands, but never that the row names testedState.head; a head-less row then reaches merged_into with no head and full_status answers UNKNOWN while an older head-carrying whole run might have answered WHOLE. Add 'the row names no tested head' as a disqualification reason so the walk skips it and a basis names it. Allow: rows with a head are unaffected.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        ".claude/hooks/guard-release.py",
+        "SECURITY.md",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_run_test_gate.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -648,16 +655,21 @@
       "dependsOn": [
         "P81.10"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T19:40:55Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T20:33:01Z.de7cd9",
+        "status": "passed",
+        "at": "2026-09-27T20:33:01Z"
+      }
     },
     {
       "id": "P81.12",
@@ -718,13 +730,11 @@
     {
       "id": "P81.13-j7p",
       "title": "add --failing-from resolves a runner-named suite to one repository path",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A fix task created with add --failing-from puts the runner's spelling of each named failing suite straight into its gate, and run-test-gate runs that gate from the project root. A suite the runner named relative to its own directory (test_old.py for backend/tests/test_old.py) becomes a path that does not exist, so the fix task's gate cannot run (probed: python3 test_old.py exits 2, can't open file). Resolve each named suite before _union_paths: keep it when it exists from the project root; otherwise take the single tracked file (git ls-files) it matches by the listed_by suffix rule; when none or several match, fall through to the ordinary task gate and say why first, the way the tail-basis case does. Reuse the one resolver the catch rule uses (a runner spelling resolves to exactly one candidate, or names why not) rather than a second matcher. Red-first: an ff case where a runner-relative spelling must come out as the repository-root path, one where two tracked files share the suffix (falls through with the reason), and one where the spelling already exists from the root (kept as written).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/scripts/governance/_evidence_io.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test_audit_task.py"
       ],
       "tests": {
         "mode": "regression",
@@ -749,6 +759,62 @@
       "dependsOn": [
         "P81.7"
       ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T19:40:55Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T20:34:38Z.d320a7",
+        "status": "passed",
+        "at": "2026-09-27T20:34:38Z"
+      }
+    },
+    {
+      "id": "P81.14-j7p",
+      "title": "the third place learns wherever it runs: review --full runs full-gate, and a full run recorded elsewhere is learned from after import",
+      "status": "pending",
+      "description": "Only full-gate.py learns from a red full run, and two of the three third-place paths never reach it. /audit:review --full tells the orchestrator to run run-test-gate.py --full --record, which prints the remedy and files nothing; the CI example records the run into a shard that is imported later, and nothing learns from an imported row (learning inside CI would write into a checkout that is thrown away). Do: (1) review.md's --full runs full-gate.py (one command of the third place), with the manifest and --project-dir as the pre-push hook does. (2) full-gate.py --learn-from <runId>: runs nothing, reads that row from the ledger, and applies exactly the learning the red branch applies (named misses only, unique catches, cut sources, dedupe, a learning exception never masks the answer); refuses with a reason and a non-zero exit when the row is missing, unreadable, not full scope, or not red; learning twice from the same run files nothing new. (3) import-evidence.py prints, for each imported red full row, the full-gate --learn-from command that learns from it (printed, never run). (4) the CI example and the orchestrator/README third-place text say where learning happens for a CI run. Red-first for (2) and (3); allow: a green imported row prints no learn command; --learn-from on a green row refuses. No numbers in prose, no register ids.",
+      "files": [
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/commands/review.md",
+        "docs/examples/azure-pipelines.yml",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_full_gate.py: repro that FAILS on current code - full-gate --learn-from <runId> over an imported red full row with a named selection miss files the coupling and the bug without running anything"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.8"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -759,6 +825,54 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P81.15-j7p",
+      "title": "a gate re-pointed at paths quotes each path for the shell it runs in",
+      "status": "in_progress",
+      "description": "_gate_derive.repointed rebuilds a path-scoped gate entry by joining tokens with a space and never quotes the paths it substitutes, and run-test-gate runs gate commands through a shell. A suite path with a space (or any shell metacharacter) therefore produces a gate that cannot run: probed, the runner named 'test old.py', the resolver pinned 'backend/tests/test old.py', and the written gate 'python3 backend/tests/test old.py' exits 2 (can't open .../backend/tests/test). Quote each substituted path with shlex.quote (POSIX shell, which is what run-test-gate spawns), and read the sibling's own tokens with the matching split so an already-quoted path in a declared gate survives a re-point. Paths with no special characters must come out byte-identical to today (every existing gate spelling stays). Red-first: a space path; a path with a quote character; allow: an ordinary path is unchanged, and a sibling entry that already quotes its path is re-pointed without double quoting. Drive one end to end: the written gate run from a real project root opens the file.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/tests/test__gate_derive.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__gate_derive.py: repro that FAILS on current code - a sibling gate re-pointed at a suite path holding a space yields a command that, run from the project root through a shell, opens the right file"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T20:06:36Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T20:36:26Z.2df7eb",
+        "status": "passed",
+        "at": "2026-09-27T20:36:26Z"
+      }
     }
   ],
   "startedAt": "2026-09-27T14:08:52Z"

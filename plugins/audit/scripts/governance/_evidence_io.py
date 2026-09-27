@@ -2458,7 +2458,32 @@ FULL_SCOPE = "full"
 
 
 def _full_disqualification(row, full_commands):
-    """Why `row` cannot bear WHOLE, or None when every rule holds.
+    """Why `row` cannot bear WHOLE, or None when every rule holds: every
+    rule of `_measurement_disqualification`, then the head rule.
+
+    A ROW NAMING NO TESTED HEAD IS DISQUALIFIED HERE, not left for git to
+    refuse: ancestry of an absent head answers UNKNOWN, and an UNKNOWN in
+    `full_status`'s walk outranks an older run that does contain the merge,
+    so the phase would read could-not-ask with a remedy (fetch, unshallow)
+    that cannot supply a head the row never recorded. The head rule comes
+    LAST so a row failing a measurement rule too is named for that one - a
+    red run is red before it is head-less.
+    """
+    reason = _measurement_disqualification(row, full_commands)
+    if reason is not None:
+        return reason
+    if not _names_tested_head(row):
+        return ("the row names no tested head, so there is no commit to ask "
+                "whether it contains the merge, and it cannot bear whole")
+    return None
+
+
+def _measurement_disqualification(row, full_commands):
+    """Why `row` is not a MEASURED FULL RUN - the declared gate measured
+    green on a clean tree - or None when it is. Whole-bearing is this plus a
+    tested head (`_full_disqualification`); a caller asking whether a run
+    gave the gate its chance to catch something, and not what commit it can
+    vouch for, asks this alone.
 
     EVERY RULE NAMES ITSELF IN ITS OWN RETURN, because a caller reporting
     PROVISIONAL over the nearest disqualified row has to say WHICH condition
@@ -2467,10 +2492,10 @@ def _full_disqualification(row, full_commands):
 
     THE ORDER IS THE ORDER A ROW WAS BUILT IN: whether it is a measurement at
     all (status, then not a repeat), what scope it claims, whether it measured
-    anything, whether every step's cost is known, whether the tree it measured
-    was clean, and only last whether it ran the gate that is actually declared
-    now -- a row that failed every earlier test would be a strange one to praise
-    for running the right commands.
+    anything, whether every step's cost is known, whether the tree it
+    measured was clean, and only last whether it ran the gate that is
+    actually declared now -- a row that failed every earlier test would be a
+    strange one to praise for running the right commands.
     """
     if row.get("status") != "passed":
         return "status is %r, not passed" % (row.get("status"),)
@@ -2507,6 +2532,14 @@ def _full_disqualification(row, full_commands):
         return ("the published commands do not match meta.fullGate verbatim "
                 "and in order")
     return None
+
+
+def _names_tested_head(row):
+    """Whether `row.testedState.head` is a non-blank string - the commit a
+    full run's ancestry question is asked of."""
+    state = row.get("testedState")
+    head = state.get("head") if isinstance(state, dict) else None
+    return isinstance(head, str) and bool(head.strip())
 
 
 def merged_phase(phase):
@@ -2605,11 +2638,16 @@ def _is_dated(row):
     return _ts_moment(row) is not None
 
 
-def _newest_whole_bearing(full_rows, full_commands):
-    """The newest DATED row of `full_rows` (already in `_newest_first` order)
-    that `_full_disqualification` passes, or None when none does."""
-    for row in full_rows:
-        if _is_dated(row) and _full_disqualification(row, full_commands) is None:
+def _newest_passing(rows, full_commands, disqualification):
+    """The newest DATED scope-`full` row of `rows` (`_newest_first` order)
+    that `disqualification(row, full_commands)` passes, or None when none
+    does - also None when `full_commands` is empty, since no row can match a
+    gate nothing declares."""
+    declared = list(full_commands or [])
+    if not declared:
+        return None
+    for row in _full_rows_newest_first(rows):
+        if _is_dated(row) and disqualification(row, declared) is None:
             return row
     return None
 
@@ -2621,18 +2659,28 @@ def _full_rows_newest_first(rows):
 
 
 def newest_whole_bearing(rows, full_commands):
-    """The newest dated, whole-bearing scope-`full` row of `rows`, or None -
-    also None when `full_commands` is empty, since no row can match a gate
-    nothing declares.
+    """The newest dated, whole-bearing scope-`full` row of `rows`
+    (`_full_disqualification` passes it), or None.
 
-    THE ROW `full_status` NAMES AS `wholeRunId`, found by the one walk it
-    uses: a caller asking "what merged since the last full run that counted"
-    reads this, and never a second reading of which run counts.
+    THE ROW `full_status` NAMES AS `wholeRunId`: a caller asking "what merged
+    since the last full run that counted" reads this, and never a second
+    reading of which run counts.
     """
-    declared = list(full_commands or [])
-    if not declared:
-        return None
-    return _newest_whole_bearing(_full_rows_newest_first(rows), declared)
+    return _newest_passing(rows, full_commands, _full_disqualification)
+
+
+def newest_measured_full_run(rows, full_commands):
+    """The newest dated MEASURED full run of `rows`
+    (`_measurement_disqualification` passes it, whatever its head), or None.
+
+    A DIFFERENT QUESTION FROM `newest_whole_bearing`, answered by the same
+    walk: whether a run gave the declared gate its chance to catch something,
+    not what commit it can vouch for. `selection_miss` bounds "the work
+    since" with it - passing over a green run with no head to an older one
+    would widen that window over work the newer run already measured - and
+    then asks about the head itself.
+    """
+    return _newest_passing(rows, full_commands, _measurement_disqualification)
 
 
 def full_status(rows, phase, git_root, full_commands, run=None):
@@ -2946,7 +2994,7 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
     failing (`named_failing_suites`) that no `testGateDerived.tests` of the
     counted phases lists. A phase is counted when it is merged
     (`merged_phase`), the run's `head` contains its `mergedHead`, the newest
-    earlier whole-bearing full run (`newest_whole_bearing` over
+    earlier measured full run (`newest_measured_full_run` over
     `earlier_rows`, `since`) does not, and it carries a derived gate -
     `_phase_since` holds each exclusion. Both ancestry questions go to git
     (`_worktrees.merged_into`). `sources` is the union of the counted
@@ -2954,7 +3002,7 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
     the plan rather than guessed from a diff. The lists are uncut here;
     `row_for` bounds them and counts what it drops.
 
-    LEARNING NEEDS A BOUND. With no earlier whole-bearing run, one that
+    LEARNING NEEDS A BOUND. With no earlier measured full run, one that
     recorded no head, or a run with no head of its own, "the work since"
     would be the whole history, so nothing is learned and `reasons` (or
     `unasked`, for a bounding run with no head) says why. `unnamed` holds
@@ -2971,17 +3019,17 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
         result["reasons"].append("this run recorded no head, so what it "
                                  "contains cannot be asked")
         return result
-    since = newest_whole_bearing(earlier_rows, full_commands)
+    since = newest_measured_full_run(earlier_rows, full_commands)
     if since is None:
-        result["reasons"].append("no earlier whole-bearing full run bounds "
-                                 "the work since")
+        result["reasons"].append("no earlier measured full run bounds the "
+                                 "work since")
         return result
     since_head = (since.get("testedState") or {}).get("head")
     result["since"] = {"runId": since.get("runId"), "head": since_head}
-    if not since_head:
+    if not _names_tested_head(since):
         result["unasked"].append(
             ["run %s" % (since.get("runId"),),
-             "the newest earlier whole-bearing full run records no "
+             "the newest earlier measured full run records no "
              "testedState.head, so what merged since it cannot be asked"])
         return result
     counted = []

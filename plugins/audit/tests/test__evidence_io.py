@@ -3540,6 +3540,99 @@ def _full_status_cases(check):
               res_und_whole["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
               and res_und_whole["runId"] == "run-undated")
 
+        # --- a run that names no tested head cannot bear whole ----------------
+        # Real git, no injected `run`: asking ancestry of an absent head is
+        # what git itself answers UNKNOWN to, so only a disqualification lets
+        # the walk reach the older run that does name a head.
+        headless_newer = _fs_row("run-headless", "2026-01-05T00:00:00Z", None,
+                                 ["echo x"])
+        headed_older = _fs_row("run-headed", "2026-01-01T00:00:00Z",
+                               repo["second"], ["echo x"])
+        res_hl = M.full_status([headed_older, headless_newer], phase,
+                               repo["root"], ["echo x"])
+        check("fs27 RED-FIRST: the newest whole-bearing run named beside the "
+              "answer is never a head-less one - wholeRunId names the older "
+              "headed run - while the WHOLE answer from that older run is "
+              "unchanged: %r" % (res_hl,),
+              res_hl["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res_hl["runId"] == "run-headed"
+              and "run-headed" in res_hl["basis"]
+              and res_hl.get("wholeRunId") == "run-headed")
+
+        # The shape that really read could-not-ask: the older headed run does
+        # NOT contain mergedHead, so the walk used to stop at the newer
+        # head-less row and ask git about an absent head.
+        headed_not = _fs_row("run-headed-not", "2026-01-01T00:00:00Z",
+                             repo["first"], ["echo x"])
+        later_phase = {"id": "P1", "mergedHead": repo["second"]}
+        res_hn = M.full_status([headed_not, headless_newer], later_phase,
+                               repo["root"], ["echo x"])
+        check("fs27b RED-FIRST: an older headed run that does not contain "
+              "mergedHead beside a newer head-less run reads PROVISIONAL "
+              "about the older run, never a could-not-ask about the "
+              "head-less one: %r" % (res_hn,),
+              res_hn["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and res_hn["runId"] == "run-headed-not"
+              and "could not" not in res_hn["basis"])
+
+        no_state = _fs_row("run-nostate", "2026-01-05T00:00:00Z", None,
+                           ["echo x"])
+        del no_state["testedState"]
+        blank_head = _fs_row("run-blank", "2026-01-05T00:00:00Z", "  ",
+                             ["echo x"])
+        reasons = [M._full_disqualification(r, ["echo x"])
+                   for r in (headless_newer, no_state, blank_head)]
+        check("fs28 RED-FIRST: a null head, a missing testedState and a blank "
+              "head are each disqualified by a reason naming the missing "
+              "tested head: %r" % (reasons,),
+              all(r is not None and "tested head" in r for r in reasons))
+
+        res_hl_only = M.full_status([headless_newer], phase, repo["root"],
+                                    ["echo x"])
+        check("fs29 RED-FIRST: when the only whole-looking run names no head "
+              "the answer is not WHOLE, and its basis says the run was "
+              "disqualified for the missing head rather than that git could "
+              "not answer: %r" % (res_hl_only,),
+              res_hl_only["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and res_hl_only["runId"] == "run-headless"
+              and "tested head" in res_hl_only["basis"]
+              and "could not" not in res_hl_only["basis"]
+              and res_hl_only.get("wholeRunId") is None)
+
+        # The other direction: a check that over-fired on every row would
+        # turn the WHOLE answers above red; this pins it directly.
+        check("fs30 ALLOW: a row that does name its tested head passes the "
+              "head rule - no disqualification at all: %r"
+              % (M._full_disqualification(headed_older, ["echo x"]),),
+              M._full_disqualification(headed_older, ["echo x"]) is None
+              and M._full_disqualification(whole_row, ["echo x"]) is None)
+
+        # Two walks, two questions. Whole-bearing needs a head; a MEASURED
+        # full run (the selection-miss bound) does not, but every other rule
+        # still holds - a dirty head-less run is newer than both and is
+        # neither.
+        dirty_headless = _fs_row("run-dirty-headless", "2026-01-06T00:00:00Z",
+                                 None, ["echo x"], dirty_outside=["src/x.ts"])
+        ledger = [headed_older, headless_newer, dirty_headless]
+        whole_walk = M.newest_whole_bearing(ledger, ["echo x"])
+        measured_walk = M.newest_measured_full_run(ledger, ["echo x"])
+        check("fs31 the two walks differ by the head rule alone: the newest "
+              "whole-bearing run is the headed one, the newest measured full "
+              "run the newer head-less one, and the dirty head-less run is "
+              "neither: %r" % ([(b or {}).get("runId")
+                                for b in (whole_walk, measured_walk)],),
+              (whole_walk or {}).get("runId") == "run-headed"
+              and (measured_walk or {}).get("runId") == "run-headless")
+        check("fs32 a head-less row passes the measurement rule and fails "
+              "only the head rule, which is what makes it measured but not "
+              "whole-bearing: %r"
+              % ((M._measurement_disqualification(headless_newer, ["echo x"]),
+                  M._full_disqualification(headless_newer, ["echo x"])),),
+              M._measurement_disqualification(headless_newer, ["echo x"])
+              is None
+              and "tested head" in (M._full_disqualification(
+                  headless_newer, ["echo x"]) or ""))
+
         # --- reconcile: a full row moves nothing and refuses nothing -----------
         proj = _project(os.path.join(tmp, "recon"),
                         {"manifestPath": "docs/audit/audit-plan.json"})

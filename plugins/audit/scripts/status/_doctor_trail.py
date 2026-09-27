@@ -1580,9 +1580,9 @@ def _check_coupling_tracking(rep, project, entries, git_root):
                % (len(entries), len(set(_norm(p) for p in paths))))
 
 
-def coupling_age(entry, whole_moments):
-    """`(runs, field, why)` - how many green whole-bearing full runs (their
-    moments in `whole_moments`) came strictly AFTER the entry was last
+def coupling_age(entry, run_moments):
+    """`(runs, field, why)` - how many green measured full runs (their
+    moments in `run_moments`) came strictly AFTER the entry was last
     caught, or learned when it never was.
 
     `lastCaught` OUTRANKS `learnedAt`: a coupling that caught a failure
@@ -1596,17 +1596,19 @@ def coupling_age(entry, whole_moments):
     moment = _usage_core.parse_ts(stamp)
     if moment is None:
         return None, field, "its %s %r does not read as a moment" % (field, stamp)
-    return sum(1 for m in whole_moments if m > moment), field, None
+    return sum(1 for m in run_moments if m > moment), field, None
 
 
-def _whole_bearing_moments(rows, full_commands):
-    """The moment of every GREEN WHOLE-BEARING full run in `rows` - the
-    ledger's own rule (`_evidence_io._full_disqualification`), never a second
+def _measured_run_moments(rows, full_commands):
+    """The moment of every GREEN MEASURED full run in `rows` - the ledger's
+    own rule (`_evidence_io._measurement_disqualification`), never a second
     reading of it: a red run, a repeated verdict, a dirty tree or a different
     command set is not a run that gave a coupling the chance to catch
-    anything.
+    anything. A missing tested head is: the run still measured the gate, and
+    the head only matters to what commit it can vouch for, which ageing
+    never asks.
 
-    `(moments, undated)`: a green whole-bearing row whose `ts` does not parse
+    `(moments, undated)`: a green measured row whose `ts` does not parse
     cannot be placed before or after a coupling, so it ages nothing - and
     `undated` COUNTS those rows so the caller says so, rather than printing
     a run count quietly narrower than the ledger it read."""
@@ -1614,7 +1616,8 @@ def _whole_bearing_moments(rows, full_commands):
     for row in rows or []:
         if not isinstance(row, dict):
             continue
-        if _evidence_io._full_disqualification(row, full_commands) is not None:
+        if _evidence_io._measurement_disqualification(
+                row, full_commands) is not None:
             continue
         moment = _usage_core.parse_ts(row.get("ts"))
         if moment is None:
@@ -1629,7 +1632,7 @@ def _undated_note(undated):
     placed in time - empty when none."""
     if not undated:
         return ""
-    return ("; %d green whole-bearing run(s) carry a ts that does not parse, "
+    return ("; %d green measured full run(s) carry a ts that does not parse, "
             "so they age nothing" % (undated,))
 
 
@@ -1647,14 +1650,14 @@ def _relearn_fix(entry):
 
 
 def _check_coupling_ageing(rep, project, manifest_rel, manifest, meta, entries):
-    """Which couplings have gone `UNCOUPLE_AFTER_FULL_RUNS` green
-    whole-bearing full runs without catching anything - named as CANDIDATES,
-    never dropped."""
+    """Which couplings have gone `UNCOUPLE_AFTER_FULL_RUNS` green measured
+    full runs without catching anything - named as CANDIDATES, never
+    dropped."""
     full_commands = [c for _name, c in
                      _evidence_io.resolved_commands(manifest, meta.get("fullGate"))]
     if not full_commands:
         rep.ok(COUPLING_CHECK,
-               "no meta.fullGate declared, so no run is whole-bearing and no "
+               "no meta.fullGate declared, so no run measured it and no "
                "coupling can be aged against one")
         return
     _eproject, _econfig, rows, failure, unreadable = _read_gate_rows(
@@ -1668,7 +1671,7 @@ def _check_coupling_ageing(rep, project, manifest_rel, manifest, meta, entries):
                  "file(s) could not be parsed - no coupling is aged over a "
                  "ledger this check could not fully read" % (unreadable,))
         return
-    moments, undated = _whole_bearing_moments(rows, full_commands)
+    moments, undated = _measured_run_moments(rows, full_commands)
     basis = "UNCOUPLE_AFTER_FULL_RUNS = %d" % (UNCOUPLE_AFTER_FULL_RUNS,)
     aged, unageable = [], []
     for entry in entries:
@@ -1681,7 +1684,7 @@ def _check_coupling_ageing(rep, project, manifest_rel, manifest, meta, entries):
     if candidates:
         rep.warn(COUPLING_CHECK,
                  "CANDIDATE for uncouple - %s: no failure caught across at "
-                 "least %s green whole-bearing full run(s) (%s)%s"
+                 "least %s green measured full run(s) (%s)%s"
                  % ("; ".join("%s (%d run(s) since its %s)" % (t, n, f)
                               for t, n, f in candidates),
                     UNCOUPLE_AFTER_FULL_RUNS, basis, _undated_note(undated)),
@@ -1697,7 +1700,7 @@ def _check_coupling_ageing(rep, project, manifest_rel, manifest, meta, entries):
     if candidates or unageable:
         return
     rep.ok(COUPLING_CHECK,
-           "%d coupling(s) aged over %d green whole-bearing full run(s); "
+           "%d coupling(s) aged over %d green measured full run(s); "
            "none has gone %s of them uncaught (%s), the oldest %d%s"
            % (len(aged), len(moments), UNCOUPLE_AFTER_FULL_RUNS, basis,
               max(n for _t, n, _f in aged), _undated_note(undated)))
@@ -1710,7 +1713,7 @@ def check_couplings(rep, project, manifest_rel, manifest, git_root, config=None)
     TWO QUESTIONS, NEVER ONE: a coupling naming a path git does not track
     (one batched `git ls-files`), or one outside the repository, is broken
     NOW; one that has not caught a
-    failure across `UNCOUPLE_AFTER_FULL_RUNS` green whole-bearing full runs
+    failure across `UNCOUPLE_AFTER_FULL_RUNS` green measured full runs
     may merely be quiet. The first is a WARNING naming the path, the second a
     CANDIDATE with the constant printed as its basis, and both carry the
     exact `audit-task.py uncouple --test <path>` that would act on them.

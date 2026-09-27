@@ -1785,7 +1785,7 @@ def _ledger_failure_cases(check):
 def _coupling_cases(check):
     """`check_couplings` - a learned coupling that points at a file git no
     longer tracks is NAMED with the command that drops it, and one that has
-    gone the constant's worth of green whole-bearing full runs without
+    gone the constant's worth of green measured full runs without
     catching anything is named as a CANDIDATE. Neither is ever removed: the
     only writer of `meta.coupling` is `audit-task.py`, and a doctor that
     edited it would be narrowing the gate on its own judgement."""
@@ -1980,7 +1980,7 @@ def _coupling_cases(check):
         finally:
             shutil.rmtree(bare, ignore_errors=True)
 
-    # --- ageing against green whole-bearing full runs ---------------------
+    # --- ageing against green measured full runs --------------------------
     def _full(project, run_id, day, status="passed"):
         _evidence_io.append_row(project, {
             "v": _evidence_io.ROW_VERSION, "runId": run_id,
@@ -1995,9 +1995,9 @@ def _coupling_cases(check):
     age = _harness.fixture_root("doctor-trail-coupling-age-")
     try:
         os.makedirs(os.path.join(age, "docs", "audit"))
-        # K green whole-bearing runs on consecutive days from the 2nd, plus
+        # K green measured runs on consecutive days from the 2nd, plus
         # one RED full run AFTER all of them - so a reader that aged by every
-        # full row rather than by whole-bearing ones counts one run more.
+        # full row rather than by measured ones counts one run more.
         for i in range(k):
             _full(age, "green-%d" % (i,), i + 2)
         _full(age, "red-0", k + 2, status="failed")
@@ -2010,12 +2010,12 @@ def _coupling_cases(check):
             return [r for r in _rows(rep) if "CANDIDATE" in r["detail"]]
 
         # dcp6 ALLOW (the named direction): learned before every run, never
-        # caught - K green whole-bearing runs since, so it is a candidate,
+        # caught - K green measured runs since, so it is a candidate,
         # K printed as the basis, and the command named, not run.
         rep = _run(age, _aged(_entry("tests/test_old.py", ["src/old.py"],
                                      "2026-02-01T00:00:00Z")), None)
         cand = _candidates(rep)
-        check("dcp6 a coupling older than K green whole-bearing full runs is "
+        check("dcp6 a coupling older than K green measured full runs is "
               "a CANDIDATE naming K and the uncouple command: %r"
               % (_rows(rep),),
               len(cand) == 1 and "tests/test_old.py" in cand[0]["detail"]
@@ -2039,7 +2039,7 @@ def _coupling_cases(check):
         # a candidate only to a reader that counts the red run too.
         rep = _run(age, _aged(_entry("tests/test_mid.py", ["src/mid.py"],
                                      "2026-03-02T12:00:00Z")), None)
-        check("dcp8 only GREEN whole-bearing runs age a coupling - K-1 of "
+        check("dcp8 only GREEN measured runs age a coupling - K-1 of "
               "them is not enough: %r" % (_rows(rep),),
               not _candidates(rep))
 
@@ -2070,7 +2070,7 @@ def _coupling_cases(check):
                   "--sources src/n.py --basis-run" in fix
               and "or audit-task.py couple to learn it again" not in fix)
 
-        # dcp11: a green whole-bearing row whose ts does not parse ages
+        # dcp11: a green measured row whose ts does not parse ages
         # nothing, and that is SAID - never a silently narrower count.
         _evidence_io.append_row(age, {
             "v": _evidence_io.ROW_VERSION, "runId": "green-undated",
@@ -2084,13 +2084,41 @@ def _coupling_cases(check):
         rep = _run(age, _aged(_entry("tests/test_live.py", ["src/live.py"],
                                      "2026-02-01T00:00:00Z",
                                      caught="2026-03-02T12:00:00Z")), None)
-        check("dcp11 a green whole-bearing run whose ts does not parse is "
+        check("dcp11 a green measured run whose ts does not parse is "
               "counted and said, and still ages nothing: %r" % (_rows(rep),),
-              any("1 green whole-bearing run(s) carry a ts that does not "
+              any("1 green measured full run(s) carry a ts that does not "
                   "parse" in r["detail"] for r in _rows(rep))
               and not _candidates(rep))
     finally:
         shutil.rmtree(age, ignore_errors=True)
+
+    # dcp13: ageing asks whether a run MEASURED the declared gate green on a
+    # clean tree - the chance a coupling had to catch - and a missing tested
+    # head says nothing about that. K head-less green runs age a coupling
+    # exactly as K headed ones do.
+    headless = _harness.fixture_root("doctor-trail-coupling-headless-")
+    try:
+        os.makedirs(os.path.join(headless, "docs", "audit"))
+        for i in range(k):
+            _evidence_io.append_row(headless, {
+                "v": _evidence_io.ROW_VERSION, "runId": "headless-%d" % (i,),
+                "ts": "2026-03-%02dT00:00:00Z" % (i + 2,),
+                "scope": _evidence_io.FULL_SCOPE, "status": "passed",
+                "steps": [{"name": "gate", "command": "echo x", "exit": 0,
+                           "durationMs": 1000}],
+                "testedState": {},
+                "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                                 "dirtyOutside": []}})
+        rep = _run(headless, {"meta": {"fullGate": ["echo x"], "coupling": [
+            _entry("tests/test_old.py", ["src/old.py"],
+                   "2026-02-01T00:00:00Z")]}, "phases": []}, None)
+        cand = [r for r in _rows(rep) if "CANDIDATE" in r["detail"]]
+        check("dcp13 RED-FIRST: K green full runs that record no tested head "
+              "still age a coupling into a CANDIDATE - a missing head is not "
+              "a missed chance to catch: %r" % (_rows(rep),),
+              len(cand) == 1 and "tests/test_old.py" in cand[0]["detail"])
+    finally:
+        shutil.rmtree(headless, ignore_errors=True)
 
 
 def _selftest():

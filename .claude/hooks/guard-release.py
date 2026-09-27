@@ -336,8 +336,10 @@ def read_held_phases(project):
     it would let a release through over a phase the plan's own evidence cannot
     vouch for, which is this file's fail-loud rule broken one phase at a time.
     Both are returned, each with the answer that put it here, because they are
-    settled differently: a full run settles the first, and the second needs
-    the phase's merge record repaired before any run can.
+    settled differently: a full run settles the first, and no run can settle
+    the second until its own cause is repaired - recording the missing
+    `mergedHead`, or, when one is recorded, making both commits present so
+    git can answer.
 
     UNREADABLE IS A REFUSAL, NEVER "NOTHING HELD". A manifest that will not
     parse, or a ledger carrying a file that could not be read or verified,
@@ -483,14 +485,16 @@ def refusal(why, bugs, bug_problem, held, phase_problem):
             "answer whether a full run's head contains it (see the basis)")
         if unreachable:
             # Every cause of this bucket - an unreachable commit, a shallow
-            # clone, a run row carrying no head, git missing or timing out -
-            # is named by the basis, and the remedy below covers each without
-            # reading that prose.
+            # clone, git missing or timing out - is named by the basis, and
+            # the remedy below covers each without reading that prose. A run
+            # row carrying no head never lands here: the evidence rule skips
+            # it, so an older full run that contains the merge still makes
+            # the phase whole, and otherwise the phase is refused as
+            # provisional, with the full-run remedy.
             unreachable += (
                 " - make both commits present here (git fetch, or unshallow "
-                "the clone), or record a full run whose row carries its "
-                "head; recording the mergedHead again changes nothing, and "
-                "until git can answer only the keyword releases over it")
+                "the clone); recording the mergedHead again changes nothing, "
+                "and until git can answer only the keyword releases over it")
         found = [p for p in (provisional, unrecorded, unreachable) if p]
         parts.extend(found or ["no merged phase is provisional or "
                                "unanswerable"])
@@ -988,9 +992,11 @@ def _selftest():
         check("gr36c RED-FIRST: a phase whose recorded mergedHead git cannot "
               "resolve is refused and named, and its remedy is making the "
               "heads reachable - never the close-phase re-run, which cannot "
-              "help a phase that already records a head: %r" % (got,),
+              "help a phase that already records a head, and never a run "
+              "that carries its head, a cause this answer no longer has: %r"
+              % (got,),
               bool(got) and "P3" in got and "close-phase.py" not in got
-              and "unshallow" in got)
+              and "unshallow" in got and "carries its head" not in got)
 
         # A PLAN WITH MANY LEGACY MERGES, none recording a mergedHead. The
         # fixture is sized to exceed the refusal's cut, so the tail must be
@@ -1096,11 +1102,12 @@ def _selftest():
                           cwd=tmp2, check=True, capture_output=True,
                           timeout=30)
 
-        # A RECORDED mergedHead can read UNKNOWN for causes other than an
-        # unreachable commit - here the newest whole-bearing run records no
-        # head at all. The remedy for a recorded head must cover every such
-        # cause without parsing the basis prose, so it names both ways out:
-        # make the commits present, or record a run that carries its head.
+        # A NEWEST FULL RUN THAT RECORDS NO HEAD is not an ancestry question
+        # git failed to answer: the evidence rule skips the row. Here no
+        # older run contains the merge, so the phase reads PROVISIONAL,
+        # holds the release as one, and gets the full-run remedy - never the
+        # fetch/unshallow one, which cannot supply a head the row never
+        # recorded, and never close-phase.
         tmp4 = tempfile.mkdtemp(prefix="guard-release-nohead-")
         try:
             os.makedirs(os.path.join(tmp4, "docs", "audit"))
@@ -1125,13 +1132,16 @@ def _selftest():
                 "observations": {"ranTotal": 1, "countsBasis": "1 check",
                                  "dirtyOutside": []}}, writer="selftest")
             got = decide("git tag -a v1 -m x", tmp4, "s1")
-            check("gr36d RED-FIRST: a recorded mergedHead read UNKNOWN because "
-                  "the whole-bearing run records no head is refused, and its "
-                  "remedy covers that cause too - see the basis, make both "
-                  "commits present, or record a run that carries its head - "
-                  "never close-phase: %r" % (got,),
-                  bool(got) and "P4" in got and "see the basis" in got
-                  and "record a full run whose row carries its head" in got
+            check("gr36d RED-FIRST: a phase whose newest full run records no "
+                  "head is refused as PROVISIONAL, its basis naming the "
+                  "missing tested head, its remedy the full run - never "
+                  "unanswerable, unshallow or close-phase: %r" % (got,),
+                  bool(got) and "P4" in got
+                  and "1 merged phase(s) are provisional" in got
+                  and "names no tested head" in got
+                  and "/audit:review <phase> --full" in got
+                  and "unanswerable" not in got
+                  and "unshallow" not in got
                   and "close-phase.py" not in got)
         finally:
             shutil.rmtree(tmp4, ignore_errors=True)
