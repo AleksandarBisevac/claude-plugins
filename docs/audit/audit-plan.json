@@ -730,7 +730,8 @@
       "P87.13-bpl",
       "P87.14-bpl",
       "P81.14-j7p",
-      "P88.1"
+      "P88.1",
+      "P81.18-j7p"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -884,7 +885,9 @@
       "P81.5",
       "P81.7",
       "P81.8",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.16-j7p",
+      "P81.18-j7p"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1116,7 +1119,8 @@
       "P74.3-qq5",
       "P80.21-rtb",
       "P81.5",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.18-j7p"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1176,7 +1180,8 @@
       "P42.1",
       "P57.3",
       "P61.14",
-      "P81.2"
+      "P81.2",
+      "P81.18-j7p"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -1188,7 +1193,8 @@
       "P81.8",
       "P77.2",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P81.18-j7p"
     ],
     "plugins/audit/commands/init.md": [
       "P1.6",
@@ -1294,7 +1300,8 @@
       "P65.1",
       "P80.10",
       "P81.8",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.18-j7p"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
@@ -1361,7 +1368,8 @@
       "P76.1",
       "P76.3-6qa",
       "P76.4-6qa",
-      "P79.10-5bh"
+      "P79.10-5bh",
+      "P81.17-j7p"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -1679,7 +1687,8 @@
       "P78.11",
       "P84.7-791",
       "P80.21-rtb",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.18-j7p"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -1981,7 +1990,8 @@
       "P81.10",
       "P81.11",
       "P81.7",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.16-j7p"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2198,7 +2208,8 @@
       "P78.14-msc",
       "P79.9-5bh",
       "P74.10-qq5",
-      "P86.1"
+      "P86.1",
+      "P81.16-j7p"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2313,7 +2324,8 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P84.2"
+      "P84.2",
+      "P81.16-j7p"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -2426,7 +2438,8 @@
       "P84.4-791",
       "P84.6-791",
       "P81.7",
-      "P81.13-j7p"
+      "P81.13-j7p",
+      "P81.16-j7p"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2696,7 +2709,9 @@
       "P78.13-msc",
       "P80.14-rtb",
       "P80.15-rtb",
-      "P81.11"
+      "P81.11",
+      "P81.17-j7p",
+      "P81.18-j7p"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2734,7 +2749,8 @@
       "P78.9",
       "P79.6",
       "P80.9",
-      "P81.6"
+      "P81.6",
+      "P81.17-j7p"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
@@ -3002,7 +3018,8 @@
       "P78.13-msc",
       "P80.14-rtb",
       "P80.15-rtb",
-      "P81.11"
+      "P81.11",
+      "P81.17-j7p"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -3045,7 +3062,8 @@
       "P81.10",
       "P81.11",
       "P81.7",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.16-j7p"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -3195,7 +3213,8 @@
       "P79.1",
       "P80.1",
       "P81.1",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P81.16-j7p"
     ],
     "plugins/audit/tests/test__manifest_vocab.py": [
       "P20.6",
@@ -3421,7 +3440,8 @@
       "P78.9",
       "P79.6",
       "P80.9",
-      "P81.6"
+      "P81.6",
+      "P81.17-j7p"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -3544,7 +3564,8 @@
       "P84.4-791",
       "P84.6-791",
       "P81.7",
-      "P81.13-j7p"
+      "P81.13-j7p",
+      "P81.16-j7p"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3862,7 +3883,8 @@
       "P79.9-5bh",
       "P74.10-qq5",
       "P80.18-rtb",
-      "P81.11"
+      "P81.11",
+      "P81.16-j7p"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -3899,7 +3921,8 @@
       "P79.1",
       "P80.1",
       "P81.1",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P81.16-j7p"
     ],
     "pyproject.toml": [
       "P9.1",
@@ -4098,13 +4121,15 @@
       "P80.5",
       "P80.19-rtb",
       "P81.10",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.17-j7p"
     ],
     "plugins/audit/tests/test_import_evidence.py": [
       "P80.5",
       "P80.19-rtb",
       "P81.10",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.17-j7p"
     ],
     "tools/ui-tests/full-run-verified.test.mjs": [
       "P80.8"
@@ -4112,12 +4137,14 @@
     "plugins/audit/scripts/governance/full-gate.py": [
       "P80.10",
       "P81.7",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.16-j7p"
     ],
     "plugins/audit/tests/test_full_gate.py": [
       "P80.10",
       "P81.7",
-      "P81.14-j7p"
+      "P81.14-j7p",
+      "P81.16-j7p"
     ],
     ".claude/hooks/guard-release.py": [
       "P80.11",
