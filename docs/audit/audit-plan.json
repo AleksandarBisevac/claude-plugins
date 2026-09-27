@@ -696,7 +696,9 @@
       "P74.11-qq5",
       "P84.1",
       "P84.2",
-      "P84.3"
+      "P84.3",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1197,7 +1199,8 @@
       "P74.6-qq5",
       "P74.7-qq5",
       "P74.9-qq5",
-      "P84.1"
+      "P84.1",
+      "P84.6-791"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -1612,7 +1615,9 @@
       "P74.6-qq5",
       "P78.15-msc",
       "P79.11-5bh",
-      "P84.1"
+      "P84.1",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1932,7 +1937,9 @@
       "P55.2",
       "P75.1",
       "P75.2-j5h",
-      "P75.3-j5h"
+      "P75.3-j5h",
+      "P84.6-791",
+      "P84.4-791"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -2297,7 +2304,9 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P79.10-5bh",
-      "P84.1"
+      "P84.1",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2954,7 +2963,9 @@
       "P55.2",
       "P75.1",
       "P75.2-j5h",
-      "P75.3-j5h"
+      "P75.3-j5h",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -3330,7 +3341,9 @@
       "P74.6-qq5",
       "P78.14-msc",
       "P79.10-5bh",
-      "P84.1"
+      "P84.1",
+      "P84.4-791",
+      "P84.6-791"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3719,7 +3732,8 @@
       "P50.3",
       "P51.1",
       "P59.2",
-      "P84.3"
+      "P84.3",
+      "P84.5-791"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
