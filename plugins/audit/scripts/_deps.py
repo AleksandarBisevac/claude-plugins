@@ -790,6 +790,17 @@ LAYERS = (
      # the class this product keeps being repaired for. It reaches `_evidence_io`
      # (L3) for the row and the ledger and `_manifest_io` (L1) for the loader.
      "record-outside-run",
+     # `import-evidence` is the same question one machine LATER: a CI runner
+     # made its own gate run and recorded its own ledger file, and until now the
+     # only way that file reached a clone was a hand copy nothing verified - a
+     # byte changed in transit, a truncated download, a shard typed over
+     # another writer's file under one name, none of it visible before the row
+     # was trusted. It reaches `_evidence_io` (L2) for `verify_rows` (the SAME
+     # chain check every other reader of this ledger trusts, not a second
+     # opinion written here) and `evidence_dir`, `_journal_io` (L1) for
+     # `rows_from_text` and config loading, and `_manifest_io` (L1) for the
+     # loader that turns a bad `<manifest>` argument into a usage error.
+     "import-evidence",
      # `migrate-json-encoding` rewrites the files of ONE manifest in the escaping
      # `_manifest_io.json_document` chose, in a single all-or-nothing pass. An
      # entry point for this layer's usual reason - the caller is an operator, or

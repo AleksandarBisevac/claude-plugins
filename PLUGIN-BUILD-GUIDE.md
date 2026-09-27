@@ -154,6 +154,7 @@ claude-plugins/                           # this repo (personal, public)
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
+          import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
@@ -392,6 +393,7 @@ L7:
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
+  import-evidence -> _evidence_io, _journal_io, _manifest_io, _output
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
@@ -3600,6 +3602,35 @@ fill the field. The window is the whole value of the row, so a `--started` that 
 a refusal rather than a guess — and the stamp is read by `_evidence_io`'s own reader, because a
 writer parsing instants its own way would disagree with the module that decides whether two of
 them overlap, by a time zone.
+
+### `plugins/audit/scripts/governance/import-evidence.py`
+`import-evidence.py <manifest> <shard.jsonl> [--json] [--project-dir DIR]` — **bring a CI build's
+own evidence ledger file into this checkout, whole.**
+
+**Why it exists.** A CI runner's gate run writes its evidence row on the runner, and that file
+never reaches a clone through `git` — it is gitignored scratch unless something copies it out. A
+hand copy verifies nothing: a byte changed in transit, a line torn by a truncated artifact
+download, a shard typed over another writer's file under the same name, none of it visible before
+the row was trusted.
+
+**Verification is borrowed, never re-derived.** Before anything is copied, every line must parse
+and `_evidence_io.verify_rows` must hold over the whole file — the same chain check
+`audit-journal.py` and the doctor already trust, so a second implementation here could never come
+to disagree with it about what tampering looks like. A torn last line is checked separately,
+because a truncated tail never becomes a row for `verify_rows` to grade at all.
+
+**A name collision is graded by bytes, not merged.** A file already sitting under the shard's
+basename is compared byte for byte: identical bytes is the same import arriving twice and exits 0
+as "already imported"; different bytes is refused outright, because the chain's genesis is seeded
+from the basename alone (`_journal_io.genesis_prev`) — two different chains sharing one name is
+exactly the substitution that seed exists to catch. The copy itself is atomic: the bytes land in a
+temp file inside the destination directory and only `os.replace` gives it the final name.
+
+**What it does not prove.** A ledger is evidence, not authentication — a new shard starts at its
+own genesis the moment somebody names a file that way, so a verified chain says the rows were not
+edited after the file was written and says nothing about who wrote it. The report says so on every
+successful import; the commit that carries the imported file into the repository is the
+authorship trail.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
