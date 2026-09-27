@@ -422,7 +422,7 @@
     {
       "id": "P87.9-bpl",
       "title": "an exact call line is read only when its neighbouring lines leave it self-contained",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 7 (review-P87g.json). The exact-line pin reads each physical line alone, so the real call's own neighbours can change what runs. (1, med, regression of the deleted ra29c/ra29d) In YAML a flag on a continuation line of the run's own value is dropped: `- run: >`, `- run: >-`, and a plain `- run: <call>` continued on a deeper line read as ALL_ARMS (ci.yml's expected answer) while CI runs only --against-commit. Read a YAML call line only if (a) it is a one-line `run: <call>` whose next non-blank, non-comment line is indented no deeper than the run: key, or (b) the nearest earlier line indented less than it is a plain literal opener `run: |`, `|-` or `|+` (optionally after `- `); refuse anything else by line. (2, low) In shell, a call line continued from the line above (`echo \"x\" \\`, `: \\`) is read though the tool never runs: when the previous line ends in a backslash, read the call only if that line is exactly the runner's wrapper (`run \"<label>\" \\`); otherwise refuse, naming both lines. Restore the folded and continued fixtures as ra29h rows with the flag on the continuation line; ra29h rows for `echo \"x\" \\` + call and `: \\` + call; a ra29g row keeping `run \"x\" \\` + call as a read. The CHANGELOG and CONTRIBUTING sentences about a moved flag must match the code. Red first.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -452,14 +452,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b466a522",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_context_problem: backslash continuation only from the runner wrapper; YAML one-line run: with no deeper continuation, or a plain run: | body; ra29i, ra29g",
+        "descriptive": "A call line counts only when the lines around it confirm it is what runs"
       },
       "startedAt": "2026-09-27T16:38:38Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T16:46:48Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 37/37",
+        "probe 10/10 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
