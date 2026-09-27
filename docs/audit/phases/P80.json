@@ -1,7 +1,7 @@
 {
   "id": "P80",
   "title": "The third place",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "With meta.fullGate declared, run-test-gate.py --full --record - by hand, from full-gate.py in a pre-push hook, or in CI with --writer and brought back by import-evidence.py - records a full-scope row on HEAD, and a merged phase reads whole only when a green, measured, clean, verbatim full run's head contains its mergedHead, otherwise provisional or unknown with the reason, the same words on status, report, panel and doctor, while this repository's release guard refuses a release over a provisional phase.",
   "testGate": [
@@ -19,8 +19,8 @@
     "P69",
     "P74"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "98c783dd07c321180e23ac4377354b0f446fd318",
+  "branch": "audit/p80-the-third-place",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -33,7 +33,7 @@
     {
       "id": "P80.1",
       "title": "meta.fullGate, phase.mergedHead and the VERIFIED words: schema, vocabulary, validator",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Schema: meta.fullGate (array of buildCommands keys - the third place: full suite, coverage, e2e; ABSENT means this plan names no third place: no phase is provisional, --full refuses, the new status conditions are inert and no surface renders anything new) and phase.mergedHead (the parent branch's commit right after the phase merged, written only by close-phase.py; absent means ancestry cannot be asked, so the phase is never whole - it reads unknown, never provisional). _manifest_vocab.py: KNOWN_META += fullGate, KNOWN_PHASE += mergedHead, one tuple VERIFIED = ('task', 'sign-off', 'whole') - the word every surface renders for what 'tests passed' means at each place, never 'all tests passed' - and the full-status answers WHOLE, PROVISIONAL, UNKNOWN, NOT_DECLARED as named constants the evidence reader and every surface share. Validator warnings, never findings: a fullGate entry that is not a buildCommands key (name it; reuse _comma_joined_gate for the comma spelling); a mergedHead that is not a full hex SHA (phase-level, in _walk_phases). SCHEMA_EXEMPTIONS rows for both new fields until the report task carries them in the fixture; that task deletes these rows, and the stale half of schema_coverage holds it to that. Red-first: a fullGate entry naming no key warns (mutation: skip the membership check -> red); VERIFIED is exactly those words in that order (mutation: reorder -> red). Allow case: a plan with neither key validates exactly as before.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -69,16 +69,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T04:18:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T04:35:14Z.22b3ec",
+        "status": "passed",
+        "at": "2026-09-27T04:35:14Z"
+      }
     },
     {
       "id": "P80.2",
@@ -216,14 +221,15 @@
     {
       "id": "P80.5",
       "title": "import-evidence.py brings a CI ledger file in whole, after its chain verifies",
-      "status": "pending",
+      "status": "in_progress",
       "description": "New entry point plugins/audit/scripts/governance/import-evidence.py <manifest> <shard.jsonl> [--json] [--project-dir DIR]: copies a ledger file a CI build published into _evidence_io.evidence_dir WHOLE and never rewrites a row. The chain is per file and seeded from its basename (_journal_io.genesis_prev), so the file keeps its basename. Before copying: every line parses, and _evidence_io.verify_rows(rows, basename) holds (a torn line or a broken chain is refused, exit 1, naming the first bad line). A file of that name already in the evidence directory with identical bytes is 'already imported', exit 0; with different bytes it is refused exit 1 (two genesis rows under one name). The copy is atomic (a temp file in the directory, then rename). The report names the rows it brought and their runIds, and says that a ledger is evidence, not authentication: a new shard starts at its own genesis, so nothing here proves who wrote it, and the commit that carries it is the authorship trail. Red-first in test_import_evidence.py inside _harness.fixture_root(): a valid shard is copied byte for byte and read_rows then returns its rows; a shard whose second row's hash is altered is refused (mutation: skip verify_rows -> red); a same-name file with different bytes is refused (mutation: overwrite -> red). Allow case: re-importing the same bytes exits 0 'already imported'. Layer entry in _deps.LAYERS, PATH_PREAMBLE, safe_stdio() first, migrated --selftest, PLUGIN-BUILD-GUIDE.md tree line and section.",
       "files": [
         "plugins/audit/scripts/governance/import-evidence.py",
         "plugins/audit/scripts/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/tests/test_import_evidence.py",
-        "plugins/audit/tests/test__deps.py"
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -246,14 +252,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T04:18:48Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -652,5 +658,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T04:18:48Z"
 }
