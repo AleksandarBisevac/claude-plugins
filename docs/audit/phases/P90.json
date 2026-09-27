@@ -19,10 +19,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "outcome": "matches; a table-only change proven by the check it feeds"
   },
-  "summary": null,
+  "summary": "The committed-identity check is green on main. Three hash-chained journal rows that the home-directory detector misreads are recorded in BASELINE, each with its reason: one finding's prose, and the two plan rows that quoted it. None carries a path of any machine, and the detector is unchanged. It is not reviewed beyond the author's check, because the change is three table rows proven by the check itself: red without them, green with them, the tool's selftest passing. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P90.1",
@@ -66,5 +67,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-27T22:57:23Z"
+  "startedAt": "2026-09-27T22:57:23Z",
+  "testEvidence": {
+    "runId": "2026-09-27T23:01:53Z.517f42",
+    "status": "passed",
+    "at": "2026-09-27T23:01:53Z"
+  }
 }
