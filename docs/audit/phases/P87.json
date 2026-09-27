@@ -1,0 +1,119 @@
+{
+  "id": "P87",
+  "title": "a task that regenerates a published page can record a green gate before its commit, and a journal row keeps every detail its writer passed",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "The pre-commit sweep compares published pages against a fresh render, and the comparison against what the commit carries runs where a commit exists (CI and verify.sh --release), so a task regenerating a page is gated green on correct work without an override; close-phase's phase.merged row carries its parent, and a detail key outside the journal's allow-list at any append site fails the build instead of being dropped.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P87.1",
+      "title": "the published-page check compares against a fresh render before the commit and against the commit only where one exists",
+      "status": "pending",
+      "description": "F521 (quality-gates-internal PLAN.md). ra23's live arm (--selftest compares every published page against HEAD) sits in the pre-commit sweep, so a task that regenerates a page with the repo's own recipe is red by construction until its commit, and commit-task-work binds a commit to a green gate - P80.7, P80.15 and P80.20 went through --override-verdict. Keep the fresh-render comparison in the pre-commit sweep; move the vs-commit comparison to where a commit exists - the CLI run CI and verify.sh --release make - and state in CONTRIBUTING.md and verify.sh which set carries it. gate-parity.py must stay green (every description of the gate set agrees). Red-first: a fixture page that matches a fresh render and not HEAD makes the selftest red on the current code and green after; allow: a page matching neither a fresh render nor HEAD still fails the pre-commit sweep, and the vs-commit arm still fails on a page the commit does not carry.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "tools/verify.sh",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - a regenerated page matching a fresh render but not HEAD turns the --selftest red"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P87.2",
+      "title": "a journal row keeps every detail its writer passed: phase.merged carries its parent, and an unlisted detail key at any append site fails the build",
+      "status": "pending",
+      "description": "F522 (quality-gates-internal PLAN.md). close-phase builds phase.merged's details with parent, but _journal_io keeps only DETAILS_KEYS and drops the rest silently, so the trail row is {phaseId, branch} and bf6b pins that. Add parent to DETAILS_KEYS (COMPATIBILITY.md: adding a detail key is free; say so if the row shape is promised), update bf6b and the manifest-conventions.md phase.merged bullet (which now says the parent is only in the summary) together with the writer. Then the class: a case in test__journal_io.py walks every .py under hooks/ and scripts/ by AST and fails on a literal details key at a journal append site that DETAILS_KEYS does not hold, naming file:line - so the next writer that believes it recorded a field it did not goes red. Red-first: the merged row names its parent (fails now); the lint goes red on a planted unlisted key and on the current close-phase before parent is added; allow: rows whose keys are all listed are byte-identical.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: repro that FAILS on current code - the phase.merged row read back from the trail names no parent"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P87.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
