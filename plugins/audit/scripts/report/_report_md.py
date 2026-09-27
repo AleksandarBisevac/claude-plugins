@@ -118,6 +118,15 @@ def render_md(manifest, summary, usage=None, evidence=None):
                       " · sign-off due" if psum.get("signoffDue") else ""))
         if ph.get("desiredOutcome"):
             out.append("_%s_" % cell(ph["desiredOutcome"]))
+        # THE SAME WORDS THE HTML CARRIES, off the SAME data - never recomputed:
+        # `evidence` is the one dict both renderers read, and a phase this plan
+        # names no third place for (or that has not merged) carries no `fullRun`
+        # key at all, so this line is absent exactly where the HTML's is.
+        phase_ev = ((evidence or {}).get("phases") or {}).get(str(psum["id"]))
+        verified = (_report_html._verified_line((phase_ev or {}).get("fullRun"))
+                   if phase_ev else "")
+        if verified:
+            out.append("_%s_" % cell(verified))
         out += ["", "| id | title | status | model | risk | commit | done |%s ADO |"
                 % (" tests |" if tviews else ""),
                 "|---|---|---|---|---|---|---|%s---|" % ("---|" if tviews else "")]

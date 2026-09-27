@@ -172,16 +172,49 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None):
     return view
 
 
+def _phase_full_row(raw, own_view):
+    """One phase's `fullRun` entry for the report, or None.
+
+    `raw` is the caller's own per-phase answer (`answer`/`basis`/`runId`, plus
+    `head`/`mergedHead`/`phaseId`/`testGateBasis` - render-report.py computes it
+    at layer 7, the same way it computes `boundary`, and this module never reads
+    git or a second copy of the ledger to get there).
+
+    THE SUITE COUNTS AND THE SIGN-OFF STAMP COME FROM `own_view`'S OWN ROW,
+    never re-read from the ledger a second time: `own_view` is this SAME phase's
+    sign-off view, already built by `_view_for` two lines above the call site, and
+    its `row` is the ledger row the phase's OWN gate last recorded. A `derived`
+    run narrows to a subset it counts as `narrowed`; a `wide` one still counts
+    what it WOULD have narrowed to, as `shadow` - the same two keys, so reading
+    either first and falling back to the second answers "how many suites, out of
+    how many" regardless of which mode this phase's gate runs in.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out = dict(raw)
+    row = own_view.get("row") if isinstance(own_view, dict) else None
+    if isinstance(row, dict):
+        counts = row.get("narrowed") or row.get("shadow") or {}
+        out["listed"] = counts.get("listed")
+        out["full"] = counts.get("full")
+        out["signOffStatus"] = row.get("status")
+        out["signOffTs"] = row.get("ts")
+    return out
+
+
 # --- the load -----------------------------------------------------------------
-def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
+def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
+                  full_run=None):
     """Everything the report says about test execution, or None when it says none.
 
     `{"tasks", "phases", "keys", "flags", "rows", "files", "unreadable"}`:
 
       tasks   {taskId: view}  - one per task, whether or not it points at a run
-      phases  {phaseId: {"own": view, "rollup": [(key, label, count), ...]}} -
-              the phase's OWN sign-off run and an aggregate over its tasks, kept
-              apart because merging them would claim a measurement nobody made
+      phases  {phaseId: {"own": view, "rollup": [(key, label, count), ...][,
+              "fullRun": {...}]}} - the phase's OWN sign-off run and an
+              aggregate over its tasks, kept apart because merging them would
+              claim a measurement nobody made; `fullRun` is a THIRD measurement,
+              present only for a phase `full_run` names at all
       keys    the distinct statuses across the TASK views, in vocabulary order
       flags   the distinct observation markers across them, in vocabulary order
 
@@ -201,6 +234,12 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
     two reads of a ledger that a parallel run may have grown between. None is the
     third state, not a default: a caller that computed no boundary excuses
     nothing, which is exactly what every caller rendered before this existed.
+
+    `full_run` IS THE SAME KIND OF ARGUMENT, ONE FIELD OVER: render-report.py's own
+    `{phaseId: {"answer", ...}}`, or None when it computed none (a plan naming no
+    `meta.fullGate` at all). `None` and `{}` read the same here - no phase earns a
+    `fullRun` key, which is what keeps a report of a plan naming no third place
+    byte-identical.
     """
     tasks, phases = subjects(manifest)
     if not _pointed_at_anything(tasks, phases):
@@ -229,10 +268,12 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
             continue
         mine = [task_views[str(t.get("id"))] for t in (phase.get("tasks") or [])
                 if isinstance(t, dict) and str(t.get("id")) in task_views]
-        phase_views[str(pid)] = {
-            "own": _view_for(phase, phase, "phase", by_run, rows, boundary),
-            "rollup": _report_html.tev_rollup(mine),
-        }
+        own_view = _view_for(phase, phase, "phase", by_run, rows, boundary)
+        entry = {"own": own_view, "rollup": _report_html.tev_rollup(mine)}
+        full_row = _phase_full_row((full_run or {}).get(str(pid)), own_view)
+        if full_row is not None:
+            entry["fullRun"] = full_row
+        phase_views[str(pid)] = entry
     return {
         "tasks": task_views,
         "phases": phase_views,

@@ -858,6 +858,25 @@ def _tev_step_rows(row):
                       e(took) if took
                       else '<span class="muted">not timed</span>',
                       (" · " + e(outcome)) if outcome else "", what))
+        # WHY, WHEN THE STEP HAS NO VERDICT - printed only for `could-not-run`,
+        # the one outcome whose whole point is that nothing else on the row says
+        # why. A passed step's markup stays exactly what it was above: no basis
+        # was ever recorded for it and none is owed. `derivedGap` is a MARKER,
+        # never folded into the basis sentence - `audit-lookup.py`'s `run`
+        # rendering already draws this same line apart for the same reason, and
+        # a second wording here would be a second opinion about what the marker
+        # means.
+        if outcome == "could-not-run":
+            if st.get("outcomeBasis"):
+                out.append('<div class="dt-r"><span class="dt-k"></span>'
+                           '<span class="dt-v muted">basis: %s</span></div>'
+                           % e(st["outcomeBasis"]))
+            if st.get("derivedGap"):
+                out.append(
+                    '<div class="dt-r"><span class="dt-k"></span>'
+                    '<span class="dt-v muted">derivedGap: this step answered a '
+                    "narrower question than the phase's derived gate declared"
+                    "</span></div>")
     dropped = row.get("stepsDropped")
     if dropped:
         out.append('<div class="dt-r"><span class="dt-k"></span>'
@@ -964,11 +983,68 @@ def tev_rollup(views):
     return [(k, TEV_LABELS.get(k) or _theme.label(k), counts[k]) for k in ordered]
 
 
+def _verified_line(fr):
+    """The one line `_manifest_vocab.VERIFIED` speaks for a merged phase - the
+    phase's own sign-off gate (`VERIFIED[1]`, "sign-off") carried alongside the
+    third place's own answer (`VERIFIED[2]`, "whole") - or "" when there is
+    nothing recorded to say.
+
+    `fr` IS `entry.get("fullRun")`, ALREADY RESOLVED DATA, never a ledger row or
+    a git question: render-report.py (layer 7) computed `answer`/`basis`/`runId`/
+    `head`/`mergedHead`/`phaseId`/`testGateBasis`, and `_evidence_view` (layer 3)
+    added the sign-off counts beside it. This module (layer 2) may not touch git
+    or the ledger, so every word below is read off `fr` and nothing else.
+
+    `fr is None` FOR EVERY PHASE WHENEVER THIS PLAN NAMES NO `meta.fullGate` AT
+    ALL, OR THIS PHASE NEVER MERGED - which is what keeps a report of a plan
+    naming no third place byte-identical to one rendered before this existed.
+
+    THE THREE ANSWERS THIS PLUGIN CAN MAKE, and never a fourth invented here:
+      WHOLE       "sign-off: <derived|wide>, <listed> of <full> suites, <status>
+                  <ts>; whole at <sha>" - the phase's own sign-off counts, and
+                  the commit a green, measured, clean, verbatim full run's head
+                  was found to contain.
+      PROVISIONAL "whole: pending - record a full run at <mergedHead> (pre-push,
+                  CI, or /audit:review <P> --full)" - the repair, not just the gap.
+      UNKNOWN     "unknown - <basis>" - `full_status`'s own sentence, verbatim,
+                  because a second opinion about why ancestry could not be asked
+                  would be free to disagree with the one that actually asked it.
+    A `not_declared` answer (or any word this build does not recognise) renders
+    nothing: `NOT_DECLARED` is the ABSENT-means-inert reading this plugin
+    promises everywhere else, so a phase merged before `meta.fullGate` existed
+    gets the same silence a plan with no third place at all gets.
+    """
+    if not isinstance(fr, dict):
+        return ""
+    answer = fr.get("answer")
+    if answer == _vocab.FULL_STATUS_WHOLE:
+        sha = str(fr.get("head") or "")[:9] or "?"
+        mode = "derived" if fr.get("testGateBasis") == "derived" else "wide"
+        listed = fr.get("listed")
+        full_n = fr.get("full")
+        status = fr.get("signOffStatus") or "?"
+        ts = fr.get("signOffTs") or "?"
+        return ("sign-off: %s, %s of %s suites, %s %s; whole at %s"
+                % (mode, listed if listed is not None else "?",
+                   full_n if full_n is not None else "?", status, ts, sha))
+    if answer == _vocab.FULL_STATUS_PROVISIONAL:
+        merged_head = str(fr.get("mergedHead") or "")[:9] or "?"
+        return ("whole: pending - record a full run at %s (pre-push, CI, or "
+                "/audit:review %s --full)" % (merged_head, fr.get("phaseId")))
+    if answer == _vocab.FULL_STATUS_UNKNOWN:
+        return "unknown - %s" % (fr.get("basis") or "?")
+    return ""
+
+
 def _tev_phase_marks(entry):
     """A phase row's two evidence marks, LABELLED APART.
 
     The phase's own sign-off run and the rollup over its tasks are two
-    measurements, and a row that showed one number would be claiming the other."""
+    measurements, and a row that showed one number would be claiming the other.
+
+    A THIRD MARK, when `entry` carries a `fullRun` - the same `.ptev` chip class,
+    because this is one more measurement in the same family and not a new kind
+    of thing the stylesheet has to learn."""
     if not entry:
         return ""
     out = ""
@@ -987,6 +1063,12 @@ def _tev_phase_marks(entry):
         out += ('<span class="ptev" title="a commit on the group\'s branch no task '
                 'records, taken into its review at sign-off">accepted %s: %s</span>'
                 % (e(str(item.get("commit"))[:12]), e(str(item.get("reason") or ""))))
+    line = _verified_line(entry.get("fullRun"))
+    if line:
+        fr = entry.get("fullRun") or {}
+        out += ('<span class="ptev" data-fullrun="%s" title="the third place\'s '
+                'own verdict for this phase\'s merge">%s</span>'
+                % (e(fr.get("answer") or ""), e(line)))
     rollup = entry.get("rollup") or []
     if rollup:
         out += ('<span class="ptev" title="the tasks in this phase, by what '

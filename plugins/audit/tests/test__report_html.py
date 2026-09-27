@@ -906,6 +906,92 @@ def _cases(check):
           and M._chip_buttons(["done"], "data-ps", "fchip")
           == M._chip_buttons(["done"], "data-ps", "fchip", mapping=None))
 
+    # --- _verified_line(): the one line VERIFIED speaks for a merged phase ----
+    # A merged phase whose full run contains its mergedHead names the run's own
+    # SHA and its own sign-off counts - a phase this build cannot answer WHOLE
+    # for renders no such line at all, which is the repro this case is: it FAILS
+    # on any build that has not yet learned the word.
+    _fr_whole = {"answer": "whole", "head": "abcdef0123456789",
+                 "testGateBasis": "derived", "listed": 3, "full": 5,
+                 "signOffStatus": "passed", "signOffTs": "2026-01-01T00:00:00Z"}
+    check("vl1 a WHOLE answer names the run's own sha and the phase's own "
+          "sign-off counts, never a bare word: %r" % (M._verified_line(_fr_whole),),
+          "whole at abcdef012" in M._verified_line(_fr_whole)
+          and "sign-off: derived, 3 of 5 suites, passed "
+              "2026-01-01T00:00:00Z" in M._verified_line(_fr_whole))
+    check("vl2 the mode word falls back to wide for anything that is not "
+          "literally 'derived' - a phase this build has never seen narrowed "
+          "is a wide gate, not a blank",
+          "sign-off: wide" in M._verified_line(dict(_fr_whole, testGateBasis=None)))
+    # A PROVISIONAL phase names no mergedHead to record a run AT until this
+    # line exists to say so - the repro half of this case.
+    _fr_prov = {"answer": "provisional", "mergedHead": "deadbeef00cafe12",
+               "phaseId": "P3"}
+    check("vl3 a PROVISIONAL answer is the repair, not just the gap: it names "
+          "the mergedHead to record a run against and the command that would "
+          "do it: %r" % (M._verified_line(_fr_prov),),
+          "record a full run at deadbeef0" in M._verified_line(_fr_prov)
+          and "/audit:review P3 --full" in M._verified_line(_fr_prov))
+    check("vl4 an UNKNOWN answer carries `full_status`'s own basis verbatim, "
+          "never a second opinion about why ancestry could not be asked",
+          M._verified_line({"answer": "unknown", "basis": "git could not be "
+                            "asked"}) == "unknown - git could not be asked")
+    check("vl5 no fullRun at all (this plan names no meta.fullGate, or this "
+          "phase never merged) renders no line - the byte-identical case",
+          M._verified_line(None) == "" and M._verified_line({}) == "")
+    check("vl6 not_declared (or any word this build does not recognise) "
+          "renders no line either - NOT_DECLARED is the ABSENT-means-inert "
+          "reading this plugin promises everywhere else",
+          M._verified_line({"answer": "not_declared"}) == ""
+          and M._verified_line({"answer": "some-future-word"}) == "")
+
+    # --- _tev_phase_marks(): the third mark, and only when there is one --------
+    check("pm1 a phase row with a fullRun answer wears a third mark carrying "
+          "the same words _verified_line renders, in the existing .ptev chip "
+          "class - no new class for the stylesheet to learn",
+          "sign-off: derived" in M._tev_phase_marks({"own": None, "rollup": [],
+                                                     "fullRun": _fr_whole})
+          and M._tev_phase_marks(
+              {"own": None, "rollup": [],
+               "fullRun": _fr_whole}).count('class="ptev"') == 1)
+    _entry_no_full = {"own": None, "rollup": []}
+    _entry_full_none = {"own": None, "rollup": [], "fullRun": None}
+    check("pm2 a phase with no fullRun key renders BYTE-IDENTICAL markup to one "
+          "whose fullRun is explicitly None - the old plan and the new one "
+          "that simply has not merged read as the same silence",
+          M._tev_phase_marks(_entry_no_full)
+          == M._tev_phase_marks(_entry_full_none) == "")
+
+    # --- _tev_step_rows(): why a could-not-run step has no verdict -------------
+    # A step that measured cleanly stays exactly as it was - no basis was ever
+    # recorded for it and none is owed.
+    _passed_steps = M._tev_step_rows({"steps": [
+        {"name": "lint", "exit": 0, "outcome": "measured",
+         "outcomeBasis": "never read for a passed step", "derivedGap": True}]})
+    check("sr1 a step that is not could-not-run renders no basis line and no "
+          "derivedGap marker, even when the row carries both fields - only "
+          "the outcome decides, never their bare presence: %r" % (_passed_steps,),
+          "basis:" not in _passed_steps and "derivedGap:" not in _passed_steps)
+    _gap_steps = M._tev_step_rows({"steps": [
+        {"name": "test", "exit": None, "outcome": "could-not-run",
+         "outcomeBasis": "npm test printed no verdict signature",
+         "derivedGap": True}]})
+    check("sr2 a could-not-run step renders the basis it was recorded with, "
+          "and the derivedGap marker separately from it, in the wording "
+          "audit-lookup.py already renders for the same two fields: %r"
+          % (_gap_steps,),
+          "basis: npm test printed no verdict signature" in _gap_steps
+          and "derivedGap: this step answered a narrower question than the "
+              "phase's derived gate declared" in _gap_steps)
+    _nogap_steps = M._tev_step_rows({"steps": [
+        {"name": "test", "exit": None, "outcome": "could-not-run",
+         "outcomeBasis": "the interpreter was not on PATH"}]})
+    check("sr3 a could-not-run step with no derivedGap renders the basis "
+          "alone - the marker is never invented for a step that did not "
+          "earn it: %r" % (_nogap_steps,),
+          "basis: the interpreter was not on PATH" in _nogap_steps
+          and "derivedGap:" not in _nogap_steps)
+
 
 
 def _selftest():

@@ -203,10 +203,39 @@ def _signoff_cases(check):
           and not any(h.startswith("## P2") and "sign-off due" in h for h in heads))
 
 
+def _verified_cases(check):
+    """The Markdown twin carries `_manifest_vocab.VERIFIED`'s own words - the
+    SAME data the HTML reads, off `evidence.phases[id].fullRun`, never a second
+    computation of them."""
+    m = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "merged", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}],
+        "bugs": [], "fileIndex": {}}
+    import _status_facts
+    summary = _status_facts.rollup(m, [], [])
+    evidence = {"phases": {"P1": {"own": None, "rollup": [],
+                                 "fullRun": {"answer": "provisional",
+                                             "mergedHead": "deadbeef00cafe12",
+                                             "phaseId": "P1"}}}}
+    text = M.render_md(m, summary, None, evidence)
+    check("rm-vl1 a merged phase's provisional third-place answer reads in the "
+          "twin exactly as it reads in the HTML - the same sentence, not a "
+          "second spelling of it: %r" % (text[text.find("## P1"):][:400],),
+          "record a full run at deadbeef0" in text
+          and "/audit:review P1 --full" in text)
+    no_full = M.render_md(m, summary, None, {"phases": {"P1": {"own": None,
+                                                               "rollup": []}}})
+    check("rm-vl2 a phase with no fullRun at all carries no such line - the "
+          "byte-identical case the HTML keeps too",
+          "record a full run at" not in no_full
+          and "whole at" not in no_full)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _signoff_cases(check)
+        _verified_cases(check)
     return _harness.run(body)
 
 

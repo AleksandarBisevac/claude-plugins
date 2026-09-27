@@ -97,6 +97,7 @@ import _report_html           # noqa: E402  (HTML fragment builders: escaping, c
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
 import _evidence_view         # noqa: E402  (the test-execution record: the only read of it)
 import _evidence_io           # noqa: E402  (WHEN this plan could first have recorded, at layer 2)
+import _invariants            # noqa: E402  (git_root_for: where the third place asks ancestry)
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 import _areas                 # noqa: E402  (plan_skill_refs: which names this plan uses)
@@ -168,6 +169,61 @@ load_evidence = _evidence_view.load_evidence
 # at nothing, which is why the boundary cannot be taken off it - a plan with no
 # pointers anywhere is precisely the plan whose boundary matters most.
 boundary_for = _evidence_io.boundary_for
+
+
+def _full_run_block(manifest, manifest_path, project):
+    """Per-MERGED-phase third-place verdict, or `{}` when this plan names no
+    `meta.fullGate` at all - the report's own read of the SAME question
+    `audit-status.py`'s `full_run_block` and `_panel_composition._phase_full_run`
+    ask, so the word a reader sees here cannot disagree with the one they see
+    on the CLI or the panel.
+
+    MERGED MEANS `phase.get("mergedAt")` TRUTHY AND `phase.get("id") IS NOT
+    None` - exactly that predicate and no other. `effective_phase_status ==
+    "done"` is NOT this: a phase can be done without ever having merged, and a
+    phase reads merged before its status catches up to `done`. `audit-status.py`
+    uses this same one-line predicate; a shared helper beside
+    `_evidence_io.full_status` is a later task's to add, and this stays a single,
+    obvious line on purpose so that move is easy.
+
+    THE ONE RESOLUTION OF THE GATE and THE ONE READ OF THE LEDGER, exactly as
+    `audit-status.py`'s docstring states them - this file re-derives neither, it
+    only asks the SAME two questions a second time because the report is a
+    second process. `head` is added beside `full_status`'s own `answer`/`basis`/
+    `runId` for a WHOLE answer only, so `_report_html._verified_line` can name
+    the commit a whole-bearing run's head resolved to without reading the
+    ledger itself; `mergedHead`, `phaseId` and `testGateBasis` are added on
+    every entry so the renderer needs nothing from `manifest` either.
+    """
+    meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
+    full_commands = [c for _name, c in _evidence_io.resolved_commands(
+        manifest, meta.get("fullGate"))]
+    if not full_commands:
+        return {}
+    try:
+        project_root, config = _evidence_io.project_config_for(
+            manifest_path, project)
+        git_root = _invariants.git_root_for(manifest, project_root)
+        rows = _evidence_io.read_rows(project_root, config=config)["rows"]
+    except Exception as exc:                       # defensive; see the docstring
+        return {"error": "the full-gate ledger could not be read: %s" % (exc,)}
+    out = {}
+    for p in (manifest.get("phases") or []):
+        if not isinstance(p, dict) or not p.get("mergedAt") or p.get("id") is None:
+            continue
+        res = dict(_evidence_io.full_status(rows, p, git_root, full_commands))
+        res["mergedHead"] = p.get("mergedHead")
+        res["phaseId"] = p.get("id")
+        res["testGateBasis"] = p.get("testGateBasis")
+        run_id = res.get("runId")
+        if run_id:
+            run_row = _evidence_io.row_by_run(rows, run_id)
+            if isinstance(run_row, dict):
+                head = (run_row.get("testedState") or {}).get("head")
+                if head:
+                    res["head"] = str(head)
+        out[p["id"]] = res
+    return out
 
 # The document itself lives in _report_page.py (P13.3) and its Markdown twin in
 # _report_md.py — this file kept `main()`, the theme resolve and the suite that
@@ -354,14 +410,20 @@ def main(argv):
     boundary = boundary_for(manifest_path)
     summary = lib.rollup(manifest, findings, warnings, boundary=boundary)
     usage = load_usage(manifest, manifest_path)
-    evidence = load_evidence(manifest, manifest_path, boundary=boundary)
+    # The project root every disk read below resolves against - the theme, the
+    # third place's own ledger read, and (a few lines down) the panel config.
+    # One read rather than a second guess of CLAUDE_PROJECT_DIR that could
+    # answer differently.
+    _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
+        os.path.abspath(manifest_path)) or "."
+    full_run = _full_run_block(manifest, manifest_path, _proj)
+    evidence = load_evidence(manifest, manifest_path, boundary=boundary,
+                             full_run=full_run)
 
     # th: resolve the look once — project theme, then the user's, then
     # the built-in — and hand the compiled sheet to every writer below. A theme
     # that failed to load says so on stderr and the report still renders: a
     # look is decoration, and decoration never takes the document down.
-    _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
-        os.path.abspath(manifest_path)) or "."
     try:
         _cfg = _panel_cfg(_proj)
     except Exception:

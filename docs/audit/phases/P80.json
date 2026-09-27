@@ -435,7 +435,8 @@
         "plugins/audit/tests/test__report_html.py",
         "plugins/audit/tests/test__report_md.py",
         "plugins/audit/tests/test_render_report.py",
-        "plugins/audit/tests/test_gen_demo_manifest.py"
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -473,7 +474,12 @@
       },
       "startedAt": "2026-09-27T08:39:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T09:25:12Z.8f1669",
+        "status": "failed",
+        "at": "2026-09-27T09:25:12Z"
+      }
     },
     {
       "id": "P80.8",
@@ -629,7 +635,7 @@
     {
       "id": "P80.10",
       "title": "full-gate.py, /audit:review --full, the pre-push snippet and the pipeline step",
-      "status": "in_progress",
+      "status": "done",
       "description": "New entry point plugins/audit/scripts/governance/full-gate.py <manifest> [--writer <name>] [--project-dir DIR]: the one command of the third place. It runs run-test-gate.py <manifest> --full --record [--writer ...] as a SUBPROCESS resolved with _loader.script_path('run-test-gate.py') and sys.executable (an entry point cannot import another; render-report._bench_fixture is the precedent _deps names for this spelling, and script_path is not counted as an edge), streams its output and exits with its code. With no meta.fullGate it exits 0 saying no third place is declared: a pre-push hook on a plan that has none must not block pushes. This phase's script does not learn; the selection-miss pass is the next phase's. commands/review.md: --full - after the ordinary sign-off, run-test-gate.py <m> --full --record, then read the full-status line; argument-hint and the README /audit:review row (_refs.command_flag_drift). README, a section 'The third place': the documented .husky/pre-push snippet 'python3 \"$AUDIT_PLUGIN/scripts/governance/full-gate.py\" docs/audit/audit-plan.json || exit 1', that CI is the stronger owner (--no-verify skips a hook), and what whole, provisional and unknown mean. docs/examples/azure-pipelines.yml: a job with fetchDepth: 0 (ancestry needs history; a shallow clone answers unknown), run-test-gate.py \"$(manifest)\" --full --record --writer \"ci-$(Build.BuildId)\", the evidence directory published as a build artifact, then audit-status.py --gate --fail-on stale-full-run in the same checkout, and how a maintainer brings the artifact back with import-evidence.py. Red-first in test_full_gate.py: with a fake fullGate command the script's exit code is the runner's and a full row exists afterwards; no fullGate -> exit 0 with the sentence (mutation: exit 2 -> red). Layer entry in _deps.LAYERS, PATH_PREAMBLE, safe_stdio() first, migrated --selftest, PLUGIN-BUILD-GUIDE.md tree line and section.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
@@ -668,18 +674,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d7e82b6e806bf65f1c242c4b9d614d46839f229d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "full-gate.py delegates to run-test-gate.py --full --record as a subprocess (exit code passed through, output streamed), and exits 0 with a sentence when no meta.fullGate is declared so a pre-push hook never blocks on an undeclared gate; LAYERS, guide tree line and section, module-map fence (re-rendered last, carrying the wave's edges), test__output migrated lists; review.md --full, README 'The third place', azure-pipelines.yml steps. Cases fgd1-fgd4, fge1-fge3. Task review clean; redFirst could-not-prove for a new entry point, live mutations the proof. inheritedTests not-asked.",
+        "descriptive": "The third place has one command: full-gate.py runs the declared full gate through run-test-gate and records it, for a pre-push hook or by hand; /audit:review --full, the README's third-place section and the pipeline example with its writer and artifact step document it."
       },
       "startedAt": "2026-09-27T07:37:40Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T08:44:45Z",
+      "verifiedBy": [
+        "fgd1",
+        "fgd2",
+        "fgd3",
+        "fge1",
+        "fge2",
+        "fge3"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T08:25:19Z.1d4796",
         "status": "passed",
         "at": "2026-09-27T08:25:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d7e82b6e806bf65f1c242c4b9d614d46839f229d",
+        "at": "2026-09-27T08:44:45Z"
       }
     },
     {

@@ -485,6 +485,24 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
     rng = random.Random(seed)
     statuses = _phase_plan(n_phases)
     ungated = _ungated_phase(statuses)
+    # THE ONE MERGED PHASE THAT NEVER RECORDS `mergedHead` - the earliest `done`
+    # phase, on purpose: it is the same phase a mid-flight adopter's earliest
+    # work already sits behind (see `_pre_recorder_phase`), so a phase this old
+    # having no ancestry pointer either is one fact, not two. Every OTHER
+    # merged phase gets one, which is what lets `full_status` answer UNKNOWN
+    # for this one and PROVISIONAL for the rest - the two states this fixture
+    # can show HONESTLY. A THIRD, WHOLE, needs git to say a real run's head
+    # contains a real merge; this generator runs with no `.git` behind it at
+    # all (`docs/demo-large.html`'s own recipe renders it against a bare
+    # temp directory), so a "whole-making" row here would not demonstrate
+    # WHOLE - every merged phase asks the SAME global ledger, so the moment one
+    # well-formed full-scope row exists, git is asked about EVERY phase's own
+    # `mergedHead` and answers UNKNOWN for all of them alike (no repository to
+    # ask), collapsing the two honest states this fixture can reach into one.
+    # So no full-scope row is generated at all; `meta.fullGate` and
+    # `phase.mergedHead` are exercised by the two states that need no git.
+    first_done_pi = next(
+        (i + 1 for i, s in enumerate(statuses) if s == "done"), None)
     # Built ONCE and read twice - by `_task_gate`, which narrows a task's gate
     # against these roots, and by `meta.areas` below. Two calls would be two
     # registries that could disagree about the boundary a gate was derived from,
@@ -653,6 +671,13 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             phase["baseRef"] = _sha(rng)
             phase["branch"] = "audit/%s-%s" % (pid.lower(), area)
             phase["mergedAt"] = _iso(p_start + datetime.timedelta(days=2))
+            # THE PARENT BRANCH'S COMMIT RIGHT AFTER THIS PHASE MERGED - stamped
+            # on every merged phase but `first_done_pi` (the comment above
+            # `first_done_pi` says why that one carries none). A stable hash of
+            # the phase id, exactly as deterministic as `baseRef` above and
+            # drawing nothing from `rng` either.
+            if pi != first_done_pi:
+                phase["mergedHead"] = _hex("mergedHead-%s" % pid, 40)
             phase["summary"] = (
                 "Met the desired outcome: every touched file under src/%s is "
                 "validated and the phase gate is green." % area)
@@ -745,6 +770,12 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
                 "gated phase and a full bug lifecycle."
                 % (n_phases, n_tasks)),
             "buildCommands": _build_commands(),
+            # THE THIRD PLACE: the buildCommands keys a full suite would run at,
+            # beyond a task's own gate and a phase's sign-off gate. Declared so
+            # `full_status` has a question to answer for every merged phase
+            # above (`meta.fullGate`'s own SCHEMA_EXEMPTIONS row, once here,
+            # named the surface that would retire it - this is that surface).
+            "fullGate": ["build", "lint"],
             # The build/runtime half of the configuration, which the orchestrator
             # prose reads and the committed acme example already declares. The
             # demo declared none of it, so the scale page showed a project with
@@ -894,19 +925,12 @@ SCHEMA_EXEMPTIONS = {
         "what `derive-phase-gate.py` computed for a phase's sign-off gate, "
         "beside the wide `testGate` array - unreachable and unread for "
         "`testGateBasis`'s own reason above, the pair this follows exactly.",
-    "meta.fullGate":
-        "the buildCommands keys naming the third place tests can pass at "
-        "(full suite, coverage, e2e). No rendered surface reads it yet - not "
-        "the report, not the panel, not /audit:status or /audit:doctor - so "
-        "a demo carrying it would be a lever nothing downstream shows. "
-        "REVISIT when a rendered surface reads meta.fullGate.",
-    "phase.mergedHead":
-        "the parent branch's commit right after this phase merged, written "
-        "only by close-phase.py. No rendered surface reads it yet, the same "
-        "reason meta.fullGate above is exempt - and a hand-stamped SHA in a "
-        "published fixture would claim an ancestry this generator never "
-        "actually merged. REVISIT when a rendered surface reads "
-        "phase.mergedHead.",
+    # `meta.fullGate` and `phase.mergedHead` WERE EXEMPT HERE, both on the same
+    # reason: no rendered surface read either field yet. The report now does
+    # (`_report_html._verified_line`), so both rows are gone and `generate()`
+    # carries the fields for real - see the comment above `first_done_pi` for
+    # why the fixture stops short of a `whole`-bearing full-scope row.
+    #
     # `meta.branch` WAS EXEMPT HERE and is carried now. Its row read "REVISIT
     # when the panel grows a meta.branch card: the demo is where its screenshot
     # comes from" -- and the panel grew one, and nothing said so. The trigger had

@@ -837,10 +837,59 @@ def _graded_cases(check):
         _harness.remove_tree(root)
 
 
+def _full_run_cases(check):
+    """`load_evidence(..., full_run=...)` gains the full row family: a phase's
+    `fullRun` entry carries the caller's own answer PLUS this phase's own
+    sign-off counts - never a second read of the ledger for either half."""
+    root = _harness.fixture_root("evidence-view-fullrun")
+    try:
+        plan = {"meta": {"version": 2, "title": "f", "repo": "r"}, "bugs": [],
+                "phases": [
+                    {"id": "P1", "title": "gated", "status": "done",
+                     "testGate": ["make test"], "testGateBasis": "derived",
+                     "mergedHead": "aaaa111122223333",
+                     "testEvidence": {"runId": "R-1", "status": "passed",
+                                      "at": "2026-08-01T10:00:00Z"}, "tasks": []},
+                    {"id": "P2", "title": "unmerged", "status": "in_progress",
+                     "tasks": []}]}
+        rows = [{"v": 1, "runId": "R-1", "ts": "2026-08-01T10:00:00Z",
+                 "scope": "phase", "phaseId": "P1", "status": "passed",
+                 "steps": [], "failed": [], "testedState": {},
+                 "observations": {},
+                 "narrowed": {"listed": 2, "full": 6}}]
+        path = _write_project(root, plan, rows)
+        full_run = {"P1": {"answer": "whole", "head": "cafebabe01234567",
+                           "runId": "R-full"}}
+        ev = M.load_evidence(plan, path, project_dir=root, full_run=full_run)
+        fr = ev["phases"]["P1"].get("fullRun")
+        check("fr1 the phase's fullRun carries the caller's own answer, "
+              "verbatim: %r" % (fr,),
+              isinstance(fr, dict) and fr.get("answer") == "whole"
+              and fr.get("head") == "cafebabe01234567")
+        check("fr2 ...AND this phase's own sign-off counts, read off the SAME "
+              "row `own` already carries - never a second read of the ledger",
+              fr.get("listed") == 2 and fr.get("full") == 6
+              and fr.get("signOffStatus") == "passed"
+              and fr.get("signOffTs") == "2026-08-01T10:00:00Z")
+        check("fr3 a phase `full_run` names nothing for carries no fullRun key "
+              "at all - not None, ABSENT, which is what keeps a plan naming no "
+              "third place byte-identical",
+              "fullRun" not in ev["phases"]["P2"])
+        ev_none = M.load_evidence(plan, path, project_dir=root, full_run=None)
+        check("fr4 `full_run=None` (a caller that computed no third-place "
+              "answer at all) is the SAME silence as `full_run={}` - neither "
+              "phase earns a fullRun key",
+              "fullRun" not in ev_none["phases"]["P1"]
+              and "fullRun" not in ev_none["phases"]["P2"])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _graded_cases(check)
+        _full_run_cases(check)
     return _harness.run(body)
 
 
