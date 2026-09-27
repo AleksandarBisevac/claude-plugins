@@ -54,7 +54,12 @@ Exit codes:
   1  the chain does not hold, a different file already holds that name, a
      run it carries is already in the ledger under another file or repeated
      inside the shard, or the ledger could not be read in full to ask
-  2  usage error - the manifest will not load, or the shard path is not a file
+  2  usage error - the manifest will not load, the shard path is not a file,
+     or `--project-dir` was given and the manifest does not sit under it
+
+Without `--project-dir` the project is the manifest's own
+(`_panel_write.project_of_manifest`) - never the directory the command was
+typed in.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_import_evidence.py`.
@@ -94,6 +99,7 @@ import _evidence_io as _ev  # noqa: E402  (evidence_dir, verify_rows - the one c
 import _journal_io  # noqa: E402  (config loading, rows_from_text)
 import _loader  # noqa: E402  (script_path: the printed full-gate.py, never loaded)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
+import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
@@ -350,6 +356,49 @@ def render(answer, out=print):
 
 
 # --- cli ------------------------------------------------------------------------
+def _is_under(path, directory):
+    """True when `path` sits at or below `directory`, both resolved through
+    symlinks first - a temp directory reached through a link is still the
+    directory it names."""
+    path, directory = os.path.realpath(path), os.path.realpath(directory)
+    try:
+        return os.path.commonpath([path, directory]) == directory
+    except ValueError:
+        return False
+
+
+def resolve_project(manifest_path, project_dir):
+    """`(project, refusal)` - the project this import writes into, or why it
+    will not.
+
+    WITHOUT `--project-dir` the project is the one the MANIFEST belongs to,
+    by the plugin's one answer to that question,
+    `_panel_write.project_of_manifest` - the answer `audit-task.py` reads for
+    a named manifest: the first ancestor holding `.claude/` or `.git`, and
+    without one `<T>` for the default `<T>/docs/audit/<file>` layout or the
+    manifest's own directory anywhere else. A count of directories up from
+    the file is right for the default layout alone. The
+    current directory is not asked: an import typed from anywhere else would
+    otherwise land the shard in a ledger the manifest's plan never reads, and
+    print a `--learn-from` command pairing that plan with the wrong ledger.
+
+    WITH `--project-dir`, a manifest that does not sit under it is refused:
+    the printed command would pair one project's plan with another's ledger,
+    and there is no reading of the pair that is not a mistake."""
+    manifest_abs = os.path.abspath(manifest_path)
+    if project_dir is None:
+        return _panel_write.project_of_manifest(manifest_abs), ""
+    project = os.path.abspath(project_dir)
+    if not _is_under(manifest_abs, project):
+        return project, (
+            "the manifest %s is not under --project-dir %s - the shard would "
+            "land in one project's ledger and be learned from into another's "
+            "plan. Pass the directory the manifest belongs to, or leave "
+            "--project-dir out and the manifest's own project is used"
+            % (manifest_abs, project))
+    return project, ""
+
+
 def build_parser():
     """The argument parser, separated so a case can read the option table."""
     parser = argparse.ArgumentParser(
@@ -358,9 +407,13 @@ def build_parser():
                     "checkout whole, after its own chain verifies.")
     parser.add_argument("manifest")
     parser.add_argument("shard", help="the ledger file a CI build published")
-    parser.add_argument("--project-dir", dest="project_dir", default=".",
+    parser.add_argument("--project-dir", dest="project_dir", default=None,
                         help="the directory holding .claude/ and the records "
-                             "(default: the current directory)")
+                             "(default: the project the manifest belongs to - "
+                             "the nearest directory above it holding .claude/ "
+                             "or .git, else <T> for <T>/docs/audit/<file>, "
+                             "else the manifest's own directory); the "
+                             "manifest must sit under it")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
@@ -386,7 +439,10 @@ def main(argv, out=print):
         sys.stderr.write("ERROR: %s is not a file\n" % (args.shard,))
         return E_USAGE
 
-    project = os.path.abspath(args.project_dir)
+    project, refusal = resolve_project(args.manifest, args.project_dir)
+    if refusal:
+        sys.stderr.write("ERROR: %s\n" % (refusal,))
+        return E_USAGE
     # ABSOLUTE, so the printed command does not depend on the directory it
     # is pasted into.
     code, answer = import_shard(project, args.shard,

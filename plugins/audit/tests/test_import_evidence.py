@@ -35,6 +35,11 @@ WHAT IS PINNED, and why each one is here rather than trusted:
   byte is still named. A ledger that cannot be read in full refuses too,
   saying the check could not be made and giving the step that clears a torn
   tail, because an unread row is a row that might be the duplicate.
+- **THE PROJECT IS THE MANIFEST'S, NOT THE CURRENT DIRECTORY'S.** Typed from
+  elsewhere with no `--project-dir`, the shard lands in the manifest's project
+  and the printed command names it; a `--project-dir` the manifest does not
+  sit under is refused, exit 2; and typed from inside the project the import
+  is unchanged.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -479,6 +484,181 @@ def _cases(check):
         check("i29 a green full row imports with no --learn-from line: %r (%s)"
               % (code, out),
               code == 0 and "run-s1" in out and "--learn-from" not in out)
+
+        # --- the project comes from the manifest, not the current directory -
+        # Typed from a directory that is not the project, with no
+        # --project-dir: the shard must land in the MANIFEST's project and the
+        # printed command must name that project. A version reading the cwd
+        # writes under <cwd>/docs/audit/evidence and prints the cwd.
+        d12, mp12 = project()
+        away12 = tempfile.mkdtemp(dir=root)
+        away_name = "2026-01.ci-w17.jsonl"
+        away_data, _ = _shard_bytes(away_name, [
+            {"runId": "run-t1", "v": 1, "scope": "full", "status": "failed"}])
+        away_src = write_shard(away_name, away_data)
+        held_cwd = os.getcwd()
+        os.chdir(away12)
+        try:
+            code, out = run([mp12, away_src, "--json"])
+        finally:
+            os.chdir(held_cwd)
+        answer12 = json.loads(out)
+        want12 = ("python3 %s %s --learn-from run-t1 --project-dir %s"
+                  % (shlex.quote(_loader.script_path("full-gate.py")),
+                     shlex.quote(os.path.abspath(mp12)),
+                     shlex.quote(os.path.abspath(d12))))
+        check("i32 RED-FIRST: an import typed from another directory with no "
+              "--project-dir lands under the manifest's project, and nothing "
+              "lands under the directory it was typed in: %r (%r, %r)"
+              % (code, answer12.get("path"), sorted(os.listdir(away12))),
+              code == 0 and os.path.isfile(
+                  os.path.join(_ev.evidence_dir(d12), away_name))
+              and os.listdir(away12) == [])
+        check("i33 RED-FIRST: ...and the printed --learn-from command names "
+              "the manifest's project, not that directory: %r"
+              % (answer12.get("learnFrom"),),
+              answer12.get("learnFrom") == [want12])
+
+        # A --project-dir the manifest does not sit under is refused, exit 2,
+        # with a reason, and nothing is written in either project.
+        d13, mp13 = project()
+        d14, _mp14 = project()
+        mis_name = "2026-01.ci-w18.jsonl"
+        mis_data, _ = _shard_bytes(mis_name, [
+            {"runId": "run-u1", "v": 1, "scope": "full", "status": "failed"}])
+        mis_src = write_shard(mis_name, mis_data)
+        err = io.StringIO()
+        held_err = sys.stderr
+        sys.stderr = err
+        mis_lines = []
+        try:
+            code = M.main([mp13, mis_src, "--project-dir", d14],
+                          out=mis_lines.append)
+        finally:
+            sys.stderr = held_err
+        check("i34 RED-FIRST: a --project-dir the manifest is not under is "
+              "refused, exit 2, saying the manifest is not under it, and "
+              "neither project's ledger gains a file: %r (%r)"
+              % (code, err.getvalue()),
+              code == 2 and "is not under --project-dir" in err.getvalue()
+              and not os.path.isdir(_ev.evidence_dir(d13))
+              and not os.path.isdir(_ev.evidence_dir(d14)) and not mis_lines)
+
+        # ALLOW DIRECTION: typed from inside the project with no --project-dir,
+        # the import is exactly what it was - a version refusing whenever the
+        # flag is absent, or deriving some other directory, goes red here.
+        d15, mp15 = project()
+        in_name = "2026-01.ci-w19.jsonl"
+        in_data, _ = _shard_bytes(in_name, [
+            {"runId": "run-v1", "v": 1, "scope": "full", "status": "failed"}])
+        in_src = write_shard(in_name, in_data)
+        os.chdir(d15)
+        try:
+            code, out = run(["docs/audit/audit-plan.json", in_src, "--json"])
+        finally:
+            os.chdir(held_cwd)
+        answer15 = json.loads(out)
+        want15 = ("python3 %s %s --learn-from run-v1 --project-dir %s"
+                  % (shlex.quote(_loader.script_path("full-gate.py")),
+                     shlex.quote(os.path.join(os.path.realpath(d15), "docs",
+                                              "audit", "audit-plan.json")),
+                     shlex.quote(os.path.realpath(d15))))
+        check("i35 ALLOW: an import typed from inside the project with no "
+              "--project-dir lands in that project and prints its command: "
+              "%r (%r)" % (code, answer15.get("learnFrom")),
+              code == 0 and os.path.isfile(
+                  os.path.join(_ev.evidence_dir(d15), in_name))
+              and answer15.get("learnFrom") == [want15])
+
+        # --- the project is the plugin's one answer for a named manifest ----
+        # `_panel_write.project_of_manifest`: the first ancestor holding
+        # `.claude/` or `.git`, else `<T>` for `<T>/docs/audit/<file>`, else
+        # the manifest's own directory. A rule counting three directories up
+        # is right for the default layout alone.
+        def import_away(mpath, name, run_id):
+            data, _ = _shard_bytes(name, [
+                {"runId": run_id, "v": 1, "scope": "full",
+                 "status": "failed"}])
+            src = write_shard(name, data)
+            away = tempfile.mkdtemp(dir=root)
+            os.chdir(away)
+            try:
+                code, out = run([mpath, src, "--json"])
+            finally:
+                os.chdir(held_cwd)
+            try:
+                answer = json.loads(out)
+            except ValueError:
+                answer = {"unparsed": out}
+            return code, answer
+
+        def lands_in(project_dir, name, answer, run_id, mpath):
+            want = ("python3 %s %s --learn-from %s --project-dir %s"
+                    % (shlex.quote(_loader.script_path("full-gate.py")),
+                       shlex.quote(os.path.abspath(mpath)), run_id,
+                       shlex.quote(project_dir)))
+            return (os.path.isfile(os.path.join(_ev.evidence_dir(project_dir),
+                                                name))
+                    and answer.get("learnFrom") == [want])
+
+        # A plan outside the default layout, in a project marked by `.git`.
+        t16 = tempfile.mkdtemp(dir=root)
+        os.makedirs(os.path.join(t16, ".git"))
+        os.makedirs(os.path.join(t16, "plan"))
+        mp16 = os.path.join(t16, "plan", "audit-plan.json")
+        with io.open(mp16, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(_manifest(), indent=2))
+        code, answer16 = import_away(mp16, "2026-01.ci-w20.jsonl", "run-w1")
+        check("i36 RED-FIRST: a plan at <T>/plan/audit-plan.json in a project "
+              "marked by <T>/.git imports into <T> - the marker names the "
+              "project, not a count of directories - and the command names "
+              "<T>: %r (%r)" % (code, answer16),
+              code == 0 and lands_in(t16, "2026-01.ci-w20.jsonl", answer16,
+                                     "run-w1", mp16))
+
+        # A plan nested with no marker above it: the manifest's own
+        # directory, the helper's documented fallback. The precondition is
+        # asserted rather than assumed - a marker somewhere above the scratch
+        # directory would make this case test a different branch.
+        t17 = tempfile.mkdtemp(dir=root)
+        nest17 = os.path.join(t17, "a", "b")
+        os.makedirs(nest17)
+        mp17 = os.path.join(nest17, "audit-plan.json")
+        with io.open(mp17, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(_manifest(), indent=2))
+        marked = []
+        cur = os.path.abspath(nest17)
+        while True:
+            if (os.path.isdir(os.path.join(cur, ".claude"))
+                    or os.path.exists(os.path.join(cur, ".git"))):
+                marked.append(cur)
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+        code, answer17 = import_away(mp17, "2026-01.ci-w21.jsonl", "run-w2")
+        check("i37 RED-FIRST: a plan nested at <N>/a/b/audit-plan.json with "
+              "no marker above it imports into <N>/a/b, the manifest's own "
+              "directory (markers above: %r): %r (%r)"
+              % (marked, code, answer17),
+              not marked and code == 0
+              and lands_in(nest17, "2026-01.ci-w21.jsonl", answer17,
+                           "run-w2", mp17))
+
+        # ALLOW DIRECTION: the default layout with no marker at all is still
+        # <T> - the case every earlier import in this file already relied on,
+        # now without the `.claude/` that let the helper stop early.
+        t18 = tempfile.mkdtemp(dir=root)
+        os.makedirs(os.path.join(t18, "docs", "audit"))
+        mp18 = os.path.join(t18, "docs", "audit", "audit-plan.json")
+        with io.open(mp18, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(_manifest(), indent=2))
+        code, answer18 = import_away(mp18, "2026-01.ci-w22.jsonl", "run-w3")
+        check("i38 ALLOW: the default layout <T>/docs/audit/audit-plan.json "
+              "with no marker still imports into <T>: %r (%r)"
+              % (code, answer18),
+              code == 0 and lands_in(t18, "2026-01.ci-w22.jsonl", answer18,
+                                     "run-w3", mp18))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

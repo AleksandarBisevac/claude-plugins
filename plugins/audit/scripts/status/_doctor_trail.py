@@ -80,7 +80,6 @@ import _evidence_io  # noqa: E402  (the ledger tally, at layer 2)
 import _fmt  # noqa: E402  (human_duration, at layer 1)
 import _manifest_io  # noqa: E402  (signoff_recorded, declared_gate_entries, layer 1)
 import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
-import _usage_core  # noqa: E402  (parse_ts, the ledger's own ISO reading, layer 1)
 import _worktrees  # noqa: E402  (_git, the one git runner at layer 1)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
@@ -1437,7 +1436,7 @@ def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
 # --- checks: learned couplings -------------------------------------------------
 COUPLING_CHECK = "coupling"
 
-# How many GREEN WHOLE-BEARING full runs a coupling may go without catching
+# How many GREEN MEASURED full runs a coupling may go without catching
 # anything before this check names it as a candidate for `uncouple`. Counted in
 # runs, never in days: only a full run runs every coupled test, so a stretch
 # with no full run has not exercised a coupling at all and must not age it.
@@ -1581,26 +1580,52 @@ def _check_coupling_tracking(rep, project, entries, git_root):
 
 
 def coupling_age(entry, run_moments):
-    """`(runs, field, why)` - how many green measured full runs (their
-    moments in `run_moments`) came strictly AFTER the entry was last
-    caught, or learned when it never was.
+    """`(runs, field, why)` - how many green measured full runs (the
+    `(moment, mutedTests)` pairs in `run_moments`) came strictly AFTER the
+    entry was last caught, or learned when it never was.
 
     `lastCaught` OUTRANKS `learnedAt`: a coupling that caught a failure
     yesterday earned its place yesterday, however long ago it was learned.
     `runs` is None and `why` the basis when neither field reads as a moment -
-    an entry that cannot be aged is said, never read as a fresh one."""
+    an entry that cannot be aged is said, never read as a fresh one.
+
+    A RUN THAT MUTED THIS TEST DOES NOT AGE IT. The row reads green because
+    the mute excused the test's failure, not because the test passed, so
+    counting it would read "failed every run" as "caught nothing". The test
+    is compared in `_norm`'s spelling, the one every coupled path here is
+    compared in.
+
+    Both stamps are read by `_evidence_io.stamp_moment`, the reading the
+    ledger orders its rows by, so a date-only stamp means the same moment
+    here as it does there."""
     field = "lastCaught" if entry.get("lastCaught") else "learnedAt"
     stamp = entry.get(field)
     if not stamp:
         return None, field, "it carries neither lastCaught nor learnedAt"
-    moment = _usage_core.parse_ts(stamp)
+    moment = _evidence_io.stamp_moment(stamp)
     if moment is None:
         return None, field, "its %s %r does not read as a moment" % (field, stamp)
-    return sum(1 for m in run_moments if m > moment), field, None
+    test = _norm(entry["test"])
+    return (sum(1 for m, muted in run_moments if m > moment and test not in muted),
+            field, None)
+
+
+def _muted_tests(row):
+    """Every test a mute excused in `row` - named by the row's own `muted`
+    list or by any step's - in `_norm`'s spelling."""
+    lists = [row.get("muted")] + [step.get("muted")
+                                  for step in (row.get("steps") or [])
+                                  if isinstance(step, dict)]
+    return frozenset(_norm(m["test"]) for mutes in lists
+                     if isinstance(mutes, list)
+                     for m in mutes
+                     if isinstance(m, dict) and isinstance(m.get("test"), str)
+                     and m["test"].strip())
 
 
 def _measured_run_moments(rows, full_commands):
-    """The moment of every GREEN MEASURED full run in `rows` - the ledger's
+    """`(moment, mutedTests)` for every GREEN MEASURED full run in `rows`,
+    `mutedTests` being `_muted_tests` of the row - the ledger's
     own rule (`_evidence_io._measurement_disqualification`), never a second
     reading of it: a red run, a repeated verdict, a dirty tree or a different
     command set is not a run that gave a coupling the chance to catch
@@ -1608,7 +1633,8 @@ def _measured_run_moments(rows, full_commands):
     the head only matters to what commit it can vouch for, which ageing
     never asks.
 
-    `(moments, undated)`: a green measured row whose `ts` does not parse
+    `(moments, undated)`: a green measured row whose `ts` does not read as a
+    moment by `_evidence_io.stamp_moment` - the ledger's own ordering read -
     cannot be placed before or after a coupling, so it ages nothing - and
     `undated` COUNTS those rows so the caller says so, rather than printing
     a run count quietly narrower than the ledger it read."""
@@ -1619,11 +1645,11 @@ def _measured_run_moments(rows, full_commands):
         if _evidence_io._measurement_disqualification(
                 row, full_commands) is not None:
             continue
-        moment = _usage_core.parse_ts(row.get("ts"))
+        moment = _evidence_io.stamp_moment(row.get("ts"))
         if moment is None:
             undated += 1
         else:
-            moments.append(moment)
+            moments.append((moment, _muted_tests(row)))
     return moments, undated
 
 
@@ -1639,13 +1665,18 @@ def _undated_note(undated):
 def _relearn_fix(entry):
     """Drop, THEN learn again. `couple` over a test that already carries an
     entry only widens its sources and keeps `learnedAt`, so `couple` alone
-    would leave the very field this warning is about untouched."""
+    would leave the very field this warning is about untouched.
+
+    EVERY FLAG `couple` REFUSES TO LEARN WITHOUT is spelled: the run, the
+    HEAD that run examined, and the phases it covered - a remedy missing one
+    of them is refused the moment it is typed."""
     test = shlex.quote(entry["test"])
     sources = ",".join(s for s in _coupling_paths(entry)[1:])
     return ("audit-task.py uncouple --test %s, then audit-task.py couple "
             "--test %s --sources %s --basis-run <runId of a full run it "
-            "failed in> to learn it again (couple alone only widens an "
-            "existing entry and keeps its learnedAt)"
+            "failed in> --basis-head <sha that run examined> --phases "
+            "<phase ids that run covered, if any> to learn it again (couple "
+            "alone only widens an existing entry and keeps its learnedAt)"
             % (test, test, shlex.quote(sources) if sources else "<paths>"))
 
 

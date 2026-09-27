@@ -677,7 +677,9 @@ newest catch and never moves back, and offering it again is not an error. The tw
 are compared as moments, never as text, so an offset against `Z` or a fractional second
 orders by time. **Refused, exit 2:** a test with no entry, `--caught` beside any of
 `--sources`/`--basis-run`/`--basis-head`/`--phases`, a run the ledger does not hold, a row of
-any scope other than `full`, a row that did not name this test on such a step, and a row whose
+any scope other than `full`, a row that did not name this test on such a step, a row whose
+name for the test fits several coupled tests at once (a bare `test_c.py` beside two
+`*/test_c.py` couplings — it cannot say which one failed, so it credits none), and a row whose
 `ts` does not read as a moment (the refusal names it). When the run is not found and some of
 the ledger could not be read, the refusal names the files that could not be read in full —
 the run may be on the line that was lost — and `--basis-run` refuses the same way.

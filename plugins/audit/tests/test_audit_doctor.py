@@ -1497,6 +1497,33 @@ def _cases(check):
           _ns.as_json is True and _ns.deep is True and _ns.color == "never"
           and hasattr(_ns, "project"))
 
+    # THE COUPLING CHECK AGES OVER GREEN MEASURED FULL RUNS, and the two
+    # comments that introduce it say so: the one above its call here and the
+    # one above its threshold. "Whole-bearing" is a different, stricter rule
+    # (the full-run check's), and a comment naming it here would send a
+    # reader to the wrong rule.
+    def _comment_above(path, anchor):
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        at = next((i for i, ln in enumerate(lines) if anchor in ln), None)
+        if at is None:
+            return None
+        block = []
+        for ln in reversed(lines[:at]):
+            if not ln.strip().startswith("#"):
+                break
+            block.insert(0, ln.strip())
+        return " ".join(block).lower()
+    _above = [_comment_above(_loader.script_path("audit-doctor.py"),
+                             "check_couplings(rep,"),
+              _comment_above(_loader.script_path("_doctor_trail.py"),
+                             "UNCOUPLE_AFTER_FULL_RUNS = ")]
+    check("the comments introducing the coupling ageing - above its call and "
+          "above its threshold - say MEASURED runs, never whole-bearing: %r"
+          % (_above,),
+          all(c and "measured" in c and "whole-bearing" not in c
+              for c in _above))
+
 
 def _selftest():
     return _harness.run(_cases)

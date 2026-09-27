@@ -19,6 +19,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -2119,6 +2120,175 @@ def _coupling_cases(check):
               len(cand) == 1 and "tests/test_old.py" in cand[0]["detail"])
     finally:
         shutil.rmtree(headless, ignore_errors=True)
+
+    _muted_coupling_cases(check, _run, _rows, _entry, k)
+    _date_only_coupling_cases(check, _entry)
+    _relearn_command_cases(check, _run, _rows)
+
+
+def _muted_full_row(run_id, day, step_mute, row_mute):
+    """A green measured full row whose step FAILED with its failure excused
+    by a mute - named on the step, on the row, or both."""
+    step = {"name": "gate", "command": "echo x", "exit": 1, "durationMs": 1000}
+    if step_mute:
+        step["muted"] = [{"test": step_mute, "bugId": "BUG-1",
+                          "until": "2099-01-01"}]
+    row = {"v": _evidence_io.ROW_VERSION, "runId": run_id,
+           "ts": "2026-03-%02dT00:00:00Z" % (day,),
+           "scope": _evidence_io.FULL_SCOPE, "status": "passed",
+           "steps": [step], "testedState": {"head": "e" * 40},
+           "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                            "dirtyOutside": []}}
+    if row_mute:
+        row["muted"] = [{"test": row_mute, "bugId": "BUG-1",
+                         "until": "2099-01-01"}]
+    return row
+
+
+def _muted_coupling_cases(check, _run, _rows, _entry, k):
+    """A run whose coupled test failed and was MUTED reads green, but the
+    test did not pass in it - so it must not age that coupling. The mute is
+    spelled `./tests/...` while the coupling says `tests/...`, so a reader
+    comparing raw strings goes red too."""
+    muted = _harness.fixture_root("doctor-trail-coupling-muted-")
+    try:
+        os.makedirs(os.path.join(muted, "docs", "audit"))
+        # K runs from the 2nd: the first half name the mute on the step
+        # only, the rest on the row only, so dropping either reading ages
+        # the muted coupling by a count this case can see.
+        for i in range(k):
+            on_step = i < k // 2
+            _evidence_io.append_row(muted, _muted_full_row(
+                "muted-%d" % (i,), i + 2,
+                "./tests/test_c.py" if on_step else None,
+                None if on_step else "./tests/test_c.py"))
+        plan = {"meta": {"fullGate": ["echo x"], "coupling": [
+            _entry("tests/test_c.py", ["src/c.py"], "2026-02-01T00:00:00Z"),
+            _entry("tests/test_d.py", ["src/d.py"], "2026-02-01T00:00:00Z")]},
+            "phases": []}
+        rep = _run(muted, plan, None)
+        cand = [r for r in _rows(rep) if "CANDIDATE" in r["detail"]]
+        check("dcp14 RED-FIRST: K green runs in which the coupled test "
+              "failed MUTED do not make it a CANDIDATE - it failed every "
+              "run, which is not catching nothing: %r" % (_rows(rep),),
+              not any("tests/test_c.py" in r["detail"] for r in cand))
+        # ALLOW DIRECTION: the same runs age a coupling they did NOT mute,
+        # so a version that skipped every row carrying any mute goes red.
+        check("dcp15 ALLOW: the same unmuted-for-it green runs still age "
+              "the other coupling into a CANDIDATE: %r" % (_rows(rep),),
+              len(cand) == 1 and "tests/test_d.py" in cand[0]["detail"])
+        rows = _evidence_io.read_rows(muted)["rows"]
+        moments, _undated = M._measured_run_moments(rows, ["echo x"])
+        ages = [M.coupling_age(_entry(t, ["src/x.py"],
+                                      "2026-02-01T00:00:00Z"), moments)[0]
+                for t in ("tests/test_c.py", "tests/test_d.py")]
+        check("dcp16 RED-FIRST: counted run by run, the muted coupling is "
+              "aged by none of the K runs - neither those muting it on the "
+              "step nor those muting it on the row - and the other by all "
+              "K: %r (K=%d)" % (ages, k),
+              ages == [0, k])
+    finally:
+        shutil.rmtree(muted, ignore_errors=True)
+
+
+def _date_only_coupling_cases(check, _entry):
+    """A date-only stamp is a moment to the ledger's own ordering
+    (`_evidence_io.stamp_moment`, the start of that day in UTC), so ageing
+    must read it as the same moment rather than as no moment at all."""
+    row = {"v": _evidence_io.ROW_VERSION, "runId": "dated", "ts": "2026-03-05",
+           "scope": _evidence_io.FULL_SCOPE, "status": "passed",
+           "steps": [{"name": "gate", "command": "echo x", "exit": 0,
+                      "durationMs": 1000}],
+           "testedState": {"head": "e" * 40},
+           "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                            "dirtyOutside": []}}
+    moments, undated = M._measured_run_moments([row], ["echo x"])
+    want = _evidence_io.stamp_moment("2026-03-05")
+    check("dcp17 RED-FIRST: a green measured run stamped with a date alone "
+          "is placed at the moment the ledger orders it by, not counted as "
+          "undated: %r (want %r)" % ((moments, undated), want),
+          undated == 0 and [m for m, _muted in moments] == [want]
+          and want is not None)
+    before = M.coupling_age(_entry("tests/test_e.py", ["src/e.py"],
+                                   "2026-03-04"), moments)
+    same = M.coupling_age(_entry("tests/test_e.py", ["src/e.py"],
+                                 "2026-03-05"), moments)
+    check("dcp18 RED-FIRST: a date-only learnedAt is a moment too - the day "
+          "before the run is aged by it, the run's own day (the same "
+          "moment) is not: %r" % ((before, same),),
+          before[0] == 1 and same[0] == 0 and before[2] is None
+          and same[2] is None)
+
+
+def _relearn_command_cases(check, _run, _rows):
+    """The remedy printed for an entry that cannot be aged is a command a
+    reader types: `couple` refuses to learn without every basis flag, so
+    the printed one is RUN - its placeholders filled from a fixture - and
+    must be accepted."""
+    fixture = _harness.fixture_root("doctor-trail-coupling-relearn-")
+    try:
+        os.makedirs(os.path.join(fixture, ".claude"))
+        os.makedirs(os.path.join(fixture, "docs", "audit"))
+        with open(os.path.join(fixture, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        plan = {"meta": {"version": 2, "buildCommands": {"test": "true"},
+                         "fullGate": ["echo x"]},
+                "phases": [{"id": "P1", "title": "Live",
+                            "status": "in_progress", "testGate": ["test"],
+                            "tasks": [{"id": "P1.1", "title": "a",
+                                       "status": "pending"}]}],
+                "fileIndex": {}, "bugs": []}
+        with open(os.path.join(fixture, "docs", "audit", "audit-plan.json"),
+                  "w", encoding="utf-8") as fh:
+            json.dump(plan, fh, indent=2)
+        _evidence_io.append_row(fixture, {
+            "v": _evidence_io.ROW_VERSION, "runId": "run-relearn",
+            "ts": "2026-03-02T00:00:00Z", "scope": _evidence_io.FULL_SCOPE,
+            "status": "failed",
+            "steps": [{"name": "gate", "command": "echo x", "exit": 1,
+                       "durationMs": 1000}],
+            "testedState": {"head": "e" * 40},
+            "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                             "dirtyOutside": []}})
+        unaged = {"test": "tests/test_re.py", "sources": ["src/re.py"],
+                  "basis": {"runId": "run-learn"}}
+        rep = _run(fixture, {"meta": {"fullGate": ["echo x"],
+                                      "coupling": [unaged]},
+                             "phases": []}, None)
+        cannot = [r for r in _rows(rep) if "cannot be aged" in r["detail"]]
+        fix = (cannot[0].get("fix") or "") if cannot else ""
+        marker = "then audit-task.py couple "
+        tail = fix.split(marker, 1)[1] if marker in fix else ""
+        printed = "couple " + tail.split(" to learn it again", 1)[0]
+        values = {"--basis-run": "run-relearn", "--basis-head": "e" * 40,
+                  "--phases": "P1"}
+        missing = []
+
+        def fill(match):
+            flag = match.group(1)
+            if flag not in values:
+                missing.append(flag)
+                return match.group(0)
+            return "%s %s" % (flag, values[flag])
+        argv = shlex.split(re.sub(r"(--[\w-]+) <[^>]*>", fill, printed))
+        task = _loader.load_script("audit-task.py", modname="audit_task_dcp")
+        said = []
+        code = task.main(argv + ["--project-dir", fixture], out=said.append)
+        coupled = []
+        with open(os.path.join(fixture, "docs", "audit", "audit-plan.json"),
+                  encoding="utf-8") as fh:
+            coupled = (json.load(fh).get("meta") or {}).get("coupling") or []
+        check("dcp19 RED-FIRST: the couple command the doctor prints for an "
+              "entry that cannot be aged, its placeholders filled, is "
+              "ACCEPTED by audit-task.py couple and learns the entry - every "
+              "flag couple requires is spelled: %r -> %r %r (%r)"
+              % (argv, code, said, coupled),
+              bool(tail) and not missing and code == 0
+              and [e.get("test") for e in coupled] == ["tests/test_re.py"]
+              and (coupled[0].get("basis") or {}).get("phases") == ["P1"])
+    finally:
+        shutil.rmtree(fixture, ignore_errors=True)
 
 
 def _selftest():
