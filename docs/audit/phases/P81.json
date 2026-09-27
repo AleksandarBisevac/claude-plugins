@@ -90,7 +90,7 @@
     {
       "id": "P81.2",
       "title": "bug-add writes the bug shape /audit:bug spells; mute and unmute write meta.muted",
-      "status": "in_progress",
+      "status": "done",
       "description": "audit-task.py bug-add \"<title>\" [manifest] --severity low|med|high --description TEXT --files a,b [--repro TEXT] [--expected TEXT] [--actual TEXT] writes exactly the shape commands/bug.md step 3 spells - {id, title, status 'open', severity, reportedAt, reportedBy null, description, repro, expected, actual, files, taskId null, fixedIn null, notes null} - with the id from _id_shape.next_bug_id(assembled, suffix) (the allocator next-id bug already uses, suffix from _mint_suffix), creating bugs [] when absent, under _under_lock, into the index through _write_add(..., phase_id=None, index_fields=('bugs',)) (the index-only path P69 added), revalidated with roll-back, journal row bug.add. The title is the POSITIONAL, not a --title flag: this parser's positional slot is named title, and the --rename comment in build_parser records why a --title flag would shadow it. --repro, --expected and --actual join PROSE_FLAGS. mute --test <path> --reason TEXT --owner NAME --until <date> --bug <id> and unmute --test <path> are the only writers of meta.muted (same lock, index write with index_fields=('meta',), revalidation, journal test.muted / test.unmuted); mute on an already-muted test with a later until extends it. Because an expired mute is a warning (L4.a), unmute and an extending mute run on such a plan like every other verb. commands/bug.md steps 1-3 become the bug-add call (no hand edit of bugs[]) and /audit:bug add passes its gathered answers as flags; the /audit:bug README row and commands/task.md for mute and unmute (_refs.command_flag_drift). Red-first: bug-add writes the step-3 shape with every key present, an allocator id and one journal row; on a plan with no bugs key it creates the list; mute without --bug refused; mute naming a bug the plan lacks is refused by the validator's finding and rolled back (mutation: skip the revalidation -> red). Allow case: unmute of a muted test removes exactly that entry.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -127,18 +127,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29839ab5a78fba074e7690200119b7bd8ef24d9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "bug-add under the lock into the index with a bug.add row; mute reads until through _manifest_vocab and extends only to a later day; an unknown bug is the validator's finding with rollback; main and supplied_flags use parse_intermixed_args (proved on 3.9); _manifest_from_positional runs before _resolve_project in settle/couple/uncouple/mute/unmute; --files kept optional as bug.md allows.",
+        "descriptive": "/audit:bug add calls bug-add, which writes the step-3 shape with every key; mute and unmute are the only writers of meta.muted; the CLI parses a trailing manifest on every supported interpreter, and that manifest decides the project"
       },
       "startedAt": "2026-09-27T14:42:17Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T16:44:01Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T16:38:40Z.fab1c8",
         "status": "passed",
         "at": "2026-09-27T16:38:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "29839ab5a78fba074e7690200119b7bd8ef24d9c",
+        "at": "2026-09-27T16:44:01Z"
       }
     },
     {
@@ -245,7 +250,7 @@
     {
       "id": "P81.5",
       "title": "couple --caught refreshes a coupling's lastCaught from a named third-place failure",
-      "status": "pending",
+      "status": "in_progress",
       "description": "couple --test <path> --caught <runId> on an already-coupled test sets lastCaught to that run's ts and journals coupling.caught. The run must be a scope full row whose failingSuites, with a named basis, include the test (looked up with _evidence_io.row_by_run); otherwise refused exit 2 naming which. A coupling first written from a miss carries no lastCaught. --caught never creates a coupling (a test that is not coupled is refused) and never changes sources. Add the dest to VERB_FLAGS['couple'] and commands/task.md. Red-first: --caught on a coupled test named failing in a full row sets lastCaught to the row's ts and writes one journal row; mutation: accept a row whose basis is a tail -> red. Allow cases: an uncoupled test refused; a phase-scope row refused. Also, in the same file: audit-task's `_named_failing_suites` (the reader behind a fix task's --failing-from gate) must skip a step the committed row marks muted (the step-level `muted` marker P81.3 adds to STEP_KEYS), so a quarantined suite never narrows a fix task's gate; correct its docstring that says it reads a failed step the way run-test-gate.failed_steps does. Red-first: a failed row whose only failing suite is a muted step yields no failing-from paths.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -276,14 +281,14 @@
         "P81.2",
         "P81.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T16:44:22Z",
       "completedAt": null,
       "verifiedBy": []
     },
