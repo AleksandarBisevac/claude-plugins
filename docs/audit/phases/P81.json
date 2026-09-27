@@ -149,7 +149,7 @@
     {
       "id": "P81.3",
       "title": "A muted suite's failure is recorded and does not block; Playwright's flaky is its own word",
-      "status": "in_progress",
+      "status": "done",
       "description": "Verdict rule (dg20): a failed step whose failingSuites (named basis only) are ALL muted by an unexpired meta.muted entry does not make the run fail - failed_steps / run_status exclude it - and the step keeps its exit, failing and failingSuites on the row; the row gets muted [{test, bugId, until}] and the terminal prints 'muted: <test> failed (bug <bugId>, until <date>)'. A step with one non-muted failing suite, or whose failures could not be named (tail basis), fails as today: a mute is never assumed. An expired entry is not honoured, and the line says 'muted until <date> - expired, so this failure blocks'. The runner never retries a non-muted failure (a retry stays reserved for a signal death). Playwright: add a summary reader row (passed, failed and flaky counted as ran) and a failure reader row TOGETHER (fr0 reads _SUMMARY_READERS and _FAILURE_READERS against each other), and a step observation flaky (the names Playwright reports as flaky) with flakyBasis, recorded on a step that exited 0 as well. NOT a step outcome: _evidence_io._step_failed and every tally read any outcome as not-passed, and a flaky-but-green step is a pass with a named doubt. Capture a real Playwright run's list or line reporter output as the fixture before writing the regex (the verifying-external-behavior skill): the reader must match what the pinned version prints. _evidence_io: muted on the row (row_for allow-list), flaky and flakyBasis in STEP_KEYS, bounded and redacted. Red-first: dg20 - a muted failing suite beside green steps -> status passed with the muted line (mutation: remove the filter -> red); allow: an expired until -> the failure blocks (mutation: ignore until -> red); a muted suite beside an unmuted failure -> failed; a tail-basis failure -> failed. Playwright output with one flaky test -> step exit 0, flaky names it, status passed (mutation: record it as outcome -> red, through gate_tally counting it failed).",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -187,24 +187,29 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "82f585fbf371896cef0a6824be8c8428cebe6b53",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges from the description by tightening it after three reviews: the description's rule (all failingSuites muted, named basis) let a second failure through in wrappers, package scripts, multi-runner steps and several runner shapes, so the rule fails closed (mute_ineligible, command_runner, MUTE_RUNNERS) over real captures of pytest 9.1.1, jest 30.5.2, vitest 4.1.10 and Playwright 1.56.0; a step-level muted marker is on the committed row, and the tallies, the shadow claim, derive-phase-gate and audit-lookup read it. Known limit, stated in MUTE_RUNNERS: a jest reporter error prints nothing, so a mute beside it holds.",
+        "descriptive": "a mute is honoured only for a direct call of an allow-listed runner (pytest, jest, vitest, Playwright) that exits with its failed-tests code, whose named failures match its tally and which reports no other failure state; anything else keeps the gate red; Playwright's flaky tests are named on a step without being an outcome"
       },
       "startedAt": "2026-09-27T14:42:17Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T17:09:05Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T17:07:15Z.706819",
         "status": "passed",
         "at": "2026-09-27T17:07:15Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "82f585fbf371896cef0a6824be8c8428cebe6b53",
+        "at": "2026-09-27T17:09:05Z"
       }
     },
     {
       "id": "P81.4",
       "title": "The --full post-pass names a SELECTION MISS, learning only from a suite the runner named",
-      "status": "pending",
+      "status": "in_progress",
       "description": "After a --full run, a post-pass (dg15). Failing suites = the steps' failingSuites whose basis says the runner NAMED them - never the failing tail, never a muted suite. Derived sets = the union of phase.testGateDerived.tests over the phases whose mergedHead the run's head contains (_worktrees.merged_into) and that merged after the newest earlier whole-bearing green full row. A failing suite none of them listed is a SELECTION MISS: print 'SELECTION MISS: <path> failed at the third place and no derived sign-off gate in <P, ...> listed it. remedy: audit-task.py couple --test <path> --sources <files> --basis-run <runId> --basis-head <head> --phases <ids>; audit-task.py bug-add ...' and put selectionMiss [{test, phases, sources}] on the row (row_for allow-list). Sources are the union of those phases' tasks' files - the work since the last green full run, read off the plan rather than guessed from a diff. When the failures were not named, print 'not learned: the runner did not name the failing suites (basis: <basis>)' instead. The runner prints and records; it never writes the manifest - full-gate.py acts. Red-first: a full run failing on e2e/cart.spec.ts, with one merged phase whose derived tests do not list it, prints the miss and records it; dg15 - the same failure with a tail basis records no miss and prints the not-learned line (mutation: learn from the tail -> red). Allow cases: a failing suite a derived gate listed is not a miss; a muted suite is never a miss.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -236,14 +241,14 @@
       "dependsOn": [
         "P81.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T17:09:06Z",
       "completedAt": null,
       "verifiedBy": []
     },
