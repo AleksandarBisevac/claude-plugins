@@ -118,7 +118,8 @@ Hard rules (non-negotiable):
   test files (a pytest node id, unittest `-v`'s module and class, a run of exactly one
   declared file), the class it names there defines the case (its last binding there — an
   assignment, walrus, `with ... as` or import of the name after it means the def is not
-  what runs; `New.maxDiff = None` binds nothing), and no test file anywhere in HEAD's tree
+  what runs, and so does a later `New.<case> = ...` or `setattr(New, '<case>', ...)`;
+  `New.maxDiff = None` binds nothing), and no test file anywhere in HEAD's tree
   holds an identical def under the same class and name. A house run is compared whole: a
   script identical to one of HEAD's test files is refused. A HEAD case your new file
   imports, inherits or loads, a file you moved, or a case you copied is not yours unless

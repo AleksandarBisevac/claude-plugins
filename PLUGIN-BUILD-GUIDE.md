@@ -3702,7 +3702,11 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
    assignment with a value, an augmented one, `del`, a `for` target, `with ... as`, a match
    capture, an import (a `*` import counts as binding anything), a def, a class, and a walrus
    anywhere in the statement outside a lambda; any of those after the def means the def is not
-   what runs; a def in a string, in another class or merely inherited is not it), and no test file
+   what runs, and so does a later statement at any level of the chain that `_replaces()` the case
+   on its class - an assignment of any kind to the exact attribute path `<chain>.<case>`
+   (`New.test_x = f` at module level, `Inner.test_x = f` in `Outer`'s body) or a
+   `setattr(<chain>, '<case>', ...)` naming it literally - while any other attribute of the class
+   is untouched; a def in a string, in another class or merely inherited is not it), and no test file
    anywhere in HEAD's tree (`head_tree()`: `git ls-tree -r` filtered by `_is_test_path()`, read
    by one `git cat-file --batch` under the deadline) holds an ast-identical def under the same
    class chain and name (`credit_problem()`). That is keyed by the definition, not by the path, so
@@ -3736,7 +3740,8 @@ a new definition and is credited; a HEAD case in a file `_is_test_path()` does n
 is not in the set a copy is compared against; a rebinding inside the block of an `if`, `try`,
 loop, `with` or `match` is not read (only what the statement's header binds is); a decorator that
 returns a different function than the one it decorates is not read, so a decorated def is taken to
-be what runs; a house suite moved or copied with any edit is compared as a new file and is credited
+be what runs; a `setattr` whose name is computed rather than a literal, or whose object is reached
+some other way than the chain's own dotted names, is not read either; a house suite moved or copied with any edit is compared as a new file and is credited
 with every case it prints, HEAD's among them; and a unittest module name, exact or trailing, also
 refuses a legitimate case when an unrelated file elsewhere in the tree ends with the same path -
 run the file by its path, or under pytest, to prove it.

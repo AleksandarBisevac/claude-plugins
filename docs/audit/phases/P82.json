@@ -848,6 +848,53 @@
       "verifiedBy": [
         "stamp-verification selftest 162/162 plus probe/mutations.py 91/91 red on an export; full sweep"
       ]
+    },
+    {
+      "id": "P82.15-fye",
+      "title": "red-first reads an attribute assignment or setattr that replaces the case on its class as a rebinding",
+      "status": "in_progress",
+      "description": "Round-13 review (review-P82m.json; probe29). A regression from P82.14: a module-level `New.test_value_is_two = test_old.Old.test_value_is_two` after the class replaces the passing def with HEAD's unchanged red function; P82.14 reads an Attribute target as binding nothing, so _definition returns the passing def and HEAD's red is credited (T1, exit 0 proved; P82.13 refused it). `setattr(New, 'test_value_is_two', ...)` (T2) is credited too. After the chain resolves, a later statement rebinds the case when (a) one of its Assign/AugAssign/AnnAssign targets is an Attribute whose dotted path is the chain plus the case name, or (b) it is setattr(<chain>, '<name>', ...) with a literal name; either means not defined here. `New.maxDiff = None` (sr175, O1) stays allowed - only the case's own name on its own chain counts. Red first: T1 and T2 refused; O1 still proves. A setattr with a computed name is a named limit in the guide and CHANGELOG.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - New.test_value_is_two = test_old.Old.test_value_is_two after the class gets HEAD's red credited"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T19:38:41Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

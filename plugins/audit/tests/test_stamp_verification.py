@@ -2178,6 +2178,25 @@ def _binding_cases(check):
               "runs and HEAD's red is not credited: exit=%r %s"
               % (cid, how, code, basis[:400]),
               code == M.E_CANNOT_PROVE and "does not define it" in basis)
+    passing = ["import unittest", "from tests import test_old",
+               "class New(unittest.TestCase):", "    def test_value_is_two(self):",
+               "        self.assertTrue(True)"]
+    replaced = [
+        ("sr184", "a module-level `New.test_value_is_two = ...` after the class",
+         "New.test_value_is_two = test_old.Old.test_value_is_two"),
+        ("sr185", "a module-level `setattr(New, 'test_value_is_two', ...)`",
+         "setattr(New, 'test_value_is_two', test_old.Old.test_value_is_two)"),
+    ]
+    for cid, how, line in replaced:
+        root, man = _tree_repo("stamp-red-%s-" % (cid,), head,
+                               {"tests/test_new.py": "\n".join(passing + [line]) + "\n"},
+                               ["tests/test_new.py"])
+        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+        check("%s %s replaces the passing def with HEAD's function, so the def is not "
+              "what runs and HEAD's red is not credited: exit=%r %s"
+              % (cid, how, code, basis[:400]),
+              code == M.E_CANNOT_PROVE and "does not define it" in basis)
     legacy = "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
                         "class Old(unittest.TestCase):",
                         "    def test_value_is_two(self):",
@@ -2475,6 +2494,44 @@ def _located_cases(check):
           and bool(housed["the same module, a comment and blank lines added"])
           and housed["a suite of its own"] is None
           and bool(housed["HEAD's tree unread"]))
+    base = "class New:\n    def test_x(self):\n        pass\n"
+    nested = ("class Outer:\n    class Inner:\n        def test_x(self):\n"
+              "            pass\n")
+    replacing = [
+        ("the case's own attribute replaced", base + "New.test_x = f\n", ["New"], False),
+        ("replaced through a tuple target", base + "(New.test_x, a) = (f, 1)\n",
+         ["New"], False),
+        ("replaced by an augmented assignment", base + "New.test_x += f\n", ["New"],
+         False),
+        ("replaced by an annotated assignment", base + "New.test_x: object = f\n",
+         ["New"], False),
+        ("setattr with the literal name", base + "setattr(New, 'test_x', f)\n",
+         ["New"], False),
+        ("setattr inside an assignment", base + "_ = setattr(New, 'test_x', f)\n",
+         ["New"], False),
+        ("a nested chain replaced at module level",
+         nested + "Outer.Inner.test_x = f\n", ["Outer", "Inner"], False),
+        ("a nested chain replaced in the outer class body",
+         nested.replace("            pass\n", "            pass\n    Inner.test_x = f\n"),
+         ["Outer", "Inner"], False),
+        ("another attribute of the class", base + "New.maxDiff = None\n", ["New"],
+         True),
+        ("the same name on another class", base + "Other.test_x = f\n", ["New"], True),
+        ("a longer path through the case", base + "New.test_x.__doc__ = 'x'\n",
+         ["New"], True),
+        ("setattr with a computed name", base + "setattr(New, 'test_' + 'x', f)\n",
+         ["New"], True),
+        ("setattr on another object", base + "setattr(Other, 'test_x', f)\n", ["New"],
+         True),
+    ]
+    wrong = [(k, want) for k, text, chain, want in replacing
+             if (M._definition(text, chain, "test_x") is not None) != want]
+    check("sr186 once the chain resolves, a later assignment to the attribute "
+          "<chain>.<case> - plain, through a tuple, augmented or annotated - or a "
+          "`setattr(<chain>, '<case>', ...)` with that literal name replaces the def, "
+          "at module level or in an enclosing class; any other attribute, another "
+          "object, a longer path and a computed name do not: %d rows, wrong %r"
+          % (len(replacing), wrong), not wrong)
     check("sr174 the throwaway's own files are listed for that refusal - relative, "
           "`/`-separated, `.git` left out: %r" % (walked,),
           walked == ["legacy/test_new.py", "top.py"])

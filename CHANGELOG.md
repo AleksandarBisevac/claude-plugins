@@ -321,7 +321,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   HEAD's tree also ends with is refused, since unittest resolves it through `sys.path`), the class
   the runner names there defines it (read by ast as the name's last real binding - an assignment
   to the name, a walrus, `with ... as`, a `for` target, a match capture or an import after the def
-  means it is not what runs, while `New.maxDiff = None` binds nothing), and no test file anywhere in
+  means it is not what runs, as does a later assignment to `<chain>.<case>` or a
+  `setattr(<chain>, '<case>', ...)` with that literal name, while `New.maxDiff = None` binds nothing;
+  a `setattr` whose name is computed is not read), and no test file anywhere in
   HEAD's tree holds an ast-identical def under the same class chain and name; a house run's one
   script is compared whole, and one identical to a HEAD test file is refused. The stubs remove the
   new files' content and so everything it reaches; a HEAD case a new file imports, inherits or

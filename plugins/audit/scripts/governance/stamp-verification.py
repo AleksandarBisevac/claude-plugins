@@ -991,22 +991,88 @@ def _definition(text, classes, name):
     Each name is read as the body's LAST top-level binding of it: a class of
     the chain must be last bound by its `class` statement, and the case by its
     `def`. So any binding `_binds` reads after the def - in the class body, or
-    of the class name at module level - means it is not the def that runs,
-    while an attribute or subscript assignment binds nothing; and a def in a
-    string, in another class or merely inherited is not it either. A binding
-    inside the block of a compound statement is not read, and neither is a
-    decorator that returns another function."""
+    of the class name at module level - means it is not the def that runs; so
+    does a later statement at any level of the chain that `_replaces` the case
+    on its class (an assignment to `<chain>.<case>`, or a `setattr` naming it
+    literally), while any other attribute or subscript assignment binds
+    nothing; and a def in a string, in another class or merely inherited is
+    not it either. A binding inside the block of a compound statement is not
+    read, and neither is a decorator that returns another function or a
+    `setattr` whose name is computed."""
     tree = _parse(text)
     if tree is None:
         return None
-    body = tree.body
+    body, trail = tree.body, []
     for cls in classes:
         node = _last_binding(body, cls)
         if not isinstance(node, ast.ClassDef):
             return None
+        trail.append((body, node))
         body = node.body
     node = _last_binding(body, name)
-    return node if isinstance(node, _DEFS) else None
+    if not isinstance(node, _DEFS):
+        return None
+    trail.append((body, node))
+    for depth, (level, anchor) in enumerate(trail):
+        path = list(classes[depth:]) + [name]
+        later = level[[id(stmt) for stmt in level].index(id(anchor)) + 1:]
+        if any(_replaces(stmt, path) for stmt in later):
+            return None
+    return node
+
+
+def _dotted(node):
+    """The dotted path an expression spells - `New.test_x` is
+    `["New", "test_x"]` - or None for anything but names and attributes."""
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, ast.Attribute):
+        head = _dotted(node.value)
+        return head + [node.attr] if head is not None else None
+    return None
+
+
+def _attribute_targets(target):
+    """The Attribute targets of an assignment target, read through tuples,
+    lists and starred."""
+    if isinstance(target, ast.Attribute):
+        return [target]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [a for elt in target.elts for a in _attribute_targets(elt)]
+    if isinstance(target, ast.Starred):
+        return _attribute_targets(target.value)
+    return []
+
+
+def _replaces(stmt, path):
+    """Whether `stmt` replaces the case at `path` - the class chain as seen
+    from the body `stmt` stands in, then the case's name - on its class: an
+    assignment of any kind to that exact attribute path, or a
+    `setattr(<chain>, '<name>', ...)` with that literal name. Another
+    attribute (`New.maxDiff = None`), another object or a longer path does
+    not, and a name setattr computes is not read."""
+    if len(path) < 2:
+        return False
+    if isinstance(stmt, ast.Assign):
+        targets = stmt.targets
+    elif isinstance(stmt, (ast.AugAssign, ast.AnnAssign)):
+        targets = [stmt.target]
+    else:
+        targets = []
+    if any(_dotted(a) == path for t in targets for a in _attribute_targets(t)):
+        return True
+    stack = list(_header(stmt))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Lambda):
+            continue
+        if isinstance(node, ast.Call) and _dotted(node.func) == ["setattr"] \
+                and len(node.args) >= 2 and _dotted(node.args[0]) == path[:-1] \
+                and isinstance(node.args[1], ast.Constant) \
+                and node.args[1].value == path[-1]:
+            return True
+        stack.extend(ast.iter_child_nodes(node))
+    return False
 
 
 def test_definitions(texts):
