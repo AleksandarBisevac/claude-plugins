@@ -1,0 +1,33 @@
+{
+  "id": "P86",
+  "title": "No register id in a comment, held by the lint",
+  "status": "pending",
+  "description": "Second half of the register-citation sweep: the citations in files P74, P82, P80 and P81 hold, and in BUG-12's files once the human fix has landed, then the lint extension (parenthesised phase, task and bug ids; measured 51 true of 52 hits over the tree). The lint lands last, because it fails while any citation remains.",
+  "desiredOutcome": "No comment or docstring in the tree cites a phase, task or bug id in parentheses, and _deps.register_citation_violations() fails the build on one, with every legitimate shape it must leave alone pinned by an allow case.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [
+    "P74",
+    "P82",
+    "P81"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}
