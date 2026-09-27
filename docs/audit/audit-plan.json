@@ -557,7 +557,7 @@
     {
       "id": "P87",
       "title": "a task that regenerates a published page can record a green gate before its commit, and a journal row keeps every detail its writer passed",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P87.json"
     }
   ],
@@ -4238,6 +4238,9 @@
     ],
     "plugins/audit/tests/test_propose_gates.py": [
       "P80.15-rtb"
+    ],
+    "tools/affected.py": [
+      "P87.1"
     ]
   },
   "bugs": [
