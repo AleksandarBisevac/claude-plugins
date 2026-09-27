@@ -701,6 +701,53 @@
       "verifiedBy": [
         "stamp-verification selftest 136/136 plus probe/mutations.py 42/42 red on an export; full sweep"
       ]
+    },
+    {
+      "id": "P82.12-fye",
+      "title": "red-first credits a located case only when its definition in the runner's class is new or changed at HEAD, and a no-tests-ran baseline is green only when nothing failed",
+      "status": "in_progress",
+      "description": "Round-10 review (review-P82j.json; probe25). (1) A located case whose file exists at HEAD is credited only when its definition is new or changed against HEAD's text (ast comparison of the FunctionDef the runner's class and name select); an unchanged HEAD case is could-not-prove with that reason (Y1 import from a declared existing file, Y2 load_tests). (2) _defines resolves the definition through the location: unittest 3.11+ mod.Class.test, pytest ::Class::test; the named ClassDef must hold the FunctionDef, read by ast, not a line regex (Y3: an unrelated class defining the same name). (3) The no-tests-ran green branch requires nothing failed: tally is None or (not collected and not failed); _unittest_tally sums every Ran line or treats several tallies as mixed (Z1: a shell running HEAD's red file then the stub). (4) Over-refusal: a unittest module maps to a declared file by dotted suffix, refused only when more than one file matches; script paths are normalised (./, absolute) (D: discover -s tests). (5) pytest exit 5 with 0 run and 0 failed (all deselected) is no-tests-ran. (6) The one-second floor is checked before each git call in _isolate, and the comment describes the code. Y1, Y2, Y3, Z1 red cases proved first; D an allow case; sr150 stays the allow case. The four documents and the docstring state the rule the code enforces.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a new test file importing an unchanged red case from a declared existing test file gets it credited"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T11:12:10Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

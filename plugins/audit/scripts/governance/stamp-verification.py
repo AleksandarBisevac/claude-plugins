@@ -74,9 +74,11 @@ path but SIGKILL, which no process can catch - the `red` section says what is
 reported instead.
 """
 import argparse
+import ast
 import datetime
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -196,9 +198,10 @@ def read_stamp_text(args, stdin=None):
 # and its implementation files left at HEAD. HEAD's own test files run FIRST,
 # before any file of the task's is laid over - each declared test file new at
 # HEAD written as an EMPTY file, so the same command reaches what the task's run
-# reaches - and must be green; then the task's run must be red, the fix run -
-# the task's tests on the working tree's implementation - green, and only a
-# failure the runner locates in a declared test file that defines it is the
+# reaches minus the new files' content - and must be green; then the task's run
+# must be red, the fix run - the task's tests on the working tree's
+# implementation - green, and only a failure the runner locates in a declared
+# test file, whose named class defines it new or changed against HEAD's, is the
 # task's. Every run is made in the throwaway reset to HEAD with an isolated
 # environment of its own, so the runs differ only in the files laid over. What
 # that cannot see - state reached by an absolute path or the shared git
@@ -238,9 +241,11 @@ DEFAULT_TIMEOUT = 480
 # ONE deadline, `--timeout`, starts before anything runs and covers every git
 # call that builds or reads the throwaway and every run - HEAD's own, the task's,
 # the second (`--introduces`) and the fix run: each stage gets what the earlier
-# ones left, and with less than a second left `_isolated_run` makes no run and
-# no reset at all, so no git call is started past the deadline with the floor of
-# one second a timeout is given. What happens after the deadline has to fit in
+# ones left. `_isolated_run` makes no run, and `_isolate` starts neither of the
+# reset's git calls, with less than a whole second left, so none of those is
+# started past the deadline on the one-second floor a timeout is given. The
+# git calls before the throwaway exists (listing and reading HEAD's files,
+# building it) keep that floor and can overrun it by up to a second each. What happens after the deadline has to fit in
 # the rest of the host's limit, so it is bounded and summed here: one teardown
 # of a timed-out run (`_proc_group.GRACE_SECONDS` for SIGTERM, again for
 # SIGKILL, again for the drain - at most one run can time out, because each
@@ -300,9 +305,6 @@ _UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
 # two modules - HEAD's imported class and a subclass inheriting from it - each
 # keep their own.
 _UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)(?: \(([\w.]+)\))?", re.M)
-# The runner's own "nothing was collected" shape: pytest and, from 3.12,
-# unittest exit 5 and say so.
-_NO_TESTS_RAN = re.compile(r"no tests ran|NO TESTS RAN|^Ran 0 tests", re.M)
 # A house case's id is its label's leading token when that token carries a digit
 # (`me1`, `ga9b`, `pc-sd0`) - the key the harness's `case_id()` hands out and
 # prove-gates attributes a mutation by. A label led by an ordinary word has no id
@@ -356,19 +358,25 @@ def _pytest_cases(text):
     return out
 
 
-def _unittest_module(name, where):
-    """The module a unittest line locates a case in: `where` is `mod.Class` or,
-    from 3.11, `mod.Class.test`. None when the line gives no location."""
+def _unittest_site(name, where):
+    """`(module, class)` a unittest line locates a case in: `where` is
+    `mod.Class` or, from 3.11, `mod.Class.test`. Nones when the line gives no
+    location."""
     parts = where.split(".") if where else []
     if parts and parts[-1] == name:
         parts = parts[:-1]
-    return ".".join(parts[:-1]) or None
+    if len(parts) < 2:
+        return None, None
+    return ".".join(parts[:-1]), parts[-1]
 
 
 def _unittest_cases(text):
-    return [{"id": name, "label": name, "assertion": kind == "FAIL", "why": kind,
-             "module": _unittest_module(name, where)}
-            for kind, name, where in _UNITTEST_CASE.findall(text)]
+    out = []
+    for kind, name, where in _UNITTEST_CASE.findall(text):
+        module, cls = _unittest_site(name, where)
+        out.append({"id": name, "label": name, "assertion": kind == "FAIL",
+                    "why": kind, "module": module, "cls": cls})
+    return out
 
 
 CASE_READERS = {"house": _house_cases, "pytest": _pytest_cases,
@@ -432,7 +440,10 @@ def _unittest_tally(text):
             if val.isdigit():
                 counts[key] = counts.get(key, 0) + int(val)
     failures = counts.get("failures", 0)
-    return {"runner": "unittest", "collected": int(ran[-1]),
+    # Every `Ran N` line is counted, as every FAILED line is: a command running
+    # two suites prints two, and reading only the last would pair one run's
+    # count with both runs' failures.
+    return {"runner": "unittest", "collected": sum(int(n) for n in ran),
             "failed": failures + counts.get("errors", 0), "assertions": failures}
 
 
@@ -673,17 +684,24 @@ def baseline_problem(head, cmd):
     `head` is `{"code", "text", "problem"}` of HEAD's own test files run on
     HEAD's code, FIRST, in a fresh throwaway and an isolated environment, with
     every declared test file new at HEAD laid over as an EMPTY file - so the
-    same command reaches what the task's run reaches, minus the task's cases,
-    however it is spelled. Green is exit 0 with no failure counted, or the
-    runner's own no-tests-ran shape (exit 5 saying nothing was collected),
-    which a command naming only new files legitimately gives."""
+    same command reaches what the task's run reaches, however it is spelled,
+    minus the new files' content. Green is exit 0 with no failure counted, or the
+    runner's own no-tests-ran exit 5 - which a command naming only new files
+    legitimately gives, and pytest gives when `-k` deselects every case - read
+    as ONE runner's tally counting no case run and no failure. The text alone
+    is not read: a red run followed by an empty one prints "NO TESTS RAN" too,
+    and a mixed tally counts nothing because it reads no cases.
+
+    The stubs remove the new files' CONTENT, and with it everything that
+    content reaches - a HEAD case a new file imports, inherits or loads is not
+    run here. `credit_problem` is what keeps such a case from being credited."""
     if head is None:
         return "HEAD's own run was not made - %s" % (NARROW,)
     if head.get("problem"):
         return "HEAD's own run could not be made (%s) - %s" % (head["problem"], NARROW)
     tally = read_tally(head["text"], cmd)
-    if head["code"] in (0, 5) and _NO_TESTS_RAN.search(head["text"]) \
-            and (tally is None or not tally["collected"]):
+    if head["code"] == 5 and tally is not None and tally["runner"] is not None \
+            and not tally["collected"] and not tally["failed"]:
         return None
     if head["code"] != 0 or (tally is not None and (tally["runner"] is None
                                                     or tally["failed"])):
@@ -722,8 +740,13 @@ def _is_named(failure, name):
             or (label.startswith(name) and label.startswith(" (", len(name))))
 
 
+_RUNNER_MODULES = ("unittest", "pytest")
+
+
 def _house_script(cmd):
-    """The script a `python <file>.py ...` command runs, or None."""
+    """The script a `python <file>.py ...` or `python -m <module>` command runs,
+    as the path it was spelled with, or None - for `-c`, and for `-m` naming a
+    runner rather than a test module."""
     args = [str(a) for a in (cmd or ())]
     if args and args[0].endswith(".py"):
         return args[0]
@@ -734,44 +757,125 @@ def _house_script(cmd):
         if args[i] in ("-X", "-W"):
             i += 2
             continue
-        if args[i] in ("-m", "-c"):
+        if args[i] == "-c":
             return None
+        if args[i] == "-m":
+            module = args[i + 1] if i + 1 < len(args) else ""
+            if not module or module.split(".")[0] in _RUNNER_MODULES:
+                return None
+            return module.replace(".", "/") + ".py"
         if not args[i].startswith("-"):
             return args[i]
         i += 1
     return None
 
 
-def _defines(text, name):
-    """Whether `text` holds a `def` of the case `name` (a pytest parameter
-    suffix `[...]` dropped)."""
-    name = (name or "").split("[")[0]
-    return bool(name) and re.search(r"^[ \t]*(?:async[ \t]+)?def[ \t]+%s\b"
-                                    % (re.escape(name),), text or "", re.M) is not None
+def _as_rel(path, roots):
+    """`path` as a repository-relative posix path: `./` and `..` folded, an
+    absolute path made relative to the first of `roots` it lies under; None
+    for an absolute path under none of them."""
+    if not path:
+        return None
+    if os.path.isabs(path):
+        for root in roots:
+            rel = os.path.relpath(path, root)
+            if rel != os.pardir and not rel.startswith(os.pardir + os.sep):
+                path = rel
+                break
+        else:
+            return None
+    return posixpath.normpath(path.replace(os.sep, "/"))
 
 
-def located(failure, runner, tests, cmd, texts=None):
-    """Whether the runner locates this failure in a declared test file: a
-    pytest node id's path; unittest -v's module (from 3.11), or `__main__`
-    when the command runs one declared file as a script; a house run whose
-    command runs exactly one declared test file. A new test file that imports
-    HEAD's cases would otherwise carry them into its run. With `texts` - each
-    declared test file's working-tree text - a pytest or unittest case must
-    also be DEFINED in the file it is located in, since both runners locate an
-    inherited case in the subclass's file."""
-    tests = set(tests)
-    script = _house_script(cmd)
+def _one_declared(path, tests):
+    """The ONE declared test file `path` names - equal to it, or ending with
+    `/` + it, since a runner prints paths and modules relative to its own top
+    directory (`unittest discover -s tests` prints `test_new`) - or None when
+    none or more than one does."""
+    hits = [t for t in tests if path and (t == path or t.endswith("/" + path))]
+    return hits[0] if len(hits) == 1 else None
+
+
+def case_site(failure, runner, tests, cmd, roots=()):
+    """`(rel, classes, name)` - the declared test file the runner locates this
+    failure in, the class chain it names there and the case's name - or None
+    when the runner locates it in no declared test file. A pytest node id
+    gives `path::Class::name`; unittest -v gives `mod.Class`, or `__main__`
+    when the command runs a declared file as a script; a house run is located
+    only as the one declared script its command runs, with `classes` None,
+    because its FAIL lines carry no location at all."""
+    name = (failure.get("id") or "").split("[")[0]
+    script = _as_rel(_house_script(cmd), roots)
     if runner == "pytest":
-        rel = (failure.get("label") or "").split("::")[0]
-    elif runner == "unittest":
-        module = failure.get("module")
-        rel = (script if module == "__main__"
-               else module.replace(".", "/") + ".py" if module else None)
-    else:
-        return runner == "house" and script in tests
-    if rel not in tests:
-        return False
-    return texts is None or _defines(texts.get(rel), failure.get("id"))
+        parts = (failure.get("label") or "").split("::")
+        rel = _one_declared(_as_rel(parts[0], roots), tests)
+        return (rel, parts[1:-1], name) if rel and len(parts) > 1 else None
+    if runner == "unittest":
+        module, cls = failure.get("module"), failure.get("cls")
+        if module == "__main__":
+            rel = script if script in tests else None
+        else:
+            rel = _one_declared(module.replace(".", "/") + ".py" if module else None,
+                                tests)
+        return (rel, [cls] if cls else [], name) if rel else None
+    if runner == "house" and script in tests:
+        return script, None, name
+    return None
+
+
+def _definition(text, classes, name):
+    """The ast node of the def `name` held directly by the class chain
+    `classes` of `text` (module level when the chain is empty), or None. Read
+    by ast, so a def inside a string, in another class or merely inherited is
+    not it; the LAST binding of a name wins, as it does when Python runs it."""
+    try:
+        body = ast.parse(text or "").body
+    except (SyntaxError, ValueError):
+        return None
+    for cls in classes:
+        found = [n for n in body if isinstance(n, ast.ClassDef) and n.name == cls]
+        if not found:
+            return None
+        body = found[-1].body
+    defs = [n for n in body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == name]
+    return defs[-1] if defs else None
+
+
+def credit_problem(failure, runner, scope):
+    """Why this failing case is NOT the task's own, or None when it is.
+
+    `scope` is `{"tests", "cmd", "roots", "wt", "head", "new"}`: the declared
+    test files, the command, the roots a spelled path is relative to, each
+    declared test file's working-tree and HEAD text, and the ones new at HEAD.
+    The case must be located in a declared test file (`case_site`); under
+    pytest and unittest that file must define it in the class the runner
+    names; and in a file HEAD already has, that definition must be new or
+    changed against HEAD's - compared as ast, so layout and comments do not
+    count - because the baseline stubs only NEW files, and a HEAD case a new
+    file imports from a declared existing one is reached by nothing else."""
+    site = case_site(failure, runner, scope["tests"], scope["cmd"],
+                     scope.get("roots", ()))
+    if site is None:
+        return "the runner locates it in no declared test file"
+    rel, classes, name = site
+    if classes is None:
+        return None
+    where = "%s%s" % (rel, "".join(" class " + c for c in classes))
+    node = _definition(scope["wt"].get(rel), classes, name)
+    if node is None:
+        return "%s does not define it in %s" % (where, "that class" if classes
+                                                 else "the module")
+    if rel in scope["new"]:
+        return None
+    head = scope["head"].get(rel)
+    if head is None:
+        return "HEAD's copy of %s could not be read to tell an edit from HEAD's case" % (
+            rel,)
+    old = _definition(head, classes, name)
+    if old is not None and ast.dump(old) == ast.dump(node):
+        return "its definition in %s is unchanged from HEAD's - HEAD's case" % (where,)
+    return None
 
 
 def _test_texts(root, tests):
@@ -788,14 +892,13 @@ def _test_texts(root, tests):
     return out
 
 
-def own_failures(failing, cases, runner=None, tests=(), cmd=None, texts=None):
+def own_failures(failing, cases, runner=None, scope=None):
     """`(own, refused)` - the failing cases that failed an assertion and that
-    the runner locates in a declared test file (`located`), all of them the
-    task's own against a green baseline, narrowed to those `--case` names;
+    `credit_problem` credits to the task, narrowed to those `--case` names;
     and the `--case` names that name none of them. Without a `runner` the
-    location is not asked."""
+    credit is not asked."""
     asserting = [f for f in failing if f["assertion"] and (f["id"] or f["label"])
-                 and (runner is None or located(f, runner, tests, cmd, texts))]
+                 and (runner is None or credit_problem(f, runner, scope) is None)]
     refused = [c for c in cases if not any(_is_named(f, c) for f in asserting)]
     if cases:
         asserting = [f for f in asserting if any(_is_named(f, c) for c in cases)]
@@ -973,7 +1076,8 @@ def red_verdict(run, ctx):
     files as empty stubs - and `fix` the task's test files on the working
     tree's code, made when the task's run is red on a green baseline. Every
     run has an isolated environment of its own. `ctx` is `{"root",
-    "implementation", "tests", "cases", "symbols", "dropped", "new"}`."""
+    "implementation", "tests", "cases", "symbols", "dropped", "new", "heads",
+    "path"}` - `heads` HEAD's text of each declared test file HEAD has."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
@@ -1011,19 +1115,25 @@ def red_verdict(run, ctx):
                 "status": RED_CANNOT, "at": at,
                 "basis": "%s with failing cases %s, but %s - %s%s"
                          % (where, _ids(failing), problem, line, env_clause)}, None
-        own, refused = own_failures(failing, ctx["cases"], tally["runner"],
-                                    ctx["tests"], run["cmd"],
-                                    _test_texts(ctx["root"], ctx["tests"]))
+        scope = {"tests": ctx["tests"], "cmd": run["cmd"],
+                 "roots": tuple(r for r in (ctx["root"], ctx.get("path")) if r),
+                 "wt": _test_texts(ctx["root"], ctx["tests"]),
+                 "head": ctx.get("heads") or {}, "new": set(ctx.get("new") or ())}
+        own, refused = own_failures(failing, ctx["cases"], tally["runner"], scope)
         refused_clause = _refused_clause(refused)
+        uncredited = "; ".join(
+            "%s: %s" % (f["label"] or f["id"], why) for f, why in
+            ((f, credit_problem(f, tally["runner"], scope)) for f in failing
+             if f["assertion"]) if why)
         if not own and not ctx["cases"]:
             return E_CANNOT_PROVE, verdict, {
                 "status": RED_CANNOT, "at": at,
-                "basis": "%s with failing cases %s, but the runner locates none of "
-                         "them in a declared test file (%s) that defines it, so a "
-                         "case the task's file imports or inherits cannot be told "
-                         "from its own - "
-                         "%s%s" % (where, _ids(failing), ", ".join(ctx["tests"]),
-                                   line, env_clause)}, None
+                "basis": "%s with failing cases %s, but none is the task's own (%s) "
+                         "- a case is the task's only when the runner locates it in "
+                         "a declared test file (%s) whose named class defines it, "
+                         "new or changed against HEAD's - %s%s"
+                         % (where, _ids(failing), uncredited or "none asserted",
+                            ", ".join(ctx["tests"]), line, env_clause)}, None
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
@@ -1034,8 +1144,11 @@ def red_verdict(run, ctx):
                             _ids(own), line, refused_clause, env_clause)}, None
         return E_CANNOT_PROVE, verdict, {
             "status": RED_CANNOT, "at": at,
-            "basis": "%s, but no case --case names failed an assertion: %s - %s%s%s"
-                     % (where, _ids(failing), line, refused_clause, env_clause)}, None
+            "basis": "%s, but no case --case names failed an assertion as the "
+                     "task's own: %s%s - %s%s%s"
+                     % (where, _ids(failing),
+                        " (%s)" % (uncredited,) if uncredited else "", line,
+                        refused_clause, env_clause)}, None
     why_not = [baseline] if baseline and verdict == V_COLLECT else []
     for symbol in (ctx["symbols"] if verdict == V_COLLECT and not baseline else ()):
         holds, why = introduced(ctx["root"], ctx["implementation"], symbol,
@@ -1105,8 +1218,12 @@ def _at_head(root, rels, deadline):
 def _isolate(path, deadline):
     """Reset the throwaway to HEAD exactly - `checkout -f` and `clean -ffdx`, so
     nothing an earlier run wrote or rewrote there, tracked or not, survives.
-    Returns the problem, or None."""
+    Returns the problem, or None. Each git call is started only with a whole
+    second of the deadline left, so none runs past it on the one-second floor
+    a timeout is given."""
     for args in (["checkout", "-f", "HEAD", "--", "."], ["clean", "-ffdxq"]):
+        if _left(deadline) < 1:
+            return "the run timed out: no time was left of the deadline for the reset"
         code, text = _git(path, args, timeout=max(1, _left(deadline)))
         if code != 0:
             return "git could not reset the throwaway to HEAD: %s" % (text,)
@@ -1274,7 +1391,7 @@ def run_red(args, cmd, out):
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None}
-    state = {"new": []}
+    state = {"new": [], "heads": {}}
     copied = []
     previous = _arm()
     try:
@@ -1282,6 +1399,9 @@ def run_red(args, cmd, out):
             present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
+                state["heads"] = dict(
+                    (rel, _head_text(root, rel, timeout=max(1, _left(deadline))))
+                    for rel in sorted(set(scope["tests"]) & present))
                 _copied, run["problem"] = _build_throwaway(
                     root, path, [], timeout=max(1, _left(deadline)))
             if run["problem"] is None and _left(deadline) < 1:
@@ -1317,7 +1437,8 @@ def run_red(args, cmd, out):
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
-            "new": state["new"], "deadline": deadline})
+            "new": state["new"], "heads": state["heads"], "path": path,
+            "deadline": deadline})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:

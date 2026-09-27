@@ -306,17 +306,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
   hands out) as its id only when present. A red is now credited only against a GREEN baseline:
   HEAD's own test files run FIRST with the same command on HEAD's implementation, before any file of
-  the task's is laid over or run, and must be green - exit 0 with no failure counted, or the runner's
-  own no-tests-ran shape. It is always made: every declared test file new at HEAD is laid over as an
+  the task's is laid over or run, and must be green - exit 0 with no failure counted, or an exit 5
+  whose one runner's tally counts no case run and no failure (unittest's tally counts every `Ran N`
+  line, so a red run followed by an empty one is not green). It is always made: every declared test file new at HEAD is laid over as an
   EMPTY file, so the same command reaches what the task's run reaches however it is spelled - a
   dotted module name, a shell wrapper, a file the working tree deleted - rather than a reader of the
   command's arguments deciding whether it was owed. Then the task's run (its test files on HEAD's
   implementation) must be red on an assertion, and a fix run (the task's test files on the working
   tree's implementation) green with no fewer cases. A failure is the task's own - a new case or an
-  edited one - only where the runner locates it in a declared test file that defines it (a pytest
-  node id's path, unittest `-v`'s module, a run of exactly one declared file), so a case a new file
-  imports or inherits from HEAD's tests is not credited, and a runner that locates none is
-  `could-not-prove`; `--case` must name a located one. No run, and no reset before one, starts with
+  edited one - only where the runner locates it in one declared test file (a pytest node id's path or
+  unittest `-v`'s module, matched by trailing components so `discover -s tests` is read, or the one
+  declared script a run executes), the class the runner names there defines it (read by ast), and,
+  in a file HEAD already has, that definition is new or changed against HEAD's. The stubs remove
+  the new files' content and so everything it reaches; a HEAD case a new file imports, inherits or
+  loads is therefore not credited unless the task edited it, and a runner that locates none is
+  `could-not-prove` with each case's reason; `--case` must name a credited one. No run, and neither git call of the reset before one, starts with
   less than a second of the deadline left. Every run, including `--introduces`'s
   second run, is made in the throwaway reset to HEAD (a forced checkout and a clean of untracked and
   ignored files) with an isolated environment of its own: a new home under every name a home lookup

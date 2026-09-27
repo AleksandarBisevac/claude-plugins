@@ -1640,15 +1640,47 @@ def _baseline_unit_cases(check):
     got["pytest collected nothing"] = M.baseline_problem(
         {"code": 5, "problem": None, "text": "=== no tests ran in 0.01s ===\n"},
         ["pytest", "tests/test_new.py"])
+    got["pytest deselected every case"] = M.baseline_problem(
+        {"code": 5, "problem": None, "text": "=== 2 deselected in 0.01s ===\n"},
+        ["pytest", "tests/test_old.py", "-k", "test_new_case"])
     got["not made"] = M.baseline_problem(None, [py, "t.py"])
+    reds = {
+        "a red run, then the stub's empty one, behind exit 5": (
+            {"code": 5, "problem": None,
+             "text": "FAIL: test_value_is_two (tests.test_old.Old.test_value_is_two)\n"
+                     "Ran 1 test in 0.0s\n\nFAILED (failures=1)\n"
+                     "Ran 0 tests in 0.0s\n\nNO TESTS RAN\n"},
+            ["sh", "-c", "two runs", "--", "-m", "unittest"]),
+        "a mixed tally behind exit 5 and NO TESTS RAN": (
+            {"code": 5, "problem": None,
+             "text": "FAIL a (x)\n" + _TALLY % ("SELFTEST FAILED", 0, 1)
+                     + "\nRan 0 tests in 0.0s\n\nNO TESTS RAN\n"},
+            [py, "t.py"]),
+        "a pytest exit 5 counting an error and no case run": (
+            {"code": 5, "problem": None, "text": "=== 1 error in 0.01s ===\n"},
+            ["pytest", "tests/test_new.py"]),
+        "exit 5 with no tally at all, saying no tests ran": (
+            {"code": 5, "problem": None, "text": "no tests ran\n"}, [py, "t.py"]),
+    }
+    for k, (h, cmd) in reds.items():
+        got[k] = M.baseline_problem(h, cmd)
     greens = ("green", "an empty stub run by its script", "unittest ran no test",
-              "pytest collected nothing")
-    check("sr104 the baseline is green on exit 0 with no failure counted, or on the "
-          "runner's own no-tests-ran shape - what a command naming only new files "
-          "gives when they are empty stubs - and a run not made is never green: %r"
+              "pytest collected nothing", "pytest deselected every case")
+    check("sr104 the baseline is green on exit 0 with no failure counted, or on an "
+          "exit 5 whose ONE runner's tally counts no case run and no failure - what a "
+          "command naming only new files gives when they are empty stubs, and pytest "
+          "gives when -k deselects everything; never on the words alone, a red run "
+          "before an empty one, or a mixed tally; and a run not made is never "
+          "green: %r"
           % (got,),
           all(got[k] is None for k in greens)
-          and all(got[k] and "narrow" in got[k] for k in list(shapes) + ["not made"]))
+          and all(got[k] and "narrow" in got[k]
+                  for k in list(shapes) + ["not made"] + list(reds)))
+    summed = M._unittest_tally("Ran 1 test in 0.0s\n\nFAILED (failures=1)\n"
+                               "Ran 2 tests in 0.0s\n\nOK\n")
+    check("sr163 unittest's tally counts every `Ran N` line it counts the FAILED "
+          "lines of, so two runs read as one tally and not as the last: %r"
+          % (summed,), summed["collected"] == 3 and summed["failed"] == 1)
     one = {"code": 0, "problem": None,
            "text": "PASS a\n" + _TALLY % ("ALL PASS", 1, 1) + "\n"}
     fewer = M.fix_problem(one, [py, "t.py"], {"collected": 2})
@@ -2026,6 +2058,58 @@ def _reach_cases(check):
           "and passes with the fix proves - its stub baseline is green, and the "
           "failure is located in it: exit=%r %s" % (code_n, basis_n[:300]),
           code_n == M.E_PROVED and "test_new" in basis_n)
+    by_package = "\n".join(["import unittest", "from tests.test_old import Old",
+                            "class New(unittest.TestCase):", "    def test_new(self):",
+                            "        self.assertTrue(True)"]) + "\n"
+    loading = "\n".join(["import unittest", "class New(unittest.TestCase):",
+                         "    def test_new(self):", "        self.assertTrue(True)",
+                         "def load_tests(loader, tests, pattern):",
+                         "    import tests.test_old as o",
+                         "    tests.addTests(loader.loadTestsFromModule(o))",
+                         "    return tests"]) + "\n"
+    same_name = "\n".join(["import unittest", "from tests import test_old",
+                           "class New(test_old.Old):", "    def test_new(self):",
+                           "        self.assertTrue(True)",
+                           "class Other(unittest.TestCase):",
+                           "    def test_value_is_two(self):",
+                           "        self.assertTrue(True)"]) + "\n"
+    declared_old = [
+        ("sr157", "imports HEAD's red class from a DECLARED, unchanged test file",
+         by_package, True, "unchanged"),
+        ("sr158", "adds a DECLARED, unchanged test module through load_tests",
+         loading, True, "unchanged"),
+        ("sr159", "inherits HEAD's red case while an unrelated class defines one of "
+         "the same name", same_name, False, "class New"),
+    ]
+    for cid, how, new_text, declare, why in declared_old:
+        root, man = _reach_repo("stamp-red-%s-" % (cid,), new_text=new_text,
+                                declare_old=declare)
+        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+        check("%s a new test file that %s does not get HEAD's red credited, and the "
+              "basis says why: exit=%r %s" % (cid, how, code, basis[:400]),
+              code == M.E_CANNOT_PROVE and why in basis)
+    two = "%s -m unittest -v tests/test_old.py; %s -m unittest -v tests/test_new.py" % (
+        py, py)
+    root_z, man_z = _reach_repo("stamp-red-sr160-", new_text=fixing, declare_old=True)
+    code_z, got_z = _red(root_z, man_z, ["sh", "-c", two, "--", "-m", "unittest"],
+                         "--case", "test_value_is_two")
+    basis_z = (got_z.get("redFirst") or {}).get("basis", "") or json.dumps(got_z)
+    check("sr160 HEAD's red run followed by the stub's empty one is not a green "
+          "baseline behind exit 5 - HEAD's red case is not credited: exit=%r %s"
+          % (code_z, basis_z[:400]),
+          code_z == M.E_CANNOT_PROVE and "narrow" in basis_z)
+    root_d, man_d = _reach_repo("stamp-red-sr161-", new_text=fixing,
+                                old_text=_OLD_RED.replace("assertEqual(mine.v, 2)",
+                                                          "assertTrue(mine.v >= 1)"))
+    code_d, got_d = _red(root_d, man_d, [py, "-m", "unittest", "discover", "-s",
+                                         "tests", "-v"])
+    basis_d = (got_d.get("redFirst") or {}).get("basis", "") or json.dumps(got_d)
+    check("sr161 THE ALLOW CASE: `unittest discover -s tests` prints the new module "
+          "as `test_new`, which names the one declared tests/test_new.py by its "
+          "dotted suffix - the new red case proves: exit=%r %s"
+          % (code_d, basis_d[:400]),
+          code_d == M.E_PROVED and "test_new" in basis_d)
     green_old = _OLD_RED.replace("assertEqual(mine.v, 2)", "assertTrue(mine.v >= 1)")
     root_e, man_e = _reach_repo("stamp-red-reach-edit-", new_text=_NEW_TRIVIAL,
                                 old_text=green_old, declare_old=True,
@@ -2043,54 +2127,119 @@ def _located_cases(check):
     py = sys.executable
     tests = ["tests/test_new.py"]
     unit = [py, "-m", "unittest", "-v", "tests/test_new.py"]
+    root = os.path.join(os.sep, "abs", "repo")
     rows = {
         "a pytest node id in the new file": (
-            {"label": "tests/test_new.py::New::test_x"}, "pytest", ["pytest"], True),
+            {"label": "tests/test_new.py::New::test_x"}, "pytest", ["pytest"],
+            tests, "tests/test_new.py"),
         "a pytest node id into HEAD's old file": (
             {"label": "tests/test_old.py::Old::test_value_is_two"}, "pytest",
-            ["pytest"], False),
+            ["pytest"], tests, None),
+        "a pytest node id relative to a rootdir under tests/": (
+            {"label": "test_new.py::test_x"}, "pytest", ["pytest"], tests,
+            "tests/test_new.py"),
         "unittest -v locating the new module": (
-            {"module": "tests.test_new"}, "unittest", unit, True),
+            {"module": "tests.test_new"}, "unittest", unit, tests, "tests/test_new.py"),
+        "unittest discover -s tests, the module relative to tests/": (
+            {"module": "test_new"}, "unittest", unit, tests, "tests/test_new.py"),
+        "a bare module two declared files end with": (
+            {"module": "test_new"}, "unittest", unit,
+            ["a/test_new.py", "b/test_new.py"], None),
         "unittest -v locating HEAD's module (imported)": (
-            {"module": "test_old"}, "unittest", unit, False),
-        "unittest with no location": ({"module": None}, "unittest", unit, False),
+            {"module": "test_old"}, "unittest", unit, tests, None),
+        "unittest with no location": ({"module": None}, "unittest", unit, tests, None),
         "unittest __main__ of the one declared script": (
-            {"module": "__main__"}, "unittest", [py, "tests/test_new.py", "-v"], True),
+            {"module": "__main__"}, "unittest", [py, "tests/test_new.py", "-v"], tests,
+            "tests/test_new.py"),
+        "__main__ of the script spelled ./": (
+            {"module": "__main__"}, "unittest", [py, "./tests/test_new.py"], tests,
+            "tests/test_new.py"),
+        "__main__ of the script spelled absolute under the repository": (
+            {"module": "__main__"}, "unittest",
+            [py, os.path.join(root, "tests", "test_new.py")], tests,
+            "tests/test_new.py"),
+        "__main__ of `python -m tests.test_new`": (
+            {"module": "__main__"}, "unittest", [py, "-m", "tests.test_new"], tests,
+            "tests/test_new.py"),
         "a house run of the one declared script": (
-            {}, "house", [py, "tests/test_new.py"], True),
-        "a house run through a runner": ({}, "house", [py, "-m", "runner"], False),
+            {}, "house", [py, "tests/test_new.py"], tests, "tests/test_new.py"),
+        "a house run through a runner": (
+            {}, "house", [py, "-m", "runner"], tests, None),
+        "a house run under `-m unittest`": (
+            {}, "house", [py, "-m", "unittest", "tests/test_new.py"], tests, None),
     }
-    got = dict((k, M.located(f, runner, tests, cmd))
-               for k, (f, runner, cmd, _w) in rows.items())
-    check("sr151 only a failure the runner locates in a declared test file is "
-          "credited - a pytest node id's path, unittest -v's module, the one "
-          "declared script a house or `__main__` run executes: %r" % (got,),
-          got == dict((k, w) for k, (_f, _r, _c, w) in rows.items()))
-    texts = {"tests/test_new.py": "class New(Old):\n    pass\n\n"
-                                  "def test_mine(x):\n    assert x\n"}
-    defined = dict((k, M.located(f, runner, tests, cmd, texts)) for k, (f, runner, cmd)
-                   in {"an inherited unittest case": (
-                           {"module": "tests.test_new", "id": "test_value_is_two"},
-                           "unittest", unit),
-                       "an inherited pytest case": (
-                           {"label": "tests/test_new.py::New::test_value_is_two",
-                            "id": "test_value_is_two"}, "pytest", ["pytest"]),
-                       "a pytest case the file defines, parametrized": (
-                           {"label": "tests/test_new.py::test_mine[1]",
-                            "id": "test_mine[1]"}, "pytest", ["pytest"])}.items())
-    check("sr154 a located case must also be DEFINED in the file it is located in - "
-          "both runners locate an inherited case in the subclass's file: %r"
-          % (defined,),
-          defined == {"an inherited unittest case": False,
-                      "an inherited pytest case": False,
-                      "a pytest case the file defines, parametrized": True})
+    got = dict((k, (M.case_site(f, runner, declared, cmd, (root,)) or (None,))[0])
+               for k, (f, runner, cmd, declared, _w) in rows.items())
+    check("sr151 a failure is located in the ONE declared test file the runner's "
+          "location names - a pytest node id's path or unittest -v's module, matched "
+          "by trailing components, or the one declared script a house or `__main__` "
+          "run executes, spelled any way: %r" % (got,),
+          got == dict((k, w) for k, (_f, _r, _c, _d, w) in rows.items()))
+    new_text = "\n".join([
+        "import unittest", "from tests import test_old", 'DOC = """',
+        "def test_value_is_two(self):", '"""', "class New(test_old.Old):",
+        "    def test_new(self):", "        pass", "class Other(unittest.TestCase):",
+        "    def test_value_is_two(self):", "        pass", "def test_mine(x):",
+        "    assert x"]) + "\n"
+    old_head = "\n".join(["import unittest", "class Old(unittest.TestCase):",
+                          "    def test_value_is_two(self):",
+                          "        self.assertEqual(1, 2)"]) + "\n"
+    both = ["tests/test_new.py", "tests/test_old.py"]
+
+    def credit(failure, runner, wt_old=old_head, head_old=old_head):
+        scope = {"tests": both, "cmd": unit, "roots": (root,),
+                 "wt": {"tests/test_new.py": new_text, "tests/test_old.py": wt_old},
+                 "head": {"tests/test_old.py": head_old},
+                 "new": set(["tests/test_new.py"])}
+        return M.credit_problem(failure, runner, scope)
+
+    def ut(module, cls, name="test_value_is_two"):
+        return {"id": name, "label": name, "module": module, "cls": cls}
+
+    def pt(node):
+        return {"id": node.split("::")[-1], "label": node}
+
+    credits = {
+        "an inherited unittest case, another class defining the name": credit(
+            ut("tests.test_new", "New"), "unittest"),
+        "the same through a pytest node id": credit(
+            pt("tests/test_new.py::New::test_value_is_two"), "pytest"),
+        "a module-level def that is only inside a string": credit(
+            pt("tests/test_new.py::test_value_is_two"), "pytest"),
+        "the unrelated class's own case": credit(
+            pt("tests/test_new.py::Other::test_value_is_two"), "pytest"),
+        "a parametrized module-level case of the new file": credit(
+            pt("tests/test_new.py::test_mine[1]"), "pytest"),
+        "HEAD's case, unchanged, in a declared existing file": credit(
+            ut("tests.test_old", "Old"), "unittest"),
+        "HEAD's case edited in a declared existing file": credit(
+            ut("tests.test_old", "Old"), "unittest",
+            wt_old=old_head.replace("(1, 2)", "(1, 3)")),
+        "a case added to a declared existing file": credit(
+            ut("tests.test_old", "Old", "test_added"), "unittest",
+            wt_old=old_head + "    def test_added(self):\n        self.fail()\n"),
+        "a declared existing file whose HEAD copy could not be read": credit(
+            ut("tests.test_old", "Old"), "unittest", head_old=None),
+    }
+    credited = ("the unrelated class's own case",
+                "a parametrized module-level case of the new file",
+                "HEAD's case edited in a declared existing file",
+                "a case added to a declared existing file")
+    check("sr154 a located case is the task's only when the class the runner names "
+          "holds its def (read by ast - a def in a string or in another class is not "
+          "it) and, in a file HEAD has, that def is new or changed: %r" % (credits,),
+          all(credits[k] is None for k in credited)
+          and all(credits[k] for k in credits if k not in credited)
+          and "unchanged" in credits["HEAD's case, unchanged, in a declared existing "
+                                     "file"])
     gone = _harness.fixture_root("stamp-deadline-")
     late, copied = M._isolated_run(gone, os.path.join(gone, "no-tree"), [], [py, "-c", ""],
                                    time.time() + 0.5, 30, {}, gone, "late")
     check("sr155 with less than a second of the deadline left no run is made - not "
-          "even the reset's git calls, which would start past it: %r %r"
-          % (late, copied),
-          late["code"] is None and "no time was left" in (late["problem"] or "")
+          "even the reset's git calls - and the problem is the run's own, naming the "
+          "--timeout it spent, not the reset's: %r %r" % (late, copied),
+          late["code"] is None
+          and "no time was left of the 30-second deadline" in (late["problem"] or "")
           and copied == [])
     real = subprocess.run([py, "-m", "unittest", "-v", "test_u"], cwd=_where_unittest(),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -2101,10 +2250,28 @@ def _located_cases(check):
     twin = ("FAIL: test_value_is_two (test_old.Old.test_value_is_two)\n"
             "FAIL: test_value_is_two (tests.test_new.New.test_value_is_two)\n"
             "\n----\nRan 2 tests in 0.001s\n\nFAILED (failures=2)\n")
-    both = [c.get("module") for c in M.failing_cases(twin, "unittest")]
-    check("sr156 two failing cases of one name in two modules keep a module each - "
-          "the imported one HEAD's, the inherited one the subclass's: %r" % (both,),
-          both == ["test_old", "tests.test_new"])
+    both = [(c.get("module"), c.get("cls")) for c in M.failing_cases(twin, "unittest")]
+    old_style = [(c.get("module"), c.get("cls")) for c in M.failing_cases(
+        "FAIL: test_value_is_two (tests.test_new.New)\n\n----\nRan 1 test in 0.0s"
+        "\n\nFAILED (failures=1)\n", "unittest")]
+    check("sr156 two failing cases of one name in two modules keep a module and a "
+          "class each - the imported one HEAD's, the inherited one the subclass's - "
+          "and a pre-3.11 line gives the same: %r %r" % (both, old_style),
+          both == [("test_old", "Old"), ("tests.test_new", "New")]
+          and old_style == [("tests.test_new", "New")])
+    calls = []
+    lefts = [5, 0]
+    real_git, real_left = M._git, M._left
+    M._git = lambda path, args, timeout=120, strip=True: calls.append(args) or (0, "")
+    M._left = lambda deadline: lefts.pop(0) if lefts else 0
+    try:
+        floor = M._isolate("/nowhere", 0)
+    finally:
+        M._git, M._left = real_git, real_left
+    check("sr162 the one-second floor is checked before EACH of the reset's git "
+          "calls: with a second left for the first and none for the second, only the "
+          "first is started: %r %r" % (calls, floor),
+          len(calls) == 1 and "no time was left" in (floor or ""))
 
 
 def _where_unittest():

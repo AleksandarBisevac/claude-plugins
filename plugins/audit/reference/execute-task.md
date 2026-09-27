@@ -120,13 +120,16 @@ not need to.
      the `redFirst` block, naming the failing case it rests on — which must be one of the
      task's own. A red counts only against a GREEN baseline: HEAD's own test files, run FIRST
      with the same command on HEAD's code and every declared test file new at HEAD laid
-     over as an empty file, must be green — exit 0 with no failure, or the runner's own
-     no-tests-ran shape — and the fix run (the task's test files on the working tree's
-     code) must turn every failure green. A failure is the task's own, a new case or an
-     edited one, only where the runner locates it in a declared test file that defines it:
-     a pytest node id's path, unittest `-v`'s module, or a run of exactly one declared
-     file. A case the task's file imports or inherits is not credited, and a runner that
-     locates no failure is `could-not-prove`. Every run has a
+     over as an empty file, must be green — exit 0 with no failure, or an exit 5 whose one
+     runner's tally counts nothing run and nothing failed — and the fix run (the task's
+     test files on the working tree's code) must turn every failure green. A failure is
+     the task's own, a new case or an edited one, only where the runner locates it in a
+     declared test file (a pytest node id's path, unittest `-v`'s module matched by its
+     trailing components, or a run of exactly one declared file), the class the runner
+     names there defines it, and — in a file HEAD already has — that definition is new or
+     changed against HEAD's. So a HEAD case the task's file imports, inherits or loads is
+     not credited unless the task edited its definition, and a runner that locates no
+     failure is `could-not-prove`. Every run has a
      fresh home and temp directory of its own. A command
      already red at HEAD is `could-not-prove`: narrow the command to the task's cases.
      `--case` narrows to the ids or labels it names, held to that same test: it must name a

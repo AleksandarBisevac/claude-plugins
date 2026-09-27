@@ -113,12 +113,14 @@ Hard rules (non-negotiable):
   failing cases, and a red counts only against a GREEN baseline: the helper first runs
   HEAD's own test files with the same command on HEAD's code — every declared test file
   new at HEAD laid over as an empty file — and they must be green (exit 0 with no failure,
-  or the runner's own no-tests-ran shape); then a failure of your run counts only where
-  the runner locates it in one of your declared test files and that file defines the
-  case (a pytest node id, unittest `-v`'s module, a run of exactly one declared file) —
-  a case your file imports or inherits is not yours — and the fix run (your test files
-  on the working tree's code) must turn each one green. A runner that locates no failure
-  is `could-not-prove`. Every run gets a fresh home and temp directory of its own. If HEAD's own tests are already red under your command, the answer
+  or an exit 5 whose one runner's tally counts nothing run and nothing failed); then a
+  failure of your run counts only where the runner locates it in one of your declared
+  test files (a pytest node id, unittest `-v`'s module and class, a run of exactly one
+  declared file), the class it names there defines the case, and — in a file HEAD already
+  has — that definition is new or changed against HEAD's. A HEAD case your new file
+  imports, inherits or loads, from any file, declared or not, is not yours unless you
+  edited it; and the fix run (your test files on the working tree's code) must turn each
+  one green. A runner that locates no failure is `could-not-prove`. Every run gets a fresh home and temp directory of its own. If HEAD's own tests are already red under your command, the answer
   is `could-not-prove`: narrow the command to the task's cases (one test file, one `-k`
   selection) and run it again. `--case` narrows to the ids or labels you name, and must
   name a case that failed an assertion in your run. A test body raising an exception is
