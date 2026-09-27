@@ -709,13 +709,15 @@
       "P84.8-791",
       "P80.22-rtb",
       "P87.1",
-      "P87.2"
+      "P87.2",
+      "P87.3-bpl"
     ],
     "CLAUDE.md": [
       "P32.10",
       "P35.1",
       "P37.2",
-      "P80.11"
+      "P80.11",
+      "P87.3-bpl"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -758,7 +760,8 @@
       "P37.2",
       "P85.4",
       "P85.5-axa",
-      "P87.1"
+      "P87.1",
+      "P87.3-bpl"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1488,7 +1491,8 @@
       "P72.7-ttl",
       "P72.8-ttl",
       "P85.3",
-      "P87.2"
+      "P87.2",
+      "P87.3-bpl"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -1578,7 +1582,8 @@
       "P84.1",
       "P84.7-791",
       "P80.17-rtb",
-      "P87.2"
+      "P87.2",
+      "P87.3-bpl"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1981,7 +1986,8 @@
       "P73.7-9h1",
       "P74.10-qq5",
       "P86.1",
-      "P87.2"
+      "P87.2",
+      "P87.3-bpl"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3056,7 +3062,8 @@
       "P73.6-9h1",
       "P73.7-9h1",
       "P74.10-qq5",
-      "P87.2"
+      "P87.2",
+      "P87.3-bpl"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -3657,7 +3664,8 @@
       "P72.7-ttl",
       "P72.8-ttl",
       "P85.3",
-      "P87.2"
+      "P87.2",
+      "P87.3-bpl"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
@@ -3994,7 +4002,8 @@
       "P19.2",
       "P32.10",
       "P56.2",
-      "P87.1"
+      "P87.1",
+      "P87.3-bpl"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -4233,7 +4242,8 @@
     ],
     "tools/check-rendered-artifacts.py": [
       "P80.20-rtb",
-      "P87.1"
+      "P87.1",
+      "P87.3-bpl"
     ],
     "plugins/audit/scripts/governance/propose-gates.py": [
       "P80.15-rtb"
@@ -4242,7 +4252,8 @@
       "P80.15-rtb"
     ],
     "tools/affected.py": [
-      "P87.1"
+      "P87.1",
+      "P87.3-bpl"
     ]
   },
   "bugs": [
