@@ -115,7 +115,10 @@ Hard rules (non-negotiable):
   name. The helper makes that run itself when yours is red, so the command must name
   every case it runs, passing ones included — the house harness does; pass `-rA` or
   `-v` to pytest and `-v` to unittest, or the answer is `could-not-prove` and says so.
-  `--case` narrows to the ids or labels you name and is held to that same measurement,
+  When HEAD's own run is itself red, a case is credited only if that run printed a count
+  of every case it had — the house tally, pytest's `collected N items` — equal to the cases
+  it named; unittest prints no such count, so a red HEAD run under unittest is
+  `could-not-prove`. `--case` narrows to the ids or labels you name and is held to that same measurement,
   so naming a case HEAD's run already named proves nothing. An existing case going red, or a test body raising an
   exception, is not a proof about your test. A compile error, an import error or
   zero tests collected exits non-zero with no assertion ever evaluated, so it is

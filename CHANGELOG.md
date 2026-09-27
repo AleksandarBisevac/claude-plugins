@@ -324,12 +324,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   as new at HEAD. unittest names are qualified by class, HEAD's files are put back byte for byte,
   every git call before the throwaway's removal runs under the one deadline, and every run is made
   with `PYTHONDONTWRITEBYTECODE=1` so a swapped file cannot be shadowed by stale cached bytecode.
-  A case red at HEAD that the task's run prints only as passing means its test was changed; beside
-  a credited failing line that is `could-not-prove`, so a red already there before the task cannot be
-  credited by relabelling it. The limits that remain are listed in the guide: a case passing at HEAD
-  that is given a new label and edited to fail, its old label reused by a new passing case, is
-  credited - that red comes from the task's own edit, as an edited test's red does - and every other
-  limit refuses. A label built by a wrapper, looked up
+  Each red line at HEAD is paired one to one with a DIFFERENT failing line of the task's run; a red
+  at HEAD left without a partner means its test was changed, and beside a credited failing line
+  that is `could-not-prove`, so a red already there before the task - one or several, sharing a
+  label or not - cannot be credited by relabelling it. A red HEAD run is credited only on positive
+  evidence that it covered every case (the house tally's total, pytest's `collected N items`, equal
+  to the cases named), since a stop-first setting can live where no option reader sees it -
+  `unittest.main(failfast=True)` in the file, a runner config; a red HEAD run under unittest, which
+  prints no such count, is `could-not-prove`. The pairing's candidate pairs are bounded from the
+  label counts before any graph is built. The limits that remain are listed in the guide: a case
+  passing at HEAD that is given a new label and edited to fail, its old label reused by a new passing
+  case, is credited - that red comes from the task's own edit, as an edited test's red does - and
+  every other limit refuses. A label built by a wrapper, looked up
   in a dict, or spelled again by an unrelated literal - each a shape some reading of the source got
   wrong - is therefore decided the same way as any other. The command must name every case it runs,
   passing ones included: the house harness does, pytest does under `-rA` or `-v`, unittest under

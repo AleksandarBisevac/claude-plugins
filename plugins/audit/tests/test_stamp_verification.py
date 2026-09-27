@@ -1726,22 +1726,27 @@ def _head_run_cases(check):
     usage = {"code": 4, "problem": None,
              "text": "ERROR: file or directory not found: tests/test_new.py\n\n"
                      "=== no tests ran in 0.01s ===\n"}
+    # Each red shape below carries a collected count equal to the cases it
+    # names, so the stop line, the interrupt line or the flag is what refuses.
     stopped = {"code": 1, "problem": None,
-               "text": "tests/test_a.py::test_p FAILED   [ 50%]\n"
+               "text": "collected 1 item\n\ntests/test_a.py::test_p FAILED   [ 50%]\n"
                        "!!!!!!!! stopping after 1 failures !!!!!!!!\n"
                        "=== 1 failed in 0.05s ===\n"}
     interrupted = {"code": 2, "problem": None,
-                   "text": "ERROR tests/test_a.py\n"
+                   "text": "collected 1 item\n\nERROR tests/test_a.py\n"
                            "!!!!!!! Interrupted: 1 error during collection !!!!!!!\n"
                            "=== 1 error in 0.10s ===\n"}
     got = dict((k, M.head_names(h, cmd, "pytest", False)) for k, h, cmd in (
         ("no case collected", usage, ["pytest", "-rA", "t.py", "tests/test_new.py"]),
-        ("stopped after a failure", stopped, ["pytest", "-v", "-x"]),
+        ("stopped after a failure", stopped, ["pytest", "-v"]),
         ("interrupted", interrupted, ["pytest", "-rA"]),
         ("a stop-first flag", {"code": 1, "problem": None,
                                "text": stopped["text"].replace(
                                    "!!!!!!!! stopping after 1 failures !!!!!!!!\n",
                                    "")}, ["pytest", "-v", "--maxfail=1"])))
+    got["a green HEAD run of no case"] = M.head_names(
+        {"code": 0, "problem": None, "text": _TALLY % ("ALL PASS", 0, 0) + "\n"},
+        [sys.executable, "t.py"], "house", False)
     check("sr104 HEAD's own run is refused when it collected no case while a "
           "declared test file exists at HEAD, and when it is red and may have "
           "stopped early - a pytest stop or interrupt line, or a stop-first flag "
@@ -1840,10 +1845,11 @@ def _round5_cases(check):
                                  new_u.replace("self.assertTrue(True)",
                                                "self.assertEqual(mine.v, 3)"),
                                  [py, "tests/test_mine.py", "-vv"])
-    check("sr110 THE ALLOW CASE for sr109: HEAD red under an ordinary `-vv`, a "
-          "direct runner invocation with no stop-first flag, still proves a new "
-          "test: exit=%r %s" % (code_v, basis_v[:300]),
-          code_v == M.E_PROVED and "test_new" in basis_v)
+    check("sr110 HEAD red under unittest, even an ordinary `-vv`, is not proved: "
+          "unittest prints no count of what it collected, so nothing shows HEAD's "
+          "run covered every case - a failfast set in the file itself would look "
+          "the same: exit=%r %s" % (code_v, basis_v[:300]),
+          code_v == M.E_CANNOT_PROVE and "covered every case" in basis_v)
 
 
 def _round5_unit_cases(check):
@@ -1979,6 +1985,120 @@ def _round5_unit_cases(check):
           code_s == M.E_PROVED and "the new failing case" in basis_s)
 
 
+# --- HEAD's reds paired one to one; a red HEAD run credited only on a count ---
+def _unit_main(failfast):
+    return "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
+                      "class T(unittest.TestCase):",
+                      "    def test_a_p(self):", "        self.assertEqual(mine.v, 5)",
+                      "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)",
+                      "if __name__ == '__main__':",
+                      "    unittest.main(%s)" % ("failfast=True" if failfast else "")]
+                     ) + "\n"
+
+
+def _round6_cases(check):
+    py = sys.executable
+    shapes = [
+        ("sr119", "two reds already at HEAD sharing a label, one relabelled while "
+         "the old label goes to a new passing case",
+         _label_suite([("'the old broken case'", "mine.v == 2"),
+                       ("'the old broken case'", "mine.v == 2")]),
+         _label_suite([("'the renamed case'", "mine.v == 2"),
+                       ("'the old broken case'", "mine.v == 2"),
+                       ("'the old broken case'", "True")]), None),
+        ("sr120", "two reds at HEAD whose labels share a reading, one relabelled "
+         "while its old label goes to a new passing case",
+         _label_suite([("'the value'", "mine.v == 2"),
+                       ("'the value (as read)'", "mine.v == 2")]),
+         _label_suite([("'the renamed case'", "mine.v == 2"), ("'the value'", "True"),
+                       ("'the value (as read)'", "mine.v == 2")]), None),
+        ("sr121", "a failfast set in HEAD's test file itself "
+         "(`unittest.main(failfast=True)`), which the task removes",
+         _unit_main(True), _unit_main(False), [py, "tests/test_mine.py", "-v"]),
+    ]
+    for cid, how, head, wt, cmd in shapes:
+        code, basis = _suite_red("stamp-red-%s-" % (cid,), head, wt, cmd)
+        check("%s %s is not proved: every red at HEAD must pair with a DIFFERENT "
+              "failing line, and a red HEAD run is credited only on a count showing "
+              "it covered every case: exit=%r %s" % (cid, how, code, basis[:300]),
+              code == M.E_CANNOT_PROVE)
+
+
+def _round6_unit_cases(check):
+    tally = "%s: %d/%d cases " + "passed"
+    covered = {"code": 1, "problem": None,
+               "text": "PASS a\nFAIL b (saw 1)\n" + tally % ("SELFTEST FAILED", 1, 2)}
+    short = {"code": 1, "problem": None,
+             "text": "PASS a\nFAIL b (saw 1)\n" + tally % ("SELFTEST FAILED", 1, 3)}
+    got = dict((k, M.head_names(h, [sys.executable, "t.py"], "house", False)[1])
+               for k, h in (
+        ("house tally covers every name", covered),
+        ("house tally counts a case no line names", short)))
+    py_ok = {"code": 1, "problem": None,
+             "text": "collected 2 items\n\ntests/t.py::test_a PASSED\n"
+                     "tests/t.py::test_b FAILED\n=== 1 failed, 1 passed in 0.1s ===\n"}
+    py_q = {"code": 1, "problem": None,
+            "text": "tests/t.py::test_a PASSED\ntests/t.py::test_b FAILED\n"
+                    "=== 1 failed, 1 passed in 0.1s ===\n"}
+    got["pytest collected equals named"] = M.head_names(
+        py_ok, ["pytest", "-v"], "pytest", False)[1]
+    got["pytest with no collected line"] = M.head_names(
+        py_q, ["pytest", "-v"], "pytest", False)[1]
+    got["unittest red"] = M.head_names(
+        {"code": 1, "problem": None,
+         "text": "test_a (m.T) ... ok\ntest_b (m.T) ... FAIL\n\nRan 2 tests in "
+                 "0.001s\n\nFAILED (failures=1)\n"},
+        [sys.executable, "-m", "unittest", "-v"], "unittest", False)[1]
+    check("sr122 a red HEAD run is credited only on POSITIVE evidence that it "
+          "covered every case - a house tally or pytest's collected count equal "
+          "to the cases named - and refused otherwise, unittest always: %r" % (got,),
+          got["house tally covers every name"] is None
+          and got["pytest collected equals named"] is None
+          and all(got[k] for k in ("house tally counts a case no line names",
+                                   "pytest with no collected line", "unittest red")))
+    one = M.changed_reds("FAIL the old one (saw 1)\n",
+                         "FAIL the old one (saw 1)\nFAIL the new one (saw 1)\n",
+                         "house")
+    check("sr123 THE ALLOW CASE for sr119: one red at HEAD with the task's failing "
+          "line of the same label still pairs, so nothing is called changed: %r"
+          % (one,), one == ([], None))
+    code = "\n".join([
+        "import sys, time", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
+        "import _harness, _loader",
+        "M = _loader.load_script('stamp-verification.py', modname='sv_bound')",
+        "t = time.time()",
+        "n = 2000",
+        "r = M.compare_runs('PASS A\\n' * n, 'FAIL A (saw 1)\\n' * n, 'house',"
+        " M.failing_cases('FAIL A (saw 1)\\n' * n + 'X: 0/1 cases ' + 'passed', "
+        "'house'), None, deadline=time.time() + 30)",
+        "t1 = time.time() - t",
+        "m = 6000",
+        "head = ''.join('FAIL the case %d (saw 1)\\n' % i for i in range(m))",
+        "task = head + 'FAIL the brand new case (saw 1)\\n'",
+        "t = time.time()",
+        "ch = M.changed_reds(head, task, 'house', deadline=time.time() + 30)",
+        "t2 = time.time() - t",
+        "print(bool(r['problem']), len(ch[0]), round(t1, 1), round(t2, 1))"])
+    try:
+        proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, universal_newlines=True,
+                              timeout=120)
+        out = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+    except subprocess.TimeoutExpired:
+        out = "timed out"
+    parts = out.split()
+    late = M.changed_reds("FAIL a (saw 1)\n", "FAIL a (saw 1)\n", "house",
+                          deadline=time.time() - 1)
+    check("sr125 pairing HEAD's reds is under the one deadline: a deadline already "
+          "passed is a refusal with its reason: %r" % (late,),
+          late[0] is None and late[1] and "deadline" in late[1])
+    check("sr124 the bound is complete: a pairing past the edge budget is refused "
+          "from the label counts before any graph is built, and pairing HEAD's "
+          "reds is linear - both inside a second or two: %r" % (out,),
+          len(parts) == 4 and parts[:2] == ["True", "0"]
+          and float(parts[2]) < 2 and float(parts[3]) < 2)
+
+
 def _unit_suite(methods):
     return "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
                       "class T(unittest.TestCase):"] + list(methods)
@@ -2028,6 +2148,8 @@ def _cases(check):
     _harness.stage(check, "sr-head-run", _head_run_cases)
     _harness.stage(check, "sr-round5", _round5_cases)
     _harness.stage(check, "sr-round5-units", _round5_unit_cases)
+    _harness.stage(check, "sr-round6", _round6_cases)
+    _harness.stage(check, "sr-round6-units", _round6_unit_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

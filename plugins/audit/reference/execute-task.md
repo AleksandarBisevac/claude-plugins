@@ -121,7 +121,10 @@ not need to.
      task's own: a case that HEAD's own test files, run with the same command in the same
      throwaway, did not name. That run is made only when the first is red, and it needs a
      command that names every case, passing ones included (the house harness does; pytest
-     wants `-rA` or `-v`, unittest `-v`) — otherwise the answer is `could-not-prove`.
+     wants `-rA` or `-v`, unittest `-v`) — otherwise the answer is `could-not-prove`. When
+     HEAD's own run is itself red, a case is credited only if that run printed a count of
+     every case it had (the house tally, pytest's `collected N items`) equal to the cases it
+     named; unittest prints none, so a red HEAD run under unittest is `could-not-prove`.
      `--case` narrows to the ids or labels it names, held to that same test, so naming a case
      HEAD's run already named proves nothing. Its
      `--introduces <symbol>` is where "the task introduces the symbol" is decided: an

@@ -491,6 +491,53 @@
         "test_stamp_verification sr117",
         "test_stamp_verification sr118"
       ]
+    },
+    {
+      "id": "P82.8-fye",
+      "title": "red-first pairs HEAD's reds one to one, credits past a red HEAD run only with proof it ran every case, and bounds all its work",
+      "status": "in_progress",
+      "description": "Round-6 review (review-P82f.json; probe18, probe19). (1) changed_reds pairs each red line at HEAD with a DIFFERENT failing task line through the existing matching, so one failing line cannot cover several HEAD reds; probe18 (z) and (z1) as red cases, (z0) still refused. (2) A stop-first setting can live where the tool cannot read it (unittest.main(failfast=True) in the file, a runner config, an env var), so reading options is not enough. When HEAD's run is red, a case is credited only on positive evidence that HEAD's run covered every case: pytest's collected count equal to the cases it named, or a house tally whose total equals the cases it named; a runner that gives no such count (unittest) with HEAD red is could-not-prove with that reason. The option readers stay as a first layer. probe18 (ff) as a red case; an ordinary unittest run with HEAD green still proves. (3) The edge budget is checked while the graph is built, not after, and changed_reds runs in linear time under the deadline; probe19's sizes finish inside the budget or are refused with the reason, memory bounded. (4) The guide, CHANGELOG and docstrings state only what holds after (1)-(3), naming every credited variant that remains.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - two HEAD reds sharing a label, one relabelled, credit a red that was already there"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T01:39:05Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"
