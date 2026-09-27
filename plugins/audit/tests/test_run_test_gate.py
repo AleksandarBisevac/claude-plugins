@@ -6543,13 +6543,15 @@ def _crowd_cases(check):
 
 
 def _full_repo(name, fullgate=("ok",), buildcommands=None, mergedhead=None,
-              extra_phases=()):
+              extra_phases=(), preamble=None):
     """A committed git repository whose plan declares `meta.fullGate`.
 
-    Returns `(root, mpath)`. `fullgate=None` builds a manifest that names no
+    Returns `(root, mpath, head)`, `head` being the full sha of the fixture
+    commit just made. `fullgate=None` builds a manifest that names no
     third place at all, for the refusal case. `mergedhead`, when given, is
     written onto phase `P1` so a WHOLE claim can be asked of the SAME commit
-    this fixture just made - a commit is its own ancestor.
+    this fixture just made - a commit is its own ancestor. `preamble`, when
+    given, is written as `meta.nodePreamble` verbatim.
     """
     root = _harness.fixture_root("run-test-gate-full-")
     os.makedirs(os.path.join(root, "docs", "audit"))
@@ -6561,6 +6563,8 @@ def _full_repo(name, fullgate=("ok",), buildcommands=None, mergedhead=None,
            "buildCommands": buildcommands or {"ok": "true", "bad": "false"}}
     if fullgate is not None:
         meta["fullGate"] = list(fullgate)
+    if preamble is not None:
+        meta["nodePreamble"] = preamble
     phases = [{"id": "P1", "title": "one", "status": "in_progress", "tasks": []}]
     if mergedhead is not None:
         phases[0]["mergedHead"] = mergedhead
@@ -6717,8 +6721,42 @@ def _full_scope_cases(check):
               "SAME rows a real /audit:phase would read: %r" % (status,),
               code == M.E_OK
               and status["answer"] == _manifest_vocab.FULL_STATUS_WHOLE)
+        # The comparison above reads its expected commands from the function
+        # it is judging, so a resolution that went wrong on both sides would
+        # still agree with itself. The literal below is written by hand: the
+        # `buildCommands` value the fixture's `fullGate` names.
+        recorded = [s.get("command") for r in rows if r.get("scope") == "full"
+                    for s in r.get("steps") or []]
+        check("fg10b ...and the command the run recorded is the fixture's "
+              "declared gate spelled out by hand, not re-derived by the "
+              "resolver under test: %r" % (recorded,),
+              recorded == ["echo '1 passed in 0.01s'"])
     finally:
         _harness.remove_tree(root_w2)
+
+    # --- the same run with meta.nodePreamble set ----------------------------
+    # Padded with whitespace on purpose: the preamble is stripped before it is
+    # joined with `&&`, so a literal that kept the padding, or one that
+    # dropped the preamble, would each tell a mis-resolution apart.
+    root_p, mpath_p, _head_p = _full_repo(
+        "preamble", buildcommands={"ok": "echo '1 passed in 0.01s'"},
+        preamble="  export FIXTURE_PREAMBLE=on  ")
+    try:
+        code = M.main([mpath_p, "--full", "--project-dir", root_p, "--record"],
+                      out=(lambda _l: None))
+        rows = _ev_io.read_rows(root_p)["rows"]
+        recorded = [s.get("command") for r in rows if r.get("scope") == "full"
+                    for s in r.get("steps") or []]
+        check("fg10c ...and with meta.nodePreamble set, the recorded command "
+              "is the preamble, stripped, joined to the declared gate by `&&` "
+              "- written here by hand, so a resolver that dropped or "
+              "mis-joined the preamble cannot agree with itself: %r"
+              % (recorded,),
+              code == M.E_OK
+              and recorded == [
+                  "export FIXTURE_PREAMBLE=on && echo '1 passed in 0.01s'"])
+    finally:
+        _harness.remove_tree(root_p)
 
 
 def _selftest():

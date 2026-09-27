@@ -1007,7 +1007,8 @@
         "plugins/audit/scripts/panel/_panel_composition.py",
         "plugins/audit/tests/test__panel_composition.py",
         "plugins/audit/scripts/report/render-report.py",
-        "plugins/audit/tests/test_render_report.py"
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/status/_status_facts.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1040,7 +1041,12 @@
       },
       "startedAt": "2026-09-27T10:22:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T10:40:56Z.bb4f1e",
+        "status": "passed",
+        "at": "2026-09-27T10:40:56Z"
+      }
     },
     {
       "id": "P80.15-rtb",
@@ -1142,7 +1148,8 @@
       "description": "Sign-off finding P80-R3. The already-recorded branch returns before asking git, so a phase merged before mergedHead existed reads unknown for ever. When the recorded merge has no mergedHead and the parent ref resolves, write the parent's head once, in the same write discipline, never moving mergedAt; a recorded mergedHead is never replaced. Pin the default deleteBranch re-run path and a first stamp after a hand merge. Mutations: overwrite an existing mergedHead; move mergedAt.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
-        "plugins/audit/tests/test_close_phase.py"
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/reference/manifest-conventions.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1174,7 +1181,12 @@
       },
       "startedAt": "2026-09-27T10:22:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T10:42:16Z.c1d9ad",
+        "status": "passed",
+        "at": "2026-09-27T10:42:16Z"
+      }
     },
     {
       "id": "P80.18-rtb",
@@ -1214,7 +1226,12 @@
       },
       "startedAt": "2026-09-27T10:22:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T10:51:40Z.227d24",
+        "status": "passed",
+        "at": "2026-09-27T10:51:40Z"
+      }
     },
     {
       "id": "P80.19-rtb",
@@ -1255,7 +1272,12 @@
       },
       "startedAt": "2026-09-27T10:22:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T10:44:52Z.6c68d6",
+        "status": "passed",
+        "at": "2026-09-27T10:44:52Z"
+      }
     },
     {
       "id": "P80.20-rtb",
@@ -1346,7 +1368,12 @@
       },
       "startedAt": "2026-09-27T10:22:34Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T10:46:10Z.92048f",
+        "status": "passed",
+        "at": "2026-09-27T10:46:10Z"
+      }
     }
   ],
   "startedAt": "2026-09-27T04:18:48Z"
