@@ -198,7 +198,9 @@ python3 tools/check-git-pipeline.py        # the write half, against a REAL git 
 npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
-python3 tools/check-rendered-artifacts.py  # the artifacts vs a fresh render AND vs HEAD
+python3 tools/check-rendered-artifacts.py  # vs a fresh render AND vs HEAD; verify.sh's
+                                           # plain run passes --before-commit (the render
+                                           # only), and --release adds --against-commit
 python3 tools/check-committed-pii.py       # ...and that none of them names a machine
 python3 tools/check-example-ledgers.py     # ...and that no committed evidence row
                                            # records a verdict the runner cannot

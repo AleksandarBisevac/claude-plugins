@@ -298,8 +298,12 @@ run "claude plugin validate (marketplace)" claude plugin validate .
 run "claude plugin validate (plugin)" claude plugin validate plugins/audit
 
 echo "verify: rendered artifacts"
-run "committed artifacts match a fresh render AND what HEAD carries" \
-  python3 tools/check-rendered-artifacts.py
+# THE FRESH RENDER ONLY, because a plain run is a before-commit run. The tool's other
+# arm asks whether HEAD carries the pages on disk: before the commit it is red while a
+# re-rendered page is uncommitted - the correct change included. `--release` below
+# asks it after one, and on CI it cannot fire, because the checkout is the commit.
+run "committed artifacts match a fresh render" \
+  python3 tools/check-rendered-artifacts.py --before-commit
 # THE HALF OF THAT CLAIM THE TOOL ABOVE DELIBERATELY DOES NOT MAKE, and the only gate
 # CI ran that this file did not — so "every gate CI runs, in one command" was false by
 # exactly one step, and it was the step that catches a release follower. docs/index.html
@@ -528,6 +532,12 @@ PYEOF
   run "follower 2: artifacts stamp v$version" refs_rule artifact_version_drift
   run "follower 3: docs/index.html copies follower 2" docs_index_is_copy
   run "follower 4: screenshots were shot at v$version" refs_rule screenshot_capture_drift
+  # THE ARM THE PLAIN RUN LEAVES OUT. A release is cut from a commit, so here the
+  # question has an answer: does HEAD carry the pages the render above found current.
+  # A re-render left unstaged is green in every before-commit check and absent from
+  # the `git archive` a reader downloads.
+  run "HEAD carries the published pages" \
+    python3 tools/check-rendered-artifacts.py --against-commit
   # Not followers — these are properties of the release COMMIT rather than files the
   # number stales, which is why they sit below the numbered list instead of in it.
   run "the plan carries no open bug" no_open_bugs

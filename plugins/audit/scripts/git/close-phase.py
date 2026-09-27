@@ -1034,8 +1034,9 @@ def backfill_merged_head(manifest_path, phase_id, parent, project, ask_head,
     if not written:
         return {"mergedHeadWhy": why}
     # ONLY ALLOW-LISTED DETAIL KEYS: `_journal_io` drops any other key in silence,
-    # so the head travels as `to` and its basis as `reason`, and what has no key of
-    # its own - the parent, which head this is, `mergedHeadAt` - is in the summary.
+    # so the head travels as `to`, its basis as `reason` and the branch whose chain
+    # it came from as `parent`; what has no key of its own - which head this is,
+    # `mergedHeadAt` - is in the summary.
     what = ("recorded at %s after the fact: the parent's head then, not the "
             "merge's own commit, so stricter than it" % (at,) if at
             else "recovered from the parent's first-parent chain")
@@ -1047,7 +1048,7 @@ def backfill_merged_head(manifest_path, phase_id, parent, project, ask_head,
                    % (parent, written, recorded[MERGED_FIELD], what),
         "details": {"phaseId": str(phase_id), "field": MERGED_HEAD_FIELD,
                     "from": None, "to": written,
-                    "mergedAt": recorded[MERGED_FIELD],
+                    "mergedAt": recorded[MERGED_FIELD], "parent": parent,
                     "reason": ("recovered: " if not at else "") + head["basis"]},
     })
     return {"mergedHead": written, "mergedHeadBackfilled": path,

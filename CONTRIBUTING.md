@@ -177,9 +177,10 @@ npx --yes ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.s
 claude plugin validate .
 claude plugin validate plugins/audit
 
-# the dialect and the 3.8 floor. `ruff` selects E9+F only (pyproject.toml); the AST
-# lint in `_output.house_style_violations()` is what enforces the bans vermin cannot
-# see — annotations, walrus, `typing`, `dataclasses`, `from __future__`.
+# the dialect and the 3.8 floor. `ruff` selects the rules in pyproject.toml (syntax
+# errors, pyflakes, invalid escapes); the AST lint in
+# `_output.house_style_violations()` is what enforces the bans vermin cannot see —
+# annotations, walrus, `typing`, `dataclasses`, `from __future__`.
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 
@@ -194,6 +195,21 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 # at once, and the live demo went a month stale by the same route. A page nobody could
 # look up in HEAD is named as that rather than counted either way; a run that could look
 # up none of them fails saying so.
+#
+# AND THEY RUN AT DIFFERENT MOMENTS. Before a commit, the second arm is red for as long
+# as a re-rendered page is uncommitted, so the correct change is red until it lands.
+# The pre-commit set therefore asks the fresh render alone: the selftest sweep
+# (`--selftest` asks no other arm) and a plain or `--affected` `tools/verify.sh`
+# (`--before-commit`). After a commit, the second arm is what finds a page committed
+# without its re-render: `tools/verify.sh --release` runs `--against-commit`, and the
+# command below, run with no flag, asks both. CI runs it with no flag too, but there the
+# checkout IS the commit, so the second arm cannot fire. Its first arm is what catches
+# a stale committed page there. Before a PR your work is committed, so run it as written.
+# The tool's selftest pins these calls in verify.sh and ci.yml by exact line, and pins
+# the line around each: a ci.yml call is read only as a one-line `run:` with no deeper
+# continuation or as a line in a plain `run: |` block, and a call continued from the line
+# above only from the runner's `run "<label>" \` wrapper. So a flag moved, dropped, or
+# put on a continuation line fails a case.
 python3 tools/check-rendered-artifacts.py
 
 # ...and the half that tool deliberately does NOT make. docs/index.html is a byte
