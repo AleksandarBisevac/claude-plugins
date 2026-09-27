@@ -1,7 +1,7 @@
 {
   "id": "P84",
   "title": "review findings are written by a verb, every validator warning family carries a code the lint can see, and a fresh worktree's evidence is counted",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A sign-off's findings and their resolutions are recorded through a verb under the lock with a journal row, and the outcome's tally is derived from them; the stable-code lint reaches every warning _check_phase_gate emits; check-example-ledgers judges pointers and ledgers over the same set, so a phase's second task gate in a fresh worktree is not red on the first gate's pointer.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "72caceb122f3eeee054885d84342bf14d8af9329",
   "branch": "audit/p84-review-findings-are-written-by",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T09:19:02Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
