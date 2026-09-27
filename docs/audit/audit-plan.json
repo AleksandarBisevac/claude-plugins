@@ -479,7 +479,7 @@
     {
       "id": "P74",
       "title": "close-phase and the worktree tool name the commands that finish their work, and a group of phases on one branch can be signed off",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P74.json"
     },
     {
