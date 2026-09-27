@@ -855,6 +855,19 @@ LIST_ANCHORS = (
      r"FIXED_NAMES\s*=\s*\(([^)]*)\)",
      "`phase-<phaseId>` also works — **take the narrowest one that covers "
      "your writes:**"),
+    # The words `full_status` answers with, read off the constants that spell
+    # them. `FULL_STATUS` itself is a tuple of NAMES, which carries no quoted
+    # member to extract, so the capture is the run of `FULL_STATUS_*` string
+    # constants that sits directly above `FULL_STATUS = (`. What the tuple then
+    # holds is not read here: `test__areas.py` compares this row's parse with
+    # `set(_manifest_vocab.FULL_STATUS)`, so a member dropped from the tuple or
+    # defined outside that run fails there. A word added to that run, or one
+    # renamed there, is a member the section must then name; a word the section
+    # names that the run does not hold is a status no surface can print.
+    ("full-status-words", "The third place",
+     os.path.join("scripts", "manifest", "_manifest_vocab.py"),
+     r'((?:FULL_STATUS_[A-Z_]+\s*=\s*"[^"]+"[ \t]*\n)+)FULL_STATUS\s*=\s*\(',
+     "derived from the evidence ledger alone"),
 )
 
 # section -> why nothing anchors it. Checked in BOTH directions by `claim_drift`:

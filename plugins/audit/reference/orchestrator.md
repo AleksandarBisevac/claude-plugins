@@ -468,13 +468,13 @@ Omit the line entirely when the echo never applied (no `meta.ado`, or disabled).
 
 ## Answering one question about the trail
 
-Four questions come up repeatedly and each has exactly one answer, carried by a pointer a
-reader can check: why a task or phase was cancelled, what a bug concluded, which task last
-touched a file, and — folded from that third one — which task(s) last touched every file ONE
-task itself declares. None of them needs the whole plan or the whole journal read to answer —
-that cost grows with the project instead of with the question, and the file question (and the
-brief question built from it) is a **lookup**, not a search: `fileIndex` already records who
-declared what.
+A handful of questions come up repeatedly and each has exactly one answer, carried by a pointer
+a reader can check: why a task or phase was cancelled, what a bug concluded, which task last
+touched a file, which task(s) last touched every file ONE task itself declares (folded from the
+file question), and what a recorded gate run answered. None of them needs the whole plan or the
+whole journal read to answer — that cost grows with the project instead of with the question,
+and the file question (and the brief question built from it) is a **lookup**, not a search:
+`fileIndex` already records who declared what.
 
 ```
 scripts/status/audit-lookup.py <manifest> cancel <taskOrPhaseId>
@@ -500,7 +500,7 @@ recorded <runId>` line named, or with `run latest --phase <id>` / `run latest --
 that id was not kept. **Never read a background gate's verdict off a truncated terminal** — the
 ledger row is what the recording already made durable, and it is a lookup rather than a search.
 
-**`brief` is the one of the four you do not wait to be asked.** `cancel`/`bug`/`file` answer a
+**`brief` is the one of these you do not wait to be asked.** `cancel`/`bug`/`file` answer a
 question a human or a reviewing agent puts to you; `brief` answers the question an EXECUTOR
 would otherwise grep the manifest or the journal for at the start of its own task, so it is run
 by you and folded into the spawn prompt before that agent's first turn —
@@ -512,7 +512,7 @@ This is a narrower tool than the **Resume after interruption** procedure below, 
 different question — *which phase is resumable* — and still needs the manifest read in full for
 that.
 
-### The third place
+## The third place
 
 `meta.fullGate` names a gate beyond a task's own and a phase's sign-off gate — the whole
 product, measured with `run-test-gate.py --full --record` or the one command
@@ -524,10 +524,9 @@ panel, so whoever reads any of those already knows a phase has landed without ye
 and that refusal belongs to the release command, never to a phase run.
 
 **Never claim a full run passed, or that a phase is whole, from anything but the ledger.**
-`_evidence_io.full_status(rows, phase, git_root, full_commands)` is the one answer every
-surface reads — `whole`, `provisional`, `unknown` or `not_declared` — derived from the evidence
-ledger alone, never from a manifest pointer or a memory of what a gate answered earlier in this
-session. Read a recorded run back with `scripts/status/audit-lookup.py <manifest> run <runId>`,
+`_evidence_io.full_status` is the one answer every surface reads. It answers `whole`,
+`provisional`, `unknown` or `not_declared`, derived from the evidence ledger alone, never from a
+manifest pointer or a memory of what a gate answered earlier in this session. Read a recorded run back with `scripts/status/audit-lookup.py <manifest> run <runId>`,
 exactly as **Answering one question about the trail** above describes, rather than asserting
 what a run answered from its own printed lines.
 

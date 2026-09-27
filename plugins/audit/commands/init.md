@@ -139,11 +139,11 @@ With Bash/Glob/Grep — never reading secrets:
    ```
 
    — and ask (AskUserQuestion, multi-select, NOTHING pre-selected) whether the plan should adopt
-   either entry as a `meta.buildCommands` key, showing both the `asks` and the `costs` sentence
-   for each: an operator choosing a gate is making a trade, and a menu that hid one side of it is
-   a menu that gets chosen wrongly once. Declining both is the default and leaves `meta.buildCommands`
-   exactly as the tree- and history-derived candidates above left it — this step adds nothing on
-   its own, and only writes the key(s) the human actually picked.
+   any listed entry as a `meta.buildCommands` key, showing both the `asks` and the `costs`
+   sentence for each: an operator choosing a gate is making a trade, and a menu that hid one side
+   of it is a menu that gets chosen wrongly once. Declining every entry is the default and leaves
+   `meta.buildCommands` exactly as the tree- and history-derived candidates above left it — this
+   step adds nothing on its own, and only writes the key(s) the human actually picked.
 
    **Then OFFER `meta.fullGate` — the third place beyond a phase's own gate — never add it
    uninvited.** From the `meta.buildCommands` keys drafted above, name any that look like the
@@ -153,9 +153,9 @@ With Bash/Glob/Grep — never reading secrets:
    `.husky/pre-push` snippet `README.md`'s "The third place" section documents as what adopting
    it buys. Declining leaves `meta.fullGate` unwritten — the same absent-means-inert reading
    every other key in this step gets. **This is not `_gate_feed.OFFERED_GATES`'s catalog**: that
-   one is a fixed pair of candidate `meta.buildCommands` keys `accepted_gates()` reads back off
-   the keys a plan actually wrote, and a pre-push snippet is not a `meta.buildCommands` entry at
-   all.
+   one is a catalog of candidate `meta.buildCommands` keys, defined in that tuple and printed by
+   the `--list-offered` command above, which `accepted_gates()` reads back off the keys a plan
+   actually wrote, and a pre-push snippet is not a `meta.buildCommands` entry at all.
 
    **And record HOW the test command can be pointed at paths.** It is the only input a task's
    own gate can be derived from (step 5.3), and nothing later in the run can recover it. Beside

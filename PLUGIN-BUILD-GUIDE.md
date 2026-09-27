@@ -311,7 +311,7 @@ L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _locks, _manifest_io, _manifest_vocab, _output, _worktrees
+  _evidence_io -> _journal_io, _locks, _manifest_io, _manifest_vocab, _output, _usage_core, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
@@ -2856,7 +2856,7 @@ keeps the session rule.
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
-`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` with an ASCII
+`_locks.valid_name` accepts — a name in `_locks.FIXED_NAMES`, or `phase-<id>` with an ASCII
 id (a spelling that differs only in case from a held lock is refused, so the answer does not
 depend on whether the filesystem folds case), and for tooling that is not the plugin's a
 namespaced `user-<name>` under `_locks.USER_NAME_RULES`, whose own part may never be a lock name

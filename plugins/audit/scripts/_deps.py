@@ -374,8 +374,9 @@ LAYERS = (
      "_gate_feed",
      # `_evidence_io` is where a test-execution record lives and what it may say.
      # It reaches `_journal_io` (L1) for config loading, the writer id and the
-     # month, and nothing else - which is the reason it sits one layer up rather
-     # than beside it: a layer-mate may not be imported, and re-deriving "where
+     # month, and its other imports sit at L1 or below too; `_deps.py --render`
+     # prints the edges. That is the reason it sits one layer up rather than
+     # beside them: a layer-mate may not be imported, and re-deriving "where
      # does this manifest keep its committed record" would put the trail and the
      # evidence in different directories the first time a repo set an unusual
      # `manifestPath`. Its consumers are `_invariants` (L4), which has to know

@@ -237,7 +237,7 @@
         },
         "buildCommands": {
           "type": "object",
-          "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...). Two more are offered rather than required: `plugins/audit/scripts/status/_gate_feed.py`'s OFFERED_GATES catalog (list it with `--list-offered`) names 'provesCanFail' and 'claimsMatchCode' -- the two checks this project's own history learnt the hard way -- each with the sentence saying what it asks of a change and what it costs to run. Adding either key is this plan's own choice; leaving both out changes nothing here.",
+          "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...). More keys are offered rather than required: `plugins/audit/scripts/status/_gate_feed.py`'s OFFERED_GATES catalog (list it with `--list-offered`) names them -- 'provesCanFail', 'claimsMatchCode' and whatever else that tuple holds, the checks this project's own history learnt the hard way -- each with the sentence saying what it asks of a change and what it costs to run. Adding any of those keys is this plan's own choice; leaving them all out changes nothing here.",
           "additionalProperties": {
             "type": "string"
           }
