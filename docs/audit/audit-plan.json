@@ -655,7 +655,8 @@
       "P82.7-fye",
       "P82.8-fye",
       "P82.9-fye",
-      "P82.10-fye"
+      "P82.10-fye",
+      "P82.11-fye"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -775,7 +776,8 @@
       "P82.7-fye",
       "P82.8-fye",
       "P82.9-fye",
-      "P82.10-fye"
+      "P82.10-fye",
+      "P82.11-fye"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1000,7 +1002,8 @@
       "P82.5-fye",
       "P82.8-fye",
       "P82.9-fye",
-      "P82.10-fye"
+      "P82.10-fye",
+      "P82.11-fye"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1425,7 +1428,8 @@
       "P82.5-fye",
       "P82.8-fye",
       "P82.9-fye",
-      "P82.10-fye"
+      "P82.10-fye",
+      "P82.11-fye"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1917,7 +1921,8 @@
       "P82.7-fye",
       "P82.8-fye",
       "P82.9-fye",
-      "P82.10-fye"
+      "P82.10-fye",
+      "P82.11-fye"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3319,7 +3324,8 @@
       "P82.7-fye",
       "P82.8-fye",
       "P82.9-fye",
-      "P82.10-fye"
+      "P82.10-fye",
+      "P82.11-fye"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
