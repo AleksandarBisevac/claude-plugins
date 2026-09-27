@@ -81,7 +81,10 @@ PANEL_GATE = "node tools/capture-screenshots.mjs --check --only panel"
 REPORT_GATE = "node tools/check-report-interactive.mjs %s"
 REPORT_DOCS = ("examples/acme-store/acme-store-audit.html",
                "docs/index.html", "docs/demo-large.html")
-ARTIFACTS = "python3 tools/check-rendered-artifacts.py"
+# `--before-commit` because a narrowed run happens before the commit: the tool's
+# other arm asks what HEAD carries, and that is red for every change that re-renders
+# a page until the change is committed. CI and `verify.sh --release` ask it.
+ARTIFACTS = "python3 tools/check-rendered-artifacts.py --before-commit"
 
 # The JavaScript unit tests under `tools/ui-tests/`. They were selectable by nothing
 # and runnable only in CI, so a change to a `scripts/ui/` part reached a push with
@@ -679,7 +682,20 @@ def _cases(check):
           "test__refs.py" in page["suites"]
           and ARTIFACTS in page["gates"] and not page["full"])
 
-    shot = sel("docs/screenshots/panel-blocks.png")
+    # A NARROWED RUN IS A BEFORE-COMMIT RUN, so the byte comparison it selects must
+    # not ask what HEAD carries: before the commit exists that arm is red for every
+    # change that re-renders a page, the correct one included. The no-flag spelling
+    # asks both arms, which is the shape this case exists to refuse.
+    _art = [g.split() for g in page["gates"]
+            if "tools/check-rendered-artifacts.py" in g]
+    check("a10c ...and the byte comparison it selects asks the fresh render ONLY "
+          "(`--before-commit`), never what HEAD carries - a narrowed run happens "
+          "before the commit it would be comparing against: %r" % (_art,),
+          len(_art) == 1
+          and _art[0][:2] == ["python3", "tools/check-rendered-artifacts.py"]
+          and _art[0][2:] == ["--before-commit"])
+
+    shot =sel("docs/screenshots/panel-blocks.png")
     check("a11 a committed PNG selects no gate and does NOT widen - 'nothing "
           "covers this' is a real answer here, and it is not spelled the same "
           "way as 'I could not tell': %r" % (shot,),

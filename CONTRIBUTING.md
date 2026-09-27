@@ -194,6 +194,14 @@ vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks 
 # at once, and the live demo went a month stale by the same route. A page nobody could
 # look up in HEAD is named as that rather than counted either way; a run that could look
 # up none of them fails saying so.
+#
+# AND THEY RUN AT DIFFERENT MOMENTS, because the second arm has no answer until the
+# commit exists: asked before it, every change that re-renders a page is red, the
+# correct one included. So the pre-commit set asks the fresh render alone — the
+# selftest sweep (`--selftest` asks no other arm) and a plain or `--affected`
+# `tools/verify.sh` (`--before-commit`). The commit is asked where there is one: `tools/verify.sh
+# --release` runs `--against-commit`, and CI runs the command below with no flag, which
+# asks both. Before a PR your work is committed, so run it as written.
 python3 tools/check-rendered-artifacts.py
 
 # ...and the half that tool deliberately does NOT make. docs/index.html is a byte

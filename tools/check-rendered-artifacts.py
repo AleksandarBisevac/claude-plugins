@@ -27,6 +27,13 @@ went green here while a `git archive` of the commit still held the old bytes. Th
 reported apart: one is repaired by re-rendering and the other by committing, and a
 reader has to know which went red.
 
+AND THEY ARE ASKED AT DIFFERENT MOMENTS. The commit's question has no answer before
+the commit exists: asked of a tree that is about to become that commit, it is red for
+every change that re-renders a page with this repo's own recipe. So `--selftest` -
+which the pre-commit sweep runs - and `--before-commit` ask the fresh render alone,
+`--against-commit` asks HEAD alone, and a run with no flag asks both, which is what CI
+runs. `arm_verdict()` names an arm a run left out rather than going quiet about it.
+
 WHAT IT STILL DOES NOT COVER, and the direction: an artifact nobody listed in
 `ARTIFACTS`. That is an UNDER-count -- the quiet direction -- so a clean run means
 "the artifacts in the table are current", not "every committed artifact is".
@@ -52,13 +59,15 @@ very flags `_fixture_argv()` renders with, so the instructions cannot drift from
 comparison the way a hand-copied recipe does -- and the recipe already existed by
 hand, in more than one file, on the day this was added.
 
-Run it:   python3 tools/check-rendered-artifacts.py
+Run it:   python3 tools/check-rendered-artifacts.py                   # both arms
+          python3 tools/check-rendered-artifacts.py --before-commit   # the render
+          python3 tools/check-rendered-artifacts.py --against-commit  # HEAD
           python3 tools/check-rendered-artifacts.py --how       # just the recipes
           python3 tools/check-rendered-artifacts.py --selftest
-Exit 0 when every artifact is current, the commit carries what the working tree
-holds, and the copy check is still in place; 1 naming each artifact that is stale,
-each page the commit does not carry, and each declared copy check that has gone; 2 on
-a usage error. A page nobody could look up in `HEAD` is named rather than counted
+Exit 0 when every arm the run asks is clean and the copy check is still in place; 1
+naming each artifact that is stale, each page the commit does not carry, and each
+declared copy check that has gone; 2 on a usage error (an unknown flag, or both arm
+flags at once). A page nobody could look up in `HEAD` is named rather than counted
 either way, and a run that could look up NONE of them exits 1 saying so. Nothing is
 written to the repo -- it renders into a temporary directory.
 """
@@ -601,6 +610,98 @@ def committed_report(result):
     return lines, 0
 
 
+# --- which run asks which question --------------------------------------------
+# THE COMMIT'S QUESTION HAS NO ANSWER BEFORE THE COMMIT EXISTS. The fresh-render arm
+# is a question about the working tree and holds at any moment. The HEAD arm is a
+# question about a commit, and asked of a working tree that is about to BECOME that
+# commit it is red by construction: a task that re-renders a page with this repo's own
+# recipe differs from HEAD until its commit is made, and a gate that has to be green
+# before the commit may be made then refuses the one correct change. That is where the
+# HEAD arm used to sit - live in `--selftest`, which the pre-commit sweep runs - and
+# every task that regenerated a page could only land by overriding the verdict.
+#
+# So each run names the arms it asks, and a run that leaves one out says so in its
+# output rather than printing a verdict that reads as covering both:
+#   * `--before-commit` - the fresh render only. The sweep (through `--selftest`,
+#     which asks exactly these arms) and a plain `tools/verify.sh` run.
+#   * `--against-commit` - HEAD only. `tools/verify.sh --release`, whose plain half
+#     has already asked the fresh render on the same tree.
+#   * no flag - both. CI, where the checkout IS the commit, and anybody by hand.
+FRESH_ARM = "fresh"
+HEAD_ARM = "head"
+ALL_ARMS = (FRESH_ARM, HEAD_ARM)
+BEFORE_COMMIT_ARMS = (FRESH_ARM,)
+AGAINST_COMMIT_ARMS = (HEAD_ARM,)
+ARM_FLAGS = (("--before-commit", BEFORE_COMMIT_ARMS),
+             ("--against-commit", AGAINST_COMMIT_ARMS))
+
+
+def arms_for(argv):
+    """(arms, problem) for a command line. Exactly one of the two is None.
+
+    A flag this tool does not know is a problem and not a no-op: an unknown flag
+    used to fall through to the full run, so a mistyped `--before-comit` would ask
+    the very question it was typed to leave out. Both flags at once name no run.
+    """
+    known = [flag for flag, _arms in ARM_FLAGS]
+    unknown = [a for a in argv if a not in known]
+    if unknown:
+        return None, "unknown argument(s): %s" % (" ".join(unknown),)
+    picked = [arms for flag, arms in ARM_FLAGS if flag in argv]
+    if len(picked) > 1:
+        return None, ("%s asks the working tree and %s asks the commit; with no "
+                      "flag at all this tool asks both" % tuple(known))
+    return (picked[0] if picked else ALL_ARMS), None
+
+
+def _recipe_lines(rel):
+    """How to refresh one artifact, or a sentence saying that nothing records it."""
+    how = refresh_for(rel)
+    if how is None:
+        return ["      nothing here records how to refresh this artifact - add the "
+                "command beside its table row"]
+    return ["      %s" % (line,) for line in how.split("\n")]
+
+
+def arm_verdict(arms, root=None, subjects=None, drift=None):
+    """([lines], exit code) for the named arms, and a line for each arm left out.
+
+    PURE AT THE SEAMS a case needs: `drift` stands in for the render (a callable
+    returning `drifted()`'s shape) and `root`/`subjects` point the HEAD arm at a
+    fixture repository. An arm not asked is NAMED as not asked, because a run that
+    printed nothing about the commit would read exactly like one whose commit
+    carried every page.
+    """
+    lines, code = [], 0
+    if FRESH_ARM in arms:
+        bad = drifted() if drift is None else drift()
+        for rel, detail in bad:
+            lines.append("STALE %s - %s" % (rel, detail))
+            lines.extend(_recipe_lines(rel))
+        if bad:
+            lines.append("%d committed artifact(s) no longer match their source. "
+                         "Re-render with the command printed under each, and commit "
+                         "the result." % (len(bad),))
+            code = 1
+        else:
+            lines.append("OK: %d committed artifact(s) match a fresh render"
+                         % (len(_tabled_artifacts()),))
+    else:
+        lines.append("NOT ASKED: whether the pages match a fresh render - this run "
+                     "asks only what %s carries; `--before-commit` asks the "
+                     "render" % (_HEAD,))
+    if HEAD_ARM in arms:
+        head_lines, head_code = committed_report(uncommitted(root, subjects))
+        lines.extend(head_lines)
+        code = max(code, head_code)
+    else:
+        lines.append("NOT ASKED: whether %s carries these pages - before a commit "
+                     "exists that answer is red by construction; `--against-commit` "
+                     "asks it, and CI and `tools/verify.sh --release` run it"
+                     % (_HEAD,))
+    return lines, code
+
+
 # --- selftest -----------------------------------------------------------------
 def _cases(check):
     # TWO COMPUTATIONS, NOT ONE, and the reason is what this case used to be: it
@@ -720,9 +821,14 @@ def _cases(check):
     # stream: the shared runner prints nothing until every case has run, so a slow
     # render delays the whole report and the ordering buys no early news. What it
     # does buy is a report whose expensive case is the last line before the tally.
-    _live = drifted()
+    #
+    # IT ASKS THE BEFORE-COMMIT ARMS AND NO OTHER, through the same constant the
+    # `--before-commit` flag spends: this suite runs in the pre-commit sweep, and
+    # asking it what the commit carries made every task that re-rendered a page red
+    # until its own commit existed. ra25 is what fails if that question comes back.
+    _live_lines, _live_code = arm_verdict(BEFORE_COMMIT_ARMS)
     check("ra5 every committed rendered artifact matches what its source renders "
-          "today - %r" % (_live,), _live == [])
+          "today - %r" % (_live_lines,), _live_code == 0)
 
     # THE SECOND ROW, DRIVEN FOR REAL. The generated half of the walk built its
     # fixture and its output under two FIXED names, so the row after the first
@@ -930,14 +1036,82 @@ def _head_cases(check):
           and any(line.startswith("UNCOMMITTED") for line in _bad_lines)
           and any("commit it" in line for line in _bad_lines))
 
-    # The live one. It is a claim about THIS checkout and it is the last thing here
-    # for the reason `ra5` is last in the block above.
-    _live = uncommitted()
-    check("ra23 every published page this tool has an opinion about is byte-"
-          "identical to what the commit carries, and every one of them really was "
-          "compared: %r" % (_live,),
-          _live["differs"] == [] and _live["unlooked"] == []
-          and _live["compared"] == len(_live["subjects"]))
+    # NO LIVE CASE FOR THIS ARM, ON PURPOSE. It used to end here asking whether THIS
+    # checkout's commit carries every page, and this suite runs before a commit
+    # exists - see "which run asks which question" above. The live question is the
+    # CLI's, and `_arm_cases` pins which run asks it.
+    _arm_cases(check)
+
+
+def _arm_cases(check):
+    """Which run asks which question, driven over one real repository.
+
+    The fixture is the state that used to fail the pre-commit sweep: a page whose
+    working-tree bytes are the fresh render (the render is stood in for by `drift`,
+    because what is under test is the choice of arms, not the renderer) and whose
+    commit still holds the bytes from before the re-render.
+    """
+    _old = "<html>the render before this change</html>\n"
+    _new = "<html>the render this change made</html>\n"
+    def _matches_render():
+        return []
+
+    def _stale():
+        return [(_HEAD_FX_REL, "differs from a fresh render")]
+
+    root = _head_fixture(_old)
+    try:
+        _write_working(root, _HEAD_FX_REL, _new)
+        _pre_lines, _pre_code = arm_verdict(BEFORE_COMMIT_ARMS, root=root,
+                                            subjects=[_HEAD_FX_REL],
+                                            drift=_matches_render)
+        _neither_lines, _neither_code = arm_verdict(BEFORE_COMMIT_ARMS, root=root,
+                                                    subjects=[_HEAD_FX_REL],
+                                                    drift=_stale)
+        _ci_arms = arms_for([])[0]
+        _ci_lines, _ci_code = arm_verdict(_ci_arms, root=root,
+                                          subjects=[_HEAD_FX_REL],
+                                          drift=_matches_render)
+        _rel_arms = arms_for(["--against-commit"])[0]
+        _rel_lines, _rel_code = arm_verdict(_rel_arms, root=root,
+                                            subjects=[_HEAD_FX_REL],
+                                            drift=_stale)
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(root)
+
+    def _count(lines, prefix):
+        return len([line for line in lines if line.startswith(prefix)])
+
+    check("ra25 a page re-rendered by the change being prepared - current against "
+          "a fresh render, not yet in HEAD - passes the before-commit arms, which "
+          "are the ones this suite asks; they say the commit was NOT ASKED rather "
+          "than going quiet about it: %r" % (_pre_lines,),
+          _pre_code == 0
+          and _count(_pre_lines, "UNCOMMITTED") == 0
+          and _count(_pre_lines, "NOT ASKED") == 1
+          and HEAD_ARM not in BEFORE_COMMIT_ARMS)
+    # THE OTHER DIRECTION of ra25: an arm set that dropped the render along with the
+    # commit would pass ra25 for ever while checking nothing at all.
+    check("ra26 ...but a page matching NEITHER a fresh render nor HEAD still fails "
+          "the before-commit arms, once, as STALE: %r" % (_neither_lines,),
+          _neither_code == 1 and _count(_neither_lines, "STALE") == 1)
+    check("ra27 ...and the run CI makes (no flag) and the one `verify.sh --release` "
+          "makes (`--against-commit`) both still fail on a page the commit does "
+          "not carry: %r / %r" % (_ci_lines, _rel_lines),
+          _ci_code == 1 and _count(_ci_lines, "UNCOMMITTED") == 1
+          and _rel_code == 1 and _count(_rel_lines, "UNCOMMITTED") == 1
+          and _count(_rel_lines, "STALE") == 0)
+    _both, _both_problem = arms_for(["--before-commit", "--against-commit"])
+    _typo, _typo_problem = arms_for(["--before-comit"])
+    check("ra28 the flags map to the arms they name, no flag asks both, and a "
+          "mistyped or contradictory flag is a usage error rather than a quiet "
+          "fall-through to some other run: %r" % ((_both_problem, _typo_problem),),
+          arms_for([]) == (ALL_ARMS, None)
+          and arms_for(["--before-commit"]) == (BEFORE_COMMIT_ARMS, None)
+          and arms_for(["--against-commit"]) == (AGAINST_COMMIT_ARMS, None)
+          and _both is None and _both_problem is not None
+          and _typo is None and "--before-comit" in (_typo_problem or ""))
 
 
 def _selftest():
@@ -952,17 +1126,6 @@ def _tabled_artifacts():
             + [rel for rel, _b in GENERATED_ARTIFACTS])
 
 
-def _write_recipe(rel):
-    """Print how to refresh one artifact, or say that nothing records it."""
-    how = refresh_for(rel)
-    if how is None:
-        sys.stdout.write("      nothing here records how to refresh this "
-                         "artifact - add the command beside its table row\n")
-        return
-    for line in how.split("\n"):
-        sys.stdout.write("      %s\n" % (line,))
-
-
 def main():
     argv = sys.argv[1:]
     if "--selftest" in argv:
@@ -970,7 +1133,8 @@ def main():
     if "--how" in argv:
         for rel in _tabled_artifacts():
             sys.stdout.write("%s\n" % (rel,))
-            _write_recipe(rel)
+            for line in _recipe_lines(rel):
+                sys.stdout.write(line + "\n")
         for copy_rel, source_rel, _sides in COPY_PROVEN:
             sys.stdout.write("%s (a byte copy, checked by cmp not by a render)\n"
                              % (copy_rel,))
@@ -981,15 +1145,15 @@ def main():
                          "and the repair is `git add` plus a commit, not another "
                          "render.\n" % (_HEAD,))
         return 0
-    bad = drifted()
-    for rel, detail in bad:
-        sys.stdout.write("STALE %s - %s\n" % (rel, detail))
-        _write_recipe(rel)
-    # THE SECOND ARM, PRINTED APART FROM THE FIRST. A page can be stale on disk, or
-    # current on disk and absent from the commit, and the two are repaired by
-    # different acts - so they are two blocks of output rather than one word.
-    head_lines, head_code = committed_report(uncommitted())
-    for line in head_lines:
+    arms, problem = arms_for(argv)
+    if problem is not None:
+        sys.stderr.write("check-rendered-artifacts.py: %s\n" % (problem,))
+        return 2
+    # THE TWO ARMS, PRINTED APART. A page can be stale on disk, or current on disk
+    # and absent from the commit, and the two are repaired by different acts - so
+    # they are two blocks of output rather than one word.
+    lines, code = arm_verdict(arms)
+    for line in lines:
         sys.stdout.write(line + "\n")
     # The claim this tool makes about what it does NOT compare. Reported beside the
     # drift rather than in the docstring alone, because "docs/index.html is covered
@@ -998,15 +1162,10 @@ def main():
     gaps = copy_check_missing()
     for copy_rel, side, problem in gaps:
         sys.stdout.write("UNCOVERED %s - %s %s\n" % (copy_rel, side, problem))
-    if bad:
-        sys.stdout.write("\n%d committed artifact(s) no longer match their source. "
-                         "Re-render with the command printed under each, and commit "
-                         "the result.\n" % len(bad))
-    if bad or gaps or head_code:
+    if code or gaps:
         return 1
-    sys.stdout.write("OK: %d committed artifact(s) match a fresh render, and every "
-                     "byte copy this tool defers on is still compared where it says "
-                     "it is\n" % (len(ARTIFACTS) + len(GENERATED_ARTIFACTS)))
+    sys.stdout.write("OK: every byte copy this tool defers on is still compared "
+                     "where it says it is\n")
     return 0
 
 

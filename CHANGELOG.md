@@ -551,6 +551,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **Re-rendering a published page no longer fails the pre-commit sweep.**
+  `tools/check-rendered-artifacts.py --selftest` compared every published page with what `HEAD`
+  carries, and the sweep runs before the commit exists — so a change that re-rendered a page with
+  the repository's own recipe was red until its own commit was made. The selftest and the new
+  `--before-commit` flag now compare with a fresh render only, and say in their output that the
+  commit was not asked. `--against-commit` compares with `HEAD` only; `tools/verify.sh` runs
+  `--before-commit`, and so does the check `--affected` selects; `--release` adds
+  `--against-commit`. CI's run with no flag compares
+  both, as before. An unknown flag, or both flags together, is now a usage error (exit 2)
+  instead of running both comparisons.
 - **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
   report and the panel each turned a failed read into a clean read of nothing, so a task or
   phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not

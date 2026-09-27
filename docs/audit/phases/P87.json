@@ -1,7 +1,7 @@
 {
   "id": "P87",
   "title": "a task that regenerates a published page can record a green gate before its commit, and a journal row keeps every detail its writer passed",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "The pre-commit sweep compares published pages against a fresh render, and the comparison against what the commit carries runs where a commit exists (CI and verify.sh --release), so a task regenerating a page is gated green on correct work without an override; close-phase's phase.merged row carries its parent, and a detail key outside the journal's allow-list at any append site fails the build instead of being dropped.",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6dc42323acbdc06a1330344d35e881a54282089e",
+  "branch": "audit/p87-a-task-that-regenerates-a-publ",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,13 +27,14 @@
     {
       "id": "P87.1",
       "title": "the published-page check compares against a fresh render before the commit and against the commit only where one exists",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F521 (quality-gates-internal PLAN.md). ra23's live arm (--selftest compares every published page against HEAD) sits in the pre-commit sweep, so a task that regenerates a page with the repo's own recipe is red by construction until its commit, and commit-task-work binds a commit to a green gate - P80.7, P80.15 and P80.20 went through --override-verdict. Keep the fresh-render comparison in the pre-commit sweep; move the vs-commit comparison to where a commit exists - the CLI run CI and verify.sh --release make - and state in CONTRIBUTING.md and verify.sh which set carries it. gate-parity.py must stay green (every description of the gate set agrees). Red-first: a fixture page that matches a fresh render and not HEAD makes the selftest red on the current code and green after; allow: a page matching neither a fresh render nor HEAD still fails the pre-commit sweep, and the vs-commit arm still fails on a page the commit does not carry.",
       "files": [
         "tools/check-rendered-artifacts.py",
         "tools/verify.sh",
         "CONTRIBUTING.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "tools/affected.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -56,14 +57,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T14:08:20Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -115,5 +116,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T14:08:20Z"
 }
