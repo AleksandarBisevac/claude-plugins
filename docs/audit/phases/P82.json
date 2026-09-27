@@ -1,7 +1,7 @@
 {
   "id": "P82",
   "title": "red-first names the task's own case by its label, and reads only the runner that ran",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "stamp-verification red recognises a house case whose label starts with an ordinary word as the task's own, and an expected ERROR: line from a passing house case is no longer counted as a failing unittest case, so a genuine red-first reads proved.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "2dc352428f96e8115fc30cbcdbb4efac1c7a2591",
   "branch": "audit/p82-red-first-names-the-task-s-own",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T22:21:57Z",
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
@@ -1356,5 +1356,6 @@
     "runId": "2026-09-27T22:02:56Z.50b14f",
     "status": "passed",
     "at": "2026-09-27T22:02:56Z"
-  }
+  },
+  "mergedHead": "983e67ad8e65995f43e36a739ce83fdfe75d5776"
 }
