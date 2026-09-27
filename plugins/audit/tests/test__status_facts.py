@@ -332,6 +332,77 @@ def _cases(check):
           "stranded-skills" in M.CONDITIONS
           and "stranded-skills" not in M.DEFAULT_GATE)
 
+    # --- (fr) the third place: provisional / stale-full-run ---------------------
+    # `summary["fullRun"]` is INJECTED by `audit-status.py` (this module is a
+    # layer-mate of `_evidence_io` and may open no ledger and ask no git), so the
+    # same three states `invariant_breaches` and `stranded_skills` have apply
+    # here too: absent means nobody asked, and a gate reading that as clean would
+    # pass every repository where the injection silently failed.
+    check("fr1 a summary with NO fullRun block FAILS both conditions - the "
+          "ledger not having been read is not evidence that a merged phase is "
+          "whole",
+          M.evaluate_gate({}, ("provisional", "stale-full-run"))
+          == ["provisional", "stale-full-run"]
+          and M.provisional_phases({}) is not None
+          and M.stale_full_runs({}) is not None)
+    _fr_whole = {"fullRun": {"P1": {"answer": "whole", "basis": "b", "runId": "r"}},
+                "phases": [{"id": "P1", "mergedAt": "2026-01-01T00:00:00Z"}]}
+    check("fr2 THE ALLOW CASE: a WHOLE phase trips neither condition",
+          M.evaluate_gate(_fr_whole, ("provisional", "stale-full-run")) == []
+          and M.provisional_phases(_fr_whole) is None
+          and M.stale_full_runs(_fr_whole) is None)
+    _fr_prov = {"fullRun": {"P1": {"answer": "provisional",
+                                  "basis": "does not contain X", "runId": "r"}},
+               "phases": [{"id": "P1", "mergedAt": "2026-01-01T00:00:00Z"}]}
+    check("fr3 a PROVISIONAL phase trips `provisional`, naming the phase and the "
+          "basis rather than a bare count",
+          M.evaluate_gate(_fr_prov, ("provisional",)) == ["provisional"]
+          and "P1" in " ".join(M.provisional_phases(_fr_prov))
+          and "does not contain X" in " ".join(M.provisional_phases(_fr_prov)))
+    check("fr4 UNKNOWN never counts as provisional - it is 'ancestry could not "
+          "be asked at all', a different and narrower gap than this condition "
+          "claims",
+          M.evaluate_gate(
+              {"fullRun": {"P1": {"answer": "unknown", "basis": "b",
+                                  "runId": None}},
+               "phases": [{"id": "P1"}]},
+              ("provisional",)) == [])
+    check("fr5 stale-full-run needs `runTs` on the row - a PROVISIONAL phase "
+          "with no run named at all (never measured, ever) is not YET stale, "
+          "only unwritten",
+          M.evaluate_gate(_fr_prov, ("stale-full-run",)) == []
+          and M.stale_full_runs(_fr_prov) is None)
+    _fr_stale = {
+        "fullRun": {"P1": {"answer": "provisional", "basis": "does not contain X",
+                           "runId": "r2", "runTs": "2026-04-01T00:00:00Z"}},
+        "phases": [{"id": "P1", "mergedAt": "2026-03-01T00:00:00Z"}],
+    }
+    check("fr6 THE SHARPER CLAIM: a full run recorded AFTER this phase merged "
+          "and still not containing it IS stale, naming the run and both moments",
+          M.evaluate_gate(_fr_stale, ("stale-full-run",)) == ["stale-full-run"]
+          and "r2" in " ".join(M.stale_full_runs(_fr_stale))
+          and "2026-03-01T00:00:00Z" in " ".join(M.stale_full_runs(_fr_stale))
+          and "2026-04-01T00:00:00Z" in " ".join(M.stale_full_runs(_fr_stale)))
+    _fr_before = {
+        "fullRun": {"P1": {"answer": "provisional", "basis": "does not contain X",
+                           "runId": "r0", "runTs": "2026-01-01T00:00:00Z"}},
+        "phases": [{"id": "P1", "mergedAt": "2026-03-01T00:00:00Z"}],
+    }
+    check("fr7 SECOND DIRECTION: a full run recorded BEFORE the merge is not "
+          "stale - the plan has simply not been re-measured since, which is "
+          "`provisional`'s claim already and not a sharper one",
+          M.evaluate_gate(_fr_before, ("stale-full-run",)) == []
+          and M.stale_full_runs(_fr_before) is None)
+    check("fr8 DEFAULT_GATE PINNED WHOLE, so widening it to include either "
+          "condition is a deliberate edit that goes red first rather than a "
+          "merge that quietly starts failing other people's builds",
+          M.DEFAULT_GATE == ("invalid", "open-high-bugs", "blocked-tasks"))
+    check("fr9 ...and both ARE accepted by --fail-on, which is the direction "
+          "that fails if fr8 is satisfied by dropping them everywhere",
+          "provisional" in M.CONDITIONS and "stale-full-run" in M.CONDITIONS
+          and "provisional" not in M.DEFAULT_GATE
+          and "stale-full-run" not in M.DEFAULT_GATE)
+
     # --- (ur) a run that stopped mid-phase ---------------------------------------
     # `/audit:phase P5` means "run every ready task, then sign off". A phase
     # planned as waves of parallel subagents committed wave one, named wave two

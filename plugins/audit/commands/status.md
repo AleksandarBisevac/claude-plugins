@@ -154,6 +154,13 @@ meanings, rendered from the same tuple the gate evaluates:
   run that stopped mid-phase. `/audit:phase P5` means *execute every ready task,
   then sign off*, and a run that commits one wave, names the next and stops has
   done neither — see below
+- `provisional` — a **merged phase `meta.fullGate` has not yet certified whole**:
+  no green, measured, clean, verbatim full run's head is yet known to contain
+  this phase's merge — see below
+- `stale-full-run` — the sharper claim inside `provisional`: a full run
+  **happened after this phase merged and still does not contain it** — a plan
+  actively falling behind its own third place, not merely one that has not
+  reached it yet — see below
 
 Neither budget condition is in the default, deliberately: spend is a signal, not a
 defect, and a phase at 105% may be entirely justified. Opt in when a budget is a
@@ -212,6 +219,40 @@ That question belongs to
 `/audit:doctor` and to `--fail-on invariant-breach`. The `tests` column in the render
 carries the same word where a task has one, and a phase's own verdict is a `tests
 <word>` clause on its head line.
+
+### `provisional` / `stale-full-run` — the third place
+
+`meta.fullGate` names a THIRD gate beyond a task's own and a phase's sign-off
+gate — the full suite, coverage, an end-to-end pass. `phase.mergedHead` is what
+lets a **merged** phase be asked whether that third gate ran clean on exactly
+its own work: the parent branch's commit right after the merge, so a full
+run's own head containing it is the one fact that makes "this phase's tests
+passed" a claim about *this* phase rather than about whatever else has landed
+since. The `tests` column names it the same way it names a task's or phase's
+own gate — `whole`, `provisional (since <mergedAt>)`, or `unknown - <basis>` —
+and it is the **same word** `whole` that a task's own gate and a phase's
+sign-off gate use for "tests passed", never a second spelling invented for
+this place. With no `meta.fullGate` declared at all, the column renders
+exactly as it always has — a basis with no claim is noise, so there is no
+"not declared" text anywhere.
+
+**`provisional` is the plain reading:** this merged phase's tests have not yet
+been certified whole by the third place. That covers every reason short of a
+containing green run — nothing has ever been recorded, the newest recorded run
+does not measure this plan's declared gate, or it does but its head does not
+(yet) contain this phase's merge. `stale-full-run` is the sharper claim inside
+it: a full run was recorded **after** this phase merged and **still** does not
+contain it — the plan is not merely unmeasured, a chance to measure it has
+already come and gone. `unknown` never counts as either: it means ancestry
+could not be asked at all (no `mergedHead` recorded), which is a narrower gap
+than either condition claims.
+
+**Both are opt-in and out of the `--gate` default, for `no-test-evidence`'s own
+reason.** A plan that has never recorded a full run, or that names no
+`meta.fullGate` at all, carries no whole-bearing row anywhere — a default
+holding either condition would fail every such build the day the plugin
+shipped it. A team that wants the third place enforced is a team that types
+`--fail-on provisional` (or `stale-full-run`) on purpose.
 
 ### `unfinished-run` — a run that stopped mid-phase
 

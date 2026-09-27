@@ -537,7 +537,7 @@
     {
       "id": "P80.9",
       "title": "The doctor's full-run row: provisional and unknown phases, with the command that settles each",
-      "status": "in_progress",
+      "status": "done",
       "description": "check_full_run(rep, project, manifest_rel, manifest, git_root, config=None) in _doctor_trail.py, wired after the recall row. No meta.fullGate: an OK row 'no third place declared (meta.fullGate)'. Otherwise: the newest whole-bearing full run (runId, head, age); each PROVISIONAL phase as a WARNING with the command that would settle it (/audit:review <P> --full, or the pre-push/CI step); each UNKNOWN phase as a WARNING with its basis (no mergedHead, or git's answer); a full row that failed a whole-bearing rule named with the rule it failed (dirty, counted nothing, ran k of n declared entries). Reuses _evidence_io.full_status; advisory, exit status unchanged. Red-first: a fixture with one provisional and one unknown phase produces both warnings with their commands; mutation: skip UNKNOWN phases -> red. Allow case: every merged phase whole -> one OK row naming the run.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -570,18 +570,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a0a4acbd59270f307d426519c47fd9a6f08a6b04",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_doctor_trail.check_full_run, wired after the shadow recall row; reads _evidence_io.full_status with full_commands from resolved_commands; an unreadable ledger warns before any figure. Cases dfr1-dfr6 and the wiring-order case. Task review: intent matches; redFirst graded proved from the hand-made red (the tool's throwaway tree lacked the uncommitted base). Carried to sign-off (HIGH): the doctor picks merged phases by effective status done, while status and the panel use mergedAt, so the surfaces do not ask about the same phases; one shared predicate beside full_status fixes all four. inheritedTests not-asked.",
+        "descriptive": "The doctor now has a full-run row: it says when no third place is declared, warns for each merged phase that is provisional (with the command that settles it) or unknown (with the reason), and names the full run that makes the rest whole."
       },
       "startedAt": "2026-09-27T07:28:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T08:41:20Z",
+      "verifiedBy": [
+        "dfr1",
+        "dfr2",
+        "dfr3",
+        "dfr4",
+        "dfr5",
+        "dfr6"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T08:24:04Z.ffba9e",
         "status": "passed",
         "at": "2026-09-27T08:24:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a0a4acbd59270f307d426519c47fd9a6f08a6b04",
+        "at": "2026-09-27T08:41:20Z"
       }
     },
     {

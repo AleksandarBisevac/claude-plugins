@@ -61,6 +61,11 @@ import _cli_fmt                                    # noqa: E402  (as audit-statu
 # the product's own writers, so the fixture has the shape a real phase run leaves
 # on disk instead of this file's memory of it.
 import _locks as _lockmod                          # noqa: E402
+# The `fr` block writes ledger rows directly (bypassing `append_row`'s chain -
+# a --gate reader does not verify the chain, only `verify()` does) but reads
+# them back through this module's OWN `evidence_dir`, so the fixture and the
+# command agree on where the record lives without a second guess at the path.
+import _evidence_io as _ebio                        # noqa: E402
 
 M = _loader.load_script("audit-status.py", modname="audit_status")
 
@@ -1831,7 +1836,7 @@ def _cases(_record):
     _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
     check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
           "not exist" % len(M.CONDITIONS),
-          _missing_ap == [] and len(M.CONDITIONS) == 12,
+          _missing_ap == [] and len(M.CONDITIONS) == 14,
           "absent from --help: %r" % (_missing_ap,))
     _help_txt = getattr(M, "CONDITION_HELP", None)
     check("ap9 ...and every condition's MEANING is rendered there too, so the "
@@ -2534,6 +2539,218 @@ def _cases(_record):
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = _uf_env
         _sh_uf.rmtree(_uf_root, ignore_errors=True)
+
+
+    # --- the third place: provisional / stale-full-run --------------------------
+    # A REAL git repository, for `_full_status_cases`' own reason (test__evidence_io.py):
+    # a case that mutated `full_status` to compare `head == mergedHead` would still
+    # pass against two equal strings, and only two real, ancestor-related commits
+    # catch that. Ledger rows are written directly rather than through
+    # `append_row` - a --gate reader never verifies the chain, only `verify()`
+    # does - but read back through `_evidence_io.evidence_dir`, so the fixture and
+    # the command agree on where the record lives.
+    import shutil as _sh_fr
+
+    def _fr_git(root):
+        git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+              "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+        def sh(*args):
+            subprocess.run(git + list(args), cwd=root, check=True,
+                           capture_output=True)
+
+        def rev():
+            out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root,
+                                 check=True, capture_output=True)
+            return out.stdout.decode("utf-8").strip()
+
+        sh("init", "-q")
+        with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("1\n")
+        sh("add", "-A")
+        sh("commit", "-qm", "one")
+        first = rev()
+        with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("2\n")
+        sh("add", "-A")
+        sh("commit", "-qm", "two")
+        second = rev()
+        return first, second
+
+    def _fr_row(run_id, ts, head, passed=True):
+        return {"v": _ebio.ROW_VERSION, "runId": run_id, "ts": ts,
+                "scope": _ebio.FULL_SCOPE,
+                "status": "passed" if passed else "failed",
+                "steps": [{"name": "gate", "command": "echo x", "exit": 0,
+                          "durationMs": 1000}],
+                "testedState": {"head": head},
+                "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                                 "dirtyOutside": []}}
+
+    if not _sh_fr.which("git"):
+        for _lbl in ("fr10", "fr11", "fr12", "fr13", "fr14", "fr15"):
+            _harness.skip(check, _lbl, "git is not on PATH, and full_status "
+                          "needs a real repository to ask ancestry of", True)
+    else:
+        _fr_root = tempfile.mkdtemp(prefix="audit-status-fullrun-")
+        _fr_env = os.environ.get("CLAUDE_PROJECT_DIR")
+        try:
+            _fr_repo = os.path.join(_fr_root, "proj")
+            os.makedirs(os.path.join(_fr_repo, "docs", "audit"))
+            _fr_first, _fr_second = _fr_git(_fr_repo)
+            _fr_plan = {
+                "meta": {"version": 2, "title": "third place",
+                        "fullGate": ["full"],
+                        "buildCommands": {"full": "echo x"}},
+                "phases": [{"id": "P1", "title": "one", "status": "done",
+                           "mergedAt": "2026-03-01T00:00:00Z",
+                           "mergedHead": _fr_second, "tasks": []}],
+            }
+            _fr_path = os.path.join(_fr_repo, "docs", "audit",
+                                    "audit-plan.json")
+            with open(_fr_path, "w", encoding="utf-8") as fh:
+                json.dump(_fr_plan, fh)
+            os.environ["CLAUDE_PROJECT_DIR"] = _fr_repo
+
+            def _fr_cli(argv):
+                _o, _e = _io_ap.StringIO(), _io_ap.StringIO()
+                with _ctx_ap.redirect_stdout(_o), _ctx_ap.redirect_stderr(_e):
+                    _c = M.main(argv)
+                return _c, _o.getvalue(), _e.getvalue()
+
+            def _fr_write(rows):
+                d = _ebio.evidence_dir(_fr_repo)
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "manual.jsonl"), "w",
+                         encoding="utf-8") as fh:
+                    for r in rows:
+                        fh.write(json.dumps(r) + "\n")
+
+            # --- no full run recorded at all: PROVISIONAL, and OPT-IN ----------
+            _c1, _o1, _e1 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                     "provisional"])
+            _c2, _o2, _e2 = _fr_cli([_fr_path, "--gate"])
+            check("fr10 --gate --fail-on provisional exits non-zero on a "
+                  "PROVISIONAL fixture (nothing ever recorded), and zero "
+                  "without the flag - provisional is opt-in, exactly like "
+                  "no-test-evidence",
+                  _c1 == 1 and "GATE FAILED: provisional" in _o1
+                  and "P1" in _o1 and _c2 == 0,
+                  repr((_c1, _o1.strip()[-160:], _c2)))
+
+            # --- a full run whose head CONTAINS mergedHead: WHOLE --------------
+            _fr_write([_fr_row("r1", "2026-04-01T00:00:00Z", _fr_second)])
+            _c3, _o3, _e3 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                     "provisional"])
+            check("fr11 a green, measured, clean, verbatim full run whose head "
+                  "IS mergedHead certifies the phase WHOLE, and the gate passes",
+                  _c3 == 0 and "GATE PASSED: provisional" in _o3,
+                  repr(_o3.strip()[-160:]))
+            _c3b, _o3b, _e3b = _fr_cli([_fr_path])
+            check("fr12 THE TESTS COLUMN, on the human render: the phase head "
+                  "names the third place's own word, and it is the SAME "
+                  "spelling `_manifest_vocab.VERIFIED` uses for it - never a "
+                  "second word for 'whole'",
+                  _c3b == 0 and "full whole" in _o3b
+                  and _vocab.VERIFIED[2] == "whole",
+                  repr(_o3b))
+
+            # --- a run BEFORE the merge that does not contain it: PROVISIONAL,
+            # but not yet STALE - the plan has simply not been re-measured -----
+            _fr_write([_fr_row("r0", "2026-01-01T00:00:00Z", _fr_first)])
+            _c4, _o4, _e4 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                     "provisional,stale-full-run"])
+            check("fr13 a full run recorded BEFORE the merge, whose head does "
+                  "NOT contain mergedHead, is provisional but not stale",
+                  _c4 == 1 and "GATE FAILED: provisional" in _o4
+                  and "GATE FAILED: stale-full-run" not in _o4,
+                  repr(_o4.strip()))
+            _c4b, _o4b, _e4b = _fr_cli([_fr_path])
+            check("fr13b ...and the tests column names it, since since <mergedAt>",
+                  _c4b == 0
+                  and "full provisional (since 2026-03-01T00:00:00Z)" in _o4b,
+                  repr(_o4b))
+
+            # --- THE SHARPER CLAIM: a run AFTER the merge, still not containing
+            # mergedHead - a full run happened after the phase landed and STILL
+            # does not contain it -----------------------------------------------
+            _fr_write([_fr_row("r2", "2026-05-01T00:00:00Z", _fr_first)])
+            _c5, _o5, _e5 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                     "stale-full-run"])
+            check("fr14 LIVE: a full run recorded AFTER mergedAt whose head "
+                  "still does not contain mergedHead trips stale-full-run, "
+                  "naming the run and both moments",
+                  _c5 == 1 and "GATE FAILED: stale-full-run" in _o5
+                  and "r2" in _o5 and "2026-03-01T00:00:00Z" in _o5
+                  and "2026-05-01T00:00:00Z" in _o5,
+                  repr(_o5.strip()[-260:]))
+
+            # --- THE ALLOW CASE: no meta.fullGate at all renders BYTE-IDENTICAL
+            # to a plan that never named a third place - no "not_declared" text
+            _fr_no_gate = copy.deepcopy(_fr_plan)
+            del _fr_no_gate["meta"]["fullGate"]
+            del _fr_no_gate["meta"]["buildCommands"]
+            fd, _fr_ng_path = tempfile.mkstemp(suffix=".json")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(_fr_no_gate, fh)
+            _c6, _o6, _e6 = _fr_cli([_fr_ng_path])
+            check("fr15 ALLOW: a plan with no meta.fullGate renders EXACTLY as "
+                  "it always has - no 'full:' text of any kind, and 'not "
+                  "declared' nowhere on the page. A basis with no claim is "
+                  "noise",
+                  _c6 == 0 and "full " not in _o6 and "not_declared" not in _o6
+                  and "not declared" not in _o6,
+                  repr(_o6))
+            os.unlink(_fr_ng_path)
+
+            # --- a phase with NO mergedHead: UNKNOWN - ancestry cannot be asked
+            # at all, and it must never render (or gate) as WHOLE -------------
+            _fr_unk = copy.deepcopy(_fr_plan)
+            del _fr_unk["phases"][0]["mergedHead"]
+            fd, _fr_unk_path = tempfile.mkstemp(suffix=".json")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(_fr_unk, fh)
+            _c7, _o7, _e7 = _fr_cli([_fr_unk_path])
+            check("fr16 UNKNOWN renders its own word and never 'full whole' - "
+                  "ancestry that could not be asked at all is a narrower claim "
+                  "than certified WHOLE, and reading one as the other is the "
+                  "mutation this case exists to catch",
+                  _c7 == 0 and "full unknown -" in _o7
+                  and "full whole" not in _o7,
+                  repr(_o7))
+            os.unlink(_fr_unk_path)
+
+            # --- meta.nodePreamble: the run's own command carries it, and the
+            # resolution asked of the run MUST carry the identical preamble -
+            # never a second reading of meta.buildCommands that could drift ---
+            _fr_pre = copy.deepcopy(_fr_plan)
+            _fr_pre["meta"]["nodePreamble"] = "cd ."
+            _fr_pre_path = _fr_path
+            with open(_fr_pre_path, "w", encoding="utf-8") as fh:
+                json.dump(_fr_pre, fh)
+            _fr_write([{"v": _ebio.ROW_VERSION, "runId": "r3",
+                       "ts": "2026-04-01T00:00:00Z", "scope": _ebio.FULL_SCOPE,
+                       "status": "passed",
+                       "steps": [{"name": "gate", "command": "cd . && echo x",
+                                 "exit": 0, "durationMs": 1000}],
+                       "testedState": {"head": _fr_second},
+                       "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                                        "dirtyOutside": []}}])
+            _c8, _o8, _e8 = _fr_cli([_fr_pre_path, "--gate", "--fail-on",
+                                     "provisional"])
+            check("fr17 THE ONE RESOLUTION: a run recorded with meta.nodePreamble "
+                  "in front of its commands is judged WHOLE against the SAME "
+                  "resolution, `_evidence_io.resolved_commands` - never a second "
+                  "reading of meta.buildCommands that drops the preamble and "
+                  "reads every real full run as 'commands do not match'",
+                  _c8 == 0 and "GATE PASSED: provisional" in _o8,
+                  repr(_o8.strip()[-200:]))
+        finally:
+            if _fr_env is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _fr_env
+            _sh_fr.rmtree(_fr_root, ignore_errors=True)
 
 
     # --- render_short: the condensed form the pipeline echoes, never the default
