@@ -142,7 +142,12 @@
       },
       "startedAt": "2026-09-27T04:40:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T06:37:49Z.9c10a5",
+        "status": "passed",
+        "at": "2026-09-27T06:37:49Z"
+      }
     },
     {
       "id": "P80.3",
@@ -151,7 +156,8 @@
       "description": "full_status(rows, phase, git_root, full_commands, run=None) in _evidence_io.py returns {answer, basis, runId}. NOT_DECLARED when full_commands (the resolved meta.fullGate) is empty; UNKNOWN when the phase has no mergedHead; otherwise walk scope full rows newest first, keeping only WHOLE-BEARING ones: status passed; not a repeat (no verdictSource); observations.ranTotal > 0 with a countsBasis; every step carrying durationMs; observations.dirtyOutside present and empty (the paths dirty outside recorded_paths before the first command, which the runner task writes); the steps' published commands equal to full_commands verbatim and in order (the published rule _record_run applies). For each, ask _worktrees.merged_into(git_root, mergedHead, row.testedState.head, run=run) (a SHA is a ref to git; run is that module's injectable seam): CONTAINED -> WHOLE with the runId; NOT_CONTAINED -> keep looking; UNKNOWN -> remember it and keep looking. None contains: any UNKNOWN -> UNKNOWN with git's sentence; else PROVISIONAL, whose basis names the newest shape-valid run and that its head does not contain mergedHead, or, when no row is whole-bearing, the nearest disqualified row and why: 'FULL RUN ON A DIRTY TREE: certifies nothing about <head>' (dg7), 'the full run counted nothing' (dg8), 'FULL RUN RAN k OF n DECLARED ENTRIES' (dg9). The ledger is the only source: no manifest pointer is consulted (dg14). DO NOT add a full arm to latest_by_subject: its docstring keys it for a pointer write and its readers treat every key as a pointer subject - reconcile writes a PHASE pointer for any non-task scope, _doctor_completions.check_evidence_pointers would report every full row as 'record ahead of the plan', and gen-demo-manifest._stamp_pointers stamps from it. A full row carries no phaseId, so it is already skipped there; a case pins that it stays skipped. _same_subject gains a head arm comparing testedState.head, so reusable_run matches a full row only on the same head (dg16: a green phase-scope row never satisfies full scope, widen-only pin). Red-first with a real git fixture: dg6 (mutation: compare head == mergedHead -> red on a head that contains it without being it); dg7; dg8 (mutation: drop the ranTotal check -> red); dg9 (mutation: compare lengths -> red on the same length with a different command); dg14; a git answer of 128 -> UNKNOWN (mutation: fold it into provisional -> red); NOT_DECLARED without fullGate; reconcile over a ledger holding a full row moves and refuses nothing (mutation: add the arm to latest_by_subject -> red).",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -186,7 +192,12 @@
       },
       "startedAt": "2026-09-27T04:40:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T06:39:04Z.bf6d79",
+        "status": "passed",
+        "at": "2026-09-27T06:39:04Z"
+      }
     },
     {
       "id": "P80.4",
@@ -237,7 +248,7 @@
     {
       "id": "P80.5",
       "title": "import-evidence.py brings a CI ledger file in whole, after its chain verifies",
-      "status": "in_progress",
+      "status": "done",
       "description": "New entry point plugins/audit/scripts/governance/import-evidence.py <manifest> <shard.jsonl> [--json] [--project-dir DIR]: copies a ledger file a CI build published into _evidence_io.evidence_dir WHOLE and never rewrites a row. The chain is per file and seeded from its basename (_journal_io.genesis_prev), so the file keeps its basename. Before copying: every line parses, and _evidence_io.verify_rows(rows, basename) holds (a torn line or a broken chain is refused, exit 1, naming the first bad line). A file of that name already in the evidence directory with identical bytes is 'already imported', exit 0; with different bytes it is refused exit 1 (two genesis rows under one name). The copy is atomic (a temp file in the directory, then rename). The report names the rows it brought and their runIds, and says that a ledger is evidence, not authentication: a new shard starts at its own genesis, so nothing here proves who wrote it, and the commit that carries it is the authorship trail. Red-first in test_import_evidence.py inside _harness.fixture_root(): a valid shard is copied byte for byte and read_rows then returns its rows; a shard whose second row's hash is altered is refused (mutation: skip verify_rows -> red); a same-name file with different bytes is refused (mutation: overwrite -> red). Allow case: re-importing the same bytes exits 0 'already imported'. Layer entry in _deps.LAYERS, PATH_PREAMBLE, safe_stdio() first, migrated --selftest, PLUGIN-BUILD-GUIDE.md tree line and section.",
       "files": [
         "plugins/audit/scripts/governance/import-evidence.py",
@@ -270,18 +281,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "53ddf2aeda1e0724ec9cc1cd71b2aae7db0f8a76",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "import-evidence.py (entry-point layer): _journal_io.rows_from_text, _evidence_io.verify_rows, basename collision check, temp-file-then-os.replace copy; LAYERS, guide tree line, section and re-rendered fence, test__output migrated lists. Cases i1-i11; mutations named in the executor report. INTENT DIVERGES (task review): the description names _harness.fixture_root() for the fixtures, the suite uses tempfile.mkdtemp with cleanup in finally. The orchestrator judged the diff correct: CLAUDE.md prescribes mkdtemp plus finally for scratch space, and this suite needs no git repository; the description over-specified the mechanism. redFirst: the moved-aside run is could-not-prove by the vocabulary, the four live mutations are the proof. Carried to sign-off: a shard under a different name whose runIds already exist in the ledger is imported without a word. inheritedTests not-asked.",
+        "descriptive": "A ledger file written elsewhere (a CI shard) is brought into the evidence directory whole, only after its hash chain verifies with the plugin's own verifier; an identical re-import is a no-op, a different file under the same name is refused, and the report says a ledger is evidence, not authentication."
       },
       "startedAt": "2026-09-27T04:18:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T04:45:01Z",
+      "verifiedBy": [
+        "i1",
+        "i4",
+        "i7",
+        "i9",
+        "i11"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T04:36:48Z.a8d0d0",
         "status": "passed",
         "at": "2026-09-27T04:36:48Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "53ddf2aeda1e0724ec9cc1cd71b2aae7db0f8a76",
+        "at": "2026-09-27T04:45:01Z"
       }
     },
     {

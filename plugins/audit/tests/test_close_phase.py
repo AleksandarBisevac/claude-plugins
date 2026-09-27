@@ -1235,6 +1235,93 @@ def _landed_survivor_cases(check):
         done(root, wt)
 
 
+def _merged_head(path):
+    with open(path) as fh:
+        return [p.get("mergedHead") for p in json.load(fh)["phases"]
+                if p.get("id") == "P1"][0]
+
+
+def _merged_head_cases(check):
+    """`phase.mergedHead` is the PARENT's commit right after the merge, stamped in
+    the same write as `mergedAt` - never a second write, never the branch tip, and
+    never re-derived once a merge is already recorded."""
+    # --- THE REPRO: a fast-forward landing carries mergedAt and no mergedHead ----
+    root = _harness.fixture_root("closephase-mergedhead-ff")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        head = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        merged_head = _merged_head(mpath)
+        check("mh1 a phase closed into its parent carries mergedAt and its derived "
+              "status but ALSO mergedHead, equal to the parent's HEAD right after "
+              "the merge - a full 40-hex SHA, never a guess: exit %r, mergedAt %r, "
+              "mergedHead %r, parent head %r"
+              % (code, _merged_at(mpath), merged_head, head),
+              code == M.E_OK and bool(_merged_at(mpath))
+              and merged_head == head and len(merged_head or "") == 40)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+    # --- THE PARENT'S HEAD, NOT THE BRANCH TIP: a --no-ff merge makes them differ -
+    root = _harness.fixture_root("closephase-mergedhead-noff")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        tip = git("rev-parse", "refs/heads/audit/p1-demo").stdout.decode().strip()
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root, "--no-ff",
+                       "--keep-branch"], out=lines.append)
+        head = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        merged_head = _merged_head(mpath)
+        check("mh2 --no-ff: mergedHead is the parent's post-merge commit, not the "
+              "branch's own tip - a merge commit has a parent the branch tip is not: "
+              "exit %r, tip %r, parent head %r, mergedHead %r"
+              % (code, tip, head, merged_head),
+              code == M.E_OK and merged_head == head and merged_head != tip
+              and len(merged_head or "") == 40)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+    # --- A RECORDED MERGE IS KEPT: a re-run does not move mergedHead -------------
+    # `--keep-branch` so the branch survives the first run: with it gone, `main()`'s
+    # own "landed and gone" short-circuit answers before `close-phase` ever reaches
+    # `_stamp`, which would make this case pass for a reason that has nothing to do
+    # with the one it is pinning - the RE-RUN going through `close()` and its
+    # `recorded_merge` guard, on an already-contained branch that still resolves.
+    root = _harness.fixture_root("closephase-mergedhead-rerun")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root, meta_extra={
+            "merge": {"deleteBranch": False}})
+        M.main([wt_mpath, "P1", "--project", root], out=(lambda line: None))
+        first_head = _merged_head(mpath)
+        with open(os.path.join(root, "extra.txt"), "w") as fh:
+            fh.write("more\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "more")
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        second_head = _merged_head(mpath)
+        check("mh3 a phase whose merge is already recorded is not re-stamped with a "
+              "different head, even though the parent has since moved on: exit %r, "
+              "first %r, second %r, mode %r"
+              % (code, first_head, second_head,
+                 [ln for ln in lines if ln.startswith("[close-phase]")][:1]),
+              code == M.E_OK and second_head == first_head and bool(first_head)
+              and "nothing left to do" not in text)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+
 def _selftest():
     def body(check):
         _no_survivor_cases(check)
@@ -1245,6 +1332,7 @@ def _selftest():
         _main_tree_cases(check)
         _composed_cases(check)
         _surviving_copy_cases(check)
+        _merged_head_cases(check)
     return _harness.run(body)
 
 

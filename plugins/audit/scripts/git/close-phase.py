@@ -122,6 +122,13 @@ ACTION_PHASE_MERGED = "phase.merged"
 # is where they start to disagree.
 MERGED_FIELD = "mergedAt"
 
+# The parent's commit right after the merge - never the branch tip, and never a
+# second write away from `mergedAt`. A sentinel (not None) is `stamp_merged`'s
+# default for this one, so a caller that never mentions it leaves the key untouched
+# rather than pinning it to null; `main()` always passes one or the other on purpose.
+MERGED_HEAD_FIELD = "mergedHead"
+_HEAD_NOT_ASKED = object()
+
 
 # --- resolving what this phase is ------------------------------------------------
 
@@ -686,13 +693,21 @@ def _revalidated_write(manifest_path, path, obj):
     return new
 
 
-def stamp_merged(manifest_path, phase_id, when=None):
-    """Write `phase.mergedAt`. Returns the path written, or "" with a reason.
+def stamp_merged(manifest_path, phase_id, when=None, merged_head=_HEAD_NOT_ASKED):
+    """Write `phase.mergedAt` (and, in the SAME write, `phase.mergedHead`). Returns
+    the path written, or "" with a reason.
 
     THE FIELD IS WRITTEN ONLY AFTER THE PARENT DEMONSTRABLY CONTAINS THE BRANCH, and
     never on the `auto: false` path -- a plan that says a phase merged at a moment it
     did not is worse than a plan that says nothing, because every later reader treats
     it as landed.
+
+    `merged_head` IS THE PARENT'S COMMIT RIGHT AFTER THE MERGE, asked by the caller
+    (never composed here) - `None` when git could not say, and the not-asked
+    sentinel when the caller never mentions it at all, which leaves the key out of
+    the write entirely rather than pinning it to null. There is no second write:
+    both fields land in the one `_revalidated_write` call below, because a stamp
+    split across two writes is exactly the bug this exists to close.
     """
     path = _phase_file(manifest_path, phase_id)
     if not path:
@@ -721,12 +736,16 @@ def stamp_merged(manifest_path, phase_id, when=None):
     # terminal, and nothing new for one whose sign-off is not recorded.
     if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
         body[MERGED_FIELD] = stamp                      # a shard IS the phase
+        if merged_head is not _HEAD_NOT_ASKED:
+            body[MERGED_HEAD_FIELD] = merged_head
         _store_derived(body)
     else:
         found = False
         for ph in ((body or {}).get("phases") or []):
             if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
                 ph[MERGED_FIELD] = stamp
+                if merged_head is not _HEAD_NOT_ASKED:
+                    ph[MERGED_HEAD_FIELD] = merged_head
                 _store_derived(ph)
                 found = True
         if not found:
@@ -922,6 +941,10 @@ def render(answer, out=print):
         if answer.get("stampedElsewhere"):
             out("    (that is the copy in the worktree the merge landed in - the "
                 "one in this tree is about to be removed)")
+        if answer.get("mergedHead"):
+            out("  %s = %s" % (MERGED_HEAD_FIELD, answer["mergedHead"]))
+        elif answer.get("mergedHeadWhy"):
+            out("  %s NOT recorded: %s" % (MERGED_HEAD_FIELD, answer["mergedHeadWhy"]))
         if answer.get("stubMirrored"):
             out("  index stub re-mirrored from the shard in %s"
                 % (answer["stubMirrored"],))
@@ -1085,17 +1108,30 @@ def main(argv, out=print):
             return {"stamped": "", "stampWhy": why}
         earlier = recorded_merge(target, args.phase)
         if earlier:
-            # A re-run records the merge that happened; it does not move it.
+            # A re-run records the merge that happened; it does not move it - and
+            # that includes mergedHead, which is why this returns before asking git
+            # for one at all: a recorded merge is kept, never re-derived.
             return {"stamped": target, "stampedAt": earlier, "stampKept": True,
                     "stampedElsewhere": (os.path.abspath(target)
                                          != os.path.abspath(args.manifest)),
                     "parkedOnBranch": _parked_after_merge(target, names["branch"])}
-        path, stamp_at = stamp_merged(target, args.phase)
+        # ASKED HERE, AFTER `close()` HAS VERIFIED CONTAINMENT AND BEFORE THE
+        # CLEANUP: the parent's OWN ref, re-read now that the merge landed - never
+        # the branch tip, which after a squash or `--no-ff` merge is not the same
+        # commit and is not even guaranteed to be its ancestor. A parent that does
+        # not resolve (git could not be asked, or the ref is somehow gone) writes no
+        # guess: `None` travels through as an explicit null.
+        head = _wt.ref_exists(git_root, names["parent"])
+        merged_head = head["sha"] or None
+        merged_head_why = ("" if merged_head else
+                           "%r %s" % (names["parent"], head["basis"]))
+        path, stamp_at = stamp_merged(target, args.phase, merged_head=merged_head)
         if not path:
             return {"stamped": "", "stampWhy": stamp_at}
         record_row(project_for_row, args.phase, names["branch"], names["parent"])
         mirrored, mirror_why = mirror_stub(target, args.phase, project_for_row)
         return {"stamped": path, "stampedAt": stamp_at,
+                "mergedHead": merged_head, "mergedHeadWhy": merged_head_why,
                 "stubMirrored": mirrored, "stubWhy": mirror_why,
                 "stampedElsewhere": (os.path.abspath(target)
                                      != os.path.abspath(args.manifest)),
