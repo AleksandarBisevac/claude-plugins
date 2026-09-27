@@ -317,12 +317,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   tree's implementation) green with no fewer cases. A failure is the task's own - a new case or an
   edited one - only where the runner locates it in one declared test file (a pytest node id's path or
   unittest `-v`'s module, matched by trailing components so `discover -s tests` is read, or the one
-  declared script a run executes; a tail an undeclared file in HEAD's tree also has is refused), the
-  class the runner names there defines it (read by ast as the name's last binding, so a later
-  assignment or import rebinding it does not count), and no test file anywhere in HEAD's tree holds
-  an ast-identical def under the same class chain and name. The stubs remove the new files' content
-  and so everything it reaches; a HEAD case a new file imports, inherits or loads, a moved file
-  carries or a copy repeats is therefore not credited unless the task edited it, and a runner that locates none is
+  declared script a run executes; a unittest module, exact or trailing, that an undeclared file in
+  HEAD's tree also ends with is refused, since unittest resolves it through `sys.path`), the class
+  the runner names there defines it (read by ast as the name's last real binding - an assignment
+  to the name, a walrus, `with ... as`, a `for` target, a match capture or an import after the def
+  means it is not what runs, while `New.maxDiff = None` binds nothing), and no test file anywhere in
+  HEAD's tree holds an ast-identical def under the same class chain and name; a house run's one
+  script is compared whole, and one identical to a HEAD test file is refused. The stubs remove the
+  new files' content and so everything it reaches; a HEAD case a new file imports, inherits or
+  loads, a moved file carries or a copy repeats is therefore not credited unless the task edited
+  it, and a runner that locates none is
   `could-not-prove` with each case's reason; `--case` must name a credited one. No run, and neither git call of the reset before one, starts with
   less than a second of the deadline left. Every run, including `--introduces`'s
   second run, is made in the throwaway reset to HEAD (a forced checkout and a clean of untracked and

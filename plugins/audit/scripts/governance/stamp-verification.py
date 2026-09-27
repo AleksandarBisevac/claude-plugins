@@ -797,22 +797,26 @@ def _as_rel(path, roots):
     return posixpath.normpath(path.replace(os.sep, "/"))
 
 
-def _one_declared(path, tests, others=()):
+def _one_declared(path, tests, others=(), real_path=False):
     """The ONE declared test file `path` names, or None.
 
     Equal to it, or ending with `/` + it, since a runner prints paths and
     modules relative to its own top directory (`unittest discover -s tests`
     prints `test_new`). A trailing match is refused when two declared files
-    share the tail, and when `others` - every other file in HEAD's tree and in
-    the throwaway - holds one that does: then the runner may have loaded that
-    one, and the tail cannot say which. `others` None means they could not be
-    listed, and only an exact match is read."""
+    share the tail. And a match is refused when `others` - every other file in
+    HEAD's tree and in the throwaway - holds one equal to `path` or ending with
+    it: the runner may have loaded that one, and the name cannot say which.
+    That holds for an EXACT match too unless `real_path` says `path` is a path
+    the runner resolved against its working directory (a pytest node id);
+    a unittest module is resolved through sys.path, so `test_old` names
+    whichever `test_old.py` came first on it. `others` None means they could
+    not be listed, and then only a real path's exact match is read."""
     if not path:
         return None
-    if path in tests:
-        return path
     tail = "/" + path
-    hits = [t for t in tests if t.endswith(tail)]
+    if real_path and path in tests:
+        return path
+    hits = [t for t in tests if t == path or t.endswith(tail)]
     if len(hits) != 1 or others is None:
         return None
     if any(o == path or o.endswith(tail) for o in others if o != hits[0]):
@@ -833,7 +837,7 @@ def case_site(failure, runner, tests, cmd, roots=(), others=()):
     script = _as_rel(_house_script(cmd), roots)
     if runner == "pytest":
         parts = (failure.get("label") or "").split("::")
-        rel = _one_declared(_as_rel(parts[0], roots), tests, others)
+        rel = _one_declared(_as_rel(parts[0], roots), tests, others, real_path=True)
         return (rel, parts[1:-1], name) if rel and len(parts) > 1 else None
     if runner == "unittest":
         qual = failure.get("qual") or (
@@ -855,22 +859,112 @@ def case_site(failure, runner, tests, cmd, roots=(), others=()):
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
-def _binds(stmt, name):
-    """Whether the statement `stmt`, standing in a body, binds `name` there: a
-    def or a class of that name, an assignment of any kind or a `del` naming
-    it among its targets, or an import binding it."""
+def _target_names(target):
+    """The names an assignment target binds: a Name, and the Names inside a
+    Tuple, List or Starred - never a Name under an Attribute or a Subscript,
+    which binds nothing (`New.maxDiff = None` leaves `New` bound as it was)."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [n for elt in target.elts for n in _target_names(elt)]
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    return []
+
+
+# The statements whose nested block is a body of its own: a binding in the
+# block is not read (a named limit), only what their header binds.
+_COMPOUND = ("For", "AsyncFor", "While", "If", "With", "AsyncWith", "Try",
+             "TryStar", "Match")
+
+
+def _header(stmt):
+    """The expressions of `stmt` evaluated in the body `stmt` stands in: the
+    whole of a simple statement; the header of a compound one; a def's or a
+    class's decorators, defaults, bases and keywords."""
+    kind = type(stmt).__name__
+    if isinstance(stmt, _DEFS):
+        args = stmt.args
+        return list(stmt.decorator_list) + list(args.defaults) + [
+            d for d in args.kw_defaults if d is not None]
+    if isinstance(stmt, ast.ClassDef):
+        return list(stmt.decorator_list) + list(stmt.bases) + [
+            k.value for k in stmt.keywords]
+    if kind in ("For", "AsyncFor"):
+        return [stmt.iter]
+    if kind in ("While", "If"):
+        return [stmt.test]
+    if kind in ("With", "AsyncWith"):
+        return [item.context_expr for item in stmt.items]
+    if kind == "Match":
+        return [stmt.subject]
+    if kind in _COMPOUND:
+        return []
+    return [stmt]
+
+
+def _walrus_names(nodes):
+    """The names a walrus in `nodes` binds in their own scope: a lambda is a
+    scope of its own and is not entered; a comprehension is, since a walrus
+    in it binds in the enclosing scope."""
+    out, stack = [], list(nodes)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Lambda):
+            continue
+        if isinstance(node, ast.NamedExpr):
+            out.extend(_target_names(node.target))
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _pattern_names(pattern):
+    """The capture names of a match pattern (read by node name, which keeps
+    this file free of 3.10-only attributes)."""
+    out = []
+    for node in ast.walk(pattern):
+        kind = type(node).__name__
+        if kind in ("MatchAs", "MatchStar") and getattr(node, "name", None):
+            out.append(node.name)
+        elif kind == "MatchMapping" and getattr(node, "rest", None):
+            out.append(node.rest)
+    return out
+
+
+def _bound_names(stmt):
+    """Every name the statement `stmt` binds in the body it stands in."""
+    kind = type(stmt).__name__
+    names = []
     if isinstance(stmt, _DEFS + (ast.ClassDef,)):
-        return stmt.name == name
-    if isinstance(stmt, (ast.Import, ast.ImportFrom)):
-        return any((a.asname or a.name.split(".")[0]) == name for a in stmt.names)
-    if isinstance(stmt, (ast.Assign, ast.Delete)):
-        targets = stmt.targets
-    elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
-        targets = [stmt.target]
-    else:
-        return False
-    return any(isinstance(n, ast.Name) and n.id == name
-               for target in targets for n in ast.walk(target))
+        names.append(stmt.name)
+    elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
+        names.extend("*" if a.name == "*" else (a.asname or a.name.split(".")[0])
+                     for a in stmt.names)
+    elif isinstance(stmt, (ast.Assign, ast.Delete)):
+        names.extend(n for t in stmt.targets for n in _target_names(t))
+    elif isinstance(stmt, ast.AugAssign) or (isinstance(stmt, ast.AnnAssign)
+                                             and stmt.value is not None):
+        names.extend(_target_names(stmt.target))
+    elif kind in ("For", "AsyncFor"):
+        names.extend(_target_names(stmt.target))
+    elif kind in ("With", "AsyncWith"):
+        names.extend(n for item in stmt.items if item.optional_vars is not None
+                     for n in _target_names(item.optional_vars))
+    elif kind == "Match":
+        names.extend(n for case in stmt.cases for n in _pattern_names(case.pattern))
+    return names + _walrus_names(_header(stmt))
+
+
+def _binds(stmt, name):
+    """Whether the statement `stmt`, standing in a body, binds `name` there:
+    a def or a class of that name; an import binding it, or a `*` import,
+    which may; a Name target of an assignment, an annotated assignment with a
+    value, an augmented assignment or a `del`, read through tuples, lists and
+    starred but never under an attribute or a subscript; a `for` target; a
+    `with ... as`; a match capture; or a walrus in the statement outside a
+    lambda. A binding inside a compound statement's own block is not read."""
+    names = _bound_names(stmt)
+    return name in names or "*" in names
 
 
 def _last_binding(body, name):
@@ -896,11 +990,12 @@ def _definition(text, classes, name):
 
     Each name is read as the body's LAST top-level binding of it: a class of
     the chain must be last bound by its `class` statement, and the case by its
-    `def`. So an assignment, an import alias or a `del` after the def - in the
-    class body, or of the class name at module level - means it is not the
-    def that runs, and a def in a string, in another class or merely
-    inherited is not it either. A binding nested in an `if`, `try` or loop is
-    not read."""
+    `def`. So any binding `_binds` reads after the def - in the class body, or
+    of the class name at module level - means it is not the def that runs,
+    while an attribute or subscript assignment binds nothing; and a def in a
+    string, in another class or merely inherited is not it either. A binding
+    inside the block of a compound statement is not read, and neither is a
+    decorator that returns another function."""
     tree = _parse(text)
     if tree is None:
         return None
@@ -936,10 +1031,12 @@ def test_definitions(texts):
 def credit_problem(failure, runner, scope):
     """Why this failing case is NOT the task's own, or None when it is.
 
-    `scope` is `{"tests", "cmd", "roots", "wt", "head_defs", "others"}`: the
+    `scope` is `{"tests", "cmd", "roots", "wt", "head_defs", "head_modules",
+    "others"}`: the
     declared test files, the command, the roots a spelled path is relative
-    to, each declared test file's working-tree text, `test_definitions` of
-    every test file in HEAD's tree (None when it could not be read), and every
+    to, each declared test file's working-tree text, `test_definitions` and
+    the `module_key`s of every test file in HEAD's tree (None when it could not
+    be read), and every
     other file in HEAD's tree and the throwaway. The case must be located in
     ONE declared test file (`case_site`); under pytest and unittest that
     file's named class must define it (`_definition`); and no test file
@@ -947,13 +1044,22 @@ def credit_problem(failure, runner, scope):
     chain and name - because the baseline stubs only NEW files, so a HEAD case
     a new file imports, a moved file carries or a copy repeats is reached by
     nothing else. Layout and comments do not count as a change; any edit to
-    the def's ast does."""
+    the def's ast does. A house run carries no definitions, so the one script
+    it runs is compared whole: a script identical to one of HEAD's test files
+    is HEAD's suite, moved or copied."""
     site = case_site(failure, runner, scope["tests"], scope["cmd"],
                      scope.get("roots", ()), scope.get("others", ()))
     if site is None:
         return "the runner locates it in no declared test file"
     rel, classes, name = site
     if classes is None:
+        modules = scope.get("head_modules")
+        if modules is None:
+            return "HEAD's test files could not be read to tell a new suite from HEAD's"
+        same = modules.get(module_key(scope["wt"].get(rel)))
+        if same is not None:
+            return ("%s is identical to HEAD's %s (the same module ast) - a house run "
+                    "of it prints HEAD's cases" % (rel, same))
         return None
     where = "%s%s" % (rel, "".join(" class " + c for c in classes))
     node = _definition(scope["wt"].get(rel), classes, name)
@@ -1000,19 +1106,34 @@ def _cat_blobs(root, rels, deadline):
     return texts, None
 
 
+def module_key(text):
+    """What makes two test files the same file: the ast of the module, so
+    layout and comments do not count - or, for one that does not parse, its
+    text."""
+    tree = _parse(text)
+    return ast.dump(tree) if tree is not None else "text:" + (text or "")
+
+
 def head_tree(root, named, deadline):
-    """`(files, defs)` - every path in HEAD's tree, and `test_definitions` of
-    the `.py` test files among them (`_is_test_path`, the declared `named`
-    counting as tests). Either is None when git could not answer under the
-    deadline, which the credit reads as a refusal, never as "nothing"."""
+    """`(files, defs, modules)` - every path in HEAD's tree; `test_definitions`
+    of the `.py` test files among them (`_is_test_path`, the declared `named`
+    counting as tests); and `{module_key: rel}` of the same files, for a house
+    run, whose cases carry no definition to compare. Any is None when git
+    could not answer under the deadline, which the credit reads as a refusal,
+    never as "nothing"."""
     code, text = _git(root, ["ls-tree", "-r", "-z", "--name-only", "HEAD"],
                       timeout=max(1, _left(deadline)), strip=False)
     if code != 0:
-        return None, None
+        return None, None, None
     files = [p for p in text.split("\0") if p]
     tests = [p for p in files if p.endswith(".py") and _is_test_path(p, named)]
     texts, problem = _cat_blobs(root, tests, deadline)
-    return files, (test_definitions(texts) if problem is None else None)
+    if problem is not None:
+        return files, None, None
+    modules = {}
+    for rel in sorted(texts):
+        modules.setdefault(module_key(texts[rel]), rel)
+    return files, test_definitions(texts), modules
 
 
 def _throwaway_files(path):
@@ -1224,7 +1345,8 @@ def red_verdict(run, ctx):
     tree's code, made when the task's run is red on a green baseline. Every
     run has an isolated environment of its own. `ctx` is `{"root",
     "implementation", "tests", "cases", "symbols", "dropped", "new",
-    "head_files", "head_defs", "path"}` - `head_tree`'s answer, and the
+    "head_files", "head_defs", "head_modules", "path"}` - `head_tree`'s
+    answer, and the
     throwaway's path."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
@@ -1270,7 +1392,8 @@ def red_verdict(run, ctx):
         scope = {"tests": ctx["tests"], "cmd": run["cmd"],
                  "roots": tuple(r for r in (ctx["root"], ctx.get("path")) if r),
                  "wt": _test_texts(ctx["root"], ctx["tests"]),
-                 "head_defs": ctx.get("head_defs"), "others": others}
+                 "head_defs": ctx.get("head_defs"),
+                 "head_modules": ctx.get("head_modules"), "others": others}
         own, refused = own_failures(failing, ctx["cases"], tally["runner"], scope)
         refused_clause = _refused_clause(refused)
         uncredited = "; ".join(
@@ -1543,7 +1666,8 @@ def run_red(args, cmd, out):
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None}
-    state = {"new": [], "head_files": None, "head_defs": None}
+    state = {"new": [], "head_files": None, "head_defs": None,
+             "head_modules": None}
     copied = []
     previous = _arm()
     try:
@@ -1551,7 +1675,8 @@ def run_red(args, cmd, out):
             present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
-                state["head_files"], state["head_defs"] = head_tree(
+                (state["head_files"], state["head_defs"],
+                 state["head_modules"]) = head_tree(
                     root, set(scope["tests"]), deadline)
                 _copied, run["problem"] = _build_throwaway(
                     root, path, [], timeout=max(1, _left(deadline)))
@@ -1589,7 +1714,8 @@ def run_red(args, cmd, out):
             "tests": scope["tests"], "cases": args.case,
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
             "new": state["new"], "head_files": state["head_files"],
-            "head_defs": state["head_defs"], "path": path,
+            "head_defs": state["head_defs"],
+            "head_modules": state["head_modules"], "path": path,
             "deadline": deadline})
     finally:
         removed = _remove_throwaway(root, holder, path)

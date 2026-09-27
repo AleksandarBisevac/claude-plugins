@@ -126,10 +126,13 @@ not need to.
      the task's own, a new case or an edited one, only where the runner locates it in a
      declared test file (a pytest node id's path, unittest `-v`'s module matched by its
      trailing components, or a run of exactly one declared file), the class the runner
-     names there defines it (its last binding there), and no test file anywhere in HEAD's
-     tree holds an ast-identical def under the same class chain and name. So a HEAD case
-     the task's file imports, inherits or loads, a moved file's case and a copied case are
-     not credited unless the task edited the definition, and a runner that locates no
+     names there defines it (its last real binding there, read by ast; an attribute or
+     subscript assignment binds nothing), and no test file anywhere in HEAD's tree holds an
+     ast-identical def under the same class chain and name; a house run's one script is
+     compared whole, and a script identical to one of HEAD's test files is refused. So a
+     HEAD case the task's file imports, inherits or loads, a moved file's case and a copied
+     case are not credited unless the task edited the definition (under a house run, the
+     script), and a runner that locates no
      failure is `could-not-prove`. Every run has a
      fresh home and temp directory of its own. A command
      already red at HEAD is `could-not-prove`: narrow the command to the task's cases.

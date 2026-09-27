@@ -25,6 +25,7 @@ everything a caller can get wrong, and everything the exit code promises.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import hashlib
 import importlib.util
 import io
@@ -2137,6 +2138,96 @@ def _moved_cases(check):
               code == M.E_CANNOT_PROVE and "does not define it" in basis)
 
 
+
+def _binding_cases(check):
+    py = sys.executable
+    unit = [py, "-m", "unittest", "-v"]
+    head = {"tests/__init__.py": "", "tests/test_old.py": _OLD_RED}
+    own_red = "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
+                         "class New(unittest.TestCase):",
+                         "    def test_new_two(self):",
+                         "        self.assertEqual(mine.v, 2)",
+                         "New.maxDiff = None"]) + "\n"
+    root, man = _tree_repo("stamp-red-sr175-", head, {"tests/test_new.py": own_red},
+                           ["tests/test_new.py"])
+    code, got = _red(root, man, unit + ["tests/test_new.py"])
+    basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+    check("sr175 THE ALLOW CASE: a new red case whose class gets `New.maxDiff = None` "
+          "after it proves - an attribute assignment rebinds no name: exit=%r %s"
+          % (code, basis[:400]),
+          code == M.E_PROVED and "test_new_two" in basis)
+    rebinds = [
+        ("sr176", "a class-body `with ... as test_value_is_two` after the def", "\n".join([
+            "import contextlib, unittest", "from tests import test_old",
+            "class New(unittest.TestCase):", "    def test_value_is_two(self):",
+            "        self.assertTrue(True)",
+            "    with contextlib.nullcontext(test_old.Old.test_value_is_two)"
+            " as test_value_is_two:", "        pass"]) + "\n"),
+        ("sr177", "a class-body walrus after the def", "\n".join([
+            "import unittest", "from tests import test_old",
+            "class New(unittest.TestCase):", "    def test_value_is_two(self):",
+            "        self.assertTrue(True)",
+            "    (test_value_is_two := test_old.Old.test_value_is_two)"]) + "\n"),
+    ]
+    for cid, how, text in rebinds:
+        root, man = _tree_repo("stamp-red-%s-" % (cid,), head,
+                               {"tests/test_new.py": text}, ["tests/test_new.py"])
+        code, got = _red(root, man, unit + ["tests/test_new.py"])
+        basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+        check("%s %s rebinds the case to HEAD's function, so the def is not what "
+              "runs and HEAD's red is not credited: exit=%r %s"
+              % (cid, how, code, basis[:400]),
+              code == M.E_CANNOT_PROVE and "does not define it" in basis)
+    legacy = "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
+                        "class Old(unittest.TestCase):",
+                        "    def test_value_is_two(self):",
+                        "        self.assertEqual(mine.v, 2)"]) + "\n"
+    reach = "\n".join(["import os, sys, unittest",
+                       "sys.path.insert(0, os.path.join(os.path.dirname("
+                       "os.path.abspath(__file__)), '..', 'legacy'))",
+                       "from test_old import Old", "class New(unittest.TestCase):",
+                       "    def test_new(self):", "        self.assertTrue(True)"]) + "\n"
+    decoy = "\n".join(["import unittest", "class Old(unittest.TestCase):",
+                       "    def test_value_is_two(self):",
+                       "        self.assertTrue(True)"]) + "\n"
+    root, man = _tree_repo("stamp-red-sr178-",
+                           {"tests/__init__.py": "", "legacy/test_old.py": legacy},
+                           {"tests/test_new.py": reach, "test_old.py": decoy},
+                           ["tests/test_new.py", "test_old.py"])
+    code, got = _red(root, man, unit + ["tests/test_new.py"])
+    basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+    check("sr178 a unittest module that EXACTLY names a declared file is still not "
+          "mapped to it when an undeclared file HEAD has (legacy/test_old.py) ends "
+          "with the same path - unittest found it through sys.path: exit=%r %s"
+          % (code, basis[:400]),
+          code == M.E_CANNOT_PROVE and "no declared test file" in basis)
+    suite = _house_test("import mine", [("old1", "mine.v == 2")])
+    house = [
+        ("sr179", "HEAD's red house suite `git mv`d, unchanged", {
+            "tests/test_hold.py": suite}, {}, ["tests/test_hmoved.py"],
+         [("tests/test_hold.py", "tests/test_hmoved.py")], "tests/test_hmoved.py"),
+        ("sr180", "a verbatim copy of HEAD's red house suite", {
+            "tests/test_hold.py": suite}, {"tests/test_hcopy.py": suite},
+         ["tests/test_hcopy.py"], (), "tests/test_hcopy.py"),
+    ]
+    for cid, how, head_files, wt, declared, moves, script in house:
+        root, man = _tree_repo("stamp-red-%s-" % (cid,), head_files, wt, declared,
+                               moves)
+        code, got = _red(root, man, [py, script])
+        basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+        check("%s %s is not credited under a house run - the script is identical to "
+              "HEAD's tests/test_hold.py: exit=%r %s" % (cid, how, code, basis[:400]),
+              code == M.E_CANNOT_PROVE and "HEAD's tests/test_hold.py" in basis)
+    fresh = _house_test("import mine", [("new1", "mine.v == 2")])
+    root, man = _tree_repo("stamp-red-sr181-", {"tests/test_hold.py": suite},
+                           {"tests/test_hnew.py": fresh}, ["tests/test_hnew.py"])
+    code, got = _red(root, man, [py, "tests/test_hnew.py"])
+    basis = (got.get("redFirst") or {}).get("basis", "") or json.dumps(got)
+    check("sr181 THE ALLOW CASE: a NEW house suite with its own red case still proves: "
+          "exit=%r %s" % (code, basis[:400]),
+          code == M.E_PROVED and "new1" in basis)
+
+
 def _reach_cases(check):
     py = sys.executable
     unit = [py, "-m", "unittest", "-v"]
@@ -2297,9 +2388,15 @@ def _located_cases(check):
         "a tail an undeclared HEAD file shares": M.case_site(
             {"module": "test_new", "qual": ["test_new", "New"]}, "unittest", tests,
             unit, (root,), shared),
-        "the full module, whatever HEAD shares": M.case_site(
+        "the full module, when another HEAD file ends with it": M.case_site(
+            {"module": "tests.test_new", "qual": ["tests", "test_new", "New"]},
+            "unittest", tests, unit, (root,), ["legacy/tests/test_new.py"]),
+        "the full module, no other file ending with it": M.case_site(
             {"module": "tests.test_new", "qual": ["tests", "test_new", "New"]},
             "unittest", tests, unit, (root,), shared),
+        "a pytest node id's real path, whatever else ends with it": M.case_site(
+            {"label": "tests/test_new.py::New::test_x", "id": "test_x"}, "pytest",
+            tests, ["pytest"], (root,), ["legacy/tests/test_new.py"]),
         "a tail no other HEAD file shares": M.case_site(
             {"module": "test_new", "qual": ["test_new", "New"]}, "unittest", tests,
             unit, (root,), ["tests/test_old.py"]),
@@ -2316,14 +2413,80 @@ def _located_cases(check):
             os.makedirs(os.path.dirname(path))
         _write(path, "")
     walked = sorted(M._throwaway_files(walk_root))
+    binds = [
+        ("New.maxDiff = None", "New", False),
+        ("REG[New] = 1", "New", False),
+        ("test_x.__doc__ = 'x'", "test_x", False),
+        ("del New.x", "New", False),
+        ("x: int", "x", False),
+        ("x: int = 1", "x", True),
+        ("a, *test_x = (1, 2)", "test_x", True),
+        ("[a, (b, test_x)] = [1, (2, 3)]", "test_x", True),
+        ("(test_x := 1)", "test_x", True),
+        ("print([(test_x := i) for i in range(2)])", "test_x", True),
+        ("f = lambda: (test_x := 1)", "test_x", False),
+        ("with open('f') as test_x:\n    pass", "test_x", True),
+        ("with open('f') as (a, test_x):\n    pass", "test_x", True),
+        ("for test_x in range(2):\n    pass", "test_x", True),
+        ("for i in range(2):\n    test_x = i", "test_x", False),
+        ("print([test_x for test_x in range(2)])", "test_x", False),
+        ("import os.path as test_x", "test_x", True),
+        ("import test_x.sub", "test_x", True),
+        ("from m import *", "test_x", True),
+        ("del test_x", "test_x", True),
+        ("@(test_x := deco)\ndef f():\n    pass", "test_x", True),
+        ("if True:\n    (test_x := 1)", "test_x", False),
+        ("try:\n    (test_x := 1)\nexcept Exception:\n    pass", "test_x", False),
+    ]
+    if sys.version_info >= (3, 10):
+        binds += [
+            ("match v:\n    case [test_x, *_]:\n        pass", "test_x", True),
+            ("match v:\n    case {'k': 1, **test_x}:\n        pass", "test_x", True),
+            ("match v:\n    case int() as test_x:\n        pass", "test_x", True),
+            ("match v:\n    case Point(x=test_x.y):\n        pass", "test_x", False),
+        ]
+    wrong = [(src, name, want) for src, name, want in binds
+             if M._binds(ast.parse(src).body[0], name) != want]
+    check("sr182 only a real binding of the name counts - a Name target through "
+          "tuples, lists and starred, never under an attribute or subscript; a walrus "
+          "outside a nested scope; `with ... as`, a `for` target, a match capture, "
+          "an import, a def, a class, a `del` - so `New.maxDiff = None` rebinds "
+          "nothing: %d rows, wrong %r" % (len(binds), wrong), not wrong)
+    suite_text = "import sys\nprint('ALL PASS: 1/1 cases passed')\n"
+    head_modules = {M.module_key(suite_text): "tests/test_hold.py"}
+
+    def house(text, modules):
+        scope = {"tests": ["tests/test_h.py"], "cmd": [py, "tests/test_h.py"],
+                 "roots": (root,), "wt": {"tests/test_h.py": text},
+                 "head_defs": {}, "head_modules": modules, "others": ()}
+        return M.credit_problem({"id": None, "label": "x"}, "house", scope)
+    housed = {
+        "identical to a HEAD suite": house(suite_text, head_modules),
+        "the same module, a comment and blank lines added": house(
+            "# moved\n\n" + suite_text, head_modules),
+        "a suite of its own": house(suite_text + "print('new1')\n", head_modules),
+        "HEAD's tree unread": house(suite_text + "print('new1')\n", None),
+    }
+    check("sr183 a house run's script is compared whole with HEAD's test files by "
+          "module ast - identical or differing only in layout is HEAD's suite, an "
+          "edited one is its own, and an unread HEAD refuses: %r" % (housed,),
+          bool(housed["identical to a HEAD suite"])
+          and "HEAD's tests/test_hold.py" in housed["identical to a HEAD suite"]
+          and bool(housed["the same module, a comment and blank lines added"])
+          and housed["a suite of its own"] is None
+          and bool(housed["HEAD's tree unread"]))
     check("sr174 the throwaway's own files are listed for that refusal - relative, "
           "`/`-separated, `.git` left out: %r" % (walked,),
           walked == ["legacy/test_new.py", "top.py"])
-    check("sr173 a trailing-component match is refused when an undeclared file in "
-          "HEAD's tree shares the same tail, an exact module is not, and a nested "
-          "class keeps its chain: %r" % (tails,),
+    check("sr173 a unittest module - read through sys.path, so exact or trailing "
+          "alike - is refused when an undeclared file in HEAD's tree shares its "
+          "tail; a pytest node id is a real path and is not; and a nested class "
+          "keeps its chain: %r" % (tails,),
           tails == {"a tail an undeclared HEAD file shares": None,
-                    "the full module, whatever HEAD shares": (
+                    "the full module, when another HEAD file ends with it": None,
+                    "the full module, no other file ending with it": (
+                        "tests/test_new.py", ["New"]),
+                    "a pytest node id's real path, whatever else ends with it": (
                         "tests/test_new.py", ["New"]),
                     "a tail no other HEAD file shares": ("tests/test_new.py", ["New"]),
                     "a nested class, the module the longest declared prefix": (
@@ -2541,6 +2704,7 @@ def _cases(check):
     _harness.stage(check, "sr-reach", _reach_cases)
     _harness.stage(check, "sr-located", _located_cases)
     _harness.stage(check, "sr-moved", _moved_cases)
+    _harness.stage(check, "sr-binding", _binding_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

@@ -799,6 +799,53 @@
       "verifiedBy": [
         "stamp-verification selftest 153/153 plus probe/mutations.py 72/72 red on an export; full sweep"
       ]
+    },
+    {
+      "id": "P82.14-fye",
+      "title": "red-first reads a binding only from what binds a name, checks the shared tail on exact module matches too, and compares a house suite against HEAD's test texts",
+      "status": "in_progress",
+      "description": "Round-12 review (review-P82l.json; probe27, probe28). (1) _binds is wrong both ways: ast.walk over a target counts a name inside an attribute or subscript target (New.maxDiff = None) as a rebinding and refuses honest code (O1), while a walrus, `with ... as NAME`, a for target, a match capture, and a decorator returning another function are missed (W1, W2). Read only what binds a name: Name targets through Tuple/List/Starred (never through Attribute/Subscript), NamedExpr, With/For/comprehension targets at that level, match capture names, def/class/import/del; state in the docs what is not read (a decorator that returns a different function is a named limit). (2) An exact unittest module match skips the shared-tail refusal (A2): apply the `others` check to exact matches too and flip the sr173 row that pins the old behaviour. (3) A house run credits a moved or copied HEAD suite (H1 git mv, H2 verbatim copy) while guide point 4, audit-executor.md, execute-task.md and CHANGELOG say moved/copied is refused: compare the declared house script's text against HEAD's test texts (head_tree already holds them) and refuse an identical one; H3 (a genuinely new suite) still proves. Red first: O1 proves, W1, W2, A2, H1, H2 refused.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a module-level New.maxDiff = None refuses a genuine new red case"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T16:19:39Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

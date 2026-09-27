@@ -3691,18 +3691,27 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
    locates it in ONE declared test file (`case_site()`: a pytest node id's path or unittest `-v`'s
    module, matched by trailing components because both print them relative to their own top
    directory, refused when two declared files match or when an undeclared file in HEAD's tree or
-   the throwaway shares the tail; the longest module prefix naming a declared file, so a nested
-   class keeps its chain; or the one declared script a `__main__` or house run executes, spelled
-   `./`, absolute or `-m`), the class the runner names there holds its `def` (`_definition()`,
-   read by ast as each name's LAST top-level binding in its body - so an assignment, import alias
-   or `del` after the def, in the class or of the class name at module level, means the def is not
+   the throwaway equals or ends with the same path - for a unittest module even on an EXACT match,
+   since unittest resolves a module through `sys.path` and `test_old` names whichever `test_old.py`
+   came first, while a pytest node id is a real path; the longest module prefix naming a declared
+   file, so a nested class keeps its chain; or the one declared script a `__main__` or house run
+   executes, spelled `./`, absolute or `-m`), the class the runner names there holds its `def`
+   (`_definition()`, read by ast as each name's LAST top-level binding in its body, `_binds()`
+   reading only what really binds a name: a Name target through tuples, lists and starred - never
+   under an attribute or a subscript, so `New.maxDiff = None` rebinds nothing - an annotated
+   assignment with a value, an augmented one, `del`, a `for` target, `with ... as`, a match
+   capture, an import (a `*` import counts as binding anything), a def, a class, and a walrus
+   anywhere in the statement outside a lambda; any of those after the def means the def is not
    what runs; a def in a string, in another class or merely inherited is not it), and no test file
    anywhere in HEAD's tree (`head_tree()`: `git ls-tree -r` filtered by `_is_test_path()`, read
    by one `git cat-file --batch` under the deadline) holds an ast-identical def under the same
    class chain and name (`credit_problem()`). That is keyed by the definition, not by the path, so
    a case HEAD has is refused wherever it lands - imported, inherited or loaded by a new file,
-   carried by a `git mv`, or copied verbatim. A HEAD case is therefore not credited unless the task
-   edited its definition; if HEAD's tree cannot be read no case is credited; a runner that
+   carried by a `git mv`, or copied verbatim. A house run carries no definitions, so its one
+   script is compared whole instead (`module_key()`): a script whose module ast is identical to
+   one of HEAD's test files is HEAD's suite, moved or copied, and is refused. A HEAD case is
+   therefore not credited unless the task edited its definition - or, under a house run, the
+   script; if HEAD's tree cannot be read no case is credited; a runner that
    locates no failure is `could-not-prove`, with each case's reason; and `--case` must name a
    credited one. That rests on two
    conditions, and holds only while both do: the runs differ only in the files laid over, which the
@@ -3724,9 +3733,13 @@ it be credited with HEAD's red; and the other direction - an unchanged HEAD case
 through something else in its file (a helper, `setUp`, a constant) is not credited, and needs its
 definition touched or a case of its own. A copy of a HEAD case under a renamed class or case name is
 a new definition and is credited; a HEAD case in a file `_is_test_path()` does not call a test file
-is not in the set a copy is compared against; a rebinding nested inside an `if`, `try` or loop is
-not read; and a trailing-component match also refuses a legitimate case when an unrelated file
-elsewhere in the tree shares its basename - name the file by its path to prove it.
+is not in the set a copy is compared against; a rebinding inside the block of an `if`, `try`,
+loop, `with` or `match` is not read (only what the statement's header binds is); a decorator that
+returns a different function than the one it decorates is not read, so a decorated def is taken to
+be what runs; a house suite moved or copied with any edit is compared as a new file and is credited
+with every case it prints, HEAD's among them; and a unittest module name, exact or trailing, also
+refuses a legitimate case when an unrelated file elsewhere in the tree ends with the same path -
+run the file by its path, or under pytest, to prove it.
 
 Seven review rounds each found another way to credit a case past a RED baseline by reading two runs'
 output - a relabelled case, a label carrying a per-run value, a quiet stop, a failfast set in the
