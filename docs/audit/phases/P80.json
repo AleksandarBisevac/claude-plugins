@@ -60,11 +60,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -103,11 +101,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -149,11 +145,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -197,11 +191,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -245,11 +237,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -292,11 +282,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -443,11 +431,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -494,11 +480,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -542,11 +526,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -590,11 +572,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
