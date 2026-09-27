@@ -132,8 +132,11 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    suite(s)` line reports what the derived set would have caught — advisory, and it moves
    nothing: the wide gate just run is still the phase's whole answer. In `enforce` mode, a
    `NARROWED sign-off: this run measured the DERIVED gate (N of M listed checks; basis on
-   phase.testGateBasis)` line says the run you just took as evidence measured the narrower set
-   and not the wide one — read `phase.testGateBasis` for why. And when the derived step's own
+   phase.testGateBasis). It is evidence about this phase's own tests and their recorded
+   couplings. meta.fullGate was not run here and is owed before <phase> is whole` line says
+   the run you just took as evidence measured the narrower set and not the wide one, and names
+   the third place — `meta.fullGate` — as what it still has not measured; read
+   `phase.testGateBasis` for why the derived set narrowed the way it did. And when the derived step's own
    output did not name every suite `phase.testGateDerived` listed, the step reads
    `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES: ...` basis: that run answered
    a narrower question than the phase recorded, so its exit code is not this run's verdict —
@@ -463,6 +466,13 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       go-ahead run each printed `/audit:propose materialize <PROP-id>` ON THE PARENT BRANCH, commit
       that branch, and only then start the new phases. The list is read from the copy the merge
       landed in, so it is the parent's truth, not this branch's.
+
+      **The same write also stamped `phase.mergedHead`** — the parent's commit right after this
+      merge — which is what lets the third place ask whether a later full run's own head
+      contains this phase. Until such a run does, the phase reads `provisional`, and
+      `/audit:status`, the report and the panel all say so in the same word; this repository's
+      own release guard refuses a release while it does. With no `meta.fullGate` declared, none
+      of this applies — no phase is ever provisional for a third place this plan never named.
    e. Cleanup is `meta.merge`'s to decide and the script's to do — `removeWorktree` and
       `deleteBranch`, both on by default. **It cleans up only what the plugin started and has
       finished with**, and the refusals below are the rule working rather than something to route

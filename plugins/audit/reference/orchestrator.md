@@ -512,6 +512,29 @@ This is a narrower tool than the **Resume after interruption** procedure below, 
 different question — *which phase is resumable* — and still needs the manifest read in full for
 that.
 
+### The third place
+
+`meta.fullGate` names a gate beyond a task's own and a phase's sign-off gate — the whole
+product, measured with `run-test-gate.py --full --record` or the one command
+`scripts/governance/full-gate.py` wraps around it, never one phase's or one task's claim.
+**A phase that merges is `provisional` until that third place records it, and provisional
+blocks nothing inside a session.** It already shows on `/audit:status`, the report and the
+panel, so whoever reads any of those already knows a phase has landed without yet being
+`whole`; only this repository's own release guard turns a provisional phase into a refusal,
+and that refusal belongs to the release command, never to a phase run.
+
+**Never claim a full run passed, or that a phase is whole, from anything but the ledger.**
+`_evidence_io.full_status(rows, phase, git_root, full_commands)` is the one answer every
+surface reads — `whole`, `provisional`, `unknown` or `not_declared` — derived from the evidence
+ledger alone, never from a manifest pointer or a memory of what a gate answered earlier in this
+session. Read a recorded run back with `scripts/status/audit-lookup.py <manifest> run <runId>`,
+exactly as **Answering one question about the trail** above describes, rather than asserting
+what a run answered from its own printed lines.
+
+**A full run expected to outlast the Bash tool's foreground bound follows the same background
+rule a phase gate does**: run it under `run_in_background`, and read its verdict back from the
+ledger once it has recorded — never from a truncated terminal.
+
 ## Resume after interruption
 
 1. Read the manifest. Find the phase with `status == "in_progress"`, a non-null `branch`, and no

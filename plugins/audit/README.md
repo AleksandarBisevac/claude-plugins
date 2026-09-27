@@ -1383,6 +1383,13 @@ Whether a gate actually ran, when, and what it answered — kept where the plan 
 `task.verifiedBy` names the tests a task says it added; this is the record of the run, and
 the two are different kinds of statement.
 
+**"Tests passed" means something different at each of three places, and `VERIFIED` is the one
+word every surface uses for each of them** — `task` (a task's own gate), `sign-off` (a phase's
+sign-off gate) and `whole` (the [third place](#the-third-place), the whole product). Never "all
+tests passed": that phrase does not say which of the three is meant, and the status table, the
+report, the panel and `/audit:doctor` all render the same word for the same place rather than a
+paraphrase of it.
+
 The orchestrator runs each gate through the script rather than by hand, and `--record` is
 what writes it down:
 

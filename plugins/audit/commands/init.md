@@ -145,6 +145,18 @@ With Bash/Glob/Grep — never reading secrets:
    exactly as the tree- and history-derived candidates above left it — this step adds nothing on
    its own, and only writes the key(s) the human actually picked.
 
+   **Then OFFER `meta.fullGate` — the third place beyond a phase's own gate — never add it
+   uninvited.** From the `meta.buildCommands` keys drafted above, name any that look like the
+   full suite, a coverage run or an end-to-end pass (a `test`/`coverage`/`e2e`-family key, never
+   one drafted read-only for lint or typecheck), and ask (AskUserQuestion, multi-select, nothing
+   pre-selected) whether the plan should declare them as `meta.fullGate`, showing the
+   `.husky/pre-push` snippet `README.md`'s "The third place" section documents as what adopting
+   it buys. Declining leaves `meta.fullGate` unwritten — the same absent-means-inert reading
+   every other key in this step gets. **This is not `_gate_feed.OFFERED_GATES`'s catalog**: that
+   one is a fixed pair of candidate `meta.buildCommands` keys `accepted_gates()` reads back off
+   the keys a plan actually wrote, and a pre-push snippet is not a `meta.buildCommands` entry at
+   all.
+
    **And record HOW the test command can be pointed at paths.** It is the only input a task's
    own gate can be derived from (step 5.3), and nothing later in the run can recover it. Beside
    each `test`-family command, note which one the runner offers: a **source→test** mode

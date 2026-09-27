@@ -276,6 +276,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   since a listing that already said "nothing" is not evidence for a narrower guess; the basis
   line says why. This is one of two ways `derived-empty` is reached — the other is the
   spelling-sourced shape left with nothing to substitute, in the bullet above.
+- **`meta.fullGate` and `phase.mergedHead`: a third gate beyond a task's own and a phase's
+  sign-off gate, and the parent commit a phase merged onto.** `meta.fullGate` names the
+  `meta.buildCommands` keys the whole product is measured against — the full suite, coverage,
+  an e2e pass — never narrowed to one phase's or one task's files; `phase.mergedHead` is the
+  parent branch's commit right after a phase merged, written by `close-phase.py` in the same
+  write as `mergedAt`. Both are additive: absent means today's behaviour exactly, and nothing
+  is ever provisional for lack of either. `_manifest_vocab.VERIFIED` is the one word every
+  surface renders for "tests passed" at each place a gate can mean that — a task's own gate, a
+  phase's sign-off gate, and the full run — and `FULL_STATUS` is the vocabulary a merged
+  phase's full-gate status answers with.
+- **`run-test-gate.py --full [--record] [--writer NAME]` runs the declared `meta.fullGate`
+  against the whole product and records a `scope: "full"` row with no phase or task subject.**
+  The row is written before the summary prints, so a run cut off after measuring still leaves
+  its evidence behind; `--writer` names a CI shard's own ledger file, winning over a session
+  id. The commands come from `_evidence_io.resolved_commands`, the one resolver every reader of
+  `meta.fullGate` shares, so a row is judged against the identical list it was measured against.
+  The NARROWED sign-off line a derived-gate run prints now names `meta.fullGate` as what it
+  still owes.
+- **`_evidence_io.full_status` answers whether a merged phase is whole, provisional, unknown,
+  or has no third place declared, from the evidence ledger alone.** Whole needs a green,
+  measured, clean, verbatim full run whose head contains the phase's `mergedHead`, asked of git
+  through ancestry rather than a string match; `/audit:status`, the report, the panel and
+  `/audit:doctor` all read the identical answer and basis off this one function.
+- **`scripts/governance/import-evidence.py` brings a CI-recorded ledger shard into the evidence
+  directory whole, after its hash chain verifies.** A same-named file with different bytes is
+  refused; an identical re-import is a no-op; a shard is committed evidence, never
+  authentication of who wrote it.
+- **`scripts/governance/full-gate.py` is the one command a pre-push hook or a CI step reaches
+  for.** It runs `run-test-gate.py --full --record` as a subprocess and exits with its code,
+  exiting clean with a sentence when no `meta.fullGate` is declared so an undeclared third
+  place never blocks a push; `/audit:review <phaseId> --full` and
+  `docs/examples/azure-pipelines.yml` both reach for it.
+- **`/audit:status --fail-on provisional` and `--fail-on stale-full-run`, opt-in conditions
+  beside the existing test-evidence ones.** `provisional` trips on a merged phase the ledger
+  has not yet certified whole; `stale-full-run` is the sharper claim that a full run happened
+  after the phase landed and still does not contain it. The default gate is unchanged; the
+  status table's tests column now says whether a merged phase is whole, provisional (naming
+  when it merged) or unknown (naming why), and renders exactly as before for a plan with no
+  `meta.fullGate`.
+- **The report and the control panel each carry the VERIFIED line for a merged phase.** The
+  report prints the phase's sign-off counts alongside the third place's own answer under each
+  merged phase; the panel renders the same word and basis beside a merged phase's evidence,
+  reading the identical `full_status` answer rather than recomputing it.
+- **`/audit:doctor`'s full-run row.** No `meta.fullGate` declared reads as an OK row saying so;
+  a provisional merged phase is a warning naming the command that would settle it, an unknown
+  one a warning naming why ancestry could not be asked, and every merged phase reading whole is
+  one OK row naming the newest whole-bearing full run.
+- **This repository's own release guard refuses a release over a provisional phase, beside an
+  open bug.** The `#release-with-bugs` bypass arms over both lists and prints both.
+- **A committed evidence row keeps `outcomeBasis` and `derivedGap` for a step that could not
+  run**, so a derived run that skipped a listed suite reads apart from a missing interpreter or
+  a no-verdict signature; `audit-lookup.py run` shows both, and a passed step's row is
+  unchanged.
 
 ### Changed
 - **`signoff --verdict passed` needs the gate run it rests on**, on the single-phase path and the

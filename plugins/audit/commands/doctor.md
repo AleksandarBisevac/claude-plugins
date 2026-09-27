@@ -248,5 +248,28 @@ whatever the numbers say: set `meta.phaseGate.mode` to `"enforce"` once this rec
 this project — nothing switches it for you, because no threshold here decides that judgement
 call.
 
+## The `full run` row — the third place, read off the ledger
+
+Read only when `meta.fullGate` is declared. **No `meta.fullGate` is an OK row saying so**, the
+same reading `shadow recall` gives its own opt-in switch: a plan that never declared a third
+place has not been told it is missing one. Past that, it reuses `_evidence_io.full_status` —
+the same function `/audit:status`, the report and the panel all read — rather than re-deriving
+whether a merged phase is whole, so this row and those three surfaces can never disagree about
+one phase.
+
+Every merged phase is asked, whole or not: a **PROVISIONAL** phase draws a WARNING naming the
+command that would settle it (`/audit:review <phaseId> --full`, or the pre-push hook, or CI);
+an **UNKNOWN** phase draws a WARNING naming `full_status`'s own basis — no `mergedHead`
+recorded, or ancestry itself could not be asked. A phase that failed a whole-bearing rule is
+named with the rule it failed, in the identical sentence `full_status` composed for it — a
+second wording of the same fact here would be a second implementation to keep in step with the
+first. When every merged phase reads **WHOLE**, one OK row names the newest whole-bearing full
+run and how long ago it ran.
+
+**An unreadable ledger is a WARNING that says so and clears nothing**, exactly the `sandbox`/
+`secret rules` class above. Advisory in every branch, like the rest of this section: a WARNING
+here changes nothing about the exit code, and the release guard is the one place a PROVISIONAL
+phase actually blocks anything.
+
 Do not modify anything. Related: `/audit:status`, `/audit:init`, `/audit:panel`,
-`/audit:usage`, `/audit:layout`, `/audit:logs`.
+`/audit:usage`, `/audit:layout`, `/audit:logs`, `/audit:review --full`.

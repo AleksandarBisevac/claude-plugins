@@ -182,6 +182,23 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   `derive-phase-gate.py` writes `testGateBasis` together with `testGateDerived`, so the two
   are absent or present as a pair. Ceasing to read any of the
   four, or reversing what its absence means, is a major.
+- **`meta.fullGate` and `phase.mergedHead` are under the same promise, and each absence is its
+  own documented reading, never a gap.** **`meta.fullGate` absent means this plan names no third
+  place at all** — no phase is ever provisional for lack of one, `run-test-gate.py --full`
+  refuses rather than measuring nothing, and the `provisional`/`stale-full-run` status
+  conditions are inert on every surface that grades them. **`phase.mergedHead` absent means
+  ancestry cannot be asked at all**, so a merged phase reads `unknown` rather than
+  `provisional` — a specific gap this plan has no way to measure is never claimed in its place.
+  `phase.mergedHead` is written only by `close-phase.py`; a plan that never adopts the third
+  place behaves exactly as it did before either key existed. Ceasing to read either, or
+  reversing what its absence means, is a major.
+- **The `provisional` and `stale-full-run` status conditions are opt-in, and `DEFAULT_GATE` is
+  unchanged by their addition.** `--fail-on` is what turns either on; a plan that has never
+  declared `meta.fullGate` or recorded a full run fails no build over a condition it never
+  asked for.
+- **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
+  before either existed carries neither key, which is the true reading for it, and a passed
+  step's row is unchanged.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is

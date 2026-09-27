@@ -780,7 +780,7 @@
     {
       "id": "P80.12",
       "title": "Docs: the third place, provisional, and what init offers",
-      "status": "pending",
+      "status": "in_progress",
       "description": "reference/orchestrator.md: the third place - what whole needs (a green, measured, clean, verbatim full run whose head contains the phase's mergedHead), that provisional blocks nothing inside a session and shows on status, report and panel, and that the orchestrator never claims a full run passed: the answer comes from the ledger through full_status (dg14); a long full run follows the background rule. reference/phase-signoff.md: after its merge a phase is provisional until the third place records it; the NARROWED line names meta.fullGate. commands/init.md: OFFER meta.fullGate (the test, coverage and e2e keys recon found) and the pre-push snippet, and write neither without the user's pick. Not through _gate_feed.OFFERED_GATES: that catalog is meta.buildCommands keys that accepted_gates reads back, and a pre-push hook is not one. commands/doctor.md: the full-run row. README Test evidence: the meanings VERIFIED names (task, sign-off, whole). COMPATIBILITY.md: fullGate absent = no third place (nothing provisional, --full refuses, the conditions are inert); mergedHead absent = unknown, never whole; the new conditions are opt-in and DEFAULT_GATE is unchanged. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -822,16 +822,21 @@
         "P80.10",
         "P80.11"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T09:50:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T10:02:27Z.86dce8",
+        "status": "passed",
+        "at": "2026-09-27T10:02:27Z"
+      }
     },
     {
       "id": "P80.13",
