@@ -1,7 +1,7 @@
 {
   "id": "P84",
   "title": "review findings are written by a verb, every validator warning family carries a code the lint can see, and a fresh worktree's evidence is counted",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "A sign-off's findings and their resolutions are recorded through a verb under the lock with a journal row, and the outcome's tally is derived from them; the stable-code lint reaches every warning _check_phase_gate emits; check-example-ledgers judges pointers and ledgers over the same set, so a phase's second task gate in a fresh worktree is not red on the first gate's pointer.",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "72caceb122f3eeee054885d84342bf14d8af9329",
+  "branch": "audit/p84-review-findings-are-written-by",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,14 +29,16 @@
     {
       "id": "P84.1",
       "title": "a verb records a sign-off finding and its resolution, and the outcome's tally is derived from the findings",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F516 (quality-gates-internal PLAN.md). Add a verb that appends a finding in the schema's shape (id, severity low|med|high, file, issue, resolution) under the index lock, revalidating or rolling back, with a review.finding journal row; a way to set a finding's resolution to its fix task and commit when the fix lands; and derive the severity tally in review.outcome from review.findings when the verb writes it, so no one types it. A text-only correction of review.outcome or summary goes through a verb with its own journal row and never re-decides the verdict. phase-signoff.md step 1 names the verb. Red-first: a malformed finding (missing severity, severity outside the vocabulary) is refused before any write; allow: a well-formed one is appended and journaled; a correction leaves the verdict and its row untouched.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/reference/phase-signoff.md",
         "plugins/audit/commands/phase.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/manifest-conventions.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -61,27 +63,28 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T04:18:45Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P84.2",
       "title": "the stable-code lint reaches every warning the phase-gate checks emit",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F517 (quality-gates-internal PLAN.md). _check_phase_gate mutates the validator's warnings parameter, a shape fc2's walk never follows, so the whole family can ship uncoded. Give _check_phase_gate (and its helpers) the return shape the walk already follows - it returns its findings and the caller extends - rather than adding a new seed rule. Red-first: strip the code from one _check_coupling warning and fc2 goes red; allow: every coded site stays green and the validator's output is byte-identical before and after.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
         "plugins/audit/tests/test__manifest_phases.py",
         "plugins/audit/tests/test__output.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/_manifest_rules.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -106,21 +109,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T04:18:45Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P84.3",
       "title": "check-example-ledgers judges pointers and ledgers over the same set",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F519 (quality-gates-internal PLAN.md). The tool reads pointers from the working-tree manifests but counts only git-tracked ledgers, so a phase's second task gate in a fresh worktree goes red on the first gate's pointer into the still-untracked evidence file. Judge both halves over the same set - read pointers from manifests at HEAD (the committed claim this tool exists to check). Red-first: a fixture repo whose tracked manifest at HEAD has no pointer to the untracked ledger while the working-tree manifest does passes; allow: a manifest at HEAD pointing at a run no ledger holds still fails.",
       "files": [
         "tools/check-example-ledgers.py",
@@ -149,16 +152,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T04:18:45Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T04:18:45Z"
 }
