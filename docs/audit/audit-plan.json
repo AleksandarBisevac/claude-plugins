@@ -712,7 +712,8 @@
       "P87.2",
       "P87.3-bpl",
       "P87.4-bpl",
-      "P87.5-bpl"
+      "P87.5-bpl",
+      "P87.6-bpl"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1585,7 +1586,8 @@
       "P84.7-791",
       "P80.17-rtb",
       "P87.2",
-      "P87.3-bpl"
+      "P87.3-bpl",
+      "P87.6-bpl"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -4247,7 +4249,8 @@
       "P87.1",
       "P87.3-bpl",
       "P87.4-bpl",
-      "P87.5-bpl"
+      "P87.5-bpl",
+      "P87.6-bpl"
     ],
     "plugins/audit/scripts/governance/propose-gates.py": [
       "P80.15-rtb"
