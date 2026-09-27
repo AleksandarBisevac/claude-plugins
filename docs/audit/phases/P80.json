@@ -1547,7 +1547,7 @@
     {
       "id": "P80.23-rtb",
       "title": "the panel screenshot capture keeps its demo identity and its fixture skills now that the fixture is a git repository",
-      "status": "in_progress",
+      "status": "done",
       "description": "A full 'node tools/capture-screenshots.mjs' run on the P80 branch fails two panel preconditions it passed before the demo fixture became a git repository: 'these shots would be captured as null rather than the demo identity dev@example.com - GIT_CONFIG_GLOBAL did not take', and 'the fixture manifest spells [clean-typescript, pragmatic-testing, safe-incremental-refactor, structured-code-review, web-security], which the fixture home does not declare'. --check passes, so the gap is in what only a full capture asserts. Find the root cause (the fixture's hand-written .git/config, the panel's identity and discovery lookups, the tool's environment) and fix it where it lives; if it lives in a file outside this task, stop and name it. Prove it with a full capture of the panel leg exiting 0 and a regression case that fails on the current code.",
       "files": [
         "tools/capture-screenshots.mjs",
@@ -1579,17 +1579,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4fd76f2d0ae0b0c69628a0f051e9b4dbcf9d6a83",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "the description suspected the demo fixture becoming a git repository; the executor showed the cause is a race in the capture tool (STATE and REG read after a static tab strip plus a fixed sleep, before boot() had answered from /api/state and /api/registry), reproduced under CPU load with a scratch probe; the fix is waitForPanelBoot after every static-tab wait, and gen-demo-manifest.py is unchanged. A full capture then exited 0.",
+        "descriptive": "the full panel capture reads the viewer identity and the skill registry only after the page has booted"
       },
       "startedAt": "2026-09-27T12:48:08Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T13:28:30Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T13:28:30Z.ca812c",
         "status": "passed",
+        "at": "2026-09-27T13:28:30Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "4fd76f2d0ae0b0c69628a0f051e9b4dbcf9d6a83",
         "at": "2026-09-27T13:28:30Z"
       }
     }
