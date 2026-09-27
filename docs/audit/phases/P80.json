@@ -995,7 +995,7 @@
     {
       "id": "P80.14-rtb",
       "title": "one reading of the third place: which phases are merged, and which run makes one stale",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off findings P80-R1 and P80-R11. (1) Put one merged-phase predicate beside _evidence_io.full_status (a phase is merged when mergedAt is set and it has an id) and make audit-status.full_run_block, _doctor_trail.check_full_run, _panel_composition._phase_full_run and render-report._full_run_block all call it; the doctor currently uses effective status done. (2) full_status names, beside its answer, the newest WHOLE-BEARING full run (one _full_disqualification passes) and its ts, and stale-full-run reads that instead of audit-status re-checking status and scope on whatever run full_status named - a disqualified run (dirty tree, counted nothing, wrong commands) must never make a phase stale. (3) _panel_composition._memoizing_runner memoizes an ancestry answer only when both operands are full 40-hex SHAs; otherwise it asks git each time. Cases: the four surfaces select the same phases; a disqualified passed-status run does not trip stale-full-run; a non-SHA mergedHead is never memoized. Mutations for each. No plan ids in comments; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -1035,24 +1035,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "11dd3e6526ff",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges from the description on one clause, by review request: the description says full 40-hex SHAs, the first task review asked for SHA-256 ids too, so _is_full_sha accepts 40- or 64-hex (fr11). The scope verb refuses a description change on an attempted task, so the divergence is recorded here.",
+        "descriptive": "status, report, panel and doctor grade the same merged phases through one predicate; stale-full-run reads only the newest run that could count as whole, chosen by parsed moment; the ancestry memo keeps only full commit ids"
       },
       "startedAt": "2026-09-27T10:22:33Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T11:21:25Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T11:19:49Z.2a56e0",
         "status": "passed",
         "at": "2026-09-27T11:19:49Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "11dd3e6526ff",
+        "at": "2026-09-27T11:21:25Z"
       }
     },
     {
       "id": "P80.15-rtb",
       "title": "the panel says when the evidence ledger could not be read",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Sign-off finding P80-R6. build_state turns a failed ledger read into a fabricated clean empty read that the evidence tab renders as no runs and zero unreadable lines. Carry the error into evidence_view's payload (a readError field) and render it in overview.js as its own sentence, distinct from an empty ledger; the full-run UNKNOWN path already carries it. JS: a pure-data test that the view shows the error sentence. Mutation: fabricate the clean read again. Allow case: a genuinely empty ledger still reads as no runs. No plan ids; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -1087,21 +1092,21 @@
       "dependsOn": [
         "P80.14-rtb"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T11:21:50Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P80.16-rtb",
       "title": "the release guard holds a release over a phase whose full-run answer is unknown",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Sign-off finding P80-R2. read_provisional appends only PROVISIONAL phases and drops UNKNOWN ones, which lets a release through over a phase the plan's own evidence cannot answer for; treat UNKNOWN as a reason to refuse, named with its basis, and select merged phases with the shared predicate. refusal() names each list it could read and only the unreadable one as unknown. Restate the plan, design-table and bug ids in the new comments as the constraints they stand for. SECURITY.md: no count in prose ('two lists'), and the table states what an unknown phase does. Mutations: drop the unknown bucket; collapse both lists to unknown. Allow: a whole phase releases; git push origin main untouched.",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -1131,14 +1136,14 @@
       "dependsOn": [
         "P80.14-rtb"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T11:21:50Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -1150,7 +1155,12 @@
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
         "plugins/audit/tests/test_close_phase.py",
-        "plugins/audit/reference/manifest-conventions.md"
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/status.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1246,7 +1256,10 @@
       "description": "Sign-off finding P80-R5. Before copying, read the run ids the evidence directory already holds and refuse (exit 1, naming the duplicated ids and the file that holds them) a shard that would duplicate one under a different name. Allow: a shard of new run ids imports; an identical re-import of the same file still reads already imported. Mutation: skip the duplicate check.",
       "files": [
         "plugins/audit/scripts/governance/import-evidence.py",
-        "plugins/audit/tests/test_import_evidence.py"
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1288,7 +1301,7 @@
     {
       "id": "P80.20-rtb",
       "title": "the demo shows whole, provisional and unknown, and a browser check sees the full-run line",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Sign-off findings P80-R7 and P80-R8. The demo is rendered in a directory with no git repository, so it can never show whole. Make the demo fixture a git repository with deterministic commits (fixed author, committer and dates, so the SHAs and the rendered page stay byte-identical run to run), stamp one merged phase's mergedHead with a real commit and record one whole-making full row on a head containing it, so docs/demo-large.html shows whole, provisional and unknown; regenerate it with the recipe. Then make the browser checks look: check-report-interactive.mjs asserts the rendered full-run line for each answer on the demo page, and capture-screenshots.mjs --check asserts the panel renders the full-run line on the panel fixture. Show both checks red before the render exists. Deterministic output is the load-bearing property: run the regeneration twice and compare bytes.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -1323,21 +1336,21 @@
       "dependsOn": [
         "P80.14-rtb"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T11:21:50Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P80.21-rtb",
       "title": "the third place has its own section in the orchestrator reference, and no count in prose",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off findings P80-R9 and P80-R10. Move 'The third place' in reference/orchestrator.md to its own ## section like its siblings and give it what the section-anchor lint in _areas.py asks: an anchor to the code claim it makes (full_status answers from the ledger, the release guard refuses) or a reasoned UNANCHORED_SECTIONS row; never a heading level chosen to stay out of the scan. Drop the counts in prose: 'a fixed pair' in commands/init.md and 'each of three places' in the README, pointing at what derives each instead.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -1371,19 +1384,70 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "66806a510eb1638a07de2409736dd710a88b7522",
       "outcome": {
         "technical": null,
         "descriptive": null
       },
       "startedAt": "2026-09-27T10:22:34Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T11:21:04Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T11:21:03Z.9c4631",
         "status": "passed",
         "at": "2026-09-27T11:21:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "66806a510eb1638a07de2409736dd710a88b7522",
+        "at": "2026-09-27T11:21:04Z"
       }
+    },
+    {
+      "id": "P80.22-rtb",
+      "title": "the changelog and the compatibility contract say what the sign-off fixes shipped",
+      "status": "pending",
+      "description": "After every sign-off fix task lands: the CHANGELOG [Unreleased] section states what each one shipped, read from the code and not from the task titles (the full-run answer's wholeRunId/wholeRunTs replacing runTs, the merged-phase predicate, the ancestry memo's full-id rule, close-phase's mergedHead backfill and mergedHeadAt, import-evidence's duplicate-run and unreadable-ledger refusals, the panel's evidence read error, the release guard holding over an unknown phase, the demo's whole/provisional/unknown fixture). COMPATIBILITY.md gains the absence reading for any new manifest key the fixes added, in the shape its neighbours use, and widens no promise. The comment in _evidence_io.py that says what phase.mergedHead names is corrected to what close-phase now writes. No numbers in prose; no plan ids.",
+      "files": [
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/scripts/governance/_evidence_io.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P80.15-rtb",
+        "P80.16-rtb",
+        "P80.17-rtb",
+        "P80.19-rtb",
+        "P80.20-rtb"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T04:18:48Z"
