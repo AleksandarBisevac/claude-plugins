@@ -3,7 +3,7 @@
 The Settings form's schema, and the write-path key allow-lists it shares with
 panel-server.py — stdlib only.
 
-Moved out of panel-server.py (P12.1). Three things live here because they are all
+This module holds three things split out of panel-server.py because they are all
 SETTINGS-SHAPE KNOWLEDGE, not server plumbing:
 
   * FIELD_HELP / COMPOSITION_HELP / SETTINGS_GROUPS — the Settings form described

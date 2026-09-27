@@ -519,7 +519,7 @@ def _cases(check):
 
     # --- v0.28: the areas registry over HTTP ------------------------------------
     # The GET cases (registry as stored, tags a phase uses, the typo case) moved to
-    # _panel_state.py (P12.3); the WRITE path is what is exercised here.
+    # _panel_state.py; the WRITE path is what is exercised here.
     # `meta` lives on the INDEX in a sharded manifest, so a registry save must
     # touch the index and nothing else. That is the whole reason this goes through
     # apply_composition rather than writing the file itself: a second writer here
@@ -727,7 +727,7 @@ def _cases(check):
 
     # --- v0.30: the capability policy ------------------------------------------
     # The rule-listing cases that are a pure function of the block, and the
-    # enforcement-marker cases, moved to _panel_state.py (P12.3).
+    # enforcement-marker cases, moved to _panel_state.py.
     # The resolution lives in _policy and is exercised there. What is checked here
     # is that this endpoint SHOWS what the guard hook will DO — same function, same
     # active areas — and that the one writer refuses what the validator refuses.
@@ -1707,7 +1707,7 @@ def _cases(check):
         _sh1.rmtree(_gf_tmp, ignore_errors=True)
         _sh1.rmtree(_gf_out, ignore_errors=True)
 
-    # --- isolation cases (P12.4): the moved boundary stays real -----------------
+    # --- isolation cases: the moved boundary stays real -------------------------
     _src = _harness.module_source(M)
     _imports = [l for l in _src.split("\n")
                 if l.startswith("import ") or l.startswith("from ")]

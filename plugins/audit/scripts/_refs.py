@@ -779,8 +779,9 @@ VERBATIM_FLAGS = ("--reason", "justification", "--confirm-high-risk")
 # - which is useful writing and not a rule being stated. That mention alone
 # discharged the check, and the mutation harness caught it: deleting the real
 # directive left the file passing. A MENTION IS NOT A STATEMENT, which is the
-# same count-do-not-merely-find trap `test__refs.tk6` was rewritten for in the
-# same release.
+# same count-do-not-merely-find trap that `test__refs.py` guards elsewhere by
+# checking a directive's survival inside the specific section it lives in,
+# never merely its presence anywhere in the document.
 VERBATIM_POINTER = "**The operator's words go in VERBATIM**"
 
 # ...and the section the pointer names, so a pointer at a heading that has been

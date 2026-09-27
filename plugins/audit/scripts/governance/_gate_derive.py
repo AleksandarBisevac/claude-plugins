@@ -216,7 +216,7 @@ def newest_red_phase_row(rows, phase_id):
 
 
 # --- the phase-level derivation --------------------------------------------------
-# Pinned verbatim (dg4): the one sentence every NARROWED answer's basis carries,
+# Pinned verbatim: the one sentence every NARROWED answer's basis carries,
 # so a reader never has to guess whether a narrow gate came from more than the
 # import graph and the recorded couplings -- and a widened version of it (one
 # that also claimed, say, "and the files this phase touched") would be a claim
@@ -319,8 +319,8 @@ def _importers_arm(meta, facts):
     with the reason named -- never an empty result read as "narrowed to
     nothing", and never a stale listing trusted in silence.
 
-    EQUAL TO THE FULL LISTING MEANS THE WIDE GATE **IS** THE NARROW ANSWER
-    (dg1): every suite the runner would collect imports something this phase
+    EQUAL TO THE FULL LISTING MEANS THE WIDE GATE **IS** THE NARROW ANSWER:
+    every suite the runner would collect imports something this phase
     touched, so there is nothing left to narrow away from and pretending
     otherwise would be a guess dressed as a derivation.
 
@@ -553,7 +553,7 @@ def derive(manifest, phase, facts):
     if isinstance(smoke, str) and smoke.strip():
         exempt = facts.get("exempt")
         exempt = exempt if isinstance(exempt, dict) else {}
-        # NEVER DECIDED BY `meta.runtimeBoot.appRootPath` (dg10): the ONLY
+        # NEVER DECIDED BY `meta.runtimeBoot.appRootPath`: the ONLY
         # questions asked of a touched file are whether the plan gate's own
         # exempt verdict already cleared it and whether it is a test file
         # itself -- a source file outside an app's own root is still a source

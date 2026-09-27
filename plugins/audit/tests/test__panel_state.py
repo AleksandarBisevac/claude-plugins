@@ -5,7 +5,7 @@ The cases for `_panel_state.py`, moved out of it - an importable helper.
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list.
 
-WHAT IS LEFT HERE AFTER U3.1. The module was split six ways, and the cases went
+WHAT IS LEFT HERE AFTER THE SPLIT. The module was split six ways, and the cases went
 with the code: `test__panel_paths.py`, `test__panel_viewer.py`,
 `test__panel_composition.py`, `test__panel_policy.py`, `test__panel_runstate.py`
 and `test__panel_usage.py`. What stays is the report export (which is still this
@@ -265,7 +265,7 @@ def _cases(check):
           len(_rr_debt) == 1 and "render-report" in _rr_debt[0])
 
 
-    # --- isolation cases (P12.3): the moved boundary stays real -----------------
+    # --- isolation cases: the moved boundary stays real -------------------------
     _imports = [l for l in _src.split("\n")
                 if l.startswith("import ") or l.startswith("from ")]
     check("this module never imports panel-server - the read side sits BELOW the "
@@ -303,7 +303,7 @@ def _cases(check):
           "\n_JOURNAL = _panel_state._JOURNAL\n" in _panel_src
           and isinstance(M._JOURNAL, dict))
 
-    # --- U3.1: the split boundary, in both directions ---------------------------
+    # --- the split boundary, in both directions ---------------------------------
     # The five leaves may not reach back up. A cycle here would not be a lint
     # failure first - it would be an ImportError at panel start-up, on the one
     # code path a user meets before anything else.

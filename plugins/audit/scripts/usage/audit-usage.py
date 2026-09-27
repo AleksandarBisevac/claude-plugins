@@ -61,7 +61,7 @@ _output.install_path()
 
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _locks  # noqa: E402  (take/give back the backfill lock, at layer 1)
-import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6)
+import _fmt  # noqa: E402  (the one token/cost formatter)
 import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
@@ -81,7 +81,7 @@ DEFAULT_LEDGER = os.path.join(".claude", "usage")
 # --- formatting -----------------------------------------------------------------
 # Thin re-exports of _fmt.py (the one token/cost formatter — see its docstring for
 # the difference table between this CLI's shapes and render-report's). audit-status.py
-# now imports _fmt directly for these (P14.2) rather than reaching them through this
+# imports _fmt directly for these rather than reaching them through this
 # module's loader; these wrappers stay as this CLI's own call shape (and in case any
 # other consumer still loads this module for them).
 #

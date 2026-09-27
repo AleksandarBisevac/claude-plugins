@@ -4,7 +4,7 @@ Discovery: which skills, agents and MCP servers this project can actually reach
 — project-local, user-global, installed plugins and this repo's own plugins tree
 — stdlib only.
 
-Moved out of panel-server.py (P12.2). This is a read-only filesystem scan, not
+This module holds a read-only filesystem scan split out of panel-server.py, not
 server plumbing: given a project directory (and, for tests, a home directory), it
 walks the same places Claude Code itself looks for skills/agents and returns what
 it finds, so the panel's composition pickers offer real building blocks instead of
@@ -18,7 +18,7 @@ grading lives HERE, once, for the reason `_policy` states about the capability
 policy: the doctor, the panel, the CI gate and the report all ask it, and a rule
 resolved in four places is four rules. See the portability section below.
 
-Front matter parsing delegates to `_help.front_matter` (P10.5) rather than
+Front matter parsing delegates to `_help.front_matter` rather than
 reimplementing it here — this module still needs `_help` for that one function,
 which is fine: `_help` does not import this module or panel-server, so there is no
 cycle.

@@ -392,8 +392,8 @@ def _render_lines(phase_id, meta, result, facts):
 
 
 def _brief_line(phase_id, meta, result, facts, at):
-    """The reviewer's ONE-line basis -- never a path, never runner output
-    (tk2): every number here is a COUNT, and the only string carried through
+    """The reviewer's ONE-line basis -- never a path, never runner output:
+    every number here is a COUNT, and the only string carried through
     verbatim is `testGateBasis`, which is a fixed vocabulary word. Keyed off
     `narrowed`/`basis` the same way `_render_lines` is -- a wide gate never
     prints a per-arm count, MEASURED or otherwise, except the full-suite

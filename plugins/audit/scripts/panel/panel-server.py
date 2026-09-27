@@ -112,7 +112,7 @@ import _panel_write          # noqa: E402  (the write path: locks, change rows, 
 import _panel_page           # noqa: E402  (the assembled page: UI_HTML + UI_TEMPLATE)
 
 # The settings-form schema and the write-path allow-lists are settings-shape
-# knowledge, not server plumbing — they live in _panel_settings.py (P12.1).
+# knowledge, not server plumbing — they live in _panel_settings.py.
 # Aliased here so every downstream reference in this file (the substitution
 # chain below, `_composition_changes`, `_reject_unknown`, the cases in tests/)
 # keeps working unchanged.
@@ -128,7 +128,7 @@ _settings_paths = _panel_settings._settings_paths
 _cfg_enums = _panel_settings._cfg_enums
 
 # The skills/agents/MCP registry scan is a read-only filesystem walk, not server
-# plumbing — it lives in _panel_discovery.py (P12.2). Aliased here so every
+# plumbing — it lives in _panel_discovery.py. Aliased here so every
 # downstream reference (the /api/registry route, `policy_state`'s own preview
 # call, the fixture-dir cases in tests/) keeps working unchanged.
 _front_matter = _panel_discovery._front_matter
@@ -147,7 +147,7 @@ SCOPE_REPO = _panel_discovery.SCOPE_REPO
 
 # The panel's READ side -- every payload `GET /api/*` answers with, plus the path
 # safety, viewer identity, core-module loading and lock detection those payloads
-# rest on -- lives in _panel_state.py (P12.3). Aliased here so every downstream
+# rest on -- lives in _panel_state.py. Aliased here so every downstream
 # reference in this file (the GET routes, the write path's own use of `_cores`,
 # `_within`, `read_config`, `_manifest_path`, `_read_json` and `_journalmod`, and
 # the cases in tests/) keeps working unchanged. See that module's docstring for why
@@ -190,8 +190,8 @@ render_report = _panel_state.render_report
 build_state = _panel_state.build_state
 
 # The panel's WRITE side -- the lock a save takes, the change rows it echoes, the
-# journal row it leaves and the four writers themselves -- lives in _panel_write.py
-# (P12.4). Aliased here so the PUT routes, the fixtures the cases in tests/ still
+# journal row it leaves and the four writers themselves -- lives in _panel_write.py.
+# Aliased here so the PUT routes, the fixtures the cases in tests/ still
 # build, and anything that spelled these names in this file keep working
 # unchanged. `_atomic_write_json` moved with them: it is the one write the read
 # side never makes, and the wrapper (not `_mio.atomic_write_json` at each call

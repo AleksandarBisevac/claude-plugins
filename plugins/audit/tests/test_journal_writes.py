@@ -734,11 +734,12 @@ def _cases(check):
               "pre-image while it was off)",
               len(entries) == 1 and entries[0]["action"] == "config.edit")
 
-        # --- s: P0-S, the unsandboxed Bash run ---------------------------------
+        # --- s: the unsandboxed Bash run ----------------------------------------
         # `dangerouslyDisableSandbox: true` turns off the ONLY layer that can
-        # actually contain a read, and until P0-S no part of this plugin saw it:
-        # a live session read a secret through direnv that way and left no deny,
-        # no gate message and NO ROW. This stops nothing - PostToolUse is after
+        # actually contain a read, and before this file was widened to watch for
+        # it no part of this plugin saw it: a live session read a secret through
+        # direnv that way and left no deny, no gate message and NO ROW. This
+        # stops nothing - PostToolUse is after
         # the fact - it converts an invisible event into tamper-evident history,
         # which is the currency this plugin actually trades in.
         def bash_payload(cmd, *, sid="pp-s", sandbox_off=True):
@@ -1151,7 +1152,7 @@ def _cases(check):
               "and leaves no slot - nothing here outlives the user's switch",
               M.post_entries(f_bash("f-10b"), cfg=post_cfg, root=_f10b_dir) == []
               and not os.path.isdir(os.path.join(_f10b_dir, ".claude", "state")))
-        # f11: the P0-S row and the manifest rows share one Bash call, and both
+        # f11: the unsandboxed-run row and the manifest rows share one Bash call, and both
         # land. The lane was one `return` before this fix, so "either/or" is exactly
         # the shape a careless fix would have kept.
         f_write(manifest_doc(status="in_progress"))

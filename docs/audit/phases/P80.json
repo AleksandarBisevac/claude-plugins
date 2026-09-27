@@ -523,11 +523,12 @@
       "id": "P80.11",
       "title": "This repository's release guard refuses a release over a provisional phase",
       "status": "pending",
-      "description": "This repository's own .claude/hooks/guard-release.py (configuration, not product) refuses the publishing commands it already refuses when the plan carries a PROVISIONAL phase, as a second list beside the open bugs. read_provisional(project) loads _evidence_io and _worktrees lazily, the way _effective loads _manifest_io, reads the assembled manifest and the ledger, and returns the provisional phases with their bases, or a problem string: unreadable is a refusal, never 'nothing provisional' (fail-loud, the file's own rule). The manifest's tree comes from the plugin hooks' _config.tree_for(payload, target=<the command's effective cwd>) (P72) instead of CLAUDE_PROJECT_DIR, so a release typed in a linked worktree is judged against that worktree's plan; loaded lazily from plugins/audit/hooks/, inside the branch that already knows the command publishes. _deps.hook_tree_violations scans plugins/audit/hooks/ only, so this file's tree resolution is held by its own selftest, not by that lint. With no meta.fullGate nothing is provisional and the guard behaves exactly as today; git push origin main stays untouched (dg13 allow). arm-release-bypass.py prints the provisional phases it arms over beside the bugs, through the same function. The refusal sentence names both lists and the keyword. Red-first in the inline _selftest (.claude/hooks files keep theirs and the sweep runs them): no open bug plus one provisional phase refuses git tag v1 (dg13; mutation: read only the bugs -> red). Allow cases: the same plan with the phase whole releases; git push origin main is not refused; an unreadable ledger refuses with the problem named. SECURITY.md: the row for this fail-loud refusal. CLAUDE.md's Releasing section describes this guard's refusal set; whether to update it is the user's call, so say so in the task outcome instead of editing it.",
+      "description": "This repository's own .claude/hooks/guard-release.py (configuration, not product) refuses the publishing commands it already refuses when the plan carries a PROVISIONAL phase, as a second list beside the open bugs. read_provisional(project) loads _evidence_io and _worktrees lazily, the way _effective loads _manifest_io, reads the assembled manifest and the ledger, and returns the provisional phases with their bases, or a problem string: unreadable is a refusal, never 'nothing provisional' (fail-loud, the file's own rule). The manifest's tree comes from the plugin hooks' _config.tree_for(payload, target=<the command's effective cwd>) (P72) instead of CLAUDE_PROJECT_DIR, so a release typed in a linked worktree is judged against that worktree's plan; loaded lazily from plugins/audit/hooks/, inside the branch that already knows the command publishes. _deps.hook_tree_violations scans plugins/audit/hooks/ only, so this file's tree resolution is held by its own selftest, not by that lint. With no meta.fullGate nothing is provisional and the guard behaves exactly as today; git push origin main stays untouched (dg13 allow). arm-release-bypass.py prints the provisional phases it arms over beside the bugs, through the same function. The refusal sentence names both lists and the keyword. Red-first in the inline _selftest (.claude/hooks files keep theirs and the sweep runs them): no open bug plus one provisional phase refuses git tag v1 (dg13; mutation: read only the bugs -> red). Allow cases: the same plan with the phase whole releases; git push origin main is not refused; an unreadable ledger refuses with the problem named. SECURITY.md: the row for this fail-loud refusal. CLAUDE.md's Releasing section describes this guard's refusal set, and the user decided (2026-09-27) that it is updated in this same commit: the refusal names provisional phases beside open bugs, what makes a phase provisional (no green full run on a head containing its mergedHead) and the command that settles one, and that the #release-with-bugs slot arms over both lists and prints both - worded from the code as it lands, with no number in prose.",
       "files": [
         ".claude/hooks/guard-release.py",
         ".claude/hooks/arm-release-bypass.py",
-        "SECURITY.md"
+        "SECURITY.md",
+        "CLAUDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -612,6 +613,54 @@
         "P80.10",
         "P80.11"
       ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P80.13",
+      "title": "A committed evidence row keeps why a step could not run",
+      "status": "pending",
+      "description": "_evidence_io.STEP_KEYS omits outcomeBasis, and the derived-gap marker run-test-gate sets on a step is omitted too, so _step / row_for drop both and a committed could-not-run row carries the verdict and not its basis: a derived run that did not name every listed suite, a missing interpreter and a no-verdict signature read identically to audit-lookup, the report and the doctor. Keep outcomeBasis on the row, bounded the way failing is bounded, and the derived-gap marker; render them wherever a could-not-run step is shown (audit-lookup run, the report's evidence view). The row only gains keys, which COMPATIBILITY.md treats as free. Allow case: a passed step's row is byte-identical to today's. No plan ids in comments; no numbers in prose.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a recorded step graded could-not-run keeps its bounded outcomeBasis on the committed row, and a derived-run gap is distinguishable there from a missing interpreter or a no-verdict signature - red at HEAD",
+          "plugins/audit/tests/test_audit_lookup.py: audit-lookup run <runId> on such a row names why the step could not run; a passed step's row reads exactly as before"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P80.4"
+      ],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
