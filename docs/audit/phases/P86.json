@@ -29,5 +29,177 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P86.1",
+      "title": "Held-file comments state their rule, not the register",
+      "status": "pending",
+      "description": "The files P74 and P82 held while P85 ran. Rewrite each comment or docstring in this task's files that cites a register id - P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>, BUG-<n>, F<n>, U<n>.<m>, or a dg<n>/tk<n> label used as a citation, including bare 'since P<n>' asides - so it states the constraint of its block in plain words; what an id meant is in the private register (quality-gates-internal/PLAN.md and plans/), but no register text is copied. A test's own case label, an id illustrating an id SHAPE, a rendered-output example in backticks and fixture data are not citations. No behaviour change; no string a test reads changes; no number in prose. Measured occurrences: /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (verify each line and report any the list missed).",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P86.2",
+      "title": "Report and release-guard comments state their rule, not the register",
+      "status": "pending",
+      "description": "The files P80 and P81 held. The two release-guard hooks' docstrings narrate a release cut while named bug ids sat open; keep the reason the guard exists (a release went out over open bugs nobody's gate asked about) and drop the ids. Rewrite each comment or docstring in this task's files that cites a register id - P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>, BUG-<n>, F<n>, U<n>.<m>, or a dg<n>/tk<n> label used as a citation, including bare 'since P<n>' asides - so it states the constraint of its block in plain words; what an id meant is in the private register (quality-gates-internal/PLAN.md and plans/), but no register text is copied. A test's own case label, an id illustrating an id SHAPE, a rendered-output example in backticks and fixture data are not citations. No behaviour change; no string a test reads changes; no number in prose. Measured occurrences: /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (verify each line and report any the list missed).",
+      "files": [
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/scripts/report/_report_md.py",
+        ".claude/hooks/guard-release.py",
+        ".claude/hooks/arm-release-bypass.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P86.3",
+      "title": "The secrets-guard files' comments state their rule, not the register",
+      "status": "pending",
+      "description": "The files of BUG-12, whose fix is with a human maintainer. Start only after BUG-12 is closed or its fix has landed, so these comment edits never collide with that patch; if it is still open when P86 runs, stop and report rather than edit. The label cited here is the rule that an unsandboxed Bash run reaching an environment file is denied and every other unsandboxed run is journaled. Rewrite each comment or docstring in this task's files that cites a register id - P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>, BUG-<n>, F<n>, U<n>.<m>, or a dg<n>/tk<n> label used as a citation, including bare 'since P<n>' asides - so it states the constraint of its block in plain words; what an id meant is in the private register (quality-gates-internal/PLAN.md and plans/), but no register text is copied. A test's own case label, an id illustrating an id SHAPE, a rendered-output example in backticks and fixture data are not citations. No behaviour change; no string a test reads changes; no number in prose. Measured occurrences: /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (verify each line and report any the list missed).",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P86.4",
+      "title": "The citation lint reads parenthesised phase, task and bug ids",
+      "status": "pending",
+      "description": "Extend _deps.register_citation_violations() so the rule the sweep applied is held. Today it reads fault ids everywhere and phase ids only in the paragraph-opening shape, and its markdown pass reads only those two. Add: a phase, task or bug id inside parentheses - (P12.3), (P79.8-5bh), (BUG-12), (since P56.6), (U3.1) - in a comment, a docstring or a scanned markdown file, and the same shapes in the markdown pass as in the .py pass. Leave alone, each pinned by an allow case: a noqa code list, an id glued to a word as a rendered-output example (audit-state(P1):), an id inside a backtick span carrying more than the id, a test's own case label, id-shape illustrations and fixture data, and the files CITATION_SCAN_EXEMPT already names. Measure the rule over the tree before and after and put the measurement's command in the function's docstring, with a WHAT IT CANNOT SEE paragraph naming the bare forms it deliberately does not read (a bare P<n> is indistinguishable from the pervasive legitimate id-shape prose). The live-tree case must read zero once P86.1-P86.3 have landed; if a hit remains, it is a citation the sweep missed and the fix is the comment, never the rule. tools/prove-gates.py must carry a red-first row for the new shape in both directions if its table requires one. No plan ids in comments; no numbers in prose.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: a comment carrying (P12.3), (BUG-12) or (U3.1) and a markdown file carrying (since P56.6) are each reported by register_citation_violations() - red at HEAD",
+          "plugins/audit/tests/test__deps.py: allow cases stay silent - noqa lists, audit-state(P1): examples, backtick spans with more than the id, test case labels, id-shape prose, exempt files"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P86.1",
+        "P86.2",
+        "P86.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }
