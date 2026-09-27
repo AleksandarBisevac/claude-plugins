@@ -70,6 +70,8 @@ Usage:
   audit-task.py couple --test <path> --sources p,p --basis-run <runId>
                 --basis-head <sha> [--phases id,id] [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py couple --test <path> --caught <runId> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py uncouple --test <path> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py bug-add "<title>|-" [manifest] --severity low|med|high
@@ -162,6 +164,12 @@ Usage:
   never silently replaced. `--basis-run` names a row the evidence ledger
   actually holds (looked up, never parsed) and `--basis-head` the HEAD that
   row examined; a coupling with no run to point at teaches nothing.
+  `couple --caught <runId>` records that an already-coupled test earned its
+  place: the run must be a `full` row whose runner NAMED the test as failing
+  on a step no mute excused, and the entry's `lastCaught` becomes that row's
+  `ts`. It never creates an entry and never touches `sources` or `basis`;
+  a run no newer than the `lastCaught` already recorded (compared as a
+  moment, not as text) writes nothing and exits 0 saying so.
   `uncouple` drops one entry by `--test` alone, and refuses, exit 2, a test
   that carries none.
   `bug-add` appends one bug to top-level `bugs[]` in exactly the shape
@@ -358,6 +366,8 @@ import _id_shape              # noqa: E402  (the one answer to which id comes ne
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
+import _usage_core            # noqa: E402  (parse_ts: the one reading of a row's ts as a
+                              # moment, the one `lastCaught`'s reader ages a coupling by)
 import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
                               # repointed: a TASK's own gate and a PHASE's derived
                               # one ask the same three questions, so both entry
@@ -2285,38 +2295,6 @@ def _failing_from_lookup(project, phase, run_id):
     return row, None
 
 
-def _named_failing_suites(row):
-    """Every suite file `--failing-from`'s ROW named as failing, in the order
-    its failed steps carry them, deduplicated.
-
-    A STEP COUNTS AS FAILED THE SAME WAY `run-test-gate.failed_steps` READS
-    ONE -- restated here rather than imported, because `run-test-gate.py` and
-    this file are peer entry points and neither imports the other: it ran to
-    completion (a non-zero exit) and carries no no-verdict `outcome`, since a
-    timed-out step's exit code is an artefact of the kill that stopped it and
-    reading that as a named failure would point a gate at a suite that never
-    finished.
-
-    ONLY A `failingSuitesBasis` THAT SAYS THE RUNNER NAMED THEM COUNTS.
-    `run-test-gate.failing_suites` falls back to a capped tail of the step's
-    own output when no runner it recognises wrote a summary, and a tail
-    excerpt is not a list of failing tests -- learning suites off it would be
-    a fix task's gate narrowed to whatever lines happened to scroll past last.
-    """
-    suites = []
-    for step in (row.get("steps") or []):
-        if not isinstance(step, dict):
-            continue
-        if step.get("exit") in (0, None) or step.get("outcome"):
-            continue
-        if "named as failing" not in (step.get("failingSuitesBasis") or ""):
-            continue
-        for path in step.get("failingSuites") or []:
-            if path not in suites:
-                suites.append(path)
-    return suites
-
-
 def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                         meta, phase):
     """The three ordinary defaults (`tests.add`, `files`, the phase's wide
@@ -2474,8 +2452,8 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     `--gate-set`.
 
     When the row's failed steps NAMED at least one suite
-    (`_named_failing_suites`) and the phase has a path-scoped spelling to
-    point them through, the gate is those suites UNIONED with this task's own
+    (`_evidence_io.named_failing_suites`) and the phase has a path-scoped
+    spelling to point them through, the gate is those suites UNIONED with this task's own
     `tests.add` paths, in the sibling's spelling -- the union because a fix
     task may still be asked to write a NEW case beside the failure it
     repairs, and dropping that path would buy a green the task never earned.
@@ -2500,7 +2478,8 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
         return _ordinary_task_gate(shape, owner, wide, build, add_paths,
                                    files, mode, meta, phase)
     if shape is not None:
-        suites = _named_failing_suites(failing_row) if failing_row else []
+        suites = (_evidence_io.named_failing_suites(failing_row.get("steps"))
+                  if failing_row else [])
         if suites:
             union = _union_paths(suites, add_paths)
             return (_repointed(shape, build, union),
@@ -7885,9 +7864,10 @@ def _locked_settle(args, project, config, mpath, out):
 # `sources` in both derived sets at once and the table could not describe
 # both truthfully. `_coupling_test_refusal` and `_coupling_sources_refusal`
 # take plain values, never `args`, for the same reason `_files_refusal` does;
-# `_locked_couple` and `_locked_uncouple` are the only functions that read
+# `_locked_couple`, `_locked_couple_caught` (reached only through
+# `_locked_couple`) and `_locked_uncouple` are the only functions that read
 # `args.test` / `args.sources` / `args.basis_run` / `args.basis_head` /
-# `args.phases` at all, the way `retarget`'s own `--gate-set`/`--gate-drop`
+# `args.phases` / `args.caught` at all, the way `retarget`'s own `--gate-set`/`--gate-drop`
 # pair stayed inside `_retarget_gate_contradiction` and `_retarget_gate_now`.
 def _coupling_test_refusal(test, verbs="couple/uncouple", what="a coupling"):
     """Whether `--test <path>` names something a coupling can be about, or
@@ -7971,12 +7951,17 @@ def _locked_couple(args, project, config, mpath, out):
     rule, reused rather than re-derived. `--phases` is checked against the
     plan this call is writing into, refused by name when an id is not a
     phase this plan holds.
+
+    `--caught` IS THE OTHER SPELLING, handed to `_locked_couple_caught`
+    before any learning flag is read.
     """
     test = (args.test or "").strip()
     refusal = _coupling_test_refusal(test)
     if refusal:
         out(refusal)
         return E_USAGE
+    if args.caught is not None:
+        return _locked_couple_caught(args, test, project, config, mpath, out)
     sources = _split_csv(args.sources)
     if not sources:
         out("[audit-task] couple needs --sources <path,path> -- a coupling "
@@ -8004,16 +7989,12 @@ def _locked_couple(args, project, config, mpath, out):
             "name that goes on resolving to whatever it points at later"
             % (head,))
         return E_USAGE
-    try:
-        rows = _evidence_io.read_rows(project)["rows"]
-    except Exception as exc:
-        out("[audit-task] --basis-run %s: the evidence ledger could not be "
-            "read (%s)" % (run_id, exc))
-        return E_USAGE
-    if _evidence_io.row_by_run(rows, run_id) is None:
-        out("[audit-task] --basis-run %s: no run with this id is in the "
-            "evidence ledger -- a coupling says what taught it, and this run "
-            "taught nothing recorded" % (run_id,))
+    row, refusal = _ledger_run(
+        project, "--basis-run", run_id,
+        "a coupling says what taught it, and this run taught nothing "
+        "recorded")
+    if refusal:
+        out(refusal)
         return E_USAGE
     # THE SAME ASK `done --commit` MAKES, reused rather than re-derived
     # (`_commit_git_note`'s own reason): refused when git can be asked and
@@ -8082,6 +8063,161 @@ def _locked_couple(args, project, config, mpath, out):
     if unverified:
         out(unverified)
     _report_tail(out, jres, "coupling.learned", warnings, written_manifest,
+                written, index_note)
+    return 0
+
+
+def _ledger_run(project, flag, run_id, why):
+    """`(row, refusal)` for the evidence row `run_id` names -- exactly one is
+    not None. `why` ends the refusal for a run the ledger does not hold.
+
+    A LOST LINE IS NAMED, NEVER READ AS ABSENCE. `read_rows` skips a line it
+    cannot parse and counts it; a run not found among the readable rows may
+    be on exactly that line, so the refusal says which file could not be
+    read in full rather than asserting the run was never recorded."""
+    try:
+        ledger = _evidence_io.read_rows(project)
+    except Exception as exc:
+        return None, ("[audit-task] %s %s: the evidence ledger could not be "
+                      "read (%s)" % (flag, run_id, exc))
+    row = _evidence_io.row_by_run(ledger.get("rows") or [], run_id)
+    if row is not None:
+        return row, None
+    if ledger.get("unreadable"):
+        lost = [_output.posix_rel(p, project) if os.path.isabs(p) else p
+                for p in (ledger.get("unreadableFiles") or [])]
+        return None, ("[audit-task] %s %s: no run with this id is among the "
+                      "readable rows of the evidence ledger, and some of it "
+                      "could not be read (%s) -- the run may be on a line "
+                      "that read lost, so repair it before asking again"
+                      % (flag, run_id, ", ".join(lost) or "file unnamed"))
+    return None, ("[audit-task] %s %s: no run with this id is in the "
+                  "evidence ledger -- %s" % (flag, run_id, why))
+
+
+def _caught_refusal(row, run_id, test):
+    """Why the evidence row `run_id` names cannot be a catch of `test`, or
+    None. A catch is a THIRD-PLACE run (scope `full`) whose runner named
+    `test` as failing on a step no mute excused. That reading is
+    `_evidence_io.named_failing_suites`, the one a fix task's
+    `--failing-from` gate and the gate runner take, so a tail excerpt and a
+    quarantined step are refused here for the reason they are refused there. Its `ts` must read as a moment through
+    `_usage_core.parse_ts`, the reading `lastCaught`'s own reader ages a
+    coupling by."""
+    if row.get("scope") != _evidence_io.FULL_SCOPE:
+        return ("[audit-task] --caught %s is a run of scope %r, not %r -- "
+                "only a third-place run is a catch the coupling earned; a "
+                "phase or task run is the kind of run that taught it"
+                % (run_id, row.get("scope"), _evidence_io.FULL_SCOPE))
+    named = _evidence_io.named_failing_suites(row.get("steps"))
+    if test not in named:
+        return ("[audit-task] --caught %s does not name %s as failing on a "
+                "step whose runner named its failing suites and no mute "
+                "excused (it named: %s) -- a tail excerpt or a quarantined "
+                "failure is not a catch"
+                % (run_id, test, ", ".join(named) if named else "none"))
+    if _usage_core.parse_ts(row.get("ts")) is None:
+        return ("[audit-task] --caught %s carries ts %r, which does not read "
+                "as a moment, so there is nothing to record as lastCaught"
+                % (run_id, row.get("ts")))
+    return None
+
+
+def _locked_couple_caught(args, test, project, config, mpath, out):
+    """Set one coupled test's `lastCaught` from a named third-place failure,
+    under lock.
+
+    A CATCH NEVER CREATES OR RESHAPES A COUPLING: a test with no entry is
+    refused, the learning flags are refused beside `--caught`, and only
+    `lastCaught` is written. The run is LOOKED UP through
+    `_evidence_io.row_by_run`, `--basis-run`'s own reason.
+
+    NEWEST ONLY, AND IDEMPOTENT. `lastCaught` is the newest catch, so a
+    well-formed catch at or before the recorded one -- an older run imported
+    late, or the same run replayed by a retry -- writes nothing and adds no
+    journal row, and still exits 0 saying so: the fact it offers is already
+    covered. Both sides are compared as MOMENTS through `_usage_core.parse_ts`,
+    never as text, because an offset against `Z` or a fractional second
+    sorts differently as a string than in time. A recorded `lastCaught` no
+    parser reads is replaced by the catch offered, which does read.
+    """
+    run_id = (args.caught or "").strip()
+    if not run_id:
+        out("[audit-task] --caught needs a runId -- the full run that named "
+            "this test as failing")
+        return E_USAGE
+    extra = [flag for flag, value in (
+        ("--sources", args.sources), ("--basis-run", args.basis_run),
+        ("--basis-head", args.basis_head), ("--phases", args.phases))
+        if value is not None]
+    if extra:
+        out("[audit-task] --caught records a catch and changes nothing else "
+            "on the entry, so it takes none of %s" % (", ".join(extra),))
+        return E_USAGE
+    row, refusal = _ledger_run(
+        project, "--caught", run_id,
+        "a catch names the full run that caught it")
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    refusal = _caught_refusal(row, run_id, test)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    ts = str(row.get("ts"))
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    coupling = [dict(e) for e in (meta.get("coupling") or [])
+               if isinstance(e, dict)]
+    idx = next((i for i, e in enumerate(coupling) if e.get("test") == test),
+               None)
+    if idx is None:
+        out("[audit-task] couple --caught: %r carries no meta.coupling entry "
+            "-- a catch is recorded against a coupling, never in place of "
+            "one; learn it with --sources/--basis-run/--basis-head first"
+            % (test,))
+        return E_USAGE
+    was = coupling[idx].get("lastCaught")
+    was_at = _usage_core.parse_ts(was)
+    if was_at is not None and was_at >= _usage_core.parse_ts(ts):
+        if args.as_json:
+            out(json.dumps({"ok": True, "test": test,
+                            "entry": coupling[idx], "written": [],
+                            "unchanged": True}, sort_keys=True))
+            return 0
+        out("[audit-task] %s: lastCaught already records a newer or the same "
+            "catch (%s; run %s ran at %s) -- nothing written, since "
+            "lastCaught is the newest catch and never moves back"
+            % (test, was, run_id, ts))
+        return 0
+    coupling[idx]["lastCaught"] = ts
+    entry = coupling[idx]
+    meta["coupling"] = coupling
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the catch", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    summary = "%s caught by run %s: lastCaught %s -> %s" % (
+        test, run_id, was or "(never)", ts)
+    jres = _journal_row(project, config, mpath, "coupling.caught", summary,
+                        {"field": test, "from": was, "to": ts,
+                         "runId": run_id})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "entry": entry,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "coupling.caught", warnings, written_manifest,
                 written, index_note)
     return 0
 
@@ -8799,10 +8935,13 @@ VERB_FLAGS = {
     # `note` appends one entry, and its text is its one flag.
     "note": ("text",),
     # `couple` writes `meta.coupling`: the test, what it is coupled to, and
-    # the run that taught it. `--phases` is the only one of the five that may
+    # the run that taught it. `--phases` is the only learning flag that may
     # be absent -- a coupling learned off a run with no phase scope narrows
-    # nothing by phase, which is a legal answer and not a hole.
-    "couple": ("test", "sources", "basis_run", "basis_head", "phases"),
+    # nothing by phase, which is a legal answer and not a hole. `--caught` is
+    # the other spelling: it records a catch on an entry that already exists
+    # and takes none of the learning flags.
+    "couple": ("test", "sources", "basis_run", "basis_head", "phases",
+               "caught"),
     # `uncouple` drops one entry by the test alone; it shares `--test` with
     # `couple` and reads nothing else `couple` does.
     "uncouple": ("test",),
@@ -9010,6 +9149,11 @@ def build_parser():
                    help="couple: the HEAD the run examined")
     p.add_argument("--phases", action="append", default=None,
                    help=_list_help("phase ids", "--phases P2,P3"))
+    # `couple` only, and never beside the learning flags above: the full run
+    # whose runner named the already-coupled test as failing.
+    p.add_argument("--caught", default=None, metavar="RUNID",
+                   help="couple: a full run that named this coupled test as "
+                        "failing; sets its lastCaught and changes nothing else")
     # `finding` only. A review finding's fields, spelled as the schema spells
     # them. `--severity` carries no `choices`: argparse would refuse on stderr
     # before `main` buffers anything, so `_finding_refusal` grades the word and a

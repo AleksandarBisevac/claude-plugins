@@ -8721,7 +8721,7 @@ def _cases(check):
                           "from meta.buildCommands"))
 
         # ---- (ff) a fix task opened after a red run is gated on ITS failing --
-        # suites -- `add --failing-from <runId>`. `_named_failing_suites`'s own
+        # suites -- `add --failing-from <runId>`. `named_failing_suites`'s own
         # rule: only a step whose `failingSuitesBasis` says the runner NAMED
         # them counts; a tail excerpt is not a list of failing tests.
         import _evidence_io as _ff_ev
@@ -8868,6 +8868,91 @@ def _cases(check):
               "run named as failing: %r" % (txtff[:140],),
               codeff == 2 and "not phase P1's" in txtff
               and task_in(ff_mp, "P1.5") is None)
+
+        # ---- RED-FIRST: a MUTED step never narrows a fix task's gate -------
+        # A step the committed row marks `muted` failed under a quarantine: a
+        # known failure a bug already tracks, not something this run caught.
+        # Its named suites are the one reading that must stay out of the gate.
+        _ff_muted_basis = ("the 1 suite file(s) vitest named as failing, "
+                           "read from vitest's FAIL <file> line(s)")
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-MUTED", "ts": "2026-09-01T00:25:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/quarantined.test.ts"],
+                      "failingSuitesBasis": _ff_muted_basis,
+                      "muted": [{"test": "src/quarantined.test.ts",
+                                 "bugId": "BUG-1",
+                                 "until": "2999-01-01"}]}]})
+        _ff_muted_row = _ff_ev.row_by_run(
+            _ff_ev.read_rows(ff_proj)["rows"], "RUN-MUTED")
+        codeff, txtff = run(
+            ["add", "Fix beside a quarantine", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-MUTED",
+             "--tests-add", "src/fix.test.ts: the case this task writes"])
+        check("ff7 RED-FIRST: a failed row whose ONLY failing suite sits on a "
+              "step the row marks muted yields no failing-from paths, so the "
+              "task falls through to its tests.add gate with the reason "
+              "printed - a quarantined suite never narrows a fix task's "
+              "gate: %r" % ((codeff, _ff_ev.named_failing_suites(
+                  (_ff_muted_row or {}).get("steps")),
+                  ff_tests("P1.5").get("gate"),
+                  ff_tests("P1.5").get("gateBasis")),),
+              _ff_muted_row is not None
+              and _ff_ev.named_failing_suites(
+                  _ff_muted_row.get("steps")) == []
+              and codeff == 0
+              and ff_tests("P1.5").get("gate")
+              == ["lint", "vitest run src/fix.test.ts"]
+              and ff_tests("P1.5").get("gateBasis") == "tests.add"
+              and "named no suite as failing" in txtff)
+        # ...and the direction a skip that is too wide breaks in: only the
+        # muted STEP is skipped, never the row it sits in.
+        _ff_mixed = {"steps": [
+            {"name": "unit", "exit": 1,
+             "failingSuites": ["src/quarantined.test.ts"],
+             "failingSuitesBasis": _ff_muted_basis,
+             "muted": [{"test": "src/quarantined.test.ts", "bugId": "BUG-1",
+                        "until": "2999-01-01"}]},
+            {"name": "e2e", "exit": 1, "failingSuites": ["src/live.test.ts"],
+             "failingSuitesBasis": _ff_muted_basis, "muted": []}]}
+        check("ff8 ALLOW CASE: in a row with a muted step and an unmuted one "
+              "(an empty `muted` is no quarantine), only the unmuted step's "
+              "suites are read: %r"
+              % (_ff_ev.named_failing_suites(_ff_mixed["steps"]),),
+              _ff_ev.named_failing_suites(_ff_mixed["steps"])
+              == ["src/live.test.ts"])
+
+        # ---- ONE READING: both verbs ask `_evidence_io`, never a copy ------
+        # A spy stands in for the shared reading and answers with a suite no
+        # row names, so a verb still reading its own copy would narrow to the
+        # row's real suite instead - the answer, not merely the call, has to
+        # come from the shared function.
+        _sp_calls = []
+        _sp_real = _ff_ev.named_failing_suites
+
+        def _sp_spy(steps):
+            _sp_calls.append(steps)
+            return ["src/spied.test.ts"]
+        _ff_ev.named_failing_suites = _sp_spy
+        try:
+            codesp, txtsp = run(
+                ["add", "Fix read through the spy", "--phase", "P1",
+                 "--project-dir", ff_proj, "--failing-from", "RUN-VITEST"])
+        finally:
+            _ff_ev.named_failing_suites = _sp_real
+        check("ff9 the failing-from gate is read through "
+              "`_evidence_io.named_failing_suites`, handed the row's steps, "
+              "and narrows to what IT answers: %r"
+              % ((codesp, _sp_calls, ff_tests("P1.6").get("gate")),),
+              M._evidence_io is _ff_ev
+              and not hasattr(M, "_named_failing_suites")
+              and codesp == 0 and len(_sp_calls) == 1
+              and isinstance(_sp_calls[0], list)
+              and _sp_calls[0][0].get("failingSuites")
+              == ["src/cart.test.ts"]
+              and ff_tests("P1.6").get("gate")
+              == ["lint", "vitest run src/spied.test.ts"])
 
         # ---- (cp) couple / uncouple: `meta.coupling`, an index-only write --
         import _evidence_io as _cp_ev
@@ -9034,6 +9119,280 @@ def _cases(check):
               "coupling entry is refused exit 2 - a no-op reporting success "
               "would hide that nothing was there to drop: %r" % (txtcp6[:140],),
               codecp6 == 2 and "carries no meta.coupling entry" in txtcp6)
+
+        # ---- (cc) couple --caught: a coupling that earned its place --------
+        # `lastCaught` is the ts of a third-place (scope `full`) run whose
+        # runner NAMED the coupled test as failing. Without a writer, every
+        # coupling ages from `learnedAt` as though it never caught anything.
+        cc_proj, cc_mp = mk("cc-caught", base_manifest())
+        _cc_named = ("the 1 suite file(s) pytest named as failing, read "
+                     "from pytest's FAILED <path> line(s)")
+
+        def cc_row(run_id, ts, scope, suites, basis, **extra):
+            step = {"name": "test", "exit": 1, "failingSuites": suites,
+                    "failingSuitesBasis": basis}
+            step.update(extra)
+            row = {"v": 1, "runId": run_id, "ts": ts, "scope": scope,
+                   "status": "failed", "steps": [step]}
+            if scope == "phase":
+                row["phaseId"] = "P2"
+            _cp_ev.append_row(cc_proj, row)
+
+        def cc_entry():
+            return next((e for e in cp_coupling(cc_mp)
+                         if e.get("test") == "tests/test_c.py"), None)
+
+        cc_row("RUN-CC-MISS", "2026-09-01T00:00:00Z", "phase",
+               ["tests/test_c.py"], _cc_named)
+        codecc0, _ = run(
+            ["couple", "--test", "tests/test_c.py", "--sources", "src/c.ts",
+             "--basis-run", "RUN-CC-MISS", "--basis-head", "deadbeef",
+             "--project-dir", cc_proj])
+        _cc_first = dict(cc_entry() or {})
+        check("cc0 a coupling first written from a miss carries no "
+              "lastCaught: %r" % ((codecc0, _cc_first),),
+              codecc0 == 0 and _cc_first.get("test") == "tests/test_c.py"
+              and "lastCaught" not in _cc_first)
+
+        cc_row("RUN-CC-FULL", "2026-09-03T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc1, txtcc1 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-FULL",
+             "--project-dir", cc_proj])
+        _cc_after = dict(cc_entry() or {})
+        _cc_rows = cp_journal(cc_proj, "coupling.caught")
+        _cc_det = (_cc_rows[0].get("details") or {}) if _cc_rows else {}
+        check("cc1 RED-FIRST: `couple --test <coupled> --caught <runId>` on a "
+              "full row whose runner NAMED the test as failing sets "
+              "lastCaught to that row's ts, changes nothing else on the "
+              "entry, and writes exactly one `coupling.caught` journal row - "
+              "on current code `--caught` is not a flag at all: %r"
+              % ((codecc1, txtcc1[:160], _cc_after, _cc_rows),),
+              codecc1 == 0
+              and _cc_after.get("lastCaught") == "2026-09-03T00:00:00Z"
+              and dict((k, v) for k, v in _cc_after.items()
+                       if k != "lastCaught") == _cc_first
+              and len(_cc_rows) == 1
+              and _cc_det.get("field") == "tests/test_c.py"
+              and _cc_det.get("runId") == "RUN-CC-FULL"
+              and _cc_det.get("to") == "2026-09-03T00:00:00Z")
+
+        # ---- MUTATION GUARD: a TAIL basis is not a runner naming a test ----
+        cc_row("RUN-CC-TAIL", "2026-09-04T00:00:00Z", "full",
+               ["tests/test_c.py"],
+               "no runner this gate can count recognised; the last lines of "
+               "its output are kept instead")
+        codecc2, txtcc2 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-TAIL",
+             "--project-dir", cc_proj])
+        check("cc2 MUTATION GUARD: a full row whose failing suites came off a "
+              "TAIL, not a runner's own summary, is refused exit 2 naming the "
+              "run, and lastCaught stays where cc1 put it: %r"
+              % ((codecc2, txtcc2[:200], cc_entry()),),
+              codecc2 == 2 and "RUN-CC-TAIL" in txtcc2
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+
+        # ---- ALLOW CASES: --caught never creates, and reads only `full` ----
+        cc_row("RUN-CC-OTHER", "2026-09-05T00:00:00Z", "full",
+               ["tests/test_d.py"], _cc_named)
+        codecc3, txtcc3 = run(
+            ["couple", "--test", "tests/test_d.py", "--caught",
+             "RUN-CC-OTHER", "--project-dir", cc_proj])
+        check("cc3 ALLOW CASE: --caught on a test that is NOT coupled is "
+              "refused exit 2 and creates no entry - a catch is recorded "
+              "against a coupling, never in place of one: %r"
+              % ((codecc3, txtcc3[:200], cp_coupling(cc_mp)),),
+              codecc3 == 2 and "carries no meta.coupling entry" in txtcc3
+              and [e.get("test") for e in cp_coupling(cc_mp)]
+              == ["tests/test_c.py"])
+        cc_row("RUN-CC-PHASE", "2026-09-06T00:00:00Z", "phase",
+               ["tests/test_c.py"], _cc_named)
+        codecc4, txtcc4 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-PHASE", "--project-dir", cc_proj])
+        check("cc4 ALLOW CASE: a phase-scope row naming the test is refused "
+              "exit 2, naming its scope - only a third-place run is a catch "
+              "the coupling itself earned: %r" % ((codecc4, txtcc4[:200]),),
+              codecc4 == 2 and "'phase'" in txtcc4
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z")
+        codecc5, txtcc5 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-OTHER", "--project-dir", cc_proj])
+        check("cc5 ALLOW CASE: a full row that named OTHER suites is refused "
+              "exit 2 - it caught something, not this test: %r"
+              % ((codecc5, txtcc5[:200]),),
+              codecc5 == 2 and "tests/test_c.py" in txtcc5
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z")
+        cc_row("RUN-CC-MUTED", "2026-09-07T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named,
+               muted=[{"test": "tests/test_c.py", "bugId": "BUG-1",
+                       "until": "2999-01-01"}])
+        codecc6, txtcc6 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-MUTED", "--project-dir", cc_proj])
+        check("cc6 ALLOW CASE: a full row whose step naming the test was "
+              "MUTED is refused exit 2 - a quarantined failure is not a "
+              "catch: %r" % ((codecc6, txtcc6[:200]),),
+              codecc6 == 2
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z")
+        codecc7, txtcc7 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-FULL", "--sources", "src/z.ts",
+             "--project-dir", cc_proj])
+        check("cc7 ALLOW CASE: --caught with --sources is refused exit 2 and "
+              "the sources stay as they were - recording a catch never "
+              "changes what the test is coupled to: %r"
+              % ((codecc7, txtcc7[:200], cc_entry()),),
+              codecc7 == 2 and "--sources" in txtcc7
+              and (cc_entry() or {}).get("sources") == ["src/c.ts"])
+        codecc8, txtcc8 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "NO-SUCH-RUN",
+             "--project-dir", cc_proj])
+        check("cc8 ALLOW CASE: an unknown runId is refused exit 2: %r"
+              % ((codecc8, txtcc8[:200]),),
+              codecc8 == 2 and "no run with this id" in txtcc8)
+        cc_row("RUN-CC-OLD", "2026-09-02T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc9, txtcc9 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-OLD",
+             "--project-dir", cc_proj])
+        check("cc9 a catch OLDER than the recorded lastCaught writes nothing "
+              "and adds no journal row, but exits 0 saying lastCaught "
+              "already records a newer catch - newest only, and an "
+              "out-of-order import is not an error: %r"
+              % ((codecc9, txtcc9[:200], cc_entry()),),
+              codecc9 == 0 and "already records" in txtcc9
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+        codecc10, txtcc10 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-FULL",
+             "--project-dir", cc_proj])
+        check("cc10 the SAME run replayed is idempotent: exit 0, nothing "
+              "written, no second journal row: %r"
+              % ((codecc10, txtcc10[:200], cc_entry()),),
+              codecc10 == 0 and "already records" in txtcc10
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+
+        # ---- MUTATION GUARD: moments are compared, never text ---------------
+        # `2026-09-03T01:00:00+02:00` sorts AFTER `2026-09-03T00:00:00Z` as
+        # text and is an hour BEFORE it as a moment; `...00.5Z` sorts before
+        # `...00Z` as text ('.' < 'Z') and is half a second after it.
+        cc_row("RUN-CC-OFFSET", "2026-09-03T01:00:00+02:00", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc11, txtcc11 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-OFFSET", "--project-dir", cc_proj])
+        check("cc11 MUTATION GUARD: a row whose ts is LATER as text but "
+              "EARLIER as a moment (an offset against Z) writes nothing: %r"
+              % ((codecc11, txtcc11[:200], cc_entry()),),
+              codecc11 == 0 and "already records" in txtcc11
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+        cc_row("RUN-CC-FRAC", "2026-09-03T00:00:00.5Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc12, txtcc12 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-FRAC", "--project-dir", cc_proj])
+        check("cc12 MUTATION GUARD: a row whose ts is EARLIER as text but "
+              "LATER as a moment (a fraction against Z) is written: %r"
+              % ((codecc12, txtcc12[:200], cc_entry()),),
+              codecc12 == 0
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00.5Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 2)
+
+        # ---- ALLOW CASE: a ts no parser reads is refused, naming it --------
+        # Written as a raw ledger line, so no writer's own normalising can
+        # repair the value before the verb sees it.
+        with open(_cp_ev.ledger_files(cc_proj)[-1], "a",
+                  encoding="utf-8") as _cc_fh:
+            _cc_fh.write(json.dumps({
+                "v": 1, "runId": "RUN-CC-BADTS", "ts": "last tuesday",
+                "scope": "full", "status": "failed",
+                "steps": [{"name": "test", "exit": 1,
+                           "failingSuites": ["tests/test_c.py"],
+                           "failingSuitesBasis": _cc_named}]}) + "\n")
+        codecc13, txtcc13 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-BADTS", "--project-dir", cc_proj])
+        check("cc13 ALLOW CASE: a row whose ts does not parse as a moment is "
+              "refused exit 2, naming the ts: %r"
+              % ((codecc13, txtcc13[:200], cc_entry()),),
+              codecc13 == 2 and "last tuesday" in txtcc13
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00.5Z")
+
+        # ---- ALLOW CASE: a torn ledger line is named, never silence --------
+        # A run not found among the READABLE rows may sit on the line the read
+        # lost, so both lookups say which file could not be read in full.
+        tl_proj, tl_mp = mk("cc-torn", base_manifest())
+        _cp_ev.append_row(tl_proj, {
+            "v": 1, "runId": "RUN-TL", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed",
+            "steps": []})
+        codetl0, _ = run(
+            ["couple", "--test", "tests/test_t.py", "--sources", "src/t.ts",
+             "--basis-run", "RUN-TL", "--basis-head", "deadbeef",
+             "--project-dir", tl_proj])
+        _tl_ledger = _cp_ev.ledger_files(tl_proj)[-1]
+        with open(_tl_ledger, "a", encoding="utf-8") as _tl_fh:
+            _tl_fh.write('{"v": 1, "runId": "RUN-TL-LOST", "ts": "2026-09\n')
+        _tl_name = os.path.basename(_tl_ledger)
+        codetl1, txttl1 = run(
+            ["couple", "--test", "tests/test_t.py", "--caught", "RUN-TL-LOST",
+             "--project-dir", tl_proj])
+        codetl2, txttl2 = run(
+            ["couple", "--test", "tests/test_u.py", "--sources", "src/u.ts",
+             "--basis-run", "RUN-TL-LOST", "--basis-head", "deadbeef",
+             "--project-dir", tl_proj])
+        check("cc14 ALLOW CASE: with a torn ledger line, a run not found is "
+              "refused exit 2 by BOTH --caught and --basis-run, each naming "
+              "the file that could not be read in full: %r"
+              % ((codetl0, codetl1, txttl1[:240], codetl2, txttl2[:240]),),
+              codetl0 == 0
+              and codetl1 == 2 and _tl_name in txttl1
+              and "could not be read" in txttl1
+              and codetl2 == 2 and _tl_name in txttl2
+              and "could not be read" in txttl2
+              and [e.get("test") for e in cp_coupling(tl_mp)]
+              == ["tests/test_t.py"])
+
+        # ---- ONE READING, the --caught half: the spy answers WITHOUT the ---
+        # coupled test, so a verb reading its own copy would accept a row that
+        # really names it - the refusal has to come from the shared function.
+        cc_row("RUN-CC-SPY", "2026-09-09T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        _sp_calls2 = []
+
+        def _sp_spy2(steps):
+            _sp_calls2.append(steps)
+            return ["tests/other.py"]
+        _cp_ev.named_failing_suites = _sp_spy2
+        try:
+            codesp2, txtsp2 = run(
+                ["couple", "--test", "tests/test_c.py", "--caught",
+                 "RUN-CC-SPY", "--project-dir", cc_proj])
+        finally:
+            _cp_ev.named_failing_suites = _sp_real
+        check("cc15 `--caught` reads the catch through "
+              "`_evidence_io.named_failing_suites`, handed the row's steps, "
+              "and refuses when IT does not name the test: %r"
+              % ((codesp2, txtsp2[:200], len(_sp_calls2)),),
+              codesp2 == 2 and len(_sp_calls2) == 1
+              and isinstance(_sp_calls2[0], list)
+              and _sp_calls2[0][0].get("failingSuites") == ["tests/test_c.py"]
+              and "tests/other.py" in txtsp2
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00.5Z")
 
         # ---- (cp) --basis-head is asked of git, exactly as `done --commit` -
         cp_projg, cp_mpg, cp_head = cp_repo("cp-git", base_manifest())

@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id] | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -15,7 +15,7 @@ or subcommand `scope` followed by a task id and any of its flags;
 or subcommand `move` followed by a task id and `--to <phaseId>`;
 or subcommand `block` followed by a task id and `--reason "<why>"`;
 or subcommand `note` followed by a task id and `--text TEXT`;
-or subcommand `couple` followed by `--test <path> --sources a,b --basis-run <runId> --basis-head <sha>`;
+or subcommand `couple` followed by `--test <path> --sources a,b --basis-run <runId> --basis-head <sha>` (or by `--test <path> --caught <runId>`);
 or subcommand `uncouple` followed by `--test <path>`;
 or subcommand `mute` followed by `--test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId>`;
 or subcommand `unmute` followed by `--test <path>`;
@@ -656,7 +656,31 @@ it. A test coupled for the first time gets a new entry; a test already coupled h
 `sources` WIDENED (unioned) with the ones just named, and its `basis` (`runId`/`head`/`phases`)
 and `learnedAt` stay exactly what the first call wrote — a re-couple's own `--basis-run`/
 `--basis-head`/`--phases` are still validated, but never written over the first call's basis.
-A coupling is a fact that grows and is never silently replaced.
+A coupling is a fact that grows and is never silently replaced. A coupling written this way
+carries no `lastCaught`: being learned from a miss is not the same as having caught one.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" couple \
+  --test plugins/audit/tests/test_<name>.py --caught <runId> [--json]
+```
+
+`couple --caught` records that an already-coupled test earned its place: the run it names is
+looked up in the evidence ledger the same way `--basis-run` is, and it must be a third-place
+row (scope `full`) whose runner NAMED this test as failing — a suite list read off a tail
+excerpt, or off a step the row marks muted, is not a catch. The entry's `lastCaught` becomes
+that row's `ts`, one `coupling.caught` journal row is written, and nothing else on the entry
+changes. `--caught` never creates a coupling and never changes `sources` or `basis`.
+A catch that is **not newer** than the `lastCaught` already recorded — an older run imported
+late, or the same run replayed by a retry — writes nothing and adds no journal row, and exits
+0 with a line saying `lastCaught` already records a newer or the same catch: `lastCaught` is the
+newest catch and never moves back, and offering it again is not an error. The two timestamps
+are compared as moments, never as text, so an offset against `Z` or a fractional second
+orders by time. **Refused, exit 2:** a test with no entry, `--caught` beside any of
+`--sources`/`--basis-run`/`--basis-head`/`--phases`, a run the ledger does not hold, a row of
+any scope other than `full`, a row that did not name this test on such a step, and a row whose
+`ts` does not read as a moment (the refusal names it). When the run is not found and some of
+the ledger could not be read, the refusal names the files that could not be read in full —
+the run may be on the line that was lost — and `--basis-run` refuses the same way.
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" uncouple \
@@ -668,7 +692,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" uncouple \
 `--basis-run`/`--basis-head`, a `--basis-run` the evidence ledger does not hold, a
 `--basis-head` that is not a commit SHA or that git can be asked about and does not have, or a
 `--phases` id this plan does not hold.
-`--sources` and `--basis-run`/`--basis-head`/`--phases` belong to `couple` alone; `--test` is
+`--sources`, `--basis-run`/`--basis-head`/`--phases` and `--caught` belong to `couple` alone; `--test` is
 the one flag the two verbs share.
 
 ## Subcommand: `mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId>` / `unmute --test <path>`

@@ -209,7 +209,7 @@
     {
       "id": "P81.4",
       "title": "The --full post-pass names a SELECTION MISS, learning only from a suite the runner named",
-      "status": "in_progress",
+      "status": "done",
       "description": "After a --full run, a post-pass (dg15). Failing suites = the steps' failingSuites whose basis says the runner NAMED them - never the failing tail, never a muted suite. Derived sets = the union of phase.testGateDerived.tests over the phases whose mergedHead the run's head contains (_worktrees.merged_into) and that merged after the newest earlier whole-bearing green full row. A failing suite none of them listed is a SELECTION MISS: print 'SELECTION MISS: <path> failed at the third place and no derived sign-off gate in <P, ...> listed it. remedy: audit-task.py couple --test <path> --sources <files> --basis-run <runId> --basis-head <head> --phases <ids>; audit-task.py bug-add ...' and put selectionMiss [{test, phases, sources}] on the row (row_for allow-list). Sources are the union of those phases' tasks' files - the work since the last green full run, read off the plan rather than guessed from a diff. When the failures were not named, print 'not learned: the runner did not name the failing suites (basis: <basis>)' instead. The runner prints and records; it never writes the manifest - full-gate.py acts. Red-first: a full run failing on e2e/cart.spec.ts, with one merged phase whose derived tests do not list it, prints the miss and records it; dg15 - the same failure with a tail basis records no miss and prints the not-learned line (mutation: learn from the tail -> red). Allow cases: a failing suite a derived gate listed is not a miss; a muted suite is never a miss.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -245,18 +245,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "22688385a2fc5f22c48c4033e964e8e8d586dfb5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges by narrowing the description after review: only phases with a derived gate count (a non-derived phase made no selection); with no earlier whole-bearing run, or no head on it, nothing is learned; a backfilled mergedHead fails closed unless the bounding head contains it; cancelled tasks' files are not sources; cut lists carry dropped counts. One reading of named failing suites (_evidence_io.named_failing_suites) now serves run-test-gate, the shadow claim and derive-phase-gate; newest_whole_bearing is its single home. Also fixed at its source: a step's named paths were a set, which crashed every --json dump.",
+        "descriptive": "a --full run prints and records a SELECTION MISS, with a couple and bug-add remedy, for a suite the runner named that no derived gate of the phases merged since the newest earlier whole-bearing run listed; a tail-read failure prints not-learned, and every case it cannot ask is printed with its reason"
       },
       "startedAt": "2026-09-27T17:09:06Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T18:00:26Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T17:58:56Z.05634c",
         "status": "passed",
         "at": "2026-09-27T17:58:56Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "22688385a2fc5f22c48c4033e964e8e8d586dfb5",
+        "at": "2026-09-27T18:00:26Z"
       }
     },
     {
