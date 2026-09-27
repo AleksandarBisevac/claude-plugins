@@ -50,10 +50,16 @@ of the split: the four pieces at layer 2 sit above `_manifest_vocab` at layer 1,
 so their only consumer has to sit above them. Nothing at layer 3 imports this
 and this imports nothing at layer 3, so the move is free.
 
-Pure by construction: `validate()` takes parsed JSON and returns
-`(findings, warnings)`, never raises on arbitrary input, reads no file and holds
-no module state. That is what lets four consumers share it without sharing a
-process, and it is why the cases below need no fixture directory.
+Pure by construction, with one input beyond the manifest: `validate()` takes
+parsed JSON and returns `(findings, warnings)`, never raises on arbitrary input,
+reads no file and holds no module state. That is what lets every consumer share
+it without sharing a process, and it is why the cases below need no fixture
+directory. The one other input is the calendar day an expired mute is graded
+against: a caller pins it with `today=`, and otherwise it comes from
+`_manifest_vocab.mute_today()`. Who the consumers are is derived, not listed:
+
+    python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
+    e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_rules'))"
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_rules.py` — see `plugins/audit/tests/_harness.py`.
@@ -326,6 +332,123 @@ def _check_branch(manifest):
     return (f, w)
 
 
+# --- the quarantine ----------------------------------------------------------------
+# `meta.muted` sits with the header's checks in spirit, but it cannot run from
+# `_check_meta`: whether a `bugId` names a real bug is a question about bugs[],
+# so it needs the index `_index_bugs` builds. It is its own piece instead.
+MUTE_FIELDS = ("test", "reason", "owner", "until")
+
+
+def _named(value):
+    """True for a non-empty string - the only `test` a command can be spelled with."""
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _mute_commands(test):
+    """The two verbs that settle an expired mute, spelled for this `test`."""
+    return ("`audit-task.py unmute --test %s` to lift it, or `audit-task.py mute "
+            "--test %s --reason ... --owner ... --until <YYYY-MM-DD> --bug <id>` "
+            "to extend it" % (test, test))
+
+
+def _check_muted(manifest, index, today=None):
+    """FINDINGS for a mute no bug tracks, WARNINGS for everything else about one.
+
+    A missing `bugId`, or one bugs[] does not hold, is a FINDING: a mute with
+    nothing tracking it is the retry-until-green shape the quarantine exists to
+    refuse, and it is wrong from the moment it is written.
+
+    An EXPIRED `until` is only a WARNING, on purpose. Every mutating verb refuses
+    a manifest that already carries a finding, and the default status gate fails
+    on one, so a finding that a DATE triggers would freeze every verb and fail
+    every default CI gate on the expiry morning - including the verb that lifts
+    the mute. The enforcement is the runner, which stops honouring an expired
+    mute, so the failure blocks again on its own. Turning this into a finding
+    means changing `warnings` to `findings` below AND exempting the mute verbs
+    from their own pre-check.
+
+    A duplicate `test`, a missing `test`/`reason`/`owner`, an unreadable `until`
+    and a malformed container are warnings: the additive lane every other
+    `meta` shape check runs in.
+
+    `today` is a `datetime.date`; None asks `_vocab.mute_today()`, so the
+    validator and the runner read one clock. That makes this the one piece of
+    `validate()` whose answer depends on the day it runs.
+    """
+    f, w = [], []
+    meta = manifest.get("meta")
+    if not isinstance(meta, dict) or "muted" not in meta:
+        return (f, w)
+    muted = meta.get("muted")
+    if not isinstance(muted, list):
+        w.append(_output.finding(
+            "rules.muted.array",
+            "meta.muted: must be an array, got %s" % (type(muted).__name__,)))
+        return (f, w)
+    today = _vocab.mute_today() if today is None else today
+    bug_ids = set(index.get("bug_ids") or ())
+    seen, dup = set(), []
+    for i, entry in enumerate(muted):
+        where = "meta.muted[%d]" % (i,)
+        if not isinstance(entry, dict):
+            w.append(_output.finding(
+                "rules.muted.entry-object",
+                "%s: must be an object, got %s" % (where, type(entry).__name__)))
+            continue
+        bug = entry.get("bugId")
+        if not (isinstance(bug, str) and bug.strip()):
+            f.append(_output.finding(
+                "rules.muted.bug-missing",
+                "%s: no `bugId` - a mute must name the bug tracking the failure "
+                "it hides, or it hides that failure with nothing to show for it"
+                % (where,)))
+        elif bug not in bug_ids:
+            f.append(_output.finding(
+                "rules.muted.bug-unknown",
+                "%s: `bugId` %r names no bug in bugs[] - a mute must name the "
+                "bug tracking the failure it hides" % (where, bug)))
+        missing = [k for k in MUTE_FIELDS
+                   if not (isinstance(entry.get(k), str) and entry[k].strip())]
+        if missing:
+            w.append(_output.finding(
+                "rules.muted.missing",
+                "%s: missing %s" % (where, _output.some_of(missing))))
+        test = entry.get("test")
+        if _named(test):
+            if test in seen and test not in dup:
+                dup.append(test)
+            seen.add(test)
+        until_raw = entry.get("until")
+        if "until" in missing:
+            continue
+        until = _vocab.mute_until(until_raw)
+        if until is None:
+            w.append(_output.finding(
+                "rules.muted.until-unreadable",
+                "%s: `until` %r is not a calendar day (YYYY-MM-DD), so when "
+                "the mute stops holding cannot be told" % (where, until_raw)))
+        elif _vocab.mute_expired(until, today) and _named(test):
+            w.append(_output.finding(
+                "rules.muted.expired",
+                "%s: the mute on %r expired after %s, so the runner no longer "
+                "honours it and that suite's failure blocks again - run %s"
+                % (where, test, until_raw, _mute_commands(test))))
+        elif _vocab.mute_expired(until, today):
+            # No test to spell a command with: `--test None` would be a
+            # command that mutes or lifts nothing.
+            w.append(_output.finding(
+                "rules.muted.expired",
+                "%s: this mute expired after %s and names no test, so it "
+                "mutes nothing - remove the entry, or give it the `test` it "
+                "was meant to quarantine" % (where, until_raw)))
+    for test in dup:
+        w.append(_output.finding(
+            "rules.muted.duplicate",
+            "meta.muted: %r is muted by more than one entry - nothing says "
+            "which entry's `until` and `bugId` apply" % (test,)))
+    return (f, w)
+
+
 # --- validate: one walk, then one question per piece ------------------------------
 # `validate()` was 354 lines, and its size was never the reason it was hard to
 # cut. The reason was the INDEX: seven accumulating locals built by one pass over
@@ -387,8 +510,11 @@ def finding_subject(line):
                      locus.strip()] + ids)
 
 
-def validate(manifest):
+def validate(manifest, today=None):
     """Return (findings, warnings) — two lists of strings; empty findings = valid.
+
+    `today` pins the calendar day `_check_muted` grades an expiry against; None
+    reads the clock. It is the one input here that is not the manifest.
 
     ORCHESTRATION ONLY. Every question lives in a piece above that answers it
     and returns its own pair; this decides the ORDER, which is the one thing
@@ -444,6 +570,7 @@ def validate(manifest):
     add(_check_priority(manifest, phases))
     add(_check_ado_parents(manifest, phases))
     add(_check_derived(manifest))
+    add(_check_muted(manifest, index, today))
     return (f, w)
 
 

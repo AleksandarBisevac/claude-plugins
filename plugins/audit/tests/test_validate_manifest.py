@@ -310,6 +310,7 @@ def _cases(record):
         _cases_output(record, path2)
         _cases_test_evidence(record, path2)
         _cases_gate_evidence(record, path2)
+        _cases_muted(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -639,6 +640,110 @@ def _cases_gate_evidence(record, path):
             os.environ["CLAUDE_PROJECT_DIR"] = saved_env
         import shutil                                              # noqa: E402
         shutil.rmtree(evidence_dir, ignore_errors=True)
+
+
+# --- meta.muted: a quarantine is only as honest as the bug it names ------------
+def _muted_plan(entry):
+    """`_valid_manifest()` carrying ONE `meta.muted` entry - BUG-1 is in bugs[].
+
+    The dates are far enough either side of any real clock that the cases do
+    not depend on the day they run: the validator reads today's date, and a
+    case that pinned a near date would go red on its own some morning.
+    """
+    plan = _valid_manifest()
+    plan["meta"]["muted"] = [entry]
+    return plan
+
+
+def _mute(**over):
+    """A well-formed, unexpired entry naming a bug the plan holds, with `over`
+    replacing or (value None) removing fields."""
+    entry = {"test": "e2e/cart.spec.ts", "reason": "races the payment stub",
+             "owner": "checkout team", "until": "2999-12-31", "bugId": "BUG-1"}
+    for key, value in over.items():
+        if value is None:
+            entry.pop(key, None)
+        else:
+            entry[key] = value
+    return entry
+
+
+def _cases_muted(record, path):
+    """A mute with no bug, or naming one the plan does not hold, is a FINDING;
+    an expired one is a WARNING and the plan stays valid.
+
+    Asserted through `main()` as well as `validate()`, because the exit code is
+    the half a CI job and every mutating verb's pre-check actually read.
+    """
+    def _cli(plan):
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        return _run([path])
+
+    def _muted_lines(lines):
+        # Both spellings: the rule's own lines open `meta.muted[i]`, while the
+        # typo-catcher names an unknown key as `meta: unknown key 'muted'`.
+        return [x for x in lines if "meta.muted" in x or "'muted'" in x]
+
+    no_bug = _muted_plan(_mute(bugId=None))
+    f_nb, w_nb = M.validate(no_bug)
+    code_nb, _out_nb = _cli(no_bug)
+    record("c43 a meta.muted entry with NO bugId is a finding naming the entry "
+           "and the field, and the command exits 1 on it - a mute nothing "
+           "tracks is a failure hidden until somebody happens to look: %r"
+           % (_muted_lines(f_nb),),
+           code_nb == 1
+           and len(_muted_lines(f_nb)) == 1
+           and "meta.muted[0]" in _muted_lines(f_nb)[0]
+           and "bugId" in _muted_lines(f_nb)[0])
+
+    # WELL-SHAPED AND ABSENT: `BUG-7` matches the bug-id pattern and bugs[]
+    # lacks it, so only the membership check can make this case pass - a check
+    # of the id's shape alone would accept it.
+    ghost = _muted_plan(_mute(bugId="BUG-7"))
+    f_gh, _w_gh = M.validate(ghost)
+    code_gh, _out_gh = _cli(ghost)
+    record("c44 a meta.muted entry whose bugId names a bug bugs[] does not hold "
+           "is a finding QUOTING that id, and the command exits 1 - a bugId "
+           "that resolves to nothing tracks nothing either: %r"
+           % (_muted_lines(f_gh),),
+           code_gh == 1
+           and len(_muted_lines(f_gh)) == 1
+           and "'BUG-7'" in _muted_lines(f_gh)[0])
+
+    expired = _muted_plan(_mute(until="2000-01-01"))
+    f_ex, w_ex = M.validate(expired)
+    code_ex, _out_ex = _cli(expired)
+    exp_lines = [x for x in w_ex if "meta.muted[0]" in x and "expired" in x]
+    record("c45 an EXPIRED until is a WARNING, never a finding: the plan stays "
+           "valid (exit 0, no meta.muted finding) so the verb that lifts or "
+           "extends the mute can still run, and the one warning names the "
+           "test, the date and both commands: %r" % (exp_lines,),
+           code_ex == 0
+           and _muted_lines(f_ex) == []
+           and len(exp_lines) == 1
+           and "e2e/cart.spec.ts" in exp_lines[0]
+           and "2000-01-01" in exp_lines[0]
+           and "unmute --test" in exp_lines[0]
+           and "mute --test" in exp_lines[0].replace("unmute --test", ""))
+
+    ok = _muted_plan(_mute())
+    f_ok, w_ok = M.validate(ok)
+    code_ok, _out_ok = _cli(ok)
+    record("c46 ALLOW: a well-formed, unexpired entry naming a bug the plan "
+           "holds validates clean - exit 0, and no finding or warning mentions "
+           "meta.muted at all, the case that goes red if the rule over-fires "
+           "or the key is left out of the known vocabulary: %r"
+           % (_muted_lines(f_ok) + _muted_lines(w_ok),),
+           code_ok == 0
+           and _muted_lines(f_ok) == [] and _muted_lines(w_ok) == [])
+
+    absent = _valid_manifest()
+    f_ab, w_ab = M.validate(absent)
+    record("c47 ALLOW: no meta.muted at all says nothing about it - absent "
+           "means nothing is quarantined, which is not a defect: %r"
+           % (_muted_lines(f_ab) + _muted_lines(w_ab),),
+           _muted_lines(f_ab) == [] and _muted_lines(w_ab) == [])
 
 
 def _selftest():

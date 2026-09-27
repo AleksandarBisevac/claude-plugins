@@ -936,6 +936,15 @@ SCHEMA_EXEMPTIONS = {
         "derivation has run yet to learn anything from this fixture, and no "
         "rendered surface reads the field either. REVISIT when "
         "derive-phase-gate.py has a rendered surface.",
+    # `meta.coupling[].lastCaught` has no row of its own and needs none: the
+    # coverage walk does not enter `meta.coupling`'s items, so the row above
+    # already answers for every field an entry can carry.
+    "meta.muted":
+        "the suites QUARANTINED from blocking a run, each naming the bug that "
+        "tracks it. No rendered surface reads the key - not the report, not the "
+        "panel, not /audit:status - so a mute carried here would be a key "
+        "nothing downstream shows, the same reason meta.phaseGate above is "
+        "exempt. REVISIT when a rendered surface shows a muted suite.",
     "phase.testGateBasis":
         "which derivation produced `testGateDerived` beside it - unreachable "
         "for the same reason: the fixture's phases carry a plain `testGate` "

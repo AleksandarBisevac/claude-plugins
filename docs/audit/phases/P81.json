@@ -75,7 +75,12 @@
       },
       "startedAt": "2026-09-27T14:08:52Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T14:41:54Z.f20358",
+        "status": "passed",
+        "at": "2026-09-27T14:41:54Z"
+      }
     },
     {
       "id": "P81.2",
@@ -446,7 +451,12 @@
       },
       "startedAt": "2026-09-27T14:08:52Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T14:35:23Z.54ff40",
+        "status": "passed",
+        "at": "2026-09-27T14:35:23Z"
+      }
     },
     {
       "id": "P81.10",

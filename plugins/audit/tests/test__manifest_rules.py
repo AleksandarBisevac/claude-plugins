@@ -55,10 +55,12 @@ with it.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import datetime
 import json
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (finding_code, for the muted cases)
 from _output import safe_stdio                     # noqa: E402
 import _manifest_rules as M                        # noqa: E402
 import _manifest_phases as _phases_mod             # noqa: E402  (the alias's other
@@ -1062,6 +1064,98 @@ def _cases(record):
            M.tests_add_path is _phases_mod.tests_add_path
            and M.tests_add_path(_ta_named_entry) == "src/cart/total.ts",
            M.tests_add_path(_ta_named_entry))
+
+    _cases_muted(record)
+
+
+# --- meta.muted: the warnings, graded against a pinned day ----------------------
+def _cases_muted(record):
+    """The shape warnings and the expiry boundary, with `today` pinned so no case
+    depends on the day it runs. The findings are `test_validate_manifest.py`'s,
+    through the command's exit code."""
+    day = datetime.date(2026, 9, 27)
+
+    def _plan(*entries):
+        plan = _valid_manifest()
+        plan["meta"]["muted"] = list(entries)
+        return plan
+
+    def _entry(**over):
+        entry = {"test": "e2e/cart.spec.ts", "reason": "races the stub",
+                 "owner": "checkout team", "until": "2026-09-27",
+                 "bugId": "BUG-1"}
+        for key, value in over.items():
+            if value is None:
+                entry.pop(key, None)
+            else:
+                entry[key] = value
+        return entry
+
+    def _codes(lines):
+        return sorted(str(_output.finding_code(x)) for x in lines
+                      if str(_output.finding_code(x)).startswith("rules.muted."))
+
+    f_today, w_today = M.validate(_plan(_entry()), today=day)
+    f_after, w_after = M.validate(_plan(_entry()),
+                                  today=day + datetime.timedelta(days=1))
+    record("mu1 on its `until` day a mute still holds (nothing said), and the "
+           "next day it is ONE expired warning and still no finding: "
+           "%r / %r / %r" % (_codes(f_today + w_today), _codes(f_after), _codes(w_after)),
+           _codes(f_today + w_today) == [] and _codes(f_after) == []
+           and _codes(w_after) == ["rules.muted.expired"])
+
+    dup = _plan(_entry(), _entry(until="2026-12-31"))
+    f_dup, w_dup = M.validate(dup, today=day)
+    record("mu2 two entries muting the same test are ONE duplicate warning "
+           "naming it, and no finding: %r" % ([str(x) for x in w_dup
+                                               if "muted" in str(x)],),
+           _codes(f_dup) == [] and _codes(w_dup) == ["rules.muted.duplicate"]
+           and any("'e2e/cart.spec.ts'" in str(x) for x in w_dup))
+
+    thin = _plan(_entry(owner=None, reason="  "))
+    f_thin, w_thin = M.validate(thin, today=day)
+    thin_lines = [str(x) for x in w_thin if "meta.muted[0]" in str(x)]
+    record("mu3 a missing owner and a blank reason are ONE warning naming both, "
+           "and no finding - the bug is what makes a mute accountable: %r"
+           % (thin_lines,),
+           _codes(f_thin) == [] and _codes(w_thin) == ["rules.muted.missing"]
+           and "owner" in thin_lines[0] and "reason" in thin_lines[0])
+
+    odd = _plan(_entry(until="next sprint"))
+    f_odd, w_odd = M.validate(odd, today=day)
+    record("mu4 an unreadable `until` is a warning QUOTING it and saying the "
+           "end cannot be told - never read as expired, never as unexpired: %r"
+           % ([str(x) for x in w_odd if "muted" in str(x)],),
+           _codes(f_odd) == []
+           and _codes(w_odd) == ["rules.muted.until-unreadable"]
+           and any("'next sprint'" in str(x) for x in w_odd))
+
+    shapes = [M.validate(_plan("e2e/x.spec.ts"), today=day),
+              M.validate(dict(_valid_manifest(),
+                              meta={"version": 2, "muted": {"a": 1}}),
+                         today=day)]
+    record("mu5 a non-object entry and a non-array `meta.muted` are warnings in "
+           "the additive lane, not findings: %r"
+           % ([(_codes(fs), _codes(ws)) for fs, ws in shapes],),
+           [(_codes(fs), _codes(ws)) for fs, ws in shapes]
+           == [([], ["rules.muted.entry-object"]), ([], ["rules.muted.array"])])
+
+    nameless = _plan(_entry(test=None, until="2026-09-01"))
+    f_nl, w_nl = M.validate(nameless, today=day)
+    nl_lines = [str(x) for x in w_nl
+                if _output.finding_code(x) == "rules.muted.expired"]
+    record("mu7 an expired entry with NO test is still ONE expired warning, and "
+           "it spells no command - `--test None` would lift or extend nothing, "
+           "and 'the mute on None' names nothing: %r" % (nl_lines,),
+           _codes(f_nl) == [] and len(nl_lines) == 1
+           and "None" not in nl_lines[0] and "--test" not in nl_lines[0]
+           and "names no test" in nl_lines[0])
+
+    plain = M.validate(_valid_manifest(), today=day)
+    record("mu6 ALLOW: `validate()` with a pinned day and no `meta.muted` is the "
+           "same answer as without the pin - `today` changes nothing but the "
+           "expiry grade",
+           plain == M.validate(_valid_manifest()))
 
 
 def _selftest():

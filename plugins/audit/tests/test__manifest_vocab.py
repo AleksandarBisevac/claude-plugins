@@ -27,7 +27,10 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import datetime
+import os
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (SCRIPTS_DIR + py_files, for the inline scan)
@@ -939,6 +942,83 @@ def _cases(check):
                   "add it, or the typo-catcher warns about a real key",
                   "phases[].mergedHead is in the schema and not in the set - "
                   "add it, or the typo-catcher warns about a real key"]))
+
+    # --- meta.muted: the key, and the one reading of its `until` ---------------
+    _mu_meta = ((_fg_schema.get("$defs") or {}).get("meta")
+                or {}).get("properties") or {}
+    _mu_coupling = ((((_mu_meta.get("coupling") or {}).get("items") or {})
+                     .get("properties")) or {})
+    check("mv58 `muted` is a KNOWN_META key the schema declares at `meta` and "
+          "OFF_SCHEMA does not excuse, and `coupling[].lastCaught` is declared "
+          "beside `learnedAt`: %r"
+          % ({"muted in KNOWN_META": "muted" in M.KNOWN_META,
+              "muted in schema meta": "muted" in _mu_meta,
+              "lastCaught in coupling items": "lastCaught" in _mu_coupling},),
+          "muted" in M.KNOWN_META and "muted" in _mu_meta
+          and "muted" not in (M.OFF_SCHEMA.get("KNOWN_META") or {})
+          and "lastCaught" in _mu_coupling)
+    _mu_day = datetime.date(2026, 9, 27)
+    _mu_reads = [(v, M.mute_until(v)) for v in
+                 ("2026-09-27", "2026-02-30", "27.09.2026", "2026-9-27",
+                  "2026-09-27T00:00:00Z", 20260927, None, "")]
+    check("mv59 `mute_until` reads exactly a real YYYY-MM-DD day and answers "
+          "None for an impossible day, another spelling, a timestamp, a "
+          "non-string and an empty value - never a guessed date: %r"
+          % (_mu_reads,),
+          _mu_reads[0][1] == _mu_day
+          and all(d is None for _v, d in _mu_reads[1:]))
+    _mu_grades = [M.mute_expired(_mu_day + datetime.timedelta(days=k), _mu_day)
+                  for k in (-1, 0, 1)]
+    check("mv60 `until` is INCLUSIVE: a mute until yesterday is expired, one "
+          "until today or tomorrow still holds - the boundary the validator "
+          "and the runner must share: %r" % (_mu_grades,),
+          _mu_grades == [True, False, False])
+
+    # `mute_today()` is UTC, told apart from a local-clock read by running it
+    # under two zones a day apart: at any hour at least one of them has a local
+    # date that differs from the UTC date, so a local read fails one of them.
+    _mu_zones = {}
+    if hasattr(time, "tzset"):
+        _saved_tz = os.environ.get("TZ")
+        try:
+            for _zone in ("Etc/GMT-14", "Etc/GMT+12"):
+                os.environ["TZ"] = _zone
+                time.tzset()
+                _before = datetime.datetime.now(datetime.timezone.utc).date()
+                _got = M.mute_today()
+                _after = datetime.datetime.now(datetime.timezone.utc).date()
+                _mu_zones[_zone] = (_got in (_before, _after),
+                                    str(_got), str(datetime.date.today()))
+        finally:
+            if _saved_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = _saved_tz
+            time.tzset()
+    check("mv61 `mute_today()` answers the UTC day under a zone fourteen hours "
+          "ahead and one twelve hours behind - the clock the ledger stamps, not "
+          "the local one: %r" % (_mu_zones,),
+          len(_mu_zones) == 2 and all(v[0] for v in _mu_zones.values()))
+    # ...and `_check_muted` asks it when no day is pinned, rather than reading a
+    # clock of its own. Proved by answering for it: with `mute_today` standing in
+    # for a day far past a far-future `until`, only a fallback that CALLS it can
+    # see the mute as expired.
+    _mu_saved = M.mute_today
+    try:
+        M.mute_today = lambda: datetime.date(3000, 1, 1)
+        _mu_fb = _rules._check_muted(
+            {"meta": {"muted": [{"test": "e2e/a.spec.ts", "reason": "r",
+                                 "owner": "o", "until": "2999-12-31",
+                                 "bugId": "BUG-1"}]},
+             "bugs": [{"id": "BUG-1"}]},
+            {"bug_ids": ["BUG-1"]})
+    finally:
+        M.mute_today = _mu_saved
+    check("mv62 `_check_muted` with no `today` takes the day from "
+          "`mute_today()` - the one clock the runner imports too: %r"
+          % ([_output.finding_code(x) for x in _mu_fb[1]],),
+          _mu_fb[0] == [] and [_output.finding_code(x) for x in _mu_fb[1]]
+          == ["rules.muted.expired"])
 
 
 def _selftest():
