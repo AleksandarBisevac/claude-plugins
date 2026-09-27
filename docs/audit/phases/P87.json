@@ -563,6 +563,47 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P87.12-bpl",
+      "title": "the line before a call's command is judged by a strict character rule, not a comment lexer",
+      "status": "in_progress",
+      "description": "Phase review round 10 (review-P87j.json). The trailing-comment cut is a small shell lexer and leaks the same way the readers did: `false &&# c`, escaped quotes (`false \\\" && # c`), `false \\ #x &&`, and a comment ending in a backslash above a blank line all leave the real call read. Do not write a lexer. Replace the continuation test with a strict character rule: the nearest earlier CODE line before the command's start (skipping blank lines and full-line comments - a line whose first non-space character is #, which never continues a command in shell) must contain none of the characters & | \\ # anywhere; in ci.yml the plain `run: |` opener is the block's edge and is exempt. Any such line is refused by line, naming it. The real tree passes: verify.sh's lines before the plain and release wrappers and ci.yml's `set -e` contain none of them. Delete _without_trailing_comment and the operator-suffix logic the rule makes dead, and the docstring sentence about a backslash before a comment. ra29i rows for every round-10 spelling, red first; ra29g keeps full-line comments (including ones ending in a backslash or &&) and a plain command line above the call as reads. State in the comment and CHANGELOG that the rule is deliberately strict: a correct but unusual line above the call is refused loudly.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - false &&# c above the wrapper leaves the real call read"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T17:22:08Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
