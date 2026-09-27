@@ -2,7 +2,7 @@
 """
 The panel's READ side: everything `GET /api/*` answers with, off panel-server.py.
 
-Moved out of panel-server.py (P12.3), and split six ways (U3.1). What is left here
+Split out of panel-server.py, then split six ways again. What is left here
 is the part that could not go anywhere else: the journal, the help endpoints, the
 report export, and `build_state`, which assembles one payload out of all of them.
 
@@ -51,7 +51,7 @@ The `--name-only` SECURITY case moved with `_git_config_origins` and now slices
 BOUNDARY DECISIONS -- read-side code that touched names the write path also uses:
 
   * `_JOURNAL` / `_journalmod`. The journal WRITER (`_journal`) stays in
-    panel-server (P12.4), but `journal_state` needs the same module handle, so the
+    panel-server, but `journal_state` needs the same module handle, so the
     loader and its one-shot memo live here and are aliased back. The alias is the
     same dict object, so the cases on both sides that swap a stub module in by
     mutating `_JOURNAL` in place still reach one shared piece of state.
@@ -214,10 +214,10 @@ def _cores():
 
     A POSITIONAL 4-TUPLE, KEPT: `_panel_write` (twice) and `audit-task` (twice)
     read index 0 out of it, `_panel_write` and two suites read index 1, and the
-    shape is what they read it by. What changed at U3.1 is where the pieces come
-    from -- three of them from `_panel_paths` at layer 3, and `_manifest_rules`
-    from the plain import above, which is legal HERE at layer 5 and was the one
-    thing that could not sit in the shared base.
+    shape is what they read it by. What changed when this module was split up is
+    where the pieces come from -- three of them from `_panel_paths` at layer 3,
+    and `_manifest_rules` from the plain import above, which is legal HERE at
+    layer 5 and was the one thing that could not sit in the shared base.
 
     There is still exactly one memo, and it is `_panel_paths.hooks_config()`.
     Three of these four were only ever plain module references, which is why

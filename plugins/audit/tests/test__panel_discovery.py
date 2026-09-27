@@ -73,7 +73,7 @@ def _cases(check):
           any(s["source"] == "project" for s in reg["skills"]) and
           any(s["source"] == "user" for s in reg["skills"]))
 
-    # --- isolation cases (P12.2): moved-module boundaries stay real ------------
+    # --- isolation cases: moved-module boundaries stay real --------------------
     _long = os.path.join(tmp, "long-skill.md")
     with open(_long, "w") as fh:
         fh.write("---\nname: long\ndescription: " + ("x" * 5000) + "\n---\nbody")

@@ -28,8 +28,9 @@ FOUR EXPRESSIONS READ SOURCE, AND ALL FOUR HAD TO BE RE-POINTED.
     run-status block. That adjacency is a design constraint, not an accident, so
     the slice stays - re-pointed at the subject through
     `_harness.module_source(...)` rather than at a path built off this file's own
-    directory. At U3.1 both defs moved from `_panel_state` to `_panel_runstate`
-    and the slice moved with them: `_panel_state` re-exports both NAMES, so the
+    directory. When this module was split up, both defs moved from `_panel_state`
+    to `_panel_runstate` and the slice moved with them: `_panel_state` re-exports
+    both NAMES, so the
     case would still have run, against a file containing neither marker, and
     `between()` raising by name is the only reason that was noticed rather than
     quietly widening.
@@ -113,7 +114,7 @@ def _cases(check):
           "SECRET" not in M._redact_token(None) + M._redact_token("t=SECRET"))
 
     # discovery (_scan_skills/_scan_agents/discover, the front-matter parser and
-    # their fixture-dir cases) moved to _panel_discovery.py's own selftest (P12.2);
+    # their fixture-dir cases) moved to _panel_discovery.py's own selftest;
     # `discover` itself is still exercised indirectly below via `apply_composition`
     # writing a reviewSkill/skills value the same way the panel's picker would.
     tmp = tempfile.mkdtemp(prefix="panel-selftest-")
@@ -125,7 +126,7 @@ def _cases(check):
 
     # The write path's own cases -- the config and composition writers, the sharded
     # write-back, the lock refusal, the areas and policy PUTs, the change rows and
-    # the journal -- moved to _panel_write.py's selftest (P12.4), with their labels.
+    # the journal -- moved to _panel_write.py's selftest, with their labels.
     # The FIXTURE they built stays here: build_state, the viewer, runStatus and the
     # composition view below all read this project, and they are claims about what
     # the server serves rather than about what a save writes.
@@ -241,7 +242,7 @@ def _cases(check):
     check("build_state has runStatus",
           isinstance(st.get("runStatus"), dict) and "phases" in st["runStatus"])
     # _lock_info's own cases (what a lock file says, and whether the run behind it
-    # is alive) moved to _panel_state.py (P12.3).
+    # is alive) moved to _panel_state.py.
     m2 = M._read_json(mpath)
     m2["phases"][0]["claim"] = {"sessionId": "sess-abcd1234", "host": "h", "branch": "audit/p1"}
     M._atomic_write_json(mpath, m2)
@@ -278,7 +279,7 @@ def _cases(check):
     # --- Settings: the whole config, named by what it does ---------------------
     # The coverage checks (SETTINGS_GROUPS/FIELD_HELP derived against
     # validate-config's own key sets) moved to _panel_settings.py's own selftest
-    # (P12.1) — they need no UI_HTML and no server source. What stays here needs
+    # they need no UI_HTML and no server source. What stays here needs
     # one or the other.
     _vc = M._cores()[1]
     # `policy` is a root key with no control on this form, on purpose — the one
@@ -300,7 +301,7 @@ def _cases(check):
           # The two defs are ADJACENT in _panel_runstate.py and must stay so: this
           # slice is the design constraint, not an accident of ordering, and
           # `between()` raises rather than widening if either marker moves. Both
-          # left `_panel_state` at U3.1 and the slice followed them; reaching it
+          # left `_panel_state` when the module was split up, and the slice followed them; reaching it
           # through `_panel_state`'s re-export would have taken the slice out of a
           # file that no longer contains either marker.
           _harness.between(_harness.module_source(_panel_runstate),
@@ -402,7 +403,7 @@ def _cases(check):
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
     # from the project's own config, so there is nothing to traverse with. The
-    # cases that RENDER a report moved to _panel_state.py (P12.3); what stays is
+    # cases that RENDER a report moved to _panel_state.py; what stays is
     # the route that reaches it and the button that opens it.
     #
     # This searched the WHOLE of this file's own source, so each literal

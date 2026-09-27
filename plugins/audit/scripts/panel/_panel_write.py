@@ -2,7 +2,7 @@
 """
 The panel's WRITE side: everything a `PUT /api/*` actually does, off panel-server.py.
 
-Moved out of panel-server.py (P12.4). Given a project directory this is the whole
+Split out of panel-server.py. Given a project directory this is the whole
 path from a request body to bytes on disk and a row in the journal: the lock that
 makes a write safe against a running /audit command (`_acquire_write_lock` /
 `_release_write_lock`), the change rows that let the panel say what a save WOULD
@@ -29,16 +29,16 @@ as written, so a rename on either side is caught rather than absorbed.
 
 BOUNDARY DECISIONS -- names this module shares with the read side:
 
-  * `_atomic_write_json`. P12.3 deliberately left it in panel-server for this
-    task; it is the one WRITE the read side never makes, so it moved HERE and is
+  * `_atomic_write_json`. The read-side split deliberately left it in
+    panel-server; it is the one WRITE the read side never makes, so it moved HERE and is
     aliased back. It stays a wrapper rather than being inlined as
     `_mio.atomic_write_json(...)` at each of its call sites: `indent=2` is this
     panel's byte shape, and spelling it at every call site is that many places for
     one of them to drift. The ESCAPING is not a shape this module holds at all --
     `_manifest_io` chose it once, for every writer in the plugin.
 
-  * `_JOURNAL` / `_journalmod`. The module handle moved to _panel_state in P12.3
-    (its `journal_state` reads the same journal this writes). It is reached here
+  * `_JOURNAL` / `_journalmod`. The module handle moved to _panel_state, whose
+    `journal_state` reads the same journal this writes. It is reached here
     through that module -- `_JOURNAL` is the SAME dict object, not a copy -- so a
     case that swaps a stub module in by mutating it in place is seen by the
     writer, by `journal_state` and by panel-server alike. Two memos would be two

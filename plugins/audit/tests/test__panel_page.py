@@ -109,7 +109,7 @@ def _cases(check):
               for k in M._META_API_ONLY))
 
     # c6's server half (the change rows a save echoes) and the journal call site
-    # moved to _panel_write.py (P12.4). What stays below and further down is the
+    # moved to _panel_write.py. What stays below and further down is the
     # browser's half of the same contract, pinned against UI_HTML.
 
     check("the UI badges an abandoned lock differently from a running one",
@@ -148,7 +148,7 @@ def _cases(check):
     # --- Settings: the whole config, named by what it does ---------------------
     # The coverage checks (SETTINGS_GROUPS/FIELD_HELP derived against
     # validate-config's own key sets) live in _panel_settings.py's own selftest
-    # (P12.1); the cases that need a server call (the exempt key's route, the
+    # the cases that need a server call (the exempt key's route, the
     # bands key the validator accepts) stayed in panel-server.py. What is here
     # needs the assembled page.
     #
@@ -2025,7 +2025,7 @@ def _cases(check):
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with — pinned in
-    # _panel_state.py (P12.3). What stays here is the other half of that claim:
+    # _panel_state.py. What stays here is the other half of that claim:
     # the browser being handed the verdicts rather than deriving its own.
     check("the browser is handed those verdicts rather than re-deriving them",
           "b.open&&b.high" in M.UI_HTML and "STATE.bugs" in M.UI_HTML
@@ -3687,7 +3687,7 @@ def _cases(check):
           and "slot.querySelector('[data-stale]')" in M.UI_HTML)
 
     # usage_state's own cases (facts, the roll-up cap, the declared rate basis)
-    # moved to _panel_state.py (P12.3); everything above is the tab that reads it.
+    # moved to _panel_state.py; everything above is the tab that reads it.
 
     # --- WCAG 2.2 SC 2.5.8 Target Size (Minimum): a census, not a wish list ------
     # 24 x 24 CSS px, or a named exception. The exceptions are five and they are
