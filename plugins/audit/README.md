@@ -1567,7 +1567,12 @@ prints the command that learns from it, and runs nothing:
 ```
 
 Everything after `ran: ` runs as printed, from any directory: the interpreter is spelled out and
-the script, the manifest and the project are absolute paths, shell-quoted.
+the script, the manifest and the project are absolute paths, shell-quoted. The project the shard
+lands in is the manifest's own (`_panel_write.project_of_manifest`: the nearest directory above
+it holding `.claude/` or `.git`, else `<T>` for `<T>/docs/audit/<file>`, else the manifest's own
+directory), never the directory the command was typed in; with `--project-dir`, a manifest that
+does not sit under it is refused, exit 2, so one project's plan is never paired with another's
+ledger.
 `full-gate.py <manifest> --learn-from <runId>` runs no gate. It reads that row from this
 checkout's ledger and files what it taught through the same function a red local run uses, so
 the rules below hold unchanged. The operator runs it, or a pre-push hook written to run it — the
@@ -1601,15 +1606,24 @@ the declared gate, whether or not its row names a tested head), is a **selection
 `run-test-gate.py --full` prints one line for each, ending in the commands that would file it or
 the reason none can be printed (`selection_lines`). With no earlier measured run to bound
 "merged since", or one whose row names no head, nothing is asked and a
-`SELECTION MISS not asked:` line gives the reason. As printed for a recorded run, by a
-fixture with one miss in a phase named `checkout`:
+`SELECTION MISS not asked:` line gives the reason. So does a ledger that could not be read in
+full: the bounding run may sit on the line that read lost, so no miss is asked and the line names
+the files. A runner names a suite from whatever directory it was started in, so each name is
+first pinned to the one tracked file it names (`_evidence_io.pin_suite`, over `git ls-files`
+from the project); a name that fits no tracked file, or several, is never counted as listed and
+gets a `SELECTION MISS not asked of <name>:` line instead. As printed for a recorded run, by a
+fixture with one miss in a phase named `checkout`, the plugin's and the project's absolute paths
+shown here as `<plugin>` and `<project>`:
 
 ```text
-SELECTION MISS: tests/test_cart.py failed at the third place and no derived sign-off gate in checkout listed it. remedy: audit-task.py couple --test tests/test_cart.py --sources src/cart.py,src/price.py --basis-run RUN-1 --basis-head abc1234 --phases checkout; audit-task.py bug-add 'SELECTION MISS: tests/test_cart.py' --severity med --description 'full run RUN-1 at abc1234 failed tests/test_cart.py, and no derived sign-off gate in checkout listed it' --files tests/test_cart.py
+SELECTION MISS: tests/test_cart.py failed at the third place and no derived sign-off gate in checkout listed it. remedy: python3 <plugin>/scripts/manifest/audit-task.py couple --test tests/test_cart.py --sources src/cart.py,src/price.py --basis-run RUN-1 --basis-head abc1234 --phases checkout <project>/docs/audit/audit-plan.json --project-dir <project>; python3 <plugin>/scripts/manifest/audit-task.py bug-add 'SELECTION MISS: tests/test_cart.py' --severity med --description 'full run RUN-1 at abc1234 failed tests/test_cart.py, and no derived sign-off gate in checkout listed it' --files tests/test_cart.py <project>/docs/audit/audit-plan.json --project-dir <project>
+SELECTION MISS not asked of tests/test_c.py: tests/test_c.py names each of pkg1/tests/test_c.py, pkg2/tests/test_c.py - one name, several suites, so it names none of them
 ```
 
-**What it asks of you:** everything after `remedy:` is commands only, joined by `; ` and quoted
-for a shell, so it can be pasted as it stands — `couple` records that this suite depends on the
+**What it asks of you:** everything after `remedy:` is commands only, joined by `; ` and
+shell-quoted, and runs as printed from any directory — the interpreter is spelled out, and the
+script, the manifest and the project are absolute paths. The suite it names is the pinned path, a
+file the plan can open. `couple` records that this suite depends on the
 files of those phases' tasks, so a later derived gate touching them runs it, and `bug-add` files
 the miss as a bug. When those tasks declare no files, or more files than one printed `--sources`
 argument carries (`_evidence_io.MAX_PATHS`), the parenthesis after `remedy` says why and only the
@@ -1619,7 +1633,13 @@ re-run with `--record`, because a coupling must name the run that taught it.
 `full-gate.py` does that filing itself after a red run, and the run stays red: it runs the
 `couple` and `bug-add` for each miss the runner named, and a `couple --caught` for each suite the
 plan already coupled that the runner named failing, which refreshes that coupling's
-`lastCaught`. A suite the row lists as its own selection miss is never that row's catch — the
+`lastCaught`. Each miss is filed under its pinned path; a name that pins to no tracked file, or to
+several, still files its bug — the failure happened — with no `--files` and no coupling, and a
+line saying why. When the run's row is not among the ledger's readable rows and some ledger file
+could not be read in full, it names that file rather than calling the run absent. Both scripts
+find the project the way the rest of the plugin does, from the manifest
+(`_panel_write.project_of_manifest`) unless `--project-dir` names it, so the run records into and
+learns from the ledger that manifest's plan reads. A suite the row lists as its own selection miss is never that row's catch — the
 row says no derived gate ran it — so a coupling a miss creates or widens is not credited by the
 same row, whichever order imported rows are learned in. It learns nothing from a failure read off the tail of the output, from a run it was
 told was not recorded, or from a green run, and says why on its own `[full-gate]` lines. A name
@@ -1648,6 +1668,13 @@ nothing**: `full-gate.py` files no coupling, bug or catch from a muted step. `un
 UTC day the mute holds; after it the runner stops honouring the entry, the failure **blocks
 again**, and `validate-manifest.py` warns with the command to lift or extend it. A mute naming no
 bug in `bugs[]` is a validator finding.
+
+**A mute never holds inside its own bug's fix task.** A task run (`run-test-gate.py … --task
+<id>`) whose task is the `taskId` of the muted bug does not honour that mute: the gate would go
+green whether the fix worked or not. **Nor once the bug is closed**: a mute whose bug is closed
+by its effective status is not honoured, and `validate-manifest.py` warns
+(`rules.muted.bug-closed`) with `audit-task.py unmute --test <path>` to lift it. Both are printed
+on the step's `muted:` line as the reason the failure blocks (`run-test-gate.withheld_mutes`).
 
 **The mute fails closed.** It holds only for a **direct** call of a runner on
 `run-test-gate.py`'s `MUTE_RUNNERS` (optionally through `npx`, `yarn exec` or `pnpm exec`), when

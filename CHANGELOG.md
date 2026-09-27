@@ -466,13 +466,46 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `python3`, then absolute paths. A suite a row lists as its own selection miss is never
   credited as that row's catch, so learning from the same run twice, or from two rows with the
   same miss in either order, files nothing new.
+- **A runner's name for a suite is pinned to one tracked path by one rule.** A runner names a
+  suite from whatever directory it was started in; `_evidence_io.pin_suite` pins that spelling to
+  the one file `git ls-files` lists from the project that it names, and the selection-miss
+  question, `full-gate.py`'s filing of a miss, the printed remedy and `add --failing-from` all go
+  through it. Whether a row lists a suite as its own miss — the reading `full-gate.py`'s catch
+  credit and `couple --caught`'s refusal share — is pinned the same way (`own_miss`). A name that
+  fits no tracked file, or several, is never counted as listed: the full run prints
+  `SELECTION MISS not asked of <name>: <why>`, naming the candidates, and `full-gate.py` still
+  files that miss's bug with no `--files` and no coupling. A ledger read with losses bounds
+  nothing: no miss is asked, and a `SELECTION MISS not asked:` line names the file. The remedy is
+  printed as `python3 <path to audit-task.py> … <manifest> --project-dir <project>`, every path
+  absolute and shell-quoted, so it runs as printed from any directory.
+- **A mute does not hold in its own bug's fix task, or once its bug is closed.** A task run
+  (`run-test-gate.py … --task <id>`) does not honour a mute whose bug names that task as its
+  `taskId`, so a fix task's gate shows its own failure; and no run honours a mute whose bug is
+  closed by its effective status, which `validate-manifest.py` warns about
+  (`rules.muted.bug-closed`) with the `unmute` command. The step's `muted:` line gives the reason
+  the failure blocks.
+- **`import-evidence.py` takes its project from the manifest.** Without `--project-dir`, the shard
+  lands in the manifest's own project (`_panel_write.project_of_manifest`), never the directory
+  the command was typed in; with it, a manifest that does not sit under it is refused, exit 2, so
+  one project's plan is never paired with another's ledger. `full-gate.py` finds its project the
+  same way and hands it to `run-test-gate.py`, so a red run is learned from the ledger it was
+  recorded into; a row it cannot find while some ledger file was read with losses names that file
+  rather than calling the run absent.
+- **A run that muted a coupled suite does not age that coupling.** `/audit:doctor` counts only
+  the green measured full runs in which no mute excused the coupled test, since a muted failure is
+  not a pass. The relearn command it prints for an entry it cannot age carries `--basis-run` and
+  `--basis-head`, the flags `couple` refuses to learn without, and `--phases`, which `couple`
+  accepts but does not require.
 
 ### Changed
-- **Every reader of the evidence ledger decodes it one strict way and orders its rows by one
-  moment.** A byte that is not UTF-8 makes that file unreadable everywhere — named, or refused by
-  a merge or an import — instead of being replaced and read as clean, and "newest" is decided by
-  the moment a `ts` names rather than by its spelling. A subject row whose `ts` names no moment
-  blocks the verdict it could be, rather than sorting first.
+- **Every reader of the evidence ledger decodes it one strict way, and the ledger module and the
+  verdict binding order its rows by moment.** A byte that is not UTF-8 makes that file unreadable
+  everywhere — named, or refused by a merge or an import — instead of being replaced and read as
+  clean. In `_evidence_io` and `_verdict_binding`, "newest" is decided by the moment a `ts` names
+  rather than by its spelling, and a subject row whose `ts` names no moment blocks the verdict it
+  could be, rather than sorting first. Not every reader does yet: the derived gate's newest red
+  phase run (`_gate_derive`), the report's evidence view and the doctor's newest whole-bearing
+  run still compare `ts` as text.
 - **`ruff` also selects W605, an invalid escape sequence in a string.** Python 3.12
   and later warn about one on every run of the file, and the file then fails to
   compile under `-W error`; the build now refuses it by name.
@@ -650,6 +683,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **`run-test-gate.py` finds the project a manifest belongs to the plugin's shared way.**
+  Without `--project-dir` it counted directories up from the manifest, which is right only for
+  `<T>/docs/audit/<file>` and recorded a manifest kept anywhere else into a ledger outside its
+  project. It now asks `_panel_write.project_of_manifest` — the nearest directory above the
+  manifest holding `.claude/` or `.git`, else `<T>` for that default layout, else the manifest's
+  own directory — the answer `audit-task.py` already used.
 - **A `phase.merged` trail row names the parent the phase reached.** `close-phase.py` handed
   the parent over in the row's details, and the journal kept only the keys on its allow-list and
   dropped the rest without a word, so the row read `{phaseId, branch}`. `parent` is now on the

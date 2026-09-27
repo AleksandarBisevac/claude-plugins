@@ -92,6 +92,15 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
    - `model`: `sonnet` (or stronger for `risk: "high"`).
 4. **Update the bug**: `status: "in_progress"`, `taskId: <new task id>`.
 5. Extend `fileIndex` with the task's files. Revalidate.
+
+   **A mute on this bug does not hold in this task's gate.** If `meta.muted` quarantines a suite
+   under this bug, a gate run for the task (`run-test-gate.py … --task <taskId>`) does not
+   honour that mute — the bug's `taskId` is the task under test, and a quarantined failure would
+   let the gate go green whether the fix worked or not (`run-test-gate.withheld_mutes`). Other
+   runs keep honouring it while the bug is open. **Once the bug is closed**, by its own status or
+   by its fix task reaching `done`, no run honours the mute any more and `validate-manifest.py`
+   warns (`rules.muted.bug-closed`); lift it with
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" unmute --test <path> <manifestPath>`.
 6. **Report + handoff**: `Materialized <taskId> for <bugId> — run /audit:run <taskId>`.
    Do NOT execute the fix here — execution, commits, and the red-first check are the
    `/audit:run`/`/audit:phase` job (it also flips the bug to `fixed` + `fixedIn` on the task commit).

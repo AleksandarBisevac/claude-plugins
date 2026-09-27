@@ -542,13 +542,20 @@ derived sign-off gate listed, among the phases merged since the newest earlier *
 run — green, clean and verbatim against the declared gate, whether or not its row names a tested
 head (`_evidence_io.newest_measured_full_run`). With no such run to bound "merged since", or one
 whose row names no head to ask ancestry of, nothing is asked and a `SELECTION MISS not asked:`
-line gives the reason. Each miss line ends either in the `audit-task.py` commands that would
-file it — printed, never run (`run-test-gate._miss_remedy`) — or in the reason none can be
-printed. `full-gate.py`, after a red exit, reads the row
+line gives the reason; so does a ledger read with losses, naming the file, because the bounding
+run may sit on the line that read lost. Each suite name is first pinned to the one tracked file it
+names (`_evidence_io.pin_suite`); a name that fits none or several is never counted as listed and
+prints `SELECTION MISS not asked of <name>: <why>`. Each miss line ends either in the commands
+that would file it — `python3 <plugin>/scripts/manifest/audit-task.py couple … <manifest>
+--project-dir <project>` and the matching `bug-add`, every path absolute and shell-quoted so they
+run as printed from any directory, printed and never run (`run-test-gate._miss_remedy`) — or in
+the reason none can be printed. `full-gate.py`, after a red exit, reads the row
 that run recorded and runs those verbs itself, as subprocesses (`full-gate.learning_plan`):
 
 - a `couple` (the suite to the sources the miss names) and a `bug-add` titled
-  `SELECTION MISS: <suite>` for each `selectionMiss` entry;
+  `SELECTION MISS: <suite>` for each `selectionMiss` entry, filed under the suite's pinned path;
+  a name that pins to no tracked path, or to several, still files its bug, with no `--files` and
+  no coupling;
 - a `couple --caught <runId>` for each suite the plan already coupled that the runner named
   failing, which refreshes that coupling's `lastCaught` — never for a suite the row lists in its
   own `selectionMiss`, which says no derived gate ran it, so a coupling that row creates or
@@ -582,7 +589,9 @@ and an ambiguous name; a catch no newer than the recorded `lastCaught` writes no
 **A red full run CI recorded is learned from after its shard is imported, never inside the
 pipeline.** A CI build throws its checkout away, so the pipeline records (`run-test-gate.py
 --full --record --writer ci-<id>`) and files nothing. `import-evidence.py <manifest>
-<shard.jsonl>` prints, for each imported row that is full scope and red, the command
+<shard.jsonl>` writes into the manifest's own project (`_panel_write.project_of_manifest`), never
+the directory it was typed in, and refuses, exit 2, a manifest outside a `--project-dir` it is
+given. It prints, for each imported row that is full scope and red, the command
 `python3 <plugin>/scripts/governance/full-gate.py <manifest> --learn-from <runId> --project-dir
 <dir>` with every path absolute, so it runs as printed from any directory, and runs none of
 them. That command runs no gate: it reads the row from this checkout's ledger and hands it to
@@ -617,6 +626,11 @@ passed:**
 - **Blocks again after `until`.** `until` is the last UTC day the mute holds
   (`_manifest_vocab.mute_expired`); past it the runner stops honouring the entry and prints the
   failure as blocking, and `validate-manifest.py` warns with the `unmute`/`mute` commands.
+- **Blocks in its own bug's fix task, and once its bug is closed.** `run-test-gate.withheld_mutes`
+  refuses, whatever `until` says, the mute of the bug whose `taskId` is the task under `--task` —
+  that task's gate must show the failure cleared, so a fix task's gate is never quarantined by its
+  own bug — and the mute of any bug closed by its effective status, which `validate-manifest.py`
+  warns about (`rules.muted.bug-closed`) with `audit-task.py unmute --test <path>`.
 
 **The mute fails closed.** It holds only when the runner named every failing check and every file
 it blamed, a live entry covers each of those files, and `mute_ineligible` finds the step to be one

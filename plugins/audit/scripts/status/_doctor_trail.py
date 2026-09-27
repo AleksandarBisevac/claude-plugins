@@ -1667,9 +1667,11 @@ def _relearn_fix(entry):
     entry only widens its sources and keeps `learnedAt`, so `couple` alone
     would leave the very field this warning is about untouched.
 
-    EVERY FLAG `couple` REFUSES TO LEARN WITHOUT is spelled: the run, the
-    HEAD that run examined, and the phases it covered - a remedy missing one
-    of them is refused the moment it is typed."""
+    THE FLAGS `couple` REFUSES TO LEARN WITHOUT are spelled: `--basis-run`
+    and `--basis-head`, the run and the HEAD that run examined - a remedy
+    missing either is refused the moment it is typed. `--phases`, the phases
+    that run covered, is spelled too; `couple` accepts it but does not
+    require it."""
     test = shlex.quote(entry["test"])
     sources = ",".join(s for s in _coupling_paths(entry)[1:])
     return ("audit-task.py uncouple --test %s, then audit-task.py couple "

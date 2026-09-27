@@ -1800,6 +1800,13 @@ import; a case pins every alias with `is`, so a pasted-back copy fails by name. 
 above `_manifest_vocab` at layer 1, and a consumer AT layer 2 is still not strictly
 downward.
 
+**`_check_muted` grades `meta.muted`.** A mute naming no bug, or a bug `bugs[]` does not hold, is a
+finding. A mute whose bug is closed by its effective status (`_closed_bugs`: the bug's
+`_manifest_io.effective_bug_status` in `_status_facts.CLOSED_BUG`, the reading
+`run-test-gate.withheld_mutes` refuses the mute by) is a WARNING, `rules.muted.bug-closed`,
+carrying `audit-task.py unmute --test <path>` — a warning for the expiry's reason: the runner
+already stops honouring it, and a finding would freeze the very verb that lifts it.
+
 ### `plugins/audit/scripts/manifest/_manifest_vocab.py`
 The manifest's **words** (layer 1), and the four shape checks every level of it shares.
 The status/tests/risk/bug enums, the `BUG-`/`PROP-` id patterns, the known-key set per level
@@ -2707,6 +2714,19 @@ or a finding it cannot support, and both grade a real pattern a WARNING, never a
 state cannot tell an operator they are paying for a gate that keeps earning nothing; only the
 trail can, and doing so is advice rather than a build failure.
 
+**`check_couplings` ages a coupling in green measured full runs, never in days, and never by a
+run that muted it.** `_measured_run_moments` keeps `(moment, mutedTests)` for every green
+measured full run — `_evidence_io._measurement_disqualification`, so a run with no tested head
+still counts — with each moment read by `_evidence_io.stamp_moment`, the ledger's own ordering
+read. `_muted_tests` gathers every test a mute excused in the row, from the row's `muted` list and
+every step's, in `_norm`'s spelling. `coupling_age` counts the runs after the entry's
+`lastCaught` (else its `learnedAt`) whose `mutedTests` do not hold the entry's test: a row that
+reads green because the mute hid that test's failure is not a pass of it, and counting it would
+read "failed every run" as "caught nothing". An entry that cannot be aged gets `_relearn_fix`'s
+`uncouple` then `couple` pair, which spells `--basis-run` and `--basis-head`, the flags `couple`
+refuses to learn without, so the remedy is not refused the moment it is typed, and `--phases`
+for the phases that run covered, which `couple` accepts but does not require.
+
 ### `plugins/audit/scripts/status/_doctor_completions.py`
 The one check that CORRELATES two records rather than inspecting one: the journal's close
 receipts against the manifest's done tasks, the commit SHAs those tasks name against what git
@@ -3105,20 +3125,24 @@ produced yet, or none at all, is red rather than a pass nobody measured. The mea
 above, `full-gate.py`'s `--learn-from` refusal and `import-evidence.py`'s printed command all ask
 it rather than comparing the word themselves.
 
-**`pin_suite()` is the one place a runner's spelling of a suite becomes a path.** A runner names
+**`pin_suite()` is where a runner's spelling of a suite becomes a tracked path.** A runner names
 a suite from whatever directory it was started in, and a derived gate, a coupling and a bug spell
-it from the project root. `suite_listing()` asks `git ls-files` once from the project, and
-`pin_suite()` normalizes the spelling (`project_relative()`: an absolute one inside the project
-becomes relative, one outside it is refused), then keeps the ONE tracked path `resolve_named()`
-matches — a spelling two sibling packages both end in pins to neither, and says so naming them.
+it from the project root. `suite_listing()` asks `git ls-files` from the project once per reader,
+and `pin_suite()` normalizes the spelling (`project_relative()`: an absolute one inside the
+project becomes relative, one outside it is refused), then keeps the ONE path `resolve_named()`
+matches among the tracked files plus the spelling itself when it exists from the root — so a
+spelling on disk that also has deeper tracked twins pins to none of them, and a spelling that
+sibling packages both end in pins to none of them; either way the reason names the candidates.
 Where git cannot list, a spelling on disk from the root is kept as written and any other is
 refused naming the listing failure; a path holding a control character is refused
 (`shell_unsafe()`). `pin_suites()` is the all-or-none form `audit-task.py add --failing-from`
 narrows a fix task's gate with. `selection_miss()` pins each named suite before asking whether a
-derived gate listed it, so a name that pins to nothing is a `SELECTION MISS not asked of` line
-rather than a listed suite; `full-gate.py` pins each miss before `couple` and `bug-add`; and
-`own_miss()` is the one reading of "this row lists that suite as its own miss", which
-`full-gate.py`'s catch credit and `couple --caught`'s refusal both ask.
+derived gate listed it, so a name that pins to no path, or to several, is a
+`SELECTION MISS not asked of` line rather than a listed suite; `full-gate.py` pins each miss
+before `couple` and `bug-add`; and `own_miss()` is the one reading of "this row lists that suite
+as its own miss", which `full-gate.py`'s catch credit and `couple --caught`'s refusal both ask.
+Crediting a catch to a coupling is a different question — which coupled key a name fits — and
+both of those ask `resolve_named()` over the coupled keys directly.
 
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.
@@ -3632,6 +3656,28 @@ declares beside a pass. `--also` makes the run own the union of every named memb
 signoff` compares that `scopeDigest` against the members' files as they stand when it records a
 `passed` verdict, which is how the verdict knows the run it rests on is current.
 
+**A selection miss is asked of pinned paths, and its remedy runs as printed.** The `--full` path
+hands its steps to `_evidence_io.selection_miss`, which pins each suite the runner named with
+`pin_suite` before asking whether a derived gate listed it; a name that pins to no tracked path,
+or to several, prints `SELECTION MISS not asked of <name>: <why>` and is never counted as
+listed. The whole ledger read goes in, lost lines included (`unreadable_names`): a file read with
+losses may hold the bounding run, so no miss is asked and the `SELECTION MISS not asked:` line
+names the file. `_miss_remedy` prints each command as `python3 <audit-task.py> … <manifest>
+--project-dir <project>`, the script resolved by `_loader.script_path` and every path absolute and
+shell-quoted, so it runs from any directory; the suite in it is the pinned path.
+
+**Withheld mutes.** `withheld_mutes(manifest, task_id)` names the bugs whose mutes a run may not
+honour, and `mute_decision` refuses each such entry with that sentence as its `why`, whatever its
+`until`: the bug whose `taskId` is the task under `--task` — a mute inside its own fix task's gate
+would hide the failure the fix must be seen to clear — and any bug closed by its effective status
+(`_manifest_io.effective_bug_status` in `_status_facts.CLOSED_BUG`), whose quarantine is over.
+The full run passes no task, so only the closed-bug rule applies there.
+
+**The project is the manifest's.** Without `--project-dir`, the project is
+`_panel_write.project_of_manifest(manifest)`, the answer `full-gate.py`, `import-evidence.py` and
+`audit-task.py` read, never a count of directories up from the file — that count is right only for
+`<T>/docs/audit/<file>` and would record anywhere else into a ledger outside the project.
+
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
 [--status passed|failed]` — **record a test suite that ran where this plugin could not see it.**
@@ -3707,6 +3753,14 @@ the project this import resolved — so the line runs as printed from any direct
 `learnFrom`. They are printed, never run: bringing a file in whole is not consent to write the
 plan, and a green row prints none.
 
+**The project is the manifest's.** `resolve_project` takes it from
+`_panel_write.project_of_manifest` when `--project-dir` is absent — the nearest ancestor holding
+`.claude/` or `.git`, else `<T>` for `<T>/docs/audit/<file>`, else the manifest's own directory —
+and never from the directory the command was typed in, which would land the shard in a ledger the
+plan never reads and print a `--learn-from` command pairing that plan with the wrong ledger. With
+`--project-dir`, a manifest that does not sit under it (both resolved through symlinks) is
+refused, exit 2.
+
 **What it does not prove.** A ledger is evidence, not authentication — a new shard starts at its
 own genesis the moment somebody names a file that way, so a verified chain says the rows were not
 edited after the file was written and says nothing about who wrote it. The report says so on every
@@ -3751,6 +3805,22 @@ credited with a catch by it. A miss whose `sources` the row cut (`sourcesDropped
 the bug it files says so and points at the tasks' files in the plan. A miss an open bug already
 tracks, or a coupling that already covers every source, is not filed again, so a push retried on
 the same red does not multiply bugs.
+
+**A miss is filed under its pinned path.** `learning_plan` pins each miss's spelling with
+`_evidence_io.pin_suite` over one `suite_listing` of the project, so `couple --test` and
+`bug-add --files` name a file the plan can open and the existing-coupling check reads the key the
+plan holds. A spelling that pins to no tracked path, or to several, still files its bug — the
+failure happened — with no `--files`, no coupling, and a note saying why. Whether a miss is one the
+runner named is `same_suite`, never a suffix, and whether the row lists a coupled suite as its own
+miss is `own_miss`, the reading `couple --caught` refuses by.
+
+**The project is the manifest's, and a lost file is named.** Without `--project-dir` the project
+is `_panel_write.project_of_manifest(manifest)` — the plugin's one answer, never a count of
+directories up from the file — and it is always handed to `run-test-gate.py` as `--project-dir`,
+so the runner records into the very ledger the red branch then reads. When the run's row is not
+among the readable rows and `read_rows` could not read some ledger file in full, `find_row` says
+so, naming the file (`_evidence_io.unreadable_names`) with the `--learn-from` command to ask again
+once it is repaired, rather than calling the run absent.
 
 **`--learn-from <runId>` learns from a run recorded elsewhere, running nothing.**
 `full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` is the door for a red full run a

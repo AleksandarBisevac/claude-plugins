@@ -62,9 +62,13 @@ prints the resolved skill and the basis it came from; read that rather than re-d
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/full-gate.py" <manifest> [--project-dir <dir>]`
 — the same command the README's pre-push snippet runs. It runs `run-test-gate.py <manifest>
 --full --record` as a subprocess, measured against the whole product rather than this one phase,
-streams what the runner prints and exits with the runner's code. Read the **full-status** line
-the runner prints — the same word (`whole`, `provisional` or `unknown`, with the reason)
-`/audit:status`, the report, the panel and the doctor all read off the same row. A plan with no
+streams what the runner prints and exits with the runner's code. Neither script prints the
+phase's full-run answer; read it afterwards where it is printed — `/audit:status`'s tests column
+(`full whole`, `full provisional (since …)`, `full unknown - <reason>`) and `/audit:doctor`'s
+`full run` row (a WARNING naming a PROVISIONAL or UNKNOWN phase with its basis, one OK row when
+every merged phase reads WHOLE), both off `_evidence_io.full_status`. `/audit:status` asks git
+from `CLAUDE_PROJECT_DIR`, or the directory it runs in when that is unset, so run it from the
+project's own checkout. A plan with no
 `meta.fullGate` declared prints that the plan names no third place and exits 0; that is not a
 failure of this command, it is the plan's own state.
 
