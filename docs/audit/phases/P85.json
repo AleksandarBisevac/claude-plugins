@@ -1,0 +1,201 @@
+{
+  "id": "P85",
+  "title": "Comments state their rule, not the register",
+  "status": "pending",
+  "description": "First half of the register-citation sweep, over files no in-flight phase declares; the measured occurrence list is in the orchestrator's scratchpad (idcite/occurrences.tsv). The held files and the lint that keeps the rule are P86.",
+  "desiredOutcome": "Every comment and docstring in the files this phase declares states the constraint of its block instead of citing a plan, phase, task, bug, fault or design-table id; behaviour is unchanged and the whole suite stays green.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P85.1",
+      "title": "Panel comments state their rule, not the register",
+      "status": "pending",
+      "description": "Rewrite each comment or docstring in this task's files that cites a register id - a phase or task id (P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>), a bug id (BUG-<n>), a fault id (F<n>) or a design-table label (dg<n>, tk<n>) used as a citation - so that it states the constraint of its block, the thing the id stood for, in plain words. What an id meant can be read in the private register (quality-gates-internal/PLAN.md and its plans/), but the constraint is written fresh and no register text is copied into the public tree. Not citations, and left alone: a test's own case label passed to check(), an id illustrating an id SHAPE (--phase P3, P9 before P10, phases/P1.json), a rendered-output example quoted in backticks, ruff codes in a noqa list, and demo or fixture data. No behaviour changes, no string a test reads changes, and no number is written into prose. The measured occurrences are in /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (rows with is_real = yes); treat that as a pointer, verify every line, and report any real citation it missed in these files.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_discovery.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test__panel_discovery.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/tests/test__panel_state.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/tests/test_panel_server.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P85.2",
+      "title": "Report and usage comments state their rule, not the register",
+      "status": "pending",
+      "description": "Rewrite each comment or docstring in this task's files that cites a register id - a phase or task id (P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>), a bug id (BUG-<n>), a fault id (F<n>) or a design-table label (dg<n>, tk<n>) used as a citation - so that it states the constraint of its block, the thing the id stood for, in plain words. What an id meant can be read in the private register (quality-gates-internal/PLAN.md and its plans/), but the constraint is written fresh and no register text is copied into the public tree. Not citations, and left alone: a test's own case label passed to check(), an id illustrating an id SHAPE (--phase P3, P9 before P10, phases/P1.json), a rendered-output example quoted in backticks, ruff codes in a noqa list, and demo or fixture data. No behaviour changes, no string a test reads changes, and no number is written into prose. The measured occurrences are in /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (rows with is_real = yes); treat that as a pointer, verify every line, and report any real citation it missed in these files.",
+      "files": [
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/report/_usage_viz.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test__report_usage.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P85.3",
+      "title": "The journal-writes hook's comments state their rule, not the register",
+      "status": "pending",
+      "description": "Rewrite each comment or docstring in this task's files that cites a register id - a phase or task id (P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>), a bug id (BUG-<n>), a fault id (F<n>) or a design-table label (dg<n>, tk<n>) used as a citation - so that it states the constraint of its block, the thing the id stood for, in plain words. What an id meant can be read in the private register (quality-gates-internal/PLAN.md and its plans/), but the constraint is written fresh and no register text is copied into the public tree. Not citations, and left alone: a test's own case label passed to check(), an id illustrating an id SHAPE (--phase P3, P9 before P10, phases/P1.json), a rendered-output example quoted in backticks, ruff codes in a noqa list, and demo or fixture data. No behaviour changes, no string a test reads changes, and no number is written into prose. The measured occurrences are in /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (rows with is_real = yes); treat that as a pointer, verify every line, and report any real citation it missed in these files.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P85.4",
+      "title": "Derivation, reference-lint and gate-prover comments state their rule, not the register",
+      "status": "pending",
+      "description": "Rewrite each comment or docstring in this task's files that cites a register id - a phase or task id (P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>), a bug id (BUG-<n>), a fault id (F<n>) or a design-table label (dg<n>, tk<n>) used as a citation - so that it states the constraint of its block, the thing the id stood for, in plain words. What an id meant can be read in the private register (quality-gates-internal/PLAN.md and its plans/), but the constraint is written fresh and no register text is copied into the public tree. Not citations, and left alone: a test's own case label passed to check(), an id illustrating an id SHAPE (--phase P3, P9 before P10, phases/P1.json), a rendered-output example quoted in backticks, ruff codes in a noqa list, and demo or fixture data. No behaviour changes, no string a test reads changes, and no number is written into prose. The measured occurrences are in /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (rows with is_real = yes); treat that as a pointer, verify every line, and report any real citation it missed in these files.",
+      "files": [
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "tools/prove-gates.py",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/test_set_priority.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
