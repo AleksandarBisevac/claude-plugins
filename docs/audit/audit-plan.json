@@ -571,6 +571,12 @@
       "title": "the history and secrets guards read the shapes BUG-12 left open, and the documents stop listing them",
       "status": "pending",
       "shard": "phases/P89.json"
+    },
+    {
+      "id": "P90",
+      "title": "the committed-identity check accounts for the one journal row it misreads",
+      "status": "pending",
+      "shard": "phases/P90.json"
     }
   ],
   "fileIndex": {
@@ -3997,7 +4003,8 @@
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
-      "P72.5-ttl"
+      "P72.5-ttl",
+      "P90.1"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
