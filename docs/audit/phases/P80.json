@@ -623,6 +623,54 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P80.13",
+      "title": "A committed evidence row keeps why a step could not run",
+      "status": "pending",
+      "description": "_evidence_io.STEP_KEYS omits outcomeBasis, and the derived-gap marker run-test-gate sets on a step is omitted too, so _step / row_for drop both and a committed could-not-run row carries the verdict and not its basis: a derived run that did not name every listed suite, a missing interpreter and a no-verdict signature read identically to audit-lookup, the report and the doctor. Keep outcomeBasis on the row, bounded the way failing is bounded, and the derived-gap marker; render them wherever a could-not-run step is shown (audit-lookup run, the report's evidence view). The row only gains keys, which COMPATIBILITY.md treats as free. Allow case: a passed step's row is byte-identical to today's. No plan ids in comments; no numbers in prose.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/tests/test__evidence_view.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a recorded step graded could-not-run keeps its bounded outcomeBasis on the committed row, and a derived-run gap is distinguishable there from a missing interpreter or a no-verdict signature - red at HEAD",
+          "plugins/audit/tests/test_audit_lookup.py: audit-lookup run <runId> on such a row names why the step could not run; a passed step's row reads exactly as before"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P80.4"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
