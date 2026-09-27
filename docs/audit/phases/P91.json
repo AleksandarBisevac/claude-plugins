@@ -20,7 +20,37 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P91-R1",
+        "severity": "high",
+        "file": "tools/check-committed-pii.py (BASELINE row for the plan index)",
+        "issue": "The plan-surface BASELINE rows are keyed by line number, and the index's baselined line sits after the phases list and fileIndex, which routine plugin writes rewrite; one added phase stub or fileIndex entry moves it, and the check (and the selftest sweep that reads the live tree) goes red on the next plan write.",
+        "resolution": "Key plan-surface BASELINE rows by what the line says (path, detector, a digest of the matched line's text), printing but not keying the line number; cases: a line inserted above a baselined match stays accounted for, an edit to the matched line itself goes red; correct the comment."
+      },
+      {
+        "id": "P91-R2",
+        "severity": "med",
+        "file": "tools/check-committed-pii.py (plan_files problem rows)",
+        "issue": "No selftest case produces plan-config-unreadable or plan-index-unparseable; dropping both appends keeps the selftest green.",
+        "resolution": "A case per row on a fixture (truncated index JSON; a config that is not JSON), each red when its append is removed."
+      },
+      {
+        "id": "P91-R3",
+        "severity": "low",
+        "file": "tools/check-committed-pii.py (SYNTHETIC)",
+        "issue": "The two new synthetic rows are missing from SYNTHETIC, so they print as a leak at line zero under the generic closing sentence.",
+        "resolution": "Add both with their own sentence; update the comment."
+      },
+      {
+        "id": "P91-R4",
+        "severity": "low",
+        "file": "tools/check-committed-pii.py (plan_files, the directory sweep)",
+        "issue": "A shard pointer into a directory other than the index's own pulls every tracked file under that directory into the plan surface, whatever its type.",
+        "resolution": "Limit it to the shard-shaped files the pointers can name, or pin the width with a case and say it in the docstring."
+      }
+    ],
+    "outcome": "[findings: 4 - 1 high, 1 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -60,7 +90,7 @@
       "commit": "ee9d8fae",
       "outcome": {
         "technical": "tools/check-committed-pii.py: plan_files derives the index from the plugin config's manifestPath and the shards from the index's own pointers (surface 'plan'); plan-index-unparseable and plan-config-unreadable findings; q24/q25 fixture, q6 expects the plan surface; BASELINE rows keyed by path, line and detector with reasons. P85 (done tasks, direct edit) and P86 (pending tasks, scope --description) scrubbed to the base name.",
-        "descriptive": "The committed-artifact check reads the plan index and every phase shard; the two shards that named the machine's scratch directory now name the file alone, and every other hit, a quoted example shape, is baselined with its reason."
+        "descriptive": "The committed-artifact check reads the plan index and every phase shard; P85 and P86, which named the machine's scratch directory, now name the file alone, and every other hit, a quoted example shape, is baselined with its reason."
       },
       "startedAt": "2026-09-27T23:03:18Z",
       "completedAt": "2026-09-27T23:16:46Z",
@@ -81,7 +111,57 @@
         "at": "2026-09-27T23:16:46Z",
         "basis": "the scrub of P85/P86 was made by the orchestrator with the owner's approval (the plan gate refuses a subagent's plan write), not by this task's executor; the domain extension and the baseline are the executor's"
       }
+    },
+    {
+      "id": "P91.2-htp",
+      "title": "a baselined plan hit is keyed by what its line says, and every plan-domain row the check can print has a case",
+      "status": "in_progress",
+      "description": "Phase review fix task. Key plan-surface BASELINE rows by what the line says (path, detector, a digest of the matched line's text) and print the line number without keying on it, so a routine plan write that moves the line keeps the hit accounted for while an edit to the matched line itself goes red; cases for plan-config-unreadable and plan-index-unparseable; both synthetic rows in SYNTHETIC with their own sentence; bound the directory sweep a shard pointer opens to shard-shaped files, or pin its width with a case.",
+      "files": [
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-committed-pii.py: repro that FAILS on current code - a line inserted above a baselined plan-index hit turns the check red although the hit is unchanged"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T23:25:24Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T23:43:01Z.0aff04",
+        "status": "passed",
+        "at": "2026-09-27T23:43:01Z"
+      }
     }
   ],
-  "startedAt": "2026-09-27T23:03:18Z"
+  "startedAt": "2026-09-27T23:03:18Z",
+  "testEvidence": {
+    "runId": "2026-09-27T23:18:24Z.839068",
+    "status": "passed",
+    "at": "2026-09-27T23:18:24Z"
+  }
 }

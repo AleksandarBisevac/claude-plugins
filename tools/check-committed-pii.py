@@ -117,6 +117,7 @@ dead baseline entry, and an empty domain), 2 on a usage error. `--scan-text` rea
 stdin instead of a repository and exits 1 on a detector hit or on an empty read.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -331,10 +332,20 @@ def _plugin_config(root):
     agree with the plugin until the day it did not. Imported inside the call, as
     `_journal_io._config_mod` does, so `--scan-text` never pays for it.
     """
+    return _config_module().load(root)
+
+
+def _config_module():
+    """`hooks/_config`, imported on first use - see `_plugin_config`."""
     if _HOOKS_DIR not in sys.path:
         sys.path.insert(0, _HOOKS_DIR)
     import _config                                        # noqa: E402
-    return _config.load(root)
+    return _config
+
+
+def _default_manifest_path():
+    """The `manifestPath` a project with no config gets, asked of the plugin."""
+    return _config_module().DEFAULTS["manifestPath"]
 
 
 def _repo_rel(root, path):
@@ -357,8 +368,9 @@ def plan_files(root, rels):
     project's config names (`manifestPath`, through `_plugin_config`), and the
     shards are wherever the index's own `shard` pointers say, resolved against the
     index's directory exactly as `_manifest_io.load_manifest` resolves them. Every
-    TRACKED file under a directory those pointers name is in, not only the files
-    they name today: a shard the index stopped pointing at is still committed.
+    TRACKED JSON file directly in a directory those pointers name is in, not only
+    the files they name today: a shard the index stopped pointing at is still
+    committed.
 
     A SHARD DIRECTORY THAT IS THE INDEX'S OWN is not swept whole, because that
     directory also holds whatever a human keeps beside the plan; only the pointed
@@ -395,7 +407,12 @@ def plan_files(root, rels):
         shards.add(rel)
         if posixpath.dirname(rel) != base:
             dirs.add(posixpath.dirname(rel))
-    under = set(r for r in tracked for d in dirs if r.startswith(d + "/"))
+    # SHARD-SHAPED FILES ONLY: JSON directly inside a directory a pointer names,
+    # which is every file a pointer COULD name there. A script, a note, or a
+    # subdirectory beside the shards is somebody's work kept near the plan, and
+    # sweeping it in is the widening this file's domain refuses everywhere else.
+    under = set(r for r in tracked
+                if posixpath.dirname(r) in dirs and r.endswith(".json"))
     return set([index]) | (shards & tracked) | under, problems
 
 
@@ -439,8 +456,47 @@ def domain_files(repo=None):
     return keep, bad
 
 
+# --- what a baseline row is keyed by -------------------------------------------
+# THE LINE NUMBER, FOR A FILE WHOSE LINES DO NOT MOVE. A journal and an evidence
+# ledger are append-only, so a row's line is fixed the day it is written; a
+# rendered report is regenerated whole and compared against a fresh render, so a
+# moved line there is a changed artifact anyway.
+#
+# THE LINE'S TEXT, FOR THE PLAN. The plugin rewrites the index and a shard in
+# place - a phase stub, a file-index entry, a task's status - and every such write
+# moves every line after it. Keyed by number, one routine phase-add printed each
+# exempted row below it as FOUND at its new line and DEAD BASELINE at its old one.
+# Keyed by a digest of what the matched line SAYS, a move changes nothing, while
+# an edit to that line - the only edit that can change what was decided about it -
+# kills the row and re-reports the finding. The line number is still printed; it
+# is just not what the exemption is attached to.
+_ANCHORED = ("plan",)
+_ANCHOR_PREFIX = "line-sha256:"
+
+
+def line_anchor(line):
+    """The key a plan line is baselined by: a digest of what it says.
+
+    Leading and trailing whitespace and a trailing comma are not part of what a
+    line says: a re-indent, or a sibling key appended after it in the same JSON
+    object, changes them without touching the text the exemption was decided on.
+    """
+    said = line.strip()
+    if said.endswith(","):
+        said = said[:-1].rstrip()
+    return _ANCHOR_PREFIX + hashlib.sha256(said.encode("utf-8")).hexdigest()[:16]
+
+
+def baseline_key(row, anchors=None):
+    """`(path, line-or-anchor, detector)` -- what a finding is looked up by."""
+    rel, n, detector = row[0], row[1], row[2]
+    return (rel, (anchors or {}).get((rel, n), n), detector)
+
+
 def scan(repo=None):
-    """One run's whole answer: `root`, `rows`, `files`, `surfaces`, `baselined`.
+    """One run's whole answer: `root`, `rows`, `anchors`, `files`, `surfaces`,
+    `baselined`. `anchors` maps a plan finding's `(path, line)` to its
+    `line_anchor`, which is what `baseline_key` looks it up by.
 
     ONE WALK, and the domain travels with the rows because "no findings" has two
     very different meanings -- every committed artifact is clean, or this tree
@@ -451,9 +507,14 @@ def scan(repo=None):
     """
     root = repo if repo is not None else REPO
     keep, rows = domain_files(root)
-    rows = list(rows)
+    rows, anchors = list(rows), {}
     for rel, surface, text in keep:
-        rows.extend(scan_text(rel, text, surface))
+        found = scan_text(rel, text, surface)
+        rows.extend(found)
+        if surface in _ANCHORED:
+            lines = text.split("\n")
+            anchors.update(((rel, n), line_anchor(lines[n - 1]))
+                           for _r, n, _d, _c in found if 0 < n <= len(lines))
         if surface in _WRITER_NAMED:
             problem = writer_id_problem(os.path.basename(rel))
             if problem is not None:
@@ -469,6 +530,7 @@ def scan(repo=None):
         rows.append((".", 0, "domain-empty", 1))
     return {"root": root,
             "rows": sorted(rows),
+            "anchors": anchors,
             "files": [rel for rel, _s, _t in keep],
             "surfaces": sorted(set(s for _r, s, _t in keep)),
             "baselined": baseline_applies(root)}
@@ -484,7 +546,8 @@ def findings(repo=None):
 
 
 # --- what is already committed, and stays -------------------------------------
-# (path, line, detector, reason). ONE reason for both rows, said once per row
+# (path, line, detector, reason) - the line is a `line_anchor` for the plan, see
+# `baseline_key`. ONE reason for both rows, said once per row
 # because a row is what a reader looks up. The reason is the user's decision and
 # this is where it is recorded rather than hidden: existing history is left alone.
 BASELINE = (
@@ -515,55 +578,68 @@ BASELINE = (
      "reason. A phrase, not a directory; chained, so recorded rather than rewritten."),
     # THE PLAN'S ROWS, recorded when the plan entered the domain. Every one is a
     # shape QUOTED in a task's text - an example, a fixture name, a phrase - and
-    # names no machine. KEYED BY LINE like every row above, and that is the
-    # point rather than a cost: an edit to one of these shards moves its lines,
-    # the moved finding prints as FOUND and the stale row as DEAD BASELINE, so
-    # the exemption is re-decided out loud instead of drifting onto new text.
-    ("docs/audit/audit-plan.json", 4440, "windows-user-path",
+    # names no machine. KEYED BY WHAT THE LINE SAYS (`line_anchor`), not by its
+    # number: the plugin rewrites these files in place and every write moves
+    # the lines after it, while only an edit to the matched line itself can
+    # change what was decided - and that edit kills the row out loud, as DEAD
+    # BASELINE beside a FOUND. `baseline_key` says why the rows above differ.
+    ("docs/audit/audit-plan.json", "line-sha256:c3abd5e92b28bfdb",
+     "windows-user-path",
      "a bug row's text giving an example of what a dirname call returns on "
      "Windows: a drive-letter scratch path under a temp folder, spelled with "
      "escaped backslashes. It names no user directory and no machine."),
-    ("docs/audit/phases/P34.json", 113, "unexpanded-home",
+    ("docs/audit/phases/P34.json", "line-sha256:871064e665529ce3",
+     "unexpanded-home",
      "a task outcome naming where the lock file lives: the documented config "
      "directory, written as the tilde default beside its environment override. "
      "A location every install shares, not a path of any machine."),
-    ("docs/audit/phases/P72.json", 72, "unexpanded-home",
+    ("docs/audit/phases/P72.json", "line-sha256:4f87b3c1a172cfa6",
+     "unexpanded-home",
      "a task's text quoting a refused shell command as the example of what the "
      "guard must block - a redirect into a shell start-up file under the tilde. "
      "It is the attack being described, not a path this project touched."),
-    ("docs/audit/phases/P72.json", 273, "unexpanded-home",
+    ("docs/audit/phases/P72.json", "line-sha256:84608e710183b4cf",
+     "unexpanded-home",
      "the same refused-command example, repeated in a second task's text of the "
      "same phase. An illustration of the guarded operation, not a directory of "
      "any machine."),
-    ("docs/audit/phases/P75.json", 422, "posix-home",
+    ("docs/audit/phases/P75.json", "line-sha256:f9821ee5e1053e2a",
+     "posix-home",
      "a task's text listing the checkout layouts that make two absolute paths "
      "collide, one of them the hosted CI runner's standard work directory. That "
      "is the runner image's fixed layout, identical everywhere, not an operator."),
-    ("docs/audit/phases/P82.json", 201, "windows-user-path",
+    ("docs/audit/phases/P82.json", "line-sha256:8dc84fcac7058bd0",
+     "windows-user-path",
      "a task's text describing how a CRLF file is rewritten on Windows, with the "
      "carriage-return and newline escapes spelled out as escaped backslash "
      "sequences. The detector reads the escapes as path separators; no path."),
-    ("docs/audit/phases/P82.json", 228, "windows-user-path",
+    ("docs/audit/phases/P82.json", "line-sha256:6a79a0c4d37badc3",
+     "windows-user-path",
      "a task's text quoting how git prints a non-ASCII test file name under its "
      "default quoting: the octal bytes of a UTF-8 character, each behind an "
      "escaped backslash. A repository-relative file name, not a user path."),
-    ("docs/audit/phases/P82.json", 372, "unexpanded-home",
+    ("docs/audit/phases/P82.json", "line-sha256:57a13209e18be434",
+     "unexpanded-home",
      "a task's text naming two marker files a selftest writes and removes in the "
      "sandboxed home, both spelled with the tilde. Fixture names the suite "
-     "invents; one row covers both columns because the key is the line."),
-    ("docs/audit/phases/P82.json", 435, "posix-home",
+     "invents; one row covers both columns because the key is the line's text."),
+    ("docs/audit/phases/P82.json", "line-sha256:6c0da7b36de3bf33",
+     "posix-home",
      "a task's text saying a run is green under the sweep's isolated home and "
      "temp directories - the phrase the journal rows above are baselined for. "
      "Prose about the scratch environment, not a directory of any machine."),
-    ("docs/audit/phases/P90.json", 6, "posix-home",
+    ("docs/audit/phases/P90.json", "line-sha256:8a691891eb8e1159",
+     "posix-home",
      "the phase outcome of the change that baselined the journal phrase above; "
      "it quotes that phrase while saying it is not a home directory. Quoting "
      "the false positive trips it again; nothing here names a machine."),
-    ("docs/audit/phases/P90.json", 30, "posix-home",
+    ("docs/audit/phases/P90.json", "line-sha256:e4ce8c0a69c04ed3",
+     "posix-home",
      "the title of that same phase's task, quoting the phrase the detector "
      "matched in the journal row. A description of a false positive, not a "
      "path of any machine."),
-    ("docs/audit/phases/P90.json", 32, "posix-home",
+    ("docs/audit/phases/P90.json", "line-sha256:e6105cb8d2235f5d",
+     "posix-home",
      "the description of that task, quoting the matched words to locate the "
      "journal finding it baselines. It states in its own text that no path of "
      "this machine is present, and none is."),
@@ -594,20 +670,31 @@ def baseline_index():
     return dict(((p, n, d), why) for p, n, d, why in BASELINE)
 
 
-def unbaselined(rows):
-    """The findings nobody has accounted for -- what a run reports."""
+def unbaselined(rows, anchors=None):
+    """The findings nobody has accounted for -- what a run reports.
+
+    `anchors` is `scan()`'s, and without it every row is looked up by its line:
+    right for the surfaces whose lines never move, wrong for the plan.
+    """
     known = baseline_index()
-    return [r for r in rows if (r[0], r[1], r[2]) not in known]
+    return [r for r in rows if baseline_key(r, anchors) not in known]
 
 
-def dead_baseline(rows):
-    """[(path, line, detector)] declared as known and matching nothing any more.
+def _key_order(key):
+    # A line and an anchor sit in one column, and Python 3 will not order an int
+    # against a str; the rendered form orders both without guessing a rank.
+    return (key[0], "%s" % (key[1],), key[2])
+
+
+def dead_baseline(rows, anchors=None):
+    """[(path, line-or-anchor, detector)] declared as known and matching nothing
+    any more.
 
     Reported like a finding, because a table that only ever grows stops describing
     the system and starts describing its own history.
     """
-    live = set((r[0], r[1], r[2]) for r in rows)
-    return [k for k in sorted(baseline_index()) if k not in live]
+    live = set(baseline_key(r, anchors) for r in rows)
+    return [k for k in sorted(baseline_index(), key=_key_order) if k not in live]
 
 
 def reasonless_baseline():
@@ -623,9 +710,9 @@ def render(row):
 
 
 # --- what a run says about itself ---------------------------------------------
-# THE SYNTHETIC DETECTORS. Neither is text a pattern matched, so neither has a
-# file and a column a reader can open - which is why they get a sentence of their
-# own rather than being left to read as a leak at line 0 of the repository root.
+# THE SYNTHETIC DETECTORS. None is text a pattern matched, so none has a column a
+# reader can open - which is why each gets a sentence of its own rather than
+# being left to read as a leak at line 0.
 SYNTHETIC = {
     "domain-empty": ("this tree tracks no journal, no evidence ledger, no plan, "
                      "no rendered report and no theme document of ours, so the "
@@ -633,6 +720,26 @@ SYNTHETIC = {
                      "check the path before reading anything into it"),
     "domain-unavailable": ("git could not be asked what this tree tracks, so "
                            "the run cleared nothing"),
+    "plan-index-unparseable": ("the plan's index does not parse, so its shard "
+                               "pointers could not be read and no shard was "
+                               "located, let alone cleared - the index's own "
+                               "text was scanned and nothing more"),
+    "plan-config-unreadable": ("the project's audit config did not parse, so "
+                               "the plugin's default manifestPath was used - if "
+                               "the config names a plan elsewhere, that plan "
+                               "was not read"),
+}
+
+# AND EACH GETS ITS OWN HEADLINE, because they do not all mean the same thing: an
+# empty or unanswerable domain cleared nothing, an unreadable index cleared the
+# index but no shard, and an unreadable config still read a plan - the default
+# one - which is not "nothing checked". Kept apart from SYNTHETIC so that table
+# stays one sentence per name, which is the shape its readers expect.
+_SYNTHETIC_HEADLINE = {
+    "domain-empty": "NOTHING WAS CHECKED",
+    "domain-unavailable": "NOTHING WAS CHECKED",
+    "plan-index-unparseable": "NO SHARD WAS CLEARED",
+    "plan-config-unreadable": "THE DEFAULT PLAN WAS READ",
 }
 
 
@@ -886,6 +993,12 @@ def _foreign_cases(check):
             remove_tree(root)
 
 
+# A script beside the fixture's shards. Assembled, because `_refs` reads every
+# script name written in tools/ as a reference to a file that must exist, and
+# this one is a fixture that exists only inside a temporary tree.
+_STRAY_SCRIPT = "plan/shards/helper" + ".py"
+
+
 def _plan_fixture():
     """`(root, leaks)` -- a tree whose PLAN names machine paths in task text.
 
@@ -926,6 +1039,10 @@ def _plan_fixture():
         # the sweep to its whole directory.
         ("plan/P4.json", shard("P4", "nothing here but plan/roadmap.json")),
         ("plan/notes.json", json.dumps({"n": home}) + "\n"),
+        # A file BESIDE a pointed shard that no pointer could name: a shard is
+        # JSON, so a script sitting in the shard directory is somebody's tool and
+        # not the plan, however close to it it lives.
+        (_STRAY_SCRIPT, "SCRATCH = %r\n" % (home,)),
     ]
     # The line is READ off the rendered shard rather than counted by hand, so the
     # expected answer is the line a person opening the file would land on.
@@ -969,6 +1086,138 @@ def _plan_cases(check, plan, leaks):
                   for rel, (n, d) in leaks.items())
           and text.count("FOUND ") == len(leaks)
           and "P3.json" not in text and "notes.json" not in text)
+
+    check("q28 ...and a shard directory contributes only what a pointer could "
+          "name - JSON directly inside it - so a script beside a pointed shard, "
+          "carrying a machine path, stays outside the plan: %r" % (prun["files"],),
+          _STRAY_SCRIPT not in prun["files"]
+          and posixpath.basename(_STRAY_SCRIPT) not in text
+          and "plan/shards/P3.json" in prun["files"])
+
+
+def _plan_problem_cases(check):
+    """The two plan rows that are not a pattern match, each driven to fire once.
+
+    One tree per row, each broken in exactly one way, so a case that saw BOTH
+    rows, or a detector row as well, is telling the reader something went wrong
+    beyond the one thing this tree was built to break.
+    """
+    default_index = _default_manifest_path()
+    # A config that is not JSON: the plugin falls back to its defaults, so the
+    # default index is still read - which is why the row says "the default was
+    # used" and not "nothing was checked".
+    cfg_bad = _fixture_tree([
+        (_CONFIG_REL, "{ this is not json\n"),
+        (default_index, json.dumps({"phases": []}) + "\n"),
+    ])
+    # An index cut off mid-write: its pointers cannot be read, so no shard was
+    # located, let alone cleared.
+    idx_bad = _fixture_tree([
+        (_CONFIG_REL, json.dumps({"manifestPath": "plan/roadmap.json"}) + "\n"),
+        ("plan/roadmap.json", '{"phases": [{"id": "P1", "shard": "shards/P'),
+        ("plan/shards/P1.json", json.dumps({"id": "P1"}) + "\n"),
+    ])
+    try:
+        crun = scan(cfg_bad)
+        ccode, ctext = _captured(["--repo", cfg_bad])
+        check("q29 a config that does not parse is ONE finding naming the config, "
+              "and the plan at the default path is still read - exit %d, %r, %r"
+              % (ccode, crun["rows"], crun["surfaces"]),
+              crun["rows"] == [(_CONFIG_REL, 0, "plan-config-unreadable", 1)]
+              and crun["surfaces"] == ["plan"] and ccode == 1
+              and ctext.count("(plan-config-unreadable): ") == 1
+              and ctext.count("THE DEFAULT PLAN WAS READ") == 1)
+
+        irun = scan(idx_bad)
+        icode, itext = _captured(["--repo", idx_bad])
+        check("q30 an index that does not parse is ONE finding naming the index, "
+              "and no shard it might have pointed at is claimed as read - exit "
+              "%d, %r, %r" % (icode, irun["rows"], irun["files"]),
+              irun["rows"] == [("plan/roadmap.json", 0, "plan-index-unparseable", 1)]
+              and irun["files"] == ["plan/roadmap.json"] and icode == 1
+              and itext.count("(plan-index-unparseable): ") == 1
+              and itext.count("NO SHARD WAS CLEARED") == 1)
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        for root in (cfg_bad, idx_bad):
+            remove_tree(root)
+
+
+def _with_edited_domain(edit):
+    """`(exit, stdout)` of a plain run over this tree, every domain text passed
+    through `edit(rel, surface, text)` first.
+
+    IN MEMORY, NEVER ON DISK. The question is what the check says about a plan
+    the plugin has just rewritten, and the committed plan is the one fixture
+    whose baselined rows are real; editing the files to ask it would leave a
+    mutated plan behind on any failure.
+    """
+    held = globals()["domain_files"]
+
+    def patched(repo=None):
+        keep, bad = held(repo)
+        return [(rel, s, edit(rel, s, t)) for rel, s, t in keep], bad
+    globals()["domain_files"] = patched
+    try:
+        return _captured([])
+    finally:
+        globals()["domain_files"] = held
+
+
+def _moving_cases(check):
+    """A baselined plan row survives the plugin moving its line, and only that."""
+    keep, _bad = domain_files()
+    plan = set(rel for rel, s, _t in keep if s == "plan")
+    hits = sorted(r for r in findings() if r[0] in plan and r[1] > 0)
+    code0, out0 = _captured([])
+
+    # EVERY plan file gains a line at the top: what adding a phase stub or a
+    # file-index entry does to every row below it in the index.
+    def shift(_rel, surface, text):
+        return ("\n" + text) if surface == "plan" else text
+    code1, out1 = _with_edited_domain(shift)
+    check("q26 a line inserted ABOVE a baselined plan match leaves it accounted "
+          "for - routine plugin writes to the index move every line after them, "
+          "and a key that moved with them turned the next phase-add red: "
+          "exit %d over %d baselined plan hit(s), %r"
+          % (code1, len(hits), [l for l in out1.split("\n") if l][:4]),
+          hits != [] and code0 == 0 and code1 == 0
+          and "FOUND " not in out1 and "DEAD BASELINE " not in out1)
+
+    rel, n = hits[0][0], hits[0][1]
+    on_line = [r for r in hits if (r[0], r[1]) == (rel, n)]
+    detectors = sorted(set(r[2] for r in on_line))
+
+    def at_line(k, suffix):
+        def edit(r, _surface, text):
+            if r != rel:
+                return text
+            lines = text.split("\n")
+            lines[k - 1] = lines[k - 1] + suffix
+            return "\n".join(lines)
+        return edit
+    code2, out2 = _with_edited_domain(at_line(n, " edited"))
+    dead = [l for l in out2.split("\n") if l.startswith("DEAD BASELINE ")]
+    check("q27 ...while an edit to the MATCHED LINE itself is re-decided out "
+          "loud: the finding prints as FOUND at its line and the row that "
+          "exempted the old text as DEAD BASELINE - exit %d, %r"
+          % (code2, [l for l in out2.split("\n") if l][:4]),
+          code2 == 1
+          and out2.count("FOUND ") == len(on_line)
+          and all(out2.count("FOUND %s:%d:%s " % (rel, n, d)) >= 1
+                  for d in detectors)
+          and len(dead) == len(detectors)
+          and all(l.startswith("DEAD BASELINE %s:" % (rel,)) for l in dead))
+
+    # THE SECOND DIRECTION: a key so loose that ANY edit to the file cleared it,
+    # or so tight that any edit killed it, fails here and nowhere else.
+    quiet = [k for k in range(1, n) if all(r[1] != k for r in hits
+                                           if r[0] == rel)]
+    code3, out3 = _with_edited_domain(at_line(quiet[0], " unrelated"))
+    check("q27b ...and an unrelated edit elsewhere in the same file changes "
+          "nothing at all: exit %d, output identical to the untouched run: %r"
+          % (code3, out3 == out0),
+          quiet != [] and code3 == 0 and out3 == out0)
 
 
 def _cases(check):
@@ -1073,7 +1322,8 @@ def _cases(check):
                     "<p>generated 2026-08-19 20:16 UTC</p>") == "report"
           and domain_of("docs/index.html", "no stamp in here") is None)
 
-    _live = findings()
+    _run = scan()
+    _live, _anchors = _run["rows"], _run["anchors"]
     _kept, _bad = domain_files()
     _surfaces = sorted(set(s for _r, s, _t in _kept))
     # A FILTER THAT NARROWED TO NOTHING MUST NOT READ AS ALL CLEAR. Every case
@@ -1087,18 +1337,31 @@ def _cases(check):
           _bad == [] and _surfaces == ["evidence", "journal", "plan", "report"])
 
     check("q7 every committed artifact is clean except what BASELINE accounts "
-          "for: %r" % ([render(r) for r in unbaselined(_live)],),
-          unbaselined(_live) == [])
+          "for: %r" % ([render(r) for r in unbaselined(_live, _anchors)],),
+          unbaselined(_live, _anchors) == [])
     # The other direction of an exemption table: an entry that matches nothing any
     # more is a claim about a system that has moved on, and a table nobody prunes
     # stops covering what it says it covers.
-    _dead = dead_baseline(_live)
+    _dead = dead_baseline(_live, _anchors)
     check("q8 ...and every BASELINE entry still matches a real finding, so a dead "
           "exemption is reported rather than accumulating: %r" % (_dead,),
           _dead == [])
     _bad = reasonless_baseline()
     check("q9 ...and every BASELINE entry carries a reason a reader can disagree "
           "with, not a label: %r" % (_bad,), _bad == [])
+
+    # BEFORE the cases that print a synthetic row: a missing headline is a
+    # KeyError inside `main`, and this is the case that names it rather than a
+    # traceback from whichever run met it first.
+    check("q31 every synthetic row has both its sentence and its headline - "
+          "the run prints the pair, so a name in one table and not the other "
+          "is a crash on exactly the run that most needs its explanation: %r"
+          % (sorted(set(SYNTHETIC) ^ set(_SYNTHETIC_HEADLINE)),),
+          set(SYNTHETIC) == set(_SYNTHETIC_HEADLINE)
+          and "plan-index-unparseable" in SYNTHETIC
+          and "plan-config-unreadable" in SYNTHETIC)
+    _moving_cases(check)
+    _plan_problem_cases(check)
 
     _row = {"actor": {"author": None, "sessionId": "s", "via": "hook",
                       "host": "MacBook-Pro.local"},
@@ -1271,18 +1534,18 @@ def main(argv=None):
     # THE TABLE IS THIS REPOSITORY'S, so in any other tree every row stands. A
     # dead-baseline report is meaningless there for the same reason: the entries
     # were never claims about that tree, so they cannot have gone stale in it.
-    bad = unbaselined(live) if run["baselined"] else list(live)
-    dead = dead_baseline(live) if run["baselined"] else []
+    bad = unbaselined(live, run["anchors"]) if run["baselined"] else list(live)
+    dead = dead_baseline(live, run["anchors"]) if run["baselined"] else []
     for row in bad:
         sys.stdout.write("FOUND %s\n" % render(row))
     for key in dead:
-        sys.stdout.write("DEAD BASELINE %s:%d:%s - it matches nothing any more, so "
+        sys.stdout.write("DEAD BASELINE %s:%s:%s - it matches nothing any more, so "
                          "the exemption is describing a system that has moved on\n"
                          % key)
     if bad or dead:
         for name in sorted(set(r[2] for r in bad) & set(SYNTHETIC)):
-            sys.stdout.write("\nNOTHING WAS CHECKED (%s): %s\n"
-                             % (name, SYNTHETIC[name]))
+            sys.stdout.write("\n%s (%s): %s\n"
+                             % (_SYNTHETIC_HEADLINE[name], name, SYNTHETIC[name]))
         sys.stdout.write("\nA committed artifact carries machine identity, an "
                          "exemption has gone stale, or nothing was checked. The "
                          "matched text is deliberately not printed - open the "
