@@ -3663,20 +3663,34 @@ a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` 
 assertions. `proved` needs one of those failures to be the TASK'S OWN, and that is decided by a
 GREEN BASELINE, not by reading output (`baseline_problem()`, `fix_problem()`, `own_failures()`):
 
-1. the task's run - its test files on HEAD's implementation - is red on an assertion;
-2. HEAD's own test files run with the same command on HEAD's implementation, in the throwaway reset
-   to HEAD (a forced checkout and a clean of untracked and ignored files, so nothing the task's run
-   wrote or rewrote survives), with `PYTHONNOUSERSITE=1`, a TMPDIR of its own and a fresh home set
-   under every name a home lookup reads (`HOME_VARS`, the table `tools/sweep-selftests.py` isolates
-   its children with), and must be GREEN:
-   exit 0 and a tally counting no failure and no error. Anything else - already red, stopped,
-   unreadable, a file the command names that HEAD does not have - is `could-not-prove` with the
-   instruction to narrow the command to the task's cases. A declared test file new at HEAD has
-   nothing of HEAD's to run;
-3. the fix run - the task's test files on the working tree's implementation, in the throwaway reset
-   again, with a fresh home of its own - must be green, with no fewer cases than the task's run, so every failure turns green;
-4. with the baseline green, every failure of step 1 comes from the task's change to the tests - a new
-   case or an edited one, the task's own edit either way - and `--case` must name one of them.
+Every run - HEAD's baseline, the task's run, the `--introduces` second run and the fix run - is made
+in the throwaway reset to HEAD (a forced checkout and a clean of untracked and ignored files), with
+an isolated environment of its own (`_isolated_env()`): a new empty home under every name a home
+lookup reads (`HOME_VARS`, the table `tools/sweep-selftests.py` isolates its children with), a new
+TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files laid over the tree.
+
+1. HEAD's baseline runs FIRST, before any file of the task's is laid over or run: HEAD's own test
+   files, the same command, HEAD's implementation. It must be GREEN - exit 0 and a tally counting no
+   failure and no error. Anything else - already red, stopped, unreadable, a file the command names
+   that HEAD does not have - is `could-not-prove` with the instruction to narrow the command to the
+   task's cases. It is skipped only when the command names nothing but test files new at HEAD
+   (`baseline_skip()`: no other file, no directory, no discovery), and then the basis says no HEAD
+   run was made and why - never that HEAD's tests were green;
+2. the task's run - its test files on HEAD's implementation - is red on an assertion;
+3. the fix run - the task's test files on the working tree's implementation - must be green, with no
+   fewer cases than the task's run, so every failure turns green;
+4. then every failure of step 2 comes from the task's change to the tests - a new case or an edited
+   one, the task's own edit either way - and `--case` must name one of them. That rests on two
+   conditions, and holds only while both do: the runs differ only in the files laid over, which the
+   reset and the isolated environment provide; and HEAD's cases give the same answer on the same
+   files, which the rule cannot check.
+
+`--introduces` requires the same baseline. **What this cannot see**, each a named limit: state
+outside the throwaway that a run reaches by an absolute path or through the git directory the
+throwaway shares with the repository (config, refs) - HEAD's baseline runs first, so nothing of the
+task's can reach it, but the task's run and the fix run could still read what an earlier run wrote
+there; network or service state that changes between runs; and a flaky or time-dependent HEAD case,
+which can fail in the task's run and pass in the baseline and the fix run.
 
 Seven review rounds each found another way to credit a case past a RED baseline by reading two runs'
 output - a relabelled case, a label carrying a per-run value, a quiet stop, a failfast set in the
@@ -3686,8 +3700,8 @@ must be narrowed to the task's cases before it can prove anything, and a case wh
 not turn green is not proved. HEAD's file list is read NUL-separated (`ls-tree -z`), so a declared
 test file whose path git would quote is found like any other, and every run is made with
 `PYTHONDONTWRITEBYTECODE=1`, so a swapped file of the same size written in the same second cannot be
-shadowed by a stale cached bytecode file. The extra runs are paid only when the first is red, and the
-payload records each one's exit and seconds. `--case` narrows to the ids or labels it names and must
+shadowed by a stale cached bytecode file. The baseline is paid on every run it is owed, the fix run
+only when the task's run is red, and the payload records each one's exit and seconds. `--case` narrows to the ids or labels it names and must
 name a case that failed an assertion, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or

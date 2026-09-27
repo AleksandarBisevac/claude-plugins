@@ -598,6 +598,53 @@
         "test_stamp_verification sr132",
         "test_stamp_verification sr133"
       ]
+    },
+    {
+      "id": "P82.10-fye",
+      "title": "every red-first run is isolated the same way, the baseline runs first and is never skipped for a command that reaches old tests",
+      "status": "in_progress",
+      "description": "Round-8 review (review-P82h.json; probe22 (H), (T), (N)). (1) One isolated environment for EVERY run - the task's run, HEAD's baseline, the fix run and the --introduces second run - each with new directories: a fresh home under the sweep runner's HOME_VARS, its own TMPDIR/TMP/TEMP, PYTHONNOUSERSITE=1; probe22 (H) and (T) as red cases. (2) HEAD's baseline runs FIRST, before the task's run touches the throwaway, so nothing the task's run writes can reach it; it is skipped only when the command's argv names nothing but test files that are new at HEAD, and otherwise required green; when it is skipped, the basis says no HEAD run was made and why, never that HEAD's tests were green; sr104 corrected; probe22 (N) as a red case, (N1) still refused. The --introduces path requires the same baseline. (3) The docs and compare-free docstrings state rule 4 with its conditions and name the limits that remain (state written outside the throwaway through the shared git directory or an absolute path, network state between runs, flaky or time-dependent HEAD cases) - each a could-not-prove or a named limit, not silence. (4) _label_forms matches in linear time (startswith over the forms, no prefix list built); a long-detail case bounded in memory.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a HEAD case red only under the caller's HOME is credited as the task's own"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T07:06:39Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

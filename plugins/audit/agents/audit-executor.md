@@ -110,11 +110,12 @@ Hard rules (non-negotiable):
   beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the
   plan gate grades which files you touch, not why — so this is kept by reading it.
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
-  failing cases, and a red counts only against a GREEN baseline: the helper also runs
-  HEAD's own test files with the same command on HEAD's code, in the throwaway reset to
-  HEAD, and they must be green; then every failure of your run — a new case or one you
-  edited — is yours, and the fix run (your test files on the working tree's code) must
-  turn each one green. If HEAD's own tests are already red under your command, the answer
+  failing cases, and a red counts only against a GREEN baseline: the helper first runs
+  HEAD's own test files with the same command on HEAD's code, and they must be green
+  (it skips that run only when your command names nothing but test files new at HEAD,
+  and says so); then every failure of your run — a new case or one you edited — is
+  yours, and the fix run (your test files on the working tree's code) must turn each one
+  green. Every run gets a fresh home and temp directory of its own. If HEAD's own tests are already red under your command, the answer
   is `could-not-prove`: narrow the command to the task's cases (one test file, one `-k`
   selection) and run it again. `--case` narrows to the ids or labels you name, and must
   name a case that failed an assertion in your run. A test body raising an exception is

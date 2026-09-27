@@ -118,10 +118,12 @@ not need to.
      task's declared test files from the working tree over it, runs the command there,
      removes the throwaway in a `finally` and reports whether the removal held, and prints
      the `redFirst` block, naming the failing case it rests on — which must be one of the
-     task's own. A red counts only against a GREEN baseline: HEAD's own test files, run with
-     the same command on HEAD's code in the throwaway reset to HEAD, must be green, and the
-     fix run (the task's test files on the working tree's code) must turn every failure
-     green — then every failure is the task's own, a new case or an edited one. A command
+     task's own. A red counts only against a GREEN baseline: HEAD's own test files, run FIRST
+     with the same command on HEAD's code, must be green (the run is skipped only when the
+     command names nothing but test files new at HEAD, and the basis says so), and the fix
+     run (the task's test files on the working tree's code) must turn every failure green —
+     then every failure is the task's own, a new case or an edited one. Every run has a
+     fresh home and temp directory of its own. A command
      already red at HEAD is `could-not-prove`: narrow the command to the task's cases.
      `--case` narrows to the ids or labels it names, held to that same test: it must name a
      case that failed an assertion in the task's run. Its

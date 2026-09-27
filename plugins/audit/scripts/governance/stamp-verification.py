@@ -193,11 +193,14 @@ def read_stamp_text(args, stdin=None):
 # ground, and a host refused it beside a sibling's uncommitted work. So the proof
 # is made somewhere else: a `git worktree add --detach` of HEAD in a temp
 # directory, with the working tree's copy of the task's TEST files laid over it
-# and its implementation files left at HEAD. When that run is red, the throwaway
-# is reset to HEAD and the SAME command runs HEAD's own test files, which must be
-# green; then the task's test files run on the working tree's implementation,
-# which must be green too. The cost is two more runs, paid only when the first
-# one is red.
+# and its implementation files left at HEAD. HEAD's own test files run FIRST,
+# before any file of the task's is laid over, and must be green (unless the
+# command names nothing but test files new at HEAD); then the task's run must be
+# red and the fix run - the task's tests on the working tree's implementation -
+# green. Every run is made in the throwaway reset to HEAD with an isolated
+# environment of its own, so the runs differ only in the files laid over. What
+# that cannot see - state reached by an absolute path or the shared git
+# directory, network state, a flaky HEAD case - is named in the guide.
 #
 # WHAT IT WRITES, AND WHAT IT CANNOT PROMISE, so nobody has to discover it.
 # `git worktree add` registers the throwaway in the repository's administrative
@@ -640,26 +643,43 @@ def introduced(root, implementation, symbol, deadline=None):
 # in an isolated clean throwaway, must pass. With that, every failure of the
 # task's run comes from the task's change to the tests, and all of them are its
 # own; the fix run then shows each one passes with the working tree's code.
-def _label_forms(label):
-    """The label as printed and the label before each ` (` it holds - a house
-    FAIL line appends its detail that way, and a detail spanning lines leaves
-    the line with no closing paren."""
-    return [label] + [label[:i] for i in range(len(label)) if label.startswith(" (", i)]
-
-
 NARROW = ("the command is already red (or unreadable) at HEAD - narrow it to the "
           "task's cases")
 
 
-def baseline_problem(head, cmd, new_files):
+def baseline_skip(cmd, root, new_tests):
+    """Why HEAD's run may be skipped, or None when it must be made.
+
+    Only when the command names nothing HEAD has: at least one argument is a
+    declared test file new at HEAD, and no other argument is a path that
+    exists in the working tree (a directory, another file) nor a discovery.
+    Anything that could reach HEAD's own tests gets the baseline."""
+    named = []
+    for arg in [str(a) for a in (cmd or ())[1:]]:
+        if arg == "discover":
+            return None
+        if arg.split("::")[0] in new_tests:
+            named.append(arg)
+            continue
+        if arg.startswith("-"):
+            continue
+        if os.path.exists(arg if os.path.isabs(arg) else os.path.join(root, arg)):
+            return None
+    if not named:
+        return None
+    return ("no HEAD run: every path the command names (%s) is a test file new at "
+            "HEAD, so it reaches nothing of HEAD's own" % (", ".join(named),))
+
+
+def baseline_problem(head, cmd, skip):
     """Why HEAD's own run is not a GREEN baseline, or None when it is.
 
     `head` is `{"code", "text", "problem"}` of HEAD's own test files run on
-    HEAD's code in an isolated clean throwaway. Green means it could be made,
-    exited 0, printed a tally this reads, and that tally counts no failure and
-    no error. When every declared test file is new at HEAD there is nothing of
-    HEAD's to run, and the baseline is green by having no case."""
-    if new_files:
+    HEAD's code, FIRST, in a fresh throwaway and an isolated environment.
+    Green means it could be made, exited 0, printed a tally this reads, and
+    that tally counts no failure and no error. `skip` is `baseline_skip`'s
+    reason when no HEAD run was owed."""
+    if skip:
         return None
     if head is None:
         return "HEAD's own run was not made - %s" % (NARROW,)
@@ -696,9 +716,11 @@ def fix_problem(fix, cmd, task_tally):
 
 def _is_named(failure, name):
     """Whether `--case NAME` names this failing case: its id, or its label as
-    printed, with or without the detail a house FAIL line appends."""
+    printed, with or without the detail a house FAIL line appends after a
+    ` (` - read in place, so a long detail costs no prefix copies."""
     label = failure.get("label") or ""
-    return name == failure.get("id") or name in _label_forms(label)
+    return (name == failure.get("id") or name == label
+            or (label.startswith(name) and label.startswith(" (", len(name))))
 
 
 def own_failures(failing, cases):
@@ -879,10 +901,11 @@ def red_verdict(run, ctx):
     `run` is `{"cmd", "code", "text", "problem", "second", "head", "fix"}`;
     `second` is the `--introduces` re-run with the working tree's
     implementation copied in, `head` the baseline - HEAD's own test files on
-    HEAD's code in an isolated clean throwaway - and `fix` the task's test
-    files on the working tree's code, both made when the task's run is red.
-    `ctx` is `{"root", "implementation", "tests", "cases", "symbols",
-    "dropped", "new_files"}`."""
+    HEAD's code, made FIRST in the fresh throwaway unless `ctx["skip"]` says
+    no HEAD run was owed - and `fix` the task's test files on the working
+    tree's code, made when the task's run is red on a green baseline. Every
+    run has an isolated environment of its own. `ctx` is `{"root",
+    "implementation", "tests", "cases", "symbols", "dropped", "skip"}`."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
@@ -906,11 +929,12 @@ def red_verdict(run, ctx):
             "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
     failing = (failing_cases(text, tally["runner"])
                if tally is not None and tally["runner"] is not None else [])
-    how = ("named by --case, HEAD's own tests green on HEAD's code" if ctx["cases"]
-           else "HEAD's own tests green on HEAD's code")
+    how = ctx.get("skip") or "HEAD's own tests green on HEAD's code"
+    if ctx["cases"]:
+        how = "named by --case, " + how
+    baseline = baseline_problem(run.get("head"), run["cmd"], ctx.get("skip"))
     if verdict == V_RED:
-        problem = (baseline_problem(run.get("head"), run["cmd"], ctx.get("new_files"))
-                   or fix_problem(run.get("fix"), run["cmd"], tally))
+        problem = baseline or fix_problem(run.get("fix"), run["cmd"], tally)
         if problem is not None:
             return E_CANNOT_PROVE, verdict, {
                 "status": RED_CANNOT, "at": at,
@@ -930,8 +954,8 @@ def red_verdict(run, ctx):
             "status": RED_CANNOT, "at": at,
             "basis": "%s, but no case --case names failed an assertion: %s - %s%s%s"
                      % (where, _ids(failing), line, refused_clause, env_clause)}, None
-    why_not = []
-    for symbol in (ctx["symbols"] if verdict == V_COLLECT else ()):
+    why_not = [baseline] if baseline and verdict == V_COLLECT else []
+    for symbol in (ctx["symbols"] if verdict == V_COLLECT and not baseline else ()):
         holds, why = introduced(ctx["root"], ctx["implementation"], symbol,
                                 ctx.get("deadline"))
         error = qualifying_error(text, symbol)
@@ -1029,40 +1053,31 @@ HOME_VARS = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
              "XDG_CACHE_HOME", "XDG_STATE_HOME", "APPDATA", "LOCALAPPDATA")
 
 
-def _fresh_home(env, scratch, prefix):
-    """`env` with a new empty home under `scratch`, set under every name in
-    `HOME_VARS` plus the windows drive/path pair derived from it - so nothing
-    the task's run wrote into its home is there to read."""
-    home = tempfile.mkdtemp(prefix=prefix, dir=scratch)
+def _isolated_env(env, scratch, tag):
+    """`env` for ONE run: a new empty home under every name in `HOME_VARS`
+    plus the windows drive/path pair, a TMPDIR/TMP/TEMP of its own and no user
+    site-packages. Every run gets new directories, so the runs differ only in
+    the files laid over the throwaway - nothing one run or the caller's
+    environment holds reaches another."""
+    home = tempfile.mkdtemp(prefix=tag + "-home-", dir=scratch)
+    tmp = tempfile.mkdtemp(prefix=tag + "-tmp-", dir=scratch)
     drive, tail = os.path.splitdrive(home)
     out = dict(env)
     out.update(dict((name, home) for name in HOME_VARS))
-    out["HOMEDRIVE"], out["HOMEPATH"] = drive, tail
+    out.update({"HOMEDRIVE": drive, "HOMEPATH": tail, "PYTHONNOUSERSITE": "1",
+                "TMPDIR": tmp, "TMP": tmp, "TEMP": tmp})
     return out
 
 
-def _head_run(path, cmd, deadline, timeout, env, scratch):
-    """The baseline: the same command over HEAD's own test files on HEAD's code,
-    in the throwaway reset to HEAD, with no user site-packages, a TMPDIR and a
-    home of its own - nothing the task's run left behind is there to read."""
+def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag):
+    """`(run, copied)` - the throwaway reset to HEAD, `rels` laid over it from
+    the working tree, and the command run in an isolated environment."""
     problem = _isolate(path, deadline)
     if problem is not None:
-        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}
-    tmp = tempfile.mkdtemp(prefix="baseline-", dir=scratch)
-    clean = dict(_fresh_home(env, scratch, "baseline-home-"), PYTHONNOUSERSITE="1",
-                 TMPDIR=tmp, TMP=tmp, TEMP=tmp)
-    return _timed_run(path, cmd, deadline, timeout, clean)
-
-
-def _fix_run(root, path, rels, cmd, deadline, timeout, env, scratch):
-    """The task's test files on the working tree's implementation, in the
-    throwaway reset to HEAD first, with a home of its own."""
-    problem = _isolate(path, deadline)
-    if problem is not None:
-        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}
-    _lay_over(root, path, rels)
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, []
+    copied = _lay_over(root, path, rels)
     return _timed_run(path, cmd, deadline, timeout,
-                      _fresh_home(env, scratch, "fix-home-"))
+                      _isolated_env(env, scratch, tag)), copied
 
 
 def _wants_second(code, text, symbols, cmd=None):
@@ -1164,44 +1179,42 @@ def run_red(args, cmd, out):
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None}
-    state = {"new_files": False}
+    state = {"skip": None}
     copied = []
     previous = _arm()
     try:
         try:
             present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
-                state["new_files"] = not present
-                copied, run["problem"] = _build_throwaway(
-                    root, path, scope["declared"], timeout=max(1, _left(deadline)))
+                new_tests = set(scope["declared"]) - present
+                state["skip"] = baseline_skip(cmd, root, new_tests)
+                _copied, run["problem"] = _build_throwaway(
+                    root, path, [], timeout=max(1, _left(deadline)))
             if run["problem"] is None and _left(deadline) < 1:
                 run["problem"] = ("the run timed out: building the throwaway spent "
                                   "the %s-second deadline" % (args.timeout,))
+            if run["problem"] is None and not state["skip"]:
+                run["head"], _c = _isolated_run(root, path, [], cmd, deadline,
+                                                args.timeout, env, holder, "baseline")
             if run["problem"] is None:
-                run["code"], run["text"], run["problem"] = _run_in(
-                    path, cmd, _left(deadline), env)
+                task, copied = _isolated_run(root, path, scope["declared"], cmd,
+                                             deadline, args.timeout, env, holder,
+                                             "task")
+                run["code"], run["text"], run["problem"] = (
+                    task["code"], task["text"], task["problem"])
             if run["problem"] is None and _wants_second(run["code"], run["text"],
                                                         args.introduces, cmd):
-                _lay_over(root, path, scope["implementation"])
-                left = _left(deadline)
-                if left < 1:
-                    code2, text2, problem2 = None, "", (
-                        "the run timed out: no time was left of the %s-second "
-                        "deadline" % (args.timeout,))
-                else:
-                    code2, text2, problem2 = _run_in(path, cmd, left, env)
-                run["second"] = {"code": code2, "text": text2, "problem": problem2}
+                run["second"], _c = _isolated_run(
+                    root, path, scope["declared"] + scope["implementation"], cmd,
+                    deadline, args.timeout, env, holder, "second")
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
-            if verdict1 == V_RED and not state["new_files"]:
-                run["head"] = _head_run(path, cmd, deadline, args.timeout, env,
-                                        holder)
             if verdict1 == V_RED and baseline_problem(run["head"], cmd,
-                                                      state["new_files"]) is None:
-                run["fix"] = _fix_run(root, path, scope["declared"]
-                                      + scope["implementation"], cmd, deadline,
-                                      args.timeout, env, holder)
+                                                      state["skip"]) is None:
+                run["fix"], _c = _isolated_run(
+                    root, path, scope["declared"] + scope["implementation"], cmd,
+                    deadline, args.timeout, env, holder, "fix")
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -1210,7 +1223,7 @@ def run_red(args, cmd, out):
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
-            "new_files": state["new_files"], "deadline": deadline})
+            "skip": state["skip"], "deadline": deadline})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:

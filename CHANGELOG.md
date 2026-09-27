@@ -305,16 +305,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   while the run held exactly that one failing case. A house case is now named by its full label,
   with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
   hands out) as its id only when present. A red is now credited only against a GREEN baseline:
-  after the task's run (its test files on HEAD's implementation) is red on an assertion, HEAD's own
-  test files run with the same command on HEAD's implementation in the throwaway reset to HEAD
-  (a forced checkout and a clean of untracked and ignored files, `PYTHONNOUSERSITE=1`, a TMPDIR of
-  its own, and a fresh home under every name a home lookup reads - the table
-  `tools/sweep-selftests.py` isolates its children with; the fix run gets a fresh home too) and must
-  be green - a tally counting no failure and no error. Then every failure of the
-  task's run comes from the task's change to the tests, a new case or an edited one, and all of
-  them are its own; a fix run (the task's test files on the working tree's implementation) must then
-  be green too, with no fewer cases, and `--case` must name one of the failures. A command red or
-  unreadable at HEAD is `could-not-prove` with the instruction to narrow it to the task's cases.
+  HEAD's own test files run FIRST with the same command on HEAD's implementation, before any file of
+  the task's is laid over or run, and must be green - a tally counting no failure and no error. The
+  baseline is skipped only when the command names nothing but test files new at HEAD, and the basis
+  then says no HEAD run was made and why. Then the task's run (its test files on HEAD's
+  implementation) must be red on an assertion, and a fix run (the task's test files on the working
+  tree's implementation) green with no fewer cases; every failure is then the task's own - a new case
+  or an edited one - and `--case` must name one of them. Every run, including `--introduces`'s
+  second run, is made in the throwaway reset to HEAD (a forced checkout and a clean of untracked and
+  ignored files) with an isolated environment of its own: a new home under every name a home lookup
+  reads (the table `tools/sweep-selftests.py` isolates its children with), a new TMPDIR, and
+  `PYTHONNOUSERSITE=1`, so the runs differ only in the files laid over. `--introduces` requires the
+  same baseline. A command red or unreadable at HEAD is `could-not-prove` with the instruction to
+  narrow it to the task's cases. The guide names what this cannot see: state reached by an absolute
+  path or through the shared git directory, network or service state between runs, and a flaky or
+  time-dependent HEAD case.
   Seven review rounds each found another way to credit a case past a red baseline by reading two
   runs' output - a relabelled case, a quiet stop, a failfast set in the file, a file the task's run
   rewrote - and the rule removes the reading rather than adding another reader: the label matching,
