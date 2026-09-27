@@ -310,10 +310,21 @@ tag is never moved or deleted — fix forward.
 question early. Ordinary work is untouched: `git push origin main` is not a release, and a guard
 that fired on it would be routed around inside a day.
 
+**A merged phase the plan's own evidence still calls provisional holds a release the same way,
+beside the open bugs rather than folded into that one list.** A phase is provisional when no
+full-scope run this repository has recorded — measured, clean, verbatim against the declared
+gate — has yet been taken with a head containing the commit that phase merged into; `/audit:review
+<phase> --full` (or the pre-push/CI step that runs the same command) is what settles one. A plan
+naming no third place (`meta.fullGate` absent) has nothing provisional to ask about, and the guard
+behaves exactly as it did before that question existed. The tree it judges comes from the
+plugin's own `_config.tree_for`, asked about the release command's own working directory, so a
+release typed from a linked worktree answers to that worktree's plan rather than to wherever
+`CLAUDE_PROJECT_DIR` happened to point.
+
 The way past it is **yours alone**: type `#release-with-bugs` in your own message, which arms a
-single-use, one-hour slot through `.claude/hooks/arm-release-bypass.py` and prints which bugs you
-are shipping over. Nothing the model writes can arm it — that is why the switch reads the prompt
-and not the command.
+single-use, one-hour slot through `.claude/hooks/arm-release-bypass.py` and prints which bugs and
+which provisional phases you are shipping over, through the guard's own reading of both. Nothing
+the model writes can arm it — that is why the switch reads the prompt and not the command.
 
 This exists because it already failed: a bug reported *during* the v2.0.1 release was written into
 a scratch plan file no gate reads, and the release went out. Twenty-one gates were green and every

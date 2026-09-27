@@ -354,7 +354,7 @@
     {
       "id": "P80.6",
       "title": "Status: the tests column says whole / provisional / unknown, and provisional and stale-full-run are opt-in conditions",
-      "status": "in_progress",
+      "status": "done",
       "description": "audit-status.py computes _evidence_io.full_status for each merged phase (git root and the resolved meta.fullGate passed in; _status_facts is a layer-mate of _evidence_io and receives the answers as data) into summary['fullRun'] {phaseId: {answer, basis, runId}}. _status_facts.CONDITIONS += provisional (a phase whose answer is PROVISIONAL) and stale-full-run (a PROVISIONAL phase whose mergedAt is older than the ts of the newest whole-bearing green full run: a full run happened after the phase landed and still does not contain it). DEFAULT_GATE is unchanged: both are opt-in for the reason the tuple's own comment gives for no-test-evidence. evaluate_gate grades them off summary['fullRun']. UNKNOWN never fails either condition (a phase merged before mergedHead existed has nothing ancestry can be asked of); it is reported. The table's tests column renders from _manifest_vocab.VERIFIED and the answers: 'whole', 'provisional (since <mergedAt>)', 'unknown - <basis>'; with no meta.fullGate the column is exactly what it is today, with no 'full: not declared' text (a basis with no claim is noise). The GATE FAILED detail names the phases and their bases; the condition help texts join the dict beside no-test-evidence. commands/status.md lists both conditions and why they are opt-in. Red-first: test__status_facts.py pins DEFAULT_GATE unchanged and that provisional fails on a PROVISIONAL phase and passes on WHOLE; test_audit_status.py: --gate --fail-on provisional exits non-zero on a provisional fixture and zero without the flag (mutation: add it to DEFAULT_GATE -> red). Allow case: a plan without fullGate renders a byte-identical table.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -389,18 +389,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7f2f8299f589492d5f297c018867e085bffb65bc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts.CONDITIONS += provisional, stale-full-run (DEFAULT_GATE untouched); provisional_phases / stale_full_runs over an injected summary.fullRun; audit-status.full_run_block computes it with resolved_commands and full_status, adding runTs; the phase line renders full whole / provisional (since mergedAt) / unknown - basis; commands/status.md documents both. Cases fr1-fr17. INTENT DIVERGES (task review, reproduced by a probe): runTs is set from the run full_status names even when that run is disqualified (dirty tree, counted nothing), so a run that certifies nothing can make a phase stale; the handback's 'measured clean' claim checks only status and scope. Fix at sign-off: full_status names the newest whole-bearing run and its moment itself. inheritedTests not-asked. Note: test_audit_status cv2/sh0 go red only when run directly in a checkout holding a real phase lock; the isolated sweep is green (a test isolation fault, recorded in the plan).",
+        "descriptive": "The status table now says whether each merged phase is whole, provisional or unknown, and --fail-on provisional or stale-full-run can make a pipeline hold on it; the default gate is unchanged."
       },
       "startedAt": "2026-09-27T07:28:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T08:42:38Z",
+      "verifiedBy": [
+        "fr1",
+        "fr3",
+        "fr6",
+        "fr8",
+        "fr10",
+        "fr11",
+        "fr14",
+        "fr15",
+        "fr16",
+        "fr17"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T08:22:46Z.f01df2",
         "status": "passed",
         "at": "2026-09-27T08:22:46Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "7f2f8299f589492d5f297c018867e085bffb65bc",
+        "at": "2026-09-27T08:42:38Z"
       }
     },
     {

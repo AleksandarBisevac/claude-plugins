@@ -18,10 +18,24 @@ a day - which is the failure mode `guard-false-positive-class` is about. Creatin
 a tag LOCALLY is refused too, because a local tag is what the push then publishes
 and refusing only the push leaves a trap already loaded.
 
+A SECOND LIST HOLDS THE SAME RELEASE, BESIDE THE BUGS: a merged phase the
+plan's own evidence ledger reads PROVISIONAL - no green, measured, clean,
+verbatim full run yet recorded whose head contains what that phase merged
+into - refuses exactly the same commands, for the reason the manifest's
+"third place" exists at all: a merge is not the same claim as a full suite
+having actually run against it. `read_provisional` asks the plugin's own
+`full_status` this question rather than restating it, the way `read_bugs`
+already asks `effective_bug_status` rather than reading a stored field. A
+plan naming no third place (`meta.fullGate` absent) has nothing provisional
+by definition, so this guard then behaves exactly as it did before this
+existed.
+
 THE WAY PAST IT is `arm-release-bypass.py`: the maintainer types the keyword and a
 single-use slot appears. Nothing the model writes can arm it. That is why the
 switch is on the prompt and not on this command - a guard the caller can satisfy
-by writing the right words is not a guard.
+by writing the right words is not a guard. The message it prints names the
+provisional phases beside the bugs, through this file's own `read_provisional`,
+so what is being shipped over is never understated.
 
 FAIL-LOUD, NOT FAIL-OPEN, AND THAT IS THE OPPOSITE OF THIS REPO'S OTHER HOOKS.
 `SECURITY.md`'s table puts advisory paths on fail-open: a guard that crashes must
@@ -39,6 +53,7 @@ Exit codes: 0 always (the decision travels in the payload, never in the code).
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -127,6 +142,89 @@ def _effective(project):
     return None
 
 
+def _evidence_modules(project):
+    """`(_evidence_io, _worktrees, _manifest_vocab)`, or None when they cannot
+    be reached - the lazy load `read_provisional` needs, patterned on
+    `_effective`'s load of `_manifest_io` for the same reason: most Bash calls
+    never reach the publishing branch, so the cost of reaching
+    `scripts/governance`, `scripts/git` and `scripts/manifest` belongs to a
+    release alone, not to every command this hook is asked about.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))       # .claude/hooks
+    repo = os.path.dirname(os.path.dirname(here))
+    for root in (repo, project):
+        scripts = os.path.join(root, "plugins", "audit", "scripts")
+        if not os.path.isdir(scripts):
+            continue
+        for entry in (scripts, os.path.join(scripts, "governance"),
+                      os.path.join(scripts, "git"),
+                      os.path.join(scripts, "manifest")):
+            if entry not in sys.path:
+                sys.path.insert(0, entry)
+        try:
+            import _evidence_io
+            import _worktrees
+            import _manifest_vocab
+            return (_evidence_io, _worktrees, _manifest_vocab)
+        except Exception:
+            continue
+    return None
+
+
+def _hooks_config(project):
+    """The plugin's own `plugins/audit/hooks/_config`, loaded lazily and by
+    the same two-root search `_effective` and `_evidence_modules` use.
+
+    THIS FILE IS NOT A PLUGIN HOOK - its own docstring says so - but the tree
+    a release command targets is exactly the question `_config.tree_for`
+    already answers for every hook that does count as one (P72), and a second
+    answer to that question invented here could disagree with the first the
+    day a linked worktree entered the picture.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))       # .claude/hooks
+    repo = os.path.dirname(os.path.dirname(here))
+    for root in (repo, project):
+        hooks = os.path.join(root, "plugins", "audit", "hooks")
+        if not os.path.isfile(os.path.join(hooks, "_config.py")):
+            continue
+        if hooks not in sys.path:
+            sys.path.insert(0, hooks)
+        try:
+            import _config
+            return _config
+        except Exception:
+            continue
+    return None
+
+
+def resolved_tree(payload, project):
+    """The tree whose PLAN a release command answers to.
+
+    `_config.tree_for`, asked about THIS COMMAND's own effective working
+    directory - never `CLAUDE_PROJECT_DIR` alone. A release typed from a
+    linked worktree publishes over THAT worktree's plan, which may carry a
+    provisional phase the project's own copy does not, so judging it against
+    the project unconditionally would be asking the wrong tree the question
+    this file exists to ask (P72).
+
+    Falls back to `project` (today's reading, unconditionally) when `_config`
+    cannot be reached or answers nothing usable - never a THIRD guess at a
+    tree neither `project` nor `_config` named.
+    """
+    cfg_mod = _hooks_config(project)
+    if cfg_mod is None:
+        return project
+    data = payload if isinstance(payload, dict) else {}
+    command = (data.get("tool_input") or {}).get("command", "")
+    try:
+        target = cfg_mod.effective_cwd(command, data.get("cwd"))
+        placed = cfg_mod.tree_for(data, target, project=project)
+    except Exception:
+        return project
+    root = placed.get("root")
+    return str(root) if root else project
+
+
 def read_bugs(project):
     """`(open_bugs, problem)` — the plan's open bugs, or why they are unknown.
 
@@ -177,6 +275,71 @@ def read_bugs(project):
     return (out, None)
 
 
+def read_provisional(project):
+    """`(provisional, problem)` - every merged phase this plan's own evidence
+    ledger reads PROVISIONAL, each named with `full_status`'s own basis, or
+    why that cannot be decided at all.
+
+    THE SECOND LIST BESIDE THE OPEN BUGS, on the plugin's own vocabulary
+    rather than a rule invented here: `full_status` (P80.3) already answers
+    whole, provisional, unknown or not-declared from the ledger alone, and a
+    second reading of that question in this file would be the same defect
+    `read_bugs`'s docstring already warns about - two answers to one
+    question, with this file at risk of being the one that lies.
+
+    UNREADABLE IS A REFUSAL, NEVER "NOTHING PROVISIONAL" - this file's own
+    fail-loud rule, extended to the second list it now reads. A manifest that
+    will not parse or a ledger carrying a file that could not be read or
+    verified means the caller cannot know whether some phase is provisional,
+    so it must say so rather than let a release through on the strength of a
+    file nobody could actually read.
+
+    No `meta.fullGate` at all means nothing is provisional and this returns
+    `([], None)` - the guard's behaviour is then exactly what it was before
+    this function existed.
+    """
+    mio = _effective(project)
+    if mio is None:
+        return ([], "the plugin's own evidence rule could not be loaded from "
+                    "plugins/audit/scripts, so provisional phases cannot be "
+                    "decided here")
+    modules = _evidence_modules(project)
+    if modules is None:
+        return ([], "the plugin's own evidence reader could not be loaded "
+                    "from plugins/audit/scripts, so provisional phases "
+                    "cannot be decided here")
+    evidence_io, _worktrees, vocab = modules
+    path = os.path.join(project, MANIFEST_REL)
+    try:
+        data = mio.load_manifest_safe(path)
+    except Exception as exc:
+        return ([], "%s could not be read (%s)" % (MANIFEST_REL, exc))
+    if not isinstance(data, dict):
+        return ([], "%s did not parse as a manifest object" % (MANIFEST_REL,))
+    meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+    full_gate = meta.get("fullGate")
+    if not full_gate:
+        return ([], None)
+    full_commands = [c for _name, c in
+                     evidence_io.resolved_commands(data, full_gate)]
+    ledger = evidence_io.read_rows(project)
+    if ledger.get("unreadable"):
+        return ([], "the evidence ledger carries file(s) that could not be "
+                    "read or verified: %s"
+                    % (", ".join(ledger.get("unreadableFiles") or []),))
+    rows = ledger.get("rows") or []
+    phases = data.get("phases")
+    phases = phases if isinstance(phases, list) else []
+    out = []
+    for phase in phases:
+        if not isinstance(phase, dict) or not phase.get("mergedAt"):
+            continue
+        status = evidence_io.full_status(rows, phase, project, full_commands)
+        if status.get("answer") == vocab.FULL_STATUS_PROVISIONAL:
+            out.append((phase.get("id") or "?", status.get("basis") or ""))
+    return (out, None)
+
+
 def bypass_armed(project, session_id, now=None):
     """True iff the maintainer armed a bypass that has not expired.
 
@@ -201,33 +364,53 @@ def bypass_armed(project, session_id, now=None):
     return (now - armed) <= ttl
 
 
-def refusal(why, bugs, problem):
-    """The sentence a refused release reads, naming what to do about it."""
+def refusal(why, bugs, provisional, problem):
+    """The sentence a refused release reads, naming what to do about it - the
+    open bugs and the provisional phases named as two lists, because they are
+    settled two different ways."""
     if problem:
-        return ("this command %s, and whether the plan carries open bugs is "
-                "UNKNOWN: %s. A pushed tag is never moved here, so this refuses "
-                "rather than guessing. Fix the file, or type %s to release "
-                "anyway." % (why, problem, KEYWORD))
-    listed = "; ".join("%s (%s) %s" % (b[0], b[1], b[2][:70]) for b in bugs)
-    return ("this command %s while %d bug(s) are open in the plan: %s. Close "
-            "them, or type %s in your own message to release over them - the "
-            "keyword only counts from you, which is why it is read off the "
-            "prompt and not off this command."
-            % (why, len(bugs), listed, KEYWORD))
+        return ("this command %s, and whether the plan carries open bugs or "
+                "a provisional phase is UNKNOWN: %s. A pushed tag is never "
+                "moved here, so this refuses rather than guessing. Fix the "
+                "file, or type %s to release anyway."
+                % (why, problem, KEYWORD))
+    parts = []
+    if bugs:
+        listed = "; ".join("%s (%s) %s" % (b[0], b[1], b[2][:70]) for b in bugs)
+        parts.append("%d bug(s) are open in the plan: %s" % (len(bugs), listed))
+    if provisional:
+        listed = "; ".join("%s (%s)" % (p[0], p[1][:90]) for p in provisional)
+        parts.append("%d phase(s) are provisional - no green full run yet "
+                     "measured on a head containing what they merged into: %s"
+                     % (len(provisional), listed))
+    return ("this command %s while %s. Close the bugs, record the full run "
+            "that settles a provisional phase (/audit:review <phase> --full, "
+            "or the pre-push/CI step), or type %s in your own message to "
+            "release over them - the keyword only counts from you, which is "
+            "why it is read off the prompt and not off this command."
+            % (why, "; and ".join(parts), KEYWORD))
 
 
-def decide(command, project, session_id, now=None):
+def decide(command, project, session_id, now=None, payload=None):
     """`reason` when the call must be denied, else None. The whole rule, in one
-    pure-ish function so its cases need no hook payload."""
+    pure-ish function so its cases need no hook payload.
+
+    `payload` is OPTIONAL and used for exactly one thing: resolving which
+    TREE this release answers to, through `resolved_tree`. Every case in this
+    file that predates that question passes no `payload` and keeps reading
+    `project` as the tree directly, which is the same answer it always got."""
     why = publishing(command)
     if not why:
         return None
-    bugs, problem = read_bugs(project)
-    if not bugs and not problem:
+    tree = resolved_tree(payload, project) if payload else project
+    bugs, bug_problem = read_bugs(tree)
+    provisional, prov_problem = read_provisional(tree)
+    problem = bug_problem or prov_problem
+    if not bugs and not provisional and not problem:
         return None
     if bypass_armed(project, session_id, now):
         return None
-    return refusal(why, bugs, problem)
+    return refusal(why, bugs, provisional, problem)
 
 
 def main():
@@ -242,7 +425,8 @@ def main():
         return 0
     command = (payload.get("tool_input") or {}).get("command", "")
     reason = decide(command, project_dir(),
-                    str(payload.get("session_id") or ""))
+                    str(payload.get("session_id") or ""),
+                    payload=payload)
     if reason:
         sys.stdout.write(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -469,6 +653,197 @@ def _selftest():
               "the plugin's own rule counts - mine=%r theirs=%r"
               % ([b[0] for b in mine], theirs),
               [b[0] for b in mine] == theirs)
+
+    # --- provisional phases hold a release too, asked of the plugin's own
+    # `full_status` rather than a second rule invented here. A FRESH fixture,
+    # never this repository's real plan: BUG-12 sits open in it right now, so
+    # only a fixture plan can isolate "no open bug, one provisional phase".
+    tmp2 = tempfile.mkdtemp(prefix="guard-release-full-")
+    try:
+        os.makedirs(os.path.join(tmp2, "docs", "audit"))
+        os.makedirs(os.path.join(tmp2, STATE_REL))
+        mpath2 = os.path.join(tmp2, MANIFEST_REL)
+
+        def write_plan(meta_extra, phases, bugs=None):
+            meta = {"version": 2}
+            meta.update(meta_extra or {})
+            with open(mpath2, "w", encoding="utf-8") as fh:
+                json.dump({"meta": meta, "phases": phases or [],
+                           "bugs": bugs or []}, fh)
+
+        modules = _evidence_modules(tmp2)
+        check("gr22 the evidence and ancestry modules load from this "
+              "repository's own scripts/ - what read_provisional needs to "
+              "ask full_status anything at all",
+              modules is not None)
+
+        # RED-FIRST: a merged phase with a declared fullGate and NO recorded
+        # full run at all reads PROVISIONAL (full_status's own "no full-scope
+        # run has ever been recorded" answer) - and that alone must hold a
+        # release exactly like an open bug does.
+        write_plan({"fullGate": ["full"],
+                   "buildCommands": {"full": "echo full"}},
+                  [{"id": "P1", "title": "p", "status": "done",
+                    "mergedAt": "2026-01-01T00:00:00Z",
+                    "mergedHead": "a" * 40, "tasks": []}])
+        provisional, problem = read_provisional(tmp2)
+        check("gr23 RED-FIRST: a merged phase this ledger has never recorded "
+              "a full run for reads PROVISIONAL, with no problem to report: "
+              "%r / %r" % (provisional, problem),
+              problem is None and [p[0] for p in provisional] == ["P1"])
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr24 RED-FIRST (dg13): no open bug and one provisional phase "
+              "still REFUSES `git tag v1` - the mutation this guards is "
+              "`decide` reading only the bugs: %r" % (got,),
+              got and "P1" in got and "provisional" in got)
+
+        # ALLOW (dg13): the SAME plan with no meta.fullGate at all has
+        # nothing provisional to ask about, and behaves exactly as it did
+        # before this function existed.
+        write_plan({}, [{"id": "P1", "title": "p", "status": "done",
+                        "mergedAt": "2026-01-01T00:00:00Z",
+                        "mergedHead": "a" * 40, "tasks": []}])
+        check("gr25 ALLOW: no meta.fullGate at all means nothing is "
+              "provisional, and the release goes through",
+              decide("git tag -a v1 -m x", tmp2, "s1") is None)
+
+        # ALLOW (dg13): ordinary work is never refused by a provisional
+        # phase either - only the publishing commands are judged.
+        write_plan({"fullGate": ["full"],
+                   "buildCommands": {"full": "echo full"}},
+                  [{"id": "P1", "title": "p", "status": "done",
+                    "mergedAt": "2026-01-01T00:00:00Z",
+                    "mergedHead": "a" * 40, "tasks": []}])
+        check("gr26 ALLOW: `git push origin main` is not refused by a "
+              "provisional phase - it is not a publishing command",
+              decide("git push origin main", tmp2, "s1") is None)
+
+        # RED-FIRST: an unreadable ledger is a PROBLEM, never "nothing
+        # provisional" - fail-loud extended to this second list.
+        edir = os.path.join(tmp2, "docs", "audit", "evidence")
+        os.makedirs(edir, exist_ok=True)
+        with open(os.path.join(edir, "2026-01.broken.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"not": "chained"}\n{also not valid json\n')
+        provisional, problem = read_provisional(tmp2)
+        check("gr27 RED-FIRST: a ledger carrying a torn line is a PROBLEM, "
+              "not an empty provisional list: %r / %r"
+              % (provisional, problem),
+              provisional == [] and bool(problem))
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr28 ...and `decide` refuses over that problem, naming it "
+              "UNKNOWN exactly like an unreadable manifest does: %r" % (got,),
+              got and "UNKNOWN" in got)
+        os.remove(os.path.join(edir, "2026-01.broken.jsonl"))
+
+        # ALLOW: the same phase made WHOLE by a real recorded full run whose
+        # head really does contain mergedHead - a REAL repo, never two
+        # strings compared for equality, for the reason `test__evidence_io`'s
+        # own fixture states: a mutation comparing `head == mergedHead` would
+        # still pass against two equal fixture strings.
+        evidence_io = modules[0]
+        git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+              "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+        def sh(*args):
+            subprocess.run(git + list(args), cwd=tmp2, check=True,
+                          capture_output=True, timeout=30)
+
+        def rev():
+            out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=tmp2,
+                                 check=True, capture_output=True, timeout=30)
+            return out.stdout.decode("utf-8").strip()
+
+        sh("init", "-q")
+        with open(os.path.join(tmp2, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("1\n")
+        sh("add", "-A")
+        sh("commit", "-qm", "one")
+        merged_head = rev()
+        with open(os.path.join(tmp2, "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("2\n")
+        sh("add", "-A")
+        sh("commit", "-qm", "two")
+        full_head = rev()
+
+        write_plan({"fullGate": ["full"], "nodePreamble": "export X=1",
+                   "buildCommands": {"full": "echo full"}},
+                  [{"id": "P1", "title": "p", "status": "done",
+                    "mergedAt": "2026-01-01T00:00:00Z",
+                    "mergedHead": merged_head, "tasks": []}])
+        with open(mpath2, "r", encoding="utf-8") as fh:
+            plan = json.load(fh)
+        full_commands = [c for _n, c in
+                        evidence_io.resolved_commands(plan, ["full"])]
+        row = {
+            "v": evidence_io.ROW_VERSION, "runId": "run-whole",
+            "ts": "2026-01-02T00:00:00Z", "scope": evidence_io.FULL_SCOPE,
+            "status": "passed",
+            "steps": [{"name": "gate", "command": c, "exit": 0,
+                      "durationMs": 1000} for c in full_commands],
+            "testedState": {"head": full_head},
+            "observations": {"ranTotal": 1, "countsBasis": "1 check",
+                             "dirtyOutside": []},
+        }
+        evidence_io.append_row(tmp2, row, writer="selftest")
+        provisional, problem = read_provisional(tmp2)
+        check("gr29 ALLOW: a real recorded full run whose head really "
+              "contains mergedHead reads WHOLE, not provisional: %r / %r"
+              % (provisional, problem),
+              problem is None and provisional == [])
+        check("gr30 ALLOW (dg13): ...and the release goes through",
+              decide("git tag -a v1 -m x", tmp2, "s1") is None)
+
+        # THE MUTATION THIS PROVES AGAINST, DRIVEN RATHER THAN ASSERTED: the
+        # SAME row read against the bare `meta.fullGate` entries - no
+        # `resolved_commands`, no preamble - does not match this run's
+        # published commands, so a `read_provisional` that skipped the
+        # resolution would disqualify a run that really did measure the
+        # declared gate and hold this release open forever.
+        bare = evidence_io.full_status(
+            evidence_io.read_rows(tmp2).get("rows") or [],
+            {"id": "P1", "mergedHead": merged_head}, tmp2, ["full"])
+        vocab = modules[2]
+        check("gr31 the bare fullGate entry (no preamble, no buildCommands "
+              "resolution) does NOT read WHOLE against this run's published "
+              "commands - the shape a preamble-skipping mutation would "
+              "break: %r" % (bare,),
+              bare["answer"] != vocab.FULL_STATUS_WHOLE)
+
+        # --- P72: the tree a release is judged against comes from
+        # `_config.tree_for`, never `CLAUDE_PROJECT_DIR` read a second time --
+        check("gr32 resolved_tree with NO payload leaves the tree exactly as "
+              "`project` - the reading every call above this point made, "
+              "unconditionally",
+              resolved_tree(None, tmp2) == tmp2)
+        payload_here = {"cwd": tmp2,
+                        "tool_input": {"command": "git tag -a v1 -m x"}}
+        check("gr33 resolved_tree asked about a command whose shell never "
+              "leaves the session's own directory answers with that SAME "
+              "directory - `tree_for` reached and agreeing, not a second "
+              "tree invented for the ordinary call",
+              resolved_tree(payload_here, tmp2) == tmp2)
+        wt = tempfile.mkdtemp(prefix="guard-release-wt-")
+        shutil.rmtree(wt)
+        subprocess.run(git + ["worktree", "add", "-b", "gr34-side", wt],
+                      cwd=tmp2, check=True, capture_output=True, timeout=30)
+        try:
+            payload_elsewhere = {"cwd": tmp2, "tool_input": {
+                "command": "cd %s && git tag -a v1 -m x" % (wt,)}}
+            moved = resolved_tree(payload_elsewhere, tmp2)
+            check("gr34 ...and a command that `cd`s into a LINKED WORKTREE "
+                  "before tagging is judged against THAT worktree's own "
+                  "plan, never `project`'s - a release typed there must "
+                  "answer for what IT carries, not for wherever "
+                  "CLAUDE_PROJECT_DIR happened to point (P72): %r"
+                  % (moved,),
+                  os.path.realpath(moved) == os.path.realpath(wt))
+        finally:
+            subprocess.run(git + ["worktree", "remove", "--force", wt],
+                          cwd=tmp2, check=True, capture_output=True,
+                          timeout=30)
+    finally:
+        shutil.rmtree(tmp2, ignore_errors=True)
 
     print("")
     print("%s: %d/%d cases passed"

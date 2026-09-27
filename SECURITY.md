@@ -470,6 +470,40 @@ Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **leas
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the
 evidence check can only relax the gate, never manufacture a denial.
 
+### The one guard that fails loud (`.claude/hooks/guard-release.py`)
+
+Everything above is **this plugin's product**, registered through `plugins/audit/hooks/hooks.json`
+and read fail-open by design: a hook that cannot decide must not stop legitimate work.
+`.claude/hooks/guard-release.py` and `.claude/hooks/arm-release-bypass.py` are **not the product** —
+they are this repository's own release discipline, wired outside that table, and they invert the
+posture on purpose. What they protect is irreversible: a pushed tag or a published GitHub Release
+cannot be taken back, so a guard that cannot read the plan must **refuse** the publishing commands
+(`git tag`, a tag push, `gh release create`) rather than wave one through on its own malfunction.
+An ordinary `git push origin main` is never touched by either state below — pushing code is not
+releasing it.
+
+The guard refuses over **two lists**, read from the plan's own evidence rather than restated: every
+bug the plugin's `effective_bug_status` still calls open, and every merged phase the plugin's own
+`full_status` reads PROVISIONAL — a phase with no full run yet recorded whose head contains what it
+merged into. A plan naming no third place (`meta.fullGate` absent) has nothing provisional to ask
+about, and the guard behaves exactly as it did before that question existed.
+
+| What the guard is asked | Manifest/ledger reads clean | Manifest or ledger cannot be read/verified |
+|---|---|---|
+| An open bug, or a provisional phase | **deny** | **deny — UNKNOWN, not "nothing to refuse"** |
+| Neither | **allow** | **deny — UNKNOWN, not "nothing to refuse"** |
+
+The way past it is `arm-release-bypass.py`: typing `#release-with-bugs` in the maintainer's own
+prompt arms a single-use, time-limited slot that the guard alone can read — nothing the model
+writes can arm it, because a guard the caller can satisfy by writing the right words is not a
+guard. The arming message names **both** lists it is authorising a release over, through the same
+reading the guard itself refuses on, so a blanket phrase never understates what is being shipped.
+
+The tree the guard judges is resolved through `plugins/audit/hooks/_config.tree_for`, asked about
+the release command's own effective working directory — never `CLAUDE_PROJECT_DIR` read a second
+time. A release typed from a linked worktree is judged against that worktree's own plan, which may
+carry a bug or a provisional phase the project's copy does not.
+
 ## What the usage ledger records
 
 `meter-usage` reads the session transcript to recover token counts, which Claude

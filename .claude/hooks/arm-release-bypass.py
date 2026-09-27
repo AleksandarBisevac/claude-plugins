@@ -59,6 +59,25 @@ def project_dir():
     return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
+def _load_guard():
+    """`guard-release.py`, loaded BY PATH - its name is hyphenated and
+    `import` cannot spell it, the same reason the plugin's own hook tests
+    load their subjects this way. Shared by `open_bugs` and
+    `provisional_phases`: both ask the guard's own reading rather than
+    rebuilding it, so this file cannot come to disagree with the guard it
+    is arming a bypass for."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "audit_repo_guard_release", os.path.join(here, "guard-release.py"))
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        return guard
+    except Exception:
+        return None
+
+
 def open_bugs(project):
     """`[(id, severity, title)]` for every bug the plan still calls open.
 
@@ -73,23 +92,24 @@ def open_bugs(project):
     reports the failure itself: two hooks blaming each other for one unreadable
     file is how a reader learns nothing.
     """
-    # By PATH, because the sibling's name is hyphenated and `import` cannot spell
-    # it - the same reason the plugin's own hook tests load their subjects this way.
-    here = os.path.dirname(os.path.abspath(__file__))
-    guard = None
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "audit_repo_guard_release", os.path.join(here, "guard-release.py"))
-        guard = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(guard)
-    except Exception:
-        guard = None
+    guard = _load_guard()
     if guard is None:
         # The sibling could not be loaded. Say nothing about bugs rather than
         # inventing a second rule for them; the guard still decides the release.
         return []
     return guard.read_bugs(project)[0]
+
+
+def provisional_phases(project):
+    """`[(phaseId, basis)]` for every merged phase the guard's own
+    `read_provisional` calls PROVISIONAL - the SAME reading `guard-release.py`
+    refuses releases over. A guard that could not be loaded says nothing about
+    phases either, for the reason `open_bugs` already gives: the guard still
+    decides the release regardless of what this message can say about it."""
+    guard = _load_guard()
+    if guard is None:
+        return []
+    return guard.read_provisional(project)[0]
 
 
 def arm(project, session_id):
@@ -107,19 +127,29 @@ def arm(project, session_id):
         return None
 
 
-def message(bugs, armed):
-    """What the maintainer is told at the moment they authorise this."""
+def message(bugs, provisional, armed):
+    """What the maintainer is told at the moment they authorise this - the
+    provisional phases named beside the open bugs, never folded into one
+    count, because the two are settled two different ways (closing a bug vs
+    recording a full run)."""
     if not armed:
         return ("release bypass could NOT be armed - the state directory is not "
                 "writable, so the release guard will still refuse. Fix the "
                 "directory rather than working around the guard.")
-    if not bugs:
+    if not bugs and not provisional:
         return ("release bypass armed, and the plan currently carries no open "
-                "bug - so it authorises nothing. It expires unused.")
-    listed = "; ".join("%s (%s) %s" % (b[0], b[1], b[2][:60]) for b in bugs)
+                "bug or provisional phase - so it authorises nothing. It "
+                "expires unused.")
+    parts = []
+    if bugs:
+        listed = "; ".join("%s (%s) %s" % (b[0], b[1], b[2][:60]) for b in bugs)
+        parts.append("%d open bug(s): %s" % (len(bugs), listed))
+    if provisional:
+        listed = "; ".join("%s (%s)" % (p[0], p[1][:60]) for p in provisional)
+        parts.append("%d provisional phase(s): %s" % (len(provisional), listed))
     return ("release bypass armed for this session, single use. You are "
-            "releasing over %d open bug(s): %s. It expires unused in %d "
-            "minutes." % (len(bugs), listed, TTL_SECONDS // 60))
+            "releasing over %s. It expires unused in %d minutes."
+            % ("; and ".join(parts), TTL_SECONDS // 60))
 
 
 def main():
@@ -135,8 +165,10 @@ def main():
         return 0
     project = project_dir()
     bugs = open_bugs(project)
+    provisional = provisional_phases(project)
     armed = arm(project, str(payload.get("session_id") or ""))
-    sys.stdout.write(json.dumps({"systemMessage": message(bugs, armed)}))
+    sys.stdout.write(json.dumps(
+        {"systemMessage": message(bugs, provisional, armed)}))
     return 0
 
 
@@ -195,20 +227,46 @@ def _selftest():
               "what lets the guard expire it",
               bool(path) and os.path.isfile(path)
               and "armedAtEpoch" in json.load(open(path, encoding="utf-8")))
-        msg = message([("BUG-2", "med", "a thing that is wrong")], path)
+        msg = message([("BUG-2", "med", "a thing that is wrong")], [], path)
         check("rb9 the arming message NAMES the bugs being shipped over - the "
               "blanket phrase costs the friction that kept a reader aware, and "
               "being told at the moment of arming is what replaces it: %r" % (msg,),
               "BUG-2" in msg and "1 open bug" in msg)
-        clean = message([], path)
-        check("rb10 ...and with nothing open it says the bypass authorises "
-              "nothing, rather than congratulating anyone: %r" % (clean,),
+        clean = message([], [], path)
+        check("rb10 ...and with nothing open or provisional it says the "
+              "bypass authorises nothing, rather than congratulating anyone: "
+              "%r" % (clean,),
               "authorises nothing" in clean)
-        broken = message([("BUG-2", "med", "x")], None)
+        broken = message([("BUG-2", "med", "x")], [], None)
         check("rb11 a bypass that could NOT be armed says so instead of "
               "reporting success - a reader who thinks it is armed will be "
               "refused later with no idea why: %r" % (broken,),
               "could NOT be armed" in broken)
+
+        # --- the SECOND list, beside the bugs, through the guard's OWN reading -
+        got_p = provisional_phases(tmp)
+        check("rb12 with no manifest at all, provisional_phases says nothing "
+              "either - the same silence open_bugs already keeps for the "
+              "same reason (rb7)",
+              got_p == [])
+        os.makedirs(os.path.join(tmp, "docs", "audit"))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"fullGate": ["full"],
+                               "buildCommands": {"full": "echo full"}},
+                      "phases": [{"id": "P9", "title": "p", "status": "done",
+                                 "mergedAt": "2026-01-01T00:00:00Z",
+                                 "mergedHead": "b" * 40, "tasks": []}],
+                      "bugs": []}, fh)
+        got_p = provisional_phases(tmp)
+        check("rb13 RED-FIRST: a merged phase this ledger has recorded no "
+              "full run for is named by provisional_phases, driven through "
+              "the GUARD's own `read_provisional` rather than a second rule "
+              "invented here: %r" % (got_p,),
+              [p[0] for p in got_p] == ["P9"])
+        msg_p = message([], got_p, path)
+        check("rb14 the arming message names the PROVISIONAL phase beside "
+              "the (empty) bugs list, through the same reading: %r" % (msg_p,),
+              "P9" in msg_p and "provisional phase" in msg_p)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
