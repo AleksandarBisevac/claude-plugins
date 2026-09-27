@@ -20,7 +20,36 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P88-R1",
+        "severity": "low",
+        "file": "SECURITY.md:265-269",
+        "issue": "This bullet says more than the code does. The text: 'an interpreter handed the stdin marker `-`, an option this reading does not know to take a value whose separate value is script-named, or an operand carrying an expansion, is read as running a script file'. Only the middle item has the 'script-named' qualifier. The code (_config.runs_own_program, called only from guard-secrets-read.py:1131) returns True only when the first operand ends in a script extension or is an inline flag. Measured on the P88 export: ['python3','-'] False, ['python3','-','notes.txt'] False, ['python3','-','x.py'] True, ['ruby','-','-e'] True, ['python3','$S'] False, ['python3','\"$S\"'] False, ['python3','$S.py'] True. So `python3 - <<<...` and `python3 \"$X\" <<<...` are still graded as inline eval, but the document says they are exempt. The error is on the conservative side, but the statement is still one the code does not back.",
+        "resolution": "fixed in P88.2-dnb (e4c96d2b): fix task P88.2-dnb (review-P88a.json)",
+        "fixTask": "P88.2-dnb",
+        "commit": "e4c96d2b"
+      },
+      {
+        "id": "P88-R2",
+        "severity": "low",
+        "file": "SECURITY.md:241-282 (open-residuals list); P88 desiredOutcome",
+        "issue": "The desiredOutcome says the not-followed list names 'every shape the P83 round-3 review found the guards do not read'. review-P83c.json preExisting[0] is such a shape, and the list does not name it. The $(...) scanner stops at a `)` inside a comment or inside a heredoc body within the substitution. Measured on the P88 export with guard-history-rewrite._substitution_end: for `echo \"$(echo x # )<nl> echo hello) tail\"` it returns index 17, but the real close is at 30. For a quoted heredoc whose body line is `)`, it returns 18, but the real close is at 22. SECURITY.md:204-205 says of the substitution reading that 'Each of these readings has limits, and the list of open residuals below says where', and the list does not include this one. The task description limited itself to findings 4-6, so the task matches its own description. The gap is between the phase goal and the diff.",
+        "resolution": "fixed in P88.2-dnb (e4c96d2b): fix task P88.2-dnb (review-P88a.json)",
+        "fixTask": "P88.2-dnb",
+        "commit": "e4c96d2b"
+      },
+      {
+        "id": "P88-R3",
+        "severity": "low",
+        "file": "SECURITY.md:263-264",
+        "issue": "This is a claim the code does not keep, so it is filed here even though its severity is low. The error is on the conservative side: the bullet states a wider residual than exists. The new bullet reads: 'inside a `$(…)` body, a `)` in a comment or in a heredoc body is read as the substitution's close, so the rest of the body is not read'. That holds for _substitution_end called on raw text, which is what round 1 and the P83 review measured. It does not hold for the guard's own path. git_calls runs runnable() first and splits the command into stages with _op_tokens. Measured on a `git archive e4c96d2b` export, using git_calls with the benign verb `log`. (a) Comment half. A DOUBLE-QUOTED substitution loses the rest: `echo \"$(echo x # )<nl>git log) tail\"` gives []; the control without `#` gives [log]. An UNQUOTED substitution does not lose it: `echo $(echo x # )<nl> git log)` gives [log], and `x=$(...)` does too. The rest is read as outer command text. `true $(echo x # )<nl> echo hello > .git/hooks/pre-commit)` gives _output_runs True for the hello stage. (b) Heredoc half. runnable_text lifts the body out of the command before the scanner runs, for `<<'E'`, `<<\"E\"`, `<<E`, `<<-E`, a piped head and a nested subshell. Each of those gives [log] with a `)` body line. The rest is lost only when the body stays inline. That happens with a backslash-quoted delimiter (`<<\\E` gives [], and its control gives [log]) and with a second heredoc on the same line (`<<'E' <<'F'` gives [], and its control gives [log]).",
+        "resolution": "fixed in P88.3-dnb (cda6c2c1): fix task P88.3-dnb (review-P88b.json)",
+        "fixTask": "P88.3-dnb",
+        "commit": "cda6c2c1"
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
