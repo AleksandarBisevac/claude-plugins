@@ -154,8 +154,8 @@ claude-plugins/                           # this repo (personal, public)
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
-          import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains
-          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared
+          import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
+          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
@@ -395,7 +395,7 @@ L7:
   full-gate -> _evidence_io, _loader, _manifest_io, _output, _status_facts
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
-  import-evidence -> _evidence_io, _journal_io, _manifest_io, _output
+  import-evidence -> _evidence_io, _journal_io, _loader, _manifest_io, _output
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
@@ -3099,6 +3099,12 @@ finds containing the phase's `mergedHead`, PROVISIONAL when every such row falls
 UNKNOWN when the phase carries no `mergedHead` or git itself could not say, and NOT_DECLARED when
 the plan names no third place at all.
 
+**`row_is_red()` is the one reading of "this run exited red"**: every `status` but `passed`
+(`RUN_PASSED`), because `run-test-gate.py` exits 0 exactly then — so a status no writer has
+produced yet, or none at all, is red rather than a pass nobody measured. The measurement rule
+above, `full-gate.py`'s `--learn-from` refusal and `import-evidence.py`'s printed command all ask
+it rather than comparing the word themselves.
+
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.
 
@@ -3677,6 +3683,15 @@ its committed copy or remove that line on purpose — and points at `audit-journ
 names the cause. The byte-identical re-import is compared before this check and still reads as
 already imported.
 
+**A red full row prints the command that learns from it.** After a successful import — a fresh
+copy or the byte-identical repeat — `learn_from_commands` builds, from the rows this import already
+parsed, `python3 <full-gate.py> <manifest> --learn-from <runId> --project-dir <dir>` for each
+row that is full scope and red by `_evidence_io.row_is_red`. Every path in it is absolute and
+shell-quoted — the script resolved by `_loader.script_path`, the manifest argument made absolute,
+the project this import resolved — so the line runs as printed from any directory; `render` prints each after the authentication note and `--json` carries them as
+`learnFrom`. They are printed, never run: bringing a file in whole is not consent to write the
+plan, and a green row prints none.
+
 **What it does not prove.** A ledger is evidence, not authentication — a new shard starts at its
 own genesis the moment somebody names a file that way, so a verified chain says the rows were not
 edited after the file was written and says nothing about who wrote it. The report says so on every
@@ -3684,7 +3699,8 @@ successful import; the commit that carries the imported file into the repository
 authorship trail.
 
 ### `plugins/audit/scripts/governance/full-gate.py`
-`full-gate.py <manifest> [--writer NAME] [--project-dir DIR]` — **the one command of the third
+`full-gate.py <manifest> [--writer NAME] [--project-dir DIR]`, or
+`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` — **the one command of the third
 place**, meant for a pre-push hook or a CI step that should not have to spell out
 `run-test-gate.py --full --record` and its own refusals itself.
 
@@ -3707,7 +3723,10 @@ line; with no such line, the newest full row stamped since it started the run �
 run at the same head) and files what it taught through `audit-task.py`, as subprocesses: a
 `couple` and a `bug-add` per `selectionMiss` entry, and a `couple --caught` per suite the plan
 already coupled that the runner named failing — pinned by `_evidence_io.resolve_named`, so a name
-that fits several coupled suites credits none of them. Each verb's own output and exit code are printed;
+that fits several coupled suites credits none of them. A suite the row lists in its own
+`selectionMiss` is never that row's catch: the row says no derived gate ran it, so a coupling
+the row creates or widens, or one another row with the same miss taught, is not credited by it —
+in either order, which is what makes a second pass over the same row file nothing new. Each verb's own output and exit code are printed;
 the exit stays the runner's. It never acts on a green run, on a run the runner said it did not
 record, or on a failure the runner did not **name** (every miss is re-asked of
 `_evidence_io.named_failing_suites`, which also skips a muted step). The couplings a catch is
@@ -3717,6 +3736,22 @@ credited with a catch by it. A miss whose `sources` the row cut (`sourcesDropped
 the bug it files says so and points at the tasks' files in the plan. A miss an open bug already
 tracks, or a coupling that already covers every source, is not filed again, so a push retried on
 the same red does not multiply bugs.
+
+**`--learn-from <runId>` learns from a run recorded elsewhere, running nothing.**
+`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` is the door for a red full run a
+CI build recorded into its own shard: learning inside the pipeline would write into a checkout the
+build throws away, so the row teaches once `import-evidence.py` has brought it into a checkout
+that keeps what is filed. It reads the row with `_evidence_io.row_by_run` and hands it to
+`learn_from_row`, the one function the red branch also calls, so the rules above are stated once.
+`row_refusal` refuses a row that is not full scope and a row `_evidence_io.row_is_red` calls
+green — the one home of the runner's own reading, since `run-test-gate.py` exits 0 exactly when
+`status` is `passed`, and the reading `import-evidence.py` uses too — and a run id the readable rows lack
+is refused naming each ledger file `read_rows` could not read in full, the way `audit-task.py`'s
+`--basis-run` lookup does. Every refusal is one `[full-gate] cannot learn from run …` line and exit
+1. Unlike the red branch there is no runner's verdict to keep, so a failed verb or a raise is exit
+1 too; exit 0 means the learning ran, and when it filed nothing the lines above the summary say
+why. Learning twice files nothing new, by the own-miss rule above. Beside `--writer` it is a usage error, exit 2: a learning pass records no row for a
+writer to name.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they

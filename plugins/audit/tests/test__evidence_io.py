@@ -726,6 +726,18 @@ def _cases(check):
               M.row_by_run(rb_rows, "R-does-not-exist") is None
               and M.row_by_run([], "R-new") is None
               and M.row_by_run(rb_rows, None) is None)
+        # THE RUNNER'S OWN READING: green is exactly `passed`. A status no
+        # writer has produced, and a row with no status, are red - a reader
+        # widening green to "anything not named failed" goes red on them, and
+        # one reading every row as red goes red on the first.
+        is_red = getattr(M, "row_is_red", None)
+        red_of = [None if is_red is None else is_red(r) for r in (
+            {"status": "passed"}, {"status": "failed"},
+            {"status": "a-word-no-writer-wrote"}, {})]
+        check("rr2b RED-FIRST: `row_is_red` is False for passed alone - True "
+              "for failed, for a status no reader has written, and for no "
+              "status at all: %r" % (red_of,),
+              red_of == [False, True, True, True])
         # Text order and moment order DISAGREE here: the offset stamp spells
         # a later day but names an earlier moment, and the unparseable stamp
         # is greatest of all as text.

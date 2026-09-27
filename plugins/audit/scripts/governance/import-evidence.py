@@ -30,6 +30,14 @@ reader of the directory counts rows, so the same run twice is counted twice.
 A ledger that cannot be read in full refuses the import rather than reading as
 empty - the check could not be made, and that is what the refusal says.
 
+WHAT A RED FULL ROW ASKS OF YOU. A CI build records its full run and throws
+its checkout away, so nothing learned from a red full run could be kept there.
+After a successful import this command prints, for each imported row that is
+full scope and red, the `python3 <full-gate.py> <manifest> --learn-from <runId>`
+command that files what the run taught into this checkout's plan - both paths
+absolute, so it runs as printed from any directory - printed, never run:
+bringing a file in whole is not consent to write the plan.
+
 WHAT IT DOES NOT PROVE. A ledger is evidence, not authentication. A new shard
 starts at its own genesis the moment somebody names a file that way, so a
 verified chain says the rows were not edited AFTER the file was written and
@@ -56,6 +64,7 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
+import shlex
 import sys
 import tempfile
 
@@ -83,6 +92,7 @@ _output.install_path()
 
 import _evidence_io as _ev  # noqa: E402  (evidence_dir, verify_rows - the one chain)
 import _journal_io  # noqa: E402  (config loading, rows_from_text)
+import _loader  # noqa: E402  (script_path: the printed full-gate.py, never loaded)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
@@ -101,7 +111,38 @@ def _empty_answer(basename):
     differ are filled in - so a caller reading one key never meets a KeyError
     on the branch that never sets it."""
     return {"imported": False, "alreadyImported": False, "path": None,
-           "basename": basename, "runIds": [], "refused": "", "duplicates": []}
+           "basename": basename, "runIds": [], "refused": "", "duplicates": [],
+           "learnFrom": []}
+
+
+def learn_from_commands(rows, manifest_path, project):
+    """The `full-gate.py --learn-from` command for each red full row in
+    `rows`, in shard order - PRINTED, NEVER RUN.
+
+    WHY HERE AND NOT IN CI. A CI build records its full run into its own shard
+    and throws the checkout away, so learning there would file a coupling and
+    a bug into a plan nobody keeps; the checkout that imports the shard is the
+    first one that keeps what is written. Running it from this command would
+    make an import write the plan, which is a different consent from bringing
+    a file in whole.
+
+    Red is `_evidence_io.row_is_red`, the runner's own reading.
+    `manifest_path` is the one this import was given and `project` the one it
+    resolved, so the command names the plan and the ledger this import just
+    wrote into.
+
+    RUNNABLE AS PRINTED, from any directory: the interpreter is spelled out
+    and the script is the absolute path `_loader.script_path` resolves by
+    basename - the resolution `full-gate.py` itself uses for
+    `run-test-gate.py` - because a bare `full-gate.py` is 'command not found'
+    in a shell. The caller hands both paths in absolute for the same reason."""
+    script = shlex.quote(_loader.script_path("full-gate.py"))
+    return ["python3 %s %s --learn-from %s --project-dir %s"
+            % (script, shlex.quote(manifest_path),
+               shlex.quote(str(row.get("runId"))), shlex.quote(project))
+            for row in rows
+            if row.get("scope") == _ev.FULL_SCOPE
+            and _ev.row_is_red(row) and row.get("runId")]
 
 
 def held_runs(project, config):
@@ -174,9 +215,13 @@ def unreadable_refusal(paths):
         % (", ".join(paths),))
 
 
-def import_shard(project, shard_path, config=None):
+def import_shard(project, shard_path, config=None, manifest_path=None):
     """`(exitCode, answer)` - verify `shard_path`'s chain and copy it whole into
     this project's evidence directory. Writes nothing on a refusal.
+
+    With `manifest_path`, a successful import's `learnFrom` carries the
+    command for each red full row it holds (`learn_from_commands`), built off
+    the rows this call already parsed rather than a second read of the file.
 
     THE VERIFIER IS BORROWED, NOT WRITTEN TWICE. `_evidence_io.verify_rows` is
     the one place a broken chain, an edited row or a corrupted mid-file line is
@@ -220,6 +265,9 @@ def import_shard(project, shard_path, config=None):
         return E_FAIL, answer
     run_ids = [str(row.get("runId") or "?") for row in rows
               if not row.get("_unparseable")]
+    learn = (learn_from_commands([r for r in rows if not r.get("_unparseable")],
+                                 manifest_path, project)
+             if manifest_path else [])
     directory = _ev.evidence_dir(project, config)
     dest = os.path.join(directory, basename)
     if os.path.isfile(dest):
@@ -235,6 +283,7 @@ def import_shard(project, shard_path, config=None):
             answer["alreadyImported"] = True
             answer["path"] = dest
             answer["runIds"] = run_ids
+            answer["learnFrom"] = learn
             return E_OK, answer
         answer["refused"] = (
             "%s already holds a different file under this name - the chain's "
@@ -277,6 +326,7 @@ def import_shard(project, shard_path, config=None):
     answer["imported"] = True
     answer["path"] = dest
     answer["runIds"] = run_ids
+    answer["learnFrom"] = learn
     return E_OK, answer
 
 
@@ -294,6 +344,9 @@ def render(answer, out=print):
     for run_id in answer["runIds"]:
         out("  runId %s" % (run_id,))
     out("  %s" % (AUTHENTICATION_NOTE,))
+    for command in answer.get("learnFrom") or []:
+        out("%s a red full run is learned from here, not where it ran: %s"
+            % (PREFIX, command))
 
 
 # --- cli ------------------------------------------------------------------------
@@ -334,7 +387,10 @@ def main(argv, out=print):
         return E_USAGE
 
     project = os.path.abspath(args.project_dir)
-    code, answer = import_shard(project, args.shard)
+    # ABSOLUTE, so the printed command does not depend on the directory it
+    # is pasted into.
+    code, answer = import_shard(project, args.shard,
+                                manifest_path=os.path.abspath(args.manifest))
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
     else:

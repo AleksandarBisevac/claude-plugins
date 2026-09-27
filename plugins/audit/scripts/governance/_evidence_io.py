@@ -2242,6 +2242,22 @@ def row_by_run(rows, run_id):
                        and str(row.get("runId") or "") == str(run_id)])
 
 
+# The one status a recorded run is green under.
+RUN_PASSED = "passed"
+
+
+def row_is_red(row):
+    """Whether the run `row` records exited red - its `status` is anything
+    but `passed`.
+
+    THE RUNNER'S OWN READING, NOT A SECOND ONE: `run-test-gate.py` exits 0
+    exactly when a run's status is `passed` and non-zero for every other
+    word, so a status no writer has produced yet, or none at all, is red
+    here as it is there. Widening green to "not named failed" would read a
+    new word - or a row missing the field - as a pass nobody measured."""
+    return row.get("status") != RUN_PASSED
+
+
 def suite_keys(rows):
     """`{"running", "silent", "unknown"}` - every step NAME, sorted into what its
     OWN recorded `suiteReader` says across every row that ever carried it.
@@ -2497,8 +2513,8 @@ def _measurement_disqualification(row, full_commands):
     actually declared now -- a row that failed every earlier test would be a
     strange one to praise for running the right commands.
     """
-    if row.get("status") != "passed":
-        return "status is %r, not passed" % (row.get("status"),)
+    if row_is_red(row):
+        return "status is %r, not %s" % (row.get("status"), RUN_PASSED)
     if row.get(VERDICT_SOURCE) is not None:
         return ("this row repeats an earlier verdict (%s=%r) rather than "
                 "measuring one" % (VERDICT_SOURCE, row.get(VERDICT_SOURCE)))

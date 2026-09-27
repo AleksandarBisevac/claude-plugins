@@ -42,7 +42,9 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import io
 import json
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -413,6 +415,70 @@ def _cases(check):
               % (code, answer9.get("duplicates")),
               code == 1 and answer9.get("duplicates")
               == [{"runId": "run-f1", "file": held_name}])
+
+        # --- a red full row prints the command that learns from it ----------
+        # THE SHARD MIXES every row the rule must tell apart - a red full run,
+        # a green full run and a red run of phase scope - so a version that
+        # printed for every row, or for every red one, names more than one id.
+        d10, mp10 = project()
+        red_name = "2026-01.ci-w15.jsonl"
+        red_data, _ = _shard_bytes(red_name, [
+            {"runId": "run-r1", "v": 1, "scope": "full", "status": "failed"},
+            {"runId": "run-r2", "v": 1, "scope": "full", "status": "passed"},
+            {"runId": "run-r3", "v": 1, "scope": "phase",
+             "status": "failed"}])
+        red_src = write_shard(red_name, red_data)
+        code, out = run([mp10, red_src, "--project-dir", d10])
+        told = [ln for ln in out.splitlines() if "--learn-from" in ln]
+        want = ("python3 %s %s --learn-from run-r1 --project-dir %s"
+                % (shlex.quote(_loader.script_path("full-gate.py")),
+                   shlex.quote(os.path.abspath(mp10)),
+                   shlex.quote(os.path.abspath(d10))))
+        check("i27 RED-FIRST: a red full row among the imported ones prints "
+              "exactly one line, ending in the python3 <full-gate.py> "
+              "--learn-from command for that run, over the manifest this "
+              "import was given: %r (%s)" % (told, code),
+              code == 0 and len(told) == 1 and told[0].endswith(want))
+        code, out = run([mp10, red_src, "--project-dir", d10, "--json"])
+        check("i28 --json carries the same command, once, beside the rest of "
+              "the answer: %r" % (json.loads(out).get("learnFrom"),),
+              code == 0 and json.loads(out).get("learnFrom") == [want])
+        # THE PRINTED STRING IS RUN AS A SHELL WOULD RUN IT, from a directory
+        # that is not the project: a bare script name is 'command not found'
+        # there, and a path relative to the import's cwd names nothing.
+        printed = (json.loads(out).get("learnFrom") or [""])[0]
+        away = tempfile.mkdtemp(dir=root)
+        proc = subprocess.run(["/bin/sh", "-c", printed], cwd=away,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              universal_newlines=True)
+        check("i30 RED-FIRST: the printed command runs as printed under "
+              "/bin/sh -c from another directory, exit 0, and it is "
+              "full-gate.py learning from run-r1: %r (%s)"
+              % (proc.returncode, proc.stdout[-300:]),
+              proc.returncode == 0
+              and "[full-gate] learned nothing from run run-r1" in proc.stdout)
+
+        # A RELATIVE MANIFEST is printed absolute, so the command does not
+        # depend on the directory it is pasted into.
+        rel = os.path.relpath(mp10)
+        code, out = run([rel, red_src, "--project-dir", d10, "--json"])
+        words = shlex.split((json.loads(out).get("learnFrom") or [""])[0])
+        check("i31 RED-FIRST: an import given a relative manifest (%s) prints "
+              "it absolute: %r" % (rel, words[2:3]),
+              code == 0 and len(words) > 2 and os.path.isabs(words[2])
+              and os.path.samefile(words[2], mp10))
+
+        # ALLOW DIRECTION: a green import prints no --learn-from at all, so
+        # the mutation 'print it for every full row' goes red here.
+        d11, mp11 = project()
+        green_name = "2026-01.ci-w16.jsonl"
+        green_data, _ = _shard_bytes(green_name, [
+            {"runId": "run-s1", "v": 1, "scope": "full", "status": "passed"}])
+        green_src = write_shard(green_name, green_data)
+        code, out = run([mp11, green_src, "--project-dir", d11])
+        check("i29 a green full row imports with no --learn-from line: %r (%s)"
+              % (code, out),
+              code == 0 and "run-s1" in out and "--learn-from" not in out)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

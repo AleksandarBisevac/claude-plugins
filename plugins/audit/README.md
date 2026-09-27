@@ -457,7 +457,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:next` | `[--dry-run]` | Execute the next ready task (by phase order, then task id), then report what's ready next. `--dry-run` previews the choice without mutating. |
 | `/audit:run` | `<taskId> [--dry-run]` | Execute exactly one task by id, with status guards (offers reopen if `done`, attempt-reset if `blocked`, warns if `in_progress`) and unmet-blocker checks. Reopening a bugfix task reopens its linked bug. |
 | `/audit:phase` | `<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] \| add "<title>" --outcome "<what success is>" [--park] [--id <P7>] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] \| retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] \| priority <phaseId> <tier> [--force] \| priority <phaseId> --clear \| cancel <phaseId> --reason "<why>" \| signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] [--accept SHA --reason TEXT] \| settle` | Everything a phase has done to it. **A bare `<phaseId>` runs it** — execute every ready task (parallel where files are disjoint, sequential otherwise) until none remain, then phase sign-off (review skill + test gate + optional runtime boot + merge); `--dry-run` previews the plan and mutates nothing. **`priority`** says which phase to reach for first among the work that is **already ready** — it never makes an unready task ready and never skips a dependency, so a pinned phase that is still waiting is skipped and `/audit:status` says so. Tier 1 is unique (a second holder is refused **by name**, or written anyway with `--force`, in which case the first in manifest order wins); `--clear` unpins. **`cancel`** closes a phase as **terminal but not done**, cascading to the work still open inside it and recording the reason, the moment and a `phase.cancel` journal row; an id that resolves to a task is refused, pointing at `/audit:task cancel`. **`add`** puts one more phase into a plan that already exists — the verb nothing had: `/audit:init` writes a whole plan, `/audit:propose materialize` moves a parked one, and `/audit:task add` needs the phase to be there. Phases are minted on the development branch: on a phase branch it still writes, but the first time on that branch it warns and names **`--park`**, which writes the same phase as a parked proposal (`PROP-<n>-<suffix>`) to materialize after the branch merges. It continues the `P<n>` sequence over live **and** parked-proposal ids, initializes the whole new-phase template, appends the phase last, and in the sharded layout writes its new shard **and** the index stub pointing at it; `--outcome` is required (a phase whose success cannot be stated in a line is one sign-off cannot address) and the gate comes from `--gate`, from `--gate-clear` (the EMPTY gate, chosen deliberately) or from `meta.buildCommands`, with the report saying which. **`retarget`** corrects a phase that already exists — its gate, area, desired outcome, description or title. **The title is `--rename`, not `--title`**, because this verb's positional slot is already called `title` and carries the phase id; and a rename is refused once the phase is on a branch, because `_branch.slugify` turns the title into the branch's `{slug}` and the readers of that name part company afterwards — `close-phase.py` and `manage-worktrees.py` prefer the recorded `phase.branch` while `resolve-branch.py` composes from the title unconditionally, so a renamed phase in flight would have two names and no reader agreeing on which. `/audit:init` and `/audit:sync pull sprint` synthesize a phase and CHOOSE its `testGate`, and until this verb existed that choice was unreachable: an imported phase given `testGate: ["lint"]` on a repo where `lint` runs a Python pre-commit suite, over tasks touching only JSON and Markdown, could not pass its own sign-off, and every route out was outside the plugin. **`--gate-clear` is the load-bearing half** — `--gate` replaces, so without it there is no spelling for the EMPTY gate, which is a designed state rather than a hole (sign-off then rests on review alone). **`add` takes it too** — and did not until this was fixed: the flag sat on the shared parser, so `add-phase --gate-clear` was accepted, ignored, and the new phase inherited `meta.buildCommands` while the caller was told it had worked. It was the third verb of that exact shape. A done or cancelled phase is refused: its sign-off was given against the gate it had. **`signoff`** records the verdict a phase's `done` is derived from and stores the status it derives; a `passed` verdict needs a current recorded gate run or `--no-evidence-reason`; **`signoff P1,P2 --branch <name>`** signs off a group of phases built on one branch together — `--plan` prints the bind, the review scoped by the tasks' commits, one gate run owning every member's files, one invariants run and a `close-phase.py --branch` per phase, and the record writes every member in one write, all or nothing; **`settle`** stores every derived phase and bug value a plan carries stale — the command `validate-manifest`'s warning names. `add`, `retarget`, `priority`, `cancel`, `signoff` and `settle` are the reserved first tokens — any other first token is a phase id. **`--confirm-high-risk "<your words>"`** answers the run's high-risk gate **before** it starts, for an operator who will not be at the keyboard when a `risk: "high"` task reaches its commit: the words go into a `risk.confirmed` journal row unchanged, and the command prints the **task ids** the answer covers — this phase, `risk: "high"`, open work only, as the manifest stands at that moment. A high-risk task that is not on that printed list still stops and asks, including one that became high-risk afterwards, because an answer covering whatever appears next is the gate deleted rather than answered. A phase with no open high-risk task is refused rather than recorded as an empty row, and a journal that is off means there is no pre-given answer at all. |
-| `/audit:review` | `<phaseId> [--full]` | Re-run **just** the phase sign-off for a phase whose tasks are already `done` — the recovery path after applying manual fixes. `--full` adds the third place afterward: `run-test-gate.py --full --record`, read back as `whole`/`provisional`/`unknown`. |
+| `/audit:review` | `<phaseId> [--full]` | Re-run **just** the phase sign-off for a phase whose tasks are already `done` — the recovery path after applying manual fixes. `--full` adds the third place afterward: `full-gate.py`, which runs `run-test-gate.py --full --record`, is read back as `whole`/`provisional`/`unknown`, and files what a red run taught. |
 | `/audit:resume` | — | Continue an interrupted run: find the in-progress phase and resume from the first task whose commit is null. |
 | `/audit:report` | `[--out-dir <dir>] [--share]` | Render a self-contained, interactive HTML + Markdown report (collapsible phases, filter/sort/search, Save-as-PDF, optional AI summary). `--share` publishes it as a Claude Code Artifact — a link a reviewer can open without installing anything — and asks before anything leaves the machine. Read-only; never mutates or locks the manifest. |
 | `/audit:panel` | `[stop\|status] [--port <n>]` | Open / stop / check the local **control panel** (browser UI) to visually manage `.claude/audit.config.json` and the manifest's composition levers, with live validation and skill/agent discovery. See [Control panel](#control-panel). |
@@ -1556,6 +1556,28 @@ laptop that never pushes never runs it at all; a CI job runs on every push regar
 is a fast local signal and CI is what a release actually depends on — `docs/examples/azure-pipelines.yml`
 shows the `--full --record --writer` step, published as a build artifact.
 
+**CI records; the checkout that imports the run learns from it.** A CI build throws its checkout
+away, so a coupling or a bug filed there would be filed into nothing, and the pipeline step calls
+`run-test-gate.py` rather than `full-gate.py` for that reason. Bring the published shard home with
+`import-evidence.py <manifest> <shard.jsonl>`; for each imported row that is a red full run it
+prints the command that learns from it, and runs nothing:
+
+```text
+[import-evidence] a red full run is learned from here, not where it ran: python3 <plugin>/scripts/governance/full-gate.py <project>/docs/audit/audit-plan.json --learn-from <runId> --project-dir <project>
+```
+
+Everything after `ran: ` runs as printed, from any directory: the interpreter is spelled out and
+the script, the manifest and the project are absolute paths, shell-quoted.
+`full-gate.py <manifest> --learn-from <runId>` runs no gate. It reads that row from this
+checkout's ledger and files what it taught through the same function a red local run uses, so
+the rules below hold unchanged. The operator runs it, or a pre-push hook written to run it — the
+`.husky/pre-push` snippet above runs a fresh full run and learns only from that one, never from an imported row.
+It refuses, exit 1 with one reason line, a run id the ledger does not hold (naming any ledger file
+it could not read in full), a row that is not full scope, and a green row. It exits 1 too when a
+learning verb fails, and 0 once the learning ran, printing why when it filed nothing. Learning
+from the same run twice files nothing new, and `--learn-from` beside `--writer` is a usage error,
+exit 2.
+
 **Whole, provisional, unknown, not declared.** `/audit:status`, the report, the panel and
 `/audit:doctor` all read a merged phase's full-run coverage off the same words, the members of
 `_manifest_vocab.FULL_STATUS`. `whole` means a green, measured, clean, verbatim full run's
@@ -1597,14 +1619,17 @@ re-run with `--record`, because a coupling must name the run that taught it.
 `full-gate.py` does that filing itself after a red run, and the run stays red: it runs the
 `couple` and `bug-add` for each miss the runner named, and a `couple --caught` for each suite the
 plan already coupled that the runner named failing, which refreshes that coupling's
-`lastCaught`. It learns nothing from a failure read off the tail of the output, from a run it was
+`lastCaught`. A suite the row lists as its own selection miss is never that row's catch — the
+row says no derived gate ran it — so a coupling a miss creates or widens is not credited by the
+same row, whichever order imported rows are learned in. It learns nothing from a failure read off the tail of the output, from a run it was
 told was not recorded, or from a green run, and says why on its own `[full-gate]` lines. A name
 that fits several coupled suites credits none of them (`_evidence_io.resolve_named`). Nothing
 removes a coupling on its own: `/audit:doctor`'s coupling row names one that has gone
 `UNCOUPLE_AFTER_FULL_RUNS` green measured full runs without a catch, and
 `audit-task.py uncouple --test <path>` is yours to run.
-`/audit:review <phaseId> --full` calls `run-test-gate.py` directly, so it prints these lines and
-files nothing.
+`/audit:review <phaseId> --full` runs `full-gate.py`, so a red run there files what it taught the
+same way. A red run recorded by CI is learned from after its shard is imported, through
+`full-gate.py <manifest> --learn-from <runId>` (above); nothing learns from it inside the pipeline.
 
 ### Quarantine — `meta.muted`
 

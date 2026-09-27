@@ -812,7 +812,7 @@
     {
       "id": "P81.14-j7p",
       "title": "the third place learns wherever it runs: review --full runs full-gate, and a full run recorded elsewhere is learned from after import",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Only full-gate.py learns from a red full run, and two of the three third-place paths never reach it. /audit:review --full tells the orchestrator to run run-test-gate.py --full --record, which prints the remedy and files nothing; the CI example records the run into a shard that is imported later, and nothing learns from an imported row (learning inside CI would write into a checkout that is thrown away). Do: (1) review.md's --full runs full-gate.py (one command of the third place), with the manifest and --project-dir as the pre-push hook does. (2) full-gate.py --learn-from <runId>: runs nothing, reads that row from the ledger, and applies exactly the learning the red branch applies (named misses only, unique catches, cut sources, dedupe, a learning exception never masks the answer); refuses with a reason and a non-zero exit when the row is missing, unreadable, not full scope, or not red; learning twice from the same run files nothing new. (3) import-evidence.py prints, for each imported red full row, the full-gate --learn-from command that learns from it (printed, never run). (4) the CI example and the orchestrator/README third-place text say where learning happens for a CI run. Red-first for (2) and (3); allow: a green imported row prints no learn command; --learn-from on a green row refuses. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
@@ -824,7 +824,9 @@
         "plugins/audit/reference/orchestrator.md",
         "plugins/audit/README.md",
         "CHANGELOG.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -849,16 +851,21 @@
       "dependsOn": [
         "P81.8"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T20:47:23Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T21:35:21Z.6c6036",
+        "status": "passed",
+        "at": "2026-09-27T21:35:21Z"
+      }
     },
     {
       "id": "P81.15-j7p",

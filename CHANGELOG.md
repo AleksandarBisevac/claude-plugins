@@ -374,9 +374,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **`scripts/governance/full-gate.py` is the one command a pre-push hook or a CI step reaches
   for.** It runs `run-test-gate.py --full --record` as a subprocess and exits with its code,
   exiting clean with a sentence when no `meta.fullGate` is declared so an undeclared third
-  place never blocks a push. `/audit:review <phaseId> --full` and
-  `docs/examples/azure-pipelines.yml` call `run-test-gate.py --full --record` directly rather
-  than this command, so neither files what a red run taught (see below).
+  place never blocks a push. `/audit:review <phaseId> --full` runs this command.
+  `docs/examples/azure-pipelines.yml` calls `run-test-gate.py --full --record` directly and only
+  records; its red run is learned from after the shard is imported (see below).
 - **`/audit:status --fail-on provisional` and `--fail-on stale-full-run`, opt-in conditions
   beside the existing test-evidence ones.** `provisional` trips on a merged phase the ledger
   has not yet certified whole; `stale-full-run` is the sharper claim that a run that could bear
@@ -456,6 +456,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   credits none of them. It learns nothing from a tail-read failure, from a run the runner did not
   record, or from a green run, does not re-file a miss an open bug already tracks, and does not
   couple a miss whose sources the row cut. The exit stays the runner's.
+- **A red full run recorded elsewhere is learned from after it is imported.** CI records into
+  its own shard and throws its checkout away, so `full-gate.py <manifest> --learn-from <runId>`
+  runs no gate and applies the same learning to that row once it is in this checkout's ledger;
+  `import-evidence.py` prints that command, never runs it, for each imported row that is full
+  scope and red. It refuses a run id the ledger does not hold (naming any file it could not read
+  in full), a row that is not full scope, and a green row, exit 1; a failed learning verb is exit
+  1 too, and `--writer` beside it is exit 2. The printed line runs as printed from any directory:
+  `python3`, then absolute paths. A suite a row lists as its own selection miss is never
+  credited as that row's catch, so learning from the same run twice, or from two rows with the
+  same miss in either order, files nothing new.
 
 ### Changed
 - **Every reader of the evidence ledger decodes it one strict way and orders its rows by one

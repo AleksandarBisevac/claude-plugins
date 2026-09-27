@@ -58,19 +58,21 @@ first level that is **present** answers, an explicit `null` **is** an answer (sk
 the signer), and with several `area` tags written order decides. `/audit:status --phase <phaseId>`
 prints the resolved skill and the basis it came from; read that rather than re-deriving it.
 
-**`--full`** runs the third place after the ordinary sign-off completes: `run-test-gate.py
-<manifest> --full --record`, measured against the whole product rather than this one phase. Read
-the **full-status** line it prints — the same word (`whole`, `provisional` or `unknown`, with the
-reason) `/audit:status`, the report, the panel and the doctor all read off the same row. A plan
-with no `meta.fullGate` declared answers that the plan names no third place at all; that is not a
+**`--full`** runs the third place after the ordinary sign-off completes, through its one command:
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/full-gate.py" <manifest> [--project-dir <dir>]`
+— the same command the README's pre-push snippet runs. It runs `run-test-gate.py <manifest>
+--full --record` as a subprocess, measured against the whole product rather than this one phase,
+streams what the runner prints and exits with the runner's code. Read the **full-status** line
+the runner prints — the same word (`whole`, `provisional` or `unknown`, with the reason)
+`/audit:status`, the report, the panel and the doctor all read off the same row. A plan with no
+`meta.fullGate` declared prints that the plan names no third place and exits 0; that is not a
 failure of this command, it is the plan's own state.
 
-**`--full` as written here files nothing from a red run.** It calls `run-test-gate.py` directly,
-and that script prints each `SELECTION MISS:` line with the `audit-task.py couple` and `bug-add`
-commands that would file it — printed, never run. The learning belongs to
-`scripts/governance/full-gate.py`, which runs the same measurement and, after a red exit, files a
-coupling and a bug for each miss the runner named and refreshes `lastCaught` on each coupled suite
-it named failing (orchestrator → **What a red full run teaches**). So after a red `--full` here,
-either run the printed remedy for each miss, or run `full-gate.py <manifest>` — a second full run,
-recorded as its own row. Whichever you choose, the phase's full-run answer is still the one the
-ledger holds; a filed miss does not make the red run anything but red.
+**A red `--full` files what the run taught, and stays red.** After the runner exits non-zero,
+`full-gate.py` reads the row it recorded and runs `audit-task.py` itself: a `couple` and a
+`bug-add` for each selection miss the runner named, and a `couple --caught` for each coupled suite
+it named failing and did not list as a miss (orchestrator → **What a red full run teaches**). Each verb's own lines and exit
+code are printed under `[full-gate]`, and so is every reason nothing was learned. The exit is
+still the runner's, and the phase's full-run answer is still the one the ledger holds; a filed
+miss does not make the red run anything but red. Report the coupling and the bug it filed with
+the rest of the sign-off.

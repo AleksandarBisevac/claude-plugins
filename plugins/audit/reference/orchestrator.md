@@ -550,7 +550,9 @@ that run recorded and runs those verbs itself, as subprocesses (`full-gate.learn
 - a `couple` (the suite to the sources the miss names) and a `bug-add` titled
   `SELECTION MISS: <suite>` for each `selectionMiss` entry;
 - a `couple --caught <runId>` for each suite the plan already coupled that the runner named
-  failing, which refreshes that coupling's `lastCaught`.
+  failing, which refreshes that coupling's `lastCaught` — never for a suite the row lists in its
+  own `selectionMiss`, which says no derived gate ran it, so a coupling that row creates or
+  widens, or that another row with the same miss taught, is not its catch.
 
 Each verb's lines and exit code are printed, and the exit stays the runner's — a run that taught
 something is still a red run. Its closing line, as a red run printed it:
@@ -576,6 +578,21 @@ credited with a catch by it. `couple --caught` asks the same questions again on 
 refuses a run that is not `full`, a suite the run did not name or named only on a muted step,
 and an ambiguous name; a catch no newer than the recorded `lastCaught` writes nothing, so
 `lastCaught` never moves back.
+
+**A red full run CI recorded is learned from after its shard is imported, never inside the
+pipeline.** A CI build throws its checkout away, so the pipeline records (`run-test-gate.py
+--full --record --writer ci-<id>`) and files nothing. `import-evidence.py <manifest>
+<shard.jsonl>` prints, for each imported row that is full scope and red, the command
+`python3 <plugin>/scripts/governance/full-gate.py <manifest> --learn-from <runId> --project-dir
+<dir>` with every path absolute, so it runs as printed from any directory, and runs none of
+them. That command runs no gate: it reads the row from this checkout's ledger and hands it to
+`full-gate.learn_from_row`, the function the red branch calls, so every rule above applies
+unchanged, whatever order the rows are learned in. It refuses, exit 1, a run id the ledger does not hold (naming any ledger file
+it could not read in full), a row that is not full scope and a green row; it exits 1 when a
+learning verb fails, and 2 beside `--writer`. `/audit:review <phaseId> --full` runs
+`full-gate.py` itself, so a red run there is learned from on the spot. Run the printed command
+after an import when the operator asks for the import; nothing runs it for you, and
+`/audit:review` does not.
 
 **Removing a coupling is `audit-task.py uncouple --test <path>`, typed by a person.** No code
 path removes one on its own: `learning_plan` builds only `couple`, `bug-add` and
