@@ -677,77 +677,35 @@ _RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then\s*$')
 _SHELL_STOPS = (";", "&&", "||", "|")
 # A redirection word ends the argv: `2>&1`, `>/dev/null`, `&>log`, `<in`.
 _REDIRECT = re.compile(r"^(\d*|&)(>>?|<)")
-# A YAML `run:` key, bare or as a list item. What follows it decides how its lines
-# become one command: `|` keeps them as written, anything else re-joins them.
-_RUN_KEY = re.compile(r"^(\s*(?:-\s+)?)run:(.*)$")
+# THE YAML SHAPES A CALL IS READ FROM - an allow-list, because every refusal list
+# written before it was one spelling short. A line that names this tool is read
+# only from (a) a one-line `run:` whose value is the unquoted call, or (b) the body
+# of a block opened by a plain `run: |` (`|-` and `|+` too, a trailing comment
+# allowed). Any other non-comment line naming it is refused by line.
+_ONE_LINE_RUN = re.compile(r"^(\s*(?:-\s+)?)run:[ \t]+(?P<value>[^\s'\"|>&!*%@`{\[#].*)$")
+_LITERAL_RUN = re.compile(r"^(\s*(?:-\s+)?)run:[ \t]+\|[-+]?[ \t]*(?:#.*)?$")
+_YAML_SHAPES = ("a one-line `run: <call>` with the call unquoted, or a line in the "
+                "body of a plain `run: |` block")
 
 
 def _indent(line):
     return len(line) - len(line.lstrip())
 
 
-def _run_blocks(lines):
-    """[(key line, last body line, style)] for every YAML `run:` key.
-
-    The body is every following line indented past the column the key starts at,
-    which is where YAML ends the value too; trailing blank lines are not body.
-    `style` is "literal" for `|`, "folded" for `>` (a comment after the indicator
-    included), and "plain" for a scalar written on the key's line.
-    """
-    out = []
-    for i, line in enumerate(lines):
-        m = _RUN_KEY.match(line)
-        if not m:
-            continue
-        col, last = len(m.group(1)), i
-        for j in range(i + 1, len(lines)):
-            if lines[j].strip() and _indent(lines[j]) <= col:
-                break
-            last = j
-        while last > i and not lines[last].strip():
-            last -= 1
-        rest = m.group(2).strip()
-        style = ("literal" if rest.startswith("|")
-                 else "folded" if rest.startswith(">") else "plain")
-        out.append((i, last, style))
-    return out
+def _is_comment(line):
+    return line.strip().startswith("#")
 
 
-def invocations(text):
-    """[argv after the script, or a problem] for every RUNNABLE call of this tool.
+def _shell_invocations(text):
+    """[argv or problem] for every call of this tool in SHELL text.
 
     A backslash continuation is joined first, because the runner writes its step
-    as `run "label" \\` above the call. A comment is not a call: both files talk
-    about this tool in prose right beside the step. The argv ends at a shell
-    separator or a redirection word.
-
-    In YAML, a call is read only from a one-line `run:` or a literal `run: |`
-    block. Any other `run:` that continues onto deeper lines - folded `>`, with or
-    without a comment after it, or a plain scalar - is re-joined by YAML before the
-    shell sees it, so when it mentions this tool it comes back as a problem STRING
-    naming its line, never as an argv a caller could read as a call that asks
-    nothing. A line the shell lexer rejects comes back as a problem too.
+    as `run "label" \\` above the call. A comment is not a call. The argv ends at
+    a shell separator or a redirection word. A line the lexer rejects comes back
+    as a problem string, never skipped.
     """
-    lines = text.splitlines()
-    out, skip = [], set()
-    for key, last, style in _run_blocks(lines):
-        if style == "literal" or last == key:
-            continue
-        # A `run:` that is not a literal block and continues onto deeper lines:
-        # YAML re-joins those lines before the shell sees them, so no line of it
-        # is a call this reader can read on its own.
-        span = range(key, last + 1)
-        skip.update(span)
-        if any(_THIS_TOOL in lines[k] for k in span):
-            out.append("line %d: a `run:` %s value continued onto deeper lines calls "
-                       "%s - YAML re-joins those lines before the shell sees them, "
-                       "so this reader cannot say which argv it gets; write it as "
-                       "a one-line `run:` or a `run: |` block"
-                       % (key + 1, "folded `>`" if style == "folded"
-                          else "plain", _THIS_TOOL))
-    kept = "\n".join(line for i, line in enumerate(lines) if i not in skip)
-    joined = re.sub(r"\\\n", " ", kept)
-    for line in joined.splitlines():
+    out = []
+    for line in re.sub(r"\\\n", " ", text).splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or _THIS_TOOL not in stripped:
             continue
@@ -767,6 +725,62 @@ def invocations(text):
             args.append(word)
         out.append(args)
     return out
+
+
+def _literal_body(lines, key, col):
+    """The index past the last body line of a `run: |` block opened at `key`.
+
+    The body runs while a line is blank or indented past the key's column."""
+    end = key + 1
+    while end < len(lines) and (not lines[end].strip() or _indent(lines[end]) > col):
+        end += 1
+    return end
+
+
+def _continues(lines, key, col):
+    """Whether a one-line `run:` value goes on below it. A full-line comment is
+    never a value line, so it neither continues the value nor ends the check."""
+    for line in lines[key + 1:]:
+        if not line.strip() or _is_comment(line):
+            continue
+        return _indent(line) > col
+    return False
+
+
+def _yaml_invocations(text):
+    """[argv or problem] for every call of this tool in a YAML workflow."""
+    lines = text.splitlines()
+    out, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        literal = _LITERAL_RUN.match(line)
+        if literal:
+            end = _literal_body(lines, i, len(literal.group(1)))
+            out.extend(_shell_invocations("\n".join(lines[i + 1:end])))
+            i = end
+            continue
+        if not line.strip() or _is_comment(line) or _THIS_TOOL not in line:
+            i += 1
+            continue
+        one = _ONE_LINE_RUN.match(line)
+        if one and not _continues(lines, i, len(one.group(1))):
+            out.extend(_shell_invocations(one.group("value")))
+        else:
+            out.append("line %d names %s outside the shapes this reader accepts in "
+                       "YAML - %s; anything else is refused rather than guessed at"
+                       % (i + 1, _THIS_TOOL, _YAML_SHAPES))
+        i += 1
+    return out
+
+
+def invocations(text, yaml=False):
+    """[argv after the script, or a problem] for every call of this tool in
+    `text` - shell text by default, a YAML workflow with `yaml=True`.
+
+    A problem comes back as a STRING rather than an argv, so a caller cannot read
+    a call this reader could not read as a call that asks nothing.
+    """
+    return _yaml_invocations(text) if yaml else _shell_invocations(text)
 
 
 def release_block(text):
@@ -811,16 +825,16 @@ def run_arms(repo_root=None):
         except (OSError, UnicodeDecodeError):
             texts[rel] = None
 
-    def _arms(text):
+    def _arms(text, yaml=False):
         if text is None:
             return None
         return [call if isinstance(call, str) else _one_arms(call)
-                for call in invocations(text)]
+                for call in invocations(text, yaml=yaml)]
 
     inside, outside = (release_block(texts[_VERIFY_REL])
                        if texts[_VERIFY_REL] is not None else (None, None))
     return {"plain": _arms(outside), "release": _arms(inside),
-            "ci": _arms(texts[_CI_REL])}
+            "ci": _arms(texts[_CI_REL], yaml=True)}
 
 
 def _recipe_lines(rel):
@@ -1319,14 +1333,14 @@ def _arm_cases(check):
                   "          --against-commit\n"
                   "      - run: python3 %s --before-commit\n"
                   % ((_THIS_TOOL,) * 2))
-    _folded = invocations(_fx_folded)
+    _folded = _read_yaml(_fx_folded)
     check("ra29c ...stops at a redirection word, and REFUSES a folded `run: >` block "
           "that calls this tool rather than reading its lines as separate calls, "
           "while a plain `run:` beside it is still read: %r / %r"
           % (invocations(_fx_redirect), _folded),
           invocations(_fx_redirect) == [["--before-commit"], []]
           and len(_folded) == 2
-          and isinstance(_folded[0], str) and "folded" in _folded[0]
+          and isinstance(_folded[0], str) and "line 2" in _folded[0]
           and _folded[1] == ["--before-commit"])
     # Two more shapes that read, line by line, as a call with NO flag - which is
     # ci.yml's expected answer, so ra29 alone could never notice them: a folded
@@ -1339,17 +1353,51 @@ def _arm_cases(check):
                  "          --against-commit\n" % (_THIS_TOOL,))
     _fx_literal = ("      - run: |\n"
                    "          python3 %s --before-commit\n" % (_THIS_TOOL,))
-    _commented = invocations(_fx_commented)
-    _plain = invocations(_fx_plain)
+    _commented = _read_yaml(_fx_commented)
+    _plain = _read_yaml(_fx_plain)
     check("ra29d ...and REFUSES a folded block whose `>` carries a comment and a "
           "plain `run:` scalar continued on a deeper line, each by its line, while "
           "a literal `|` block is still read: %r / %r / %r"
-          % (_commented, _plain, invocations(_fx_literal)),
+          % (_commented, _plain, _read_yaml(_fx_literal)),
           len(_commented) == 1 and isinstance(_commented[0], str)
-          and "line 1" in _commented[0]
+          and "line 2" in _commented[0]
           and len(_plain) == 1 and isinstance(_plain[0], str)
           and "line 1" in _plain[0]
-          and invocations(_fx_literal) == [["--before-commit"]])
+          and _read_yaml(_fx_literal) == [["--before-commit"]])
+    # EVERY SPELLING A REVIEW FOUND, each read correctly or refused - never read as
+    # a call with no flag, which is ci.yml's expected answer and so invisible to
+    # ra29. The call carries a flag here for exactly that reason: a silent misread
+    # comes back without it.
+    _call = "python3 %s --against-commit" % (_THIS_TOOL,)
+    _two = "python3 %s\n        --against-commit\n" % (_THIS_TOOL,)
+    _refused_shapes = [
+        ('"run": >', '      - "run": >\n        ' + _two),
+        ("'run': >", "      - 'run': >\n        " + _two),
+        ("run : >", "      - run : >\n        " + _two),
+        ("&k run: >", "      - &k run: >\n        " + _two),
+        ('run: "..."', '      - run: "%s"\n' % (_call,)),
+        ("run: &a |", "      - run: &a |\n          %s\n" % (_call,)),
+        ("run: !!str >", "      - run: !!str >\n        " + _two),
+    ]
+    _read_shapes = [
+        ("one-line run: with a deeper comment below",
+         "      - run: %s\n          # a note, not a value\n" % (_call,)),
+        ("run: |-", "      - run: |-\n          %s\n" % (_call,)),
+        ("run: |+ with a comment", "      - run: |+ # the call\n          %s\n"
+         % (_call,)),
+    ]
+    _got = dict((name, _read_yaml(text)) for name, text in
+                _refused_shapes + _read_shapes)
+    _misread = [name for name, _t in _refused_shapes
+                if not (len(_got[name]) == 1 and isinstance(_got[name][0], str)
+                        and "run: |" in _got[name][0])]
+    _unread = [name for name, _t in _read_shapes
+               if _got[name] != [["--against-commit"]]]
+    check("ra29e in YAML a call is read only from a one-line unquoted `run:` or "
+          "the body of a plain `run: |` block; every other spelling that names "
+          "the tool is refused by line, naming the two accepted shapes - wrongly "
+          "read %r, wrongly refused %r: %r" % (_misread, _unread, _got),
+          _misread == [] and _unread == [])
 
 
 # --- no case asks git about this checkout, measured while the cases run --------
@@ -1455,6 +1503,12 @@ def _recorded_cases(check):
     check("ra30 no case asked git about THIS checkout while the suite ran - the "
           "pre-commit sweep runs it, so a HEAD question here is the one this file "
           "moved out of it: %r" % (calls,), calls == [])
+
+
+def _read_yaml(text):
+    """How ra29c, ra29d and ra29e read a YAML fixture: the way `run_arms` reads
+    ci.yml."""
+    return invocations(text, yaml=True)
 
 
 def _selftest():

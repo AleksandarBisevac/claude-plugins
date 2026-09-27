@@ -279,6 +279,48 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P87.6-bpl",
+      "title": "the ci.yml reader accepts only the call shapes it can read and refuses every other line that names the tool",
+      "status": "in_progress",
+      "description": "Phase review round 4 (review-P87d.json). The reader still reads every line naming the tool and only exempts blocks whose key is spelled exactly `run:`, so \"run\": >, 'run': >, `run : >`, `&k run: >` read silently as no-flag (ci.yml's expected answer), a quoted one-line value is dropped, and `run: &a |`, `run: !!str >` or a deeper comment under a one-line run: are refused with a wrong message. Invert the rule into an allow-list: in YAML mode a line naming the tool is accepted only as (a) a one-line `run:` (optionally after `- `) whose unquoted value is the call, or (b) a line in the body of a block opened by a plain `run: |` (optionally `|-`/`|+`, trailing comment allowed). Every other non-comment line that names the tool is refused by line with the two accepted shapes named. A full-line comment is never a call and never extends a value. Pin each review shape (quoted keys, spaced key, anchored key, quoted value, anchored/tagged indicator, deeper comment) in ra29d or a new case: each is either read correctly or refused, none read silently. Re-wrap the manifest-conventions.md phase.merged bullet. Red first.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "CHANGELOG.md",
+        "plugins/audit/reference/manifest-conventions.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - a quoted-key folded run block calling the tool with --against-commit is read as a call with no flag"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T15:57:33Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"

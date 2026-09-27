@@ -453,10 +453,10 @@ The journal's **completion-record actions**:
   after the write lands**, the same rule every completion row here follows
 - `phase.merged` — `close-phase.py` recorded that a phase reached its parent (details: phaseId,
   branch, parent; the summary says the same, `<branch> reached <parent>`). Rows written before the
-  parent was kept name it in the summary only. Written **only after `phase.mergedAt` lands** - the stamp follows a verified
-  containment, and a stamp that failed leaves no row - and before the cleanup, so a removal that
-  fails afterwards cannot take the row with it. A re-run that finds `mergedAt` already recorded
-  writes none, which is what keeps one merge to one row
+  parent was kept name it in the summary only. Written **only after `phase.mergedAt` lands** - the
+  stamp follows a verified containment, and a stamp that failed leaves no row - and before the
+  cleanup, so a removal that fails afterwards cannot take the row with it. A re-run that finds
+  `mergedAt` already recorded writes none, which is what keeps one merge to one row
 - `phase.mergedHead.recorded` — `close-phase.py` added `phase.mergedHead` to a merge that was
   recorded without one (details: phaseId, field = `mergedHead`, from = null, to = the head written,
   mergedAt = the recorded moment it did not move, parent = the branch whose chain the head was read
