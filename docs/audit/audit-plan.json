@@ -719,7 +719,8 @@
       "P87.8-bpl",
       "P87.9-bpl",
       "P87.10-bpl",
-      "P87.11-bpl"
+      "P87.11-bpl",
+      "P87.12-bpl"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -4264,7 +4265,8 @@
       "P87.8-bpl",
       "P87.9-bpl",
       "P87.10-bpl",
-      "P87.11-bpl"
+      "P87.11-bpl",
+      "P87.12-bpl"
     ],
     "plugins/audit/scripts/governance/propose-gates.py": [
       "P80.15-rtb"
