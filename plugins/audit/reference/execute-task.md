@@ -119,10 +119,14 @@ not need to.
      removes the throwaway in a `finally` and reports whether the removal held, and prints
      the `redFirst` block, naming the failing case it rests on — which must be one of the
      task's own. A red counts only against a GREEN baseline: HEAD's own test files, run FIRST
-     with the same command on HEAD's code, must be green (the run is skipped only when the
-     command names nothing but test files new at HEAD, and the basis says so), and the fix
-     run (the task's test files on the working tree's code) must turn every failure green —
-     then every failure is the task's own, a new case or an edited one. Every run has a
+     with the same command on HEAD's code and every declared test file new at HEAD laid
+     over as an empty file, must be green — exit 0 with no failure, or the runner's own
+     no-tests-ran shape — and the fix run (the task's test files on the working tree's
+     code) must turn every failure green. A failure is the task's own, a new case or an
+     edited one, only where the runner locates it in a declared test file that defines it:
+     a pytest node id's path, unittest `-v`'s module, or a run of exactly one declared
+     file. A case the task's file imports or inherits is not credited, and a runner that
+     locates no failure is `could-not-prove`. Every run has a
      fresh home and temp directory of its own. A command
      already red at HEAD is `could-not-prove`: narrow the command to the task's cases.
      `--case` narrows to the ids or labels it names, held to that same test: it must name a

@@ -3670,17 +3670,23 @@ lookup reads (`HOME_VARS`, the table `tools/sweep-selftests.py` isolates its chi
 TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files laid over the tree.
 
 1. HEAD's baseline runs FIRST, before any file of the task's is laid over or run: HEAD's own test
-   files, the same command, HEAD's implementation. It must be GREEN - exit 0 and a tally counting no
-   failure and no error. Anything else - already red, stopped, unreadable, a file the command names
-   that HEAD does not have - is `could-not-prove` with the instruction to narrow the command to the
-   task's cases. It is skipped only when the command names nothing but test files new at HEAD
-   (`baseline_skip()`: no other file, no directory, no discovery), and then the basis says no HEAD
-   run was made and why - never that HEAD's tests were green;
+   files, the same command, HEAD's implementation, with every declared test file new at HEAD laid
+   over as an EMPTY file. It is always made, and the stubs are why no reader of the command's
+   arguments is needed: whatever the command reaches - a dotted module name, a shell wrapper, a
+   discovery, a file the working tree deleted - the baseline reaches too, minus the task's cases. It
+   must be GREEN - exit 0 with no failure counted, or the runner's own no-tests-ran shape (exit 5
+   saying nothing was collected), which a command naming only new files gives. Anything else -
+   already red, stopped, unreadable - is `could-not-prove` with the instruction to narrow the
+   command to the task's cases;
 2. the task's run - its test files on HEAD's implementation - is red on an assertion;
 3. the fix run - the task's test files on the working tree's implementation - must be green, with no
    fewer cases than the task's run, so every failure turns green;
-4. then every failure of step 2 comes from the task's change to the tests - a new case or an edited
-   one, the task's own edit either way - and `--case` must name one of them. That rests on two
+4. then a failure of step 2 is the task's own - a new case or an edited one - only where the runner
+   locates it in a declared test file (`located()`: a pytest node id's path, unittest `-v`'s module,
+   `__main__` or a house run of exactly one declared file) and that file defines the case
+   (`_defines()`: both runners locate an inherited case in the subclass's file). A case a new file
+   imports or inherits from HEAD's tests is not credited; a runner that locates no failure is
+   `could-not-prove`; and `--case` must name a located one. That rests on two
    conditions, and holds only while both do: the runs differ only in the files laid over, which the
    reset and the isolated environment provide; and HEAD's cases give the same answer on the same
    files, which the rule cannot check.
@@ -3689,8 +3695,12 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
 outside the throwaway that a run reaches by an absolute path or through the git directory the
 throwaway shares with the repository (config, refs) - HEAD's baseline runs first, so nothing of the
 task's can reach it, but the task's run and the fix run could still read what an earlier run wrote
-there; network or service state that changes between runs; and a flaky or time-dependent HEAD case,
-which can fail in the task's run and pass in the baseline and the fix run.
+there; network or service state that changes between runs; a flaky or time-dependent HEAD case,
+which can fail in the task's run and pass in the baseline and the fix run; and a house suite - its
+`FAIL` lines carry no location, so a run of exactly one declared file is credited with every case
+that file's run prints, including one it imported from HEAD's tests and ran itself; and, under pytest
+or unittest, a new file that defines a case of the same name as the HEAD case it inherits and calls
+the inherited one from it.
 
 Seven review rounds each found another way to credit a case past a RED baseline by reading two runs'
 output - a relabelled case, a label carrying a per-run value, a quiet stop, a failfast set in the

@@ -1472,8 +1472,9 @@ def _unittest_cases(check):
                           files=["src/mine.py", new_rel])
     code_f, got_f = _red(root, man, [sys.executable, new_rel])
     fix_run = (got_f.get("run") or {}).get("fix") or {}
-    check("sr94 a test file that is new at HEAD proves - HEAD has nothing of its "
-          "own to run - and the payload records the fix run with its exit and "
+    check("sr94 a test file that is new at HEAD proves - HEAD's run, made with "
+          "it as an empty stub, is green - and the payload records the fix run "
+          "with its exit and "
           "how long it took: exit=%r %r" % (code_f, fix_run),
           code_f == M.E_PROVED and isinstance(fix_run.get("seconds"), float)
           and fix_run.get("exit") == 0)
@@ -1545,11 +1546,10 @@ def _red_baseline_cases(check):
     code_r, got_r = _red(root, man, [py, "tests/test_ren.py"])
     basis_r = json.dumps(got_r.get("redFirst"))
     check("sr101 a declared test file renamed, the command naming only the new path: "
-          "the command reaches nothing HEAD has, so no HEAD run is made and the "
-          "basis says so; the edited case in it fails on HEAD's code and passes "
-          "with the fix, which is the proof: exit=%r %s" % (code_r, basis_r[:300]),
-          code_r == M.E_PROVED and "no HEAD run" in basis_r
-          and "green on HEAD's code" not in basis_r)
+          "HEAD's run is made with that path as an empty stub and is green; the "
+          "edited case in it fails on HEAD's code and passes with the fix, which "
+          "is the proof: exit=%r %s" % (code_r, basis_r[:300]),
+          code_r == M.E_PROVED and "laid over as empty files" in basis_r)
     probe = ["import os", "HERE = os.path.dirname(os.path.abspath(__file__))",
              "MARK = os.path.join(HERE, 'skip-the-legacy-case')"]
     head_i = _label_suite([], extra=probe + [
@@ -1629,39 +1629,26 @@ def _baseline_unit_cases(check):
             "code": 1, "problem": None,
             "text": "!!! stopping after 1 failures !!!\n=== 1 failed in 0.1s ===\n"},
     }
-    got = dict((k, M.baseline_problem(h, [py, "t.py"], False))
-               for k, h in shapes.items())
-    got["green"] = M.baseline_problem(green, [py, "t.py"], False)
-    got["no HEAD run owed"] = M.baseline_problem(None, [py, "t.py"],
-                                                 "no HEAD run: a reason")
-    got["no HEAD run made, none owed said"] = M.baseline_problem(None, [py, "t.py"],
-                                                                 None)
-    check("sr104 the baseline is green only when HEAD's own run could be made, "
-          "exited 0 and printed a tally counting no failure; a missing run is "
-          "accepted only with baseline_skip's reason: %r" % (got,),
-          got["green"] is None and got["no HEAD run owed"] is None
-          and all(got[k] and "narrow" in got[k] for k in shapes)
-          and got["no HEAD run made, none owed said"])
-    where = _harness.fixture_root("stamp-skip-")
-    os.makedirs(os.path.join(where, "tests"))
-    _write(os.path.join(where, "tests", "test_old.py"), "x = 1\n")
-    _write(os.path.join(where, "tests", "test_new.py"), "x = 1\n")
-    new = set(["tests/test_new.py"])
-    skips = dict((" ".join(cmd[1:]), bool(M.baseline_skip(cmd, where, new)))
-                 for cmd in ([py, "tests/test_new.py"],
-                             ["pytest", "-q", "tests/test_new.py::test_a"],
-                             [py, "tests/test_new.py", "tests/test_old.py"],
-                             [py, "-m", "unittest", "discover", "-s", "tests"],
-                             [py, "-m", "pytest", "tests"],
-                             [py, "-m", "pytest"]))
-    check("sr140 HEAD's run is skipped ONLY when the command names nothing but test "
-          "files new at HEAD - another file, a directory, a discovery or no path at "
-          "all gets the baseline: %r" % (skips,),
-          skips == {"tests/test_new.py": True,
-                    "-q tests/test_new.py::test_a": True,
-                    "tests/test_new.py tests/test_old.py": False,
-                    "-m unittest discover -s tests": False,
-                    "-m pytest tests": False, "-m pytest": False})
+    got = dict((k, M.baseline_problem(h, [py, "t.py"])) for k, h in shapes.items())
+    got["green"] = M.baseline_problem(green, [py, "t.py"])
+    got["an empty stub run by its script"] = M.baseline_problem(
+        {"code": 0, "problem": None, "text": ""}, [py, "tests/test_new.py"])
+    got["unittest ran no test"] = M.baseline_problem(
+        {"code": 5, "problem": None,
+         "text": "\n----\nRan 0 tests in 0.000s\n\nNO TESTS RAN\n"},
+        [py, "-m", "unittest", "-v", "tests/test_new.py"])
+    got["pytest collected nothing"] = M.baseline_problem(
+        {"code": 5, "problem": None, "text": "=== no tests ran in 0.01s ===\n"},
+        ["pytest", "tests/test_new.py"])
+    got["not made"] = M.baseline_problem(None, [py, "t.py"])
+    greens = ("green", "an empty stub run by its script", "unittest ran no test",
+              "pytest collected nothing")
+    check("sr104 the baseline is green on exit 0 with no failure counted, or on the "
+          "runner's own no-tests-ran shape - what a command naming only new files "
+          "gives when they are empty stubs - and a run not made is never green: %r"
+          % (got,),
+          all(got[k] is None for k in greens)
+          and all(got[k] and "narrow" in got[k] for k in list(shapes) + ["not made"]))
     one = {"code": 0, "problem": None,
            "text": "PASS a\n" + _TALLY % ("ALL PASS", 1, 1) + "\n"}
     fewer = M.fix_problem(one, [py, "t.py"], {"collected": 2})
@@ -1862,7 +1849,7 @@ def _every_run_cases(check):
           "task's run gets a fresh home as every run does, so that case passes "
           "there and nothing of the task's is red: exit=%r %s"
           % (code_h, json.dumps(got_h.get("redFirst") or got_h.get("note"))[:300]),
-          code_h != M.E_PROVED)
+          code_h == M.E_NOT_RED and "PASSED in the throwaway" in (got_h.get("note") or ""))
     tmp_case = ("'no stale lock is left in the temp dir'",
                 "not os.path.exists(os.path.join(__import__('tempfile')"
                 ".gettempdir(), 'mine.lock'))")
@@ -1875,7 +1862,7 @@ def _every_run_cases(check):
         root_t, man_t, [py, "tests/test_mine.py"]))
     check("sr135 ...and the same through the caller's TMPDIR: exit=%r %s"
           % (code_t, json.dumps(got_t.get("redFirst") or got_t.get("note"))[:300]),
-          code_t != M.E_PROVED)
+          code_t == M.E_NOT_RED and "PASSED in the throwaway" in (got_t.get("note") or ""))
     discover = [py, "-m", "unittest", "discover", "-s", "tests", "-v"]
     root_n, man_n = _new_only_repo("stamp-red-newonly-")
     code_n, got_n = _red(root_n, man_n, discover)
@@ -1898,25 +1885,23 @@ def _every_run_cases(check):
     code_o, got_o = _red(root_o, man_o, [py, "tests/test_new.py", "-v"])
     basis_o = (got_o.get("redFirst") or {}).get("basis", "")
     check("sr138 THE ALLOW CASE: a command naming ONLY a test file new at HEAD "
-          "proves with no HEAD run, and the basis says no HEAD run was made and "
-          "why - never that HEAD's tests were green: exit=%r %s"
-          % (code_o, basis_o[:300]),
-          code_o == M.E_PROVED and "no HEAD run" in basis_o
-          and "green on HEAD's code" not in basis_o
-          and (got_o.get("run") or {}).get("head") is None)
+          "proves - HEAD's run is made with that file as an empty stub, is green, "
+          "and the basis says so: exit=%r %s" % (code_o, basis_o[:300]),
+          code_o == M.E_PROVED and "laid over as empty files" in basis_o
+          and ((got_o.get("run") or {}).get("head") or {}).get("exit") == 0)
     detail = repr([(i, i + 1) for i in range(20000)])
     long_fail = {"id": None, "label": "the pairs round-trip (saw %s)" % (detail,),
                  "assertion": True, "why": "house FAIL"}
     code = "\n".join([
-        "import sys, resource", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
+        "import sys, tracemalloc", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
         "import _harness, _loader",
         "M = _loader.load_script('stamp-verification.py', modname='sv_forms')",
         "d = repr([(i, i + 1) for i in range(20000)])",
         "f = {'id': None, 'label': 'the pairs round-trip (saw %s)' % (d,),"
         " 'assertion': True, 'why': 'house FAIL'}",
+        "tracemalloc.start()",
         "own, refused = M.own_failures([f], ['the pairs round-trip'])",
-        "print(len(own), len(refused),"
-        " resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)"])
+        "print(len(own), len(refused), tracemalloc.get_traced_memory()[1])"])
     try:
         proc = subprocess.run([py, "-c", code], stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, universal_newlines=True,
@@ -1925,12 +1910,13 @@ def _every_run_cases(check):
     except subprocess.TimeoutExpired:
         out = "timed out"
     parts = out.split()
-    rss_mb = (int(parts[2]) // (1 << 20 if sys.platform == "darwin" else 1 << 10)
+    rss_mb = (int(parts[2]) // (1 << 20)
               if len(parts) == 3 and parts[2].isdigit() else None)
     check("sr139 --case names a label beside a long parenthesised detail in linear "
-          "memory - no prefix of the line is built: %r (%r MB) %d chars"
+          "memory - no prefix of the line is built; measured with tracemalloc, "
+          "which every platform has: %r (%r MB peak) %d chars"
           % (out, rss_mb, len(long_fail["label"])),
-          parts[:2] == ["1", "0"] and rss_mb is not None and rss_mb < 80)
+          parts[:2] == ["1", "0"] and rss_mb is not None and rss_mb < 8)
     # The task's run leaves a marker where the fix run would read it, and its new
     # case passes on that marker alone - the fix (v = 2) never satisfies it. Only
     # a fix run with a home, a temp directory and a tree of its own sees the case
@@ -1961,6 +1947,174 @@ def _every_run_cases(check):
               "case stays red with the fix and is not proved: exit=%r %s"
               % (cid, where_ch, code_f, basis_f[:240]),
               code_f == M.E_CANNOT_PROVE and "do not all pass" in basis_f)
+
+
+# --- the baseline reaches what the task's run reaches; only located reds count --
+_NEW_TRIVIAL = "\n".join(["import unittest", "class New(unittest.TestCase):",
+                          "    def test_new(self):", "        self.assertTrue(True)"]) + "\n"
+_OLD_RED = "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
+                      "class Old(unittest.TestCase):",
+                      "    def test_value_is_two(self):",
+                      "        self.assertEqual(mine.v, 2)"]) + "\n"
+
+
+def _reach_repo(prefix, new_text=_NEW_TRIVIAL, old_text=_OLD_RED, declare_old=False,
+                wt_old=None):
+    """HEAD holds a unittest package `tests/` with test_old.py (red at HEAD by
+    default, fixed by the implementation); the task declares src/mine.py and a
+    NEW tests/test_new.py - and test_old.py too when `declare_old`."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, "tests", "__init__.py"), "")
+    _write(os.path.join(root, "tests", "test_old.py"), old_text)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "at HEAD")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(root, "tests", "test_new.py"), new_text)
+    if wt_old is not None:
+        _write(os.path.join(root, "tests", "test_old.py"), wt_old)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = (["src/mine.py", "tests/test_new.py"]
+                     + (["tests/test_old.py"] if declare_old else []))
+    task["tests"] = {"mode": "tdd", "add": ["tests/test_new.py: v is two"]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _reach_cases(check):
+    py = sys.executable
+    unit = [py, "-m", "unittest", "-v"]
+    importing = "\n".join(["import os, sys, unittest",
+                           "sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))",
+                           "from test_old import Old", "class New(unittest.TestCase):",
+                           "    def test_new(self):", "        self.assertTrue(True)"]) + "\n"
+    shapes = [
+        ("sr145", "a second argument naming HEAD's red module by its dotted name",
+         _NEW_TRIVIAL, unit + ["tests/test_new.py", "tests.test_old"], None),
+        ("sr146", "a new test file that imports HEAD's red TestCase", importing,
+         unit + ["tests/test_new.py"], None),
+        ("sr147", "a shell wrapper whose script is a discovery",
+         _NEW_TRIVIAL, ["sh", "-c", py + " -m unittest discover -s tests -v",
+                        "tests/test_new.py"], None),
+        ("sr148", "HEAD's red file deleted in the working tree, undeclared, named "
+         "beside the new file", _NEW_TRIVIAL,
+         unit + ["tests/test_new.py", "tests/test_old.py"], "delete"),
+        ("sr153", "a new TestCase that subclasses HEAD's red one and so inherits its "
+         "case", importing.replace("class New(unittest.TestCase):", "class New(Old):"),
+         unit + ["tests/test_new.py"], None),
+    ]
+    for cid, how, new_text, cmd, edit in shapes:
+        root, man = _reach_repo("stamp-red-%s-" % (cid,), new_text=new_text)
+        if edit == "delete":
+            os.remove(os.path.join(root, "tests", "test_old.py"))
+        code, got = _red(root, man, cmd)
+        basis = json.dumps(got.get("redFirst") or got.get("note"))
+        check("%s a new test file that asserts nothing, with %s, does not get HEAD's "
+              "red credited: exit=%r %s" % (cid, how, code, basis[:300]),
+              code == M.E_CANNOT_PROVE)
+    fixing = "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
+                        "class New(unittest.TestCase):", "    def test_new(self):",
+                        "        self.assertEqual(mine.v, 2)"]) + "\n"
+    root, man = _reach_repo("stamp-red-reach-new-", new_text=fixing,
+                            old_text=_OLD_RED.replace("assertEqual(mine.v, 2)",
+                                                      "assertTrue(mine.v >= 1)"))
+    code_n, got_n = _red(root, man, unit + ["tests/test_new.py"])
+    basis_n = (got_n.get("redFirst") or {}).get("basis", "")
+    check("sr149 THE ALLOW CASE: a new test file whose own case fails on HEAD's code "
+          "and passes with the fix proves - its stub baseline is green, and the "
+          "failure is located in it: exit=%r %s" % (code_n, basis_n[:300]),
+          code_n == M.E_PROVED and "test_new" in basis_n)
+    green_old = _OLD_RED.replace("assertEqual(mine.v, 2)", "assertTrue(mine.v >= 1)")
+    root_e, man_e = _reach_repo("stamp-red-reach-edit-", new_text=_NEW_TRIVIAL,
+                                old_text=green_old, declare_old=True,
+                                wt_old=_OLD_RED)
+    code_e, got_e = _red(root_e, man_e, unit + ["tests/test_new.py",
+                                               "tests/test_old.py"])
+    basis_e = (got_e.get("redFirst") or {}).get("basis", "")
+    check("sr150 THE ALLOW CASE: a command naming a new test file AND an edited old "
+          "one still gets a green baseline - the new file a stub, the old one "
+          "HEAD's - and the edited case proves: exit=%r %s" % (code_e, basis_e[:300]),
+          code_e == M.E_PROVED and "test_value_is_two" in basis_e)
+
+
+def _located_cases(check):
+    py = sys.executable
+    tests = ["tests/test_new.py"]
+    unit = [py, "-m", "unittest", "-v", "tests/test_new.py"]
+    rows = {
+        "a pytest node id in the new file": (
+            {"label": "tests/test_new.py::New::test_x"}, "pytest", ["pytest"], True),
+        "a pytest node id into HEAD's old file": (
+            {"label": "tests/test_old.py::Old::test_value_is_two"}, "pytest",
+            ["pytest"], False),
+        "unittest -v locating the new module": (
+            {"module": "tests.test_new"}, "unittest", unit, True),
+        "unittest -v locating HEAD's module (imported)": (
+            {"module": "test_old"}, "unittest", unit, False),
+        "unittest with no location": ({"module": None}, "unittest", unit, False),
+        "unittest __main__ of the one declared script": (
+            {"module": "__main__"}, "unittest", [py, "tests/test_new.py", "-v"], True),
+        "a house run of the one declared script": (
+            {}, "house", [py, "tests/test_new.py"], True),
+        "a house run through a runner": ({}, "house", [py, "-m", "runner"], False),
+    }
+    got = dict((k, M.located(f, runner, tests, cmd))
+               for k, (f, runner, cmd, _w) in rows.items())
+    check("sr151 only a failure the runner locates in a declared test file is "
+          "credited - a pytest node id's path, unittest -v's module, the one "
+          "declared script a house or `__main__` run executes: %r" % (got,),
+          got == dict((k, w) for k, (_f, _r, _c, w) in rows.items()))
+    texts = {"tests/test_new.py": "class New(Old):\n    pass\n\n"
+                                  "def test_mine(x):\n    assert x\n"}
+    defined = dict((k, M.located(f, runner, tests, cmd, texts)) for k, (f, runner, cmd)
+                   in {"an inherited unittest case": (
+                           {"module": "tests.test_new", "id": "test_value_is_two"},
+                           "unittest", unit),
+                       "an inherited pytest case": (
+                           {"label": "tests/test_new.py::New::test_value_is_two",
+                            "id": "test_value_is_two"}, "pytest", ["pytest"]),
+                       "a pytest case the file defines, parametrized": (
+                           {"label": "tests/test_new.py::test_mine[1]",
+                            "id": "test_mine[1]"}, "pytest", ["pytest"])}.items())
+    check("sr154 a located case must also be DEFINED in the file it is located in - "
+          "both runners locate an inherited case in the subclass's file: %r"
+          % (defined,),
+          defined == {"an inherited unittest case": False,
+                      "an inherited pytest case": False,
+                      "a pytest case the file defines, parametrized": True})
+    gone = _harness.fixture_root("stamp-deadline-")
+    late, copied = M._isolated_run(gone, os.path.join(gone, "no-tree"), [], [py, "-c", ""],
+                                   time.time() + 0.5, 30, {}, gone, "late")
+    check("sr155 with less than a second of the deadline left no run is made - not "
+          "even the reset's git calls, which would start past it: %r %r"
+          % (late, copied),
+          late["code"] is None and "no time was left" in (late["problem"] or "")
+          and copied == [])
+    real = subprocess.run([py, "-m", "unittest", "-v", "test_u"], cwd=_where_unittest(),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          universal_newlines=True).stdout
+    mods = sorted(set(c.get("module") for c in M.failing_cases(real, "unittest")))
+    check("sr152 a real unittest -v run gives each failing case its module: %r"
+          % (mods,), mods == ["test_u"])
+    twin = ("FAIL: test_value_is_two (test_old.Old.test_value_is_two)\n"
+            "FAIL: test_value_is_two (tests.test_new.New.test_value_is_two)\n"
+            "\n----\nRan 2 tests in 0.001s\n\nFAILED (failures=2)\n")
+    both = [c.get("module") for c in M.failing_cases(twin, "unittest")]
+    check("sr156 two failing cases of one name in two modules keep a module each - "
+          "the imported one HEAD's, the inherited one the subclass's: %r" % (both,),
+          both == ["test_old", "tests.test_new"])
+
+
+def _where_unittest():
+    where = _harness.fixture_root("stamp-unittest-where-")
+    _write(os.path.join(where, "test_u.py"), "\n".join([
+        "import unittest", "", "", "class T(unittest.TestCase):",
+        "    def test_assert(self):", "        self.assertEqual(1, 2)", "",
+        "    def test_raise(self):", "        raise TypeError('a body that raised')",
+        ""]))
+    return where
 
 
 def _path_red(prefix, rel, head, wt, cmd=None):
@@ -2037,6 +2191,8 @@ def _cases(check):
     _harness.stage(check, "sr-round5", _round5_cases)
     _harness.stage(check, "sr-round5-units", _round5_unit_cases)
     _harness.stage(check, "sr-every-run-isolated", _every_run_cases)
+    _harness.stage(check, "sr-reach", _reach_cases)
+    _harness.stage(check, "sr-located", _located_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)
