@@ -93,7 +93,7 @@ Hard rules (non-negotiable):
   ```
   python3 "<plugin root>/scripts/governance/stamp-verification.py" red \
       --project <gitRoot> --manifest <manifestPath> --task <taskId> \
-      [--case <id of the case you added>] -- <test command>
+      [--case <id or full label of the case you added>] -- <test command>
   ```
 
   It checks HEAD out into a temp directory with `git worktree add --detach`, copies
@@ -112,11 +112,25 @@ Hard rules (non-negotiable):
   beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the
   plan gate grades which files you touch, not why — so this is kept by reading it.
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
-  failing cases, and a red counts only when one of them is the task's own: a case
-  present in the working tree's test file and absent from HEAD's. `--case` narrows to
-  the ids you name and is held to that same test, so naming a case HEAD already
-  carries proves nothing. An existing case going red, or a test body raising an
-  exception, is not a proof about your test. A compile error, an import error or
+  failing cases, and a red counts only against a GREEN baseline: the helper first runs
+  HEAD's own test files with the same command on HEAD's code — every declared test file
+  new at HEAD laid over as an empty file — and they must be green (exit 0 with no failure,
+  or an exit 5 whose one runner's tally counts nothing run and nothing failed); then a
+  failure of your run counts only where the runner locates it in one of your declared
+  test files (a pytest node id, unittest `-v`'s module and class, a run of exactly one
+  declared file), the class it names there defines the case (its last binding there — an
+  assignment, walrus, `with ... as` or import of the name after it means the def is not
+  what runs, and so does a later `New.<case> = ...` or `setattr(New, '<case>', ...)`;
+  `New.maxDiff = None` binds nothing), and no test file anywhere in HEAD's tree
+  holds an identical def under the same class and name. A house run is compared whole: a
+  script identical to one of HEAD's test files is refused. A HEAD case your new file
+  imports, inherits or loads, a file you moved, or a case you copied is not yours unless
+  you edited its definition (under a house run, the script); and the fix run (your test files on the working tree's code) must turn each
+  one green. A runner that locates no failure is `could-not-prove`. Every run gets a fresh home and temp directory of its own. If HEAD's own tests are already red under your command, the answer
+  is `could-not-prove`: narrow the command to the task's cases (one test file, one `-k`
+  selection) and run it again. `--case` narrows to the ids or labels you name, and must
+  name a case that failed an assertion in your run. A test body raising an exception is
+  not a proof about your test. A compile error, an import error or
   zero tests collected exits non-zero with no assertion ever evaluated, so it is
   `could-not-prove`, not `proved` — unless the task introduces the symbol the run
   fails on. The helper decides that and not you: pass `--introduces <symbol>` (an

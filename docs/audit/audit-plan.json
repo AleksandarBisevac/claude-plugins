@@ -527,7 +527,7 @@
     {
       "id": "P82",
       "title": "red-first names the task's own case by its label, and reads only the runner that ran",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P82.json"
     },
     {
@@ -565,6 +565,12 @@
       "title": "the history and secrets guards say exactly what they do not follow, and their allow cases are pinned",
       "status": "done",
       "shard": "phases/P88.json"
+    },
+    {
+      "id": "P89",
+      "title": "the history and secrets guards read the shapes BUG-12 left open, and the documents stop listing them",
+      "status": "pending",
+      "shard": "phases/P89.json"
     }
   ],
   "fileIndex": {
@@ -691,6 +697,20 @@
       "P73.7-9h1",
       "P78.15-msc",
       "P82.1",
+      "P82.2-fye",
+      "P82.3-fye",
+      "P82.4-fye",
+      "P82.5-fye",
+      "P82.6-fye",
+      "P82.7-fye",
+      "P82.8-fye",
+      "P82.9-fye",
+      "P82.10-fye",
+      "P82.11-fye",
+      "P82.12-fye",
+      "P82.13-fye",
+      "P82.14-fye",
+      "P82.15-fye",
       "P83.1",
       "P83.2",
       "P79.11-5bh",
@@ -731,7 +751,8 @@
       "P87.14-bpl",
       "P81.14-j7p",
       "P88.1",
-      "P81.18-j7p"
+      "P81.18-j7p",
+      "P89.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -887,7 +908,21 @@
       "P81.8",
       "P81.14-j7p",
       "P81.16-j7p",
-      "P81.18-j7p"
+      "P81.18-j7p",
+      "P82.1",
+      "P82.3-fye",
+      "P82.4-fye",
+      "P82.5-fye",
+      "P82.6-fye",
+      "P82.7-fye",
+      "P82.8-fye",
+      "P82.9-fye",
+      "P82.10-fye",
+      "P82.11-fye",
+      "P82.12-fye",
+      "P82.13-fye",
+      "P82.14-fye",
+      "P82.15-fye"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -934,7 +969,8 @@
       "P81.11",
       "P88.1",
       "P88.2-dnb",
-      "P88.3-dnb"
+      "P88.3-dnb",
+      "P89.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1141,7 +1177,18 @@
       "P78.11",
       "P77.1",
       "P77.3-6u9",
-      "P77.4-6u9"
+      "P77.4-6u9",
+      "P82.1",
+      "P82.2-fye",
+      "P82.5-fye",
+      "P82.8-fye",
+      "P82.9-fye",
+      "P82.10-fye",
+      "P82.11-fye",
+      "P82.12-fye",
+      "P82.13-fye",
+      "P82.14-fye",
+      "P82.15-fye"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1429,7 +1476,8 @@
       "P83.2",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P89.1"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1473,7 +1521,8 @@
       "P83.1",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P89.1"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -1604,7 +1653,17 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P82.1",
+      "P82.5-fye",
+      "P82.8-fye",
+      "P82.9-fye",
+      "P82.10-fye",
+      "P82.11-fye",
+      "P82.12-fye",
+      "P82.13-fye",
+      "P82.14-fye",
+      "P82.15-fye"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -2217,7 +2276,21 @@
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
-      "P82.1"
+      "P82.1",
+      "P82.2-fye",
+      "P82.3-fye",
+      "P82.4-fye",
+      "P82.5-fye",
+      "P82.6-fye",
+      "P82.7-fye",
+      "P82.8-fye",
+      "P82.9-fye",
+      "P82.10-fye",
+      "P82.11-fye",
+      "P82.12-fye",
+      "P82.13-fye",
+      "P82.14-fye",
+      "P82.15-fye"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -2925,7 +2998,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P86.3"
+      "P86.3",
+      "P89.1"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -3698,7 +3772,8 @@
       "P83.4-wkm",
       "P83.5-wkm",
       "P88.1",
-      "P88.2-dnb"
+      "P88.2-dnb",
+      "P89.1"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -3723,7 +3798,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P86.3"
+      "P86.3",
+      "P89.1"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -3900,7 +3976,21 @@
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
-      "P82.1"
+      "P82.1",
+      "P82.2-fye",
+      "P82.3-fye",
+      "P82.4-fye",
+      "P82.5-fye",
+      "P82.6-fye",
+      "P82.7-fye",
+      "P82.8-fye",
+      "P82.9-fye",
+      "P82.10-fye",
+      "P82.11-fye",
+      "P82.12-fye",
+      "P82.13-fye",
+      "P82.14-fye",
+      "P82.15-fye"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
