@@ -581,7 +581,7 @@
     {
       "id": "P91",
       "title": "committed plan records carry no machine path, and the committed-artifact check reads the plan",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P91.json"
     }
   ],
