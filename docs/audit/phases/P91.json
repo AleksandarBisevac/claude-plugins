@@ -1,7 +1,7 @@
 {
   "id": "P91",
   "title": "committed plan records carry no machine path, and the committed-artifact check reads the plan",
-  "status": "in_progress",
+  "status": "done",
   "description": "A phase shard's task text named scratch files by their absolute path on the machine that wrote them, and nothing flagged it because the committed-artifact check does not read the plan. Extend its domain to the plan, red first, then scrub the two shards it finds; words that quote a matched shape are avoided in this phase's own text.",
   "desiredOutcome": "tools/check-committed-pii.py scans the plan index and every phase shard, and no committed plan record names a path inside a user's home directory or the machine's temporary directory",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "dedb80e1ab7fe45a595dce182ff58941d41acceb",
   "branch": "audit/p91-committed-plan-records-carry-n",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T23:45:20Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -185,5 +185,6 @@
     "runId": "2026-09-27T23:44:40Z.c39985",
     "status": "passed",
     "at": "2026-09-27T23:44:40Z"
-  }
+  },
+  "mergedHead": "06db03896bcad2509494a4d0aca117c05e55c284"
 }
