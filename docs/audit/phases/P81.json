@@ -379,7 +379,7 @@
     {
       "id": "P81.7",
       "title": "full-gate.py acts on a miss: a coupling and a bug, and nothing from an unnamed failure",
-      "status": "in_progress",
+      "status": "done",
       "description": "After the --full --record subprocess, full-gate.py reads the row it wrote (_evidence_io.row_by_run with the runId the runner printed on its 'evidence: recorded' line; failing that, the newest full row for HEAD) and, for each selectionMiss entry, runs audit-task.py couple --test <path> --sources <sources> --basis-run <runId> --basis-head <head> --phases <ids>, then audit-task.py bug-add \"Selection miss: <path>\" --severity med --files <path> --description <the miss sentence, the runId, the head and the phases>, both as subprocesses through _loader.script_path; and couple --test <t> --caught <runId> for each already-coupled test named failing. It prints what it wrote and each verb's own output, and exits with the runner's code: a miss is learned and the red still blocks the push. It never acts on a row whose failures were not named. Red-first in test_full_gate.py: a fake full run producing a miss ends with a coupling and a bug in the fixture plan and one journal row each; dg15 end to end - a tail-basis red writes nothing (mutation: act on the failing lines -> red). Allow case: a green run writes nothing.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
@@ -418,18 +418,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8a2aa1e3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "full-gate.py: after a non-zero runner exit, find_row reads this run's row (runId off the evidence line, or the newest full row stamped since start by _ev.stamp_moment), learning_plan re-checks every miss against named_failing_suites, files couple (skipped when sources were cut) and bug-add (skipped when an open bug carries the title) through audit-task.py subprocesses, and credits couple --caught only through _evidence_io.resolve_named; a learning exception prints one line and main returns the runner's code. _evidence_io.resolve_named (unique / none / several with a reason). audit-task.py: --caught membership by listed_by, refusal of an ambiguous name (_caught_ambiguity). Guide fence, tree line and full-gate section; _deps.py comment.",
+        "descriptive": "A red third-place run now leaves a coupling and a bug behind for each selection miss the runner named, credits a catch only to the one coupling a name pins, learns nothing from a tail-read or unrecorded run, and still blocks the push."
       },
       "startedAt": "2026-09-27T18:00:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T19:38:53Z",
+      "verifiedBy": [
+        "fgl1-fgl18",
+        "cc16",
+        "cc17",
+        "cc18",
+        "rn1-rn4"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T19:38:31Z.e4fc27",
         "status": "passed",
         "at": "2026-09-27T19:38:31Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "8a2aa1e3",
+        "at": "2026-09-27T19:38:53Z",
+        "basis": "the description's verbs are delivered (couple and bug-add per named miss, couple --caught per already-coupled named failure, the runner's exit kept); it diverges where review proved the literal rule wrong: with no evidence line the run's row is the newest full row stamped since this run started, not the newest for HEAD; a retried push does not file a duplicate bug; bug wording follows the runner's printed remedy; and audit-task's --caught was changed so a catch is credited only to the one coupling a runner's name pins"
       }
     },
     {
