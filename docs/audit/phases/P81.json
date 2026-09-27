@@ -267,7 +267,7 @@
     {
       "id": "P81.5",
       "title": "couple --caught refreshes a coupling's lastCaught from a named third-place failure",
-      "status": "in_progress",
+      "status": "done",
       "description": "couple --test <path> --caught <runId> on an already-coupled test sets lastCaught to that run's ts and journals coupling.caught. The run must be a scope full row whose failingSuites, with a named basis, include the test (looked up with _evidence_io.row_by_run); otherwise refused exit 2 naming which. A coupling first written from a miss carries no lastCaught. --caught never creates a coupling (a test that is not coupled is refused) and never changes sources. Add the dest to VERB_FLAGS['couple'] and commands/task.md. Red-first: --caught on a coupled test named failing in a full row sets lastCaught to the row's ts and writes one journal row; mutation: accept a row whose basis is a tail -> red. Allow cases: an uncoupled test refused; a phase-scope row refused. Also, in the same file: audit-task's `_named_failing_suites` (the reader behind a fix task's --failing-from gate) must skip a step the committed row marks muted (the step-level `muted` marker P81.3 adds to STEP_KEYS), so a quarantined suite never narrows a fix task's gate; correct its docstring that says it reads a failed step the way run-test-gate.failed_steps does. Red-first: a failed row whose only failing suite is a muted step yields no failing-from paths.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -302,18 +302,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e02d991e1e2e67261a5f1bada72efc7f2988d5da",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "timestamps compared as parsed moments; a catch that is not newer is a no-op exit 0; a missing run with an unreadable ledger says so (one helper for --basis-run and --caught); audit-task reads named failing suites through _evidence_io.named_failing_suites; the guide's module map re-rendered for the audit-task -> _usage_core edge.",
+        "descriptive": "couple --test <path> --caught <runId> sets lastCaught from a full-scope row whose runner named the test on an unmuted step; it never creates a coupling or changes sources; a muted step never narrows a --failing-from gate"
       },
       "startedAt": "2026-09-27T16:44:22Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T18:00:27Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T18:00:26Z.00ed92",
         "status": "passed",
         "at": "2026-09-27T18:00:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e02d991e1e2e67261a5f1bada72efc7f2988d5da",
+        "at": "2026-09-27T18:00:27Z"
       }
     },
     {
@@ -374,7 +379,7 @@
     {
       "id": "P81.7",
       "title": "full-gate.py acts on a miss: a coupling and a bug, and nothing from an unnamed failure",
-      "status": "pending",
+      "status": "in_progress",
       "description": "After the --full --record subprocess, full-gate.py reads the row it wrote (_evidence_io.row_by_run with the runId the runner printed on its 'evidence: recorded' line; failing that, the newest full row for HEAD) and, for each selectionMiss entry, runs audit-task.py couple --test <path> --sources <sources> --basis-run <runId> --basis-head <head> --phases <ids>, then audit-task.py bug-add \"Selection miss: <path>\" --severity med --files <path> --description <the miss sentence, the runId, the head and the phases>, both as subprocesses through _loader.script_path; and couple --test <t> --caught <runId> for each already-coupled test named failing. It prints what it wrote and each verb's own output, and exits with the runner's code: a miss is learned and the red still blocks the push. It never acts on a row whose failures were not named. Red-first in test_full_gate.py: a fake full run producing a miss ends with a coupling and a bug in the fixture plan and one journal row each; dg15 end to end - a tail-basis red writes nothing (mutation: act on the failing lines -> red). Allow case: a green run writes nothing.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
@@ -405,14 +410,14 @@
         "P81.4",
         "P81.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T18:00:36Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -526,7 +531,7 @@
     {
       "id": "P81.10",
       "title": "the evidence ledger's readers decode through one function, and a byte that does not decode is a finding everywhere",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F523. read_rows opens ledger files with errors='replace' and reports them fully read, while verify opens them strictly and grades them unreadable; every consumer of read_rows (status, doctor, panel, report, the release guard's full-run answer, import-evidence) can compare a value a replaced byte silently changed. Both readers (and any sibling that opens a ledger file) decode through ONE function; a non-UTF-8 byte is a finding on every surface - read_rows counts the file as lost (unreadableFiles), never returns its rows as clean. Red-first as above; allow: a clean UTF-8 file with non-ASCII text reads as before.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -555,14 +560,14 @@
       "dependsOn": [
         "P81.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T18:00:36Z",
       "completedAt": null,
       "verifiedBy": []
     },
