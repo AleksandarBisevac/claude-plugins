@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P88-R1",
@@ -49,9 +49,9 @@
         "commit": "cda6c2c1"
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 3 with a recorded fix commit]"
+    "outcome": "matches; one phase review and two fix-diff reviews, every finding fixed in P88.2-P88.3 [findings: 3 - 0 high, 0 med, 3 low; 3 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "SECURITY.md now says exactly what the history and secrets guards do not follow, and the history guard's compound readings are pinned by allow cases.\n\nThe Not-followed list names two groups of shapes, each at shape level and measured through the guard's own path:\n- the shapes the P83 round-3 review measured as not read;\n- the three still open and tracked as BUG-12.\n\nA residual bullet names where the substitution scanner closes early, and names only what the guard's path really misses.\n\nThe CHANGELOG's Perl sentence claims only the forms the pattern reads.\n\nAllow twins for the history guard's compound readings go red under the over-fire mutation each one guards.\n\nNo guard's code changed. BUG-12's three medium findings stay open for a Python maintainer. Red tests for them are committed on branch fix/bug-12, with a handoff document in the internal repository.\n\nReviewed once over the phase and once over each fix diff. Every finding was a claim in SECURITY.md the code did not keep, and each was fixed in P88.2 or P88.3 and recorded with its fix commit. Main had not moved. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P88.1",
@@ -186,5 +186,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-27T20:01:18Z"
+  "startedAt": "2026-09-27T20:01:18Z",
+  "testEvidence": {
+    "runId": "2026-09-27T20:42:01Z.15d601",
+    "status": "passed",
+    "at": "2026-09-27T20:42:01Z"
+  }
 }
