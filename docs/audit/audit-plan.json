@@ -559,6 +559,12 @@
       "title": "a task that regenerates a published page can record a green gate before its commit, and a journal row keeps every detail its writer passed",
       "status": "done",
       "shard": "phases/P87.json"
+    },
+    {
+      "id": "P88",
+      "title": "the history and secrets guards say exactly what they do not follow, and their allow cases are pinned",
+      "status": "pending",
+      "shard": "phases/P88.json"
     }
   ],
   "fileIndex": {
@@ -722,7 +728,8 @@
       "P87.11-bpl",
       "P87.12-bpl",
       "P87.13-bpl",
-      "P87.14-bpl"
+      "P87.14-bpl",
+      "P88.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -914,7 +921,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P80.16-rtb"
+      "P80.16-rtb",
+      "P88.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -3629,7 +3637,8 @@
       "P83.1",
       "P83.3-wkm",
       "P83.4-wkm",
-      "P83.5-wkm"
+      "P83.5-wkm",
+      "P88.1"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
