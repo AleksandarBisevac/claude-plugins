@@ -19,12 +19,35 @@
   "branch": "audit/p85-comments-state-their-rule-not",
   "mergedAt": null,
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P85-R1",
+        "severity": "med",
+        "file": "CONTRIBUTING.md:902",
+        "issue": "the Sequencing paragraph still cited a private task id (U3.3) as the authority for an ordering rule; the markdown half of register_citation_violations() reads only fault ids and the paragraph-opening phase shape, so no gate could see it",
+        "resolution": "fixed in P85.5-axa (32beadff3875)"
+      },
+      {
+        "id": "P85-R2",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__panel_page.py:150",
+        "issue": "removing the cited id also removed the semicolon after it, running two clauses together",
+        "resolution": "fixed in P85.5-axa (32beadff3875)"
+      },
+      {
+        "id": "P85-R3",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_panel_server.py:281",
+        "issue": "removing the cited id also removed the dash after it, running two clauses together",
+        "resolution": "fixed in P85.5-axa (32beadff3875)"
+      }
+    ],
+    "outcome": "code-review over the phase diff: 3 findings (1 med, 2 low), all fixed in P85.5-axa; phase gate green on all eight entries (2026-09-27T02:09:43Z.35b3d8); invariants clean with one partial that names missing evidence"
   },
-  "summary": null,
+  "summary": "Every comment and docstring in the files this phase declares now states the constraint of its block instead of citing a phase, task, bug, fault or design-table id: the panel, report and usage modules, the journal-writes hook, the gate-derivation and reference-lint modules, the gate prover, CONTRIBUTING and their tests. Behaviour is unchanged; the whole suite and the phase gate stayed green. The files other phases hold, the release-guard hooks and the files of the bug a human maintainer owns are the second half, P86, with the lint that keeps the rule.",
   "tasks": [
     {
       "id": "P85.1",
@@ -252,7 +275,7 @@
     {
       "id": "P85.5-axa",
       "title": "the last register citation and two broken sentences from the comment sweep",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off review findings on P85. (1) CONTRIBUTING.md's Sequencing paragraph, near line 902, still cites a private task id in 'The order is **U3.3 step C (pins to behaviour) then dialect unification then step D**'. State the ordering constraint in plain words with no id: migrate the substring pins from asserting text to asserting behaviour first, then unify the dialect, then decide on the typed front end. Grep CONTRIBUTING.md once more for any P, BF, BUG, F, U or dg/tk id used as a citation. (2) plugins/audit/tests/test__panel_page.py near lines 150-151 lost the semicolon that followed the removed id and now runs two clauses together; restore the connective. (3) plugins/audit/tests/test_panel_server.py near lines 281-282, the same; restore the dash or semicolon between the clauses. Comments and prose only; no behaviour change; no number in prose.",
       "files": [
         "CONTRIBUTING.md",
@@ -280,20 +303,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "32beadff387521f088abeb6a26b1641cb5259ba4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CONTRIBUTING.md Sequencing paragraph states the order (pins to behaviour, then the dialect, then the typed front end) with no id; the lost semicolon and dash restored in test__panel_page.py and test_panel_server.py. Full sweep and gate-parity green.",
+        "descriptive": "The last private task id cited in CONTRIBUTING.md is now the ordering it stood for, and two test comments broken by the sweep read as sentences again."
       },
       "startedAt": "2026-09-27T01:58:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T02:03:42Z",
+      "verifiedBy": [
+        "selftests",
+        "gate-parity"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T02:03:41Z.5ce0cf",
         "status": "passed",
         "at": "2026-09-27T02:03:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "32beadff387521f088abeb6a26b1641cb5259ba4",
+        "at": "2026-09-27T02:03:42Z",
+        "basis": "a fix for the sign-off review's own findings, which the review named line by line; prose only"
       }
     }
   ],
-  "startedAt": "2026-09-27T01:32:38Z"
+  "startedAt": "2026-09-27T01:32:38Z",
+  "testEvidence": {
+    "runId": "2026-09-27T02:09:43Z.35b3d8",
+    "status": "passed",
+    "at": "2026-09-27T02:09:43Z"
+  }
 }
