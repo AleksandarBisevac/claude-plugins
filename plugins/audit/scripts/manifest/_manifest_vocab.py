@@ -221,6 +221,44 @@ PHASE_GATE_BASIS = ("derived", "derived-empty",
                     "wide: importers resolved to the full suite")
 
 
+# --- the third place, and the word every surface renders for it -----------------
+# `meta.fullGate` names a THIRD gate beyond a task's own and a phase's sign-off
+# gate - the full suite, coverage, an e2e pass - and `phase.mergedHead` is what
+# lets a MERGED phase be asked whether that third gate ran clean on exactly its
+# own work: the parent branch's commit right after the merge, so a full run's
+# own HEAD containing it is the one fact that makes "this phase's tests passed"
+# a claim about THIS phase rather than about whatever else has landed since.
+#
+# `VERIFIED` IS THE WORD, NOT THE SENTENCE. Every surface (status, report,
+# panel, doctor) needs one word for "tests passed" AT EACH OF THE THREE PLACES
+# a gate can mean that - a task's own gate, a phase's sign-off gate, and the
+# full run above - and "all tests passed" answers none of those, because it
+# does not say which place is meant. The three words are the three places, in
+# the order a change passes through them.
+VERIFIED = ("task", "sign-off", "whole")
+
+# The four answers a MERGED phase's full-gate status can be, read by the
+# evidence reader and rendered identically on every surface:
+#   WHOLE        a green, measured, clean, verbatim full run's HEAD contains
+#                this phase's `mergedHead` - the strongest claim this
+#                vocabulary can make.
+#   PROVISIONAL  the plan declares a `meta.fullGate` (so a third place
+#                exists), but no full run's HEAD is yet known to contain this
+#                phase's merge.
+#   UNKNOWN      `mergedHead` is absent, so ancestry cannot be asked at all -
+#                never PROVISIONAL, which would claim a specific gap this
+#                phase does not carry enough to name.
+#   NOT_DECLARED the plan names no `meta.fullGate` at all, so the question
+#                does not apply - the ABSENT-means-inert reading
+#                `meta.fullGate`'s own schema description promises.
+FULL_STATUS_WHOLE = "whole"
+FULL_STATUS_PROVISIONAL = "provisional"
+FULL_STATUS_UNKNOWN = "unknown"
+FULL_STATUS_NOT_DECLARED = "not_declared"
+FULL_STATUS = (FULL_STATUS_WHOLE, FULL_STATUS_PROVISIONAL,
+              FULL_STATUS_UNKNOWN, FULL_STATUS_NOT_DECLARED)
+
+
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.
 # The "legacy" names below were removed from the schema in v0.3.0 but remain
@@ -277,6 +315,12 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # tests.add/importers/changed/lastFailed alone.
               # `_manifest_phases._check_coupling` is the shape check.
               "coupling",
+              # The buildCommands keys naming the THIRD PLACE tests can pass at
+              # (full suite, coverage, e2e), beyond a task's own gate and a
+              # phase's sign-off gate. Absent = this plan names no third place,
+              # so no phase is ever provisional for lack of one. See `VERIFIED`
+              # and `FULL_STATUS` below.
+              "fullGate",
               # The rest are NOT in the schema, and the reason for each is in
               # `OFF_SCHEMA` below rather than here - one copy, and a lint that
               # goes red when it stops being true. (The comment that stood here
@@ -437,6 +481,11 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # Absent means "meta.phaseGate.mode has never derived for this
                # phase", the same reading `testEvidence`'s absence gets.
                "testGateDerived",
+               # The parent branch's commit right after THIS phase merged,
+               # written only by close-phase.py. Absent means ancestry cannot
+               # be asked at all, so the phase reads `unknown` rather than
+               # `provisional` - see `FULL_STATUS` below.
+               "mergedHead",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a

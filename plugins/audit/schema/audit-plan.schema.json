@@ -242,6 +242,13 @@
             "type": "string"
           }
         },
+        "fullGate": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "meta.buildCommands keys naming the THIRD PLACE tests can pass at, beyond a task's own gate and a phase's sign-off gate — the full suite, coverage, an end-to-end pass. ABSENT means this plan names no third place: no phase is ever provisional for lack of one, and the full-status vocabulary (whole/provisional/unknown/not_declared) stays inert on every surface. Each entry must be a real meta.buildCommands key; the validator warns, never refuses, on one that is not (COMPATIBILITY.md -> Validation stays additive)."
+        },
         "phaseGate": {
           "type": "object",
           "description": "What a NEW phase's gate defaults to, and the one declared way to narrow it. Absent = today's behaviour exactly: every meta.buildCommands key, in buildCommands order, byte-identical. See `always` and `exclude`.",
@@ -1236,6 +1243,13 @@
             "null"
           ],
           "description": "ISO timestamp after the phase branch reached its RESOLVED PARENT — phase.parentBranch ?? meta.developmentBranch — which is not always the development branch. This said 'the development branch' flatly until v2.1, while sign-off has merged into the resolved parent for as long as parentBranch has existed: a phase integrating into a story branch stamped this field and had not reached development at all. Absent/null means the branch has not landed; it is never written by a run that stopped before the merge (meta.merge.auto false)."
+        },
+        "mergedHead": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The parent branch's commit right after THIS phase merged, written only by close-phase.py — never by hand. Absent means ancestry cannot be asked at all, so the phase's full-gate status reads unknown rather than provisional; a full run's own HEAD containing this commit is what lets a merged phase read whole instead. Must be a full 40-character hex SHA when present; the validator warns, never refuses, on one that is not."
         },
         "ado": {
           "$ref": "#/$defs/adoLink",

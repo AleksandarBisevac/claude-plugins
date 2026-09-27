@@ -223,6 +223,54 @@ def _cases(record):
            any("coupling" in x and "basis.runId" in x
                for x in _pg_coupling_w))
 
+    # --- THE REPRO: meta.fullGate and phase.mergedHead ------------------------
+    # Before this rule existed, a `fullGate` entry naming no `buildCommands`
+    # key and a `mergedHead` that is not a SHA both validated with no warning
+    # naming them - the third place had no shape check at all.
+    _fg_bad = copy.deepcopy(_pg_base)
+    _fg_bad["meta"]["fullGate"] = ["nope"]
+    _fg_bad["phases"][0]["mergedHead"] = "not-a-sha"
+    _fg_bad_w = M.validate(_fg_bad)[1]
+    record("c38 a `meta.fullGate` entry naming no `buildCommands` key draws a "
+           "warning naming it: %r"
+           % ([x for x in _fg_bad_w if "fullGate" in x],),
+           any("fullGate" in x and "nope" in x for x in _fg_bad_w))
+    record("c39 ...and a phase `mergedHead` that is not a full hex SHA draws "
+           "a warning naming it, at the phase rather than at meta: %r"
+           % ([x for x in _fg_bad_w if "mergedHead" in x],),
+           any("mergedHead" in x and "not-a-sha" in x and "phase P0" in x
+               for x in _fg_bad_w))
+
+    # --- ALLOW: neither key present validates exactly as before ---------------
+    _fg_none_w = M.validate(_pg_base)[1]
+    record("c40 a plan with neither `fullGate` nor `mergedHead` draws no "
+           "warning from this rule: %r"
+           % ([x for x in _fg_none_w
+               if "fullGate" in x or "mergedHead" in x],),
+           not any("fullGate" in x or "mergedHead" in x for x in _fg_none_w))
+
+    # --- ALLOW: a real buildCommands key and a real full SHA are quiet --------
+    _fg_ok = copy.deepcopy(_pg_base)
+    _fg_ok["meta"]["fullGate"] = ["coverage"]
+    _fg_ok["phases"][0]["mergedHead"] = "a" * 40
+    _fg_ok_w = M.validate(_fg_ok)[1]
+    record("c41 a `fullGate` entry that IS a buildCommands key and a "
+           "`mergedHead` that IS a full 40-hex SHA validate in silence: %r"
+           % ([x for x in _fg_ok_w
+               if "fullGate" in x or "mergedHead" in x],),
+           not any("fullGate" in x or "mergedHead" in x for x in _fg_ok_w))
+
+    # --- the comma-joined spelling reuses `_comma_joined_gate` ----------------
+    _fg_comma = copy.deepcopy(_pg_base)
+    _fg_comma["meta"]["fullGate"] = ["test,coverage"]
+    _fg_comma_w = M.validate(_fg_comma)[1]
+    record("c42 a `fullGate` entry that is several buildCommands keys joined "
+           "by commas into ONE entry is warned the same way `phaseGate` is - "
+           "reusing `_comma_joined_gate` rather than re-deriving the shape: %r"
+           % ([x for x in _fg_comma_w if "fullGate" in x],),
+           any("fullGate" in x and "shell can find" in x
+               for x in _fg_comma_w))
+
     # --- a stub fallen behind its shard -------------------------------------
     # `validate()` reads the assembled manifest, where the body wins, so the stub's
     # stale copy is invisible to it - and the stub is what the index alone answers.

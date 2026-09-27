@@ -894,6 +894,19 @@ SCHEMA_EXEMPTIONS = {
         "what `derive-phase-gate.py` computed for a phase's sign-off gate, "
         "beside the wide `testGate` array - unreachable and unread for "
         "`testGateBasis`'s own reason above, the pair this follows exactly.",
+    "meta.fullGate":
+        "the buildCommands keys naming the third place tests can pass at "
+        "(full suite, coverage, e2e). No rendered surface reads it yet - not "
+        "the report, not the panel, not /audit:status or /audit:doctor - so "
+        "a demo carrying it would be a lever nothing downstream shows. "
+        "REVISIT when a rendered surface reads meta.fullGate.",
+    "phase.mergedHead":
+        "the parent branch's commit right after this phase merged, written "
+        "only by close-phase.py. No rendered surface reads it yet, the same "
+        "reason meta.fullGate above is exempt - and a hand-stamped SHA in a "
+        "published fixture would claim an ancestry this generator never "
+        "actually merged. REVISIT when a rendered surface reads "
+        "phase.mergedHead.",
     # `meta.branch` WAS EXEMPT HERE and is carried now. Its row read "REVISIT
     # when the panel grows a meta.branch card: the demo is where its screenshot
     # comes from" -- and the panel grew one, and nothing said so. The trigger had

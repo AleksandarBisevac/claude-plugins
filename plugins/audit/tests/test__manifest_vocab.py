@@ -880,6 +880,66 @@ def _cases(check):
           "task claim a derivation no task ever runs through",
           "derived" not in M.GATE_BASIS and "derived-empty" not in M.GATE_BASIS)
 
+    # --- the third place: VERIFIED and the full-gate status words ------------
+    # THE REPRO: before this word existed, status/report/panel had no shared
+    # answer for what "tests passed" means AT EACH of the three places a gate
+    # can mean that - a task's own gate, a phase's sign-off gate, a full run.
+    check("mv53 `VERIFIED` is exactly ('task', 'sign-off', 'whole'), in that "
+          "order - the three places a change passes through, and the word a "
+          "surface renders for each one rather than the un-placed 'all tests "
+          "passed': %r" % (getattr(M, "VERIFIED", None),),
+          getattr(M, "VERIFIED", None) == ("task", "sign-off", "whole"))
+    check("mv54 the full-status vocabulary is the four named constants - "
+          "WHOLE, PROVISIONAL, UNKNOWN, NOT_DECLARED - and `FULL_STATUS` "
+          "holds all four in one tuple so a reader iterating the vocabulary "
+          "and one comparing a single value cannot disagree: %r"
+          % (getattr(M, "FULL_STATUS", None),),
+          getattr(M, "FULL_STATUS_WHOLE", None) == "whole"
+          and getattr(M, "FULL_STATUS_PROVISIONAL", None) == "provisional"
+          and getattr(M, "FULL_STATUS_UNKNOWN", None) == "unknown"
+          and getattr(M, "FULL_STATUS_NOT_DECLARED", None) == "not_declared"
+          and getattr(M, "FULL_STATUS", None) ==
+          ("whole", "provisional", "unknown", "not_declared"))
+    check("mv55 `fullGate` is a KNOWN_META key and `mergedHead` is a "
+          "KNOWN_PHASE key - the typo-catcher's whole involvement with the "
+          "two new fields: %r"
+          % ({"fullGate in KNOWN_META": "fullGate" in M.KNOWN_META,
+              "mergedHead in KNOWN_PHASE": "mergedHead" in M.KNOWN_PHASE},),
+          "fullGate" in M.KNOWN_META and "mergedHead" in M.KNOWN_PHASE)
+
+    # `fullGate`/`mergedHead` are declared by the schema at `meta`/`phases[]`
+    # AND held by KNOWN_META/KNOWN_PHASE - asserted positively for mv18's
+    # reason: a key excused by OFF_SCHEMA would read the same as one nobody
+    # added, from that check alone.
+    _fg_schema = _help.load_schema("manifest")
+    _fg_meta_props = ((_fg_schema.get("$defs") or {}).get("meta")
+                      or {}).get("properties") or {}
+    _fg_phase_props = ((_fg_schema.get("$defs") or {}).get("phase")
+                       or {}).get("properties") or {}
+    check("mv56 both fields are declared by the schema at the anchors "
+          "KNOWN_META/KNOWN_PHASE answer to, and neither is in OFF_SCHEMA: %r"
+          % ({"fullGate in schema meta": "fullGate" in _fg_meta_props,
+              "mergedHead in schema phase": "mergedHead" in _fg_phase_props},),
+          "fullGate" in _fg_meta_props and "mergedHead" in _fg_phase_props
+          and "fullGate" not in (M.OFF_SCHEMA.get("KNOWN_META") or {})
+          and "mergedHead" not in (M.OFF_SCHEMA.get("KNOWN_PHASE") or {}))
+    # Red-first in BOTH directions, on COPIES - the shipped sets and the
+    # shipped schema are untouched, so the tree is never one exception away
+    # from carrying the mutation.
+    _fg_sets = dict(_help.vocab_sets(M))
+    _fg_sets["KNOWN_META"] = set(M.KNOWN_META) - {"fullGate"}
+    _fg_sets["KNOWN_PHASE"] = set(M.KNOWN_PHASE) - {"mergedHead"}
+    _fg_dropped = _help.vocab_drift(_levels, _fg_sets, M.SCHEMA_ANCHORS,
+                                    M.OFF_SCHEMA)
+    check("mv57 ...and dropping either key from a copy of its set names "
+          "exactly that field - `meta.fullGate` and `phases[].mergedHead` - "
+          "and nothing else: %r" % (_fg_dropped,),
+          sorted(p for _n, p in _fg_dropped) ==
+          sorted(["meta.fullGate is in the schema and not in the set - "
+                  "add it, or the typo-catcher warns about a real key",
+                  "phases[].mergedHead is in the schema and not in the set - "
+                  "add it, or the typo-catcher warns about a real key"]))
+
 
 def _selftest():
     return _harness.run(_cases)

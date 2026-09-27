@@ -261,7 +261,12 @@
       },
       "startedAt": "2026-09-27T04:18:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T04:36:48Z.a8d0d0",
+        "status": "passed",
+        "at": "2026-09-27T04:36:48Z"
+      }
     },
     {
       "id": "P80.6",

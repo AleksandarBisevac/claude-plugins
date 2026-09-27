@@ -438,6 +438,12 @@ def _check_phase_gate_derived(derived, build_keys):
 
 _COUPLING_OBJECT_ID = re.compile(r"^[0-9a-fA-F]{7,40}$")
 
+# `phase.mergedHead` is a FULL sha only, unlike `_COUPLING_OBJECT_ID` above:
+# ancestry (`git merge-base --is-ancestor`) is what this field is read for, and
+# a short sha is ambiguous input to that check in a way a coupling pointer
+# (read by a human, never diffed against another commit) is not.
+_FULL_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+
 
 def _check_coupling(coupling, phase_ids):
     """WARNINGS for `meta.coupling` - shape only, additive.
@@ -600,6 +606,48 @@ def _check_phase_gate(manifest, warnings):
         phase_ids = set(p.get("id") for p in (manifest.get("phases") or [])
                         if isinstance(p, dict))
         warnings.extend(_check_coupling(meta.get("coupling"), phase_ids))
+
+
+def _check_full_gate(manifest, warnings):
+    """WARNINGS for `meta.fullGate` - the buildCommands keys naming the THIRD
+    place tests can pass at (full suite, coverage, e2e), beyond a task's own
+    gate and a phase's sign-off gate.
+
+    ADDITIVE, NEVER A FINDING (`COMPATIBILITY.md` -> Validation stays
+    additive), the same standing `meta.phaseGate.always`/`exclude` have: an
+    entry naming no real `meta.buildCommands` key is named rather than
+    refused, and an entry that is several such keys joined by commas into
+    ONE string is the exact `_comma_joined_gate` shape `phaseGate` already
+    warns about - reused here rather than re-derived, so the two definitions
+    of "this runs as one shell command no shell can find" cannot drift apart.
+    """
+    meta = manifest.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    if "fullGate" not in meta:
+        return
+    full_gate = meta.get("fullGate")
+    if not isinstance(full_gate, list):
+        warnings.append("meta.fullGate: must be an array of buildCommands "
+                        "keys, got %s" % (type(full_gate).__name__,))
+        return
+    bad = [e for e in full_gate if not (isinstance(e, str) and e.strip())]
+    if bad:
+        warnings.append("meta.fullGate: every entry must be a non-blank "
+                        "string (%d bad: %s)"
+                        % (len(bad), _output.some_of(bad, render=repr)))
+    _, _, build_keys = _phase_gate_lists(meta)
+    if not build_keys:
+        return
+    entries = [e for e in full_gate if isinstance(e, str) and e.strip()]
+    warnings.extend(_comma_joined_gate(entries, build_keys, "meta", "fullGate"))
+    unknown = [e for e in entries if e not in build_keys]
+    if unknown:
+        warnings.append(
+            "meta.fullGate names %s, which %s not a buildCommands key - "
+            "meta.buildCommands declares %s"
+            % (_output.some_of(unknown, render=repr),
+               "is" if len(unknown) == 1 else "are",
+               _output.some_of(sorted(build_keys))))
 
 
 def _check_phase_intent(phase, pwhere, build_keys):
@@ -1120,6 +1168,19 @@ def _walk_phases(phases, build_keys=()):
             elif budget <= 0:
                 f.append(_output.finding("phases.walk_phases.budgetusd-greater-than", "%s: budgetUSD must be greater than 0 (got %s) — omit the "
                          "key entirely for 'no budget'" % (pwhere, budget)))
+        # `mergedHead` is written only by close-phase.py and read by ancestry
+        # (`git merge-base --is-ancestor`), so a malformed value is a WARNING
+        # naming it rather than a refusal - the field stays additive, and the
+        # cost of a bad value is that the phase reads `unknown` rather than
+        # `whole`, never a validator refusal.
+        if "mergedHead" in phase:
+            merged_head = phase.get("mergedHead")
+            if merged_head is not None and not (isinstance(merged_head, str)
+                                                and _FULL_SHA_RE.match(merged_head)):
+                w.append("%s: mergedHead %r is not a full hex SHA (40 "
+                         "characters) - ancestry cannot be asked of a "
+                         "partial or malformed one, so this phase reads "
+                         "unknown rather than whole" % (pwhere, merged_head))
 
         tasks_val = phase.get("tasks")
         if "tasks" not in phase:
