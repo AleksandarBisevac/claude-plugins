@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P84-R1",
@@ -135,9 +135,10 @@
         "issue": "A crashed panel's claim is reported honestly: `audit-lock.py status` prints 'abandoned - pid N is gone', and the next save answers lockStale. But the recovery line the panel prints, 'Release it with: audit-lock.py release index --project .', always refuses (exit 3, 'NOT yours to release -- held by pid N ... You were taken over'). _release_conflict counts the dead holder pid as a mismatch, and with",
         "resolution": "fix task P84.8-791"
       }
-    ]
+    ],
+    "outcome": "matches; four review passes, every finding fixed in P84.5-P84.9 [findings: 16 - 0 high, 6 med, 10 low; 0 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Review findings are written by a verb, every validator warning family carries a code the lint can see, check-example-ledgers judges one consistent set, and the lock has one rule that every reader asks.\n\nReview verbs:\n- finding (per finding, or a whole review with --findings-file), resolve-finding (the fix task must be done) and correct (text only, the verdict untouched) write the review record under the index lock, each with its own journal row.\n- The severity tally is derived from the list on every write of review.outcome.\n- A finding's fixTask follows its task through a move and is checked by crossrefs.\n- reopen takes a fix commit back off every finding that recorded it.\n- A landed phase refuses a new finding.\n\nLock:\n- A claim a process takes for its own write is re-entered only by that process or by a child carrying its token.\n- A claim taken by hand stays re-enterable by its session, and the docs say so where they prescribe the hand-held flow.\n- A panel write takes a per-call claim.\n- Every panel door and the proposal door read what they patch under the lock they write with, so two simultaneous saves both land.\n- A crashed panel's recovery line works.\n\nThe phase-gate checks return their coded findings, so the stable-code lint reaches every one of them.\n\ncheck-example-ledgers judges the working tree's manifests, tracked or not, against every ledger file the working tree holds.\n\nReviewed four times; every finding was fixed in P84.5 through P84.9. P84.4 was cancelled for a wrong declared path, and its work continued as P84.6. Main was merged in before the gate. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P84.1",
@@ -644,5 +645,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-27T04:18:45Z"
+  "startedAt": "2026-09-27T04:18:45Z",
+  "testEvidence": {
+    "runId": "2026-09-27T09:18:18Z.f14cc8",
+    "status": "passed",
+    "at": "2026-09-27T09:18:18Z"
+  }
 }
