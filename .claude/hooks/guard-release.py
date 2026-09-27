@@ -3,8 +3,8 @@
 PreToolUse hook (matcher: Bash) — refuse to publish a release while the plan
 carries an open bug. THIS REPO'S OWN CONFIGURATION, not the audit plugin's product.
 
-WHAT IT IS FOR. `v2.0.0` and `v2.0.1` were both released while BUG-2 through BUG-5
-sat `open` in the manifest, and a bug reported during the second one went into a
+WHAT IT IS FOR. `v2.0.0` and `v2.0.1` were both released while four bugs sat
+`open` in the manifest, and a bug reported during the second one went into a
 scratch plan file no gate reads. Twenty-one gates were green and every one of them
 was honest: not one asked whether the plan still carried an open bug. This is that
 question, asked at the only moment it cannot be skipped - the command that
@@ -18,31 +18,32 @@ a day - which is the failure mode `guard-false-positive-class` is about. Creatin
 a tag LOCALLY is refused too, because a local tag is what the push then publishes
 and refusing only the push leaves a trap already loaded.
 
-A SECOND LIST HOLDS THE SAME RELEASE, BESIDE THE BUGS: a merged phase the
-plan's own evidence ledger reads PROVISIONAL - no green, measured, clean,
-verbatim full run yet recorded whose head contains what that phase merged
-into - refuses exactly the same commands, for the reason the manifest's
-"third place" exists at all: a merge is not the same claim as a full suite
-having actually run against it. `read_provisional` asks the plugin's own
+A SECOND LIST HOLDS THE SAME RELEASE, BESIDE THE BUGS: a merged phase whose
+full-run answer is not WHOLE refuses exactly the same commands, for the reason
+the manifest's "third place" exists at all: a merge is not the same claim as a
+full suite having actually run against it. PROVISIONAL - no green, measured,
+clean, verbatim full run yet recorded whose head contains what that phase
+merged into - holds it, and so does UNKNOWN, a phase whose ancestry the
+evidence cannot ask at all: a guard that cannot answer refuses. Each is named
+with the basis `full_status` gave. `read_held_phases` asks the plugin's own
 `full_status` this question rather than restating it, the way `read_bugs`
 already asks `effective_bug_status` rather than reading a stored field. A
-plan naming no third place (`meta.fullGate` absent) has nothing provisional
-by definition, so this guard then behaves exactly as it did before this
-existed.
+plan naming no third place (`meta.fullGate` absent) has no phase to hold, so
+this guard then judges the bugs alone.
 
 THE WAY PAST IT is `arm-release-bypass.py`: the maintainer types the keyword and a
 single-use slot appears. Nothing the model writes can arm it. That is why the
 switch is on the prompt and not on this command - a guard the caller can satisfy
 by writing the right words is not a guard. The message it prints names the
-provisional phases beside the bugs, through this file's own `read_provisional`,
-so what is being shipped over is never understated.
+held phases beside the bugs, through this file's own `read_held_phases`, so
+what is being shipped over is never understated.
 
 FAIL-LOUD, NOT FAIL-OPEN, AND THAT IS THE OPPOSITE OF THIS REPO'S OTHER HOOKS.
 `SECURITY.md`'s table puts advisory paths on fail-open: a guard that crashes must
 not stop legitimate work. This one inverts it for one reason - the thing it
 protects is irreversible. A pushed tag cannot be taken back, so a guard that
 cannot read the manifest must refuse rather than wave a release through on its own
-malfunction. It says which of the two happened.
+malfunction. It names which list it could not read, and reports the other.
 
 Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 "permissionDecisionReason": ...}} on stdout and exits 0 - the canonical PreToolUse
@@ -59,6 +60,10 @@ import time
 
 STATE_REL = os.path.join(".claude", "state")
 MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
+# The command that records a merged phase's `mergedHead` after the fact - the
+# remedy an unanswerable phase's refusal names.
+CLOSE_PHASE_REL = os.path.join("plugins", "audit", "scripts", "git",
+                               "close-phase.py")
 # The words that mean a bug will not hold a release. `fixed` is what the plugin's
 # derivation produces; the rest are the verdicts a person wrote, and a bug closed
 # with one this tuple has not learned would hold every release until somebody
@@ -67,6 +72,20 @@ MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
 # plugin's own vocabulary against it so the two cannot come apart in silence.
 CLOSED = ("fixed", "wontfix", "not_a_bug")
 KEYWORD = "#release-with-bugs"
+# How this file names the two ways a merged phase holds a release, mapped once
+# from `full_status`'s own answers in `read_held_phases`. They are this file's
+# words for its message, kept apart because each is settled differently.
+HELD_PROVISIONAL = "provisional"
+HELD_UNANSWERABLE = "unanswerable"
+# How much of `full_status`'s basis a rendered phase keeps - wide enough that an
+# UNKNOWN basis, which names two commit ids before it says why git could not
+# answer, keeps its reason. `arm-release-bypass.py` renders on this same cap.
+BASIS_CAP = 240
+# How many phases of one kind a refusal lists before summarising the rest. A
+# plan with many legacy merges would otherwise refuse with a wall of text;
+# `/audit:status` is where the whole list is read, and the arming message
+# still names every one, because that is the moment they are shipped over.
+REFUSAL_PHASE_CAP = 5
 
 # What publishes. Each is anchored at a command boundary (start of line, `&&`,
 # `;`, `|`) so a word appearing inside a filename or a commit message cannot
@@ -144,7 +163,7 @@ def _effective(project):
 
 def _evidence_modules(project):
     """`(_evidence_io, _worktrees, _manifest_vocab)`, or None when they cannot
-    be reached - the lazy load `read_provisional` needs, patterned on
+    be reached - the lazy load `read_held_phases` needs, patterned on
     `_effective`'s load of `_manifest_io` for the same reason: most Bash calls
     never reach the publishing branch, so the cost of reaching
     `scripts/governance`, `scripts/git` and `scripts/manifest` belongs to a
@@ -177,7 +196,7 @@ def _hooks_config(project):
 
     THIS FILE IS NOT A PLUGIN HOOK - its own docstring says so - but the tree
     a release command targets is exactly the question `_config.tree_for`
-    already answers for every hook that does count as one (P72), and a second
+    already answers for every hook that does count as one, and a second
     answer to that question invented here could disagree with the first the
     day a linked worktree entered the picture.
     """
@@ -205,7 +224,7 @@ def resolved_tree(payload, project):
     linked worktree publishes over THAT worktree's plan, which may carry a
     provisional phase the project's own copy does not, so judging it against
     the project unconditionally would be asking the wrong tree the question
-    this file exists to ask (P72).
+    this file exists to ask.
 
     Falls back to `project` (today's reading, unconditionally) when `_config`
     cannot be reached or answers nothing usable - never a THIRD guess at a
@@ -225,6 +244,31 @@ def resolved_tree(payload, project):
     return str(root) if root else project
 
 
+def _read_plan(mio, project):
+    """`(manifest, problem)` - the plan both lists are read from, or why it
+    could not be read.
+
+    THE ASSEMBLED manifest, not the raw index. This repository's own plan is
+    SHARDED: `json.load` returns phases that are stubs carrying no tasks, so
+    every bug's linked task went missing and five bugs read open where
+    `/audit:status` reported one. `_panel_write` carries the same scar in its
+    own docstring - it read the raw index too, and every per-task edit was
+    refused for a task the panel had just listed.
+
+    THE RAISING LOADER, never the `_safe` one. The safe loader answers `{}`
+    for a missing or unparsable file, and `{}` reads as a plan naming no third
+    place - so the phase list would report "nothing held" for a file nobody
+    read. The exception is the basis the refusal names.
+    """
+    try:
+        data = mio.load_manifest(os.path.join(project, MANIFEST_REL))
+    except Exception as exc:
+        return (None, "%s could not be read (%s)" % (MANIFEST_REL, exc))
+    if not isinstance(data, dict):
+        return (None, "%s did not parse as a manifest object" % (MANIFEST_REL,))
+    return (data, None)
+
+
 def read_bugs(project):
     """`(open_bugs, problem)` — the plan's open bugs, or why they are unknown.
 
@@ -240,19 +284,9 @@ def read_bugs(project):
     if mio is None:
         return ([], "the plugin's own bug rule could not be loaded from "
                     "plugins/audit/scripts, so `open` cannot be decided here")
-    path = os.path.join(project, MANIFEST_REL)
-    try:
-        # THE ASSEMBLED manifest, not the raw index. This repository's own plan is
-        # SHARDED: `json.load` returns phases that are stubs carrying no tasks, so
-        # every bug's linked task went missing and five bugs read open where
-        # `/audit:status` reported one. `_panel_write` carries the same scar in
-        # its own docstring - it read the raw index too, and every per-task edit
-        # was refused for a task the panel had just listed.
-        data = mio.load_manifest_safe(path)
-    except Exception as exc:
-        return ([], "%s could not be read (%s)" % (MANIFEST_REL, exc))
-    if not isinstance(data, dict):
-        return ([], "%s did not parse as a manifest object" % (MANIFEST_REL,))
+    data, problem = _read_plan(mio, project)
+    if problem:
+        return ([], problem)
     bugs = data.get("bugs")
     if not isinstance(bugs, list):
         return ([], "%s carries no `bugs` list" % (MANIFEST_REL,))
@@ -275,47 +309,60 @@ def read_bugs(project):
     return (out, None)
 
 
-def read_provisional(project):
-    """`(provisional, problem)` - every merged phase this plan's own evidence
-    ledger reads PROVISIONAL, each named with `full_status`'s own basis, or
-    why that cannot be decided at all.
+def read_held_phases(project):
+    """`(held, problem)` - every merged phase whose full-run answer holds a
+    release, as `(phaseId, kind, basis, headRecorded)` - `kind` one of
+    `HELD_PROVISIONAL` or `HELD_UNANSWERABLE`, `basis` `full_status`'s own,
+    `headRecorded` whether the phase records a `mergedHead` - or why that
+    cannot be decided at all.
 
-    THE SECOND LIST BESIDE THE OPEN BUGS, on the plugin's own vocabulary
-    rather than a rule invented here: `full_status` (P80.3) already answers
-    whole, provisional, unknown or not-declared from the ledger alone, and a
-    second reading of that question in this file would be the same defect
-    `read_bugs`'s docstring already warns about - two answers to one
-    question, with this file at risk of being the one that lies.
+    `headRecorded` IS WHAT TELLS THE TWO CAUSES OF UNKNOWN APART, read off the
+    phase rather than parsed out of the basis prose: no `mergedHead` at all is
+    repaired by recording one, while a recorded head git could not relate to
+    any run's head (an unreachable commit, a shallow clone) is repaired by
+    making the commits reachable, and recording the head again changes
+    nothing. `full_status` returns no structured field for the cause.
 
-    UNREADABLE IS A REFUSAL, NEVER "NOTHING PROVISIONAL" - this file's own
-    fail-loud rule, extended to the second list it now reads. A manifest that
-    will not parse or a ledger carrying a file that could not be read or
-    verified means the caller cannot know whether some phase is provisional,
-    so it must say so rather than let a release through on the strength of a
-    file nobody could actually read.
+    ASKED OF THE PLUGIN'S OWN VOCABULARY rather than a rule invented here:
+    `full_status` already answers whole, provisional, unknown or not-declared
+    from the ledger alone, and `merged_phase` already says which phases it is
+    asked about. A second reading of either in this file would be the defect
+    `read_bugs`'s docstring warns about - two answers to one question, with
+    this file at risk of being the one that lies.
 
-    No `meta.fullGate` at all means nothing is provisional and this returns
-    `([], None)` - the guard's behaviour is then exactly what it was before
-    this function existed.
+    TWO ANSWERS HOLD A RELEASE, NOT ONE. PROVISIONAL is a phase no measured
+    full run yet contains. UNKNOWN is a phase whose ancestry cannot be asked at
+    all - no `mergedHead`, or a head git could not answer about - and dropping
+    it would let a release through over a phase the plan's own evidence cannot
+    vouch for, which is this file's fail-loud rule broken one phase at a time.
+    Both are returned, each with the answer that put it here, because they are
+    settled differently: a full run settles the first, and the second needs
+    the phase's merge record repaired before any run can.
+
+    UNREADABLE IS A REFUSAL, NEVER "NOTHING HELD". A manifest that will not
+    parse, or a ledger carrying a file that could not be read or verified,
+    means the caller cannot know whether any phase holds, so it says so
+    rather than let a release through on a file nobody could read.
+
+    No `meta.fullGate` at all means nothing is held and this returns
+    `([], None)` - the guard then judges the bugs alone.
     """
     mio = _effective(project)
     if mio is None:
         return ([], "the plugin's own evidence rule could not be loaded from "
-                    "plugins/audit/scripts, so provisional phases cannot be "
-                    "decided here")
+                    "plugins/audit/scripts, so a merged phase's full-run "
+                    "answer cannot be decided here")
     modules = _evidence_modules(project)
     if modules is None:
         return ([], "the plugin's own evidence reader could not be loaded "
-                    "from plugins/audit/scripts, so provisional phases "
-                    "cannot be decided here")
+                    "from plugins/audit/scripts, so a merged phase's "
+                    "full-run answer cannot be decided here")
     evidence_io, _worktrees, vocab = modules
-    path = os.path.join(project, MANIFEST_REL)
-    try:
-        data = mio.load_manifest_safe(path)
-    except Exception as exc:
-        return ([], "%s could not be read (%s)" % (MANIFEST_REL, exc))
-    if not isinstance(data, dict):
-        return ([], "%s did not parse as a manifest object" % (MANIFEST_REL,))
+    holding = {vocab.FULL_STATUS_PROVISIONAL: HELD_PROVISIONAL,
+               vocab.FULL_STATUS_UNKNOWN: HELD_UNANSWERABLE}
+    data, problem = _read_plan(mio, project)
+    if problem:
+        return ([], problem)
     meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
     full_gate = meta.get("fullGate")
     if not full_gate:
@@ -332,11 +379,13 @@ def read_provisional(project):
     phases = phases if isinstance(phases, list) else []
     out = []
     for phase in phases:
-        if not isinstance(phase, dict) or not phase.get("mergedAt"):
+        if not evidence_io.merged_phase(phase):
             continue
         status = evidence_io.full_status(rows, phase, project, full_commands)
-        if status.get("answer") == vocab.FULL_STATUS_PROVISIONAL:
-            out.append((phase.get("id") or "?", status.get("basis") or ""))
+        kind = holding.get(status.get("answer"))
+        if kind:
+            out.append((phase.get("id"), kind, status.get("basis") or "",
+                        bool(phase.get("mergedHead"))))
     return (out, None)
 
 
@@ -364,31 +413,95 @@ def bypass_armed(project, session_id, now=None):
     return (now - armed) <= ttl
 
 
-def refusal(why, bugs, provisional, problem):
-    """The sentence a refused release reads, naming what to do about it - the
-    open bugs and the provisional phases named as two lists, because they are
-    settled two different ways."""
-    if problem:
-        return ("this command %s, and whether the plan carries open bugs or "
-                "a provisional phase is UNKNOWN: %s. A pushed tag is never "
-                "moved here, so this refuses rather than guessing. Fix the "
-                "file, or type %s to release anyway."
-                % (why, problem, KEYWORD))
+def _phase_parts(picked, label, with_basis=True):
+    """The sentence naming the phases in `picked` - the first
+    `REFUSAL_PHASE_CAP` of them, the rest summarised - or None when there is
+    none. `with_basis` False renders ids alone, for a bucket whose label
+    already states the whole basis (`full_status`'s would only repeat the id
+    the entry starts with)."""
+    if not picked:
+        return None
+    shown = picked[:REFUSAL_PHASE_CAP]
+    listed = "; ".join(("%s (%s)" % (h[0], h[2][:BASIS_CAP])) if with_basis
+                       else str(h[0]) for h in shown)
+    rest = len(picked) - len(shown)
+    if rest:
+        listed += "; and %d more - `/audit:status` lists them" % (rest,)
+    return "%d merged phase(s) %s: %s" % (len(picked), label, listed)
+
+
+def refusal(why, bugs, bug_problem, held, phase_problem):
+    """The sentence a refused release reads, naming what to do about each
+    thing that holds it.
+
+    EACH LIST ON ITS OWN, because each is read on its own and settled a
+    different way. A list that could not be read is named UNKNOWN with the
+    reason; a list that was read is named by what it holds, even when that is
+    nothing - so an unreadable bug list never hides a phase that really does
+    hold the release, and the reverse. The sentence about refusing rather
+    than guessing is said only when a list really could not be read: said on
+    every refusal it would stop telling a reader anything."""
     parts = []
-    if bugs:
+    if bug_problem:
+        parts.append("whether the plan carries an open bug is UNKNOWN: %s"
+                     % (bug_problem,))
+    elif bugs:
         listed = "; ".join("%s (%s) %s" % (b[0], b[1], b[2][:70]) for b in bugs)
-        parts.append("%d bug(s) are open in the plan: %s" % (len(bugs), listed))
-    if provisional:
-        listed = "; ".join("%s (%s)" % (p[0], p[1][:90]) for p in provisional)
-        parts.append("%d phase(s) are provisional - no green full run yet "
-                     "measured on a head containing what they merged into: %s"
-                     % (len(provisional), listed))
-    return ("this command %s while %s. Close the bugs, record the full run "
-            "that settles a provisional phase (/audit:review <phase> --full, "
-            "or the pre-push/CI step), or type %s in your own message to "
-            "release over them - the keyword only counts from you, which is "
-            "why it is read off the prompt and not off this command."
-            % (why, "; and ".join(parts), KEYWORD))
+        parts.append("%d bug(s) are open in the plan: %s - close them"
+                     % (len(bugs), listed))
+    else:
+        parts.append("the plan carries no open bug")
+    if phase_problem:
+        parts.append("whether the full run has settled each merged phase is "
+                     "UNKNOWN: %s" % (phase_problem,))
+    else:
+        provisional = _phase_parts(
+            [h for h in held if h[1] == HELD_PROVISIONAL],
+            "are provisional - no measured full run yet contains what they "
+            "merged into")
+        if provisional:
+            provisional += (" - record the full run that settles each "
+                            "(/audit:review <phase> --full, or the "
+                            "pre-push/CI step)")
+        unanswerable = [h for h in held if h[1] == HELD_UNANSWERABLE]
+        unrecorded = _phase_parts(
+            [h for h in unanswerable if not h[3]],
+            "are unanswerable - no mergedHead is recorded, so the evidence "
+            "cannot say whether any full run contains what they merged into",
+            with_basis=False)
+        if unrecorded:
+            unrecorded += (
+                " - record the mergedHead each lacks by re-running "
+                "`python3 %s %s <phase> --project <dir>`; a phase that "
+                "re-run refuses to backfill (a squash merge, whose task "
+                "commits the parent does not contain) stays unanswerable, "
+                "and only the keyword releases over it" % (CLOSE_PHASE_REL,
+                                                           MANIFEST_REL))
+        unreachable = _phase_parts(
+            [h for h in unanswerable if h[3]],
+            "are unanswerable - a mergedHead is recorded, but git could not "
+            "answer whether a full run's head contains it (see the basis)")
+        if unreachable:
+            # Every cause of this bucket - an unreachable commit, a shallow
+            # clone, a run row carrying no head, git missing or timing out -
+            # is named by the basis, and the remedy below covers each without
+            # reading that prose.
+            unreachable += (
+                " - make both commits present here (git fetch, or unshallow "
+                "the clone), or record a full run whose row carries its "
+                "head; recording the mergedHead again changes nothing, and "
+                "until git can answer only the keyword releases over it")
+        found = [p for p in (provisional, unrecorded, unreachable) if p]
+        parts.extend(found or ["no merged phase is provisional or "
+                               "unanswerable"])
+    unread = ""
+    if bug_problem or phase_problem:
+        unread = (" A pushed tag is never moved here, so a list that could "
+                  "not be read refuses rather than guessing - repair it.")
+    return ("this command %s, and %s.%s Or type %s in your own message to "
+            "release over all of it. The keyword only counts from you, which "
+            "is why it is read off the prompt and not off this command."
+            % (why, "; and ".join(parts), unread, KEYWORD))
 
 
 def decide(command, project, session_id, now=None, payload=None):
@@ -396,21 +509,19 @@ def decide(command, project, session_id, now=None, payload=None):
     pure-ish function so its cases need no hook payload.
 
     `payload` is OPTIONAL and used for exactly one thing: resolving which
-    TREE this release answers to, through `resolved_tree`. Every case in this
-    file that predates that question passes no `payload` and keeps reading
-    `project` as the tree directly, which is the same answer it always got."""
+    TREE this release answers to, through `resolved_tree`. A case passing no
+    `payload` reads `project` as the tree directly."""
     why = publishing(command)
     if not why:
         return None
     tree = resolved_tree(payload, project) if payload else project
     bugs, bug_problem = read_bugs(tree)
-    provisional, prov_problem = read_provisional(tree)
-    problem = bug_problem or prov_problem
-    if not bugs and not provisional and not problem:
+    held, phase_problem = read_held_phases(tree)
+    if not (bugs or bug_problem or held or phase_problem):
         return None
     if bypass_armed(project, session_id, now):
         return None
-    return refusal(why, bugs, provisional, problem)
+    return refusal(why, bugs, bug_problem, held, phase_problem)
 
 
 def main():
@@ -505,6 +616,11 @@ def _selftest():
         check("gr11 a release with an open bug is REFUSED, and the refusal names "
               "the bug and the way past it: %r" % (got,),
               got and "BUG-2" in got and KEYWORD in got)
+        check("gr11b ...and a plan that WAS read does not claim the guard is "
+              "refusing rather than guessing - there was nothing to guess, "
+              "and a sentence on every refusal stops meaning anything: %r"
+              % (got,),
+              bool(got) and "guessing" not in got)
         # THE SECOND-DIRECTION CASE, and the one that looks vacuous: with the plan
         # clean, the same command must go through untouched. A guard that refused
         # unconditionally would pass gr11 and fail here, and it would be the last
@@ -618,8 +734,11 @@ def _selftest():
         got = decide("git push origin v2.0.2", tmp, "s1")
         check("gr18 a manifest that cannot be READ refuses the release and says "
               "so - a pushed tag cannot be taken back, so this is the one guard "
-              "here that must not fail open: %r" % (got,),
-              got and "UNKNOWN" in got)
+              "here that must not fail open - and it says so of BOTH lists, "
+              "since neither was read; a loader answering `{}` for the file "
+              "would report the phase list as holding nothing: %r" % (got,),
+              bool(got) and "open bug is UNKNOWN" in got
+              and "merged phase is UNKNOWN" in got and "guessing" in got)
         os.remove(mpath)
         check("gr19 ...and a MISSING manifest refuses on the same grounds",
               decide("git push origin v2.0.2", tmp, "s1") is not None)
@@ -656,8 +775,8 @@ def _selftest():
 
     # --- provisional phases hold a release too, asked of the plugin's own
     # `full_status` rather than a second rule invented here. A FRESH fixture,
-    # never this repository's real plan: BUG-12 sits open in it right now, so
-    # only a fixture plan can isolate "no open bug, one provisional phase".
+    # never this repository's real plan: that plan may carry an open bug on
+    # any given day, so only a fixture plan can isolate "no open bug, one provisional phase".
     tmp2 = tempfile.mkdtemp(prefix="guard-release-full-")
     try:
         os.makedirs(os.path.join(tmp2, "docs", "audit"))
@@ -673,7 +792,7 @@ def _selftest():
 
         modules = _evidence_modules(tmp2)
         check("gr22 the evidence and ancestry modules load from this "
-              "repository's own scripts/ - what read_provisional needs to "
+              "repository's own scripts/ - what read_held_phases needs to "
               "ask full_status anything at all",
               modules is not None)
 
@@ -686,18 +805,18 @@ def _selftest():
                   [{"id": "P1", "title": "p", "status": "done",
                     "mergedAt": "2026-01-01T00:00:00Z",
                     "mergedHead": "a" * 40, "tasks": []}])
-        provisional, problem = read_provisional(tmp2)
+        provisional, problem = read_held_phases(tmp2)
         check("gr23 RED-FIRST: a merged phase this ledger has never recorded "
               "a full run for reads PROVISIONAL, with no problem to report: "
               "%r / %r" % (provisional, problem),
               problem is None and [p[0] for p in provisional] == ["P1"])
         got = decide("git tag -a v1 -m x", tmp2, "s1")
-        check("gr24 RED-FIRST (dg13): no open bug and one provisional phase "
+        check("gr24 RED-FIRST: no open bug and one provisional phase "
               "still REFUSES `git tag v1` - the mutation this guards is "
               "`decide` reading only the bugs: %r" % (got,),
               got and "P1" in got and "provisional" in got)
 
-        # ALLOW (dg13): the SAME plan with no meta.fullGate at all has
+        # ALLOW: the SAME plan with no meta.fullGate at all has
         # nothing provisional to ask about, and behaves exactly as it did
         # before this function existed.
         write_plan({}, [{"id": "P1", "title": "p", "status": "done",
@@ -707,7 +826,7 @@ def _selftest():
               "provisional, and the release goes through",
               decide("git tag -a v1 -m x", tmp2, "s1") is None)
 
-        # ALLOW (dg13): ordinary work is never refused by a provisional
+        # ALLOW: ordinary work is never refused by a provisional
         # phase either - only the publishing commands are judged.
         write_plan({"fullGate": ["full"],
                    "buildCommands": {"full": "echo full"}},
@@ -718,6 +837,24 @@ def _selftest():
               "provisional phase - it is not a publishing command",
               decide("git push origin main", tmp2, "s1") is None)
 
+        # WHICH PHASES ARE ASKED is the plugin's shared `merged_phase`, not a
+        # second reading of `mergedAt` spelled here: a phase carrying a merge
+        # stamp but no id has no name a verdict could be printed under, so
+        # no surface grades it. Read as provisional (no full run recorded),
+        # a local `mergedAt` check would hold this release over a phase
+        # named "?" - the value that tells the two readings apart.
+        write_plan({"fullGate": ["full"],
+                   "buildCommands": {"full": "echo full"}},
+                  [{"title": "id-less", "status": "done",
+                    "mergedAt": "2026-01-01T00:00:00Z",
+                    "mergedHead": "a" * 40, "tasks": []}])
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr35 RED-FIRST: a phase with a merge stamp and NO id is not "
+              "asked about, on the plugin's shared `merged_phase` rather "
+              "than a local `mergedAt` check - the release goes through: %r"
+              % (got,),
+              got is None)
+
         # RED-FIRST: an unreadable ledger is a PROBLEM, never "nothing
         # provisional" - fail-loud extended to this second list.
         edir = os.path.join(tmp2, "docs", "audit", "evidence")
@@ -725,7 +862,7 @@ def _selftest():
         with open(os.path.join(edir, "2026-01.broken.jsonl"), "w",
                   encoding="utf-8") as fh:
             fh.write('{"not": "chained"}\n{also not valid json\n')
-        provisional, problem = read_provisional(tmp2)
+        provisional, problem = read_held_phases(tmp2)
         check("gr27 RED-FIRST: a ledger carrying a torn line is a PROBLEM, "
               "not an empty provisional list: %r / %r"
               % (provisional, problem),
@@ -786,18 +923,18 @@ def _selftest():
                              "dirtyOutside": []},
         }
         evidence_io.append_row(tmp2, row, writer="selftest")
-        provisional, problem = read_provisional(tmp2)
+        provisional, problem = read_held_phases(tmp2)
         check("gr29 ALLOW: a real recorded full run whose head really "
               "contains mergedHead reads WHOLE, not provisional: %r / %r"
               % (provisional, problem),
               problem is None and provisional == [])
-        check("gr30 ALLOW (dg13): ...and the release goes through",
+        check("gr30 ALLOW: ...and the release goes through",
               decide("git tag -a v1 -m x", tmp2, "s1") is None)
 
         # THE MUTATION THIS PROVES AGAINST, DRIVEN RATHER THAN ASSERTED: the
         # SAME row read against the bare `meta.fullGate` entries - no
         # `resolved_commands`, no preamble - does not match this run's
-        # published commands, so a `read_provisional` that skipped the
+        # published commands, so a `read_held_phases` that skipped the
         # resolution would disqualify a run that really did measure the
         # declared gate and hold this release open forever.
         bare = evidence_io.full_status(
@@ -810,7 +947,122 @@ def _selftest():
               "break: %r" % (bare,),
               bare["answer"] != vocab.FULL_STATUS_WHOLE)
 
-        # --- P72: the tree a release is judged against comes from
+        # --- a merged phase the evidence cannot ANSWER for holds a release
+        # too. `full_status` reads UNKNOWN when ancestry cannot be asked at
+        # all (no mergedHead) - and a guard that dropped that answer would
+        # let a release through over a phase nobody can vouch for, which is
+        # the fail-open this file exists to refuse. P1 stays WHOLE beside it,
+        # so the refusal is owed to the unanswerable phase alone.
+        unanswerable = [{"id": "P1", "title": "p", "status": "done",
+                         "mergedAt": "2026-01-01T00:00:00Z",
+                         "mergedHead": merged_head, "tasks": []},
+                        {"id": "P2", "title": "q", "status": "done",
+                         "mergedAt": "2026-01-03T00:00:00Z", "tasks": []}]
+        write_plan({"fullGate": ["full"], "nodePreamble": "export X=1",
+                   "buildCommands": {"full": "echo full"}}, unanswerable)
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr36 RED-FIRST: a merged phase with no mergedHead (full_status "
+              "UNKNOWN) REFUSES `git tag v1`, naming the phase and the basis "
+              "- the missing mergedHead, stated once by the bucket rather "
+              "than repeated per entry: %r" % (got,),
+              bool(got) and "P2" in got and "no mergedHead is recorded" in got
+              and "P1" not in got)
+        check("gr36b ...and it names the command that records a mergedHead "
+              "after the fact, as the provisional remedy names its own, and "
+              "what happens when that backfill refuses: %r" % (got,),
+              bool(got) and "plugins/audit/scripts/git/close-phase.py "
+              "docs/audit/audit-plan.json <phase> --project <dir>" in got
+              and "squash" in got)
+        # THE OTHER CAUSE OF UNKNOWN: a mergedHead IS recorded, but git cannot
+        # establish whether a run's head contains it (an unreachable commit, a
+        # shallow clone). Re-running close-phase does nothing for it - a head
+        # is already recorded - so naming that command here would send the
+        # reader to a remedy that cannot work.
+        write_plan({"fullGate": ["full"], "nodePreamble": "export X=1",
+                   "buildCommands": {"full": "echo full"}},
+                  [unanswerable[0],
+                   {"id": "P3", "title": "r", "status": "done",
+                    "mergedAt": "2026-01-03T00:00:00Z",
+                    "mergedHead": "c" * 40, "tasks": []}])
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr36c RED-FIRST: a phase whose recorded mergedHead git cannot "
+              "resolve is refused and named, and its remedy is making the "
+              "heads reachable - never the close-phase re-run, which cannot "
+              "help a phase that already records a head: %r" % (got,),
+              bool(got) and "P3" in got and "close-phase.py" not in got
+              and "unshallow" in got)
+
+        # A PLAN WITH MANY LEGACY MERGES, none recording a mergedHead. The
+        # fixture is sized to exceed the refusal's cut, so the tail must be
+        # summarised, and each entry's basis must not repeat the phase id
+        # the entry already starts with.
+        many = [{"id": "Q%02d" % (i,), "title": "m", "status": "done",
+                 "mergedAt": "2026-01-03T00:00:00Z", "tasks": []}
+                for i in range(1, 13)]
+        write_plan({"fullGate": ["full"], "nodePreamble": "export X=1",
+                   "buildCommands": {"full": "echo full"}}, many)
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr46 RED-FIRST: a refusal over more held phases than it lists "
+              "names the first ones and summarises the rest, pointing at "
+              "/audit:status for the whole list: %r" % (got,),
+              bool(got) and "Q01" in got and "Q12" not in got
+              and "more - `/audit:status` lists them" in got)
+        check("gr47 ...and an entry with no mergedHead is not followed by a "
+              "basis that repeats its own id: %r" % (got,),
+              bool(got) and "phase Q01 records" not in got)
+        write_plan({"fullGate": ["full"], "nodePreamble": "export X=1",
+                   "buildCommands": {"full": "echo full"}}, unanswerable)
+        check("gr37 ...and that refusal does not call either LIST unknown - "
+              "both were read; one phase in one of them has no answer: %r"
+              % (got,),
+              bool(got) and "UNKNOWN" not in got)
+        check("gr38 ALLOW: `git push origin main` is untouched by an "
+              "unanswerable phase - it is not a publishing command",
+              decide("git push origin main", tmp2, "s1") is None)
+        slot2 = os.path.join(tmp2, STATE_REL, "release-bypass-s1.json")
+        with open(slot2, "w", encoding="utf-8") as fh:
+            json.dump({"armedAtEpoch": time.time(), "ttlSeconds": 3600}, fh)
+        check("gr39 the maintainer's armed bypass covers an unanswerable "
+              "phase exactly as it covers an open bug...",
+              decide("git tag -a v1 -m x", tmp2, "s1") is None)
+        check("gr40 ...and only for the session that armed it",
+              decide("git tag -a v1 -m x", tmp2, "s2") is not None)
+        os.remove(slot2)
+
+        # EACH LIST IS REPORTED ON ITS OWN. A plan with no `bugs` list cannot
+        # answer the bug question while the phase question reads fine, and
+        # the refusal must say exactly that - calling both unknown hides the
+        # phase that really does hold the release.
+        with open(mpath2, "r", encoding="utf-8") as fh:
+            plan = json.load(fh)
+        del plan["bugs"]
+        with open(mpath2, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr41 RED-FIRST: the bug list unreadable, the phase list "
+              "readable - the refusal names the bug list UNKNOWN, names P2 "
+              "with its basis, and does not call the phase list unknown: %r"
+              % (got,),
+              bool(got) and "open bug is UNKNOWN" in got and "P2" in got
+              and "no mergedHead is recorded" in got
+              and "merged phase is UNKNOWN" not in got)
+        # ...and the mirror: the bugs readable with one open, the ledger torn.
+        write_plan({"fullGate": ["full"], "nodePreamble": "export X=1",
+                   "buildCommands": {"full": "echo full"}}, unanswerable,
+                  bugs=[{"id": "BUG-2", "status": "open", "severity": "med",
+                         "title": "a real one"}])
+        torn = os.path.join(edir, "2026-01.torn.jsonl")
+        with open(torn, "w", encoding="utf-8") as fh:
+            fh.write('{"not": "chained"}\n{also not valid json\n')
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr42 RED-FIRST: the bug list readable, the ledger torn - the "
+              "refusal names BUG-2, names the phase list UNKNOWN, and does "
+              "not call the bug list unknown: %r" % (got,),
+              bool(got) and "BUG-2" in got and "merged phase is UNKNOWN" in got
+              and "open bug is UNKNOWN" not in got)
+        os.remove(torn)
+
+        # --- the tree a release is judged against comes from
         # `_config.tree_for`, never `CLAUDE_PROJECT_DIR` read a second time --
         check("gr32 resolved_tree with NO payload leaves the tree exactly as "
               "`project` - the reading every call above this point made, "
@@ -835,13 +1087,70 @@ def _selftest():
                   "before tagging is judged against THAT worktree's own "
                   "plan, never `project`'s - a release typed there must "
                   "answer for what IT carries, not for wherever "
-                  "CLAUDE_PROJECT_DIR happened to point (P72): %r"
+                  "CLAUDE_PROJECT_DIR happened to point: %r"
                   % (moved,),
-                  os.path.realpath(moved) == os.path.realpath(wt))
+                  moved is not None
+                  and os.path.realpath(moved) == os.path.realpath(wt))
         finally:
             subprocess.run(git + ["worktree", "remove", "--force", wt],
                           cwd=tmp2, check=True, capture_output=True,
                           timeout=30)
+
+        # A RECORDED mergedHead can read UNKNOWN for causes other than an
+        # unreachable commit - here the newest whole-bearing run records no
+        # head at all. The remedy for a recorded head must cover every such
+        # cause without parsing the basis prose, so it names both ways out:
+        # make the commits present, or record a run that carries its head.
+        tmp4 = tempfile.mkdtemp(prefix="guard-release-nohead-")
+        try:
+            os.makedirs(os.path.join(tmp4, "docs", "audit"))
+            plan4 = {"meta": {"version": 2, "fullGate": ["full"],
+                              "buildCommands": {"full": "echo full"}},
+                     "phases": [{"id": "P4", "title": "s", "status": "done",
+                                 "mergedAt": "2026-01-03T00:00:00Z",
+                                 "mergedHead": "d" * 40, "tasks": []}],
+                     "bugs": []}
+            with open(os.path.join(tmp4, MANIFEST_REL), "w",
+                      encoding="utf-8") as fh:
+                json.dump(plan4, fh)
+            cmds4 = [c for _n, c in
+                     evidence_io.resolved_commands(plan4, ["full"])]
+            evidence_io.append_row(tmp4, {
+                "v": evidence_io.ROW_VERSION, "runId": "run-nohead",
+                "ts": "2026-01-02T00:00:00Z", "scope": evidence_io.FULL_SCOPE,
+                "status": "passed",
+                "steps": [{"name": "gate", "command": c, "exit": 0,
+                           "durationMs": 1000} for c in cmds4],
+                "testedState": {},
+                "observations": {"ranTotal": 1, "countsBasis": "1 check",
+                                 "dirtyOutside": []}}, writer="selftest")
+            got = decide("git tag -a v1 -m x", tmp4, "s1")
+            check("gr36d RED-FIRST: a recorded mergedHead read UNKNOWN because "
+                  "the whole-bearing run records no head is refused, and its "
+                  "remedy covers that cause too - see the basis, make both "
+                  "commits present, or record a run that carries its head - "
+                  "never close-phase: %r" % (got,),
+                  bool(got) and "P4" in got and "see the basis" in got
+                  and "record a full run whose row carries its head" in got
+                  and "close-phase.py" not in got)
+        finally:
+            shutil.rmtree(tmp4, ignore_errors=True)
+
+        # --- deny pins on the tree a release is judged against: a release
+        # typed in this repository is refused over this plan, and a plan
+        # missing from it refuses UNKNOWN rather than reading as clean.
+        payload_in = {"cwd": tmp2, "tool_input": {
+            "command": "git tag -a v1 -m x"}}
+        got = decide("git tag -a v1 -m x", tmp2, "s1", payload=payload_in)
+        check("gr44 a tag typed in THIS repository, placed through the "
+              "payload, is refused over this plan: %r" % (got,),
+              bool(got) and "BUG-2" in got)
+        os.rename(mpath2, mpath2 + ".away")
+        got = decide("git tag -a v1 -m x", tmp2, "s1", payload=payload_in)
+        check("gr45 ...and a MISSING plan inside this repository still "
+              "refuses, UNKNOWN: %r" % (got,),
+              bool(got) and "UNKNOWN" in got)
+        os.rename(mpath2 + ".away", mpath2)
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 

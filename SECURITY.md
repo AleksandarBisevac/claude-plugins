@@ -482,27 +482,49 @@ cannot be taken back, so a guard that cannot read the plan must **refuse** the p
 An ordinary `git push origin main` is never touched by either state below — pushing code is not
 releasing it.
 
-The guard refuses over **two lists**, read from the plan's own evidence rather than restated: every
-bug the plugin's `effective_bug_status` still calls open, and every merged phase the plugin's own
-`full_status` reads PROVISIONAL — a phase with no full run yet recorded whose head contains what it
-merged into. A plan naming no third place (`meta.fullGate` absent) has nothing provisional to ask
-about, and the guard behaves exactly as it did before that question existed.
+The guard refuses over **a list of open bugs and a list of held phases**, each read from the plan's
+own evidence rather than restated: every bug the plugin's `effective_bug_status` still calls open,
+and every phase the plugin's `merged_phase` selects whose `full_status` answer holds it. A
+phase is held by PROVISIONAL — no full run yet recorded whose head contains what it merged
+into — and by UNKNOWN — a phase whose ancestry the evidence cannot ask at all, such as one with no
+`mergedHead`. A guard that cannot answer refuses, so an unknown phase holds the release exactly as a
+provisional one does, named with the basis `full_status` gave. A plan naming no third place
+(`meta.fullGate` absent) has no phase to hold, and the guard judges the bugs alone.
 
-| What the guard is asked | Manifest/ledger reads clean | Manifest or ledger cannot be read/verified |
-|---|---|---|
-| An open bug, or a provisional phase | **deny** | **deny — UNKNOWN, not "nothing to refuse"** |
-| Neither | **allow** | **deny — UNKNOWN, not "nothing to refuse"** |
+Each list is read and reported on its own. A list the guard could not read is named UNKNOWN with the
+reason; the list it did read is still named by what it holds, so an unreadable bug list never hides
+a phase that holds the release, nor the reverse.
+
+The refusal names an UNKNOWN phase as **unanswerable**, beside the bugs and the provisional phases,
+with the remedy for its cause, told apart by whether the phase records a `mergedHead`. A phase with
+none is repaired by the command that records it (a `close-phase.py` re-run); a phase that re-run
+refuses to backfill stays unanswerable, and only the bypass releases over it. A phase that records a
+`mergedHead` git could not answer about — an unreachable commit, a shallow clone, a run row that
+records no head, git missing or timing out; the basis names which — is repaired by making both
+commits present or by recording a full run whose row carries its head. A re-run cannot help it,
+since a head is already recorded, and until git can answer, only the bypass releases over it. The
+refusal lists the first few phases of each kind and points at `/audit:status` for the rest; the
+arming message names every one.
+
+| What the guard is asked | Manifest and ledger read clean | Manifest cannot be read | Ledger cannot be read/verified |
+|---|---|---|---|
+| An open bug, or a provisional phase | **deny** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN, not "nothing to refuse"** |
+| A merged phase whose full-run answer is unknown | **deny — named unanswerable, with its basis** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN, not "nothing to refuse"** |
+| None of these | **allow** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN** when `meta.fullGate` is declared; with none the ledger is never read, so **allow** |
 
 The way past it is `arm-release-bypass.py`: typing `#release-with-bugs` in the maintainer's own
 prompt arms a single-use, time-limited slot that the guard alone can read — nothing the model
 writes can arm it, because a guard the caller can satisfy by writing the right words is not a
-guard. The arming message names **both** lists it is authorising a release over, through the same
-reading the guard itself refuses on, so a blanket phrase never understates what is being shipped.
+guard. The arming message names every open bug, provisional phase and unanswerable phase it is
+authorising a release over, each apart, and names a list the guard could not read as UNKNOWN, through the same reading the guard itself refuses on, so a
+blanket phrase never understates what is being shipped. When the guard itself cannot be loaded, the
+message says that instead: a guard that cannot load as a hook refuses nothing, bypass or not, so
+the guard file needs fixing before any release.
 
 The tree the guard judges is resolved through `plugins/audit/hooks/_config.tree_for`, asked about
 the release command's own effective working directory — never `CLAUDE_PROJECT_DIR` read a second
 time. A release typed from a linked worktree is judged against that worktree's own plan, which may
-carry a bug or a provisional phase the project's copy does not.
+carry a bug or a held phase the project's copy does not.
 
 ## What the usage ledger records
 

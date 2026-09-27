@@ -1170,12 +1170,17 @@
       },
       "startedAt": "2026-09-27T11:21:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T12:22:35Z.5b4661",
+        "status": "passed",
+        "at": "2026-09-27T12:22:35Z"
+      }
     },
     {
       "id": "P80.17-rtb",
       "title": "close-phase backfills mergedHead for a merge recorded before it existed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off finding P80-R3. The already-recorded branch returns before asking git, so a phase merged before mergedHead existed reads unknown for ever. When the recorded merge has no mergedHead and the parent ref resolves, write the parent's head once, in the same write discipline, never moving mergedAt; a recorded mergedHead is never replaced. Pin the default deleteBranch re-run path and a first stamp after a hand merge. Mutations: overwrite an existing mergedHead; move mergedAt.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1211,18 +1216,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1f0de10d8e79ebb5d163b27568c608db034de877",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges from the description by the orchestrator's decision after three task reviews: the description asked to write the parent's head on a re-run; the delivered design recovers the merge's own commit (merge_commit, nested merges included) held to every recorded task commit whenever the branch resolves (first stamp included), and on a branch-gone re-run writes the parent's head plus phase.mergedHeadAt only when every recorded task commit is contained, refusing otherwise; stale_full_runs measures from mergedHeadAt. Schema, KNOWN_PHASE, status/phase-signoff/manifest-conventions updated.",
+        "descriptive": "mergedHead keeps one meaning wherever the branch resolves, a merge recorded before the field existed gets a head only over evidence, and stale-full-run measures from the moment an after-the-fact head was recorded"
       },
       "startedAt": "2026-09-27T10:22:33Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T12:21:07Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T12:21:06Z.e2927f",
         "status": "passed",
         "at": "2026-09-27T12:21:06Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "1f0de10d8e79ebb5d163b27568c608db034de877",
+        "at": "2026-09-27T12:21:07Z"
       }
     },
     {
