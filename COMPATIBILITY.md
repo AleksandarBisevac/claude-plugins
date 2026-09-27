@@ -182,16 +182,33 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   `derive-phase-gate.py` writes `testGateBasis` together with `testGateDerived`, so the two
   are absent or present as a pair. Ceasing to read any of the
   four, or reversing what its absence means, is a major.
-- **`meta.fullGate` and `phase.mergedHead` are under the same promise, and each absence is its
-  own documented reading, never a gap.** **`meta.fullGate` absent means this plan names no third
-  place at all** — no phase is ever provisional for lack of one, `run-test-gate.py --full`
-  refuses rather than measuring nothing, and the `provisional`/`stale-full-run` status
-  conditions are inert on every surface that grades them. **`phase.mergedHead` absent means
-  ancestry cannot be asked at all**, so a merged phase reads `unknown` rather than
-  `provisional` — a specific gap this plan has no way to measure is never claimed in its place.
-  `phase.mergedHead` is written only by `close-phase.py`; a plan that never adopts the third
-  place behaves exactly as it did before either key existed. Ceasing to read either, or
-  reversing what its absence means, is a major.
+- **`meta.fullGate`, `phase.mergedHead` and `phase.mergedHeadAt` are under the same promise,
+  and each absence is its own documented reading, never a gap.** **`meta.fullGate` absent means
+  this plan names no third place at all** — no phase is ever provisional for lack of one,
+  `run-test-gate.py --full` refuses rather than measuring nothing, and the
+  `provisional`/`stale-full-run` status conditions are inert on every surface that grades them.
+  **`phase.mergedHead` absent means ancestry cannot be asked at all**, so a merged phase reads
+  `unknown` rather than `provisional` — a specific gap this plan has no way to measure is never
+  claimed in its place. **`phase.mergedHeadAt` absent means `mergedHead` is the recovered
+  commit** described next, and `stale-full-run` measures from `mergedAt`; present, it means
+  `mergedHead` was recorded after the fact, and `stale-full-run` measures from it instead.
+  `phase.mergedHead` is written into a plan only by `close-phase.py` (the demo generator stamps
+  its own fixture); a plan that never adopts the third
+  place behaves exactly as it did before any of the three existed. Ceasing to read any of them,
+  or reversing what its absence means, is a major.
+- **`phase.mergedHead` keeps two readings, and `phase.mergedHeadAt` keeps telling them apart.**
+  Without `mergedHeadAt`, `mergedHead` reads as the commit recovered from the parent's
+  first-parent chain as the one that brought the phase branch's tip in. With `mergedHeadAt`, it
+  reads as the parent's head at that moment, recorded with the branch gone and held to every task
+  commit the phase records — and nothing more is proved: a wrong parent that holds every recorded
+  task commit passes that check, and it says nothing about work no task recorded. What is
+  promised is the pair of readings and which key selects one — never which commit a given close
+  will find.
+  **The caveat is historical, and it is narrow.** No released version wrote `mergedHead` at all
+  (the key first appears under *Unreleased* in `CHANGELOG.md`), but a plan written by an
+  unreleased build from before `mergedHeadAt` existed may carry an unmarked `mergedHead` that is
+  the parent's head at close time rather than the recovered commit, and `close-phase.py` never
+  replaces a head already recorded.
 - **The `provisional` and `stale-full-run` status conditions are opt-in, and `DEFAULT_GATE` is
   unchanged by their addition.** `--fail-on` is what turns either on; a plan that has never
   declared `meta.fullGate` or recorded a full run fails no build over a condition it never

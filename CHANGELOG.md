@@ -276,16 +276,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   since a listing that already said "nothing" is not evidence for a narrower guess; the basis
   line says why. This is one of two ways `derived-empty` is reached — the other is the
   spelling-sourced shape left with nothing to substitute, in the bullet above.
-- **`meta.fullGate` and `phase.mergedHead`: a third gate beyond a task's own and a phase's
-  sign-off gate, and the parent commit a phase merged onto.** `meta.fullGate` names the
-  `meta.buildCommands` keys the whole product is measured against — the full suite, coverage,
-  an e2e pass — never narrowed to one phase's or one task's files; `phase.mergedHead` is the
-  parent branch's commit right after a phase merged, written by `close-phase.py` in the same
-  write as `mergedAt`. Both are additive: absent means today's behaviour exactly, and nothing
-  is ever provisional for lack of either. `_manifest_vocab.VERIFIED` is the one word every
-  surface renders for "tests passed" at each place a gate can mean that — a task's own gate, a
-  phase's sign-off gate, and the full run — and `FULL_STATUS` is the vocabulary a merged
-  phase's full-gate status answers with.
+- **`meta.fullGate`, `phase.mergedHead` and `phase.mergedHeadAt`: a third gate beyond a task's
+  own and a phase's sign-off gate, and the commit ancestry is asked about for a phase's merge.**
+  `meta.fullGate` names the `meta.buildCommands` keys the whole product is measured against —
+  the full suite, coverage, an e2e pass — never narrowed to one phase's or one task's files.
+  `phase.mergedHead` is written into a plan only by `close-phase.py` (the demo generator stamps
+  its own fixture) and has two readings, which
+  `phase.mergedHeadAt` tells apart: without it, the commit on the parent's first-parent chain
+  that brought the phase branch's tip in — the tip for a fast-forward, the merge commit for a
+  direct merge, the parent's merge of an intermediate branch for a nested one — recovered from
+  git rather than read off the parent's head, so a hand merge closed later records the same
+  commit a close at the merge would have; with it, the parent's head at that moment, recorded
+  after the fact with the branch gone. All three are additive: absent means today's behaviour
+  exactly, and nothing is ever provisional for lack of any of them. `_manifest_vocab.VERIFIED`
+  is the one word every surface renders for "tests passed" at each place a gate can mean that —
+  a task's own gate, a phase's sign-off gate, and the full run — and `FULL_STATUS` is the
+  vocabulary a merged phase's full-gate status answers with.
+- **`close-phase.py` records the `mergedHead` a merge was recorded without.** A re-run over a
+  phase whose `mergedAt` is set and whose `mergedHead` is not writes the head once, journals
+  `phase.mergedHead.recorded`, and never replaces a head already recorded. With the branch still
+  there it is the recovered commit above. With the branch gone it is the parent's head, written
+  with `mergedHeadAt` and only when every task commit the phase records is contained in it — a
+  rewound parent, a squash merge or a phase recording no task commit is refused, and the phase
+  stays unknown. That check proves the parent's head holds the phase's recorded work and nothing
+  more: a wrong parent holding every recorded task commit passes it, and work no task recorded
+  is not asked about. A recovered commit is held to every
+  recorded task commit too, so a branch ref moved onto an older commit cannot record a head
+  that predates the phase's work.
 - **`run-test-gate.py --full [--record] [--writer NAME]` runs the declared `meta.fullGate`
   against the whole product and records a `scope: "full"` row with no phase or task subject.**
   The row is written before the summary prints, so a run cut off after measuring still leaves
@@ -298,11 +315,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   or has no third place declared, from the evidence ledger alone.** Whole needs a green,
   measured, clean, verbatim full run whose head contains the phase's `mergedHead`, asked of git
   through ancestry rather than a string match; `/audit:status`, the report, the panel and
-  `/audit:doctor` all read the identical answer and basis off this one function.
+  `/audit:doctor` all read the identical answer and basis off this one function. Which phases
+  are asked is one predicate too, `_evidence_io.merged_phase` — a phase carrying `mergedAt` and
+  an id, never read off its status, so a done phase that never merged is not asked and a merged
+  one is asked whatever it reads — so no two surfaces grade different sets.
+  Full runs are walked newest first by the moment their `ts` parses to, never by comparing the
+  stamps as text, and a run whose `ts` will not parse is walked last and never called the
+  newest. Every answer also carries `wholeRunId` and `wholeRunTs`, naming the newest run that
+  could bear whole at all, so a caller asking whether a run that counts has happened since a
+  merge never re-derives which run counts. The panel's ancestry memo keeps an answer only when
+  both commits are full SHA-1 or SHA-256 ids, because a branch, a tag or an abbreviated SHA can
+  move, and never keeps a could-not-ask.
 - **`scripts/governance/import-evidence.py` brings a CI-recorded ledger shard into the evidence
   directory whole, after its hash chain verifies.** A same-named file with different bytes is
   refused; an identical re-import is a no-op; a shard is committed evidence, never
-  authentication of who wrote it.
+  authentication of who wrote it. A run is one run whichever file carries it, so a shard
+  carrying a `runId` another ledger file already holds, or repeating one among its own rows,
+  is refused with nothing written, naming each id and the file holding it (`duplicates` in
+  `--json`). So is any import of a new file while the existing ledger cannot be read in full,
+  since a run lost there could be one the shard carries again: the refusal names each file and
+  the step
+  that clears each cause. `_evidence_io.read_rows` gains `rowFiles`, the file each row was
+  read from, at the row's own index — additive, every other key unchanged.
 - **`scripts/governance/full-gate.py` is the one command a pre-push hook or a CI step reaches
   for.** It runs `run-test-gate.py --full --record` as a subprocess and exits with its code,
   exiting clean with a sentence when no `meta.fullGate` is declared so an undeclared third
@@ -310,21 +344,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `docs/examples/azure-pipelines.yml` both reach for it.
 - **`/audit:status --fail-on provisional` and `--fail-on stale-full-run`, opt-in conditions
   beside the existing test-evidence ones.** `provisional` trips on a merged phase the ledger
-  has not yet certified whole; `stale-full-run` is the sharper claim that a full run happened
-  after the phase landed and still does not contain it. The default gate is unchanged; the
+  has not yet certified whole; `stale-full-run` is the sharper claim that a run that could bear
+  whole — the one `wholeRunId` and `wholeRunTs` name — was recorded after the phase landed and
+  still does not contain it. A run that was red, repeated a verdict, counted nothing, ran on a
+  dirty tree or ran other commands never makes a phase stale. "Landed" is `mergedHeadAt` when
+  the phase carries one, since a head recorded after the fact is not the merge's own commit,
+  and `mergedAt` otherwise; the sentence names which. The default gate is unchanged; the
   status table's tests column now says whether a merged phase is whole, provisional (naming
   when it merged) or unknown (naming why), and renders exactly as before for a plan with no
   `meta.fullGate`.
 - **The report and the control panel each carry the VERIFIED line for a merged phase.** The
-  report prints the phase's sign-off counts alongside the third place's own answer under each
-  merged phase; the panel renders the same word and basis beside a merged phase's evidence,
-  reading the identical `full_status` answer rather than recomputing it.
+  report prints the phase's own sign-off alongside the third place's answer under each merged
+  phase — its suite counts only when the sign-off recorded them — and the line wraps rather than
+  widening the phase cell; the panel renders the same word and basis beside a merged phase's
+  evidence, reading the identical `full_status` answer rather than recomputing it. When the
+  ledger cannot be read, every merged phase reads unknown with the read failure as its basis,
+  on both surfaces and in `/audit:status`, rather than carrying no line at all.
+- **The scale demo shows whole, provisional and unknown.** `gen-demo-manifest.py` writes its
+  fixture as a git repository, deterministic from the plan, so the demo's whole and provisional
+  answers come from git's ancestry rather than from the fixture's say-so, and the earliest done
+  phase records no `mergedHead` and reads unknown. `docs/demo-large.html` carries all three;
+  `check-report-interactive.mjs` fails a page its fixture is built to show them on when one is
+  missing, and `capture-screenshots.mjs --check` fails when any of the three is missing from the
+  panel's payload, or is sent but painted without its full-run line.
 - **`/audit:doctor`'s full-run row.** No `meta.fullGate` declared reads as an OK row saying so;
   a provisional merged phase is a warning naming the command that would settle it, an unknown
   one a warning naming why ancestry could not be asked, and every merged phase reading whole is
   one OK row naming the newest whole-bearing full run.
-- **This repository's own release guard refuses a release over a provisional phase, beside an
-  open bug.** The `#release-with-bugs` bypass arms over both lists and prints both.
 - **A committed evidence row keeps `outcomeBasis` and `derivedGap` for a step that could not
   run**, so a derived run that skipped a listed suite reads apart from a missing interpreter or
   a no-verdict signature; `audit-lookup.py run` shows both, and a passed step's row is
@@ -505,6 +551,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
+  report and the panel each turned a failed read into a clean read of nothing, so a task or
+  phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not
+  hold the run, which only a read can make. Such a pointer now reads `Ledger unreadable`, amber
+  on both surfaces like the other answers that measured nothing, naming the run the plan points
+  at; the file and line counts beside it are unknown rather than zero. The sentence is one
+  template, `_manifest_vocab.LEDGER_READ_FAILED`, which the report, the panel, the report's and
+  `/audit:status`'s full-run blocks, the doctor's ledger checks and `propose-gates.py` all fill,
+  with
+  `LEDGER_LOCATION_FAILED` for failing to find where the ledger lives.
+- **`capture-screenshots.mjs` waits for the panel to boot before it reads the panel's state.**
+  It read the viewer's identity and the skill registry once the static tab strip appeared plus
+  a fixed sleep, which a loaded machine could outrun: the page had not yet answered from
+  `/api/state` and `/api/registry`, and the capture failed its identity and fixture-skill
+  preconditions against the page's initial placeholders. It now waits until boot has rendered from the
+  server's state, and fails naming that wait when it never does.
 - **Parallel lock takers of one session are serialised.** The lock let any process of the
   session holding it back in as "already yours", so parallel tool calls of one run each wrote
   over the others' manifest write and every one reported success. A claim a process takes for

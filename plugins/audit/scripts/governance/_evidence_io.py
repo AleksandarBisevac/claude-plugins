@@ -2326,8 +2326,10 @@ def _current_pointer(manifest_path, scope, ids):
 
 # --- full_status: whole, provisional, unknown, or not declared -----------------
 # THE THIRD PLACE'S OWN VERDICT, DERIVED FROM THE LEDGER ALONE. `phase.mergedHead`
-# names the commit a phase landed on; a WHOLE answer needs a green, measured,
-# clean, verbatim full run whose recorded head CONTAINS that commit, and that
+# names the commit the parent's first-parent chain brought the phase in with, or,
+# with `phase.mergedHeadAt` set, the parent's head recorded after the fact. A
+# WHOLE answer needs a green, measured, clean, verbatim full run whose recorded
+# head CONTAINS that commit, and that
 # containment is asked of git through `_worktrees.merged_into` -- never a string
 # comparison, because a head that merely EQUALS `mergedHead` is a special case of
 # containment and a head that is further ahead of it is the ordinary one.
@@ -2398,9 +2400,9 @@ def merged_phase(phase):
     truthy `mergedAt` and an `id` that is not None.
 
     MERGED IS THE FIELD THE MERGE STAMPS, NEVER A STATUS. `close-phase.py`
-    writes `mergedAt` together with `mergedHead` and never touches `status`,
-    so a phase reads merged before its effective status catches up to done,
-    and a done phase need never have merged at all. An id-less phase has no
+    writes `mergedAt` together with `mergedHead` and never decides merged
+    from status, so a phase reads merged before its effective status catches
+    up to done, and a done phase need never have merged at all. An id-less phase has no
     name any surface could print a verdict under, so none asks about it.
 
     ONE PREDICATE FOR EVERY SURFACE. The status, the report, the panel and

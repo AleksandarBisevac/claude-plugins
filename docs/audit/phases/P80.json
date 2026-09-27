@@ -32,80 +32,102 @@
         "severity": "high",
         "file": "plugins/audit/scripts/status/_doctor_trail.py:1380",
         "issue": "the doctor picks merged phases by effective status done while status, panel and report use mergedAt with an id, so the surfaces do not ask about the same phases; and stale-full-run's runTs is taken from the run full_status named even when that run was disqualified (dirty tree, counted nothing), because full_run_block checks only status and scope",
-        "resolution": "one shared merged-phase predicate beside _evidence_io.full_status used by every surface, and full_status naming the newest whole-bearing run and its moment itself"
+        "resolution": "fixed in P80.14-rtb (11dd3e6526ff): one shared merged-phase predicate beside _evidence_io.full_status used by every surface, and full_status naming the newest whole-bearing run and its moment itself",
+        "fixTask": "P80.14-rtb",
+        "commit": "11dd3e6526ff"
       },
       {
         "id": "P80-R2",
         "severity": "med",
         "file": ".claude/hooks/guard-release.py:338",
         "issue": "read_provisional drops a merged phase whose answer is UNKNOWN instead of holding the release; the refusal calls both lists unknown when only one failed to read; comments cite plan, design-table and bug ids; SECURITY.md says 'two lists'",
-        "resolution": "treat an UNKNOWN phase like a problem that refuses, report each list independently, restate the cited ids as constraints, drop the count"
+        "resolution": "fixed in P80.16-rtb (2ea7130e1ca1): treat an UNKNOWN phase like a problem that refuses, report each list independently, restate the cited ids as constraints, drop the count",
+        "fixTask": "P80.16-rtb",
+        "commit": "2ea7130e1ca199ea9d3f18f1cbcc9c756e2e7464"
       },
       {
         "id": "P80-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py:1108",
         "issue": "a phase whose merge was recorded before mergedHead existed can never get one: the already-recorded branch returns before asking git, so that phase reads unknown for ever",
-        "resolution": "backfill mergedHead once when the recorded merge has none and the parent ref resolves, without moving mergedAt, and pin the default deleteBranch re-run"
+        "resolution": "fixed in P80.17-rtb (1f0de10d8e79): backfill mergedHead once when the recorded merge has none and the parent ref resolves, without moving mergedAt, and pin the default deleteBranch re-run",
+        "fixTask": "P80.17-rtb",
+        "commit": "1f0de10d8e79ebb5d163b27568c608db034de877"
       },
       {
         "id": "P80-R4",
         "severity": "low",
         "file": "plugins/audit/tests/test_run_test_gate.py:6711",
         "issue": "fg10 derives its expected commands from resolved_commands, the function under test, so a shared regression passes both sides",
-        "resolution": "compare the recorded step command against a hand-written literal"
+        "resolution": "fixed in P80.18-rtb (7850a65fb9cd): compare the recorded step command against a hand-written literal",
+        "fixTask": "P80.18-rtb",
+        "commit": "7850a65fb9cd"
       },
       {
         "id": "P80-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/import-evidence.py:146",
         "issue": "a shard under a different name whose runIds already exist in the ledger is imported without a word",
-        "resolution": "refuse, or report, an import that would duplicate a runId already in the evidence directory"
+        "resolution": "fixed in P80.19-rtb (8b23d091d5db): refuse, or report, an import that would duplicate a runId already in the evidence directory",
+        "fixTask": "P80.19-rtb",
+        "commit": "8b23d091d5dbf3c235a2db19452c6b9fa81c6aaa"
       },
       {
         "id": "P80-R6",
         "severity": "high",
         "file": "plugins/audit/scripts/panel/_panel_state.py:492",
         "issue": "a failed ledger read becomes a fabricated clean empty read for the evidence tab, which then shows zero unreadable lines and no runs",
-        "resolution": "carry the read error into the evidence payload and render it distinctly from an empty ledger"
+        "resolution": "fixed in P80.15-rtb (ac7365bca4c0): carry the read error into the evidence payload and render it distinctly from an empty ledger",
+        "fixTask": "P80.15-rtb",
+        "commit": "ac7365bca4c0"
       },
       {
         "id": "P80-R7",
         "severity": "med",
         "file": "tools/check-report-interactive.mjs",
         "issue": "no browser-driven check has rendered the full-run line on the report or the panel",
-        "resolution": "assert the rendered full-run line in a browser check over the demo, which now declares meta.fullGate"
+        "resolution": "fixed in P80.20-rtb (9dbbf6998f8c): assert the rendered full-run line in a browser check over the demo, which now declares meta.fullGate",
+        "fixTask": "P80.20-rtb",
+        "commit": "9dbbf6998f8c"
       },
       {
         "id": "P80-R8",
         "severity": "med",
         "file": "tools/check-rendered-artifacts.py:154",
         "issue": "docs/demo-large.html is rendered in a directory with no git repository, so the demo can never show a whole phase",
-        "resolution": "make the demo fixture a deterministic git repository with one whole-making full row, so the page shows whole, provisional and unknown"
+        "resolution": "fixed in P80.20-rtb (9dbbf6998f8c): make the demo fixture a deterministic git repository with one whole-making full row, so the page shows whole, provisional and unknown",
+        "fixTask": "P80.20-rtb",
+        "commit": "9dbbf6998f8c"
       },
       {
         "id": "P80-R9",
         "severity": "high",
         "file": "plugins/audit/reference/orchestrator.md:515",
         "issue": "the third-place section was demoted to ### under an unrelated heading so the section-anchor lint in _areas.py does not see it",
-        "resolution": "make it a ## section with an anchor or a reasoned UNANCHORED_SECTIONS row"
+        "resolution": "fixed in P80.21-rtb (66806a510eb1): make it a ## section with an anchor or a reasoned UNANCHORED_SECTIONS row",
+        "fixTask": "P80.21-rtb",
+        "commit": "66806a510eb1638a07de2409736dd710a88b7522"
       },
       {
         "id": "P80-R10",
         "severity": "low",
         "file": "plugins/audit/commands/init.md:156",
         "issue": "counts in prose: 'a fixed pair' in init.md and 'each of three places' in the README",
-        "resolution": "point at what derives the count instead of stating it"
+        "resolution": "fixed in P80.21-rtb (66806a510eb1): point at what derives the count instead of stating it",
+        "fixTask": "P80.21-rtb",
+        "commit": "66806a510eb1638a07de2409736dd710a88b7522"
       },
       {
         "id": "P80-R11",
         "severity": "med",
         "file": "plugins/audit/scripts/panel/_panel_composition.py:897",
         "issue": "the ancestry memo assumes both operands are commit SHAs, but mergedHead is only warned about when it is not one, so a branch name there would cache an answer that goes stale when the branch moves",
-        "resolution": "memoize only when both operands are full 40-hex SHAs; otherwise ask git each time"
+        "resolution": "fixed in P80.14-rtb (11dd3e6526ff): memoize only when both operands are full 40-hex SHAs; otherwise ask git each time",
+        "fixTask": "P80.14-rtb",
+        "commit": "11dd3e6526ff"
       }
     ],
-    "outcome": "[findings: 11 - 3 high, 4 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 11 - 3 high, 4 med, 4 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1500,13 +1522,14 @@
     {
       "id": "P80.22-rtb",
       "title": "the changelog and the compatibility contract say what the sign-off fixes shipped",
-      "status": "pending",
+      "status": "in_progress",
       "description": "After every sign-off fix task lands: the CHANGELOG [Unreleased] section states what each one shipped, read from the code and not from the task titles (the full-run answer's wholeRunId/wholeRunTs replacing runTs, the merged-phase predicate, the ancestry memo's full-id rule, close-phase's mergedHead backfill and mergedHeadAt, import-evidence's duplicate-run and unreadable-ledger refusals, the panel's evidence read error, the release guard holding over an unknown phase, the demo's whole/provisional/unknown fixture). COMPATIBILITY.md gains the absence reading for any new manifest key the fixes added, in the shape its neighbours use, and widens no promise. The comment in _evidence_io.py that says what phase.mergedHead names is corrected to what close-phase now writes. No numbers in prose; no plan ids.",
       "files": [
         "CHANGELOG.md",
         "COMPATIBILITY.md",
         "plugins/audit/scripts/governance/_evidence_io.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/git/close-phase.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -1533,16 +1556,21 @@
         "P80.19-rtb",
         "P80.20-rtb"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T13:29:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T13:49:06Z.e7492b",
+        "status": "passed",
+        "at": "2026-09-27T13:49:06Z"
+      }
     },
     {
       "id": "P80.23-rtb",

@@ -1735,6 +1735,23 @@ later phase still records — a fixture with no runs at all would name no bounda
 ledger, the pointers and every state that depends on them down with it at the smallest sizes.
 `SCHEMA_EXEMPTIONS` used to hold the key back on exactly this argument, and that row is gone.
 
+**The fixture is a real git repository**, because `full_status` answers whole only when git says
+a full run's head contains a phase's `mergedHead`, and a directory with no repository can only
+answer unknown. `write_history()` writes it into `<out-dir>/.git` as loose objects the generator
+builds itself — no git process runs, so no hook, identity, template or `GIT_*` variable of the
+caller's reaches a commit, and every date comes from the plan, so the commit names are the same
+on every machine. The real objects are the merges `generate()` stamps as each phase's
+`mergedHead` and the commit the one recorded full run measured, which sits right after the
+first of those merges: that phase reads whole, every later one provisional, and the earliest
+done phase, which records no `mergedHead`, unknown. Every task's `commit` and every phase's
+`baseRef` stays a stable fake no object backs, so a reader asking git about those — the
+doctor's commit trail, for one — calls them dangling here, which is a property of the fixture
+and not a finding. **It never writes into a repository it did not make:** `history_refusal()` is
+asked before the manifest, the ledger or a single object is written, and accepts an existing
+`.git` only when it is a directory whose `HEAD`, `config` and branch ref are byte for byte what
+this history would write. Anything else — a linked worktree's `.git` file, a link, somebody's
+repository — and `gen-demo-manifest.py` exits 2 with the reason, having written nothing.
+
 ### `plugins/audit/scripts/demo/gen-demo-usage.py`
 Generates a synthetic usage ledger consistent with a real manifest — task/phase ids that exist,
 timestamps inside each task's own `startedAt`/`completedAt` window — so the report's Usage

@@ -901,8 +901,10 @@ def stamp_merged(manifest_path, phase_id, when=None, merged_head=_HEAD_NOT_ASKED
     did not is worse than a plan that says nothing, because every later reader treats
     it as landed.
 
-    `merged_head` IS THE PARENT'S COMMIT RIGHT AFTER THE MERGE, asked by the caller
-    (never composed here) - `None` when git could not say, and the not-asked
+    `merged_head` IS THE COMMIT `recovered_head` FOUND, asked by the caller (never
+    composed here): the commit on the parent's first-parent chain that brought the
+    branch's tip in, held to the recorded task commits - `None` when none could be
+    recovered, and the not-asked
     sentinel when the caller never mentions it at all, which leaves the key out of
     the write entirely rather than pinning it to null. There is no second write:
     both fields land in the one `_revalidated_write` call below, because a stamp
