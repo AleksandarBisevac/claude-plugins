@@ -597,7 +597,7 @@
     {
       "id": "P84.9-791",
       "title": "the lock-first reads, the host check and the save-again refusal each have a case that fails when they break",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-4 phase review of P84 (review-P84d.json). Three paths survived a mutation with every suite green, and one docstring is false. (1) a two-process drop race on the command-line materialize path, asserting both drops land - red when the read moves back above the acquire. (2) a release case with a claim recorded from another host and a dead pid, which must be refused - red when _holder_dead_here's host check is removed. (3) a case that changes the manifest between apply_composition's two passes so the save reaches an unasked phase lock, asserting the save-again refusal - red when the refusal is disabled. (4) proposal_action's docstring says the panel's per-call lock is what it adds. Each new case proven red by the mutation named.",
       "files": [
         "plugins/audit/tests/test__proposals.py",
@@ -630,14 +630,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a242e3fe",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "rc1 two-process CLI race, rk8 remote dead-pid release refused, lu8 save-again refusal; proposal_action docstring corrected.",
+        "descriptive": "Three safety checks in the lock and panel code now have tests that would fail if they were removed."
       },
       "startedAt": "2026-09-27T09:01:00Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T09:09:44Z",
+      "verifiedBy": [
+        "test__proposals rc1",
+        "test__locks rk8",
+        "test__panel_write lu8"
+      ]
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"
