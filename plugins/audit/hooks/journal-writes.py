@@ -32,12 +32,13 @@ question of the FILE -- is the digest still the one the slot remembers -- and th
 slot is refreshed after every recorded row so its baseline is the manifest as of
 the last row in the journal, whoever wrote it.
 
-THE ONE EXCEPTION, and why it earns the exception (P0-S). A Bash call carrying
+THE ONE EXCEPTION, and why it earns the exception. A Bash call carrying
 `dangerouslyDisableSandbox: true` runs with the only layer that can actually
-CONTAIN a read switched off, and until P0-S no part of this plugin saw it -- a
-live session read a secret through direnv that way and left no deny, no gate
-message and no row. `bash.unsandboxed` records a DIGEST of the command, its byte
-length, its program name, and the cwd relative to the repo. It prevents nothing
+CONTAIN a read switched off, and before this file was widened to watch for it
+no part of this plugin saw it -- a live session read a secret through direnv
+that way and left no deny, no gate message and no row. `bash.unsandboxed`
+records a DIGEST of the command, its byte length, its program name, and the
+cwd relative to the repo. It prevents nothing
 (PostToolUse is after the fact) and it is not meant to: it turns an invisible
 event into tamper-evident history, which is what this file is for. An ordinary
 sandboxed Bash call is still nobody's business here, and the flag -- not the tool
@@ -768,7 +769,7 @@ def sandbox_disabled(ti):
 
 
 def unsandboxed_entries(data, *, cfg=None, root=None):
-    """P0-S: one row for a Bash run that went around the harness sandbox.
+    """One row for a Bash run that went around the harness sandbox.
 
     THE FLAG IS STILL READ BEFORE ANYTHING ELSE IN HERE, and the reason it used to
     give is no longer the reason. It said that resolving the repo root and loading
