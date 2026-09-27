@@ -1013,7 +1013,7 @@
     {
       "id": "P74.11-qq5",
       "title": "each merge seam is walked on its own, and a journal that cannot record merges never reads as never-merged",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-8 review (review-P74h.json; p74r8/seam2.py, e2e.py, disabled.py, mut3.py). (1) chain_index walks each seam's stretch with its own visited set, so an earlier or forged merge row cannot cut a later real one short; co11: two successive real merges, the answer asserted in both seam orders. (2) merge_seams returns (None, \"journal disabled\") when journal.enabled is false, since no merge could have been recorded; a case for it. (3) a case that makes the journal read raise and asserts merge_seams returns (None, why), beside the readable case returning a list.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -1045,14 +1045,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3372f236",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "chain_index walks each seam with its own visited set; merge_seams returns None with a reason when the journal is disabled.",
+        "descriptive": "A later ledger merge can no longer be hidden by an earlier one, and a switched-off journal is never read as proof that no merge happened."
       },
       "startedAt": "2026-09-27T01:54:45Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T03:53:25Z",
+      "verifiedBy": [
+        "test__evidence_io co11",
+        "test__evidence_io co12",
+        "test__evidence_io co13",
+        "test__evidence_io co14",
+        "test__evidence_io co15"
+      ]
     }
   ],
   "startedAt": "2026-09-25T18:00:38Z"
