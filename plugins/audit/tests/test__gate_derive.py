@@ -13,9 +13,13 @@ manifest, a phase and a `facts` dict this suite builds BY HAND -- no
 subprocess, no git, no listing ever really run. `dg`-prefixed cases.
 """
 
+import os
+import shlex
+import subprocess
 import sys
+import tempfile
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _gate_derive as M                           # noqa: E402
 
@@ -43,6 +47,96 @@ def _sibling(gate):
     return _task("P1.1", tests={"gate": gate, "gateBasis": "tests.add"})
 
 
+# --- re-pointed paths are quoted for the shell the gate runs in ---------------
+# `run-test-gate.py` hands every gate entry to a POSIX shell, so a path the
+# re-point substitutes is one shell word only if it is quoted as one. Each
+# fixture path below is chosen so the unquoted join and the quoted one differ.
+def _shell_words(command):
+    """The words a POSIX shell reads out of `command`, or None when an
+    unbalanced quote leaves it unreadable -- an entry the shell would refuse
+    must fail its case, not end the suite before the cases after it run."""
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return None
+
+
+def _quoting_cases(check, build):
+    spaced = M.repointed(["python3 tests/test_a.py"], build,
+                         ["backend/tests/test old.py"])
+    check("q1 a path with a SPACE is substituted as ONE shell word: %r"
+          % (spaced,),
+          spaced == ["python3 'backend/tests/test old.py'"]
+          and _shell_words(spaced[0]) == ["python3", "backend/tests/test old.py"])
+
+    apostrophe = "tests/it" + "'" + "s.py"
+    quoted = M.repointed(["python3 tests/test_a.py -v"], build, [apostrophe])
+    check("q2 a path with a SINGLE QUOTE survives the shell's own reading: %r"
+          % (quoted,),
+          len(quoted) == 1
+          and _shell_words(quoted[0]) == ["python3", apostrophe, "-v"])
+
+    # The allow case: the direction a quote-everything mutation breaks. An
+    # ordinary path, a flag, a `--` separator and a shared key all come back
+    # byte for byte as the unquoted join has always written them.
+    plain = M.repointed(["npm test -- --runInBand ph.test.ts", "lint",
+                         "cd web && npx vitest run a.test.ts"], build,
+                        ["src/a.test.ts", "src/b-c_d.test.ts"])
+    check("q3 an ordinary path, its flags and a shared key are unchanged "
+          "byte for byte: %r" % (plain,),
+          plain == ["npm test -- --runInBand src/a.test.ts src/b-c_d.test.ts",
+                    "lint",
+                    "cd web && npx vitest run src/a.test.ts src/b-c_d.test.ts"])
+
+    single = M.repointed(["python3 'tests/test old.py' -v"], build,
+                         ["tests/b.py"])
+    double = M.repointed(['pytest -k "a or b" "tests/x y.py"'], build,
+                         ["tests/z w.py"])
+    check("q4 a sibling that already QUOTES its path is re-pointed, never "
+          "quoted twice, and its other quoted words keep their spelling: "
+          "%r %r" % (single, double),
+          single == ["python3 tests/b.py -v"]
+          and double == ['pytest -k "a or b" \'tests/z w.py\''])
+
+    quoted_only = ["python3 'tests/test old.py' -v"]
+    picked = M.path_scoped_sibling(
+        _phase(tasks=[_task("P0.1", tests={"gate": ["lint"]}),
+                      _sibling(quoted_only)]), build)
+    moved = M.repointed(picked[0] or [], build, ["tests/b c.py"])
+    check("q6 a sibling whose ONLY path is quoted is picked as the shape, and "
+          "re-points to a quoted path: %r -> %r" % (picked, moved),
+          picked == (quoted_only, "P1.1")
+          and moved == ["python3 'tests/b c.py' -v"])
+
+    if not os.path.exists("/bin/sh"):
+        _harness.skip(check, "q5", "no POSIX `/bin/sh` here, which is the "
+                      "shell run-test-gate spawns elsewhere", True)
+        return
+    root = tempfile.mkdtemp(prefix="gate-derive-quote-")
+    try:
+        suite_dir = os.path.join(root, "backend", "tests")
+        os.makedirs(suite_dir)
+        marker = os.path.join(root, "ran.txt")
+        with open(os.path.join(suite_dir, "test old.py"), "w") as fh:
+            fh.write("open(%r, 'w').write('ran')\n" % (marker,))
+        # The interpreter arrives through the environment rather than as a
+        # literal: its own absolute path can end in a dotted version, which
+        # reads as a file token and would itself be re-pointed.
+        entry = M.repointed(['"$GATE_DERIVE_PY" tests/test_a.py'], build,
+                            ["backend/tests/test old.py"])[0]
+        env = dict(os.environ, GATE_DERIVE_PY=sys.executable)
+        proc = subprocess.run(["/bin/sh", "-c", entry], cwd=root, env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        ran = os.path.isfile(marker)
+        output = proc.stdout.decode("utf-8", "replace")
+    finally:
+        _harness.remove_tree(root)
+    check("q5 the re-pointed entry RUNS from the project root through "
+          "`/bin/sh -c`: exit %s, ran %s, output %r"
+          % (proc.returncode, ran, output),
+          proc.returncode == 0 and ran)
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     build = {"unit": "npm test -- ph.test.ts", "lint": "eslint ."}
@@ -61,6 +155,7 @@ def _cases(check):
     check("m3 `repointed` swaps the path and keeps the flags",
           M.repointed(["npm test -- ph.test.ts"], build, ["src/a.test.ts"])
           == ["npm test -- src/a.test.ts"])
+    _quoting_cases(check, build)
 
     # --- mode absent: no derivation at all ------------------------------------
     no_mode = _manifest(meta={"buildCommands": build},

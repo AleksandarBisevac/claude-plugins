@@ -305,6 +305,22 @@ def _cases(check):
           and M.gate_entry_paths("npm test -- src/a.test.ts")
           == ["src/a.test.ts"]
           and M.gate_entry_paths("yarn test --shard 1/4") == [])
+    # A gate entry runs in a POSIX shell, so its words are the ones that shell
+    # reads: a quoted path is one word, returned as the name it spells.
+    _sq_found = M.gate_entry_paths(
+        "pytest -k \"a or b\" 'tests/test old.py' tests/x.py \"tests/d q.py\"")
+    check("sp5 `gate_entry_paths` reads a QUOTED path as the one file it "
+          "names, unquoted, and a quoted selector as no path at all: %r"
+          % (_sq_found,),
+          _sq_found == ["tests/test old.py", "tests/x.py", "tests/d q.py"])
+    # The direction a read-every-word-through-the-shell mutation breaks: a
+    # word carrying no quote is its own spelling, backslash included, exactly
+    # as the whitespace split always returned it.
+    _sq_plain = M.gate_entry_paths(
+        "npm test -- --shard 1/4 src/a.test.ts tests\\win.py e2e.spec")
+    check("sp6 an entry with NO quote in it reads exactly as the whitespace "
+          "split always read it: %r" % (_sq_plain,),
+          _sq_plain == ["src/a.test.ts", "tests\\win.py", "e2e.spec"])
     check("sp4 `TEST_MARKS`, `TEST_DIRS` and `path_segments` are public here "
           "too - the whole group `run-test-gate.py` used to carry under a "
           "leading underscore, MOVED rather than copied",
